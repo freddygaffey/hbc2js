@@ -125,3 +125,9 @@ Real apps ship multiple Hermes bundles: Wix (30 micro-frontend bundles with one 
 
 ## D17d — Dependency extraction is scored against ground truth from our own builds (2026-08-30)
 For every open-source app we bundle (C3), also emit Metro's source map (`--sourcemap-output`), which records the source file — hence the npm package and version from its `package.json` — of every module. That is the per-module ground truth. A `deps-truth` test runs `hbc2js deps` on the bundle and reports **precision** (packages reported that are truly present), **recall** (present packages found), and per-module attribution accuracy, with the false positives and misses listed by name. Thresholds gate CI: false positives at "confirmed" tier must be zero; guessed-tier precision is reported, not gated. Same for `.obf`/`-g` variants so fingerprinting must be robust to debug info and obfuscation.
+
+## D20 — Output language is JavaScript; framework recovery is a pass layer (2026-08-30)
+Hermes bundles are React Native, i.e. React compiled to JS — there is no Vue/Svelte in them. Output is always JavaScript. Framework-level readability comes from passes: **JSX recovery** (`React.createElement`/`jsx()` call trees → JSX; component `displayName`s → names) joins the M5 ladder as a high-value pass. For the plain-JS/Capacitor frontend (D18), Vue render functions → `.vue` SFC recovery is feasible and Svelte's imperative output is hard; both are D18 items, not Hermes work.
+
+## D21 — Release benchmark page (planned) (2026-08-30)
+At release, a script-generated comparison: the same bundles through hermes-dec, hermes-decomp, droidsaw-hermes and hbc2js, measured on runs/`node --check`, equivalence-gate result, structures recovered (loops/try/generators), % of modules stripped as recognised dependencies, time per MB. Claims in the README come only from that script's output.
