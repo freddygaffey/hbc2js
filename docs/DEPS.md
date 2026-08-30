@@ -399,6 +399,37 @@ shadows the shared DB's better-matching copy of the same version; a
 pre-existing `db.ts` layering risk, independent of this tier-threshold fix
 and out of `match.ts`'s ownership.)
 
+### `--confirm` precision/recall (2026-08-30, D17d)
+
+Live run of `hbc2js deps --confirm --no-shared-db` (real npm registry, empty
+project-local DB, no bulk shared-DB layer) against
+`react-navigation-example-0.85.3`, scored against a freshly-regenerated
+`deps-truth.json` by `tests/sweep/deps/confirm-react-navigation.test.ts`
+(~140 s, real network, real `npm install`/Metro/`hermesc` per candidate):
+
+| | |
+|---|---|
+| confirmed-tier reported | 2 (`@react-navigation/native`, `react-native-reanimated`) |
+| confirmed-tier precision | 100% (2/2, zero false positives) |
+| confirmed-tier recall | 2.7% of all 75 truth packages / 3.3% of the 60 direct ones |
+| version mismatch | `@react-navigation/native`: reported `8.0.0-alpha.21`, truth `8.0.0-alpha.44` (package still counted a true positive; exact version differs) |
+
+Recall is noisy run to run — purely from network-side version selection,
+not a code regression. `resolveCandidateVersion`'s "nearest npm release by
+date" fallback (§4 above) can land on a nightly build of a fast-moving
+package (`react-native-gesture-handler`, `react-native-screens`,
+`react-native-safe-area-context`, and `react-native-pager-view` all publish
+nightlies continuously); a nightly frequently fails to bundle at all (a
+missing/renamed transitive dependency) or ships too little of its own code
+to clear a confidence tier, so `--confirm` correctly reports nothing for it
+rather than a false positive. A separate manual run the same day (recorded
+in agent scratch, not committed) confirmed all 5 of those plus the 2 above,
+7 total, still zero false positives. Precision has been 100% in every run
+observed; only recall varies. The sweep test's own `>= 5 confirmed` floor
+is therefore itself somewhat network-luck-dependent — noted here and in
+`docs/BUGS.md`, not tightened (out of this task's scope; the fix would be
+version-selection logic in `src/deps/confirm.ts`, not this doc).
+
 ## Shared DB size
 
 `tools/pkgsig/db` is ~16 MB as of this task (40 signature files + baselines,
@@ -446,9 +477,17 @@ corpus in this seed run never contributed anything to `tools/pkgsig/db`).
   (release and `-g`): confirmed-tier false positives = 0, hint-tier false
   positives = 0 (asserted, not just reported, on this fixture since it has
   no third-party dependencies at all).
+- `tests/gate/deps/confirm.test.ts` — `confirmCandidates`'s pure helpers
+  (dedup, baseline subtraction, RN-version-from-baseline-filename fallback,
+  nearest-by-date version resolution) plus an end-to-end run against a
+  stubbed `npm`/`npx` (no network): write-back + D17b layering.
 - `tests/gate/cli/deps.test.ts` — the `hbc2js deps` CLI end-to-end
   (text/`--json`/`--out`/error handling).
 - `tests/sweep/deps/corpus.test.ts` — the seed-run corpus, skipped
   (INCONCLUSIVE) when its inputs are absent.
 - `tests/sweep/deps/truth-react-navigation.test.ts` — D17d on
   react-navigation-example, skipped until its map/truth are generated.
+- `tests/sweep/deps/confirm-react-navigation.test.ts` — `--confirm` against
+  react-navigation-example with a real npm registry, `--no-shared-db`;
+  skipped (INCONCLUSIVE) without the sweep tier or the fixture's
+  `.hbc`/`deps-truth.json`. Numbers: "`--confirm` precision/recall" above.
