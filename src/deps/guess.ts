@@ -78,6 +78,16 @@ const HOST_TO_PACKAGE: ReadonlyMap<string, string> = new Map(Object.entries({
 const PACKAGE_NAME_LIKE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 const STOPWORD_LIKE_NAMES = new Set(["true", "false", "null", "undefined", "default", "index", "main", "src"]);
 
+// A single string literal shaped like `<package-name>@<semver>` — some
+// libraries bake their own `name@version` into a User-Agent string, a log
+// prefix, or an internal assertion message. Matched against the curated name
+// set below, this is the "package-name string literal with a version" clue
+// D17a's `hint` tier names: a lone package-name-string match with *no*
+// version is too generic to report alone (any code can contain a string that
+// happens to equal a popular package's name), but one that also carries a
+// version is effectively self-corroborating.
+const PACKAGE_NAME_AT_VERSION = /^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
+
 function extractUrlHosts(strings: readonly string[]): string[] {
   const hosts = new Set<string>();
   for (const s of strings) {
@@ -129,6 +139,20 @@ export interface GuessOptions {
 }
 
 const CURATED_PACKAGE_NAMES: ReadonlySet<string> = new Set([...NATIVE_MODULE_TO_PACKAGE.values(), ...HOST_TO_PACKAGE.values()]);
+
+/** Evidence kinds specific enough to stand alone at the `hint` tier
+ *  (docs/DECISIONS.md D17a, extended 2026-08-30 per the overseer's decision
+ *  after `docs/reviews/deps-v1.md`): a curated `NativeModules`/
+ *  `TurboModuleRegistry` name, a curated API-host constant, or a
+ *  package-name string literal that itself carries a version. Never a bare
+ *  npm-search hit, an APK hint, a bare package-name string with no version,
+ *  or a dependency-edge alone — none of those are specific enough to report
+ *  on their own (`src/deps/report.ts`'s promotion logic is the only caller). */
+export function isHintEligibleEvidence(kind: string, version: string | null): boolean {
+  if (kind === "native-module" || kind === "url-host") return true;
+  if (kind === "package-name-string" && version !== null) return true;
+  return false;
+}
 
 /**
  * Guess candidate packages for every module `matchReport` left unattributed.
@@ -193,13 +217,25 @@ export async function guessModules(inventory: ModuleInventory, matchReport: Matc
     }
 
     // 3b. A string constant that *is* a known package name (libraries put
-    // their own name in error/warning prefixes and `displayName`s). An
-    // independent evidence kind from the native-module/host clues, which is
-    // what lets a native-module hit clear the report's ">= 2 independent
-    // kinds" bar (report.ts) without network.
+    // their own name in error/warning prefixes and `displayName`s) — no
+    // version, so it's an independent evidence kind from the native-module/
+    // host clues (what lets a native-module hit clear the report's ">= 2
+    // independent kinds" bar without network) but too generic to report
+    // alone. A single literal of the shape `name@version` is the stronger,
+    // self-corroborating form: it names both the package *and* a specific
+    // release, which is what makes a lone hit of this kind eligible for the
+    // `hint` tier (`isHintEligibleEvidence` above).
     for (const s of strings) {
       if (CURATED_PACKAGE_NAMES.has(s) || opts.knownPackages?.has(s) === true) {
         mergeCandidate(candidates, s, null, { kind: "package-name-string", detail: s, weight: 0.3 });
+        continue;
+      }
+      const versioned = PACKAGE_NAME_AT_VERSION.exec(s);
+      if (versioned !== null) {
+        const [, name, version] = versioned;
+        if (CURATED_PACKAGE_NAMES.has(name!) || opts.knownPackages?.has(name!) === true) {
+          mergeCandidate(candidates, name!, version!, { kind: "package-name-string", detail: s, weight: 0.3 });
+        }
       }
     }
 

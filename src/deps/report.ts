@@ -3,7 +3,8 @@
 // project gets when at least one dependency is confirmed with confidence.
 
 import type { ConfidenceTier, MatchReport } from "./match.ts";
-import type { ModuleGuess } from "./guess.ts";
+import type { Evidence, ModuleGuess } from "./guess.ts";
+import { isHintEligibleEvidence } from "./guess.ts";
 import type { ConfirmResult } from "./confirm.ts";
 
 export interface ConfirmedDep {
@@ -30,6 +31,28 @@ export interface SuppressedGuess {
   readonly confidence: number;
   readonly evidence: readonly string[];
   readonly reason: "single-evidence-kind" | "below-confidence-floor" | "npm-search-only" | "db-match-negative";
+}
+
+/** A single-evidence-kind lead that survives only because its one clue is
+ *  high-specificity (docs/DECISIONS.md D17a, extended 2026-08-30 —
+ *  `isHintEligibleEvidence` in `src/deps/guess.ts`): a curated native-module
+ *  name, a curated API-host constant, or a package-name string literal that
+ *  itself carries a version. This is the tier that keeps a lead like
+ *  `NativeModules.RNFBAnalytics` -> `@react-native-firebase/analytics`
+ *  visible even when it's the *only* signal a module has — `guessedDeps`
+ *  correctly requires >=2 independent kinds to reject collision-prone
+ *  evidence, but that also drops every native-module-only lead, which is
+ *  most of what's left once library versions have drifted from the
+ *  signature DB (docs/DEPS.md's Discord/Shopify measurement). Never written
+ *  into `package.json`, never counted in `attribution.percentAttributed` —
+ *  reported for a human to look at, same spirit as `suppressedGuesses` but
+ *  for evidence specific enough to be worth surfacing on its own. */
+export interface HintedDep {
+  readonly package: string;
+  readonly version: string | null;
+  readonly confidence: number;
+  readonly evidenceKind: Evidence["kind"];
+  readonly evidence: readonly string[];
 }
 
 export interface UnattributedModule {
@@ -61,6 +84,7 @@ export interface DepsReport {
   readonly reactNativeVersion: string | null;
   readonly confirmedDeps: readonly ConfirmedDep[];
   readonly guessedDeps: readonly GuessedDep[];
+  readonly hintedDeps: readonly HintedDep[];
   readonly suppressedGuesses: readonly SuppressedGuess[];
   readonly unattributedModules: readonly UnattributedModule[];
   /** Every module owned by a package in `confirmedDeps` — see `ModuleOwnership`. */
@@ -146,7 +170,11 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
   //      reason is named separately so the reader sees why);
   //   5. never report a package the DB explicitly scored negative — a
   //      signature for it at this HBC version exists and got no exact
-  //      function or module hit at all.
+  //      function or module hit at all;
+  //   6. exactly one evidence kind is not automatically dropped: when that
+  //      one kind is high-specificity (`isHintEligibleEvidence`), the
+  //      package is reported as a `hint` instead of suppressed (2026-08-30,
+  //      overseer decision after this same review — see `HintedDep` above).
   const dbNegative = new Set<string>();
   for (const p of matchReport.packages) {
     if (p.isBaseline) continue;
@@ -184,6 +212,7 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
     for (const e of best.evidence) addGuess(best.package, best.version, best.confidence, 1, e.kind, `${e.kind}: ${e.detail}`);
   }
   const guessedDeps: GuessedDep[] = [];
+  const hintedDeps: HintedDep[] = [];
   const suppressedGuesses: SuppressedGuess[] = [];
   for (const [pkg, v] of guessedByPackage) {
     const row = { package: pkg, version: v.version, confidence: v.confidence, modules: v.modules, evidence: [...v.evidence] };
@@ -191,20 +220,34 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
     let reason: SuppressedGuess["reason"] | null = null;
     if (dbNegative.has(pkg)) reason = "db-match-negative";
     else if (nonSearchKinds.length === 0) reason = "npm-search-only";
-    else if (v.kinds.size < 2) reason = "single-evidence-kind";
-    else if (v.confidence < GUESS_CONFIDENCE_FLOOR) reason = "below-confidence-floor";
+    else if (v.kinds.size < 2) {
+      const [soleKind] = nonSearchKinds;
+      if (soleKind !== undefined && isHintEligibleEvidence(soleKind, v.version)) {
+        hintedDeps.push({ package: pkg, version: v.version, confidence: v.confidence, evidenceKind: soleKind as Evidence["kind"], evidence: row.evidence });
+        continue;
+      }
+      reason = "single-evidence-kind";
+    } else if (v.confidence < GUESS_CONFIDENCE_FLOOR) reason = "below-confidence-floor";
     if (reason === null) guessedDeps.push(row);
     else suppressedGuesses.push({ package: pkg, confidence: v.confidence, evidence: row.evidence, reason });
   }
   guessedDeps.sort((a, b) => b.confidence - a.confidence);
+  hintedDeps.sort((a, b) => b.confidence - a.confidence);
   suppressedGuesses.sort((a, b) => b.confidence - a.confidence);
   const reportedGuessNames = new Set(guessedDeps.map((d) => d.package));
+  const hintedNames = new Set(hintedDeps.map((d) => d.package));
 
   // A module only counts as "guessed" when its best candidate survived the
-  // precision rules — otherwise it is still unattributed.
+  // precision rules — otherwise it is still unattributed. A `hint` never
+  // counts as attributed either (HintedDep's own contract) — it's simply
+  // dropped from the printed unattributed list so it isn't shown twice (once
+  // with its evidence under `== hints ==`, once bare under `== unattributed
+  // modules ==`); `attribution.unattributedModules` below is unaffected,
+  // since it's derived from counts, not from this filtered display list.
   const guessedModuleIds = new Set([...bestGuessByModule].filter(([, pkg]) => reportedGuessNames.has(pkg)).map(([idx]) => idx));
+  const hintedModuleIds = new Set([...bestGuessByModule].filter(([, pkg]) => hintedNames.has(pkg)).map(([idx]) => idx));
   const unattributedModules: UnattributedModule[] = matchReport.unattributedModules
-    .filter((m) => !guessedModuleIds.has(m.factoryFunctionIndex))
+    .filter((m) => !guessedModuleIds.has(m.factoryFunctionIndex) && !hintedModuleIds.has(m.factoryFunctionIndex))
     .map((m) => ({ localModuleId: m.localModuleId, factoryFunctionIndex: m.factoryFunctionIndex, instrCount: m.instrCount, topStrings: m.stringConstants.slice(0, 8) }));
 
   const matchedModules = matchReport.totalModules - matchReport.unattributedModules.length;
@@ -233,6 +276,7 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
     reactNativeVersion: detectReactNativeVersion(matchReport),
     confirmedDeps,
     guessedDeps,
+    hintedDeps,
     suppressedGuesses,
     unattributedModules,
     moduleOwnership,
@@ -272,6 +316,12 @@ export function formatReportText(report: DepsReport): string {
     lines.push(`  ${d.package}${d.version !== null ? `@${d.version}` : ""}  confidence=${d.confidence.toFixed(2)}  [${d.evidence.join("; ")}]`);
   }
   if (report.suppressedGuesses.length > 0) lines.push(`  (${report.suppressedGuesses.length} weak guess${report.suppressedGuesses.length === 1 ? "" : "es"} suppressed — single evidence kind, below the ${GUESS_CONFIDENCE_FLOOR} floor, npm-search only, or DB-negative; --json lists them)`);
+  lines.push("");
+  lines.push(`== hints (${report.hintedDeps.length}, single high-specificity evidence — not in package.json, not counted in attribution) ==`);
+  if (report.hintedDeps.length === 0) lines.push("  (none)");
+  for (const d of report.hintedDeps) {
+    lines.push(`  ${d.package}${d.version !== null ? `@${d.version}` : ""}  confidence=${d.confidence.toFixed(2)}  [${d.evidenceKind}: ${d.evidence.join("; ")}]`);
+  }
   lines.push("");
   lines.push(`== unattributed modules (${report.unattributedModules.length}, likely this app's own code) ==`);
   for (const m of report.unattributedModules.slice(0, 15)) {

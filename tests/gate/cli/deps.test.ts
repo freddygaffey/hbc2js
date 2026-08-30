@@ -39,12 +39,19 @@ test("deps --offline on rn-template-0.72: text report finds react + react-native
   assert.doesNotMatch(confirmedSection, /lodash/);
 });
 
+test("deps --offline on rn-template-0.72: a hints section is printed (additive, empty for this fixture)", () => {
+  const r = runCli(["deps", RN_TEMPLATE, "--offline"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /== hints \(\d+.*not counted in attribution\) ==/);
+});
+
 test("deps --offline --json on rn-template-0.72: machine-readable report shape", () => {
   const r = runCli(["deps", RN_TEMPLATE, "--offline", "--json"]);
   assert.equal(r.status, 0, r.stderr);
   const report = JSON.parse(r.stdout) as {
     hbcVersion: number;
     confirmedDeps: { package: string; version: string }[];
+    hintedDeps: { package: string }[];
     reactNativeVersion: string | null;
     attribution: { percentAttributed: number };
   };
@@ -55,6 +62,7 @@ test("deps --offline --json on rn-template-0.72: machine-readable report shape",
   assert.ok(names.includes("react"));
   assert.ok(!names.includes("lodash"));
   assert.ok(report.attribution.percentAttributed > 90);
+  assert.ok(Array.isArray(report.hintedDeps), "hintedDeps is present in --json output even when empty");
 });
 
 test("deps --offline --out <dir> writes package.json with confirmed dependencies", () => {

@@ -158,10 +158,18 @@ export async function scoreAgainstTruth(hbcPath, truth, depsOptions = { offline:
   const truthPkgs = new Set(Object.keys(truth.packages));
   const confirmed = new Set(r.confirmedDeps.map((d) => d.package));
   const guessed = new Set(r.guessedDeps.map((d) => d.package));
+  // `hint` tier (D17a, extended 2026-08-30): single-evidence-kind leads kept
+  // only when that one kind is high-specificity (`isHintEligibleEvidence`,
+  // src/deps/guess.ts). Scored separately from `guessed` — precision only,
+  // same as guessed (no recall bar: a hint's whole point is surviving on
+  // one clue, so it's expected to be a small, high-precision list, not a
+  // complete one).
+  const hinted = new Set((r.hintedDeps ?? []).map((d) => d.package));
   const inter = (a, b) => [...a].filter((x) => b.has(x));
   const directPkgs = new Set(truth.direct ?? [...truthPkgs].filter((p) => !(p in (truth.transitiveOf ?? {}))));
   const confirmedTP = inter(confirmed, truthPkgs);
   const guessedTP = inter(guessed, truthPkgs);
+  const hintedTP = inter(hinted, truthPkgs);
   const remaining = new Set([...truthPkgs].filter((p) => !confirmed.has(p)));
   const ratio = (n, d) => (d === 0 ? null : n / d);
 
@@ -193,6 +201,7 @@ export async function scoreAgainstTruth(hbcPath, truth, depsOptions = { offline:
     directPackages: [...directPkgs].sort(),
     confirmed: { reported: [...confirmed].sort(), precision: ratio(confirmedTP.length, confirmed.size), recall: ratio(confirmedTP.length, truthPkgs.size), directRecall: ratio(inter(confirmed, directPkgs).length, directPkgs.size), falsePositives: [...confirmed].filter((p) => !truthPkgs.has(p)), misses: [...truthPkgs].filter((p) => !confirmed.has(p)) },
     guessed: { reported: [...guessed].sort(), precision: ratio(guessedTP.length, guessed.size), recall: ratio(inter(guessed, remaining).length, remaining.size), falsePositives: [...guessed].filter((p) => !truthPkgs.has(p)), misses: [...remaining].filter((p) => !guessed.has(p)) },
+    hinted: { reported: [...hinted].sort(), precision: ratio(hintedTP.length, hinted.size), falsePositives: [...hinted].filter((p) => !truthPkgs.has(p)) },
     versionMismatches: r.confirmedDeps.filter((d) => truthPkgs.has(d.package) && truth.packages[d.package] !== null && truth.packages[d.package] !== d.version).map((d) => `${d.package}: reported ${d.version}, truth ${truth.packages[d.package]}`),
     perModule: { ...perModule, accuracy: ratio(perModule.correct, perModule.withTruth), wrongModules },
     attribution: r.attribution,
@@ -214,6 +223,8 @@ export function formatScore(s) {
   lines.push(`  guessed: ${s.guessed.reported.length} reported, precision ${pct(s.guessed.precision)}, recall-of-remaining ${pct(s.guessed.recall)}`);
   if (s.guessed.falsePositives.length > 0) lines.push(`    false positives: ${s.guessed.falsePositives.join(", ")}`);
   if (s.guessed.misses.length > 0) lines.push(`    misses: ${s.guessed.misses.join(", ")}`);
+  lines.push(`  hinted: ${s.hinted.reported.length} reported, precision ${pct(s.hinted.precision)} (single-evidence leads; not gated, no recall bar by design)`);
+  if (s.hinted.falsePositives.length > 0) lines.push(`    false positives: ${s.hinted.falsePositives.join(", ")}`);
   const m = s.perModule;
   lines.push(`  per-module: ${m.withTruth} library modules — ${m.correct} correct (${pct(m.accuracy)}), ${m.viaDependent} attributed to the package that depends on them, ${m.wrong} wrong package, ${m.unattributed} unattributed; ${m.appModulesAttributed} app modules wrongly attributed`);
   for (const w of m.wrongModules.slice(0, 10)) lines.push(`    module ${w.id}: truth ${w.truth}, reported ${w.reported} (${w.basis})`);

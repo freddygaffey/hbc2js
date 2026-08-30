@@ -4,7 +4,7 @@
 // access needed to exercise the scoring logic itself.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { guessModules } from "../../../src/deps/guess.ts";
+import { guessModules, isHintEligibleEvidence } from "../../../src/deps/guess.ts";
 import type { ModuleInventory, InventoryModule } from "../../../src/deps/inventory.ts";
 import type { MatchReport, ModuleAttribution } from "../../../src/deps/match.ts";
 
@@ -116,6 +116,59 @@ test("offline mode never calls the injected search function", async () => {
   let called = false;
   await guessModules(inventory, matchReport, { offline: true, search: async () => ((called = true), []) });
   assert.equal(called, false);
+});
+
+test("a bare curated package-name string constant carries no version", async () => {
+  const mod = invModule({ factoryFunctionIndex: 3, localModuleId: 3, stringConstants: ["react-native-gesture-handler"] });
+  const { inventory, matchReport } = makeInventoryAndReport([mod], [attribution({ factoryFunctionIndex: 3, localModuleId: 3 })]);
+
+  const guesses = await guessModules(inventory, matchReport, { offline: true });
+  assert.equal(guesses.length, 1);
+  const best = guesses[0]!.candidates[0]!;
+  assert.equal(best.package, "react-native-gesture-handler");
+  assert.equal(best.version, null);
+  assert.ok(best.evidence.some((e) => e.kind === "package-name-string"));
+});
+
+test("a curated package-name string constant with an embedded version carries that version (D17a hint-tier clue)", async () => {
+  const mod = invModule({ factoryFunctionIndex: 4, localModuleId: 4, stringConstants: ["react-native-gesture-handler@2.14.0"] });
+  const { inventory, matchReport } = makeInventoryAndReport([mod], [attribution({ factoryFunctionIndex: 4, localModuleId: 4 })]);
+
+  const guesses = await guessModules(inventory, matchReport, { offline: true });
+  assert.equal(guesses.length, 1);
+  const best = guesses[0]!.candidates[0]!;
+  assert.equal(best.package, "react-native-gesture-handler");
+  assert.equal(best.version, "2.14.0");
+  assert.ok(best.evidence.some((e) => e.kind === "package-name-string"));
+});
+
+test("a scoped curated package-name string constant with a version is recognised too", async () => {
+  const mod = invModule({ factoryFunctionIndex: 5, localModuleId: 5, stringConstants: ["@stripe/stripe-react-native@0.35.1"] });
+  const { inventory, matchReport } = makeInventoryAndReport([mod], [attribution({ factoryFunctionIndex: 5, localModuleId: 5 })]);
+
+  const guesses = await guessModules(inventory, matchReport, { offline: true });
+  assert.equal(guesses.length, 1);
+  const best = guesses[0]!.candidates[0]!;
+  assert.equal(best.package, "@stripe/stripe-react-native");
+  assert.equal(best.version, "0.35.1");
+});
+
+test("an uncurated name@version-shaped string is not treated as evidence at all", async () => {
+  const mod = invModule({ factoryFunctionIndex: 6, localModuleId: 6, stringConstants: ["totally-unheard-of-package@1.0.0"] });
+  const { inventory, matchReport } = makeInventoryAndReport([mod], [attribution({ factoryFunctionIndex: 6, localModuleId: 6 })]);
+
+  const guesses = await guessModules(inventory, matchReport, { offline: true });
+  assert.equal(guesses.length, 0);
+});
+
+test("isHintEligibleEvidence: native-module and url-host qualify alone; package-name-string only with a version; nothing else does", () => {
+  assert.equal(isHintEligibleEvidence("native-module", null), true);
+  assert.equal(isHintEligibleEvidence("url-host", null), true);
+  assert.equal(isHintEligibleEvidence("package-name-string", "1.2.3"), true);
+  assert.equal(isHintEligibleEvidence("package-name-string", null), false);
+  assert.equal(isHintEligibleEvidence("dependency-edge", null), false);
+  assert.equal(isHintEligibleEvidence("apk", null), false);
+  assert.equal(isHintEligibleEvidence("npm-search", "1.2.3"), false);
 });
 
 test("online mode falls back to the injected npm search when no direct clue exists", async () => {

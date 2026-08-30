@@ -18,9 +18,9 @@ function matchReport(packages: PackageScore[]): MatchReport {
   return { hbcVersion: 94, totalFunctions: 1000, totalModules: 10, packagesChecked: packages.length, packages, moduleAttributions: [], unattributedModules: [] };
 }
 
-function guess(pkg: string, evidence: Evidence[], idx = 1): ModuleGuess {
+function guess(pkg: string, evidence: Evidence[], idx = 1, version: string | null = null): ModuleGuess {
   const confidence = Math.min(1, evidence.reduce((a, e) => a + e.weight, 0));
-  return { factoryFunctionIndex: idx, localModuleId: idx, instrCount: 50, candidates: [{ package: pkg, version: null, confidence, evidence }] };
+  return { factoryFunctionIndex: idx, localModuleId: idx, instrCount: 50, candidates: [{ package: pkg, version, confidence, evidence }] };
 }
 
 test("a low-tier DB score (fuzzy-only hits) is not a guess at all", () => {
@@ -95,4 +95,84 @@ test("confirmed packages are never also guessed", () => {
   const r = buildReport("x", matchReport([score({ package: "react-native", exactHits: 900, exactCoverage: 0.9, moduleExactHits: 10, tier: "high" })]), [guess("react-native", ev)]);
   assert.equal(r.confirmedDeps.length, 1);
   assert.deepEqual(r.guessedDeps, []);
+});
+
+// `hint` tier (2026-08-30, overseer decision after this same review):
+// exactly one evidence kind is no longer an automatic drop when that one
+// kind is high-specificity enough to stand alone — the RNFBAnalytics-style
+// native-module-only lead this was added for.
+
+test("a lone native-module evidence is a hint, not suppressed", () => {
+  const ev: Evidence[] = [{ kind: "native-module", detail: "RNFBAnalyticsModule", weight: 0.75 }];
+  const r = buildReport("x", matchReport([]), [guess("@react-native-firebase/analytics", ev)]);
+  assert.deepEqual(r.guessedDeps, []);
+  assert.deepEqual(r.suppressedGuesses, []);
+  assert.equal(r.hintedDeps.length, 1);
+  assert.equal(r.hintedDeps[0]!.package, "@react-native-firebase/analytics");
+  assert.equal(r.hintedDeps[0]!.evidenceKind, "native-module");
+  assert.ok(r.hintedDeps[0]!.confidence >= 0.75);
+  assert.equal(r.attribution.guessedModules, 0, "a hint is never counted as attributed");
+});
+
+test("a lone url-host evidence is a hint, not suppressed", () => {
+  const ev: Evidence[] = [{ kind: "url-host", detail: "api.stripe.com", weight: 0.4 }];
+  const r = buildReport("x", matchReport([]), [guess("@stripe/stripe-react-native", ev)]);
+  assert.deepEqual(r.guessedDeps, []);
+  assert.deepEqual(r.suppressedGuesses, []);
+  assert.equal(r.hintedDeps.length, 1);
+  assert.equal(r.hintedDeps[0]!.evidenceKind, "url-host");
+});
+
+test("a lone package-name-string with no version stays suppressed, not a hint", () => {
+  const ev: Evidence[] = [{ kind: "package-name-string", detail: "react-native-gesture-handler", weight: 0.3 }];
+  const r = buildReport("x", matchReport([]), [guess("react-native-gesture-handler", ev, 1, null)]);
+  assert.deepEqual(r.hintedDeps, []);
+  assert.equal(r.suppressedGuesses.length, 1);
+  assert.equal(r.suppressedGuesses[0]!.reason, "single-evidence-kind");
+});
+
+test("a lone package-name-string with a version is a hint", () => {
+  const ev: Evidence[] = [{ kind: "package-name-string", detail: "react-native-gesture-handler@2.14.0", weight: 0.3 }];
+  const r = buildReport("x", matchReport([]), [guess("react-native-gesture-handler", ev, 1, "2.14.0")]);
+  assert.deepEqual(r.suppressedGuesses, []);
+  assert.equal(r.hintedDeps.length, 1);
+  assert.equal(r.hintedDeps[0]!.version, "2.14.0");
+  assert.equal(r.hintedDeps[0]!.evidenceKind, "package-name-string");
+});
+
+test("a lone dependency-edge or apk evidence is never a hint", () => {
+  const depEdge: Evidence[] = [{ kind: "dependency-edge", detail: "2/2 deps owned by some-pkg@2.0.0", weight: 0.4 }];
+  const r1 = buildReport("x", matchReport([]), [guess("some-pkg", depEdge)]);
+  assert.deepEqual(r1.hintedDeps, []);
+  assert.equal(r1.suppressedGuesses[0]!.reason, "single-evidence-kind");
+
+  const apkOnly: Evidence[] = [{ kind: "apk", detail: "BILLING", weight: 0.2 }];
+  const r2 = buildReport("x", matchReport([]), [guess("react-native-iap", apkOnly, 2)]);
+  assert.deepEqual(r2.hintedDeps, []);
+  assert.equal(r2.suppressedGuesses[0]!.reason, "single-evidence-kind");
+});
+
+test("a package the DB scored explicitly negative is never hinted either", () => {
+  const ev: Evidence[] = [{ kind: "native-module", detail: "RNGestureHandlerModule", weight: 0.75 }];
+  const negative = score({ package: "react-native-gesture-handler", fuzzyOnlyHits: 2, fuzzyCoverage: 0.02, tier: "low" });
+  const r = buildReport("x", matchReport([negative]), [guess("react-native-gesture-handler", ev)]);
+  assert.deepEqual(r.hintedDeps, []);
+  assert.equal(r.suppressedGuesses[0]!.reason, "db-match-negative");
+});
+
+test("confirmed packages are never also hinted", () => {
+  const ev: Evidence[] = [{ kind: "native-module", detail: "DevSettings", weight: 0.75 }];
+  const r = buildReport("x", matchReport([score({ package: "react-native", exactHits: 900, exactCoverage: 0.9, moduleExactHits: 10, tier: "high" })]), [guess("react-native", ev)]);
+  assert.equal(r.confirmedDeps.length, 1);
+  assert.deepEqual(r.hintedDeps, []);
+});
+
+test("a hinted module is excluded from the printed unattributedModules list but stays counted as unattributed", () => {
+  const ev: Evidence[] = [{ kind: "native-module", detail: "RNFBAnalyticsModule", weight: 0.75 }];
+  const unattributed = [{ localModuleId: 1, factoryFunctionIndex: 1, depCount: 0, nestedFunctionCount: 0, instrCount: 30, stringConstants: ["RNFBAnalyticsModule"], owners: [], ownerBasis: null }];
+  const r = buildReport("x", { hbcVersion: 94, totalFunctions: 1, totalModules: 1, packagesChecked: 0, packages: [], moduleAttributions: unattributed, unattributedModules: unattributed }, [guess("@react-native-firebase/analytics", ev)]);
+  assert.equal(r.hintedDeps.length, 1);
+  assert.deepEqual(r.unattributedModules, []);
+  assert.equal(r.attribution.unattributedModules, 1);
+  assert.equal(r.attribution.guessedModules, 0);
 });

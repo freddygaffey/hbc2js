@@ -4,7 +4,10 @@
 // package@version its source lives in (tools/deps-truth.mjs). Gate:
 // confirmed-tier false positives must be zero, for the release and the -g
 // build alike; guessed-tier precision and per-module accuracy are reported
-// (docs/DEPS.md), not gated.
+// (docs/DEPS.md), not gated. `hint`-tier (2026-08-30 addition) false
+// positives are asserted empty on this fixture (it has no third-party
+// deps at all, so any hint here would be one) but its precision, like
+// guessed-tier's, is not a hard CI gate in general.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -26,6 +29,7 @@ for (const variant of ["index.android.hbc", "index.android.debug.hbc"]) {
     assert.equal(s.confirmed.directRecall, 1, `direct deps ${s.directPackages.join(",")} must all be confirmed`);
     assert.deepEqual(s.versionMismatches, []);
     assert.deepEqual(s.guessed.falsePositives, [], "the template has no third-party deps: a guessed package is a false positive");
+    assert.deepEqual(s.hinted.falsePositives, [], "the template has no third-party deps: a hinted package is a false positive");
     assert.equal(s.perModule.appModulesAttributed, 0);
     assert.ok(s.perModule.accuracy >= 0.7, `per-module accuracy ${s.perModule.accuracy}`);
   });
