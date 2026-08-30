@@ -631,7 +631,12 @@ function main(): void {
     return;
   }
   if (argv[0] === "deps") {
-    void runDepsCmd(argv.slice(1)).then((code) => process.exit(code));
+    // `process.exitCode`, not `process.exit()`: a piped stdout is async in
+    // Node, and exiting early truncates `--json` output at the 64 KB pipe
+    // buffer (docs/BUGS.md; regression test in tests/gate/cli/deps.test.ts).
+    void runDepsCmd(argv.slice(1)).then((code) => {
+      process.exitCode = code;
+    });
     return;
   }
   // `hbc2js <input.hbc> [out.js]` is the default command; `--info` and the other

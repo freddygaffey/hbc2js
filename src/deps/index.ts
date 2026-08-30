@@ -63,7 +63,8 @@ export async function runDeps(inputPath: string, opts: DepsOptions = {}): Promis
   const matchReport = matchInventory(inventory, dbs, opts.minInstr !== undefined ? { minInstr: opts.minInstr } : {});
 
   const apkHints = apkEvidence !== null ? apkHintsFromEvidence(apkEvidence) : undefined;
-  const guesses = await guessModules(inventory, matchReport, { offline: opts.offline === true, ...(apkHints !== undefined ? { apkHints } : {}) });
+  const knownPackages = new Set(dbs.map((d) => d.file.package));
+  const guesses = await guessModules(inventory, matchReport, { offline: opts.offline === true, knownPackages, ...(apkHints !== undefined ? { apkHints } : {}) });
 
   let confirmResults: ConfirmResult[] = [];
   if (opts.confirm === true && opts.offline !== true) {

@@ -9,7 +9,7 @@
 // per recovered `__d()` registration (`dscan.ts`).
 
 import { createHash } from "node:crypto";
-import { normaliseFunctionForSignature } from "./sig-normalise.ts";
+import { normaliseFunctionForSignature, signatureInstructions } from "./sig-normalise.ts";
 import { scanModuleRegistrations } from "./dscan.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { DecodedFunction, Instruction } from "../disasm/decode.ts";
@@ -25,9 +25,8 @@ function sha256(s: string): string {
 /** Bare mnemonic sequence — every operand dropped (the fuzzy tier). */
 function fuzzyText(fn: DecodedFunction): string {
   const lines: string[] = [];
-  for (const insn of fn.instructions) {
-    const label = fn.labels.get(insn.offset);
-    const prefix = label !== undefined ? "L:" : "";
+  for (const { insn, labels } of signatureInstructions(fn)) {
+    const prefix = labels.length > 0 ? "L:" : "";
     if (insn.kind === "switch") {
       const st = insn.switchTable;
       lines.push(`${prefix}SWITCH(${st ? st.cases.length : 0})`);
@@ -73,7 +72,7 @@ export function fingerprintModule(mod: HbcModule, decodeFunction: (mod: HbcModul
       index: i,
       name: fn.name,
       paramCount: fn.header.paramCount,
-      instrCount: fn.instructions.length,
+      instrCount: signatureInstructions(fn).length,
       exactHash,
       fuzzyHash,
       stringSetHash: ss.hash,

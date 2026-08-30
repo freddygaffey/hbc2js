@@ -37,6 +37,37 @@ function maskedFunctionName(name: string): string {
 
 const LOAD_CONST_NUMERIC = new Set(["LoadConstZero", "LoadConstUInt8", "LoadConstInt", "LoadConstDouble"]);
 
+// `hermesc -g` (debug info on) inserts `AsyncBreakCheck` at every function
+// entry and loop back-edge, and `Debugger` for `debugger;` statements —
+// neither carries any semantics the signature cares about, and the former
+// shifts every offset so that not a single function of a `-g` build hashes
+// like its release twin (docs/reviews/deps-v1.md). Both are elided from the
+// exact, fuzzy and instruction-count views so release and debug builds of
+// the same source fingerprint identically (D17d).
+const DEBUG_ONLY_INSTRUCTIONS = new Set(["AsyncBreakCheck", "Debugger"]);
+
+export function isDebugOnlyInstruction(name: string): boolean {
+  return DEBUG_ONLY_INSTRUCTIONS.has(name);
+}
+
+/** The instructions a signature is computed over: `fn.instructions` minus
+ *  debug-only ones. Labels that sat on an elided instruction are carried to
+ *  the next kept one (a loop back-edge targets the `AsyncBreakCheck` in a
+ *  `-g` build and the loop head itself in a release build — same label
+ *  either way once elided). */
+export function signatureInstructions(fn: DecodedFunction): { readonly insn: Instruction; readonly labels: readonly string[] }[] {
+  const out: { insn: Instruction; labels: string[] }[] = [];
+  let pending: string[] = [];
+  for (const insn of fn.instructions) {
+    const label = fn.labels.get(insn.offset);
+    if (label !== undefined) pending.push(label);
+    if (isDebugOnlyInstruction(insn.name)) continue;
+    out.push({ insn, labels: pending });
+    pending = [];
+  }
+  return out;
+}
+
 type MaskMode = "self" | "load";
 type RegState = { readonly kind: "depmap" } | { readonly kind: "constimm"; readonly offset: number } | undefined;
 
@@ -164,9 +195,8 @@ export function normaliseFunctionForSignature(mod: HbcModule, fn: DecodedFunctio
   const maskedOffsets = findDependencyIndexOperands(fn);
   const lines = [`fn(${fn.header.paramCount}) ${maskedFunctionName(fn.name)}`];
 
-  for (const insn of fn.instructions) {
-    const label = fn.labels.get(insn.offset);
-    const prefix = label !== undefined ? `${label}: ` : "";
+  for (const { insn, labels } of signatureInstructions(fn)) {
+    const prefix = labels.map((l) => `${l}: `).join("");
     if (insn.kind === "switch") {
       lines.push(prefix + normaliseSwitch(mod, insn, fn));
       continue;

@@ -55,6 +55,30 @@ $HERMESC -O -g -emit-binary -out=index.android.Og.hbc          index.android.bun
 $HERMESC -O0 -g -emit-binary -out=index.android.noopt.debug.hbc index.android.bundle
 ```
 
+## `truth/` — the D17d ground-truth rebuild (2026-08-30)
+
+`truth/index.android.hbc`, `truth/index.android.debug.hbc` and
+`truth/deps-truth.json` come from a *second* run of steps 1-4 (same commands,
+Node v25.9.0, npm 11.12.1) with Metro's source map added to step 3:
+
+```sh
+npx react-native bundle --platform android --dev false --entry-file index.js   --bundle-output ./index.android.bundle --sourcemap-output ./index.android.map   --assets-dest ./release-assets --minify true --reset-cache
+$HERMESC -O    -emit-binary -out=index.android.hbc       index.android.bundle
+$HERMESC -O -g -emit-binary -out=index.android.debug.hbc index.android.bundle
+# in the repo root, with the scaffold still on disk (package.json versions
+# and the app's own package.json are read from it):
+node tools/deps-truth.mjs <scaffold>/index.android.hbc <scaffold>/index.android.map   --bundle-js <scaffold>/index.android.bundle --also-hbc <scaffold>/index.android.debug.hbc   --write-truth tests/fixtures/bundles/rn-template-0.72/truth/deps-truth.json
+```
+
+The rebuilt bundle is *not* byte-identical to the top-level one (transitive
+package versions float: e.g. `@babel/runtime` 7.29.7 in this rebuild), so the
+truth file only describes the `.hbc` files under `truth/` — it records their
+sha256s and the scoring tool warns on a mismatch. The 3.6 MB map and the
+bundle are not committed; the truth file (~70 KB) is what the gate test
+`tests/gate/deps/truth.test.ts` reads. Direct dependencies per the
+scaffold's package.json: `react@18.2.0`, `react-native@0.72.17`; 18 further
+packages appear transitively (see `deps-truth.json` → `transitiveOf`).
+
 ## Finding: `-O` is this hermesc build's *default*, not an opt-in
 
 Compiling with no flags at all produced a file **byte-identical** to compiling

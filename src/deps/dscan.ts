@@ -76,7 +76,7 @@ export function scanModuleRegistrations(mod: HbcModule, globalFn: DecodedFunctio
       let ids: (number | null)[] | null = null;
       if (litOp !== undefined) {
         try {
-          const { values } = readLiterals(mod.literalValueBuffer, litOp.value, numLiterals);
+          const { values } = readLiterals(mod.literalValueBuffer, litOp.value, numLiterals, mod.header.version);
           ids = values.map((v) => (v.kind === "integer" || v.kind === "number" ? v.value : null));
         } catch {
           ids = null;

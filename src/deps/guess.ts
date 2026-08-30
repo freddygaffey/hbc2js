@@ -122,7 +122,13 @@ export interface GuessOptions {
   readonly search?: (query: string) => Promise<NpmSearchHit[]>;
   /** Extra weighted string->package hints from APK-side evidence (D17a point 3). */
   readonly apkHints?: ReadonlyMap<string, string>;
+  /** Package names the caller knows exist (the loaded signature DB's) — a
+   *  string constant that is exactly one of these, or one of this file's own
+   *  curated names, is `package-name-string` evidence. */
+  readonly knownPackages?: ReadonlySet<string>;
 }
+
+const CURATED_PACKAGE_NAMES: ReadonlySet<string> = new Set([...NATIVE_MODULE_TO_PACKAGE.values(), ...HOST_TO_PACKAGE.values()]);
 
 /**
  * Guess candidate packages for every module `matchReport` left unattributed.
@@ -183,6 +189,17 @@ export async function guessModules(inventory: ModuleInventory, matchReport: Matc
         if (strings.some((s) => s.includes(hint))) {
           mergeCandidate(candidates, pkg, null, { kind: "apk", detail: hint, weight: 0.2 });
         }
+      }
+    }
+
+    // 3b. A string constant that *is* a known package name (libraries put
+    // their own name in error/warning prefixes and `displayName`s). An
+    // independent evidence kind from the native-module/host clues, which is
+    // what lets a native-module hit clear the report's ">= 2 independent
+    // kinds" bar (report.ts) without network.
+    for (const s of strings) {
+      if (CURATED_PACKAGE_NAMES.has(s) || opts.knownPackages?.has(s) === true) {
+        mergeCandidate(candidates, s, null, { kind: "package-name-string", detail: s, weight: 0.3 });
       }
     }
 

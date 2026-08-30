@@ -23,6 +23,15 @@ export interface GuessedDep {
   readonly evidence: readonly string[];
 }
 
+/** A guess the precision rules (`GUESS_RULES` below) kept out of
+ *  `guessedDeps`; listed so `--json` consumers can see what was weighed. */
+export interface SuppressedGuess {
+  readonly package: string;
+  readonly confidence: number;
+  readonly evidence: readonly string[];
+  readonly reason: "single-evidence-kind" | "below-confidence-floor" | "npm-search-only" | "db-match-negative";
+}
+
 export interface UnattributedModule {
   readonly localModuleId: number | null;
   readonly factoryFunctionIndex: number;
@@ -52,6 +61,7 @@ export interface DepsReport {
   readonly reactNativeVersion: string | null;
   readonly confirmedDeps: readonly ConfirmedDep[];
   readonly guessedDeps: readonly GuessedDep[];
+  readonly suppressedGuesses: readonly SuppressedGuess[];
   readonly unattributedModules: readonly UnattributedModule[];
   /** Every module owned by a package in `confirmedDeps` — see `ModuleOwnership`. */
   readonly moduleOwnership: readonly ModuleOwnership[];
@@ -85,6 +95,9 @@ export function detectReactNativeVersion(matchReport: MatchReport): string | nul
 // ever got the `-foundation` flavour built, never a separate non-baseline
 // `react@<ver>`/`react-native@<ver>` file — so this alias is often the
 // *only* way those two show up in the report at all for those versions.
+/** Minimum aggregated confidence for a guessed dependency to be reported. */
+export const GUESS_CONFIDENCE_FLOOR = 0.5;
+
 const BASELINE_ALIAS: ReadonlyMap<string, string | null> = new Map([
   ["react-foundation", "react"],
   ["react-native-foundation", "react-native"],
@@ -120,41 +133,82 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
   // Guessed candidates are aggregated per package name (rather than reported
   // once per guessed module) so the report reads as "these are the
   // dependencies worth investigating", not one row per unresolved function.
-  const guessedByPackage = new Map<string, { version: string | null; confidence: number; modules: number; evidence: Set<string> }>();
-  const addGuess = (pkg: string, version: string | null, confidence: number, modules: number, evidence: string): void => {
+  //
+  // Precision rules (docs/reviews/deps-v1.md — the first version reported
+  // six packages the rn-template fixture does not contain, all from a
+  // single weak evidence kind):
+  //   1. a low-tier DB score (fuzzy-only hits: bare mnemonic sequences of
+  //      tiny functions collide across every package) is not evidence;
+  //      a medium-tier one counts only when it has at least one exact hit;
+  //   2. anything reported needs >= 2 independent evidence *kinds*;
+  //   3. a confidence floor of GUESS_CONFIDENCE_FLOOR;
+  //   4. npm-search hits never stand alone (rule 2 implies it, but the
+  //      reason is named separately so the reader sees why);
+  //   5. never report a package the DB explicitly scored negative — a
+  //      signature for it at this HBC version exists and got no exact
+  //      function or module hit at all.
+  const dbNegative = new Set<string>();
+  for (const p of matchReport.packages) {
+    if (p.isBaseline) continue;
+    if (p.exactHits === 0 && p.moduleExactHits === 0) dbNegative.add(p.package);
+  }
+  for (const p of matchReport.packages) {
+    if (!p.isBaseline && (p.exactHits > 0 || p.moduleExactHits > 0)) dbNegative.delete(p.package);
+  }
+  type Agg = { version: string | null; confidence: number; modules: number; evidence: Set<string>; kinds: Set<string> };
+  const guessedByPackage = new Map<string, Agg>();
+  const addGuess = (pkg: string, version: string | null, confidence: number, modules: number, kind: string, evidence: string): void => {
     if (confirmedPackageNames.has(pkg)) return;
     const existing = guessedByPackage.get(pkg);
     if (existing === undefined) {
-      guessedByPackage.set(pkg, { version, confidence, modules, evidence: new Set([evidence]) });
+      guessedByPackage.set(pkg, { version, confidence, modules, evidence: new Set([evidence]), kinds: new Set([kind]) });
       return;
     }
     existing.version = existing.version ?? version;
     existing.confidence = Math.max(existing.confidence, confidence);
     existing.modules += modules;
     existing.evidence.add(evidence);
+    existing.kinds.add(kind);
   };
   for (const p of matchReport.packages) {
-    if (p.tier !== "medium" && p.tier !== "low") continue;
+    if (p.tier !== "medium" || p.exactHits === 0) continue;
     const pkg = p.isBaseline ? BASELINE_ALIAS.get(p.package) : p.package;
     if (pkg === null || pkg === undefined) continue; // metro-toolchain-empty, or an unrecognised baseline name
-    addGuess(pkg, p.version, p.tier === "medium" ? 0.6 : 0.3, p.moduleExactHits, `db-match: exact ${(p.exactCoverage * 100).toFixed(1)}%, fuzzy ${(p.fuzzyCoverage * 100).toFixed(1)}%`);
+    addGuess(pkg, p.version, 0.6, p.moduleExactHits, "db-match", `db-match: exact ${(p.exactCoverage * 100).toFixed(1)}%, fuzzy ${(p.fuzzyCoverage * 100).toFixed(1)}%`);
   }
+  const bestGuessByModule = new Map<number, string>();
   for (const g of guesses) {
     const best = g.candidates[0];
     if (best === undefined) continue;
-    for (const e of best.evidence) addGuess(best.package, best.version, best.confidence, 1, `${e.kind}: ${e.detail}`);
+    bestGuessByModule.set(g.factoryFunctionIndex, best.package);
+    for (const e of best.evidence) addGuess(best.package, best.version, best.confidence, 1, e.kind, `${e.kind}: ${e.detail}`);
   }
-  const guessedDeps: GuessedDep[] = [...guessedByPackage.entries()]
-    .map(([pkg, v]) => ({ package: pkg, version: v.version, confidence: v.confidence, modules: v.modules, evidence: [...v.evidence] }))
-    .sort((a, b) => b.confidence - a.confidence);
+  const guessedDeps: GuessedDep[] = [];
+  const suppressedGuesses: SuppressedGuess[] = [];
+  for (const [pkg, v] of guessedByPackage) {
+    const row = { package: pkg, version: v.version, confidence: v.confidence, modules: v.modules, evidence: [...v.evidence] };
+    const nonSearchKinds = [...v.kinds].filter((k) => k !== "npm-search");
+    let reason: SuppressedGuess["reason"] | null = null;
+    if (dbNegative.has(pkg)) reason = "db-match-negative";
+    else if (nonSearchKinds.length === 0) reason = "npm-search-only";
+    else if (v.kinds.size < 2) reason = "single-evidence-kind";
+    else if (v.confidence < GUESS_CONFIDENCE_FLOOR) reason = "below-confidence-floor";
+    if (reason === null) guessedDeps.push(row);
+    else suppressedGuesses.push({ package: pkg, confidence: v.confidence, evidence: row.evidence, reason });
+  }
+  guessedDeps.sort((a, b) => b.confidence - a.confidence);
+  suppressedGuesses.sort((a, b) => b.confidence - a.confidence);
+  const reportedGuessNames = new Set(guessedDeps.map((d) => d.package));
 
-  const guessedModuleIds = new Set(guesses.map((g) => g.factoryFunctionIndex));
+  // A module only counts as "guessed" when its best candidate survived the
+  // precision rules — otherwise it is still unattributed.
+  const guessedModuleIds = new Set([...bestGuessByModule].filter(([, pkg]) => reportedGuessNames.has(pkg)).map(([idx]) => idx));
   const unattributedModules: UnattributedModule[] = matchReport.unattributedModules
     .filter((m) => !guessedModuleIds.has(m.factoryFunctionIndex))
     .map((m) => ({ localModuleId: m.localModuleId, factoryFunctionIndex: m.factoryFunctionIndex, instrCount: m.instrCount, topStrings: m.stringConstants.slice(0, 8) }));
 
   const matchedModules = matchReport.totalModules - matchReport.unattributedModules.length;
-  const guessedModulesCount = guesses.length;
+  const guessedModulesCount = guessedModuleIds.size;
   const trulyUnattributed = matchReport.unattributedModules.length - guessedModulesCount;
   const percentAttributed = matchReport.totalModules === 0 ? 0 : ((matchedModules + guessedModulesCount) / matchReport.totalModules) * 100;
 
@@ -179,6 +233,7 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
     reactNativeVersion: detectReactNativeVersion(matchReport),
     confirmedDeps,
     guessedDeps,
+    suppressedGuesses,
     unattributedModules,
     moduleOwnership,
     attribution: {
@@ -216,6 +271,7 @@ export function formatReportText(report: DepsReport): string {
   for (const d of report.guessedDeps) {
     lines.push(`  ${d.package}${d.version !== null ? `@${d.version}` : ""}  confidence=${d.confidence.toFixed(2)}  [${d.evidence.join("; ")}]`);
   }
+  if (report.suppressedGuesses.length > 0) lines.push(`  (${report.suppressedGuesses.length} weak guess${report.suppressedGuesses.length === 1 ? "" : "es"} suppressed — single evidence kind, below the ${GUESS_CONFIDENCE_FLOOR} floor, npm-search only, or DB-negative; --json lists them)`);
   lines.push("");
   lines.push(`== unattributed modules (${report.unattributedModules.length}, likely this app's own code) ==`);
   for (const m of report.unattributedModules.slice(0, 15)) {

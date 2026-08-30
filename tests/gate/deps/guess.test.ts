@@ -21,12 +21,14 @@ function invModule(overrides: Partial<InventoryModule>): InventoryModule {
     exactHash: null,
     fuzzyHash: null,
     stringSetHash: "x",
+    factoryStringSetHash: null,
+    factoryStringCount: 0,
     ...overrides,
   };
 }
 
 function attribution(overrides: Partial<ModuleAttribution>): ModuleAttribution {
-  return { localModuleId: 0, factoryFunctionIndex: 0, depCount: 0, nestedFunctionCount: 0, instrCount: 20, stringConstants: [], owners: [], ...overrides };
+  return { localModuleId: 0, factoryFunctionIndex: 0, depCount: 0, nestedFunctionCount: 0, instrCount: 20, stringConstants: [], owners: [], ownerBasis: null, ...overrides };
 }
 
 function makeInventoryAndReport(modules: InventoryModule[], attributions: ModuleAttribution[]): { inventory: ModuleInventory; matchReport: MatchReport } {

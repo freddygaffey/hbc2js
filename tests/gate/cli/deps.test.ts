@@ -77,3 +77,13 @@ test("deps on a nonexistent file exits non-zero with a JSON error under --json",
   const parsed = JSON.parse(r.stdout) as { error: string };
   assert.ok(parsed.error.length > 0);
 });
+
+test("deps --json output larger than the 64 KB pipe buffer arrives whole when piped (docs/BUGS.md 2026-08-30)", () => {
+  // With no DB every module is unattributed and listed: ~100 KB of JSON. `process.exit()` after an
+  // async pipe write used to cut it at 64 KB; the CLI sets exitCode instead.
+  const r = runCli(["deps", join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc"), "--offline", "--no-shared-db", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(Buffer.byteLength(r.stdout) > 65536, `expected > 64 KB of output, got ${Buffer.byteLength(r.stdout)}`);
+  const report = JSON.parse(r.stdout) as { confirmedDeps: { package: string }[] };
+  assert.equal(report.confirmedDeps.length, 0);
+});
