@@ -755,6 +755,84 @@ change that unblocks two 30–50 MB production bundles.**
    entries. It is the only gate fixture that uses a dispatch variable.
 7. **v98/v99 `.obf` class fixtures** — the four hardened-tier divergences above.
 
+## Lane B: dependency extraction, `hbc2js deps` (2026-08-30, D17/D17a/D17b)
+
+Promoted the T8/D17 prototype (`tools/pkgsig/**`, docs/PACKAGE-SIGNATURES.md
+§5) into a real, typed `src/deps/**` implementation and a new `hbc2js deps`
+CLI subcommand (additive, `src/cli.ts`). Full detail, evidence-weight table,
+DB-layering spec and the seed-run numbers: `docs/DEPS.md`.
+
+- **Module inventory** (`src/deps/inventory.ts`, `src/deps/dscan.ts`):
+  structural `__d(factory, id, deps)` recovery, no decompilation. Verified
+  against the committed `rn-template-0.72` fixture: all 435 Metro modules
+  recovered with resolved local ids, dep arrays, and string-constant sets.
+- **Match** (`src/deps/match.ts`) against the D17b-layered signature DB
+  (`src/deps/db.ts`: project-local `<out>/.hbc2js/sigdb` -> user cache
+  `~/.cache/hbc2js/sigdb` (XDG-aware) -> shared `tools/pkgsig/db`, disabled
+  by `--no-shared-db`) — same confidence-tier scoring as the v2 prototype,
+  ported with baseline-alias handling added (`react-foundation`/
+  `react-native-foundation` now correctly report as `react`/`react-native`
+  rather than disappearing or double-counting against a real non-baseline
+  entry).
+- **Guess** (`src/deps/guess.ts`, new — the prototype had no guess stage):
+  evidence-scored candidates for unmatched modules — curated
+  `NativeModules`/`TurboModuleRegistry` name map (`src/deps/native-modules.ts`,
+  version-independent, survives library-version drift that defeats hash
+  matching), known third-party SDK URL/API hosts, APK-side hints
+  (`src/deps/apk.ts`: manifest permissions/`.so` names/asset files, plus a
+  minimal `aapt`-or-heuristic-AXML-scan fallback), dependency-edge
+  propagation (tightened mid-task after it over-attributed >5000 of
+  Discord's own modules to a baseline package off a 1-in-7 coincidence —
+  now requires ≥2 identified deps or ≥50% agreement), and an npm registry
+  search fallback (`fetch()`, no dependency) gated on `--offline`. Every
+  string-keyed lookup table here is a real `Map`, not a plain object
+  literal — a bundle's own strings are untrusted input, and
+  `NATIVE_MODULE_TO_PACKAGE["hasOwnProperty"]` on a plain object returns
+  `Object.prototype.hasOwnProperty`, not `undefined` (regression test in
+  `tests/gate/deps/guess.test.ts`).
+- **Confirm** (`src/deps/confirm.ts`): `npm pack` (never `npm install`, so a
+  candidate's own scripts never run) + scratch Metro bundle + matching
+  `tools/hermesc/v<N>` + fingerprint + match, writing a successful
+  signature into the project-local DB and user cache; failures are recorded
+  (not retried) in a small JSON log. Implemented and typechecked; not
+  exercised end-to-end in this task's own seed run (see docs/DEPS.md's
+  "Confirm stage" note — each candidate needs a from-scratch RN scaffold,
+  and the seed run prioritised breadth over depth within its time budget).
+- **Report** (`src/deps/report.ts`): human table + `--json`, `<out>/package.json`
+  emission when confident, and `DepsReport.moduleOwnership` — the
+  module-id-to-package map the M6 emitter needs (D19) to drop a recognised
+  module from `<out>/src/`, exported from `src/index.ts` alongside the rest
+  of the public `deps` surface (`runDeps`, `buildInventory`, `matchInventory`,
+  their result types).
+- **Seed run** (docs/DEPS.md has the full table): `rn-template-0.72` (2
+  confirmed, 99.3% attributed), fresh-fetched `react-navigation-example-0.85.3`
+  (all 9 real dependencies confirmed High, 61.9% attributed), and the local
+  corpus (`~/hbc2js-local-corpus`, never committed) — Bloomberg/Xbox (9-10
+  confirmed, 36-51% attributed), and **Discord/Shopify**, previously
+  documented at <1% attribution and 2 identified packages
+  (docs/PACKAGE-SIGNATURES.md §5.6): now 4 confirmed + 13-15 real
+  native-module-evidence guesses each (17-19 total dependencies identified),
+  though module-count attribution is still ~1% since most of both apps'
+  bytecode is either first-party or a library vintage too far from the
+  starter DB's pinned versions to hash-match — the honest state is "many
+  more dependencies identified, attribution % not yet fixed", not "solved".
+  Teams (ships several `hermes.android.bundle` micro-frontends at
+  non-standard paths) and Pinterest (no RN bundle in the APK at all) are
+  correctly reported as such rather than silently skipped.
+- **`tools/pkgsig`**: the prototype's `.mjs` scripts and `lib/` are deleted
+  (logic promoted into `src/deps/**`, see the table in
+  `tools/pkgsig/README.md`); `tools/pkgsig/db/` (the shared signature-DB
+  starter set, ~16 MB) is unchanged and is now also listed in
+  `package.json`'s `files` so it ships alongside `dist/` in the npm package
+  (`private: true` still blocks actually publishing — T10 owns the rest of
+  release packaging).
+- **Tests**: `tests/gate/deps/{inventory,db,match,guess,apk}.test.ts` (37
+  tests) + `tests/gate/cli/deps.test.ts` (6, CLI end-to-end) + `tests/sweep/deps/corpus.test.ts`
+  (the seed-run corpus, INCONCLUSIVE-skip when absent). `npm test`: 801/801
+  pass (0 fail) after this task's changes, including the two `54-try-catch-
+  finally-shared-range` failures a concurrent M4-review-lane commit fixed
+  mid-task (not this task's own fix).
+
 ## Known gaps
 - ~~**HBC 96 has no compiler/fixture yet**~~ **Closed.** Three of the five
   pulled production apps (Xbox, Bloomberg, Teams) ship v96; Discord and

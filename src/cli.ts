@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
-import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { basename, join } from "node:path";
+import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { parseHbc } from "./parse/module.ts";
 import type { LayoutClass, OpcodeTableId } from "./parse/types.ts";
 import { printModule } from "./disasm/print.ts";
 import type { DisasmMode } from "./disasm/print.ts";
-import { basename } from "node:path";
 import { VERSION } from "./version.ts";
 import { runProgram } from "./harness/runner.ts";
 import type { RunOptions } from "./harness/runner.ts";
@@ -19,6 +20,8 @@ import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
 import { decompile, decompileTree, nodeCheck } from "./decompile.ts";
+import { runDeps } from "./deps/index.ts";
+import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
@@ -31,6 +34,7 @@ Usage:
   hbc2js equiv normalise <a.hbc> <b.hbc>  normalised-disassembly diff (D3)
   hbc2js gate [options]            run the gate tier (spec 06 §7)
   hbc2js sweep [options]           run the sweep tier (spec 06 §7)
+  hbc2js deps <bundle.hbc|.apk>    identify npm dependencies (D17/D17a/D17b)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -41,8 +45,18 @@ Options (decompile):
   --no-node-check           skip the built-in 'node --check' of the output
   --opcode-table=<id>       force an opcode table instead of probing
   --force-v98-table         resolve E_LAYOUT_AMBIGUOUS by forcing hbc98-late
+  --lenient-env             don't refuse the module when an environment access
+                            cannot be resolved statically; emit a loud
+                            __hbc_unresolved_env(...) marker per site instead
   --stats                   print structurer statistics to stderr
   -o <file>                 write to a file instead of stdout
+
+Memory: decompiling needs roughly 300x the input size in heap (a 10 MB bundle
+  ~3 GB, a 50 MB bundle ~15 GB). Node's default old-space is well under that for
+  anything past ~15 MB, so large bundles need
+    node --max-old-space-size=<MB> $(command -v hbc2js) <in.hbc>
+  hbc2js prints the exact figure before it starts rather than dying in the
+  collector with no explanation.
 
 Options (--info):
   --layout=<A|B|C|D|E>             force a layout class instead of probing
@@ -74,6 +88,15 @@ Options (gate, sweep):
   --oracles <list>          comma-separated oracle set (default: syntax,trace —
                             or all four with --identity)
   exit 0 all PASS  1 any DIVERGENT/ERROR  2 any INCONCLUSIVE only
+
+Options (deps):
+  --out <dir>               decompile-project output dir (project-local DB lives at <dir>/.hbc2js/sigdb)
+  --confirm                 run the npm confirm stage (network; never executes package code)
+  --offline                 skip npm registry search + the confirm stage entirely
+  --sigdb <dir>             override the project-local signature-DB directory
+  --no-shared-db            don't consult tools/pkgsig/db (this repo's starter set)
+  --min-instr <n>           minimum-instruction floor before a hash is trusted (default 8)
+  --json                    machine-readable DepsReport on stdout
 `;
 
 interface ParsedArgs {
@@ -402,6 +425,8 @@ interface DecompileArgs {
   readonly opcodeTable: OpcodeTableId | undefined;
   readonly forceV98: boolean;
   readonly stats: boolean;
+  /** `--lenient-env`: markers instead of `E_ENV_UNRESOLVED` (review M4-H2). */
+  readonly lenientEnv: boolean;
 }
 
 function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
@@ -415,6 +440,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let opcodeTable: OpcodeTableId | undefined;
   let forceV98 = false;
   let stats = false;
+  let lenientEnv = false;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -426,12 +452,33 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
     else if (a === "--no-node-check") check = false;
     else if (a === "--force-v98-table") forceV98 = true;
     else if (a === "--stats") stats = true;
+    else if (a === "--lenient-env") lenientEnv = true;
     else if (a.startsWith("--opcode-table=")) opcodeTable = a.slice("--opcode-table=".length) as OpcodeTableId;
     else if (!a.startsWith("-")) positional.push(a);
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, nodeCheck: check, opcodeTable, forceV98, stats };
+  return { help, input, outPath, functionIndex, verify, emitTree, nodeCheck: check, opcodeTable, forceV98, stats, lenientEnv };
+}
+
+/**
+ * Review M4-H2: a 50 MB bundle died with `FATAL ERROR: … JavaScript heap out of
+ * memory` half an hour into a run, which tells the caller nothing actionable.
+ * Peak heap is close to linear in the input (measured: Bloomberg 10.5 MB ->
+ * 3.4 GB, Discord 51 MB -> ~4.9 GB before it refused, both well past Node's
+ * default old-space), so say the number and the exact flag up front.
+ */
+function warnIfHeapTooSmall(inputBytes: number, name: string): void {
+  const HEAP_PER_INPUT_BYTE = 300;
+  const needBytes = inputBytes * HEAP_PER_INPUT_BYTE;
+  const limitBytes = v8.getHeapStatistics().heap_size_limit;
+  if (needBytes <= limitBytes) return;
+  const gb = (n: number): string => (n / 1024 ** 3).toFixed(1);
+  process.stderr.write(
+    `hbc2js: ${name} is ${(inputBytes / 1024 ** 2).toFixed(1)} MB; decompiling it needs roughly ${gb(needBytes)} GB of heap ` +
+      `and this Node's limit is ${gb(limitBytes)} GB.\n` +
+      `        Re-run as: node --max-old-space-size=${Math.ceil(needBytes / 1024 ** 2)} $(command -v hbc2js) ${name} ...\n`,
+  );
 }
 
 /** `hbc2js <input.hbc> [out.js]` — docs/specs/05-emitter.md §1. */
@@ -452,10 +499,22 @@ function runDecompile(argv: readonly string[]): void {
       moduleName: basename(args.input),
       verify: args.verify,
       resolveV98Ambiguity: args.forceV98,
+      strictEnv: !args.lenientEnv,
       ...(args.opcodeTable !== undefined ? { opcodeTable: args.opcodeTable } : {}),
       ...(args.functionIndex !== undefined ? { functionIndex: args.functionIndex } : {}),
     };
-    const text = args.emitTree ? decompileTree(bytes, opts) : decompile(bytes, opts).code;
+    warnIfHeapTooSmall(bytes.length, basename(args.input));
+    let text: string;
+    if (args.emitTree) {
+      text = decompileTree(bytes, opts);
+    } else {
+      const result = decompile(bytes, opts);
+      text = result.code;
+      const unresolved = result.diagnostics.filter((d) => d.code === "W_ENV_UNRESOLVED").length;
+      if (unresolved > 0) {
+        process.stderr.write(`hbc2js: --lenient-env: ${unresolved} environment access(es) could not be resolved statically and were emitted as __hbc_unresolved_env(...) markers, which THROW when reached. The output is not faithful at those sites.\n`);
+      }
+    }
     if (!args.emitTree && args.nodeCheck) {
       const check = nodeCheck(text);
       if (!check.ok) {
@@ -473,6 +532,90 @@ function runDecompile(argv: readonly string[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// `hbc2js deps` — docs/DECISIONS.md D17/D17a/D17b.
+// ---------------------------------------------------------------------------
+
+interface DepsArgs {
+  readonly help: boolean;
+  readonly input: string | undefined;
+  readonly out: string | undefined;
+  readonly confirm: boolean;
+  readonly offline: boolean;
+  readonly sigdb: string | undefined;
+  readonly noSharedDb: boolean;
+  readonly minInstr: number | undefined;
+  readonly json: boolean;
+}
+
+function parseDepsArgs(argv: readonly string[]): DepsArgs {
+  let help = false;
+  let input: string | undefined;
+  let out: string | undefined;
+  let confirm = false;
+  let offline = false;
+  let sigdb: string | undefined;
+  let noSharedDb = false;
+  let minInstr: number | undefined;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--help" || a === "-h") help = true;
+    else if (a === "--out") out = argv[++i];
+    else if (a === "--confirm") confirm = true;
+    else if (a === "--offline") offline = true;
+    else if (a === "--sigdb") sigdb = argv[++i];
+    else if (a === "--no-shared-db") noSharedDb = true;
+    else if (a === "--min-instr") minInstr = Number(argv[++i]);
+    else if (a === "--json") json = true;
+    else if (input === undefined && !a.startsWith("-")) input = a;
+  }
+  return { help, input, out, confirm, offline, sigdb, noSharedDb, minInstr, json };
+}
+
+async function runDepsCmd(argv: readonly string[]): Promise<number> {
+  const args = parseDepsArgs(argv);
+  if (args.help || args.input === undefined) {
+    process.stdout.write(USAGE);
+    return args.help ? 0 : 2;
+  }
+  try {
+    const result = await runDeps(args.input, {
+      ...(args.out !== undefined ? { out: args.out } : {}),
+      confirm: args.confirm,
+      offline: args.offline,
+      ...(args.sigdb !== undefined ? { sigdb: args.sigdb } : {}),
+      noSharedDb: args.noSharedDb,
+      ...(args.minInstr !== undefined ? { minInstr: args.minInstr } : {}),
+    });
+    if (args.out !== undefined) {
+      const deps = packageJsonDependencies(result.report);
+      if (Object.keys(deps).length > 0) {
+        mkdirSync(args.out, { recursive: true });
+        const pkgJsonPath = join(args.out, "package.json");
+        let existing: Record<string, unknown> = { name: "decompiled-app", version: "0.0.0", private: true };
+        try {
+          existing = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as Record<string, unknown>;
+        } catch {
+          // no existing package.json — write a fresh one.
+        }
+        writeFileSync(pkgJsonPath, JSON.stringify({ ...existing, dependencies: deps }, null, 2) + "\n");
+      }
+    }
+    if (args.json) {
+      process.stdout.write(JSON.stringify(result.report, null, 2) + "\n");
+    } else {
+      process.stdout.write(formatReportText(result.report) + "\n");
+    }
+    return 0;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (args.json) process.stdout.write(JSON.stringify({ error: message }) + "\n");
+    else process.stderr.write(`hbc2js deps: ${message}\n`);
+    return e instanceof Hbc2jsError ? exitCodeFor(e.code) : 3;
+  }
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   if (argv[0] === "disasm") {
@@ -485,6 +628,10 @@ function main(): void {
   }
   if (argv[0] === "gate" || argv[0] === "sweep") {
     void runTierCmd(argv[0], argv.slice(1)).then((code) => process.exit(code));
+    return;
+  }
+  if (argv[0] === "deps") {
+    void runDepsCmd(argv.slice(1)).then((code) => process.exit(code));
     return;
   }
   // `hbc2js <input.hbc> [out.js]` is the default command; `--info` and the other
