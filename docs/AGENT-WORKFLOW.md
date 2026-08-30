@@ -1,6 +1,7 @@
 # How work gets done here
 
 1. **Architect agent (Opus)** turns a milestone in `docs/STATUS.md` into a spec under `docs/specs/<component>.md`: interfaces, data structures, invariants, test plan, acceptance criteria. No code.
+1b. **Adversarial spec review (Sonnet)** reads the spec against the format docs, fixtures and decisions and returns findings: gaps, contradictions, untestable criteria, ambiguities an implementer could misread. The architect fixes them before any code is written.
 2. **Implementation agent (Opus or Sonnet per D5)** implements exactly that spec, with tests, in a branch or worktree. It must run the full test suite before reporting.
 3. **Overseer (Fable)** reviews the diff and test output, merges, updates `docs/STATUS.md`, commits, pushes.
 4. **Every agent** appends to `docs/AGENT-LOG.md`.
