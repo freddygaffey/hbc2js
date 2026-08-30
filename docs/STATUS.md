@@ -84,6 +84,32 @@ Last updated: 2026-08-30
   refuting) D14's "at every version tested" claim; all other sampled fixtures
   matched. Details, build fix (CMake 4.x vs. `CMP0026 OLD`), timings, and
   binary sizes: `docs/TOOLCHAIN.md` "Hermes VM (source build)".
+- **D13 hardened tier (obfuscated/minified variants) done**: every
+  `tests/fixtures/constructs/<name>/source.js` now has `source.obf.js`
+  (`javascript-obfuscator@5.6.0`, control-flow flattening threshold 1 +
+  RC4-encoded string arrays + dead code injection) and `source.min.js`
+  (`terser@5.51.2`, compress+mangle) siblings, each verified against
+  `expected.txt` under Node and compiled to `vNN.obf.hbc`/`vNN.min.hbc` for
+  every hermesc version each fixture already supports (52/53 obfuscate
+  cleanly — `35-class-private-fields` breaks `javascript-obfuscator`'s
+  member-expression rewrite on ES2022 private fields; 53/53 minify cleanly;
+  194 `.obf.hbc` + 196 `.min.hbc` compiled, zero unexpected hermesc
+  failures). Control check (5 fixtures, v94, `hbc-disassembler`): minified
+  bytecode matches the original's basic-block count exactly on 5/5 and its
+  mnemonic sequence on 4/5 (one fixture's `terser compress` step reorders a
+  comparison/call, still behaviourally identical); obfuscated bytecode has
+  5-9x the instructions/basic-blocks/string-table entries on every fixture,
+  and in `52-switch-jumptable`'s case control-flow flattening's shuffled
+  dispatcher states actually defeat Hermes's own `SwitchImm` jump-table
+  codegen (0 `SwitchImm` in the obfuscated build vs. 1 in original/minified)
+  — a real decompiler-relevant finding. One obfuscated variant of the real
+  `bundles/rn-template-0.72/index.android.bundle` was also generated
+  (`controlFlowFlatteningThreshold: 0.75`) and compiled with hermesc v94
+  `-O`: 6.74 MB, over the 3 MB commit cap, so only the config and exact
+  regeneration command are committed (`bundles/rn-template-0.72/hardened/CONFIG.md`),
+  not the binary. `tests/fixtures/build.sh --variants` regenerates the
+  construct-level variants idempotently; default `build.sh` behaviour is
+  unchanged. Full detail: `tests/fixtures/OBFUSCATION.md`.
 - Otherwise: no parser/CLI code yet.
 
 ## Known gaps

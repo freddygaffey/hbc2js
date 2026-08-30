@@ -2,8 +2,16 @@
 # tests/fixtures/build.sh — regenerate every fixture's .hbc file(s) from its source.js.
 #
 # Usage:
-#   tests/fixtures/build.sh              # rebuild everything
+#   tests/fixtures/build.sh              # rebuild everything (base .hbc only, unchanged)
 #   tests/fixtures/build.sh --force      # ignore up-to-date check, recompile anyway
+#   tests/fixtures/build.sh --variants   # ALSO (re)generate the D13 hardened-tier variants:
+#                                           source.obf.js/source.min.js for every
+#                                           constructs/*/source.js, verified against
+#                                           expected.txt, then vNN.obf.hbc/vNN.min.hbc
+#                                           for every hermesc version not excused by
+#                                           versions.txt. See tests/fixtures/OBFUSCATION.md.
+#                                           Can combine with --force. Does NOT touch
+#                                           the default build.sh behaviour at all.
 #
 # Requires tools/get-hermesc.sh all to have been run first (tools/hermesc/v{84,94,99}/hermesc).
 #
@@ -37,7 +45,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HERMESC_DIR="$REPO_ROOT/tools/hermesc"
 FORCE=0
-[ "${1:-}" = "--force" ] && FORCE=1
+VARIANTS=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    --variants) VARIANTS=1 ;;
+  esac
+done
+
+# Pinned versions for the D13 hardened-tier obfuscator/minifier, per
+# tests/fixtures/OBFUSCATION.md. Fetched on demand via `npx --yes -p <pkg>@<ver>`
+# (never installed as a repo dependency — no package.json here, nothing cached
+# into the repo tree; npx's own cache is outside the repo).
+OBFUSCATOR_PKG="javascript-obfuscator@5.6.0"
+TERSER_PKG="terser@5.51.2"
+OBFUSCATOR_CONFIG="$SCRIPT_DIR/obfuscator.config.json"
 
 VERSIONS="84 94 98 99"
 
@@ -85,10 +107,12 @@ compile_one() {
 
   # Invoke with a relative path from inside the fixture's own directory, per
   # docs/TOOLCHAIN.md's reproducibility note (debug info embeds the invoked
-  # filename — always "source.js" this way, never a machine-specific absolute path).
-  local out_name
+  # filename — always the same basename this way (source.js, source.obf.js, or
+  # source.min.js as appropriate), never a machine-specific absolute path).
+  local out_name src_name
   out_name="$(basename "$out")"
-  if ( cd "$dir" && "$hermesc" -emit-binary -out="$out_name" source.js ) 2>/tmp/build_sh_err.$$; then
+  src_name="$(basename "$src")"
+  if ( cd "$dir" && "$hermesc" -emit-binary -out="$out_name" "$src_name" ) 2>/tmp/build_sh_err.$$; then
     built=$((built + 1))
     echo "OK   v$ver -> $out"
   else
@@ -115,6 +139,91 @@ for dir in "$REPO_ROOT"/tests/fixtures/constructs/*/; do
   done
 done
 
+# --- D13 hardened-tier variants (obfuscated + minified constructs) ---
+#
+# verify_variant DIR CANDIDATE_JS — runs CANDIDATE_JS under Node with the
+# constructs/ print shim (see README.md) and diffs stdout against
+# DIR/expected.txt. Returns 0 (pass) or 1 (throws or diverges).
+verify_variant() {
+  local dir="$1" candidate="$2"
+  local expected="$dir/expected.txt"
+  local tmp_check="/tmp/build_sh_variant_check.$$.js"
+  { printf 'globalThis.print ??= (...a)=>console.log(...a);\n'; cat "$candidate"; } > "$tmp_check"
+  local actual
+  if actual="$(node "$tmp_check" 2>/tmp/build_sh_variant_err.$$)"; then
+    rm -f "$tmp_check" /tmp/build_sh_variant_err.$$
+    [ "$actual" = "$(cat "$expected")" ]
+    return $?
+  else
+    rm -f "$tmp_check" /tmp/build_sh_variant_err.$$
+    return 1
+  fi
+}
+
+variants_obf_built=0
+variants_obf_broken=0
+variants_min_built=0
+variants_min_broken=0
+
+if [ "$VARIANTS" -eq 1 ]; then
+  echo ""
+  echo "=== Generating hardened-tier variants (source.obf.js / source.min.js) ==="
+  echo "(obfuscator: $OBFUSCATOR_PKG, config: $OBFUSCATOR_CONFIG; minifier: $TERSER_PKG)"
+  for dir in "$REPO_ROOT"/tests/fixtures/constructs/*/; do
+    dir="${dir%/}"
+    name="$(basename "$dir")"
+    src="$dir/source.js"
+    expected="$dir/expected.txt"
+    [ -f "$src" ] && [ -f "$expected" ] || continue
+
+    obf_out="$dir/source.obf.js"
+    min_out="$dir/source.min.js"
+
+    if [ "$FORCE" -eq 1 ] || [ ! -f "$obf_out" ] || [ -n "$(find "$src" -newer "$obf_out" 2>/dev/null)" ]; then
+      tmp_obf="/tmp/build_sh_obf.$$.js"
+      if npx --yes -p "$OBFUSCATOR_PKG" javascript-obfuscator "$src" --output "$tmp_obf" --config "$OBFUSCATOR_CONFIG" >/tmp/build_sh_obf_log.$$ 2>&1 \
+         && verify_variant "$dir" "$tmp_obf"; then
+        mv "$tmp_obf" "$obf_out"
+        variants_obf_built=$((variants_obf_built + 1))
+        echo "OK   obf  -> $obf_out"
+      else
+        rm -f "$tmp_obf" "$obf_out"
+        variants_obf_broken=$((variants_obf_broken + 1))
+        echo "SKIP obf  -> $name (throws or diverges from expected.txt — see tests/fixtures/OBFUSCATION.md)"
+      fi
+      rm -f /tmp/build_sh_obf_log.$$
+    fi
+
+    if [ "$FORCE" -eq 1 ] || [ ! -f "$min_out" ] || [ -n "$(find "$src" -newer "$min_out" 2>/dev/null)" ]; then
+      tmp_min="/tmp/build_sh_min.$$.js"
+      if npx --yes -p "$TERSER_PKG" terser -c -m -o "$tmp_min" "$src" >/tmp/build_sh_min_log.$$ 2>&1 \
+         && verify_variant "$dir" "$tmp_min"; then
+        mv "$tmp_min" "$min_out"
+        variants_min_built=$((variants_min_built + 1))
+        echo "OK   min  -> $min_out"
+      else
+        rm -f "$tmp_min" "$min_out"
+        variants_min_broken=$((variants_min_broken + 1))
+        echo "SKIP min  -> $name (throws or diverges from expected.txt — see tests/fixtures/OBFUSCATION.md)"
+      fi
+      rm -f /tmp/build_sh_min_log.$$
+    fi
+  done
+
+  echo ""
+  echo "=== Compiling hardened-tier variants (vNN.obf.hbc / vNN.min.hbc) ==="
+  for dir in "$REPO_ROOT"/tests/fixtures/constructs/*/; do
+    dir="${dir%/}"
+    for variant in obf min; do
+      variant_src="$dir/source.$variant.js"
+      [ -f "$variant_src" ] || continue
+      for ver in $VERSIONS; do
+        compile_one "$variant_src" "$dir/v$ver.$variant.hbc" "$ver"
+      done
+    done
+  done
+fi
+
 echo ""
 echo "=== Building tests/fixtures/hermes-dec-sample (special-cased) ==="
 sample_dir="$REPO_ROOT/tests/fixtures/hermes-dec-sample"
@@ -128,6 +237,9 @@ fi
 echo ""
 echo "=== Summary ==="
 echo "compiled: $built   up-to-date (skipped): $skipped_uptodate   known-failure (skipped): $skipped_known   UNEXPECTED FAILURES: $failed"
+if [ "$VARIANTS" -eq 1 ]; then
+  echo "variants: obf generated $variants_obf_built, obf broken (diverge/throw, not written) $variants_obf_broken; min generated $variants_min_built, min broken $variants_min_broken"
+fi
 
 if [ "$failed" -gt 0 ]; then
   echo ""

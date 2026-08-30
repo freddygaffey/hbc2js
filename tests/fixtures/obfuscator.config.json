@@ -1,0 +1,13 @@
+{
+  "controlFlowFlattening": true,
+  "controlFlowFlatteningThreshold": 1,
+  "stringArray": true,
+  "stringArrayRotate": true,
+  "stringArrayShuffle": true,
+  "stringArrayEncoding": ["rc4"],
+  "deadCodeInjection": true,
+  "numbersToExpressions": true,
+  "splitStrings": true,
+  "selfDefending": false,
+  "compact": false
+}
