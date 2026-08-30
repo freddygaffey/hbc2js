@@ -766,8 +766,7 @@ change that unblocks two 30–50 MB production bundles.**
   operand-shape change (`DirectEval` gains a third `UInt8 isStrict` operand,
   192 opcodes unchanged) — neither v94's nor v98's table verbatim, its own
   pin. See `docs/TOOLCHAIN.md`'s "v96: opcode table and layout" section.
- Local proprietary corpus (D16 C5, `~/hbc2js-local-corpus/apks/`, never in repo): 26 APKs, 22 with Hermes bytecode. HBC 99: Meta Horizon. HBC 98: Discord, Shopify, Klarna (1,108 bundles), Brex, Uniswap, Bluesky. HBC 96: Xbox, Bloomberg, Teams (3), Tesla, Wix (30), PlayStation, Shop, Expo Go, Phantom, Cameo, Shopify Inbox, MetaMask, Rainbow, Coinbase Wallet, Office (5). Plain JS only: Facebook (18 bundles — D18 case). Native, no bundle: Pinterest, Flipkart, Adidas. No HBC 94 in the wild.
-  `~/hbc2js-local-corpus/apks/` (not in repo).
+- Local proprietary corpus (D16 C5, `~/hbc2js-local-corpus/apks/`, never in repo): 26 APKs, 22 with Hermes bytecode. HBC 99: Meta Horizon. HBC 98: Discord, Shopify, Klarna (1,108 bundles), Brex, Uniswap, Bluesky. HBC 96: Xbox, Bloomberg, Teams (3), Tesla, Wix (30), PlayStation, Shop, Expo Go, Phantom, Cameo, Shopify Inbox, MetaMask, Rainbow, Coinbase Wallet, Office (5). Plain JS only: Facebook (18 bundles — D18 case). Native, no bundle: Pinterest, Flipkart, Adidas. No HBC 94 in the wild.
 - No Linux arm64 `hermesc` build published anywhere found; only Linux x86_64.
 - `tests/fixtures/constructs/` is now compiled (243/265 fixture×version
   combinations; see `tests/fixtures/README.md`), and now includes `SwitchImm`
