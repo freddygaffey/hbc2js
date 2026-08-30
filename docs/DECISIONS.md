@@ -53,3 +53,16 @@ Hermes diverges from spec/Node on per-iteration `let`, TDZ with shadowing, and s
 
 ## D15 — Equivalence verdicts are three-valued; oracle ladder cheapest-first (2026-08-30)
 `node --check` → trace equivalence (D2) → differential fuzzing of exports → recompile round-trip (D3). PASS / DIVERGENT / INCONCLUSIVE; INCONCLUSIVE (timeout, empty trace, missing oracle) never counts as PASS. Round-trip similarity is a per-function ratchet, not a global percentage, because one extra instruction cascades through register allocation. See docs/EQUIVALENCE.md; `tools/equiv/` is the reference implementation to be promoted into `src/harness/`.
+
+## D16 — Test corpus categories (2026-08-30)
+Supersedes the tier list in D13 with an explicit taxonomy; each category has its own directory under `tests/fixtures/`, its own oracle set (D15), and its own place in CI (gate vs sweep).
+
+| Category | Dir | Source available | Oracles | CI |
+|---|---|---|---|---|
+| C1 Constructs | `constructs/` | yes | trace (Hermes VM per D14, else Node), fuzz, round-trip | gate |
+| C2 Construct variants | `constructs/*/source.{obf,min}.js` | yes | same as C1 | gate (min), sweep (obf) |
+| C3 Open-source RN apps | `bundles/<app>-<rn>/` | yes (MIT/BSD/Apache) | round-trip, `node --check`, disassembly diff | sweep |
+| C4 Hardened builds of C3 | `bundles/<app>-<rn>/hardened/` | yes | same as C3 | sweep |
+| C5 Proprietary APK bundles | `local-corpus/` (gitignored) | **no** | parse, `node --check`, round-trip only | sweep, skipped as INCONCLUSIVE when absent |
+
+C5 rules: never commit the bundles or anything derived from them; `tools/extract-apk-bundle.sh <apk>` extracts `assets/index.android.bundle`, records sha256 + Hermes version into `local-corpus/MANIFEST.json` (which *is* committed, hashes only). Only APKs the user has legitimately obtained; analysis is local. C4 is produced by `tests/fixtures/build.sh --variants` with the D13 obfuscator config.
