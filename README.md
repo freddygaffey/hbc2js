@@ -6,7 +6,7 @@ Existing Hermes tools stop at disassembly or pseudo-code. hbc2js produces JavaSc
 
 ## Status
 
-Early, working, incomplete. See [`docs/STATUS.md`](docs/STATUS.md) for live numbers.
+Working: decompiles Hermes bytecode to runnable, verified JavaScript; readability and project-reconstruction are actively improving. See [`docs/STATUS.md`](docs/STATUS.md) for live numbers.
 
 | Component | State |
 |---|---|
@@ -14,9 +14,10 @@ Early, working, incomplete. See [`docs/STATUS.md`](docs/STATUS.md) for live numb
 | Disassembler (`hbc2js disasm`) | ✅ 100% match against `hermesc -dump-bytecode` and hermes-dec |
 | Equivalence harness (`hbc2js gate` / `equiv`) | ✅ mutation-tested; Hermes VM ground truth for 4 of 5 versions |
 | Test corpus | ✅ 53 construct programs × 5 versions, obfuscated variants, real RN apps |
-| Baseline decompiler (correct, ugly) | 🚧 in progress |
-| Readability passes | ⏳ next |
-| npm package recognition, per-module project output | ⏳ planned |
+| Baseline decompiler (`hbc2js in.hbc out.js`) | ✅ every fixture → runnable JS, verified vs Hermes VM; proven on-device (real RN app, decompiled bytecode runs identically) |
+| Readability passes (M5 ladder) | 🚧 in progress — loops, expressions, calls, globals, and **function naming** recovered; ~6 of ~30 rungs |
+| Dependency extraction (`hbc2js deps`) | ✅ identifies npm packages by bytecode signature + evidence, with npm-confirm; strips them to a `package.json` |
+| Per-module project output, JSX recovery | ⏳ next |
 
 ## Quick start
 
