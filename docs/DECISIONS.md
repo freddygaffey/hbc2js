@@ -66,3 +66,6 @@ Supersedes the tier list in D13 with an explicit taxonomy; each category has its
 | C5 Proprietary APK bundles | `local-corpus/` (gitignored) | **no** | parse, `node --check`, round-trip only | sweep, skipped as INCONCLUSIVE when absent |
 
 C5 rules: never commit the bundles or anything derived from them; `tools/extract-apk-bundle.sh <apk>` extracts `assets/index.android.bundle`, records sha256 + Hermes version into `local-corpus/MANIFEST.json` (which *is* committed, hashes only). Only APKs the user has legitimately obtained; analysis is local. C4 is produced by `tests/fixtures/build.sh --variants` with the D13 obfuscator config.
+
+## D17 — npm package recognition via bytecode signatures (planned, post-baseline) (2026-08-30)
+Metro preserves module boundaries (`__d(fn, id, deps)`) and `hermesc` is deterministic, so known npm packages can be recognised by fingerprinting normalised function bytecode (FLIRT/Function-ID style) built offline by bundling curated package versions with matching Metro + hermesc. A high-confidence whole-module match is emitted as `require("<pkg>")` plus a dependency entry; partial matches are annotated, never silently replaced. Implemented as a D12 pass with a checker that re-bundles the replacement and confirms bytecode equality. Depends on M1–M2 and the D3 normaliser; scheduled after the M4 baseline.
