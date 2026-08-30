@@ -11,6 +11,7 @@ import { runTier, computeSkippedByDesign, VERDICT } from "../../../src/harness/t
 import type { DecompilerFn } from "../../../src/harness/tiers.ts";
 import { mutants } from "../../../src/harness/mutate.ts";
 import { repoRoot } from "../../support/paths.ts";
+import { timeScale } from "../../support/tiers.ts";
 
 // A subset chosen for speed and for being outside every documented gap
 // (no known-divergence construct, no v98 layout ambiguity, compiles at every
@@ -68,10 +69,17 @@ test("computeSkippedByDesign lists 30-async-generator at every version (no herme
   assert.ok(forThatFixture.length >= 5, `expected all 5 fetched versions documented as FAILS, got ${JSON.stringify(forThatFixture)}`);
 });
 
-test("full gate tier, identity decompiler: DIVERGENT count is zero (perf budget: must finish within 120s)", async (t) => {
-  const budgetMs = 120000;
+test("full gate tier, identity decompiler: DIVERGENT count is zero (perf budget: must finish within 120s, scaled by HBC2JS_TIME_SCALE)", async (t) => {
+  const scale = timeScale();
+  // Base budgets, at scale=1, on a normal dev machine: 120s wall-clock for
+  // the whole tier, 8s per fixture's trace oracle (runOracleLadder's own
+  // default). A slow-per-core-but-many-cores box (e.g. `deb`) needs both
+  // scaled — CI sets HBC2JS_TIME_SCALE=2.5 for exactly this reason; see
+  // docs/STATUS.md's CI line.
+  const budgetMs = 120000 * scale;
+  const traceTimeoutMs = 8000 * scale;
   const started = Date.now();
-  const report = await runTier({ tier: "gate" });
+  const report = await runTier({ tier: "gate", budgets: { timeoutMs: traceTimeoutMs } });
   const elapsed = Date.now() - started;
   await t.test("timing", () => {
     console.log(`full gate identity run: ${elapsed}ms for ${report.results.length} checks (budget ${budgetMs}ms)`);

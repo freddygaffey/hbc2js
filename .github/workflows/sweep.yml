@@ -9,6 +9,10 @@ jobs:
     env:
       HBC2JS_REQUIRE_ORACLES: "1"
       HBC2JS_TIER: sweep
+      # ubuntu-latest's shared runner misses T9's unscaled pro-rata parse
+      # budget (tests/sweep/parse/bundles.test.ts) by enough margin under
+      # normal load to flake this workflow — see docs/STATUS.md's CI line.
+      HBC2JS_TIME_SCALE: "2.5"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

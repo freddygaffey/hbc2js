@@ -18,6 +18,11 @@ jobs:
     env:
       HBC2JS_REQUIRE_ORACLES: "1"
       HBC2JS_TIER: gate
+      # Shared runners (and slow-per-core-but-many-cores boxes generally)
+      # don't reach a fast dev machine's throughput even at the same core
+      # count — scale perf-sensitive wall-clock/timeout budgets accordingly.
+      # See tests/support/tiers.ts's timeScale() and docs/STATUS.md's CI line.
+      HBC2JS_TIME_SCALE: "2.5"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +44,7 @@ jobs:
     env:
       HBC2JS_REQUIRE_ORACLES: "1"
       HBC2JS_TIER: gate
+      HBC2JS_TIME_SCALE: "2.5"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
