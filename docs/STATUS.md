@@ -12,7 +12,7 @@ Last updated: 2026-08-30
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
 ## Currently working
-- `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v98/v99
+- `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v96/v98/v99
   compilers (npm-sourced, not committed) for macOS + Linux x86_64. v94
   recompiles `tests/fixtures/hermes-dec-sample/source.js` byte-identical to
   `tests/fixtures/hermes-dec-sample/v94.hbc`. v99 does not byte-match
@@ -20,18 +20,25 @@ Last updated: 2026-08-30
   probed across every publicly-published `hermes-compiler@250829098.0.x`
   patch (alpha through newest): all emit only the "98-late"/class-E header
   layout, never "98-early"/class-D — see `docs/TOOLCHAIN.md`'s "v98: which
-  header layout does the public package emit?". `hermes-dec` 0.1.7 (pip)
-  confirmed working as the behaviour-oracle disassembler/decompiler. Details:
-  `docs/TOOLCHAIN.md`.
+  header layout does the public package emit?". **v96 added**
+  (`react-native@0.73.11`, commit `644c8be78af1eae7c138fa4093fb87f0f4f8db85`
+  per that tarball's `sdks/.hermesversion`, same provenance pattern as v94):
+  layout class C, identical header shape to v94; opcode table is v94's table
+  with exactly one change (`DirectEval` grows a third `UInt8 isStrict`
+  operand — no opcode added/removed/reordered, still 192 opcodes) — see
+  `docs/TOOLCHAIN.md`'s "v96: opcode table and layout". `hermes-dec` 0.1.7
+  (pip) confirmed working as the behaviour-oracle disassembler/decompiler.
+  Details: `docs/TOOLCHAIN.md`.
 - **Tier 1 fixture corpus built**: 53 hand-written single-construct fixtures
   under `tests/fixtures/constructs/<NN-topic>/{source.js,expected.txt,vNN.hbc,licence.txt}`
   (01-51 per `docs/TEST-CORPUS.md` §1a; 52-53 added later — dense-integer
   `SwitchImm`/`UIntSwitchImm` jump-table fixtures, closing the gap flagged in
   `docs/AGENT-LOG.md`'s spec-writing entry), plus the restructured
-  `hermes-dec-sample/` (now also has `v84.hbc`/`v98.hbc` fresh recompiles,
-  alongside the two preserved historical `v94.hbc`/`v99.hbc` binaries). All 53
-  run correctly under Node 25 (`expected.txt` captured from that run);
-  196/212 (fixture × hermesc-version) combinations compile — the 16 gaps are
+  `hermes-dec-sample/` (now also has `v84.hbc`/`v96.hbc`/`v98.hbc` fresh
+  recompiles, alongside the two preserved historical `v94.hbc`/`v99.hbc`
+  binaries). All 53 run correctly under Node 25 (`expected.txt` captured from
+  that run); 243/265 (fixture × hermesc-version) combinations compile
+  (v96 added, same 6-gap pattern as v94 — see below) — the 22 gaps are
   documented per-fixture in `versions.txt` and summarized in
   `tests/fixtures/README.md`'s compatibility table. A same-VM cross-check
   against the real `hermes` interpreter (bundled with the v84 package only)
@@ -159,9 +166,20 @@ Last updated: 2026-08-30
 - Otherwise: no parser/CLI code yet.
 
 ## Known gaps
-- **HBC 96 has no compiler/fixture yet**, but two of five pulled production apps (Xbox, Bloomberg, Teams) ship v96; Discord and Shopify ship v98. Add 96 to `tools/get-hermesc.sh` and to the corpus. Local proprietary corpus (D16 C5): 5 bundles, 10–52 MB, in `~/hbc2js-local-corpus/apks/` (not in repo).
+- ~~**HBC 96 has no compiler/fixture yet**~~ **Closed.** Three of the five
+  pulled production apps (Xbox, Bloomberg, Teams) ship v96; Discord and
+  Shopify ship v98. `tools/get-hermesc.sh 96` now fetches it
+  (`react-native@0.73.11` → facebook/hermes commit
+  `644c8be78af1eae7c138fa4093fb87f0f4f8db85`), `hermes-dec-sample/v96.hbc`
+  and all 47/53 compilable `constructs/*` fixtures (+obf/min variants) exist.
+  Layout class C (same as v94); opcode table is v94's table with one
+  operand-shape change (`DirectEval` gains a third `UInt8 isStrict` operand,
+  192 opcodes unchanged) — neither v94's nor v98's table verbatim, its own
+  pin. See `docs/TOOLCHAIN.md`'s "v96: opcode table and layout" section.
+  Local proprietary corpus (D16 C5): 5 bundles, 10–52 MB, in
+  `~/hbc2js-local-corpus/apks/` (not in repo).
 - No Linux arm64 `hermesc` build published anywhere found; only Linux x86_64.
-- `tests/fixtures/constructs/` is now compiled (196/212 fixture×version
+- `tests/fixtures/constructs/` is now compiled (243/265 fixture×version
   combinations; see `tests/fixtures/README.md`), and now includes `SwitchImm`
   /`UIntSwitchImm` jump-table coverage (52, 53) and a real overflowed-string
   entry / broad regex + BigInt table exercise via `tests/fixtures/bundles/

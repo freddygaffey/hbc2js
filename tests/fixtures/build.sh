@@ -61,7 +61,7 @@ OBFUSCATOR_PKG="javascript-obfuscator@5.6.0"
 TERSER_PKG="terser@5.51.2"
 OBFUSCATOR_CONFIG="$SCRIPT_DIR/obfuscator.config.json"
 
-VERSIONS="84 94 98 99"
+VERSIONS="84 94 96 98 99"
 
 built=0
 skipped_uptodate=0

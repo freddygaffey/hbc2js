@@ -7,7 +7,7 @@ and without committing binaries to the repo.
 ## TL;DR
 
 ```sh
-tools/get-hermesc.sh all        # fetches v84, v94, v98, v99 into tools/hermesc/v<N>/ (gitignored)
+tools/get-hermesc.sh all        # fetches v84, v94, v96, v98, v99 into tools/hermesc/v<N>/ (gitignored)
 tools/hermesc/v94/hermesc -emit-binary -out=out.hbc input.js
 ```
 
@@ -60,7 +60,7 @@ which prints it directly as "HBC bytecode version").
 | 89 | `react-native@0.70.15` | RN 0.70 | |
 | 90 | `react-native@0.71.19` | RN 0.71 | |
 | **94** | **`react-native@0.72.17`** (`sdks/hermesc/`) | RN 0.72 | **Used by `tools/get-hermesc.sh 94`. Byte-identical to `tests/fixtures/hermes-dec-sample/v94.hbc`** — see verification below. |
-| 96 | `react-native@0.73.11` through `0.81.6`, and `hermes-compiler@0.14.0`–`0.17.0` | RN 0.73–0.81 | Bytecode version 96 spans several years and both distribution mechanisms — the RN→hermes-compiler split (RN 0.83) happened without a version bump. |
+| **96** | **`react-native@0.73.11`** (`sdks/hermesc/`) | RN 0.73 | **Used by `tools/get-hermesc.sh 96`.** Bytecode version 96 spans several years and both distribution mechanisms (`react-native@0.73.11` through `0.81.6`, and later `hermes-compiler@0.14.0`–`0.17.0` — the RN→hermes-compiler split at RN 0.83 happened without a version bump); `0.73.11` was picked as the earliest/closest-to-v94 point in that range. Three of five production apps pulled into the local corpus (D16 C5) ship v96 — see "v96: opcode table and layout" below. |
 | **98** | **`hermes-compiler@250829098.0.10`** (also `.0.0`–`.0.17`, `latest` dist-tag family) | RN 0.86–0.87 (current `latest`) | **Used by `tools/get-hermesc.sh 98`. Every published `250829098.0.x` patch probed (`.0.0-alpha.1`, `.0.0`, `.0.10`, `.0.14` — the exact version `react-native@0.86.0` depends on, `.0.17`) emits the "98-late" (class E, v99-shaped) header layout, never "98-early" (class D, v97-shaped) — see below.** |
 | **99** | **`hermes-compiler@260318099.0.0` / `.1`** (`latest-v1` dist-tag) | RN "1000.x" line | **Used by `tools/get-hermesc.sh 99`. Same bytecode *format* version as `tests/fixtures/hermes-dec-sample/v99.hbc` but NOT byte-identical** — see below. |
 
@@ -77,9 +77,10 @@ the table ever needs extending.
 ```sh
 tools/get-hermesc.sh 84     # → tools/hermesc/v84/{hermesc,hbcdump,hdb,hermes}
 tools/get-hermesc.sh 94     # → tools/hermesc/v94/hermesc
+tools/get-hermesc.sh 96     # → tools/hermesc/v96/hermesc
 tools/get-hermesc.sh 98     # → tools/hermesc/v98/hermesc
 tools/get-hermesc.sh 99     # → tools/hermesc/v99/hermesc
-tools/get-hermesc.sh all    # all four
+tools/get-hermesc.sh all    # all five
 ```
 
 The script uses `npm pack <pkg>@<version>` to fetch just the tarball (no
@@ -149,6 +150,81 @@ commit that produced it, which is not published to npm as of this writing.
 This is why `docs/DECISIONS.md` D3 normalizes register/label names for
 structural diffing rather than relying on byte equality for real-world
 bundles — the same reasoning applies here.
+
+## v96: opcode table and layout
+
+Unlike v94/v99, no historical hermes-dec-sample-style `v96.hbc` exists to check
+byte-identity against — `tests/fixtures/hermes-dec-sample/v96.hbc` is simply a
+fresh compile (same status as `v84.hbc`/`v98.hbc`), not a preserved original.
+
+**Commit.** `react-native@0.73.11`'s tarball records the exact commit the same
+way `react-native@0.72.17` did for v94 — `package/sdks/.hermesversion`:
+
+```
+hermes-2024-04-29-RNv0.73.8-644c8be78af1eae7c138fa4093fb87f0f4f8db85
+```
+
+So `tools/get-hermesc.sh 96` (`react-native@0.73.11`) traces to facebook/hermes
+commit **`644c8be78af1eae7c138fa4093fb87f0f4f8db85`** — vendored to
+`third_party/hermes/hbc96/` via `tools/gen-tables/vendor.sh hbc96
+644c8be78af1eae7c138fa4093fb87f0f4f8db85` (that commit's
+`BytecodeVersion.h` independently confirms `BYTECODE_VERSION = 96`, and the
+compiled sample's header bytes read `version=96` at offset 8, matching).
+
+**Layout class: C**, same as v94 (`docs/HBC-FORMAT.md` §0.1: versions 87–96
+share layout class C — 19 header `uint32`s, 19 padding bytes, 16-byte
+`SmallFuncHeader`). Confirmed directly by parsing the compiled
+`hermes-dec-sample/v96.hbc` header: every field at every class-C offset reads
+identically in shape to the documented v94 header (`bigIntCount`/
+`bigIntStorageSize` present at 64/68, `arrayBufferSize`/`objKeyBufferSize`/
+`objValueBufferSize` — not the v97+ `literalValueBufferSize`/
+`objShapeTableCount` renaming — at 80/84/88, `options` at byte 108, and the
+19-byte padding region reads all-zero). v96 is the *last* version in layout
+class C and in the classic-Hermes `main` lineage before the `static_h`
+(Static Hermes) fork at v97 (`docs/HBC-FORMAT.md` §0) — so a v94 parser needs
+no header changes at all to also accept v96.
+
+**Opcode table: neither v94's nor v98's — a distinct, closely-related fourth
+table** (one opcode's operand shape changed, not a wholesale rewrite).
+Diffing the vendored `BytecodeList.def` at the v96 commit against
+`third_party/hermes/hbc94/BytecodeList.def`:
+
+```
+525c525,526
+< DEFINE_OPCODE_2(DirectEval, Reg8, Reg8)
+---
+> /// Arg3 is a boolean which is true if the eval should be performed in strict mode.
+> DEFINE_OPCODE_3(DirectEval, Reg8, Reg8, UInt8)
+```
+
+That is the **entire diff** — every other opcode definition, in the same
+order, is byte-for-byte identical between hbc94 and hbc96. `DirectEval` grows
+a third operand (`UInt8 isStrict`) in place; no opcode is added, removed, or
+reordered, so **the opcode count and every opcode's numeric index are
+unchanged from v94 (192 opcodes** — `docs/PRIOR-ART.md` §3.2's independently-
+derived version-bump table already recorded this: the `isStrict` operand was
+actually added one version earlier, at v95, and v96 makes no further opcode
+change ("v95: `DirectEval` gains an `isStrict` `UInt8` operand"; "v96: RegExp
+`hasIndices` flag; no opcode change") — this task's from-scratch commit-diff
+independently reproduces that exact finding). Diffing against
+`third_party/hermes/hbc98-late/BytecodeList.def` (and `hbc98-2024`) shows, by
+contrast, a large, unrelated set of changes (reshaped `NewObjectWithBuffer`/
+`NewObjectWithBufferLong` arity, `FastArray*` opcodes added, `AddS` removed,
+`GetEnvironment`/`CreateEnvironment` family renamed and re-arranged,
+`PutById(Loose/Strict)` collapsed, etc.) — v96 shares essentially none of
+that with v98/v99's `static_h` table beyond opcode names that predate the
+fork.
+
+**Bottom line for the parser agent:** v96 needs its own opcode table pin
+(`third_party/hermes/hbc96/`, already vendored at
+`644c8be78af1eae7c138fa4093fb87f0f4f8db85`) — decoding v96 bytecode with the
+v94 table will misdecode `DirectEval`'s operand stream (reads a Reg8/Reg8 pair
+and stops one byte short of the real 2-byte-longer instruction), but every
+other opcode number, and the whole file-header layout (class C), can be
+shared verbatim with the existing v94 parser code path. It is **not** a v98
+variant and needs no D8-style layout-class branching — only the one
+`DirectEval` operand-shape difference plus the (independently existing)
+`hasIndices` RegExp flag change (regex bytecode payload only, not an opcode).
 
 ## v98: which header layout does the public package emit?
 

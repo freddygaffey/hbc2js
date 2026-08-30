@@ -10,10 +10,14 @@ v84: FAILS - hermesc rejects the `class` keyword entirely: "invalid statement
 v94: FAILS - identical "invalid statement encountered" error, same root cause
      (react-native@0.72.17's bundled hermesc also lacks class lowering in
      IRGen).
+v96: FAILS - identical "invalid property name - must be a string, number or
+     identifier" error on the `static {}` block, same as v84/v94
+     (react-native@0.73.11's bundled hermesc, classic-Hermes `main` lineage,
+     still has no static-block/class support in IRGen).
 v99: OK - hermes-compiler@260318099.0.1 fully supports `class` (including
      this construct's accessors/inheritance/fields as applicable).
 
-Only v99.hbc exists in this directory; tests/fixtures/build.sh skips v84/v94
+Only v99.hbc exists in this directory; tests/fixtures/build.sh skips v84/v94/v96
 for this fixture, matching this file. Historically, React Native's Metro/Babel
 pipeline transpiled all class syntax to ES5 prototype chains before handing
 JS to Hermes in this era, which is presumably why hermesc itself never grew

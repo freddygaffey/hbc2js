@@ -15,6 +15,7 @@ tests/fixtures/
     source.js
     v84.hbc                       # compiled fresh by this project (no historical original)
     v94.hbc                       # PRESERVED historical original — never regenerated
+    v96.hbc                       # compiled fresh by this project (no historical original)
     v98.hbc                       # compiled fresh by this project (no historical original)
     v99.hbc                       # PRESERVED historical original — never regenerated
     v99-public.hbc                # fresh recompile with the public v99 hermesc, for comparison
@@ -23,7 +24,7 @@ tests/fixtures/
     01-if-else-chain/
       source.js                   # the fixture program (print()-only output, deterministic)
       expected.txt                # `node source.js` output, captured once, ground truth for D2
-      v84.hbc v94.hbc v98.hbc v99.hbc  # compiled bytecode (only for versions that support it)
+      v84.hbc v94.hbc v96.hbc v98.hbc v99.hbc  # compiled bytecode (only for versions that support it)
       source.obf.js source.min.js # D13 hardened-tier variants (obfuscated/minified), see below
       vNN.obf.hbc vNN.min.hbc     # compiled variants (only where source.NN.js exists and compiles)
       versions.txt                # present only if some hermesc version can't compile this one
@@ -111,7 +112,7 @@ convention.
 ## How to rebuild
 
 ```sh
-tools/get-hermesc.sh all        # once, fetches v84/v94/v98/v99 (gitignored, not committed)
+tools/get-hermesc.sh all        # once, fetches v84/v94/v96/v98/v99 (gitignored, not committed)
 tests/fixtures/build.sh         # compiles every source.js with every hermesc it can find
 tests/fixtures/build.sh --force # recompile everything even if .hbc looks up to date
 ```
@@ -126,7 +127,10 @@ reality gets caught immediately.
 `tests/fixtures/hermes-dec-sample/{v94,v99}.hbc` are **never** touched by
 `build.sh` — they're preserved historical binaries (see that directory's
 `licence.txt` and `docs/TOOLCHAIN.md`'s byte-identical-recompilation section).
-Only `v84.hbc` and `v99-public.hbc` there are (re)generated.
+`v84.hbc`, `v96.hbc`, `v98.hbc`, and `v99-public.hbc` there are freshly
+(re)generated the same way (only `v96.hbc` was produced by hand rather than
+by `build.sh` itself, since that script's hermes-dec-sample section is
+hardcoded per-version and out of this task's edit scope — see `docs/TOOLCHAIN.md`).
 
 ## Construct fixture compiler-compatibility table
 
@@ -134,83 +138,86 @@ Only `v84.hbc` and `v99-public.hbc` there are (re)generated.
 hermesc version (✅ = compiles, ❌ = documented failure, see that fixture's
 `versions.txt`):
 
-| # | Fixture | v84 | v94 | v98 | v99 |
-|---|---|---|---|---|---|
-| 01 | if-else-chain | ✅ | ✅ | ✅ | ✅ |
-| 02 | while-loop | ✅ | ✅ | ✅ | ✅ |
-| 03 | do-while-loop | ✅ | ✅ | ✅ | ✅ |
-| 04 | for-loop-basic | ✅ | ✅ | ✅ | ✅ |
-| 05 | for-in-object | ✅ | ✅ | ✅ | ✅ |
-| 06 | for-of-array | ✅ | ✅ | ✅ | ✅ |
-| 07 | for-of-iterable | ✅ | ✅ | ✅ | ✅ |
-| 08 | labeled-break-continue | ✅ | ✅ | ✅ | ✅ |
-| 09 | switch-fallthrough | ✅ | ✅ | ✅ | ✅ |
-| 10 | switch-no-fallthrough | ✅ | ✅ | ✅ | ✅ |
-| 11 | nested-loops-mixed | ✅ | ✅ | ✅ | ✅ |
-| 12 | try-catch-finally-return | ✅ | ✅ | ✅ | ✅ |
-| 13 | try-finally-no-catch | ✅ | ✅ | ✅ | ✅ |
-| 14 | nested-try-catch | ✅ | ✅ | ✅ | ✅ |
-| 15 | catch-without-binding | ✅ | ✅ | ✅ | ✅ |
-| 16 | finally-with-break-continue | ✅ | ✅ | ✅ | ✅ |
-| 17 | closure-loop-var | ✅ | ✅ | ✅ | ✅ |
-| 18 | closure-loop-let | ✅ | ✅ | ✅ | ✅ |
-| 19 | var-hoisting | ✅ | ✅ | ✅ | ✅ |
-| 20 | let-const-tdz | ✅ | ✅ | ✅ | ✅ |
-| 21 | iife-closures | ✅ | ✅ | ✅ | ✅ |
-| 22 | nested-closures-counters | ✅ | ✅ | ✅ | ✅ |
-| 23 | generator-basic | ✅ | ✅ | ✅ | ✅ |
-| 24 | generator-return-throw | ✅ | ✅ | ✅ | ✅ |
-| 25 | generator-delegation | ✅ | ✅ | ✅ | ✅ |
-| 26 | infinite-generator-take | ✅ | ✅ | ✅ | ✅ |
-| 27 | async-await-basic | ✅ | ✅ | ✅ | ✅ |
-| 28 | async-await-error | ✅ | ✅ | ✅ | ✅ |
-| 29 | promise-chaining | ✅ | ✅ | ✅ | ✅ |
-| 30 | async-generator | ❌ | ❌ | ❌ | ❌ |
-| 31 | microtask-ordering | ✅ | ✅ | ✅ | ✅ |
-| 32 | class-basic | ❌ | ❌ | ✅ | ✅ |
-| 33 | class-inheritance-super | ❌ | ❌ | ✅ | ✅ |
-| 34 | class-static-members | ❌ | ❌ | ✅ | ✅ |
-| 35 | class-private-fields | ❌ | ❌ | ✅ | ✅ |
-| 36 | class-getters-setters | ❌ | ❌ | ✅ | ✅ |
-| 37 | destructuring-array | ✅ | ✅ | ✅ | ✅ |
-| 38 | destructuring-object | ✅ | ✅ | ✅ | ✅ |
-| 39 | destructuring-params | ✅ | ✅ | ✅ | ✅ |
-| 40 | spread-array | ✅ | ✅ | ✅ | ✅ |
-| 41 | spread-object | ✅ | ✅ | ✅ | ✅ |
-| 42 | rest-params | ✅ | ✅ | ✅ | ✅ |
-| 43 | template-literals | ✅ | ✅ | ✅ | ✅ |
-| 44 | tagged-templates | ✅ | ✅ | ✅ | ✅ |
-| 45 | regex-literals | ❌ | ✅ | ✅ | ✅ |
-| 46 | bigint-arithmetic | ❌ | ✅ | ✅ | ✅ |
-| 47 | typeof-instanceof-in | ✅ | ✅ | ✅ | ✅ |
-| 48 | optional-chaining-nullish | ✅ | ✅ | ✅ | ✅ |
-| 49 | arguments-object | ✅ | ✅ | ✅ | ✅ |
-| 50 | this-binding | ✅ | ✅ | ✅ | ✅ |
-| 51 | default-params | ✅ | ✅ | ✅ | ✅ |
-| 52 | switch-jumptable | ✅ | ✅ | ✅ | ✅ |
-| 53 | switch-jumptable-large | ✅ | ✅ | ✅ | ✅ |
+| # | Fixture | v84 | v94 | v96 | v98 | v99 |
+|---|---|---|---|---|---|---|
+| 01 | if-else-chain | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 02 | while-loop | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 03 | do-while-loop | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 04 | for-loop-basic | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 05 | for-in-object | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 06 | for-of-array | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 07 | for-of-iterable | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 08 | labeled-break-continue | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 09 | switch-fallthrough | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 10 | switch-no-fallthrough | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 11 | nested-loops-mixed | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 12 | try-catch-finally-return | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 13 | try-finally-no-catch | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 14 | nested-try-catch | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 15 | catch-without-binding | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 16 | finally-with-break-continue | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 17 | closure-loop-var | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 18 | closure-loop-let | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 19 | var-hoisting | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 20 | let-const-tdz | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 21 | iife-closures | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 22 | nested-closures-counters | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 23 | generator-basic | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 24 | generator-return-throw | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 25 | generator-delegation | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 26 | infinite-generator-take | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 27 | async-await-basic | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 28 | async-await-error | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 29 | promise-chaining | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 30 | async-generator | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 31 | microtask-ordering | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 32 | class-basic | ❌ | ❌ | ❌ | ✅ | ✅ |
+| 33 | class-inheritance-super | ❌ | ❌ | ❌ | ✅ | ✅ |
+| 34 | class-static-members | ❌ | ❌ | ❌ | ✅ | ✅ |
+| 35 | class-private-fields | ❌ | ❌ | ❌ | ✅ | ✅ |
+| 36 | class-getters-setters | ❌ | ❌ | ❌ | ✅ | ✅ |
+| 37 | destructuring-array | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 38 | destructuring-object | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 39 | destructuring-params | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 40 | spread-array | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 41 | spread-object | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 42 | rest-params | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 43 | template-literals | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 44 | tagged-templates | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 45 | regex-literals | ❌ | ✅ | ✅ | ✅ | ✅ |
+| 46 | bigint-arithmetic | ❌ | ✅ | ✅ | ✅ | ✅ |
+| 47 | typeof-instanceof-in | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 48 | optional-chaining-nullish | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 49 | arguments-object | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 50 | this-binding | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 51 | default-params | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 52 | switch-jumptable | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 53 | switch-jumptable-large | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-**Totals: 196/212 (source × version) combinations compile.** The 16 gaps (all in 01-51):
-- **`class` syntax is entirely unsupported by hermesc v84 and v94** (32-36,
-  5 fixtures × 2 versions = 10 gaps) — this is an IRGen limitation, not a
-  parser one (`hermesc -dump-ast` parses classes fine on v84); confirmed with
+**Totals: 243/265 (source × version) combinations compile.** The 22 gaps (all in 01-51):
+- **`class` syntax is entirely unsupported by hermesc v84, v94, and v96**
+  (32-36, 5 fixtures × 3 versions = 15 gaps) — this is an IRGen limitation, not
+  a parser one (`hermesc -dump-ast` parses classes fine on v84); confirmed with
   minimal repros. Only the `static_h`/Static Hermes lineage
   (`hermes-compiler@250829098.0.10`, v98, and `hermes-compiler@260318099.0.1`,
   v99) lowers classes to bytecode. This was an unexpected finding worth
   flagging to whoever designs the decompiler's class-recovery logic: **no
-  v84/v94 bytecode fixture will ever exercise class-shaped bytecode**, because
-  Hermes itself couldn't compile classes in that era (React Native's Babel
-  pipeline transpiled classes to ES5 prototype chains before this-era Hermes
-  ever saw them).
+  v84/v94/v96 bytecode fixture will ever exercise class-shaped bytecode**,
+  because classic Hermes (the `main` lineage, frozen at v96, per
+  `docs/HBC-FORMAT.md` §0) never grew class-lowering support at all — React
+  Native's Babel pipeline transpiled classes to ES5 prototype chains before
+  this-era Hermes ever saw them.
 - **BigInt literals (46) and regex named capture groups (45) are unsupported
   by v84 only** (2 gaps) — straightforward lexer/regex-engine limitations,
-  fixed by v94 (and remain fixed in v98/v99).
-- **`async function*` / `for await...of` (30) is unsupported by all four**
-  fetched versions (4 gaps) — v84/v94 reject `for await...of` outright at
+  fixed by v94 (and remain fixed in v96/v98/v99).
+- **`async function*` / `for await...of` (30) is unsupported by all five**
+  fetched versions (5 gaps) — v84/v94 reject `for await...of` outright at
   parse time; v98/v99 (both `static_h`) parse it but reject `async function*`
-  declarations. Kept as a fixture anyway (runs fine under Node) since some
-  future hermesc may support it, and it documents a real decompiler-scope gap
-  either way.
+  declarations; v96 reports both errors together (a genuinely different,
+  more specific diagnostic than v84/v94's single for-await-of error — see
+  that fixture's `versions.txt`). Kept as a fixture anyway (runs fine under
+  Node) since some future hermesc may support it, and it documents a real
+  decompiler-scope gap either way.
 
 See each gap fixture's own `versions.txt` for the exact hermesc error text and
 reasoning.

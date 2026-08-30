@@ -2,6 +2,15 @@ v84: FAILS - "for await..of loops are currently unsupported" (hermesc parse-time
      rejection of the for-await-of statement itself, independent of async
      generators).
 v94: FAILS - same "for await..of loops are currently unsupported" error as v84.
+v96: FAILS - reports BOTH errors together, a genuinely different diagnostic
+     from v84/v94: "async generators are unsupported" on the
+     `async function*` declaration itself, AND "for await..of loops are
+     currently unsupported" on the for-await-of statement. So somewhere
+     between v94 and v96 (react-native@0.72.17 -> react-native@0.73.11,
+     classic-Hermes `main` lineage, still pre-static_h) hermesc grew an
+     earlier, more specific rejection of `async function*` in addition to
+     the pre-existing for-await-of rejection, rather than only tripping the
+     later one first.
 v98: FAILS - "async generators are unsupported" (same later-stage restriction
      as v99 - v98's hermesc also accepts for-await-of syntactically but
      rejects `async function*` declarations outright; both v98 and v99 are
@@ -10,7 +19,7 @@ v99: FAILS - "async generators are unsupported" (a different, later-stage
      restriction: v99's hermesc accepts for-await-of syntactically but rejects
      `async function*` declarations outright).
 
-No hermesc version fetched by tools/get-hermesc.sh (84/94/98/99) can compile
+No hermesc version fetched by tools/get-hermesc.sh (84/94/96/98/99) can compile
 this fixture. It is kept anyway (per docs/TEST-CORPUS.md #1a construct 30) as a
 forward-looking Tier 1 fixture: it runs correctly under plain Node
 (see expected.txt) and is valid input for the D2 trace-equivalence harness
@@ -20,4 +29,4 @@ once this project's own emitter needs to represent the construct in reverse
 construct fixture documents the gap either way).
 
 No vNN.hbc files exist in this directory; tests/fixtures/build.sh skips this
-fixture for all four compilers, matching this file.
+fixture for all five compilers, matching this file.
