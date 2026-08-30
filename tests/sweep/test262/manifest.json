@@ -1,0 +1,3564 @@
+{
+  "test262Commit": "771005236e88a909635104e03ba12559688c0172",
+  "generatedBy": "tools/test262-harvest.mjs",
+  "manifest": [
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.1_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.1_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.1_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.1_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.1_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.1_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.1_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.1_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.2_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.2_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.2_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.2_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.2_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.2_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A1.2_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A1.2_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A10_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A10_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A10_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A10_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A10_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A10_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A10_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A10_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A11.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A11.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A11.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A11.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A12_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A12_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A12_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A12_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A12_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A12_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/if/S12.5_A12_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__if__S12.5_A12_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T4.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A1_T4.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A1_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A2_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A2_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A2_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A2_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T4.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/switch/S12.11_A3_T4.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__switch__S12.11_A3_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-10.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-10.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-10.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-10.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-11.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-11.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-11.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-11.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-12.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-12.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-12.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-12.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-13.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-13.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-13.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-13.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-14.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-14.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-14.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-14.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-15.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-15.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-15.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-15.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-16.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-16.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-16.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-16.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-17.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-17.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for/12.6.3_2-3-a-ii-17.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for__12.6.3_2-3-a-ii-17.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/12.6.4-1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__12.6.4-1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/12.6.4-1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__12.6.4-1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/12.6.4-2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__12.6.4-2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/12.6.4-2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__12.6.4-2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A14_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A14_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A14_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A14_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A15.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A15.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A15.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A15.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A3.1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A3.1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A3.1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A3.1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A4.1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A4.1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-in/S12.6.4_A4.1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-in__S12.6.4_A4.1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/Array.prototype.Symbol.iterator.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__Array.prototype.Symbol.iterator.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/Array.prototype.Symbol.iterator.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__Array.prototype.Symbol.iterator.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/Array.prototype.entries.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__Array.prototype.entries.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/Array.prototype.entries.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__Array.prototype.entries.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/Array.prototype.keys.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__Array.prototype.keys.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/Array.prototype.keys.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__Array.prototype.keys.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/arguments-mapped-aliasing.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__arguments-mapped-aliasing.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/arguments-mapped-mutation.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__arguments-mapped-mutation.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/arguments-mapped.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__arguments-mapped.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/arguments-unmapped-aliasing.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__arguments-unmapped-aliasing.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/arguments-unmapped-mutation.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__arguments-unmapped-mutation.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/arguments-unmapped.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__for-of__arguments-unmapped.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/head-await-using-bound-names-fordecl-tdz.js",
+      "category": "control-flow",
+      "excluded": "async",
+      "flags": [
+        "async"
+      ]
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/head-await-using-bound-names-in-stmt.js",
+      "category": "control-flow",
+      "excluded": "module",
+      "flags": [
+        "module"
+      ]
+    },
+    {
+      "sourcePath": "test/language/statements/for-of/head-await-using-fresh-binding-per-iteration.js",
+      "category": "control-flow",
+      "excluded": "module",
+      "flags": [
+        "module"
+      ]
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A10.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A10.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A10.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A10.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A11.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A11.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A11.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A11.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A14_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A14_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A14_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A14_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A14_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A14_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A14_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A14_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A15.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A15.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A15.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A15.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A4_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A4_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/while/S12.6.2_A4_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__while__S12.6.2_A4_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A10.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A10.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A10.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A10.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A11.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A11.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A11.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A11.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A12.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A12.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A12.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A12.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A14_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A14_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A14_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A14_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A14_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A14_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A14_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A14_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A15.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A15.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A15.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A15.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/do-while/S12.6.1_A3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__do-while__S12.6.1_A3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/12.8-1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__12.8-1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/12.8-1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__12.8-1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T4.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A1_T4.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A1_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A4_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A4_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A4_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A4_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A4_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A4_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A4_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A4_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A4_T3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A4_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/break/S12.8_A4_T3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__break__S12.8_A4_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/12.7-1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__12.7-1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/12.7-1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__12.7-1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T4.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A1_T4.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A1_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A5_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A5_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A5_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A5_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A5_T2.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A5_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A5_T2.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A5_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A5_T3.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A5_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A5_T3.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A5_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A6.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A6.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/continue/S12.7_A6.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__continue__S12.7_A6.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/S12.12_A1_T1.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__S12.12_A1_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/S12.12_A1_T1.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__S12.12_A1_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/continue.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__continue.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/continue.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__continue.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/cptn-break.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__cptn-break.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/cptn-break.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__cptn-break.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/cptn-nrml.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__cptn-nrml.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/cptn-nrml.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__cptn-nrml.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-async-function.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-async-function.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-async-function.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-async-function.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-async-generator.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-async-generator.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-async-generator.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-async-generator.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-cls.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-cls.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-cls.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-cls.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-const.js",
+      "category": "control-flow",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-const.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/decl-const.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/control-flow/language__statements__labeled__decl-const.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/value-await-module-escaped.js",
+      "category": "control-flow",
+      "excluded": "module",
+      "flags": [
+        "module"
+      ]
+    },
+    {
+      "sourcePath": "test/language/statements/labeled/value-await-module.js",
+      "category": "control-flow",
+      "excluded": "module",
+      "flags": [
+        "module"
+      ]
+    },
+    {
+      "sourcePath": "test/language/statements/generators/arguments-with-arguments-fn.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__arguments-with-arguments-fn.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/arguments-with-arguments-lex.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__arguments-with-arguments-lex.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/array-destructuring-param-strict-body.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__array-destructuring-param-strict-body.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/array-destructuring-param-strict-body.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__array-destructuring-param-strict-body.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/cptn-decl.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__cptn-decl.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/cptn-decl.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__cptn-decl.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/declaration.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__declaration.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/declaration.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__declaration.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/default-proto.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__default-proto.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/default-proto.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__default-proto.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-abrupt.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-abrupt.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-abrupt.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-abrupt.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-arg-val-not-undefined.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-arg-val-not-undefined.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-arg-val-not-undefined.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-arg-val-not-undefined.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-arg-val-undefined.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-arg-val-undefined.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-arg-val-undefined.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-arg-val-undefined.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-duplicates.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-duplicates.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-duplicates.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-duplicates.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-ref-later.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-ref-later.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-ref-later.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-ref-later.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-ref-prior.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-ref-prior.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-ref-prior.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-ref-prior.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-ref-self.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-ref-self.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-ref-self.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-ref-self.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-rest.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-rest.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-rest.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-rest.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-trailing-comma.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-trailing-comma.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/generators/dflt-params-trailing-comma.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__statements__generators__dflt-params-trailing-comma.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/arguments-with-arguments-fn.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__arguments-with-arguments-fn.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/arguments-with-arguments-lex.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__arguments-with-arguments-lex.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/array-destructuring-param-strict-body.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__array-destructuring-param-strict-body.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/array-destructuring-param-strict-body.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__array-destructuring-param-strict-body.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/default-proto.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__default-proto.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/default-proto.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__default-proto.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-abrupt.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-abrupt.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-abrupt.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-abrupt.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-arg-val-not-undefined.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-arg-val-not-undefined.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-arg-val-not-undefined.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-arg-val-not-undefined.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-arg-val-undefined.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-arg-val-undefined.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-arg-val-undefined.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-arg-val-undefined.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-duplicates.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-duplicates.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-duplicates.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-duplicates.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-ref-later.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-ref-later.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-ref-later.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-ref-later.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-ref-prior.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-ref-prior.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-ref-prior.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-ref-prior.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-ref-self.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-ref-self.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-ref-self.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-ref-self.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-rest.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-rest.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-rest.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-rest.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-trailing-comma.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-trailing-comma.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dflt-params-trailing-comma.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dflt-params-trailing-comma.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dstr/ary-init-iter-close.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dstr__ary-init-iter-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dstr/ary-init-iter-close.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dstr__ary-init-iter-close.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dstr/ary-init-iter-get-err-array-prototype.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dstr__ary-init-iter-get-err-array-prototype.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/generators/dstr/ary-init-iter-get-err-array-prototype.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [
+        "generated"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/language__expressions__generators__dstr__ary-init-iter-get-err-array-prototype.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/extensibility.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__extensibility.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/extensibility.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__extensibility.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/has-instance.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__has-instance.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/has-instance.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__has-instance.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-construct-throws.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-construct-throws.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-construct-throws.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-construct-throws.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-length.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-length.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-length.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-length.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-name.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-name.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-name.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-name.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-prototype.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-prototype.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-prototype.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-prototype.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-restricted-properties.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-restricted-properties.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-restricted-properties.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-restricted-properties.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-yield-expr-in-param.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-yield-expr-in-param.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/instance-yield-expr-in-param.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__instance-yield-expr-in-param.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-constructor-no-arguments.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-constructor-no-arguments.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-constructor-no-arguments.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-constructor-no-arguments.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-function-multiple-arguments.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-function-multiple-arguments.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-function-multiple-arguments.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-function-multiple-arguments.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-function-no-arguments.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-function-no-arguments.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-function-no-arguments.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-function-no-arguments.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-function-single-argument.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-function-single-argument.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/invoked-as-function-single-argument.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__invoked-as-function-single-argument.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/is-a-constructor.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [
+        "isConstructor.js",
+        "wellKnownIntrinsicObjects.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__is-a-constructor.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/is-a-constructor.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [
+        "isConstructor.js",
+        "wellKnownIntrinsicObjects.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__is-a-constructor.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/length.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__length.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/length.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__length.strict.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/name.js",
+      "category": "generators",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__name.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/built-ins/GeneratorFunction/name.js",
+      "category": "generators",
+      "mode": "strict",
+      "flags": [],
+      "includes": [
+        "propertyHelper.js"
+      ],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/generators/built-ins__GeneratorFunction__name.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-10.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-10.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-10.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-10.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-11.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-11.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-11.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-11.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-12.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-12.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-12.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-12.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-13.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-13.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-14.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-14.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-15.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-15.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-16.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-16.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-3.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-3.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-4.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-4.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-6.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-6.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-6.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-6.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-7.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-7.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-7.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-7.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-8.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-8.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-8.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-8.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-9.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-9.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/12.14-9.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__12.14-9.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A1.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A1.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T1.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T1.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T2.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T2.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T3.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T3.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T4.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T4.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T5.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T5.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A10_T5.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A10_T5.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T1.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T1.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T2.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T2.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T3.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T3.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T4.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A11_T4.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A11_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T1.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T1.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T2.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T2.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T3.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T3.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T4.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T4.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A12_T4.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A12_T4.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A13_T1.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A13_T1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A13_T1.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A13_T1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A13_T2.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A13_T2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A13_T2.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A13_T2.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A13_T3.js",
+      "category": "try-finally",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A13_T3.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/try/S12.14_A13_T3.js",
+      "category": "try-finally",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/try-finally/language__statements__try__S12.14_A13_T3.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/eval-var-scope-syntax-err.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "generated",
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__eval-var-scope-syntax-err.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-body-lex-distinct.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-body-lex-distinct.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-name-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-name-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-name-var-close.js",
+      "category": "closures",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-name-var-close.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-name-var-open-non-strict.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-name-var-open-non-strict.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-param-elem-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-param-elem-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-param-elem-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-param-elem-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-param-rest-elem-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-param-rest-elem-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-param-rest-elem-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__function__scope-param-rest-elem-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/arrow/capturing-closure-variables-1.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__arrow__capturing-closure-variables-1.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/arrow/capturing-closure-variables-1.js",
+      "category": "closures",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__arrow__capturing-closure-variables-1.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/arrow/capturing-closure-variables-2.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__arrow__capturing-closure-variables-2.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/eval-var-scope-syntax-err.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "generated",
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__eval-var-scope-syntax-err.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/lexical-new.target-closure-returned.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__lexical-new.target-closure-returned.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/lexical-new.target-closure-returned.js",
+      "category": "closures",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__lexical-new.target-closure-returned.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/scope-body-lex-distinct.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__scope-body-lex-distinct.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/scope-param-elem-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__scope-param-elem-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/scope-param-elem-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__scope-param-elem-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/scope-param-rest-elem-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__scope-param-rest-elem-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/expressions/arrow-function/scope-param-rest-elem-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__expressions__arrow-function__scope-param-rest-elem-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/eval-var-scope-syntax-err.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "generated",
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__eval-var-scope-syntax-err.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-body-lex-distinct.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-body-lex-distinct.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-param-elem-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-param-elem-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-param-elem-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-param-elem-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-param-rest-elem-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-param-rest-elem-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-param-rest-elem-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-param-rest-elem-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-paramsbody-var-close.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-paramsbody-var-close.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-paramsbody-var-close.js",
+      "category": "closures",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-paramsbody-var-close.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-paramsbody-var-open.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-paramsbody-var-open.sloppy.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/scope-paramsbody-var-open.js",
+      "category": "closures",
+      "mode": "strict",
+      "flags": [],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__scope-paramsbody-var-open.strict.cjs"
+    },
+    {
+      "sourcePath": "test/language/statements/function/unscopables-with-in-nested-fn.js",
+      "category": "closures",
+      "mode": "sloppy",
+      "flags": [
+        "generated",
+        "noStrict"
+      ],
+      "includes": [],
+      "negative": null,
+      "outFile": "tests/sweep/test262/cases/closures/language__statements__function__unscopables-with-in-nested-fn.sloppy.cjs"
+    }
+  ],
+  "divergentFromNode": [
+    {
+      "sourcePath": "test/language/statements/labeled/decl-fun-strict.js",
+      "category": "control-flow",
+      "mode": "strict",
+      "expectedNegative": {
+        "phase": "parse",
+        "type": "SyntaxError"
+      },
+      "observed": {
+        "phase": "runtime",
+        "errorName": "String",
+        "errorMessage": "Test262: This statement should not be evaluated."
+      }
+    },
+    {
+      "sourcePath": "test/language/expressions/function/scope-name-var-open-strict.js",
+      "category": "closures",
+      "mode": "strict",
+      "expectedNegative": null,
+      "observed": {
+        "phase": "runtime",
+        "errorName": "Test262Error",
+        "errorMessage": "inner binding rejects modification (from parameters) Expected a TypeError to be thrown but no exception was thrown at all"
+      }
+    }
+  ]
+}
