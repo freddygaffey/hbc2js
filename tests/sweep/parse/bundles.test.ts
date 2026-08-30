@@ -16,6 +16,10 @@ test("bundles/rn-template-0.72: every flag variant parses cleanly, zero diagnost
     assert.equal(m.layout.layoutClass, "C");
     assert.equal(m.layout.opcodeTable, "hbc94");
     assert.ok(m.functions.length > 1000, `${b.path}: expected a real bundle's function count`);
+    // M1 review Finding 6: spec 01 §9 explicitly requires probe.exhaustive === true
+    // "for every fixture and for every bundle under 4 MB" -- all four rn-template
+    // variants are <= 2.7MB, so this must hold for all of them.
+    assert.equal(m.layout.probe.exhaustive, true, `${b.path}: expected an exhaustive probe (file is under 4MB)`);
   }
 });
 

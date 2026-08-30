@@ -1,6 +1,7 @@
 // docs/specs/01-parser.md §8 T6 — oracle cross-check against hermes-dec's
 // `hbc-file-parser`. Reading its STDOUT is allowed; reading its source is forbidden
 // (D4/R6) — this file does neither; see tests/support/oracles.ts.
+// Known-divergence allowlist: tests/gate/oracle/known-divergences.md.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseHbc } from "../../../src/index.ts";
@@ -109,9 +110,10 @@ test("hbc-file-parser cross-check: header fields, string kinds/count, function t
       checkHeader("CjsModuleCount", m.header.cjsModuleCount);
       checkHeader("FunctionSourceCount", m.header.functionSourceCount);
 
-      // Known-divergence allowlist item: v99's DebugOffsets — hermes-dec reads 12
-      // bytes where the real struct has 4 (docs/HBC-FORMAT.md §4). Not header-level,
-      // so nothing to skip here; noted for the reader per T6's allowlist requirement.
+      // Known-divergence allowlist: see tests/gate/oracle/known-divergences.md
+      // (M1 review Finding 3 — this used to be an inline comment, not the spec-named
+      // file). Item 1 there (v99's DebugOffsets) is not header-level so there is
+      // nothing to skip in this specific check.
       checkHeader("DebugInfoOffset", m.header.debugInfoOffset);
 
       assert.equal(oracle.strings.length, m.strings.count, `${b.path}: string count`);

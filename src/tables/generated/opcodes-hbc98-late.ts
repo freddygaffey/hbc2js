@@ -32,7 +32,7 @@ export const HBC98_LATE: OpcodeTable = {
     { n: 12, name: "FastArrayStore", operands: ["Reg8", "Reg8", "Reg8"] },
     { n: 13, name: "FastArrayPush", operands: ["Reg8", "Reg8"] },
     { n: 14, name: "FastArrayAppend", operands: ["Reg8", "Reg8"] },
-    { n: 15, name: "UnknownFastArrayOpcode98Late", operands: ["Reg8", "Reg8"] },
+    { n: 15, name: "CacheNewObject", operands: ["Reg8", "Reg8", "UInt32", "UInt8"] },
     { n: 16, name: "Mov", operands: ["Reg8", "Reg8"] },
     { n: 17, name: "MovLong", operands: ["Reg32", "Reg32"] },
     { n: 18, name: "Negate", operands: ["Reg8", "Reg8"] },

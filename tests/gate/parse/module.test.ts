@@ -4,14 +4,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { parseHbc } from "../../../src/index.ts";
+import { parseHbc, Hbc2jsError, ErrorCode } from "../../../src/index.ts";
 import type { HbcModule } from "../../../src/index.ts";
 import { listFixtures } from "../../support/fixtures.ts";
 import { checkGolden } from "../../support/golden.ts";
 import { repoRoot } from "../../support/paths.ts";
+import { isKnownAmbiguousV98, KNOWN_AMBIGUOUS_V98 } from "../../support/known-issues.ts";
 
 // Diagnostics we know are legitimate for at least one gate fixture (T10 / §6.4 step 4).
 const ALLOWED_DIAGNOSTIC_CODES = new Set(["W_OPCODE_TABLE_TIEBREAK"]);
+
+
 
 function snapshot(m: HbcModule): unknown {
   return {
@@ -54,12 +57,13 @@ function snapshot(m: HbcModule): unknown {
   };
 }
 
-test("every gate-tier binary parses without throwing, with only allowed diagnostics", () => {
+test("every gate-tier binary parses without throwing, with only allowed diagnostics (known-ambiguous v98 files excepted)", () => {
   const fixtures = listFixtures();
   let total = 0;
   for (const f of fixtures) {
     for (const b of f.binaries) {
       total++;
+      if (isKnownAmbiguousV98(f.group, f.name, b.version)) continue; // asserted separately below
       let m: HbcModule;
       try {
         m = parseHbc(b.bytes());
@@ -74,12 +78,37 @@ test("every gate-tier binary parses without throwing, with only allowed diagnost
   assert.ok(total > 0, "fixture discovery found nothing");
 });
 
+test("known-ambiguous v98 fixtures: auto-probe correctly refuses (E_LAYOUT_AMBIGUOUS), forcing --opcode-table=hbc98-late resolves them", () => {
+  const fixtures = listFixtures({ group: "constructs" });
+  let checked = 0;
+  for (const f of fixtures) {
+    if (!KNOWN_AMBIGUOUS_V98.includes(f.name)) continue;
+    for (const b of f.binaries) {
+      if (b.version !== 98) continue;
+      checked++;
+      assert.throws(
+        () => parseHbc(b.bytes()),
+        (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_LAYOUT_AMBIGUOUS,
+        `${f.name} v98${b.variant} should refuse to auto-probe`,
+      );
+      const forced = parseHbc(b.bytes(), { opcodeTable: "hbc98-late" });
+      assert.equal(forced.layout.opcodeTable, "hbc98-late");
+      assert.ok(forced.functions.length > 0);
+    }
+  }
+  assert.ok(checked >= KNOWN_AMBIGUOUS_V98.length, `expected to check at least ${KNOWN_AMBIGUOUS_V98.length} fixtures, checked ${checked}`);
+});
+
 test("golden snapshots: stable and match the committed baseline for every gate (fixture, version)", () => {
   const fixtures = listFixtures();
   const mismatches: string[] = [];
   for (const f of fixtures) {
     for (const b of f.binaries) {
-      const m = parseHbc(b.bytes());
+      // Known-ambiguous v98 fixtures refuse to auto-probe (by design, see the tests
+      // above); snapshot the forced hbc98-late parse instead, so the golden file
+      // still pins the *content*, just not an auto-probe decision that doesn't exist.
+      const ambiguous = isKnownAmbiguousV98(f.group, f.name, b.version);
+      const m = ambiguous ? parseHbc(b.bytes(), { opcodeTable: "hbc98-late" }) : parseHbc(b.bytes());
       const key = f.group === "hermes-dec-sample" ? f.group : join(f.group, f.name);
       const variantSuffix = b.variant === "public" ? "-public" : "";
       const goldenPath = join(repoRoot(), "tests", "golden", key, `v${b.version}${variantSuffix}.json`);
@@ -105,7 +134,8 @@ test("layout.probe.chosen matches D8 expectations for the canonical fixtures", (
 test("probe.exhaustive is true for every gate fixture (all well under 2MB)", () => {
   for (const f of listFixtures()) {
     for (const b of f.binaries) {
-      const m = parseHbc(b.bytes());
+      const ambiguous = isKnownAmbiguousV98(f.group, f.name, b.version);
+      const m = ambiguous ? parseHbc(b.bytes(), { opcodeTable: "hbc98-late" }) : parseHbc(b.bytes());
       assert.equal(m.layout.probe.exhaustive, true, `${f.group}/${f.name} v${b.version}`);
     }
   }

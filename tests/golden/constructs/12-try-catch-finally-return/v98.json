@@ -9,7 +9,7 @@
     {
       "code": "W_OPCODE_TABLE_TIEBREAK",
       "context": {},
-      "message": "opcode tables [hbc98-late, hbc99-mar2026] all decode the exhaustively-sampled file cleanly; chose hbc98-late (see docs/AGENT-LOG.md)",
+      "message": "opcode tables [hbc98-late, hbc99-mar2026] decode every function in the file identically (the choice is provably immaterial); chose hbc98-late (see docs/AGENT-LOG.md)",
       "severity": "warn"
     }
   ],

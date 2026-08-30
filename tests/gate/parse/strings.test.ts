@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { parseHbc } from "../../../src/index.ts";
 import { fixture } from "../../support/fixtures.ts";
 import { listFixtures } from "../../support/fixtures.ts";
+import { isKnownAmbiguousV98 } from "../../support/known-issues.ts";
 
 function bin(version: number) {
   const f = fixture("hermes-dec-sample", "hermes-dec-sample");
@@ -45,7 +46,8 @@ test("v99 string table: 35 entries, String x16 then Identifier x19", () => {
 test("property test: every string entry's byte range is inside stringStorage, for every gate fixture", () => {
   for (const f of listFixtures()) {
     for (const b of f.binaries) {
-      const m = parseHbc(b.bytes());
+      const ambiguous = isKnownAmbiguousV98(f.group, f.name, b.version);
+      const m = ambiguous ? parseHbc(b.bytes(), { opcodeTable: "hbc98-late" }) : parseHbc(b.bytes());
       for (let id = 0; id < m.strings.count; id++) {
         const e = m.strings.entry(id);
         const byteLen = e.length * (e.isUTF16 ? 2 : 1);

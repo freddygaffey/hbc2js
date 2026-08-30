@@ -60,7 +60,7 @@ function readCommit(tableId: OpcodeTableId): string {
  * closest known upstream point, and is empirically *not quite* what real v98-late
  * binaries produce.
  *
- * The two corrections below were derived by decoding all 223 function bodies shared
+ * The corrections below were derived by decoding all 223 function bodies shared
  * (same bytecodeSizeInBytes) between every `constructs/*<!-- -->/v98.hbc`/`v99.hbc` pair and
  * `hermes-dec-sample/v98.hbc`/`v99.hbc` in this project's own MIT-licensed fixture
  * corpus (`tests/fixtures/**`), using this project's own hbc99-mar2026 table as the
@@ -75,14 +75,39 @@ function readCommit(tableId: OpcodeTableId): string {
  *    commit onward — i.e. it is exactly the kind of late addition a frozen internal
  *    fork would miss. Removing it is what makes CreateRegExp/UIntSwitchImm/
  *    StringSwitchImm land at the measured 165/166/167 (docs/specs/01-parser.md §5.2.1).
- * 2. Real v98-late has one opcode, never exercised anywhere in this project's corpus,
- *    that does not appear in the vendored file at all — evidenced by `Mov` sitting at
- *    the measured 16 (one past the vendored file's 15). It is placed here, immediately
- *    after `FastArrayAppend`, as `UnknownFastArrayOpcode98Late` with a plausible but
- *    UNVERIFIED (Reg8, Reg8) signature copied from its neighbours. If a future fixture
- *    is found to actually hit this opcode number under v98, this placeholder MUST be
- *    replaced with the real name/signature — see the standing gap note in
- *    docs/STATUS.md.
+ * 2. Real v98-late has one opcode, immediately before `Mov` (measured: `Mov` sits at
+ *    16, one past the vendored file's 15), that does not appear in the vendored
+ *    `639e5d6a` file at all. M1 review Finding 2 flagged the first version of this
+ *    patch for guessing a plausible-but-unverified `(Reg8, Reg8)` signature here
+ *    ("do not guess a plausible-looking operand signature"). Investigating that
+ *    finding (by fixing decoders to fail loudly on the guess, which then broke
+ *    `tests/fixtures/constructs/50-this-binding/v98.hbc` — a real, previously-passing
+ *    fixture that turns out to actually USE this opcode) led to the real answer:
+ *    the missing opcode is **`CacheNewObject(Reg8, Reg8, UInt32, UInt8)`**, confirmed
+ *    two independent ways —
+ *      (a) `git log -S'CacheNewObject' -- include/hermes/BCGen/HBC/BytecodeList.def`
+ *          on a full non-shallow facebook/hermes clone shows it added
+ *          (`89bc5f08e`, 2024-12-04, 2-operand form) then removed (`7193d4485`,
+ *          2026-01-21, "superseded by the AddPropertyCache optimization"); its
+ *          direct parent commit `f74f6bbe37ec85a52175c723b366b37717b64605`
+ *          (2026-01-21, `BYTECODE_VERSION = 98`, an ancestor of the vendored
+ *          `639e5d6a`) has the exact 4-operand form
+ *          `DEFINE_OPCODE_4(CacheNewObject, Reg8, Reg8, UInt32, UInt8)` sitting
+ *          IMMEDIATELY before `Mov` — i.e. at this exact position;
+ *      (b) decoding `50-this-binding/v98.hbc`'s function 3 ("Counter") bytes
+ *          directly against that signature consumes exactly 8 bytes (opcode + Reg8 +
+ *          Reg8 + UInt32 + UInt8) and realigns perfectly with the next instruction
+ *          (`LoadConstZero`) — and hermes-dec's own (D4-compliant, output-only)
+ *          disassembly of that exact byte range independently names it
+ *          `CacheNewObject` with the same four operand values.
+ *    `f74f6bbe37e`'s own table still has `ToUint32` (added 2025-11-06, `31afd17b5`,
+ *    well before this commit) — so no single real commit has BOTH "CacheNewObject
+ *    present" and "ToUint32 absent" simultaneously; the real v98-late build remains
+ *    an unreachable-from-here internal fork, but every other field of that commit's
+ *    table (CreateFunctionEnvironment=64, DeclareGlobalVar=67, GetGlobalObject=61,
+ *    PutByIdLoose=74, CreateClosure=132, and CacheNewObject's position) matches this
+ *    project's independent measurements exactly, which is why this two-correction
+ *    patch (not a single-commit pin) is the honest representation of the evidence.
  */
 function patchHbc98Late(opcodes: readonly OpcodeDef[]): readonly OpcodeDef[] {
   const movIdx = opcodes.findIndex((o) => o.name === "Mov");
@@ -95,7 +120,9 @@ function patchHbc98Late(opcodes: readonly OpcodeDef[]): readonly OpcodeDef[] {
     if (i === toUint32Idx) continue;
     patched.push(opcodes[i]!);
     if (i === movIdx - 1) {
-      patched.push({ n: -1, name: "UnknownFastArrayOpcode98Late", operands: ["Reg8", "Reg8"] as readonly OperandTypeName[] });
+      // Real Hermes opcode CacheNewObject, confirmed per the doc comment above —
+      // commit f74f6bbe37ec85a52175c723b366b37717b64605, 2026-01-21.
+      patched.push({ n: -1, name: "CacheNewObject", operands: ["Reg8", "Reg8", "UInt32", "UInt8"] as readonly OperandTypeName[] });
     }
   }
   return patched.map((o, i) => ({ ...o, n: i }));
@@ -162,7 +189,8 @@ function renderOpcodeTable(t: OpcodeTable, constName: string): string {
         .sort((a, b) => a - b);
       idsStr = `, ids: { ${keys.map((k) => `${k}: ${JSON.stringify(op.ids![k])}`).join(", ")} }`;
     }
-    lines.push(`    { n: ${op.n}, name: ${JSON.stringify(op.name)}, operands: ${operandsStr}${idsStr} },`);
+    const unverifiedStr = op.unverified === true ? `, unverified: true` : "";
+    lines.push(`    { n: ${op.n}, name: ${JSON.stringify(op.name)}, operands: ${operandsStr}${idsStr}${unverifiedStr} },`);
   }
   lines.push(`  ],`);
   lines.push(`} as const;`);
@@ -224,6 +252,16 @@ function generateAll(outDir: string): { provenance: string } {
       "see the `patchHbc98Late` doc comment in `tools/gen-tables/gen.ts` and `docs/AGENT-LOG.md` " +
       "for the full empirical derivation (no known public commit reproduces the real " +
       "`hermes-compiler@250829098.0.x` opcode table).",
+  );
+  provenanceLines.push("");
+  provenanceLines.push(
+    "**hbc98-late opcode 15 is `CacheNewObject(Reg8, Reg8, UInt32, UInt8)`** — a real " +
+      "Hermes opcode (added `89bc5f08e` 2024-12-04, removed `7193d4485` 2026-01-21) " +
+      "absent from the vendored `639e5d6a` source but confirmed via its parent commit " +
+      "`f74f6bbe37ec85a52175c723b366b37717b64605` (BYTECODE_VERSION=98, an ancestor of " +
+      "`639e5d6a`) and independently via `tests/fixtures/constructs/50-this-binding/" +
+      "v98.hbc` function 3, which actually uses it (M1 review Finding 2 — see " +
+      "`patchHbc98Late`'s doc comment in tools/gen-tables/gen.ts for the full story).",
   );
   provenanceLines.push("");
   const provenance = provenanceLines.join("\n");

@@ -3,6 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseHbc } from "../../../src/index.ts";
 import { Hbc2jsError, ErrorCode } from "../../../src/errors.ts";
+import { decodeAndVerifyFunction } from "../../../src/parse/layout.ts";
+import { getOpcodeTable } from "../../../src/tables/registry.ts";
+import { readHeaderFields } from "../../../src/parse/header.ts";
 import { fixture } from "../../support/fixtures.ts";
 
 function bin(version: number) {
@@ -86,4 +89,46 @@ test("INV-00: inputs of length 0, 7, 8, 100 and 127 all report E_TRUNCATED", () 
 test("layout.probe.candidates records why rivals were eliminated for the v98/v99 ambiguity window", () => {
   const m = parseHbc(bin(98));
   assert.ok(m.layout.probe.candidates.length >= 1);
+});
+
+
+// M1 review Finding 1 (HIGH). The review demonstrated that hbc98-late and
+// hbc99-feb2026 -- both generated from the byte-identical vendored
+// BytecodeList.def, but hbc98-late is then patched -- decode
+// hermes-dec-sample/v98.hbc's function 2 ("gen", a 24-byte generator stub) into
+// completely different, but each individually "clean", instruction sequences. This
+// is the concrete case that motivated requiring full-file verification (and a
+// byte-identical-decode check) before ever auto-resolving a tie, instead of trusting
+// candidatesForVersion()'s array order alone.
+test("hermes-dec-sample/v98.hbc fn2: hbc98-late and hbc99-feb2026 decode the SAME bytes into DIFFERENT instructions (the review's motivating case)", () => {
+  const bytes = bin(98);
+  const header = readHeaderFields(bytes, "E");
+  // fn2 is the non-overflowed "gen" generator stub: offset 0x463, 24 bytes (docs/
+  // specs/01-parser.md §3.5 / docs/HBC-FORMAT.md §3.5 -- same bytes at every v98/v99
+  // sibling since it's a pre-existing, hand-verified fixture).
+  const fn2Offset = 0x463;
+  const fn2Size = 24;
+
+  const late = decodeAndVerifyFunction(bytes, fn2Offset, fn2Size, getOpcodeTable("hbc98-late"), header.stringCount, header.functionCount, header.bigIntCount);
+  const feb = decodeAndVerifyFunction(bytes, fn2Offset, fn2Size, getOpcodeTable("hbc99-feb2026"), header.stringCount, header.functionCount, header.bigIntCount);
+
+  assert.notEqual(late, null, "hbc98-late must decode fn2 cleanly");
+  assert.notEqual(feb, null, "hbc99-feb2026 must ALSO decode fn2 cleanly (that's the whole point -- both look valid)");
+  // Both "clean", but semantically different -- proving structural validity alone
+  // (even with the stronger boundary/switch-table checks) cannot disambiguate here.
+  assert.notEqual(JSON.stringify(late), JSON.stringify(feb), "the two tables must disagree on fn2's meaning");
+  assert.equal(late![0]!.name, "CreateFunctionEnvironment");
+  assert.equal(feb![0]!.name, "CreateTopLevelEnvironment");
+});
+
+test("real v98.hbc: hbc99-feb2026 is eliminated at the whole-file cheap probe, so the only tie ever reached is hbc98-late vs hbc99-mar2026", () => {
+  // Confirms the review's own finding: despite fn2 alone being ambiguous between
+  // hbc98-late and hbc99-feb2026, some OTHER function in the real file trips an
+  // ordinary bounds/id check under hbc99-feb2026, so parsing the whole file never
+  // actually reaches a hbc98-late/hbc99-feb2026 tie in practice -- it resolves
+  // directly to hbc98-late (decidedBy includes the v98 D1 header hint, not a
+  // P3 tie-break, since hbc99-feb2026 drops out before any tie is even considered).
+  const m = parseHbc(bin(98));
+  assert.equal(m.layout.opcodeTable, "hbc98-late");
+  assert.ok(m.layout.probe.decidedBy.includes("D1"));
 });

@@ -1,15 +1,17 @@
 // docs/specs/01-parser.md §3.3, §5 — string table: kinds (RLE), small/overflow
 // entries, storage decode. docs/HBC-FORMAT.md §5.
+//
+// M1 review Finding 4 (memory): a 50.8MB real bundle (327,121 strings) grew RSS by
+// ~4x during parsing; profiling isolated ~61MB of that to eagerly building one boxed
+// `StringEntry` object per string here. Fixed by resolving into parallel typed
+// arrays (structure-of-arrays) instead of one object per string — INV-12's
+// bounds-check still runs eagerly for every string (spec 01 "eager for tables"), it
+// just no longer allocates a JS object to do it. `entry(id)` now builds one small
+// object on demand per call, matching `get()`'s existing on-demand-decode pattern.
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { BinaryReader } from "../util/reader.ts";
 import { decodeAscii, decodeUtf16 } from "../util/text.ts";
 import type { HbcHeader, SectionMap, StringEntry, StringKind, StringTable } from "./types.ts";
-
-interface SmallEntry {
-  readonly isUTF16: boolean;
-  readonly offset: number; // raw field: byte offset into storage, OR overflow index
-  readonly length: number; // raw field: 0..255; 255 == overflowed
-}
 
 export function parseStringTable(bytes: Uint8Array, header: HbcHeader, sections: SectionMap): StringTable {
   const stringCount = header.stringCount;
@@ -63,71 +65,69 @@ export function parseStringTable(bytes: Uint8Array, header: HbcHeader, sections:
     for (let i = 0; i < identifierCount; i++) identifierHashes[i] = r.u32();
   }
 
-  // --- smallStringTable ---
+  // --- smallStringTable, decoded straight into parallel typed arrays (no per-string
+  // object) ---
   const smallSpan = sections.span("smallStringTable");
-  const smallEntries: SmallEntry[] = new Array(stringCount);
+  const rawIsUtf16 = new Uint8Array(stringCount);
+  const rawOffset = new Uint32Array(stringCount); // 23-bit field: storage offset, or overflow index
+  const rawLength = new Uint8Array(stringCount); // 8-bit field: char length, or 0xff sentinel
   {
     const r = new BinaryReader(bytes.subarray(smallSpan.offset, smallSpan.offset + smallSpan.size), "smallStringTable");
     for (let i = 0; i < stringCount; i++) {
       const datum = r.u32();
-      const isUTF16 = (datum & 0x1) !== 0;
-      const offset = (datum >>> 1) & 0x7fffff; // bits 1..23 (23 bits)
-      const length = (datum >>> 24) & 0xff; // bits 24..31 (8 bits)
-      smallEntries[i] = { isUTF16, offset, length };
+      rawIsUtf16[i] = datum & 0x1;
+      rawOffset[i] = (datum >>> 1) & 0x7fffff; // bits 1..23
+      rawLength[i] = (datum >>> 24) & 0xff; // bits 24..31
     }
   }
 
   // --- overflowStringTable ---
   const overflowSpan = sections.span("overflowStringTable");
   const overflowCount = header.overflowStringCount;
-  const overflowEntries: { offset: number; length: number }[] = new Array(overflowCount);
+  const ovOffset = new Uint32Array(overflowCount);
+  const ovLength = new Uint32Array(overflowCount);
   {
     const r = new BinaryReader(bytes.subarray(overflowSpan.offset, overflowSpan.offset + overflowSpan.size), "overflowStringTable");
     for (let i = 0; i < overflowCount; i++) {
-      const offset = r.u32();
-      const length = r.u32();
-      overflowEntries[i] = { offset, length };
+      ovOffset[i] = r.u32();
+      ovLength[i] = r.u32();
     }
   }
 
   const storageSpan = sections.span("stringStorage");
   const storage = bytes.subarray(storageSpan.offset, storageSpan.offset + storageSpan.size);
 
-  // Resolve every entry once (id, kind, isUTF16, storageOffset, length in characters, overflowed).
-  const resolved: StringEntry[] = new Array(stringCount);
+  // Resolve + validate (INV-12/INV-13) every entry eagerly, as spec 01 §2 requires
+  // ("eager for tables") — but into typed arrays, not one StringEntry object each.
+  const resolvedOffset = new Uint32Array(stringCount);
+  const resolvedLength = new Uint32Array(stringCount);
+  const overflowedFlag = new Uint8Array(stringCount);
   for (let id = 0; id < stringCount; id++) {
-    const small = smallEntries[id]!;
-    const overflowed = small.length === 0xff;
+    const overflowed = rawLength[id] === 0xff;
     let storageOffset: number;
     let length: number;
     if (overflowed) {
-      const idx = small.offset;
-      if (idx < 0 || idx >= overflowCount) {
+      const idx = rawOffset[id]!;
+      if (idx >= overflowCount) {
         throw new Hbc2jsError(ErrorCode.E_BAD_STRING_ID, `string ${id} overflow index ${idx} out of range [0, ${overflowCount})`, {
           section: "overflowStringTable",
         });
       }
-      const ov = overflowEntries[idx]!;
-      storageOffset = ov.offset;
-      length = ov.length;
+      storageOffset = ovOffset[idx]!;
+      length = ovLength[idx]!;
     } else {
-      storageOffset = small.offset;
-      length = small.length;
+      storageOffset = rawOffset[id]!;
+      length = rawLength[id]!;
     }
-    const byteLength = length * (small.isUTF16 ? 2 : 1);
-    if (storageOffset < 0 || byteLength < 0 || storageOffset + byteLength > storage.length) {
+    const byteLength = length * (rawIsUtf16[id] === 1 ? 2 : 1);
+    if (storageOffset + byteLength > storage.length) {
       throw new Hbc2jsError(ErrorCode.E_SECTION_OVERRUN, `string ${id} [${storageOffset}, ${storageOffset + byteLength}) outside stringStorage (${storage.length})`, {
         section: "stringStorage",
       });
     }
-    resolved[id] = {
-      id,
-      kind: kinds[id] === 1 ? "Identifier" : "String",
-      isUTF16: small.isUTF16,
-      storageOffset,
-      length,
-      overflowed,
-    };
+    resolvedOffset[id] = storageOffset;
+    resolvedLength[id] = length;
+    overflowedFlag[id] = overflowed ? 1 : 0;
   }
 
   const cache = new Map<number, string>();
@@ -138,26 +138,38 @@ export function parseStringTable(bytes: Uint8Array, header: HbcHeader, sections:
     }
   }
 
+  function makeEntry(id: number): StringEntry {
+    return {
+      id,
+      kind: kinds[id] === 1 ? "Identifier" : "String",
+      isUTF16: rawIsUtf16[id] === 1,
+      storageOffset: resolvedOffset[id]!,
+      length: resolvedLength[id]!,
+      overflowed: overflowedFlag[id] === 1,
+    };
+  }
+
   return {
     count: stringCount,
     identifierCount,
     storage,
     entry(id: number): StringEntry {
       checkId(id);
-      return resolved[id]!;
+      return makeEntry(id);
     },
     get(id: number): string {
       checkId(id);
       const cached = cache.get(id);
       if (cached !== undefined) return cached;
-      const e = resolved[id]!;
-      const decoded = e.isUTF16 ? decodeUtf16(storage, e.storageOffset, e.length) : decodeAscii(storage, e.storageOffset, e.length);
+      const offset = resolvedOffset[id]!;
+      const length = resolvedLength[id]!;
+      const decoded = rawIsUtf16[id] === 1 ? decodeUtf16(storage, offset, length) : decodeAscii(storage, offset, length);
       cache.set(id, decoded);
       return decoded;
     },
     kind(id: number): StringKind {
       checkId(id);
-      return resolved[id]!.kind;
+      return kinds[id] === 1 ? "Identifier" : "String";
     },
     identifierHash(id: number): number | undefined {
       checkId(id);

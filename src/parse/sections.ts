@@ -6,7 +6,7 @@ import type { HbcHeader, LayoutProfile, SectionMap, SectionName, SectionSpan } f
 
 const ALIGN = 4;
 
-function alignUp(x: number, align: number): number {
+export function alignUp(x: number, align: number): number {
   const rem = x % align;
   return rem === 0 ? x : x + (align - rem);
 }

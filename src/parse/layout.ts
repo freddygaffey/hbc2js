@@ -3,10 +3,10 @@
 // E_LAYOUT_NO_CANDIDATE).
 import { ErrorCode, Hbc2jsError, type Diagnostic } from "../errors.ts";
 import { classLayoutConstants, HBC_MAGIC, HEADER_SIZE, paddingRange, readHeaderFields } from "./header.ts";
-import { buildSectionMap } from "./sections.ts";
+import { alignUp, buildSectionMap } from "./sections.ts";
 import { readFunctionRecord } from "./functions.ts";
 import { getOpcodeTable } from "../tables/registry.ts";
-import type { OpcodeTable, OpcodeTableId, OperandTypeName } from "../tables/types.ts";
+import type { OpcodeDef, OpcodeTable, OpcodeTableId, OperandTypeName } from "../tables/types.ts";
 import type { HbcHeader, LayoutClass, LayoutProfile, ParseOptions, ProbeCandidate } from "./types.ts";
 
 export interface DiagnosticSink {
@@ -27,7 +27,7 @@ export function makeDiagnosticSink(onDiagnostic?: (d: Diagnostic) => void): Diag
 /** §6.1 — version -> candidate layout classes and opcode-table candidates. */
 function candidatesForVersion(version: number): { layouts: readonly LayoutClass[]; opcodeTables: readonly OpcodeTableId[] } {
   if (version < 51) {
-    throw new Hbc2jsError(ErrorCode.E_UNSUPPORTED_VERSION, `bytecode version ${version} is below the supported floor (51)`, {});
+    throw new Hbc2jsError(ErrorCode.E_UNSUPPORTED_VERSION, `bytecode version ${version} is below the supported floor (51)`, { offset: 8 });
   }
   if (version <= 83) return { layouts: ["A"], opcodeTables: [] };
   if (version === 84) return { layouts: ["B"], opcodeTables: ["hbc84"] };
@@ -36,9 +36,14 @@ function candidatesForVersion(version: number): { layouts: readonly LayoutClass[
   if (version === 96) return { layouts: ["C"], opcodeTables: ["hbc96"] };
   if (version <= 96) return { layouts: ["C"], opcodeTables: [] };
   if (version === 97) return { layouts: ["D"], opcodeTables: [] };
+  // M1 review Finding 1: this array's ORDER IS LOAD-BEARING. When >1 of these
+  // survive full verification in probeLayout()'s opcode-table tie-break below, the
+  // one listed FIRST is preferred — but only after confirming the choice is provably
+  // immaterial (every candidate produces byte-identical decodings of every function).
+  // Do not reorder this list without re-reading the tie-break logic later in this file.
   if (version === 98) return { layouts: ["D", "E"], opcodeTables: ["hbc98-late", "hbc98-2024", "hbc99-feb2026", "hbc99-mar2026"] };
   if (version === 99) return { layouts: ["E"], opcodeTables: ["hbc99-mar2026", "hbc99-feb2026"] };
-  throw new Hbc2jsError(ErrorCode.E_UNSUPPORTED_VERSION, `bytecode version ${version} is above the supported ceiling (99); force --layout to try anyway`, {});
+  throw new Hbc2jsError(ErrorCode.E_UNSUPPORTED_VERSION, `bytecode version ${version} is above the supported ceiling (99); force --layout to try anyway`, { offset: 8 });
 }
 
 /** Which header layout class each opcode table's own commit actually produces —
@@ -184,8 +189,11 @@ function readOperandValue(view: DataView, at: number, t: OperandTypeName): numbe
 
 /** §6.4 — decode one function body against one candidate opcode table, purely to
  *  validate it (never produces disassembly; spec 02 owns that). Returns false at the
- *  first structural violation. */
-function decodeForProbe(body: Uint8Array, table: OpcodeTable, stringCount: number, functionCount: number, bigIntCount: number): boolean {
+ *  first structural violation. Throws E_UNKNOWN_OPCODE (never silently eliminates the
+ *  candidate) if the opcode byte names a table entry marked `unverified` (M1 review
+ *  Finding 2 — currently only `hbc98-late` opcode 15) — a real occurrence of that byte
+ *  must fail loudly, not be quietly absorbed into "this candidate didn't fit". */
+function decodeForProbe(body: Uint8Array, bodyFileOffset: number, table: OpcodeTable, stringCount: number, functionCount: number, bigIntCount: number): boolean {
   const byNumber = new Map(table.opcodes.map((o) => [o.n, o]));
   const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
   let addr = 0;
@@ -193,6 +201,13 @@ function decodeForProbe(body: Uint8Array, table: OpcodeTable, stringCount: numbe
     const opByte = body[addr]!;
     const op = byNumber.get(opByte);
     if (op === undefined) return false;
+    if (op.unverified === true) {
+      throw new Hbc2jsError(
+        ErrorCode.E_UNKNOWN_OPCODE,
+        `opcode ${opByte} ("${op.name}") in table ${table.id} is an unverified placeholder with no known real signature — see PROVENANCE.md and docs/STATUS.md ("hbc98-late")`,
+        { offset: bodyFileOffset + addr, section: "functionBodies" },
+      );
+    }
     let cursor = addr + 1;
     const values: number[] = [];
     for (const t of op.operands) {
@@ -219,6 +234,114 @@ function decodeForProbe(body: Uint8Array, table: OpcodeTable, stringCount: numbe
     addr = cursor;
   }
   return addr === body.length;
+}
+
+export interface VerifiedInstruction {
+  readonly addr: number;
+  readonly name: string;
+  readonly operands: readonly number[];
+}
+
+/** Bounds/alignment check for a switch instruction's jump table, which lives beyond
+ *  `bytecodeSizeInBytes` (in the file, not in `body`) — docs/HBC-FORMAT.md §11.1.
+ *  Returns true (no opinion) if the operand shape doesn't match what this project
+ *  knows about `SwitchImm`/`UIntSwitchImm`/`StringSwitchImm`, rather than rejecting a
+ *  decode over a shape mismatch this function doesn't understand. */
+function verifySwitchTableBounds(fileBytes: Uint8Array, functionOffset: number, ins: { addr: number; op: OpcodeDef; operands: readonly number[] }): boolean {
+  const ip = functionOffset + ins.addr;
+  if (ins.op.name === "SwitchImm" || ins.op.name === "UIntSwitchImm") {
+    if (ins.op.operands.length !== 5) return true;
+    if (ins.op.operands[1] !== "UInt32" || ins.op.operands[3] !== "UInt32" || ins.op.operands[4] !== "UInt32") return true;
+    const tableOffset = ins.operands[1]!;
+    const min = ins.operands[3]!;
+    const max = ins.operands[4]!;
+    const count = max - min + 1;
+    if (!(count >= 1 && count <= 10_000_000)) return false;
+    const tableStart = alignUp(ip + tableOffset, 4);
+    return tableStart >= 0 && tableStart + 4 * count <= fileBytes.length;
+  }
+  if (ins.op.name === "StringSwitchImm") {
+    if (ins.op.operands.length !== 5) return true;
+    if (ins.op.operands[2] !== "UInt32" || ins.op.operands[4] !== "UInt32") return true;
+    const tableOffset = ins.operands[2]!;
+    const tableSize = ins.operands[4]!;
+    if (!(tableSize >= 1 && tableSize <= 10_000_000)) return false;
+    const tableStart = alignUp(ip + tableOffset, 4);
+    return tableStart >= 0 && tableStart + 8 * tableSize <= fileBytes.length;
+  }
+  return true;
+}
+
+/** M1 review Finding 1's stronger verification pass — used ONLY to resolve a P3 tie
+ *  among >=2 opcode-table candidates that already passed the cheap `decodeForProbe`
+ *  sample check. Decodes the WHOLE function (never a sample) and additionally
+ *  requires: every Addr8/Addr32 jump operand's target is an actual instruction-start
+ *  address within THIS candidate's own decode (self-consistency — landing mid-
+ *  instruction is rejected, not just "in range"), and every switch instruction's jump
+ *  table is 4-aligned and fits inside the file. Returns null on any structural
+ *  failure (same candidate-elimination semantics as `decodeForProbe`); throws
+ *  `E_UNKNOWN_OPCODE` for an `unverified` opcode, same as `decodeForProbe`. */
+export function decodeAndVerifyFunction(
+  fileBytes: Uint8Array,
+  functionOffset: number,
+  bytecodeSizeInBytes: number,
+  table: OpcodeTable,
+  stringCount: number,
+  functionCount: number,
+  bigIntCount: number,
+): readonly VerifiedInstruction[] | null {
+  const byNumber = new Map(table.opcodes.map((o) => [o.n, o]));
+  const view = new DataView(fileBytes.buffer, fileBytes.byteOffset, fileBytes.byteLength);
+  const body = fileBytes.subarray(functionOffset, functionOffset + bytecodeSizeInBytes);
+  const instructions: { addr: number; op: OpcodeDef; operands: number[] }[] = [];
+  const instructionStarts = new Set<number>();
+  let addr = 0;
+  while (addr < body.length) {
+    const opByte = body[addr]!;
+    const op = byNumber.get(opByte);
+    if (op === undefined) return null;
+    if (op.unverified === true) {
+      throw new Hbc2jsError(
+        ErrorCode.E_UNKNOWN_OPCODE,
+        `opcode ${opByte} ("${op.name}") in table ${table.id} is an unverified placeholder with no known real signature — see PROVENANCE.md and docs/STATUS.md ("hbc98-late")`,
+        { offset: functionOffset + addr, section: "functionBodies" },
+      );
+    }
+    instructionStarts.add(addr);
+    let cursor = addr + 1;
+    const operands: number[] = [];
+    for (const t of op.operands) {
+      const width = OPERAND_BYTES[t];
+      if (cursor + width > body.length) return null;
+      operands.push(readOperandValue(view, functionOffset + cursor, t));
+      cursor += width;
+    }
+    if (op.ids !== undefined) {
+      for (const [idxStr, kind] of Object.entries(op.ids)) {
+        const v = operands[Number(idxStr) - 1];
+        if (v === undefined) return null;
+        if (kind === "string" && v >= stringCount) return null;
+        if (kind === "function" && v >= functionCount) return null;
+        if (kind === "bigint" && v >= bigIntCount) return null;
+      }
+    }
+    instructions.push({ addr, op, operands });
+    addr = cursor;
+  }
+  if (addr !== body.length) return null;
+
+  for (const ins of instructions) {
+    for (let i = 0; i < ins.op.operands.length; i++) {
+      const t = ins.op.operands[i]!;
+      if (t === "Addr8" || t === "Addr32") {
+        const target = ins.addr + ins.operands[i]!;
+        if (!instructionStarts.has(target)) return null;
+      }
+    }
+    if (!verifySwitchTableBounds(fileBytes, functionOffset, ins)) return null;
+  }
+
+  return instructions.map((ins) => ({ addr: ins.addr, name: ins.op.name, operands: ins.operands }));
 }
 
 function probeSet(functionCount: number, globalCodeIndex: number): { indices: number[]; exhaustive: boolean } {
@@ -326,9 +449,9 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
   if (survivors.length === 0) {
     if (forcedLayout !== undefined) {
       const first = report[0];
-      throw new Hbc2jsError(ErrorCode.E_LAYOUT_NO_CANDIDATE, `forced layout ${forcedLayout} failed: ${first?.detail ?? "unknown reason"}`, {});
+      throw new Hbc2jsError(ErrorCode.E_LAYOUT_NO_CANDIDATE, `forced layout ${forcedLayout} failed: ${first?.detail ?? "unknown reason"}`, { offset: 8 });
     }
-    throw new Hbc2jsError(ErrorCode.E_LAYOUT_NO_CANDIDATE, `no layout candidate for version ${version} passed P1/P2`, {});
+    throw new Hbc2jsError(ErrorCode.E_LAYOUT_NO_CANDIDATE, `no layout candidate for version ${version} passed P1/P2`, { offset: 8 });
   }
   if (survivors.length > 1) {
     // Only version 98 can reach here (D and E both structurally valid) — use the hint,
@@ -342,7 +465,7 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
     }
     if (survivors.length > 1) {
       const names = survivors.map((s) => s.layoutClass).join(", ");
-      throw new Hbc2jsError(ErrorCode.E_LAYOUT_AMBIGUOUS, `multiple layout classes are structurally valid: ${names}; force one with --layout`, {});
+      throw new Hbc2jsError(ErrorCode.E_LAYOUT_AMBIGUOUS, `multiple layout classes are structurally valid: ${names}; force one with --layout`, { offset: 8 });
     }
   } else if (hint !== null && survivors[0]!.layoutClass !== hint) {
     // Hint disagreed with the sole P1/P2 survivor — P2 wins per §6.3 D4, but drop the
@@ -405,7 +528,7 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
       const table = getOpcodeTable(id);
       for (const [, fn] of resolvedByIndex) {
         const body = bytes.subarray(fn.offset, fn.offset + fn.bytecodeSizeInBytes);
-        if (!decodeForProbe(body, table, chosen.header.stringCount, chosen.header.functionCount, chosen.header.bigIntCount)) {
+        if (!decodeForProbe(body, fn.offset, table, chosen.header.stringCount, chosen.header.functionCount, chosen.header.bigIntCount)) {
           return false;
         }
       }
@@ -414,43 +537,109 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
     let tableSurvivors = tableSurvivors0;
 
     if (tableSurvivors.length === 0) {
-      throw new Hbc2jsError(ErrorCode.E_LAYOUT_NO_CANDIDATE, `no opcode table candidate (of ${opcodeCandidates.join(", ")}) decodes the probe sample cleanly`, {});
+      throw new Hbc2jsError(ErrorCode.E_LAYOUT_NO_CANDIDATE, `no opcode table candidate (of ${opcodeCandidates.join(", ")}) decodes the probe sample cleanly`, { offset: functionHeadersOffset });
     }
+
     if (tableSurvivors.length > 1 && options.opcodeTable === undefined) {
-      // §6.4 warns this can happen: below opcode 165 the v98/v99 tables agree on
-      // everything, so a small program that never reaches a distinguishing opcode
-      // decodes cleanly under several candidates even with an EXHAUSTIVE (whole-file)
-      // sample. Refusing outright here would make every tiny real v98 fixture in this
-      // project's own corpus un-parseable, which the spec's own T7 requires not to
-      // happen. Tie-break by preferring whichever survivor is listed first for this
-      // version in candidatesForVersion() — that order is deliberately the
-      // best-evidenced table first (`hbc98-late` was validated against 223 real
-      // decoded function bodies from this project's own corpus with zero
-      // disagreement; see docs/AGENT-LOG.md). This is NOT "prefer the newer table"
-      // (spec 01 §6.4 step 3's forbidden shortcut) — hbc98-late is the *same*-version
-      // table, and mar2026 (the actually newer one) loses the tie. Only applies when
-      // the sample was exhaustive; an under-sampled large file still throws, per spec.
-      if (exhaustive) {
-        const preferred = candidates.opcodeTables.find((id) => tableSurvivors.includes(id));
-        diagnostics.push({
-          severity: "warn",
-          code: "W_OPCODE_TABLE_TIEBREAK",
-          message: `opcode tables [${tableSurvivors.join(", ")}] all decode the exhaustively-sampled file cleanly; chose ${preferred} (see docs/AGENT-LOG.md)`,
-          context: {},
-        });
-        tableSurvivors = preferred !== undefined ? [preferred] : tableSurvivors;
-        decidedBy.push("P3-tiebreak");
+      // M1 review Finding 1 (HIGH): a tie on the cheap sample-based check must be
+      // resolved by VERIFICATION, not by array order alone. §6.4 warns this tie can
+      // happen (below opcode 165 the v98/v99 tables agree on everything, so a small
+      // program that never reaches a distinguishing opcode decodes cleanly under
+      // several candidates), and the review demonstrated concretely that two tied
+      // candidates can decode the SAME bytes into genuinely DIFFERENT instruction
+      // sequences (hermes-dec-sample/v98.hbc fn2 under hbc98-late vs hbc99-feb2026 —
+      // see tests/gate/parse/layout.test.ts). So: decode every function in the WHOLE
+      // file (never just the probe sample) under every remaining candidate with
+      // decodeAndVerifyFunction's stronger checks (jump targets land on real
+      // instruction boundaries; switch tables 4-aligned and in-file). Only a
+      // candidate that survives that for every function stays eligible.
+      const allOffsets: { offset: number; bytecodeSizeInBytes: number }[] = new Array(chosen.header.functionCount);
+      for (let i = 0; i < chosen.header.functionCount; i++) {
+        const rec = readFunctionRecord(bytes, functionHeadersOffset + i * c.smallFuncHeaderSize, i, chosen.layoutClass);
+        allOffsets[i] = { offset: rec.header.offset, bytecodeSizeInBytes: rec.header.bytecodeSizeInBytes };
+      }
+
+      const fullDecodes = new Map<OpcodeTableId, readonly (readonly VerifiedInstruction[])[] | null>();
+      for (const id of tableSurvivors) {
+        const table = getOpcodeTable(id);
+        const perFunction: (readonly VerifiedInstruction[])[] = new Array(chosen.header.functionCount);
+        let ok = true;
+        for (let i = 0; i < chosen.header.functionCount; i++) {
+          const { offset, bytecodeSizeInBytes } = allOffsets[i]!;
+          const seq = decodeAndVerifyFunction(bytes, offset, bytecodeSizeInBytes, table, chosen.header.stringCount, chosen.header.functionCount, chosen.header.bigIntCount);
+          if (seq === null) {
+            ok = false;
+            break;
+          }
+          perFunction[i] = seq;
+        }
+        fullDecodes.set(id, ok ? perFunction : null);
+      }
+
+      const fullSurvivors = tableSurvivors.filter((id) => fullDecodes.get(id) !== null);
+
+      if (fullSurvivors.length === 0) {
+        throw new Hbc2jsError(
+          ErrorCode.E_LAYOUT_NO_CANDIDATE,
+          `no opcode table candidate (of ${tableSurvivors.join(", ")}) decodes every function in the file cleanly under full verification`,
+          { offset: functionHeadersOffset },
+        );
+      } else if (fullSurvivors.length === 1) {
+        tableSurvivors = fullSurvivors;
+        decidedBy.push("P3-full");
+      } else {
+        // Still >1 after full-file structural verification: only safe to
+        // auto-resolve when the choice is PROVABLY immaterial, i.e. every surviving
+        // candidate produces a byte-identical (same opcode name + operand values,
+        // per function) decoding of every function in the file. If they disagree
+        // anywhere, that is genuine D8-relevant ambiguity — refuse, and name exactly
+        // which functions disagree so the caller can investigate.
+        const baselineId = fullSurvivors[0]!;
+        const baseline = fullDecodes.get(baselineId)!;
+        const disagreeing: number[] = [];
+        for (let i = 0; i < chosen.header.functionCount; i++) {
+          const baseSeq = JSON.stringify(baseline[i]);
+          for (const id of fullSurvivors.slice(1)) {
+            const seq = JSON.stringify(fullDecodes.get(id)![i]);
+            if (seq !== baseSeq) {
+              disagreeing.push(i);
+              break;
+            }
+          }
+        }
+        if (disagreeing.length === 0) {
+          // Order is load-bearing here — see the comment on candidatesForVersion()'s
+          // v98/v99 arrays. Preferring the first-listed (best-evidenced/declared-
+          // version) candidate is safe ONLY because we just proved every survivor
+          // reads the file identically.
+          const preferred = candidates.opcodeTables.find((id) => fullSurvivors.includes(id));
+          diagnostics.push({
+            severity: "warn",
+            code: "W_OPCODE_TABLE_TIEBREAK",
+            message: `opcode tables [${fullSurvivors.join(", ")}] decode every function in the file identically (the choice is provably immaterial); chose ${preferred} (see docs/AGENT-LOG.md)`,
+            context: {},
+          });
+          tableSurvivors = preferred !== undefined ? [preferred] : fullSurvivors;
+          decidedBy.push("P3-tiebreak");
+        } else {
+          throw new Hbc2jsError(
+            ErrorCode.E_LAYOUT_AMBIGUOUS,
+            `opcode tables [${fullSurvivors.join(", ")}] all pass full structural verification but DISAGREE on function id(s) [${disagreeing.join(", ")}] — force one with --opcode-table=`,
+            { offset: functionHeadersOffset },
+          );
+        }
       }
     }
+
     if (tableSurvivors.length > 1) {
       throw new Hbc2jsError(
         ErrorCode.E_LAYOUT_AMBIGUOUS,
         `multiple opcode tables decode the probe sample cleanly: ${tableSurvivors.join(", ")}; force one with --opcode-table=`,
-        {},
+        { offset: functionHeadersOffset },
       );
     }
     chosenOpcodeTable = tableSurvivors[0];
-    if (!decidedBy.includes("P3-tiebreak")) decidedBy.push("P3");
+    if (!decidedBy.includes("P3-tiebreak") && !decidedBy.includes("P3-full")) decidedBy.push("P3");
   }
 
   const chosenStr = chosenOpcodeTable !== undefined ? `${chosen.layoutClass}/${chosenOpcodeTable}` : `${chosen.layoutClass}/(no opcode table)`;

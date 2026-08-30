@@ -15,3 +15,5 @@ vendored under `third_party/hermes/<tableId>/`. See docs/specs/01-parser.md §5.
 | hbc99-mar2026 | 99 | 913d31acd10aff31e0856657c9c566c3e72bd24a | 220 | e563431c40f75b584f8e65ab2c1d09879adc074bd0fc9f70281afdfb83eca483 | 294107bf09c0c5440eedfce878b6b2afa487649a1e879a9fc2f88101b53ec395 |
 
 **hbc98-late is a patched table, not a literal parse of its vendored commit** — see the `patchHbc98Late` doc comment in `tools/gen-tables/gen.ts` and `docs/AGENT-LOG.md` for the full empirical derivation (no known public commit reproduces the real `hermes-compiler@250829098.0.x` opcode table).
+
+**hbc98-late opcode 15 is `CacheNewObject(Reg8, Reg8, UInt32, UInt8)`** — a real Hermes opcode (added `89bc5f08e` 2024-12-04, removed `7193d4485` 2026-01-21) absent from the vendored `639e5d6a` source but confirmed via its parent commit `f74f6bbe37ec85a52175c723b366b37717b64605` (BYTECODE_VERSION=98, an ancestor of `639e5d6a`) and independently via `tests/fixtures/constructs/50-this-binding/v98.hbc` function 3, which actually uses it (M1 review Finding 2 — see `patchHbc98Late`'s doc comment in tools/gen-tables/gen.ts for the full story).

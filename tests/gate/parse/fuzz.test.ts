@@ -45,7 +45,12 @@ function mutate(base: Uint8Array, rng: () => number): Uint8Array {
   return bytes;
 }
 
-test("~200 deterministic mutants per gate binary (~50k total) never throw anything but Hbc2jsError, and always terminate quickly", () => {
+// M1 review Finding 3: spec 01 §8 T8 asks for 2000 mutants/binary; that is now the
+// default (matching the spec exactly), overridable via env var so a fast local/CI
+// run can lower it. `HBC2JS_FUZZ_MUTANTS_PER_BINARY=200 npm test` for a quick pass.
+const MUTANTS_PER_BINARY = Number(process.env["HBC2JS_FUZZ_MUTANTS_PER_BINARY"] ?? 2000);
+
+test(`${MUTANTS_PER_BINARY} deterministic mutants per gate binary (spec 01 §8 T8 default) never throw anything but Hbc2jsError, and always terminate quickly`, () => {
   const seed = 0x2b3c4d5e;
   const rng = makeRng(seed);
   const fixtures = listFixtures();
@@ -53,11 +58,7 @@ test("~200 deterministic mutants per gate binary (~50k total) never throw anythi
   for (const f of fixtures) {
     for (const b of f.binaries) {
       const base = b.bytes();
-      for (let i = 0; i < 200; i++) {
-        // 200 mutants per binary x ~249 binaries ~= ~50k total, per §8 T8's budget note
-        // ("keep the whole T8 file under 30s") — scaled down from "2000 per binary"
-        // (which would be ~500k mutants and far exceed that budget) to the intent:
-        // broad, seeded, deterministic coverage across the whole corpus.
+      for (let i = 0; i < MUTANTS_PER_BINARY; i++) {
         const mutant = mutate(base, rng);
         const start = performance.now();
         try {

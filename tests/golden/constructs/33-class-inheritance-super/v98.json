@@ -7,9 +7,9 @@
   },
   "diagnostics": [
     {
-      "code": "W_OPCODE_TABLE_TIEBREAK",
+      "code": "W_OPCODE_TABLE_FORCED",
       "context": {},
-      "message": "opcode tables [hbc98-late, hbc99-mar2026] all decode the exhaustively-sampled file cleanly; chose hbc98-late (see docs/AGENT-LOG.md)",
+      "message": "opcode table forced to hbc98-late",
       "severity": "warn"
     }
   ],
@@ -342,10 +342,10 @@
       "chosen": "E/hbc98-late",
       "decidedBy": [
         "D1",
-        "P3-tiebreak"
+        "P3"
       ],
       "exhaustive": true,
-      "forced": false
+      "forced": true
     },
     "version": 98
   },
