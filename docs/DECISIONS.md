@@ -35,3 +35,6 @@ Static Hermes removed the generator opcodes; bodies are compiler-lowered state m
 
 ## D10 — Fixture corpus must exercise every table before M4 (2026-08-30)
 Literal buffers, object shape table, BigInt table and switch jump tables are empty in all original fixtures (R5). `tests/fixtures/constructs/` compiled with and without `-O`/`-g`, plus one real Metro bundle, are prerequisites for the emitter.
+
+## D11 — Incremental, fixture-driven development (2026-08-30)
+Build the baseline first (parser → disassembler → CFG → Ramsey structurer → emitter with the D9 shim), until *every* fixture decompiles to JS that passes the equivalence checker — ugly output is fine at this stage. Then iterate one construct at a time: pick the next `tests/fixtures/constructs/<NN-topic>`, add a targeted recovery pass (e.g. `while(c)`, `for-of`, `switch`, closure naming), with the fixture as its red→green test, and the full corpus as the regression gate. Each pass is its own module under `src/passes/`, individually testable and toggleable. Order of passes follows the fixture numbering unless a dependency forces otherwise. The equivalence checker never regresses: a pass that improves readability but breaks any fixture is rejected.
