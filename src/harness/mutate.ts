@@ -11,10 +11,7 @@
 // The operators model the mistakes a decompiler actually makes: an off-by-one
 // in a loop bound, an inverted branch condition, a dropped `finally`, a
 // swapped `break`/`continue`, a lost statement from a mis-structured region.
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import vm from "node:vm";
 
 interface MutationApplyResult {
   readonly text: string;
@@ -244,17 +241,26 @@ function swapAdjacentLines(src: string, pick: number): MutationApplyResult | nul
   return { text: lines.join("\n"), at: i, was, now: "<swapped>" };
 }
 
-let tmpCounter = 0;
+/**
+ * `node --check`, in process (review M4, timing win 1). Spawning one `node
+ * --check` per candidate cost ~33 s of the gate; V8's own parser is right here.
+ * `vm.Script` compiles but never runs the code.
+ *
+ * This is *stricter* than `node --check` in exactly two ways, both of which can
+ * only ever turn a PASS into a DIVERGENT (never the reverse, which is the
+ * direction that would make a gate lie): a top-level `return`, which `node
+ * --check` permits because it wraps a `.js` file in the CommonJS module
+ * wrapper, and a top-level `await`, which `node --check` permits by falling
+ * back to ESM. Neither can occur in emitted output (spec 05 §9 wraps the module
+ * in an IIFE) nor in any fixture source, and `tests/gate/harness/mutate.test.ts`
+ * checks the two parsers agree over the whole corpus.
+ */
 export function syntaxOk(text: string): boolean {
-  const f = path.join(os.tmpdir(), `hbc2js-harness-mutate-check-${process.pid}-${tmpCounter++}.js`);
-  fs.writeFileSync(f, text);
   try {
-    execFileSync(process.execPath, ["--check", f], { stdio: "ignore" });
+    new vm.Script(text, { filename: "candidate.js" });
     return true;
   } catch {
     return false;
-  } finally {
-    fs.unlinkSync(f);
   }
 }
 

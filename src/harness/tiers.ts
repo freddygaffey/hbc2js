@@ -13,6 +13,7 @@ import type { FixtureRef } from "./reference-policy.ts";
 import { runOracleLadder, VERDICT } from "./ladder.ts";
 import type { CheckResult, OracleName, Verdict } from "./ladder.ts";
 import { hbcVersion } from "./hermes-vm.ts";
+import { decompile } from "../decompile.ts";
 
 export type Tier = "gate" | "sweep" | "hardened" | "local-corpus";
 
@@ -35,6 +36,18 @@ export const identityDecompiler: DecompilerFn = (input) => {
   }
   return input.sourceJs;
 };
+
+/**
+ * The real thing (review M4-H1). `runTier`'s *default* stays
+ * `identityDecompiler` — that is the harness's own self-test — but every
+ * caller that means "score the decompiler" passes this: `hbc2js gate`,
+ * `hbc2js sweep`, and the gate's own equivalence test.
+ *
+ * `resolveV98Ambiguity` is the caller making D8's choice explicitly for the
+ * eight `KNOWN_AMBIGUOUS_V98` fixtures; it is reported as
+ * `W_FORCED_OPCODE_TABLE`, never guessed by the parser.
+ */
+export const hbc2jsDecompiler: DecompilerFn = (input) => decompile(input.hbcBytes, { resolveV98Ambiguity: true, moduleName: input.fixtureName }).code;
 
 /** A negative control: same source, run through a single deterministic
  *  control-flow mutation. Used by the gate self-test (spec 06 §9's "gate
@@ -230,8 +243,17 @@ function inputsForTier(tier: Tier): TierInput[] {
 }
 
 /** D16's per-tier oracle set, before `RunnerOptions.oracles` overrides it. */
-function defaultOraclesForTier(tier: Tier): readonly OracleName[] {
-  if (tier === "gate") return ["syntax", "trace", "fuzz", "roundtrip"];
+/**
+ * The identity decompiler must PASS every oracle there is — that is the whole
+ * point of it, so the gate's self-test runs all four. A *real* decompiler's
+ * baseline oracle set is `syntax + trace` (docs/STATUS.md M4): `roundtrip`
+ * reports the unavoidable function-count difference (helper prelude + module
+ * wrapper) as DIVERGENT, and `fuzz` reports V8-vs-Hermes TypeError *message
+ * text* built from source identifiers a register-named baseline cannot have.
+ * Both stay reachable with an explicit `oracles` / `--oracles`.
+ */
+function defaultOraclesForTier(tier: Tier, identity: boolean): readonly OracleName[] {
+  if (tier === "gate") return identity ? ["syntax", "trace", "fuzz", "roundtrip"] : ["syntax", "trace"];
   if (tier === "hardened") return ["syntax", "trace"];
   return ["syntax", "roundtrip"]; // sweep, local-corpus: no source to trace against
 }
@@ -288,7 +310,7 @@ async function pool<T, R>(items: readonly T[], n: number, fn: (item: T) => Promi
 
 export async function runTier(o: RunnerOptions): Promise<TierReport> {
   const decompiler = o.decompiler ?? identityDecompiler;
-  const oracles = o.oracles ?? defaultOraclesForTier(o.tier);
+  const oracles = o.oracles ?? defaultOraclesForTier(o.tier, decompiler === identityDecompiler);
   const versions = o.versions;
   const concurrency = o.concurrency ?? Math.max(1, os.cpus().length - 1);
 

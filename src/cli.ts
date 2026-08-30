@@ -14,9 +14,10 @@ import type { RunOptions } from "./harness/runner.ts";
 import { compareTraces, TRACE_VERDICT } from "./harness/compare.ts";
 import { hbcVersion, findHermesVm, runHermes, findAllHermesVms } from "./harness/hermes-vm.ts";
 import { normaliseModule, diffNormalised } from "./harness/roundtrip.ts";
-import { runTier } from "./harness/tiers.ts";
+import { runTier, hbc2jsDecompiler } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
+import type { OracleName } from "./harness/ladder.ts";
 import { decompile, decompileTree, nodeCheck } from "./decompile.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
@@ -68,6 +69,10 @@ Options (gate, sweep):
   --json                    machine-readable TierReport on stdout
   --only <names>            comma-separated fixture names to restrict to
   --versions <list>         comma-separated HBC versions to restrict to
+  --identity                score the identity decompiler (harness self-test)
+                            instead of the real one
+  --oracles <list>          comma-separated oracle set (default: syntax,trace —
+                            or all four with --identity)
   exit 0 all PASS  1 any DIVERGENT/ERROR  2 any INCONCLUSIVE only
 `;
 
@@ -333,27 +338,44 @@ interface TierArgs {
   readonly json: boolean;
   readonly only: string[] | undefined;
   readonly versions: number[] | undefined;
+  /** `--identity`: score the harness's identity stand-in, not the decompiler. */
+  readonly identity: boolean;
+  readonly oracles: OracleName[] | undefined;
 }
 
 function parseTierArgs(argv: readonly string[]): TierArgs {
   let json = false;
   let only: string[] | undefined;
   let versions: number[] | undefined;
+  let identity = false;
+  let oracles: OracleName[] | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--json") json = true;
+    else if (a === "--identity") identity = true;
+    else if (a === "--oracles") oracles = String(argv[++i]).split(",").filter((s) => s.length > 0) as OracleName[];
     else if (a === "--only") only = String(argv[++i]).split(",").filter((s) => s.length > 0);
     else if (a === "--versions") versions = String(argv[++i])
         .split(",")
         .filter((s) => s.length > 0)
         .map(Number);
   }
-  return { json, only, versions };
+  return { json, only, versions, identity, oracles };
 }
 
 async function runTierCmd(tier: Tier, argv: readonly string[]): Promise<number> {
   const o = parseTierArgs(argv);
-  const report = await runTier({ tier, ...(o.only !== undefined ? { only: o.only } : {}), ...(o.versions !== undefined ? { versions: o.versions } : {}) });
+  // review M4-H1: the gate scored the *identity* decompiler by default, so the
+  // command the docs point at contained no execution-equivalence check of the
+  // decompiler at all. The real one is the default now; `--identity` keeps the
+  // harness self-test reachable.
+  const report = await runTier({
+    tier,
+    ...(o.identity ? {} : { decompiler: hbc2jsDecompiler }),
+    ...(o.oracles !== undefined ? { oracles: o.oracles } : {}),
+    ...(o.only !== undefined ? { only: o.only } : {}),
+    ...(o.versions !== undefined ? { versions: o.versions } : {}),
+  });
   if (o.json) {
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   } else {

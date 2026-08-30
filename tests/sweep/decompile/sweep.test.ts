@@ -12,7 +12,6 @@ import { parseForDecompile } from "../../../src/decompile.ts";
 import { structure } from "../../../src/structure/index.ts";
 import { runTier } from "../../../src/harness/tiers.ts";
 import type { DecompilerFn } from "../../../src/harness/tiers.ts";
-import { VERDICT } from "../../../src/harness/ladder.ts";
 
 const hbc2js: DecompilerFn = (input) => decompile(input.hbcBytes, { resolveV98Ambiguity: true, moduleName: input.fixtureName }).code;
 
@@ -30,18 +29,11 @@ const hbc2js: DecompilerFn = (input) => decompile(input.hbcBytes, { resolveV98Am
  */
 const ORACLES = ["syntax", "trace"] as const;
 
-test("T2: every gate fixture is PASS under the equivalence checker", async (t) => {
-  if (!requireSweep(t)) return;
-  const report = await runTier({ tier: "gate", decompiler: hbc2js, oracles: [...ORACLES] });
-  const bad = report.results.filter((r) => r.verdict !== VERDICT.PASS);
-  assert.deepEqual(
-    bad.map((r) => `${r.fixture.name}: ${r.oracles.map((o) => `${o.oracle}=${o.verdict}`).join(" ")}`),
-    [],
-  );
-  assert.equal(report.summary.divergent, 0);
-  assert.equal(report.summary.error, 0);
-  assert.ok(report.summary.pass > 480, `only ${report.summary.pass} checks ran`);
-});
+// T2 (the gate-fixture equivalence run) MOVED to
+// tests/gate/decompile/equivalence.test.ts — review M4-H1: it is the
+// decompiler's acceptance test and belongs in the per-commit gate, not in a
+// tier `npm test` never runs. Only T6/T7, which need the hardened variants and
+// the multi-megabyte bundles, stay here.
 
 test("T6: the obfuscated variants decompile and stay equivalent", async (t) => {
   if (!requireSweep(t)) return;

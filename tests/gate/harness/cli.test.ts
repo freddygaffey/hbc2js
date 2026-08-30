@@ -94,6 +94,24 @@ test("hbc2js gate --json --only produces a parseable TierReport", () => {
   assert.equal(report.results.length, 1);
 });
 
+// review-M4-H1: `hbc2js gate` used to score the identity decompiler, so the
+// command the docs point at proved nothing about the decompiler. The real one
+// is the default; `--identity` still reaches the harness self-test.
+test("hbc2js gate scores the real decompiler by default, --identity the stand-in", () => {
+  const real = run(["gate", "--json", "--only", "54-try-catch-finally-shared-range", "--versions", "94"]);
+  const realReport = JSON.parse(real.stdout) as { results: { verdict: string; oracles: { oracle: string }[] }[] };
+  assert.equal(realReport.results.length, 1);
+  assert.equal(realReport.results[0]!.verdict, "PASS");
+  // A real decompiler's default oracle set is syntax+trace (not fuzz/roundtrip).
+  assert.deepEqual(realReport.results[0]!.oracles.map((o) => o.oracle).sort(), ["syntax", "trace"]);
+
+  const identity = run(["gate", "--json", "--identity", "--only", "54-try-catch-finally-shared-range", "--versions", "94"]);
+  const idReport = JSON.parse(identity.stdout) as { results: { verdict: string; oracles: { oracle: string }[] }[] };
+  assert.equal(idReport.results[0]!.verdict, "PASS");
+  // …while the identity stand-in must PASS every oracle there is.
+  assert.ok(idReport.results[0]!.oracles.length > 2, "the identity self-test should still run the full oracle set");
+});
+
 function findAnyHbc(): string | null {
   const dir = path.join(repoRoot(), "tests", "fixtures", "constructs");
   for (const name of fs.readdirSync(dir)) {
