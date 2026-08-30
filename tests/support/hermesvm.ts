@@ -5,7 +5,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 import { repoRoot } from "./paths.ts";
-import { requireOracles } from "./tiers.ts";
 
 export interface HermesVm {
   readonly version: number;
@@ -29,12 +28,17 @@ export function findHermesVm(version: number): HermesVm | null {
   return null;
 }
 
+// Unlike hermesc (fetched by `tools/get-hermesc.sh`, which CI always runs and
+// which `HBC2JS_REQUIRE_ORACLES=1` is entitled to demand), the source-built
+// Hermes VM under `tools/hermes-vm/` is never provisioned by any workflow —
+// `tools/build-hermes-vm.sh` is a from-source cmake build documented in
+// docs/TOOLCHAIN.md as local-only. So a missing VM always skips as
+// INCONCLUSIVE, even under HBC2JS_REQUIRE_ORACLES=1 — same convention as
+// `findHermesVm` callers in tests/gate/harness/reference-policy.test.ts.
 export function requireHermesVm(t: TestContext, version: number): HermesVm | null {
   const vm = findHermesVm(version);
   if (vm === null) {
-    const msg = `no Hermes VM for v${version} (see docs/TOOLCHAIN.md "Hermes VM (source build)")`;
-    if (requireOracles()) throw new Error(msg);
-    t.skip(msg);
+    t.skip(`no Hermes VM for v${version} (see docs/TOOLCHAIN.md "Hermes VM (source build)")`);
     return null;
   }
   return vm;
