@@ -472,3 +472,84 @@ All 6 other sampled fixtures matched `expected.txt` exactly under both VMs.
   `docs/HBC-FORMAT.md` already concluded — no single publicly-identifiable
   commit reproduces `v99.hbc` exactly; ours is bracketed between it and the
   npm release rather than equal to either.
+
+## Linux arm64 `hermesc`
+
+There is no publicly published `hermesc` build for Linux arm64 (aarch64) — see
+"Where the binaries come from" above; `tools/get-hermesc.sh` only has
+`linux64-bin` (x86_64) and macOS-universal binaries to fetch, and warns and
+tries the x86_64 binary anyway (works only under emulation) if run on a
+non-x86_64 Linux host. `tools/build-hermesc-linux-arm64.sh` closes that gap by
+building `hermesc` (+ `hbcdump`) from source, gated hard on actually running
+on arm64.
+
+```sh
+tools/build-hermesc-linux-arm64.sh --check        # prereqs + version-pin report, never builds
+tools/build-hermesc-linux-arm64.sh 96              # -> tools/hermesc/v96/{hermesc,hbcdump}
+tools/build-hermesc-linux-arm64.sh all             # builds every pinned version (94, 96, 99)
+```
+
+Output lands at `tools/hermesc/v<N>/{hermesc,hbcdump}` — the same path
+`tools/get-hermesc.sh` uses — so `tests/support/hermesc.ts`'s `findHermesc`
+needs no arch-awareness: whichever script actually produced a working binary
+there is what gets found. This is a **separate script from
+`tools/build-hermes-vm.sh`**, not an extension of it: that script builds the
+full VM/CLI (`hermes`+`hermesc`+`hbcdump`) for the two versions used as the
+D14 equivalence oracle (94, 99) into `tools/hermes-vm/`, on whatever arch it
+happens to run on. This one builds `hermesc`-only, for every version this repo
+has a pinned commit for, arch-gated to arm64, into `tools/hermesc/` — a
+different output contract (matching `get-hermesc.sh`, not `build-hermes-vm.sh`)
+and a different version set, so folding it into `build-hermes-vm.sh`'s flag
+surface would have made both scripts harder to read for what little would
+have been shared (the clone/checkout/configure/build boilerplate).
+
+**Versions**: 94, 96 and 99 use the same commit pins as "Hermes VM (source
+build)" above and "v96: opcode table and layout" (`3815fec6…`, `644c8be7…`,
+`913d31ac…`). **84 and 98 are refused with a specific "not pinned" error** —
+no facebook/hermes commit has been derived for those two HBC versions in this
+repo yet (v84 predates the `react-native`-bundled `.hermesversion` convention
+that made 94/96's derivation a lookup rather than a bisection; v98's own
+section above already documents that no single commit was pinned even for the
+VM/x86_64 path). Guessing would risk silently shipping the wrong opcode table;
+derive a commit using the same method (walk the version's npm tarball /
+`.hermesversion` trail, confirm via `BYTECODE_VERSION` in the checked-out
+`BytecodeVersion.h`) before adding it to the script's table.
+
+**`--check`**: validates OS, arch, `git`, `cmake`, a generator (`ninja`
+preferred, `make` fallback), a C++ compiler, `python3`, and free disk space,
+then prints the version-pin table — all without cloning or building anything.
+Exits non-zero on any failing check, including a non-arm64 host: this mode is
+meant to run anywhere (this repo's dev containers are x86_64), so it can only
+usefully report "would this host be able to build" — it never actually
+attempts arm64 output on the wrong architecture. Building itself refuses just
+as loudly the moment it's invoked off-arm64 (no cross-compile attempt, no
+silent fallback to the host's real arch) or on a version with no pinned
+commit.
+
+**Status: unverified on real arm64 hardware.** This repo's containers are all
+x86_64 (`uname -m` reports `x86_64` here); the clone/checkout/configure/build
+path in `tools/build-hermesc-linux-arm64.sh` has never actually executed —
+invoking it here only exercises the arch gate refusing to run, by design. Only
+`--check`'s prerequisite-reporting path has been exercised (it has no arch
+gate on itself; it reports the mismatch as a normal failing check instead of
+refusing to run). A maintainer with real Linux arm64 hardware needs to run:
+
+```sh
+tools/build-hermesc-linux-arm64.sh --check          # expect: Arch: aarch64 (ok), RESULT: ok
+tools/build-hermesc-linux-arm64.sh 96                # first — cheapest pinned version to sanity-check the whole path
+tools/hermesc/v96/hermesc --version                  # expect: HBC bytecode version: 96
+tools/build-hermesc-linux-arm64.sh 94
+tools/build-hermesc-linux-arm64.sh 99
+tools/hermesc/v94/hermesc --version                  # expect: HBC bytecode version: 94
+tools/hermesc/v99/hermesc --version                  # expect: HBC bytecode version: 99
+```
+
+and ideally also recompile `tests/fixtures/hermes-dec-sample/source.js` with
+the resulting v94 binary and `cmp` it against
+`tests/fixtures/hermes-dec-sample/v94.hbc` (byte-identical, same check
+"Verification" above already ran on macOS/arm64 for the VM build) as
+independent confirmation the arm64 build isn't subtly miscompiling relative to
+the x86_64 binary `tools/get-hermesc.sh 94` fetches. Report wall-clock time,
+binary sizes, and the `--version` output back into `docs/AGENT-LOG.md` or a
+follow-up to this section, the same way "Build results" above did for the
+VM build.

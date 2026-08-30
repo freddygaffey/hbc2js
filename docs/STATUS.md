@@ -193,7 +193,15 @@ Last updated: 2026-08-30
   operand — no opcode added/removed/reordered, still 192 opcodes) — see
   `docs/TOOLCHAIN.md`'s "v96: opcode table and layout". `hermes-dec` 0.1.7
   (pip) confirmed working as the behaviour-oracle disassembler/decompiler.
-  Details: `docs/TOOLCHAIN.md`.
+  Details: `docs/TOOLCHAIN.md`. **Linux arm64 `hermesc`** (T5, 2026-08-30,
+  Claude Sonnet 5): no prebuilt binary exists upstream, so
+  `tools/build-hermesc-linux-arm64.sh` builds it from source for the same
+  three pinned commits as v94/v96/v99 above, arch-gated hard (refuses on any
+  non-arm64 host, no cross-build fallback) and validated by a `--check`
+  dry-run mode (prereqs + version-pin table, never builds) exercised in
+  CI-reachable form. **Unverified on real arm64 hardware** — see
+  `docs/TOOLCHAIN.md`'s "Linux arm64 hermesc" for the exact commands a
+  maintainer with arm64 hardware must run to confirm it.
 - **Tier 1 fixture corpus built**: 53 hand-written single-construct fixtures
   under `tests/fixtures/constructs/<NN-topic>/{source.js,expected.txt,vNN.hbc,licence.txt}`
   (01-51 per `docs/TEST-CORPUS.md` §1a; 52-53 added later — dense-integer
