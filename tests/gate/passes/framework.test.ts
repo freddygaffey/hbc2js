@@ -65,8 +65,8 @@ test("PL-04: a pass that throws is E_PASS_CRASH, not a silent skip", () => {
 test("PL-07: registry order must satisfy after/before; skip/only/stage select", () => {
   assert.throws(() => enabledPasses({}, [forHeader as Pass, loopCond as Pass]), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
   assert.deepEqual(enabledPasses({ only: ["loop-cond"] }).map((p) => p.name), ["loop-cond"]);
-  assert.deepEqual(enabledPasses({ skip: ["for-header"] }).map((p) => p.name), ["loop-cond", "expr-rebuild", "global-access", "call-shape"]);
-  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape"]);
+  assert.deepEqual(enabledPasses({ skip: ["for-header"] }).map((p) => p.name), ["loop-cond", "expr-rebuild", "global-access", "call-shape", "fn-naming"]);
+  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "fn-naming"]);
   for (const p of REGISTRY) assert.ok(p.catalogue.length > 0, `${p.name} declares no catalogue row`);
 });
 
@@ -90,5 +90,5 @@ test("PL-05: --passes=none reproduces the M4 emitter output byte for byte", () =
   // contain (an `Array.prototype.join`-style call), so skipping only the
   // two structural loop passes no longer reproduces the fully-disabled
   // baseline on its own — every stage-B rung has to be skipped too.
-  assert.equal(decompile(bytes, { passes: { skip: ["loop-cond", "for-header", "expr-rebuild", "global-access", "call-shape"] }, moduleName: "x" }).code, none);
+  assert.equal(decompile(bytes, { passes: { skip: ["loop-cond", "for-header", "expr-rebuild", "global-access", "call-shape", "fn-naming"] }, moduleName: "x" }).code, none);
 });

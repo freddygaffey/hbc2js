@@ -61,8 +61,15 @@ test("an environment stored into another environment's slot is declared where th
   const text = code("23-generator-basic", 99);
   // The wrapper (_fn1/_fn2) must declare the slots, not the body (_fn3/_fn4).
   // `_fn1` is the wrapper and `_fn3` the body; the body's own environment
-  // (`_e3_*`) must be declared alongside the wrapper's, above `function _fn3`.
-  const wrapper = /function _fn1\([^)]*\) \{([\s\S]*?)function _fn3/.exec(text);
+  // (`_e3_*`) must be declared alongside the wrapper's, above the body's own
+  // declaration. Since `fn-naming` (row R4) landed, `_fn3` itself is renamed
+  // to `sequence` (both function-table entries #1 and #3 carry the same
+  // Hermes-inferred name "sequence"; #3, processed first as the innermost
+  // site, wins it — #1's own candidacy then refuses `already-declared`,
+  // `declaredNames` walking into #1's already-renamed nested body) — the
+  // wrapper `_fn1` itself stays unrenamed, so the regex below still anchors
+  // on it, just looking for `function sequence` instead of `function _fn3`.
+  const wrapper = /function _fn1\([^)]*\) \{([\s\S]*?)function sequence/.exec(text);
   assert.ok(wrapper !== null, "the emitted nesting changed shape");
   assert.match(wrapper[1]!, /let _e1_0[^;]*_e3_0;/);
 });
@@ -137,10 +144,12 @@ test("AddOwnPrivateBySym is (object, value, symbol)", () => {
 
 test("a rest parameter does not count towards Function.prototype.length", () => {
   // v<=96 counts the rest element in paramCount and v>=97 does not; both must
-  // emit `length === 1` for `html(strings, ...values)`.
+  // emit `length === 1` for `html(strings, ...values)`. `fn-naming` (row R4)
+  // now renames the declaration from `_fnN` to `html` (its own functionName
+  // evidence), so the declared-name capture group accepts either.
   for (const version of [84, 94, 96, 98, 99]) {
     const text = code("44-tagged-templates", version);
-    const m = /function (_fn\d+)\(([^)]*)\) \{\n\s+\/\/ fn#\d+ "html"/.exec(text);
+    const m = /function (_fn\d+|html)\(([^)]*)\) \{\n\s+\/\/ fn#\d+ "html"/.exec(text);
     assert.ok(m !== null, `v${version}: html not found in the output`);
     assert.equal(m[2]!.trim(), "a1", `v${version}: html has params "${m[2]}"`);
   }

@@ -325,8 +325,11 @@ test("v94 shape: 19-var-hoisting fn#1 'demo' — guard-`if`s between accesses do
 });
 
 test("v94 shape: 19-var-hoisting fn#2 'hoistedFn' — R1a folds a single-use store into its return", () => {
+  // Named `_fn2` -> `hoistedFn` by `fn-naming` (row R4) since this batch —
+  // stale as `function _fn2(...)`, updated to the current, further-improved
+  // output; the R1a fold under test is otherwise unaffected.
   const code = decompile(loadFixture("19-var-hoisting", 94, ""), { moduleName: "x" }).code;
-  assert.match(code, /function _fn2\(\) \{\s*\/\/ fn#2 "hoistedFn"\s*return "hoisted";\s*\}/);
+  assert.match(code, /function hoistedFn\(\) \{\s*\/\/ fn#2 "hoistedFn"\s*return "hoisted";\s*\}/);
 });
 
 test("v94 shape: 02-while-loop — a six-times-reused register folds its string concatenation forward", () => {
