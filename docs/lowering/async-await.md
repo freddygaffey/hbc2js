@@ -2,9 +2,9 @@
 
 **Fixtures:** `27-async-await-basic`, `28-async-await-error`,
 `29-promise-chaining`
-**Confidence:** ✅ single-version (v94 shape); ⛔ inferred (v99 driver
-protocol — the builtin that runs the lowered body to completion was not
-traced instruction-by-instruction)
+**Confidence:** ✅ single-version (v94 shape); ✅ **measured** (the v98 and
+v99 driver protocol — builtin, call shape and the generator factory it is
+handed — read from `27-async-await-basic` at both versions; T13)
 
 ## 1. Source
 
@@ -70,11 +70,34 @@ Function<global> function list:
 
 **Async at v99 is not a separate lowering from generators at v99** — it is
 the *identical* `CreateGenerator` + lowered-state-machine body convention,
-wrapped in one additional unnamed driver function whose job (inferred, not
-traced) is to run the hidden generator via the same resume ABI
-`generators.md` §4 marks ⛔, feeding it `Promise`-settlement values instead
-of `.next()` call arguments, and returning a real `Promise` to the caller of
-`sequence()`.
+handed to a **builtin driver** that returns the `Promise`.
+
+**✅ Measured (T13, 2026-08-30).** `27-async-await-basic`, function #2
+(`sequence`), verbatim — v99 left, v98 right, identical but for the builtin:
+
+```
+  0004  ReifyArgumentsLoose  r1                              ReifyArgumentsLoose  r1
+  0009  GetBuiltinClosure    r3, b58 "makeAsyncIterator"     GetBuiltinClosure  r3, b57 "spawnAsync"
+  000f  CreateClosure        r2, r1, f4 "?anon_0_sequence"   CreateClosure      r2, r1, f4 "?anon_0_sequence"
+  0014  LoadThisNS           r1                              LoadThisNS         r1
+  0016  Call4                r1, r3, r0, r2, r1, r4          Call4              r1, r3, r0, r2, r1, r4
+  001d  Ret                  r1                              Ret                r1
+```
+
+So the protocol is `driver(generatorFactory, thisArg, reifiedArguments)` →
+`Promise`, where `generatorFactory` (`f4`) is the ordinary two-hop generator
+wrapper: `CreateFunctionEnvironment`, zero-initialise the status and index
+slots, `CreateGenerator f5`, `Ret`. The body `f5` is a plain v≥97 generator
+state machine, so **`await` is a yield** and `generators.md` §4's action and
+status codes apply unchanged.
+
+**The driver builtin differs by version**: `#57 spawnAsync` at v98, `#58
+makeAsyncIterator` at v99 — measured by compiling *this same fixture source*
+with each pinned compiler, so it is a real difference between the two
+toolchains and not, as this file previously guessed, an artefact of one
+fixture having been preserved from an older Hermes commit. A matcher must key
+off the builtin's **name**, resolved through the per-version builtin table,
+never its index.
 
 ## 4. CFG/IR shape
 
@@ -100,14 +123,8 @@ at v≤96; identical `CreateGenerator` at v≥97, distinguished only by
 
 ## 6. Version differences
 
-Same table as `generators.md` §6 applies. Additionally: the builtin(s)
-driving the hidden coroutine to completion (`spawnAsync` at v94's builtin
-#52, a differently-numbered builtin at v99 per `docs/TOOLCHAIN.md`'s
-byte-identical-recompilation research, which found the public v99
-`hermesc` resolves `#58 makeAsyncIterator` at a call site where the
-preserved historical fixture resolves `#57 spawnAsync` — a genuinely
-different Hermes commit's builtin table, not a flag difference) were not
-traced to their calling convention in this pass. **Flagged for the next T3
-session or the `async-await` pass implementer**: confirm which builtin
-actually drives `sequence`'s hidden generator at each version before
-writing `src/passes/async-await/`.
+Same table as `generators.md` §6 applies. Additionally, the builtin driving
+the hidden coroutine differs at every era measured so far: `spawnAsync` at
+v94 (builtin #52) and at v98 (#57), `makeAsyncIterator` at v99 (#58). The
+call shape is unchanged across v98/v99 (§3), and the v94 opcode-driven form
+is §2. Resolve the builtin by name per version; the index moves.

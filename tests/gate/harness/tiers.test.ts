@@ -11,14 +11,23 @@ import { runTier, computeSkippedByDesign, VERDICT } from "../../../src/harness/t
 import type { DecompilerFn } from "../../../src/harness/tiers.ts";
 import { mutants } from "../../../src/harness/mutate.ts";
 import { repoRoot } from "../../support/paths.ts";
-import { timeScale } from "../../support/tiers.ts";
+import { findHermesc } from "../../support/hermesc.ts";
+import { requireOracles, timeScale } from "../../support/tiers.ts";
 
 // A subset chosen for speed and for being outside every documented gap
 // (no known-divergence construct, no v98 layout ambiguity, compiles at every
 // fetched version).
 const SUBSET = ["01-if-else-chain", "02-while-loop", "04-for-loop-basic"];
 
-test("3-fixture subset, identity decompiler, v94: every oracle PASSes", async () => {
+test("3-fixture subset, identity decompiler, v94: every oracle PASSes", async (t) => {
+  // "every oracle" includes round-trip, which recompiles with hermesc; absent
+  // a compiler the verdict is INCONCLUSIVE (D15), which is a missing tool and
+  // not a harness failure.
+  if (findHermesc(94) === null) {
+    if (requireOracles()) throw new Error("hermesc v94 required for the identity oracle set (HBC2JS_REQUIRE_ORACLES=1)");
+    t.skip("hermesc v94 not found (run tools/get-hermesc.sh 94) — the round-trip oracle needs it");
+    return;
+  }
   const report = await runTier({ tier: "gate", only: SUBSET, versions: [94] });
   assert.equal(report.results.length, SUBSET.length);
   for (const r of report.results) {

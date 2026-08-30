@@ -3,12 +3,12 @@
 **Fixtures:** `23-generator-basic`, `24-generator-return-throw`,
 `25-generator-delegation`, `26-infinite-generator-take`
 **Confidence:** ✅ verified (v≤96 opcode-driven shape, v94); ✅ verified (v≥97
-overall architecture: `CreateGenerator` + wrapper/body split, v99); ⛔
-**inferred** (the exact integer encoding of the v≥97 resume-call ABI — the
-"action"/"status" codes — see §4). Per D9, this is exactly the shim
-boundary: everything ✅ here is enough to implement the D9 shim; the ⛔ part
-is only needed for `yield`-recovery *inside* the lowered body, which is
-explicitly out of scope for the M4 baseline.
+overall architecture: `CreateGenerator` + wrapper/body split, v99); ✅
+**measured** (the integer encoding of the v≥97 resume-call ABI — the
+action and status codes, read at v98 *and* v99, see §4; T13). Per D9, the
+shim needs only the architecture; the ABI codes are what `yield`-recovery
+*inside* the lowered body needs, and they are now pinned rather than
+inferred.
 
 ## 1. Source
 
@@ -173,27 +173,69 @@ boundary itself):**
   whose exception-handler table has 9 regions all sharing one target block,
   matching one shared-handler-per-dispatch-arm duplication.
 
-**⛔ Inferred, not fully pinned (needs targeted differential probing —
-`.next(v)` vs `.throw(e)` vs `.return(v)` calls compiled and traced against
-which `LoadParam` ends up which value) — do not build `yield`-recovery
-against these without re-verifying:**
-- Which of `LoadParam(1)`/`LoadParam(2)` is the "action" (next/throw/return)
-  selector vs. the "value" (sent value / thrown error / return value)
-  payload.
-- The exact integer encoding of the action selector and of any additional
-  status codes beyond `2` (a value `3` also appears compared against the
-  saved pre-call status in `24-generator-return-throw`'s dump, but its exact
-  meaning — a distinct "not yet started" vs. "suspended" state, or something
-  else — was not conclusively traced in this pass).
+**✅ Measured (T13, 2026-08-30) — the resume ABI, pinned:** every claim below
+is read from `hbc2js disasm` on committed fixtures, at **both** v98 and v99,
+whose prologues are instruction-for-instruction identical.
+
+`24-generator-return-throw`, function #3 (`g1`'s body), v99 — verbatim:
+
+```
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 0      ; r0 = STATUS
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L19, r0, r4    ; status === 2 -> "executing" trap
+  0014  LoadParam            r0, 2          ; param 2 = VALUE
+  0017  LoadParam            r3, 1          ; param 1 = ACTION
+  001d  LoadConstUInt8       r7, 3
+  0020  LoadConstUInt8       r5, 1
+  0030  JStrictEqualLong     L16, r13, r7   ; entry status === 3 -> "completed"
+L1:
+  003a  StoreNPToEnvironment r1, 0, r4      ; status := 2 before running a step
+  003e  LoadFromEnvironment  r13, r1, 1     ; r13 = resume-point index
+  0042  JStrictEqualLong     L11, r12, r13  ; index === 0
+  0049  JStrictEqualLong     L10, r5, r13   ; index === 1
+  0050  JStrictEqualLong     L7,  r4, r13   ; index === 2
+  0057  JStrictEqual         L4,  r7, r13   ; index === 3
+  005b  JStrictEqual         L3,  r3, r5    ; ACTION === 1
+  005f  JStrictEqual         L2,  r3, r4    ; ACTION === 2
+```
+
+- **Parameter roles.** `LoadParam 1` is the **action**; `LoadParam 2` is the
+  **value** (sent value, thrown error, or return argument). The earlier
+  reading of this file had them the other way round; the compare chain
+  settles it — only `LoadParam 1`'s register is ever compared against small
+  integer constants.
+- **Action codes.** `1` = `.throw(e)` — arm `L3` sets the status to `3` and
+  executes `Throw r0`, i.e. it throws the *value* parameter. `2` = `.return(v)`
+  — arm `L2` sets the status to `3` and returns the result object. `0` =
+  `.next(v)`, which is the fall-through: it is never compared for, because it
+  is whatever is left once `1` and `2` are excluded.
+- **Status codes**, in the slot read at entry: `0` not yet started (the
+  wrapper's `LoadConstZero` + `StoreNPToEnvironment` initialiser), `1`
+  suspended at a yield (stored before each `Ret` that hands back
+  `{value, done:false}` — see `L4`, `L7`, `L11`), `2` currently executing
+  (written immediately at `L1`, and the entry trap's value), `3` completed
+  (written before every `Throw` and every `done:true` return).
+- **Slot numbers are per-function, not fixed.** In
+  `24-generator-return-throw` the status is env slot `0` and the resume index
+  slot `1`; in `23-generator-basic`'s `counter` the status is slot `3` and the
+  index slot `2`, because slot `0` there holds a captured parameter. Identify
+  them **structurally**: the status slot is the one loaded first and compared
+  against `2` before anything else runs; the index slot is the one loaded
+  immediately after the status is set to `2`. Never hard-code the numbers.
+- **What is still not pinned:** whether any action code above `2` exists
+  (none is emitted by any fixture in this corpus), and whether the
+  `.return()` arm's result object is built by the same `NewObjectWithBuffer`
+  shape as an ordinary yield in every case. Neither blocks `yield` recovery.
 
 **Why this split is safe for the M4 baseline (D9):** the shim only needs
 the ✅ facts above — it treats the body function as an opaque, correct unit
 run by real Hermes-equivalent semantics (or, for a pure-JS decompile target,
 by a small runtime helper implementing the same resume protocol against a
-*real* JS generator internally) and never needs to understand the ⛔ ABI
-details. Those become necessary only for the "v2" `yield`-recovery pass D9
-describes, which is explicitly out of scope until this catalogue's ⛔ rows
-are resolved (spec 07 §4: "a pass may not be implemented against a ⛔ row").
+*real* JS generator internally) and never needs to understand the resume ABI at all. Those details become
+necessary only for the "v2" `yield`-recovery pass D9 describes — which spec 07
+§4 blocked while this row was ⛔, and which T13's measurement above now
+unblocks.
 
 ## 5. `yield*` delegation (`25-generator-delegation`)
 
