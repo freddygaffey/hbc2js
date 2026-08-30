@@ -71,6 +71,57 @@ finding (loop-invariant hoisting, constant folding, cross-function inlining).
 | 26 | Logical assignment (`&&=`,`\|\|=`,`??=`) | none — no fixture | 94,99 (ad hoc probe) | [logical-assignment.md](lowering/logical-assignment.md) | ⛔ inferred (no fixture; analogous to O-3) | Compiles to an ordinary short-circuit branch around a plain store; not a new opcode |
 | 27 | Obfuscated control-flow flattening vs. Hermes's own constant folding | `source.obf.js` variants (04,09,19 inspected) | 94 (O and O0) | [obfuscated-control-flow.md](lowering/obfuscated-control-flow.md) | ✅ verified (surprising negative result) | **Hermes's optimizer — and even its `-O0` front end — collapses javascript-obfuscator's `while(true){switch(ip){...}}` dispatcher back to linear code** whenever the dispatch index is compile-time-derivable. The hardened-tier CFG stress may not be stressing CFG recovery at all for short functions; see file and report |
 
+## Runtime helpers (spec 05 §7.1 rule 4)
+
+Every entry of `src/runtime/helpers.ts` — the emitted prelude — with the VM
+primitive it stands for and the opcode(s) that pull it in. Spec 05 §7.1 makes a
+row here, and a unit test, a *condition of the helper existing at all*; the unit
+tests are `tests/gate/runtime/helpers.test.ts`, one `test("review-M4-H3: <name>
+…")` per helper, and two ratchet tests there fail if a new helper arrives
+without either. Helpers are emitted only when used (`helpersUsed`, EM-03), in
+dependency order.
+
+The `__hbc_b_*` prefix marks an *internal* `CallBuiltin` entry — a VM intrinsic
+with no JS global behind it. Builtins that ARE real globals (`Math.floor`,
+`JSON.stringify`, `Object.keys`, …) get no helper: `src/emit/calls.ts` emits the
+call directly.
+
+| Helper | Stands for | Pulled in by | Note |
+|---|---|---|---|
+| `__hbc_empty` | the VM's "empty" sentinel (a TDZ binding before its initialiser) | `LoadConstEmpty`, `ThrowIfEmpty`, `ThrowIfThisInitialized` | A distinct `Symbol`, never `undefined` — collapsing it would disarm every TDZ check the bytecode actually has |
+| `__hbc_HermesInternal` | the Hermes *host* object the compiler calls into | `GetById "HermesInternal"` | Only the reached entry points: `concat` (ToString on `this` and every argument, so a Symbol still throws), `getEpilogues`, `hasPromise`, `useEngineQueue`, `enqueueJob`. Supplied by the prelude rather than the global object, which the equivalence checker would see |
+| `__hbc_delegated` | the "this yield is a `yield*` pass-through" flag | `CallBuiltin generatorSetDelegated` | Module-scoped because the builtin names no generator: it always means the one currently stepping |
+| `__hbc_unresolved_env` | *nothing* — a loud marker for an environment access spec 03 §6 could not resolve | `--lenient-env` only (review M4-H2) | Throws when reached, naming fn/offset/slot. The default is still `E_ENV_UNRESOLVED` on the whole module |
+| `__hbc_makeGenerator` | the v≤96 generator object protocol over a frame factory | `CreateGenerator`, `StartGenerator`/`SaveGenerator`/`ResumeGenerator` bodies | `step(sent, isReturn, isThrow) -> [value, done]`. Re-entry is a `TypeError` with the VM's text; a body throw finishes the generator; methods live on a per-instance prototype so the object has no own properties, like a real one |
+| `__hbc_makeGeneratorLowered` | the v≥97 shim: Static Hermes lowers the body to a state machine (D9) | `FunctionHeader.flags.kind = generator` at v≥97 | `body(mode, value)` with mode 0/1/2 = next/throw/return |
+| `__hbc_arguments` | `arguments` reification | `ReifyArguments`, `GetArgumentsPropByVal` | **Unmapped** at every version we target (D14: Hermes 84–99 does not alias parameters) |
+| `__hbc_iterBegin` | `IteratorBegin` | `IteratorBegin` | Returns `[iterator, next]`. Reproduces the *value-only* TypeError text (`object null is not iterable …`) — the expression-text form V8 uses for `for…of`/spread is not reconstructible from bytecode |
+| `__hbc_iterNext` | `IteratorNext` | `IteratorNext` | Signals exhaustion by returning the iterator as `undefined`, which is how the opcode's register protocol works |
+| `__hbc_iterClose` | `IteratorClose` | `IteratorClose` | The `ignoreInner` flag is the spec's `IteratorClose(…, true)`: it swallows a throw from `.return` itself, and only then |
+| `__hbc_pnames` | `GetPNameList` | `GetPNameList` | `for…in` key snapshot, including inherited enumerables; `null`/`undefined` yields `undefined` (the "skip the loop" signal) |
+| `__hbc_nextPName` | `GetNextPName` | `GetNextPName` | Skips keys deleted since the snapshot (`k in o`), boxes a primitive receiver |
+| `__hbc_b_apply` | `CallBuiltin apply` | `CallBuiltin apply` | Arity is the signal: 3 arguments = `Reflect.apply`, 2 = `Reflect.construct` |
+| `__hbc_b_applyWithNewTarget` | `CallBuiltin applyWithNewTarget` | same | `Reflect.construct(fn, args, newTarget)` — the prototype comes from `new.target` |
+| `__hbc_b_arraySpread` | `CallBuiltin arraySpread` | `[...x]`, spread call arguments | Writes from `index` and returns the next index, so successive spreads compose |
+| `__hbc_b_copyDataProperties` | `CallBuiltin copyDataProperties` | object rest/spread | Own enumerable keys, **symbols included**, minus the excluded set; a `null`/`undefined` source is a no-op |
+| `__hbc_b_copyRestArgs` | `CallBuiltin copyRestArgs` | rest parameters | Returns a real `Array`, not an arguments object |
+| `__hbc_b_ensureObject` | `CallBuiltin ensureObject` | destructuring, iterator results | Throws the VM's own message text, which is passed in |
+| `__hbc_b_getMethod` | `CallBuiltin getMethod` | `for…of`, `yield*`, optional call | The spec's GetMethod: `null`/`undefined` → `undefined`, non-callable → `TypeError` |
+| `__hbc_b_getTemplateObject` | `CallBuiltin getTemplateObject` | tagged templates | Frozen, `.raw` non-enumerable, **cached by call-site id** — a tagged template must hand the same object to every call |
+| `__hbc_b_initRegexNamedGroups` | `CallBuiltin initRegexNamedGroups` | named capture groups | Identity: V8 already populates `.groups`. The helper exists so the call has a callee |
+| `__hbc_b_throwTypeError` | `CallBuiltin throwTypeError` | `JmpTypeOfIs` guards, class field checks | Message supplied by the bytecode |
+| `__hbc_b_throwReferenceError` | `CallBuiltin throwReferenceError` | TDZ and unresolved-global checks | Message supplied by the bytecode |
+| `__hbc_b_silentSetPrototypeOf` | `CallBuiltin silentSetPrototypeOf` | `class … extends`, `__proto__` in a literal | "Silent" is the semantics: a failure is swallowed, not thrown |
+| `__hbc_b_exportAll` | `CallBuiltin exportAll` | `export * from` | `for…in`, so inherited names come too; `default` is excluded |
+| `__hbc_b_spawnAsync` | `CallBuiltin spawnAsync` — the async-function driver | every `async function` | Drives a generator body: a rejected `await` is thrown back *into* the body. **Known divergence (review M4-M1):** Hermes ≤96 calls a thenable's `then` synchronously inside `await`; `Promise.resolve(v).then(…)` defers it one tick |
+| `__hbc_b_makeAsyncIterator` | `CallBuiltin makeAsyncIterator` | `for await`, async generators | Literally `__hbc_b_spawnAsync` (its only dependency) |
+| `__hbc_b_awaitAsyncGenerator` | `CallBuiltin awaitAsyncGenerator` | async generators | `Promise.resolve` |
+| `__hbc_b_requireFast` | `CallBuiltin requireFast` (Metro's fast require) | Metro-bundled modules | **Refuses**: `require(n)` outside a Metro host has no answer, and inventing one would be a silently wrong decompilation |
+| `__hbc_b_generatorSetDelegated` | `CallBuiltin generatorSetDelegated` | `yield*` at v≤96 | Sets `__hbc_delegated` |
+| `__hbc_b_functionPrototypeApply` | `CallBuiltin functionPrototypeApply` | `f.apply(…)` fast path | Goes through the *original* `Function.prototype.apply`, so a shadowed `.apply` on the callee is ignored |
+| `__hbc_b_functionPrototypeCall` | `CallBuiltin functionPrototypeCall` | `f.call(…)` fast path | Same, with the arguments spread |
+| `__hbc_b_applyArguments` | `CallBuiltin applyArguments` | `super(...arguments)` in an implicit derived constructor | Measured on `33-class-inheritance-super` v99 fn#7: constructs when `new.target` is present, applies otherwise |
+
 ## Appendix: fixtures not yet given a dedicated row
 
 `19-var-hoisting`, `21-iife-closures`, `22-nested-closures-counters`,
