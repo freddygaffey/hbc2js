@@ -1,0 +1,2135 @@
+{
+  "01-if-else-chain|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "01-if-else-chain|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "01-if-else-chain|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "01-if-else-chain|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "01-if-else-chain|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "02-while-loop|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "02-while-loop|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "02-while-loop|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "02-while-loop|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "02-while-loop|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "03-do-while-loop|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "03-do-while-loop|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "03-do-while-loop|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "03-do-while-loop|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "03-do-while-loop|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "04-for-loop-basic|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "04-for-loop-basic|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "04-for-loop-basic|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "04-for-loop-basic|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "04-for-loop-basic|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "05-for-in-object|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "05-for-in-object|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "05-for-in-object|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "05-for-in-object|v98": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "05-for-in-object|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "06-for-of-array|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "06-for-of-array|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "06-for-of-array|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "06-for-of-array|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "06-for-of-array|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "07-for-of-iterable|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "07-for-of-iterable|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "07-for-of-iterable|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "07-for-of-iterable|v98": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "07-for-of-iterable|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "08-labeled-break-continue|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "08-labeled-break-continue|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "08-labeled-break-continue|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "08-labeled-break-continue|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "08-labeled-break-continue|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "09-switch-fallthrough|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "09-switch-fallthrough|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "09-switch-fallthrough|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "09-switch-fallthrough|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "09-switch-fallthrough|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "10-switch-no-fallthrough|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "10-switch-no-fallthrough|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "10-switch-no-fallthrough|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "10-switch-no-fallthrough|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "10-switch-no-fallthrough|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "11-nested-loops-mixed|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "11-nested-loops-mixed|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "11-nested-loops-mixed|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "11-nested-loops-mixed|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "11-nested-loops-mixed|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "12-try-catch-finally-return|v84": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "12-try-catch-finally-return|v94": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "12-try-catch-finally-return|v96": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "12-try-catch-finally-return|v98": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "12-try-catch-finally-return|v99": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "13-try-finally-no-catch|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "13-try-finally-no-catch|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "13-try-finally-no-catch|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "13-try-finally-no-catch|v98": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "13-try-finally-no-catch|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "14-nested-try-catch|v84": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "14-nested-try-catch|v94": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "14-nested-try-catch|v96": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "14-nested-try-catch|v98": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "14-nested-try-catch|v99": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "15-catch-without-binding|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "15-catch-without-binding|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "15-catch-without-binding|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "15-catch-without-binding|v98": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "15-catch-without-binding|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "16-finally-with-break-continue|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "16-finally-with-break-continue|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "16-finally-with-break-continue|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "16-finally-with-break-continue|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "16-finally-with-break-continue|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "17-closure-loop-var|v84": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "17-closure-loop-var|v94": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "17-closure-loop-var|v96": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "17-closure-loop-var|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "17-closure-loop-var|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "18-closure-loop-let|v84": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "18-closure-loop-let|v94": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "18-closure-loop-let|v96": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "18-closure-loop-let|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "18-closure-loop-let|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "19-var-hoisting|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "19-var-hoisting|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "19-var-hoisting|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "19-var-hoisting|v98": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "19-var-hoisting|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "20-let-const-tdz|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "20-let-const-tdz|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "20-let-const-tdz|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "20-let-const-tdz|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "21-iife-closures|v84": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "21-iife-closures|v94": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "21-iife-closures|v96": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "21-iife-closures|v98": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "21-iife-closures|v99": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "22-nested-closures-counters|v84": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "22-nested-closures-counters|v94": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "22-nested-closures-counters|v96": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "22-nested-closures-counters|v99": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "23-generator-basic|v84": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "23-generator-basic|v94": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "23-generator-basic|v96": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "23-generator-basic|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "23-generator-basic|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "24-generator-return-throw|v84": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "24-generator-return-throw|v94": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "24-generator-return-throw|v96": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "24-generator-return-throw|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "24-generator-return-throw|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "25-generator-delegation|v84": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "25-generator-delegation|v94": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "25-generator-delegation|v96": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "25-generator-delegation|v98": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "25-generator-delegation|v99": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "26-infinite-generator-take|v84": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "26-infinite-generator-take|v94": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "26-infinite-generator-take|v96": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "26-infinite-generator-take|v98": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "26-infinite-generator-take|v99": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "27-async-await-basic|v84": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "27-async-await-basic|v94": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "27-async-await-basic|v96": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "27-async-await-basic|v98": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "27-async-await-basic|v99": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "28-async-await-error|v84": {
+    "totalFunctions": 11,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "28-async-await-error|v94": {
+    "totalFunctions": 11,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "28-async-await-error|v96": {
+    "totalFunctions": 11,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "28-async-await-error|v98": {
+    "totalFunctions": 11,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "28-async-await-error|v99": {
+    "totalFunctions": 11,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "29-promise-chaining|v84": {
+    "totalFunctions": 12,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "29-promise-chaining|v94": {
+    "totalFunctions": 12,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "29-promise-chaining|v96": {
+    "totalFunctions": 12,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "29-promise-chaining|v98": {
+    "totalFunctions": 12,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "29-promise-chaining|v99": {
+    "totalFunctions": 12,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "31-microtask-ordering|v84": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "31-microtask-ordering|v94": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "31-microtask-ordering|v96": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "31-microtask-ordering|v98": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "31-microtask-ordering|v99": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "32-class-basic|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "32-class-basic|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "33-class-inheritance-super|v99": {
+    "totalFunctions": 9,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "34-class-static-members|v99": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "35-class-private-fields|v98": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "35-class-private-fields|v99": {
+    "totalFunctions": 7,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "36-class-getters-setters|v98": {
+    "totalFunctions": 9,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "36-class-getters-setters|v99": {
+    "totalFunctions": 9,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "37-destructuring-array|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "37-destructuring-array|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "37-destructuring-array|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "37-destructuring-array|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "37-destructuring-array|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "38-destructuring-object|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "38-destructuring-object|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "38-destructuring-object|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "38-destructuring-object|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "38-destructuring-object|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "39-destructuring-params|v84": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "39-destructuring-params|v94": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "39-destructuring-params|v96": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "39-destructuring-params|v98": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "39-destructuring-params|v99": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "40-spread-array|v84": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "40-spread-array|v94": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "40-spread-array|v96": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "40-spread-array|v99": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "41-spread-object|v84": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "41-spread-object|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "41-spread-object|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "41-spread-object|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "42-rest-params|v84": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "42-rest-params|v94": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "42-rest-params|v96": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "42-rest-params|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "42-rest-params|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "43-template-literals|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "43-template-literals|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "43-template-literals|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "43-template-literals|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "44-tagged-templates|v84": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "44-tagged-templates|v94": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "44-tagged-templates|v96": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "44-tagged-templates|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "44-tagged-templates|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "45-regex-literals|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "45-regex-literals|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "45-regex-literals|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "45-regex-literals|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "46-bigint-arithmetic|v94": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "46-bigint-arithmetic|v96": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "46-bigint-arithmetic|v98": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "46-bigint-arithmetic|v99": {
+    "totalFunctions": 1,
+    "exactness": [
+      true
+    ]
+  },
+  "47-typeof-instanceof-in|v84": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "47-typeof-instanceof-in|v94": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "47-typeof-instanceof-in|v96": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "47-typeof-instanceof-in|v99": {
+    "totalFunctions": 4,
+    "exactness": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "48-optional-chaining-nullish|v84": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "48-optional-chaining-nullish|v94": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "48-optional-chaining-nullish|v96": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "48-optional-chaining-nullish|v98": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "48-optional-chaining-nullish|v99": {
+    "totalFunctions": 3,
+    "exactness": [
+      true,
+      true,
+      true
+    ]
+  },
+  "49-arguments-object|v84": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "49-arguments-object|v94": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "49-arguments-object|v96": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "49-arguments-object|v98": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "49-arguments-object|v99": {
+    "totalFunctions": 6,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "50-this-binding|v84": {
+    "totalFunctions": 9,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "50-this-binding|v94": {
+    "totalFunctions": 9,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "50-this-binding|v96": {
+    "totalFunctions": 9,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "50-this-binding|v98": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "50-this-binding|v99": {
+    "totalFunctions": 10,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "51-default-params|v84": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "51-default-params|v94": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "51-default-params|v96": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "51-default-params|v98": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "51-default-params|v99": {
+    "totalFunctions": 5,
+    "exactness": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "52-switch-jumptable|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "52-switch-jumptable|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "52-switch-jumptable|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "52-switch-jumptable|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "52-switch-jumptable|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "53-switch-jumptable-large|v84": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "53-switch-jumptable-large|v94": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "53-switch-jumptable-large|v96": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "53-switch-jumptable-large|v98": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  },
+  "53-switch-jumptable-large|v99": {
+    "totalFunctions": 2,
+    "exactness": [
+      true,
+      true
+    ]
+  }
+}
