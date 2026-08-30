@@ -23,3 +23,6 @@ Bug rule
 
 Brief hygiene
 - Briefs put the facts the agent needs *inline* (numbers, file paths, the exact bug) and name at most the 2–3 files the task touches. `docs/AGENT-BRIEF.md` is the only mandatory read. Don't send agents on reading tours; tokens spent orienting are tokens not spent working.
+
+M5 pass ladder flow
+- A one-time ladder-architecture doc (`docs/specs/passes/00-LADDER.md`, strongest model) fixes rung order, dependencies, IR-node ownership and which rungs are hard. Passes are then specced in batches of five by the architect (Opus; the strongest model only for hard rungs) (`docs/specs/passes/NN-<name>.md`: match conditions from the catalogue row, rewrite output, check obligations, fixtures, acceptance), implemented one per Sonnet agent against its spec, reviewed briefly by a stronger model before the next pass builds on it. The gate (501/501 with passes on) is the regression bar for every pass.
