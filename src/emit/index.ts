@@ -1,9 +1,9 @@
 // docs/specs/05-emitter.md §2, §6, §9, §10 — module emission.
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { Diagnostic } from "../errors.ts";
-import type { ModuleAnalysis } from "../cfg/types.ts";
+import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import { structure } from "../structure/index.ts";
-import type { StructureOptions } from "../structure/index.ts";
+import type { StructureOptions, StructuredFunction } from "../structure/index.ts";
 import { getBuiltinTable } from "../tables/registry.ts";
 import { helperPrelude } from "../runtime/helpers.ts";
 import type { Stmt } from "./ast.ts";
@@ -26,6 +26,12 @@ export interface EmitOptions {
   readonly indent?: string;
   readonly moduleName?: string;
   readonly structure?: StructureOptions;
+  /**
+   * Spec 07's pass pipeline, run on every function's tree IR between the
+   * structurer and emission. src/passes/index.ts `passHook` builds it; absent
+   * (the M4 baseline) nothing runs.
+   */
+  readonly passes?: (fn: StructuredFunction, cfg: FunctionCfg) => { readonly fn: StructuredFunction; readonly diagnostics: readonly Diagnostic[] };
 }
 
 export interface LineMapEntry {
@@ -181,8 +187,13 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     }
     emitted.add(index);
     const cfg = analysis.cfg(index);
-    const structured = structure(cfg, opts.structure);
+    let structured = structure(cfg, opts.structure);
     for (const d of structured.diagnostics) diagnostics.push(d);
+    if (opts.passes !== undefined) {
+      const passed = opts.passes(structured, cfg);
+      structured = passed.fn;
+      for (const d of passed.diagnostics) diagnostics.push(d);
+    }
     const kids = childrenOf.get(index) ?? [];
     const hoisted: Stmt[] = [];
     const inlined = new Map<number, Stmt>();

@@ -4,6 +4,7 @@
 import type { Diagnostic } from "../errors.ts";
 import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import type { LayoutClass } from "../parse/types.ts";
+import type { StructuredFunction } from "../structure/ir.ts";
 
 /** Stage A operates on the structurer's tree IR; stage B on the JS AST. */
 export type Stage = "A" | "B";
@@ -17,6 +18,14 @@ export interface PassContext {
   /** Passes already applied to this function, in order. */
   readonly applied: readonly string[];
   readonly diagnostic: (d: Diagnostic) => void;
+  /**
+   * Stage A only: the function the tree belongs to (labels, duplicated blocks,
+   * the augmented graph) and a parent lookup for the *current* tree, so a
+   * matcher can see the statement that precedes its node (for-header needs the
+   * block that falls into a loop). Both are absent for stage B.
+   */
+  readonly structured?: StructuredFunction;
+  readonly parentOf?: (node: unknown) => { readonly parent: unknown; readonly index: number } | null;
 }
 
 export interface Match<TNode, TData = unknown> {
@@ -35,6 +44,12 @@ export interface Pass<TNode = unknown, TData = unknown> {
   readonly name: string; // kebab-case, matches the directory
   readonly stage: Stage;
   readonly targets: readonly string[];
+  /**
+   * PL-06: the `docs/LOWERING-CATALOGUE.md` index rows (the `#` column) whose
+   * idiom this pass recognises. tests/gate/passes/catalogue.test.ts reads the
+   * catalogue's status column and fails if any row here is ⛔ or missing.
+   */
+  readonly catalogue: readonly number[];
   /** Pure. Recognises one Hermes lowering idiom. MUST NOT mutate. */
   match(node: TNode, ctx: PassContext): Match<TNode, TData> | null;
   /** Pure. Emits the idiomatic form for exactly the captured shape. */

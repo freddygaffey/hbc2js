@@ -20,6 +20,7 @@ import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
 import { decompile, decompileTree, nodeCheck } from "./decompile.ts";
+import { describePasses } from "./passes/index.ts";
 import { runDeps } from "./deps/index.ts";
 import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
 
@@ -42,6 +43,9 @@ Options (decompile):
   --function=N              restrict --emit-tree to function index N
   --no-verify               skip the structurer's round-trip isomorphism check
   --emit-tree               print the structurer's tree IR instead of JavaScript
+  --no-pass <name>          disable one readability pass (repeatable; spec 07)
+  --passes=none             run no passes: the M4 baseline output
+  --list-passes             list the registered passes and exit
   --no-node-check           skip the built-in 'node --check' of the output
   --opcode-table=<id>       force an opcode table instead of probing
   --force-v98-table         resolve E_LAYOUT_AMBIGUOUS by forcing hbc98-late
@@ -427,6 +431,7 @@ interface DecompileArgs {
   readonly stats: boolean;
   /** `--lenient-env`: markers instead of `E_ENV_UNRESOLVED` (review M4-H2). */
   readonly lenientEnv: boolean;
+  readonly passes: { readonly none: boolean; readonly skip: readonly string[] };
 }
 
 function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
@@ -441,11 +446,16 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let forceV98 = false;
   let stats = false;
   let lenientEnv = false;
+  let passesNone = false;
+  const skipPasses: string[] = [];
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--help" || a === "-h") help = true;
     else if (a === "-o") outPath = argv[++i];
+    else if (a === "--passes=none") passesNone = true;
+    else if (a === "--no-pass") skipPasses.push(String(argv[++i]));
+    else if (a.startsWith("--no-pass=")) skipPasses.push(a.slice("--no-pass=".length));
     else if (a.startsWith("--function=")) functionIndex = Number(a.slice("--function=".length));
     else if (a === "--no-verify") verify = false;
     else if (a === "--emit-tree") emitTree = true;
@@ -458,7 +468,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, nodeCheck: check, opcodeTable, forceV98, stats, lenientEnv };
+  return { help, input, outPath, functionIndex, verify, emitTree, nodeCheck: check, opcodeTable, forceV98, stats, lenientEnv, passes: { none: passesNone, skip: skipPasses } };
 }
 
 /**
@@ -500,6 +510,7 @@ function runDecompile(argv: readonly string[]): void {
       verify: args.verify,
       resolveV98Ambiguity: args.forceV98,
       strictEnv: !args.lenientEnv,
+      passes: args.passes,
       ...(args.opcodeTable !== undefined ? { opcodeTable: args.opcodeTable } : {}),
       ...(args.functionIndex !== undefined ? { functionIndex: args.functionIndex } : {}),
     };
@@ -642,6 +653,10 @@ function main(): void {
   // `hbc2js <input.hbc> [out.js]` is the default command; `--info` and the other
   // subcommands keep their existing behaviour (additive, per this milestone's
   // task boundary).
+  if (argv.includes("--list-passes")) {
+    process.stdout.write(`${describePasses()}\n`);
+    return;
+  }
   const first = argv[0];
   if (first !== undefined && !first.startsWith("-") && argv.every((a) => a !== "--info")) {
     runDecompile(argv);

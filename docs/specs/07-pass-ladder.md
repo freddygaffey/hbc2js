@@ -203,6 +203,23 @@ project ends up with matchers that fire on shapes the compiler never emits.
 
 ## 4. Which idioms are known, and which must be measured first
 
+> **Amended 2026-08-30 (M5 pass #1).** This section is now **history, not the
+> rule**. T3 landed `docs/LOWERING-CATALOGUE.md` and `docs/lowering/*.md`, so
+> the catalogue — not the tables below — is the single source of truth for what
+> has been measured and what a pass may be written against. The tables here are
+> kept because they record what was known *before* T3 and why T3 existed; where
+> they disagree with the catalogue, **the catalogue wins** (it already does on
+> `for…in`/`for…of`, `while`/`do-while`/`for`, and the `StringSwitchImm`
+> threshold, which row 8 corrects from "v99" to "v98").
+>
+> The rule a pass author follows is the mechanical one, enforced by
+> `src/passes/catalogue.ts` + `tests/gate/passes/catalogue.test.ts` (PL-06):
+> **a pass's declared `catalogue` rows must each exist and read `✅ verified`.**
+> `⛔ inferred` fails, and so does `✅ single-version` — the catalogue's own
+> confidence key says to treat single-version as ⚠️ for exactly this purpose,
+> and the gate now agrees with it. The one-page contract an implementer reads
+> is `src/passes/README.md` (D12a).
+
 **This is the most important section of this spec.** `docs/TASKS.md` **T3** is
 exactly the job of reading `hermesc -dump-bytecode` for every construct fixture
 at v94 and v99 and writing the catalogue. **Until a row's Confirmed column is
@@ -400,16 +417,28 @@ rather than advisory.
 
 **Framework (must all hold before pass 1 is merged):**
 
-- [ ] `src/passes/{types,registry}.ts` implement §2 exactly, with an empty registry.
-- [ ] `applyPasses` handles abandonment per §2.1 step 3 and never throws.
-- [ ] Stage-A `check` reuses spec 04's `checkIsomorphic` on the rewritten subtree.
-- [ ] `--passes=none` reproduces M4 goldens byte-for-byte (PL-05).
-- [ ] Registry order validation fails loudly on a cycle (negative test).
+- [x] `src/passes/{types,registry}.ts` implement §2 exactly. (The registry was
+      empty until M5; it now holds `loop-cond` then `for-header`.)
+- [x] `applyPasses` handles abandonment per §2.1 step 3 and never throws
+      (`src/passes/driver.ts`; PL-03/PL-04 tests).
+- [x] Stage-A `check` reuses spec 04's `checkIsomorphic` — the driver re-runs
+      `reconstruct` + `checkIsomorphic` on the **whole function** after every
+      splice, which subsumes the subtree check and catches an edge moved out of
+      the rewritten subtree.
+- [x] `--passes=none` reproduces M4 goldens byte-for-byte (PL-05).
+- [x] Registry order validation fails loudly on a cycle (negative test).
 - [ ] The stage-B `after: ["expr-rebuild"]` injection happens at load and is
       asserted by a test that registers a stage-B pass *without* the declaration
       and checks it still runs after `expr-rebuild` (PL-11).
-- [ ] `docs/LOWERING-CATALOGUE.md` has the §3 headers and the §4 evidence table.
-- [ ] The PL-06 CI check exists and fails on a registered pass with a ⛔ row.
+- [x] `docs/LOWERING-CATALOGUE.md` has the §3 headers and the §4 evidence table.
+- [x] **PL-06** — `src/passes/catalogue.ts` parses the catalogue index and
+      `tests/gate/passes/catalogue.test.ts` fails a registered pass whose row is
+      ⛔, `✅ single-version`, missing, or absent altogether. It runs in the gate,
+      so it is a per-commit check, not a separate CI job.
+- [x] D12a: `src/passes/README.md` is the one-page contract, and
+      `tests/gate/passes/imports.test.ts` enforces the import boundary
+      (a pass reaches only `../types.ts`, `../tree.ts`, `../driver.ts`,
+      `src/structure/{ir,verify}.ts`, and its own siblings).
 
 **Per pass:**
 
@@ -418,6 +447,14 @@ rather than advisory.
 - [ ] Unit tests: 1 positive, ≥ 2 negative, 1 abandonment.
 - [ ] Target fixture's emission golden updated and reviewed.
 - [ ] Whole gate tier still PASS under spec 06, passes on and off.
+
+**Done so far** — `loop-cond` (rows 2, 3) and `for-header` (row 4), M5, all five
+boxes: `tests/gate/passes/loop-cond.test.ts` carries the unit tests and the
+red→green assertions for `02-while-loop` / `03-do-while-loop` /
+`04-for-loop-basic` at v84/94/96/98/99 plus the `.obf` variants through the
+hardened tier; there are no emission goldens for these fixtures, so the
+"golden" box is the per-version `while (` / `do {` / `for (` assertion and the
+`no while (true)` assertion beside it.
 - [ ] `docs/STATUS.md` counter incremented.
 
 ---

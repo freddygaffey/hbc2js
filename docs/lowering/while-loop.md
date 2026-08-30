@@ -2,6 +2,7 @@
 
 **Fixture:** `tests/fixtures/constructs/02-while-loop/source.js`
 **Confidence:** ✅ verified (v94 `-O0` and `-O`; v99 `-O0` cross-checked, identical shape)
+**Pass:** `src/passes/loop-cond/` (stage A) — implemented, M5
 
 ## 1. Source
 

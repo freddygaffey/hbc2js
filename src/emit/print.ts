@@ -106,7 +106,17 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       out.push(`${p}}`);
       return;
     case "while":
-      out.push(`${p}${s.label === null ? "" : `${s.label}: `}while (true) {`);
+      out.push(`${p}${s.label === null ? "" : `${s.label}: `}while (${s.test === undefined ? "true" : expr(s.test, 0)}) {`);
+      printBody(s.body, depth + 1, out, opts);
+      out.push(`${p}}`);
+      return;
+    case "do-while":
+      out.push(`${p}${s.label === null ? "" : `${s.label}: `}do {`);
+      printBody(s.body, depth + 1, out, opts);
+      out.push(`${p}} while (${expr(s.test, 0)});`);
+      return;
+    case "for":
+      out.push(`${p}${s.label === null ? "" : `${s.label}: `}for (${s.init === null ? "" : expr(s.init, 0)}; ${expr(s.test, 0)}; ${s.update === null ? "" : expr(s.update, 0)}) {`);
       printBody(s.body, depth + 1, out, opts);
       out.push(`${p}}`);
       return;

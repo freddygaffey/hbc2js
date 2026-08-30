@@ -56,8 +56,12 @@ export type Stmt =
   | { readonly k: "decl"; readonly kind: "let" | "const" | "var"; readonly names: readonly string[] }
   | { readonly k: "init"; readonly kind: "let" | "const" | "var"; readonly name: string; readonly value: Expr }
   | { readonly k: "if"; readonly test: Expr; readonly then: readonly Stmt[]; readonly else: readonly Stmt[] }
-  /** `label: while (true) { … }` — every loop is infinite at M4 (spec 04 §2). */
-  | { readonly k: "while"; readonly label: string | null; readonly body: readonly Stmt[] }
+  /** `label: while (test) { … }`; `test` absent is `while (true)` (the M4 baseline, spec 04 §2). */
+  | { readonly k: "while"; readonly label: string | null; readonly test?: Expr; readonly body: readonly Stmt[] }
+  /** `label: do { … } while (test);` — spec 07 loop-cond. */
+  | { readonly k: "do-while"; readonly label: string | null; readonly test: Expr; readonly body: readonly Stmt[] }
+  /** `label: for (init; test; update) { … }` — spec 07 for-header. */
+  | { readonly k: "for"; readonly label: string | null; readonly init: Expr | null; readonly test: Expr; readonly update: Expr | null; readonly body: readonly Stmt[] }
   | { readonly k: "labeled"; readonly label: string; readonly body: readonly Stmt[] }
   | { readonly k: "break"; readonly label: string | null }
   | { readonly k: "continue"; readonly label: string | null }

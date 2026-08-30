@@ -1,7 +1,8 @@
 # `for-header` — `for (init; c; update) B`
 
 **Fixture:** `tests/fixtures/constructs/04-for-loop-basic/source.js`
-**Confidence:** ✅ single-version (v94 `-O0` only — needs a v99 cross-check before a pass may be written against it, per spec 07 §4)
+**Confidence:** ✅ verified (v94 and v99, both `-O0` — see §7 for the v99 dump)
+**Pass:** `src/passes/for-header/` (stage A, after `loop-cond`)
 
 ## 1. Source
 
@@ -94,10 +95,43 @@ position had no other side-effecting statement between it and the loop, and
 
 ## 7. Version differences
 
-Not yet checked against v99 — the fixture's v99 dump was not read for this
-idiom specifically (v99 was used for `while-cond`, `switch`, and others, but
-not re-verified here for the `for`-specific init/update placement). Given
-`for` reuses the identical `while` rotation and v99 introduces no changes to
-that rotation (per `while-loop.md` §7), no divergence is expected, but this
-is a **single-version** finding per spec 07's rule and must be confirmed
-before `src/passes/for-header/` is implemented.
+**Confirmed at v99** (2026-08-30, for M5's `for-header` pass).
+`tools/hermesc/v99/hermesc -O0 -dump-bytecode -pretty-disassemble=false
+tests/fixtures/constructs/04-for-loop-basic/source.js`, `Function<global>`:
+
+```
+[@ 43] LoadConstZero 3<Reg8>                              ; i = 0   (init, before the loop)
+[@ 45] StoreNPToEnvironment 4<Reg8>, 2<UInt8>, 3<Reg8>
+[@ 49] LoadConstUInt8 3<Reg8>, 10<UInt8>                  ; j = 10  (init)
+[@ 52] StoreNPToEnvironment 4<Reg8>, 3<UInt8>, 3<Reg8>
+[@ 56] LoadFromEnvironment 3<Reg8>, 4<Reg8>, 2<UInt8>     ; i
+[@ 60] LoadFromEnvironment 1<Reg8>, 4<Reg8>, 3<UInt8>     ; j
+[@ 64] Less 3<Reg8>, 3<Reg8>, 1<Reg8>                     ; i < j
+[@ 68] JmpFalse 83<Addr8>, 3<Reg8>                        ; pre-test, false -> exit
+                                                          ; body: trace.push(i+':'+j) @71..105
+[@ 108] LoadFromEnvironment 1<Reg8>, 4<Reg8>, 2<UInt8>
+[@ 112] ToNumeric 1<Reg8>, 1<Reg8>
+[@ 115] Inc 1<Reg8>, 1<Reg8>
+[@ 118] StoreToEnvironment 4<Reg8>, 2<UInt8>, 1<Reg8>     ; i++  -- UPDATE, at the body tail
+[@ 122] LoadFromEnvironment 1<Reg8>, 4<Reg8>, 3<UInt8>
+[@ 126] ToNumeric 1<Reg8>, 1<Reg8>
+[@ 129] Dec 1<Reg8>, 1<Reg8>
+[@ 132] StoreToEnvironment 4<Reg8>, 3<UInt8>, 1<Reg8>     ; j--  -- second UPDATE (comma operator)
+[@ 136] LoadFromEnvironment 1<Reg8>, 4<Reg8>, 2<UInt8>
+[@ 140] LoadFromEnvironment 3<Reg8>, 4<Reg8>, 3<UInt8>
+[@ 144] Less 1<Reg8>, 1<Reg8>, 3<Reg8>                    ; i < j  (RE-EVALUATED, back-edge test)
+[@ 148] JmpTrue -77<Addr8>, 1<Reg8>                       ; -> back to the body
+```
+
+Instruction-for-instruction identical to v94 modulo register allocation and
+the v≥97 explicit-environment register (`CreateTopLevelEnvironment` into r4
+instead of the implicit `CreateEnvironment`): init hoisted above the pre-test,
+pre-test `Less` + `JmpFalse`, both updates appended to the body tail, the
+condition re-evaluated for the back edge. **No divergence.** The row is
+therefore `✅ verified` at 94,99 and `src/passes/for-header/` may be — and now
+is — implemented against it.
+
+Not re-read at v84/v96/v98; v96 shares v94's opcode table and v98 shares v99's
+(`docs/HBC-FORMAT.md`), and the decompiler recovers `for (` from
+`04-for-loop-basic` at all five versions, which is the behavioural
+cross-check (`tests/gate/passes/loop-cond.test.ts`).
