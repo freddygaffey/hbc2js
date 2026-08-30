@@ -1,0 +1,8 @@
+tableId: hbc94
+hermesCommit: 1c717488d1799f6153cf6d60c3556ab4ddd9dce6
+fetchedAt: 2026-08-30T03:39:06Z
+files:
+  BytecodeList.def: 7b967c196ac48a3e2522fb06aab49cbeeef9808168f5c9b62203bf7f3481371a
+  Builtins.def: 65f59877583f88012db94b81b86eb2e2f818d60523c19b6b3bbae957ddb13338
+  BytecodeVersion.h: 1014b177b0ba453f6bc7c8d55922de009861781b150a23fc12b4d1afb00d6b8a
+  LICENSE: da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93

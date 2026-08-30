@@ -1,0 +1,8 @@
+tableId: hbc98-2024
+hermesCommit: c00cc57595b3ef504a323360ba77e7b2e0ac26ce
+fetchedAt: 2026-08-30T03:39:07Z
+files:
+  BytecodeList.def: f27036e2b1ad5d79119527a27c52a77db996bd7abd4b6cb485f0e335739acd8f
+  Builtins.def: ab3b00e95fad1c02cb24073f68ead3dee9df8dafdf8bd1761904ccaf69b6727f
+  BytecodeVersion.h: 65390ea8e57d4c4c6f4b5ffbfef33886467f58e5b2981ddb640d1884a632c977
+  LICENSE: da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93

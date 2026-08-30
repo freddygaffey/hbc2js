@@ -1,0 +1,8 @@
+tableId: hbc84
+hermesCommit: c2cd9e385a922f486a55e6bd70db2032f78379ed
+fetchedAt: 2026-08-30T03:39:04Z
+files:
+  BytecodeList.def: 8045674f8d01eeead3381d9707acd112986cdb73bfa90b644bdb58299f691c11
+  Builtins.def: ed3cbca4504c573b54b56e6054d48ede183b0e41c39b213a92bc846df1e533e2
+  BytecodeVersion.h: df92b2b47f6c9ca1a1c14928696569a6023610ffe5a3ef95b77d5c246cef6e87
+  LICENSE: da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93

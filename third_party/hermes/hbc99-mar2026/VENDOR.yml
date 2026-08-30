@@ -1,0 +1,8 @@
+tableId: hbc99-mar2026
+hermesCommit: 913d31acd10aff31e0856657c9c566c3e72bd24a
+fetchedAt: 2026-08-30T03:39:13Z
+files:
+  BytecodeList.def: e563431c40f75b584f8e65ab2c1d09879adc074bd0fc9f70281afdfb83eca483
+  Builtins.def: 294107bf09c0c5440eedfce878b6b2afa487649a1e879a9fc2f88101b53ec395
+  BytecodeVersion.h: fbfe74875ec6f01b5cf9221acdad0261e979172121ef5fee3f0816aa9d3686af
+  LICENSE: da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93
