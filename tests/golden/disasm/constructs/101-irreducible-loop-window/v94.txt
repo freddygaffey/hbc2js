@@ -1,0 +1,160 @@
+; hbc2js disassembly of 101-irreducible-loop-window/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=4 strings=15 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=dbg  @0x000001b4 size=370
+  0000  DeclareGlobalVar     s11 "r1"
+  0005  DeclareGlobalVar     s12 "r2"
+  000a  DeclareGlobalVar     s13 "r3"
+  000f  DeclareGlobalVar     s14 "r4"
+  0014  DeclareGlobalVar     s9 "expandWindow"
+  0019  DeclareGlobalVar     s8 "checkLo"
+  001e  DeclareGlobalVar     s7 "checkHi"
+  0023  CreateEnvironment    r1
+  0025  CreateClosure        r2, r1, f1 "expandWindow"
+  002a  GetGlobalObject      r0
+  002c  PutById              r0, r2, #c1, s9 "expandWindow"
+  0032  CreateClosure        r2, r1, f2 "checkLo"
+  0037  PutById              r0, r2, #c2, s8 "checkLo"
+  003d  CreateClosure        r1, r1, f3 "checkHi"
+  0042  PutById              r0, r1, #c3, s7 "checkHi"
+  0048  GetByIdShort         r1, r0, #c1, s9 "expandWindow"
+  004d  LoadConstUndefined   r4
+  004f  LoadConstUInt8       r8, 3
+  0052  LoadConstUInt8       r7, 5
+  0055  LoadConstUInt8       r6, 10
+  0058  LoadConstDouble      r5, 0.5
+  0062  LoadConstUndefined   r14
+  0064  Mov                  r13, r8
+  0067  Mov                  r12, r7
+  006a  Mov                  r11, r6
+  006d  Mov                  r10, r5
+  0070  Call                 r1, r1, 5
+  0074  PutById              r0, r1, #c4, s11 "r1"
+  007a  TryGetById           r9, r0, #c2, s10 "print"
+  0080  GetByIdShort         r1, r0, #c3, s11 "r1"
+  0085  GetByIdShort         r3, r1, #c4, s6 "lo"
+  008a  GetByIdShort         r1, r0, #c3, s11 "r1"
+  008f  GetByIdShort         r2, r1, #c5, s5 "hi"
+  0094  LoadConstString      r1, s2 "both directions active:"
+  0098  Call4                r1, r9, r4, r1, r3, r2
+  009f  GetByIdShort         r2, r0, #c1, s9 "expandWindow"
+  00a4  LoadConstDouble      r10, 0.9
+  00ae  LoadConstUndefined   r14
+  00b0  Mov                  r13, r8
+  00b3  LoadConstZero        r12
+  00b5  Mov                  r11, r6
+  00b8  Call                 r1, r2, 5
+  00bc  PutById              r0, r1, #c5, s12 "r2"
+  00c2  TryGetById           r9, r0, #c2, s10 "print"
+  00c8  GetByIdShort         r1, r0, #c6, s12 "r2"
+  00cd  GetByIdShort         r8, r1, #c4, s6 "lo"
+  00d2  GetByIdShort         r1, r0, #c6, s12 "r2"
+  00d7  GetByIdShort         r2, r1, #c5, s5 "hi"
+  00dc  LoadConstString      r1, s4 "lo-only branch:"
+  00e0  Call4                r1, r9, r4, r1, r8, r2
+  00e7  GetByIdShort         r2, r0, #c1, s9 "expandWindow"
+  00ec  LoadConstDouble      r10, 0.1
+  00f6  LoadConstUndefined   r14
+  00f8  LoadConstZero        r13
+  00fa  Mov                  r12, r7
+  00fd  Mov                  r11, r6
+  0100  Call                 r1, r2, 5
+  0104  PutById              r0, r1, #c6, s13 "r3"
+  010a  TryGetById           r8, r0, #c2, s10 "print"
+  0110  GetByIdShort         r1, r0, #c7, s13 "r3"
+  0115  GetByIdShort         r7, r1, #c4, s6 "lo"
+  011a  GetByIdShort         r1, r0, #c7, s13 "r3"
+  011f  GetByIdShort         r2, r1, #c5, s5 "hi"
+  0124  LoadConstString      r1, s3 "hi-only branch:"
+  0128  Call4                r1, r8, r4, r1, r7, r2
+  012f  GetByIdShort         r2, r0, #c1, s9 "expandWindow"
+  0134  LoadConstUInt8       r12, 9
+  0137  LoadConstUndefined   r14
+  0139  LoadConstZero        r13
+  013b  Mov                  r11, r6
+  013e  Mov                  r10, r5
+  0141  Call                 r1, r2, 5
+  0145  PutById              r0, r1, #c7, s14 "r4"
+  014b  TryGetById           r3, r0, #c2, s10 "print"
+  0151  GetByIdShort         r1, r0, #c8, s14 "r4"
+  0156  GetByIdShort         r2, r1, #c4, s6 "lo"
+  015b  GetByIdShort         r0, r0, #c8, s14 "r4"
+  0160  GetByIdShort         r1, r0, #c5, s5 "hi"
+  0165  LoadConstString      r0, s1 "already settled, loop body never…"
+  0169  Call4                r0, r3, r4, r0, r2, r1
+  0170  Ret                  r0
+
+function #1 "expandWindow"  params=5 frame=22 env=0 flags=dbg  @0x00000326 size=171
+  0000  LoadParam            r2, 1
+  0003  LoadParam            r1, 2
+  0006  LoadParam            r9, 3
+  0009  LoadParam            r8, 4
+  000c  GetGlobalObject      r7
+  000e  LoadConstUndefined   r6
+  0010  LoadConstUInt8       r5, 1
+  0013  GetByIdShort         r0, r7, #c1, s8 "checkLo"
+  0018  Call3                r0, r0, r6, r2, r8
+  001e  Mov                  r4, r2
+  0021  Mov                  r3, r1
+  0024  JmpTrue              L1, r0
+  0027  GetByIdShort         r0, r7, #c2, s7 "checkHi"
+  002c  Call4                r0, r0, r6, r1, r9, r8
+  0033  Mov                  r4, r2
+  0036  Mov                  r3, r1
+  0039  Mov                  r2, r4
+  003c  Mov                  r1, r3
+  003f  JmpFalse             L4, r0
+L1:
+  0042  GetByIdShort         r0, r7, #c1, s8 "checkLo"
+  0047  Call3                r10, r0, r6, r4, r8
+  004d  Mov                  r0, r4
+  0050  Mov                  r11, r0
+  0053  JmpFalse             L2, r10
+  0056  Sub                  r11, r0, r5
+L2:
+  005a  GetByIdShort         r0, r7, #c2, s7 "checkHi"
+  005f  Call4                r0, r0, r6, r3, r9, r8
+  0066  Mov                  r10, r3
+  0069  JmpFalse             L3, r0
+  006c  Add                  r10, r3, r5
+L3:
+  0070  GetByIdShort         r0, r7, #c1, s8 "checkLo"
+  0075  Call3                r0, r0, r6, r11, r8
+  007b  Mov                  r4, r11
+  007e  Mov                  r3, r10
+  0081  JmpTrue              L1, r0
+  0084  GetByIdShort         r0, r7, #c2, s7 "checkHi"
+  0089  Call4                r0, r0, r6, r10, r9, r8
+  0090  Mov                  r4, r11
+  0093  Mov                  r3, r10
+  0096  Mov                  r2, r4
+  0099  Mov                  r1, r3
+  009c  JmpTrue              L1, r0
+L4:
+  009f  NewObject            r0
+  00a1  PutNewOwnByIdShort   r0, r2, s6 "lo"
+  00a5  PutNewOwnByIdShort   r0, r1, s5 "hi"
+  00a9  Ret                  r0
+
+function #2 "checkLo"  params=3 frame=3 env=0 flags=dbg  @0x000003d1 size=31
+  0000  LoadParam            r1, 1
+  0003  LoadConstZero        r0
+  0005  Greater              r0, r1, r0
+  0009  JmpFalse             L1, r0
+  000c  LoadParam            r2, 2
+  000f  LoadConstDouble      r1, 0.2
+  0019  Greater              r0, r2, r1
+L1:
+  001d  Ret                  r0
+
+function #3 "checkHi"  params=4 frame=3 env=0 flags=dbg  @0x000003f0 size=39
+  0000  LoadParam            r1, 2
+  0003  LoadConstUInt8       r0, 1
+  0006  Sub                  r1, r1, r0
+  000a  LoadParam            r0, 1
+  000d  Less                 r0, r0, r1
+  0011  JmpFalse             L1, r0
+  0014  LoadParam            r2, 3
+  0017  LoadConstDouble      r1, 0.8
+  0021  Less                 r0, r2, r1
+L1:
+  0025  Ret                  r0

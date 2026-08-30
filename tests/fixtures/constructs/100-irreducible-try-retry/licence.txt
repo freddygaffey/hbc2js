@@ -1,0 +1,7 @@
+Original work, written for the hbc2js project. Licensed MIT, same terms as
+the rest of hbc2js (see docs/DECISIONS.md D4 -- Tier 1 construct fixtures must
+be freely usable and are authored fresh rather than borrowed from any external
+corpus). The control-flow shape is modeled on observed behaviour of
+tests/fixtures/bundles/rn-template-0.72's fn#637 (React's commitRootImpl),
+reconstructed from `hbc2js disasm` output -- not from hermes-dec (AGPL) or any
+other source under a restrictive licence.

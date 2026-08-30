@@ -760,6 +760,20 @@ passes the §5 isomorphism check, and the whole module passes `node --check`:
 T7): ~1.7% of blocks are duplicated to resolve irreducible entries, and *no*
 function needs a dispatch variable. Max tree nesting 319, well under ST-09's 1000.
 
+**T9 part 3 (D13a, 2026-08-30, Claude Sonnet 5): two hand-written stress
+fixtures with genuinely irreducible CFGs.** `tools/irreducibility.mjs`
+(Ramsey's duplicated-block count, D7) found the trigger is measurement-driven,
+not pattern-matched by eye — see `docs/lowering/irreducible-cfg.md` §4 for the
+full method, including a plausible-looking dominance argument that predicted
+*reducible* for the real bundle function it was modeling and was wrong.
+`tests/fixtures/constructs/100-irreducible-try-retry` (handler-driven, models
+`fn#637` from `rn-template-0.72`: an `if` feeding two paths into a
+`while(true){try{…}catch(e){…;continue;}break;}` retry) measures 12
+blocks/8 duplicated at all five hermesc versions; `101-irreducible-loop-window`
+(loop-driven, no handlers, models `fn#3251`: a `while` loop whose continue
+condition is a short-circuited OR of two independently side-effecting checks)
+measures 9 blocks/6 duplicated at all five versions. Both PASS the gate 5/5.
+
 ### Local corpus (C5, report only — never committed, extracted to a scratch dir)
 
 | Bundle | Version | Size | Result |

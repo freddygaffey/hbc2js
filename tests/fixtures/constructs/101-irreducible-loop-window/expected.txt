@@ -1,0 +1,4 @@
+both directions active: 0 9
+lo-only branch: 0 0
+hi-only branch: 0 9
+already settled, loop body never runs: 0 9
