@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "24", cache: npm }
       - uses: actions/cache@v4
-        with: { path: tools/hermesc, key: hermesc-Linux-${{ hashFiles('tools/get-hermesc.sh') }} }
+        with: { path: tools/hermesc, key: "hermesc-Linux-${{ hashFiles('tools/get-hermesc.sh') }}" }
       - run: npm ci
       - run: tools/get-hermesc.sh all
       - run: npm run test:sweep            # bundles/**, round-trip, obfuscated variants
