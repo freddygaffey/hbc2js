@@ -52,10 +52,44 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
 
    | Tier | Condition |
    |---|---|
-   | High | `moduleExactHits >= 3`, or `moduleExactHits >= 1` **and** module coverage ≥5%, or overall exact-function coverage ≥90% |
+   | High | `moduleExactHits >= 3` (`STRONG_MODULE_HIT_COUNT`); or, for packages with **≥3 non-baseline hashed modules** (`TINY_PACKAGE_MODULE_TOTAL`), `moduleExactHits >= 2` **and** module coverage ≥5% **and** overall exact-function coverage ≥10%; or, for **tiny** packages (<3 modules), ≥5 exact-matched functions totalling ≥150 instructions; or overall exact-function coverage ≥90% (any package size) |
    | Medium | overall fuzzy coverage ≥50%, or exactly 1–2 module-exact hits |
    | Low | any exact/fuzzy hit at all, below Medium's floor |
    | None | zero hits after the `--min-instr` floor |
+
+   **Threshold rationale (2026-08-30 tightening, `src/deps/match.ts`,
+   `docs/PACKAGE-SIGNATURES.md` §6.6).** The pre-fix "high" rule
+   (`moduleExactHits >= 1 && moduleCoverage >= 5%`) let a package with very
+   few total modules reach "high" off a **single** coincidentally-matching
+   module — measured live on `react-navigation-example-0.85.3` with the
+   fixed bulk signature DB layered in: `js-md5` (2 total modules) hit 1/2 =
+   50% coverage, `@emotion/react` (16–17 total modules) hit 1/16 ≈ 6%, both
+   comfortably over the old flat 5% floor from one lone hash collision
+   (FLIRT's classic single-collision risk, §1.2/§3.4). The fix requires
+   **independent, multi-hit evidence, sized to the package**:
+   - `STRONG_MODULE_HIT_COUNT = 3` — three or more independently-matching
+     modules is strong evidence regardless of package size (unchanged).
+   - `MIN_MODULE_HITS_FOR_COVERAGE_PATH = 2`, `MIN_MODULE_COVERAGE = 0.05`,
+     `MIN_EXACT_FUNCTION_COVERAGE_FOR_COVERAGE_PATH = 0.10` — the
+     percentage-of-modules path now needs *two* independent module hits,
+     never one, **and** a non-trivial slice of the package's own function
+     set (not just its module count) to have matched. Raising the hit floor
+     from 1 to 2 alone eliminates both measured false positives (each had
+     exactly 1 module hit); the function-coverage leg is defense in depth
+     against a similar two-hit coincidence in a function-rich package.
+   - `TINY_PACKAGE_MODULE_TOTAL = 3` — below this many total hashed modules,
+     the percentage-of-modules path is disabled outright: a percentage of 1
+     or 2 modules isn't statistically meaningful. Tiny packages instead need
+     `MIN_TINY_PACKAGE_EXACT_FUNCTION_HITS = 5` exact-matched functions
+     totalling `MIN_TINY_PACKAGE_EXACT_FUNCTION_INSTR = 150` instructions —
+     several sizeable functions matching exactly is not plausibly a
+     coincidence, whereas one is — or `HIGH_EXACT_FUNCTION_COVERAGE = 0.9`
+     (near-total package match, any size). `tests/gate/deps/match.test.ts`
+     has both the two regression cases (js-md5/@emotion don't reach "high"
+     off their real, single-hit collision) and two positive controls (the
+     same two packages, given genuine multi-hit/broad-coverage evidence,
+     still do) — see `tests/fixtures/sigdb/tiny-package-collision/` for the
+     real signature files the collision was reproduced from.
 
    Per-module ownership is by exact factory hash, falling back to the
    factory's fuzzy hash **and** full string set together (≥8 instructions
@@ -258,6 +292,50 @@ signature still contains (baseline-subtraction gap). The `-g` residue (19
 unattributed) is string-less factories under 16 instructions, where the
 fuzzy+string fallback is deliberately not trusted.
 
+### `match.ts` tier-threshold fix (2026-08-30, follow-up to §6.6)
+
+Re-ran both fixtures after the tier-threshold fix above. `rn-template-0.72`
+never exercises the fixed bug (shared DB only, no tiny-package collision in
+its dependency tree) and is confirmed byte-identical via
+`tools/deps-truth.mjs` before → after:
+
+| | before | after |
+|---|---|---|
+| `rn-template` release: confirmed | react-native@0.72.17, react@18.2.0 (precision 100%, recall 10% of all / 100% of direct) | unchanged |
+| `rn-template` release: per-module | 334/432 correct (77.3%), 51 via dependent, 40 wrong, 7 unattributed | unchanged |
+
+`react-navigation-example-0.85.3` has no committed `deps-truth.json` yet (its
+map/truth need a live `expo export --source-maps`, `tests/sweep/deps/truth-react-navigation.test.ts`
+skips until that exists), so this fixture's numbers below are `confirmedDeps`
+name/version counts against the known real dependency set (the same 9
+packages `tests/sweep/deps/corpus.test.ts` asserts against the shared DB
+alone), not a formal source-map score — measured offline, shared DB +
+2026-08-30's fixed bulk sample layered in as project-local (`tools/pkgsig/bulk`'s
+`sigdb-20260830-fixed.tar.zst`, per `docs/PACKAGE-SIGNATURES.md` §6.6.3):
+
+| | before | after |
+|---|---|---|
+| confirmed-tier entries | 17 (9 correct incl. 1 wrong-version `@react-navigation/native` duplicate — §4 S3, pre-existing, not this bug; 8 wrong: `js-md5` ×5 versions, `@emotion/react` ×3) | 9 (same 9 correct entries; 0 wrong) |
+| confirmed-tier precision (by distinct package name) | 8/10 = 80% | 8/8 = 100% |
+| confirmed-tier false positives | `js-md5`, `@emotion/react` | **none** |
+
+All 9 real dependencies this scenario recovers (`@react-navigation/stack`,
+`react-native-gesture-handler`, `react-native-reanimated`,
+`@react-navigation/native`, `react-native-screens`,
+`react-native-safe-area-context`, `react-native`, `react`, plus the
+already-flagged wrong-version `@react-navigation/native` duplicate) keep
+their exact `moduleExactHits`/`exactCoverage` numbers unchanged — the fix
+only removes the two false positives, per the positive-control tests in
+`tests/gate/deps/match.test.ts`. (`@react-native-async-storage/async-storage`,
+one of the 9 packages the shared-DB-alone `corpus.test.ts` sweep test finds,
+does not appear in *this* bulk-layered scenario either before or after this
+fix — its bulk-built signature at the exact matching version was built from
+a different Metro/RN scaffold than the fixture's own 0.85.3 and scores 0
+exact hits, so `src/deps/db.ts`'s per-`package@version` layering precedence
+shadows the shared DB's better-matching copy of the same version; a
+pre-existing `db.ts` layering risk, independent of this tier-threshold fix
+and out of `match.ts`'s ownership.)
+
 ## Shared DB size
 
 `tools/pkgsig/db` is ~16 MB as of this task (40 signature files + baselines,
@@ -284,7 +362,11 @@ corpus in this seed run never contributed anything to `tools/pkgsig/db`).
   committed `rn-template-0.72` fixture.
 - `tests/gate/deps/db.test.ts` — layering precedence and the on-disk format.
 - `tests/gate/deps/match.test.ts` — the offline gate check: react +
-  react-native must resolve at High confidence, lodash must not.
+  react-native must resolve at High confidence, lodash must not; plus the
+  D17d tiny-package-collision regression (`js-md5`/`@emotion/react` must not
+  reach High off one coincidental module hit, but must still reach it given
+  genuine multi-hit evidence) against the committed
+  `tests/fixtures/sigdb/tiny-package-collision/` real signature files.
 - `tests/gate/deps/guess.test.ts` — evidence-scoring unit tests, including
   the `Object.prototype`-pollution regression test.
 - `tests/gate/deps/apk.test.ts` — APK-hint mapping unit tests.
