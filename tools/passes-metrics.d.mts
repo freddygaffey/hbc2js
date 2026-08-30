@@ -20,3 +20,22 @@ export interface PassesMetricsResult {
 }
 
 export function measure(): PassesMetricsResult;
+
+// docs/specs/passes/03-global-access.md §7's corpus metric.
+export interface GlobalAccessPerFixtureMetric {
+  readonly fixture: string;
+  readonly version: number;
+  readonly functions: number;
+  readonly cleanFunctionsBefore: number;
+  readonly cleanFunctionsAfter: number;
+}
+
+export interface GlobalAccessMetricsResult {
+  readonly functionCount: number;
+  readonly cleanFunctionPct: number;
+  readonly cleanFunctionPctBefore: number;
+  readonly globalThisOccurrences: ReductionMetric;
+  readonly perFixture: readonly GlobalAccessPerFixtureMetric[];
+}
+
+export function measureGlobalAccess(versions?: readonly number[]): GlobalAccessMetricsResult;

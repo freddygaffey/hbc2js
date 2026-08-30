@@ -88,10 +88,10 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
 test("the pass registry lists the M5 passes in dependency order", () => {
   // Was "empty at M4"; spec 07 §2.3. The ordering/negative tests live in
   // tests/gate/passes/framework.test.ts.
-  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "expr-rebuild"]);
+  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "expr-rebuild", "global-access"]);
   assert.deepEqual(enabledPasses({ stage: "A" }).map((p) => p.name), ["loop-cond", "for-header"]);
-  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "expr-rebuild"]);
-  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild"]);
+  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "expr-rebuild", "global-access"]);
+  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access"]);
 });
 
 test("decompileTree covers every function of a module", () => {

@@ -4,13 +4,19 @@
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { exprRebuild } from "./expr-rebuild/index.ts";
 import { forHeader } from "./for-header/index.ts";
+import { globalAccess } from "./global-access/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
 import type { Pass, Stage } from "./types.ts";
 
 /** Order is explicit data (§2.3). Stage A first; within a stage, dependency
  *  order — `expr-rebuild` is first in stage B (PL-11), enforced below by
- *  injecting `after: ["expr-rebuild"]` into every other stage-B rung. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, exprRebuild as Pass];
+ *  injecting `after: ["expr-rebuild"]` into every other stage-B rung.
+ *  `global-access` runs right after it (docs/specs/passes/03-global-access.md
+ *  §7): it needs the member read `expr-rebuild` has already inlined into its
+ *  consumer to locate it at all, and must land before a not-yet-implemented
+ *  `call-shape` would (see `global-access/index.ts`'s comment on why that
+ *  `before` constraint is not declared as pass data yet). */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, exprRebuild as Pass, globalAccess as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
