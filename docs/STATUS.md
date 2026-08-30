@@ -30,6 +30,7 @@ Last updated: 2026-08-30
 
 ## Queued before M5
 - Measure `npm run test:all` and `hbc2js gate` wall time after M4 lands. If either exceeds ~2 min, parallelise: `node --test --test-concurrency=<cores>` across files, and per-fixture worker pool inside the gate runner (fixtures are independent). Keep a `--serial` escape hatch for debugging. Record timings here.
+  - Measured 2026-08-30 19:15 after M4: `npm test` (gate) = 69 s wall, 5.7 cores busy — node's runner already parallelises across files. `test:all`/`hbc2js gate` timings pending (M4 reviewer to record).
 
 ## Currently working
 - **M1 parser implemented** (`src/`, spec 00 skeleton + spec 01 parser). TypeScript
