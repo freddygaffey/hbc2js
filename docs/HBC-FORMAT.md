@@ -513,11 +513,30 @@ Tag types (`t` shifted into bits 4–6 of the first byte):
 | Number | 3 | 8 bytes, IEEE-754 double, LE |
 | LongString | 4 | 4 bytes, uint32 string id |
 | ShortString | 5 | 2 bytes, uint16 string id |
-| ByteString | 6 | 1 byte, uint8 string id |
+| ByteString / **Undefined** | 6 | **v≤96: 1 byte, uint8 string id. v≥97: NO PAYLOAD — the element is `undefined`.** |
 | Integer | 7 | 4 bytes, int32 |
 
-`undefined` has no tag — it is encoded as a string tag by the generator, so treat
-"string" as the fallback. All values little-endian.
+**Tag 6 changed meaning at v≥97.** Hermes's
+`include/hermes/BCGen/SerializedLiteralGenerator.h` at both vendored v98-late/v99
+pins (639e5d6, 913d31a) defines `UndefinedTag = 6 << 4` and has no `ByteStringTag`
+at all (with a TODO about restoring it); short string ids go through ShortString.
+Reading it with a payload at v≥97 mis-decodes everything after it — measured:
+`24-generator-return-throw` v99's finished-generator result comes out as
+`{value: "next", done: 1}` instead of `{value: undefined, done: true}`. Measured
+from bytes too: `47-typeof-instanceof-in` v99's value buffer reads
+`71 01000000 | 61 | 72 0a000000 14000000` = Integer 1, tag 6 with no payload,
+Integer 10, Integer 20 — and 0 of 162 v≥97 key buffers use tag 6 while all 51
+legacy ones do. `src/emit/literals.ts` reads it per era.
+
+So the old sentence "`undefined` has no tag — it is encoded as a string tag by
+the generator, so treat 'string' as the fallback" holds only for **v≤96**. At
+v≥97 `undefined` has its own tag and there is no string fallback.
+
+Two related v99 facts: tag 0 is `ValueNullOrKeyPrivateNameTag` there — a null tag
+in a *key* buffer means a **private name**, which `src/emit/literals.ts` refuses
+with `E_EMIT_UNSUPPORTED` rather than decoding as `null` — and the exact
+cut-over commit between v96 and 639e5d6 is not pinned; "≥97" is the boundary the
+0/162-vs-51/51 counts support. All values little-endian.
 
 ---
 

@@ -26,7 +26,7 @@ const TAG_NAMES = ["null", "true", "false", "number", "longString", "shortString
 
 /** Read one run header at `offset`. §6.3: short form `0ttt llll` (1 byte, len<=15);
  *  long form `1ttt llll llllllll` (2 bytes, len = low 12 bits, <=4095). */
-export function readLiteralRun(buf: Uint8Array, offset: number): LiteralRun {
+export function readLiteralRun(buf: Uint8Array, offset: number, version?: number): LiteralRun {
   if (offset < 0 || offset >= buf.length) {
     throw new Hbc2jsError(ErrorCode.E_BAD_LITERAL_TAG, `literal run header at ${offset} is out of bounds`, { offset, section: "literalValueBuffer" });
   }
@@ -46,7 +46,7 @@ export function readLiteralRun(buf: Uint8Array, offset: number): LiteralRun {
     count = first & 0x0f;
     headerBytes = 1;
   }
-  const payloadWidth = PAYLOAD_BYTES[tag]!;
+  const payloadWidth = payloadBytes(tag, version);
   const byteLength = headerBytes + payloadWidth * count;
   if (offset + byteLength > buf.length) {
     throw new Hbc2jsError(ErrorCode.E_BAD_LITERAL_TAG, `literal run at ${offset} (tag ${TAG_NAMES[tag]}, count ${count}) overruns buffer`, {
@@ -57,9 +57,24 @@ export function readLiteralRun(buf: Uint8Array, offset: number): LiteralRun {
   return { offset, tag, count, byteLength };
 }
 
-const PAYLOAD_BYTES: readonly number[] = [0, 0, 0, 8, 4, 2, 1, 4]; // Null,True,False,Number,LongString,ShortString,ByteString,Integer
+// Null,True,False,Number,LongString,ShortString,ByteString,Integer.
+//
+// **Tag 6 is era-dependent.** At v≤96 it is `ByteString` (one payload byte, a
+// uint8 string id); from v≥97 Hermes renamed it `UndefinedTag` and it carries
+// NO payload (`SerializedLiteralGenerator.h` at the vendored 639e5d6/913d31a
+// pins; docs/HBC-FORMAT.md §6.3). `readRunHeader`/`readLiterals` take an
+// optional `version` for that reason; omitting it means the v≤96 reading, which
+// is what every pre-existing caller wants. `src/emit/literals.ts` has its own
+// era-aware reader and does not go through here.
+const PAYLOAD_BYTES: readonly number[] = [0, 0, 0, 8, 4, 2, 1, 4];
+const PAYLOAD_BYTES_V97: readonly number[] = [0, 0, 0, 8, 4, 2, 0, 4];
 
-function readOneValue(buf: Uint8Array, view: DataView, tag: number, at: number): SerializedLiteral {
+/** Payload width per tag for a given bytecode version (undefined = v≤96). */
+function payloadBytes(tag: number, version: number | undefined): number {
+  return (version !== undefined && version >= 97 ? PAYLOAD_BYTES_V97 : PAYLOAD_BYTES)[tag]!;
+}
+
+function readOneValue(buf: Uint8Array, view: DataView, tag: number, at: number, version?: number): SerializedLiteral {
   switch (tag) {
     case 0:
       return { kind: "null" };
@@ -74,6 +89,8 @@ function readOneValue(buf: Uint8Array, view: DataView, tag: number, at: number):
     case 5:
       return { kind: "string", stringId: view.getUint16(at, true) };
     case 6:
+      // v≥97: `UndefinedTag`, no payload. v≤96: `ByteString`, one payload byte.
+      if (version !== undefined && version >= 97) return { kind: "undefined" };
       return { kind: "string", stringId: buf[at]! };
     case 7:
       return { kind: "integer", value: view.getInt32(at, true) };
@@ -84,22 +101,23 @@ function readOneValue(buf: Uint8Array, view: DataView, tag: number, at: number):
 
 /** Read exactly `count` values starting at `offset`, consuming as many runs as
  *  needed. `count` comes from the instruction operand, not the buffer. */
-export function readLiterals(buf: Uint8Array, offset: number, count: number): { values: readonly SerializedLiteral[]; nextOffset: number } {
+export function readLiterals(buf: Uint8Array, offset: number, count: number, version?: number): { values: readonly SerializedLiteral[]; nextOffset: number } {
   const values: SerializedLiteral[] = [];
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let o = offset;
   while (values.length < count) {
-    const run = readLiteralRun(buf, o);
-    const payloadStart = o + (run.byteLength - PAYLOAD_BYTES[run.tag]! * run.count);
+    const run = readLiteralRun(buf, o, version);
+    const width = payloadBytes(run.tag, version);
+    const payloadStart = o + (run.byteLength - width * run.count);
     const need = count - values.length;
     const take = Math.min(need, run.count);
     for (let i = 0; i < take; i++) {
-      values.push(readOneValue(buf, view, run.tag, payloadStart + i * PAYLOAD_BYTES[run.tag]!));
+      values.push(readOneValue(buf, view, run.tag, payloadStart + i * width, version));
     }
     if (take < run.count) {
       // Partial consumption of a run: the next read starts mid-run. Compute the
       // resulting offset as if the run had only `take` elements.
-      o = payloadStart + take * PAYLOAD_BYTES[run.tag]!;
+      o = payloadStart + take * width;
     } else {
       o = o + run.byteLength;
     }

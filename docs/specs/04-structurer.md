@@ -185,7 +185,13 @@ doTree(node, context):
     kids = dom.children[node] sorted by RPO index, descending
     mergeKids   = kids that are merge points
     ordinaryKids = the rest
-    inner = nodeWithin(node, mergeKids, context)
+    if node is a loop header:
+        -- The `loop` wrapper goes OUTSIDE the merge-kid `labeled` blocks, not
+        -- in nodeWithin's base case. See the note below.
+        loop(labelFor(node),
+             nodeWithin(node, mergeKids, context ++ [LoopHeadedBy node]))
+    else:
+        nodeWithin(node, mergeKids, context)
     -- mergeKids become nested `labeled` blocks so that any block dominated by
     -- `node` can `break` forward to them from arbitrary depth.
 
@@ -194,10 +200,7 @@ nodeWithin(node, [k, ...ks], context):
       followed by doTree(k, context)
 
 nodeWithin(node, [], context):
-    if node is a loop header:
-        loop(labelFor(node), doBranch-body with context ++ [LoopHeadedBy node])
-    else:
-        seq(blockLeaf(node), translateTerminator(node, context))
+    seq(blockLeaf(node), translateTerminator(node, context))
 
 translateTerminator(node, context):
     return/throw/unreachable -> the corresponding leaf
@@ -219,6 +222,16 @@ doBranch(from, to, context):
     else:
         doTree(to, context)                         -- inline it
 ```
+
+> **The `loop` wrapper wraps everything the header dominates — including its
+> merge kids.** Ramsey's `loop` encloses the whole dominated region, so it must
+> be applied in `doTree` around `nodeWithin(h, mergeKids, …)`, not in
+> `nodeWithin`'s base case. Putting it in the base case (as an earlier draft of
+> this section did) leaves every merge kid — and therefore usually the latch —
+> *outside* the loop, so the back edge's `continue` finds no enclosing loop and
+> the region falls to §4.4's dispatch. Measured: **62 gate functions** fell to
+> dispatch under the base-case placement and none do under this one (review
+> M4, spec-correction 9).
 
 > **"Is a merge point" and "has an in-scope label here" are different tests, and
 > conflating them is the single easiest way to ship a structurer that hangs or

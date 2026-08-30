@@ -115,6 +115,10 @@ function literalExpr(mod: HbcModule, v: SerializedLiteral | null): Expr {
       return lit(renderNumber(v.value));
     case "string":
       return stringLiteral(mod, v.stringId);
+    case "undefined":
+      // Only reachable via `src/parse/buffers.ts`'s version-aware reader; this
+      // module's own `readValuesTolerant` signals it with `null` (above).
+      return lit("undefined");
   }
 }
 

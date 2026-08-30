@@ -173,7 +173,10 @@ export type SerializedLiteral =
   | { readonly kind: "boolean"; readonly value: boolean }
   | { readonly kind: "number"; readonly value: number }
   | { readonly kind: "integer"; readonly value: number }
-  | { readonly kind: "string"; readonly stringId: number };
+  | { readonly kind: "string"; readonly stringId: number }
+  /** Tag 6 at v≥97 (`UndefinedTag`, no payload) — docs/HBC-FORMAT.md §6.3.
+   *  Only produced when `readLiterals` is given a version ≥ 97. */
+  | { readonly kind: "undefined" };
 
 export interface LiteralRun {
   readonly offset: number;
