@@ -17,6 +17,31 @@ import { decompile } from "../decompile.ts";
 
 export type Tier = "gate" | "sweep" | "hardened" | "local-corpus";
 
+/** Mirrors `tests/support/tiers.ts`'s `timeScale()` exactly (env var, default,
+ *  and non-positive/unparsable fallback all match): `src/` must not import
+ *  from `tests/`, so this is a second, deliberately tiny copy rather than a
+ *  cross-tree dependency. CI's `ci.yml` sets `HBC2JS_TIME_SCALE=2.5` because
+ *  shared runners don't reach a dev machine's per-core throughput; without
+ *  this, `runTier`'s default trace-oracle timeout (below) stays fixed at
+ *  8000ms even under that scale, and a slow/loaded runner can make a
+ *  legitimately-slow fixture (e.g. `25-generator-delegation`) time out and
+ *  report INCONCLUSIVE instead of PASS (queued CI fix #3, docs/STATUS.md). */
+function timeScale(): number {
+  const raw = process.env["HBC2JS_TIME_SCALE"];
+  if (raw === undefined) return 1;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/** A trace-oracle INCONCLUSIVE caused purely by both traces hitting their
+ *  time/record budget (compare.ts's `compareTraces`) — as opposed to a real
+ *  divergence or an unrelated INCONCLUSIVE reason (e.g. no hermesc for a
+ *  version). Worth one cheap retry: a single slow generator under CI
+ *  contention doesn't mean the fixture is actually too slow to ever finish. */
+function isBudgetTimeoutInconclusive(r: CheckResult): boolean {
+  return r.verdict === VERDICT.INCONCLUSIVE && r.oracles.some((o) => o.oracle === "trace" && o.verdict === VERDICT.INCONCLUSIVE && o.detail?.includes("hit a budget") === true);
+}
+
 export interface DecompilerInput {
   readonly hbcBytes: Uint8Array;
   readonly version: number;
@@ -373,7 +398,7 @@ export async function runTier(o: RunnerOptions): Promise<TierReport> {
     const candidatePath = join(dir, "candidate.js");
     writeFileSync(candidatePath, candidateJs);
     try {
-      return await runOracleLadder({
+      const ladderOpts = {
         fixture,
         candidateJsPath: candidatePath,
         sourceJsPath: input.sourcePath ?? undefined,
@@ -385,9 +410,17 @@ export async function runTier(o: RunnerOptions): Promise<TierReport> {
         seed: 0,
         fuzz: 50,
         ...(o.relax !== undefined ? { relax: o.relax } : {}),
-        timeoutMs: o.budgets?.timeoutMs ?? 8000,
+        // Scaled by HBC2JS_TIME_SCALE (default 1; CI sets 2.5) — see
+        // `timeScale()` above.
+        timeoutMs: o.budgets?.timeoutMs ?? Math.round(8000 * timeScale()),
         maxRecords: o.budgets?.maxRecords ?? 20000,
-      });
+      };
+      const first = await runOracleLadder(ladderOpts);
+      // One cheap retry when the *only* reason for INCONCLUSIVE is both
+      // traces hitting the time/record budget: a single slow generator
+      // under CI contention isn't evidence the fixture never finishes.
+      if (isBudgetTimeoutInconclusive(first)) return await runOracleLadder(ladderOpts);
+      return first;
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
