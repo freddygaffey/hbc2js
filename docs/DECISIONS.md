@@ -47,3 +47,9 @@ Each pass under `src/passes/<name>/` exports a pure `match(node, ctx) → Match 
 - **Sweep** (nightly/on demand, minutes): harvested Hermes lit tests, test262/quickjs subsets, Tier 2 bundles via recompile round-trip (D3).
 - **Hardened** (after the gate passes): obfuscated variants of gate fixtures (`javascript-obfuscator`: control-flow flattening, string-array encoding, dead code) — these change CFG shape, unlike minification, which Hermes already erases. Minified variants are kept only as a control proving name-erasure. See tests/fixtures/OBFUSCATION.md.
 New gate fixtures must be the red→green test for a pass or a minimised regression from a sweep failure; bulk corpora never enter the gate.
+
+## D14 — Ground truth is the Hermes VM running the original `.hbc`, not Node running the source (2026-08-30)
+Hermes diverges from spec/Node on per-iteration `let`, TDZ with shadowing, and sloppy `arguments` aliasing, and does so at every version tested (84, 89). The decompiler must reproduce the bytecode's behaviour. Therefore: where a Hermes VM for the fixture's version exists, its trace is the reference; `expected.txt` (Node) is the reference only when no VM is available and the fixture is not in the known-divergence set. Building Hermes from source for v94/v99 VMs is a sanctioned toolchain task (`hermes-engine-cli` stops at HBC 89).
+
+## D15 — Equivalence verdicts are three-valued; oracle ladder cheapest-first (2026-08-30)
+`node --check` → trace equivalence (D2) → differential fuzzing of exports → recompile round-trip (D3). PASS / DIVERGENT / INCONCLUSIVE; INCONCLUSIVE (timeout, empty trace, missing oracle) never counts as PASS. Round-trip similarity is a per-function ratchet, not a global percentage, because one extra instruction cascades through register allocation. See docs/EQUIVALENCE.md; `tools/equiv/` is the reference implementation to be promoted into `src/harness/`.
