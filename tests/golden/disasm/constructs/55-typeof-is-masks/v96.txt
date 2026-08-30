@@ -1,0 +1,225 @@
+; hbc2js disassembly of 55-typeof-is-masks/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=6 strings=45 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=dbg  @0x000002b4 size=639
+  0000  DeclareGlobalVar     s44 "values"
+  0005  DeclareGlobalVar     s40 "described"
+  000a  DeclareGlobalVar     s37 "notStrings"
+  000f  DeclareGlobalVar     s36 "objectish"
+  0014  DeclareGlobalVar     s33 "notFunctions"
+  0019  DeclareGlobalVar     s41 "i"
+  001e  DeclareGlobalVar     s31 "describe"
+  0023  DeclareGlobalVar     s32 "notString"
+  0028  DeclareGlobalVar     s42 "isObjectish"
+  002d  DeclareGlobalVar     s30 "notFunction"
+  0032  CreateEnvironment    r0
+  0034  CreateClosure        r2, r0, f1 "describe"
+  0039  GetGlobalObject      r1
+  003b  PutById              r1, r2, #c1, s31 "describe"
+  0041  CreateClosure        r2, r0, f2 "notString"
+  0046  PutById              r1, r2, #c2, s32 "notString"
+  004c  CreateClosure        r2, r0, f3 "isObjectish"
+  0051  PutById              r1, r2, #c3, s42 "isObjectish"
+  0057  CreateClosure        r2, r0, f4 "notFunction"
+  005c  PutById              r1, r2, #c4, s30 "notFunction"
+  0062  GetByIdShort         r4, r1, #c1, s31 "describe"
+  0067  NewArrayWithBuffer   r2, 10, 3, lit@0x0000
+  006f  LoadConstUndefined   r3
+  0071  PutOwnByIndex        r2, r3, 3
+  0075  PutOwnByIndex        r2, r4, 4
+  0079  TryGetById           r5, r1, #c2, s29 "Symbol"
+  007f  LoadConstString      r4, s24 "k"
+  0083  Call2                r4, r5, r3, r4
+  0088  PutOwnByIndex        r2, r4, 5
+  008c  LoadConstBigInt      r4, bi0 10n
+  0090  PutOwnByIndex        r2, r4, 6
+  0094  NewObject            r4
+  0096  PutOwnByIndex        r2, r4, 7
+  009a  LoadConstNull        r4
+  009c  PutOwnByIndex        r2, r4, 8
+  00a0  NewArray             r4, 0
+  00a4  PutOwnByIndex        r2, r4, 9
+  00a8  PutById              r1, r2, #c5, s44 "values"
+  00ae  NewArray             r2, 0
+  00b2  PutById              r1, r2, #c6, s40 "described"
+  00b8  NewArray             r2, 0
+  00bc  PutById              r1, r2, #c7, s37 "notStrings"
+  00c2  NewArray             r2, 0
+  00c6  PutById              r1, r2, #c8, s36 "objectish"
+  00cc  NewArray             r2, 0
+  00d0  PutById              r1, r2, #c9, s33 "notFunctions"
+  00d6  LoadConstZero        r6
+  00d8  PutById              r1, r6, #c10, s41 "i"
+  00de  GetByIdShort         r4, r1, #c3, s41 "i"
+  00e3  GetByIdShort         r2, r1, #c4, s44 "values"
+  00e8  GetByIdShort         r2, r2, #c5, s34 "length"
+  00ed  LoadConstUInt8       r5, 1
+  00f0  JNotLessLong         L5, r4, r2
+L1:
+  00f7  GetByIdShort         r7, r1, #c6, s40 "described"
+  00fc  GetByIdShort         r4, r7, #c7, s43 "push"
+  0101  GetByIdShort         r8, r1, #c1, s31 "describe"
+  0106  GetByIdShort         r9, r1, #c4, s44 "values"
+  010b  GetByIdShort         r2, r1, #c3, s41 "i"
+  0110  GetByVal             r2, r9, r2
+  0114  Call2                r2, r8, r3, r2
+  0119  Call2                r2, r4, r7, r2
+  011e  GetByIdShort         r7, r1, #c8, s37 "notStrings"
+  0123  GetByIdShort         r4, r7, #c7, s43 "push"
+  0128  GetByIdShort         r8, r1, #c9, s32 "notString"
+  012d  GetByIdShort         r9, r1, #c4, s44 "values"
+  0132  GetByIdShort         r2, r1, #c3, s41 "i"
+  0137  GetByVal             r2, r9, r2
+  013b  Call2                r8, r8, r3, r2
+  0140  LoadConstZero        r2
+  0142  JmpFalse             L2, r8
+  0145  Mov                  r2, r5
+L2:
+  0148  Call2                r2, r4, r7, r2
+  014d  GetByIdShort         r7, r1, #c10, s36 "objectish"
+  0152  GetByIdShort         r4, r7, #c7, s43 "push"
+  0157  GetByIdShort         r8, r1, #c11, s42 "isObjectish"
+  015c  GetByIdShort         r9, r1, #c4, s44 "values"
+  0161  GetByIdShort         r2, r1, #c3, s41 "i"
+  0166  GetByVal             r2, r9, r2
+  016a  Call2                r8, r8, r3, r2
+  016f  LoadConstZero        r2
+  0171  JmpFalse             L3, r8
+  0174  Mov                  r2, r5
+L3:
+  0177  Call2                r2, r4, r7, r2
+  017c  GetByIdShort         r7, r1, #c12, s33 "notFunctions"
+  0181  GetByIdShort         r4, r7, #c7, s43 "push"
+  0186  GetByIdShort         r8, r1, #c13, s30 "notFunction"
+  018b  GetByIdShort         r9, r1, #c4, s44 "values"
+  0190  GetByIdShort         r2, r1, #c3, s41 "i"
+  0195  GetByVal             r2, r9, r2
+  0199  Call2                r8, r8, r3, r2
+  019e  LoadConstZero        r2
+  01a0  JmpFalse             L4, r8
+  01a3  Mov                  r2, r5
+L4:
+  01a6  Call2                r2, r4, r7, r2
+  01ab  GetByIdShort         r2, r1, #c3, s41 "i"
+  01b0  Inc                  r2, r2
+  01b3  PutById              r1, r2, #c10, s41 "i"
+  01b9  GetByIdShort         r4, r1, #c3, s41 "i"
+  01be  GetByIdShort         r2, r1, #c4, s44 "values"
+  01c3  GetByIdShort         r2, r2, #c5, s34 "length"
+  01c8  JLessLong            L1, r4, r2
+L5:
+  01cf  TryGetById           r6, r1, #c14, s39 "print"
+  01d5  GetByIdShort         r5, r1, #c6, s40 "described"
+  01da  GetByIdShort         r2, r5, #c15, s35 "join"
+  01df  LoadConstString      r4, s0 ""
+  01e3  Call2                r5, r2, r5, r4
+  01e8  LoadConstString      r2, s18 "describe:"
+  01ec  Call3                r2, r6, r3, r2, r5
+  01f2  TryGetById           r6, r1, #c14, s39 "print"
+  01f8  GetByIdShort         r5, r1, #c8, s37 "notStrings"
+  01fd  GetByIdShort         r2, r5, #c15, s35 "join"
+  0202  Call2                r5, r2, r5, r4
+  0207  LoadConstString      r2, s20 "notString:"
+  020b  Call3                r2, r6, r3, r2, r5
+  0211  TryGetById           r6, r1, #c14, s39 "print"
+  0217  GetByIdShort         r5, r1, #c10, s36 "objectish"
+  021c  GetByIdShort         r2, r5, #c15, s35 "join"
+  0221  Call2                r5, r2, r5, r4
+  0226  LoadConstString      r2, s28 "typeofObject:"
+  022a  Call3                r2, r6, r3, r2, r5
+  0230  TryGetById           r6, r1, #c14, s39 "print"
+  0236  GetByIdShort         r5, r1, #c12, s33 "notFunctions"
+  023b  GetByIdShort         r2, r5, #c15, s35 "join"
+  0240  Call2                r5, r2, r5, r4
+  0245  LoadConstString      r2, s16 "notFunction:"
+  0249  Call3                r2, r6, r3, r2, r5
+  024f  TryGetById           r2, r1, #c14, s39 "print"
+  0255  GetByIdShort         r5, r1, #c4, s44 "values"
+  025a  GetByIdShort         r1, r5, #c16, s38 "map"
+  025f  CreateClosure        r0, r0, f5 ""
+  0264  Call2                r1, r1, r5, r0
+  0269  GetByIdShort         r0, r1, #c15, s35 "join"
+  026e  Call2                r1, r0, r1, r4
+  0273  LoadConstString      r0, s13 "ternary:"
+  0277  Call3                r0, r2, r3, r0, r1
+  027d  Ret                  r0
+
+function #1 "describe"  params=2 frame=3 env=0 flags=none  @0x00000533 size=134
+  0000  LoadParam            r2, 1
+  0003  TypeOf               r1, r2
+  0006  LoadConstString      r0, s22 "string"
+  000a  JStrictEqual         L9, r1, r0
+  000e  LoadConstString      r0, s25 "number"
+  0012  JStrictEqual         L8, r1, r0
+  0016  LoadConstString      r0, s15 "boolean"
+  001a  JStrictEqual         L7, r1, r0
+  001e  LoadConstString      r0, s17 "undefined"
+  0022  JStrictEqual         L6, r1, r0
+  0026  LoadConstString      r0, s19 "function"
+  002a  JStrictEqual         L5, r1, r0
+  002e  LoadConstString      r0, s27 "symbol"
+  0032  JStrictEqual         L4, r1, r0
+  0036  LoadConstString      r0, s11 "bigint"
+  003a  JStrictEqual         L3, r1, r0
+  003e  LoadConstString      r0, s26 "object"
+  0042  JStrictEqual         L1, r1, r0
+  0046  LoadConstString      r0, s1 "?"
+  004a  Ret                  r0
+L1:
+  004c  LoadConstString      r0, s6 "O"
+  0050  LoadConstNull        r1
+  0052  JStrictNotEqual      L2, r2, r1
+  0056  LoadConstString      r0, s10 "Z"
+L2:
+  005a  Ret                  r0
+L3:
+  005c  LoadConstString      r0, s4 "G"
+  0060  Ret                  r0
+L4:
+  0062  LoadConstString      r0, s9 "Y"
+  0066  Ret                  r0
+L5:
+  0068  LoadConstString      r0, s3 "F"
+  006c  Ret                  r0
+L6:
+  006e  LoadConstString      r0, s8 "U"
+  0072  Ret                  r0
+L7:
+  0074  LoadConstString      r0, s2 "B"
+  0078  Ret                  r0
+L8:
+  007a  LoadConstString      r0, s5 "N"
+  007e  Ret                  r0
+L9:
+  0080  LoadConstString      r0, s7 "S"
+  0084  Ret                  r0
+
+function #2 "notString"  params=2 frame=2 env=0 flags=none  @0x000005b9 size=16
+  0000  LoadParam            r0, 1
+  0003  TypeOf               r1, r0
+  0006  LoadConstString      r0, s22 "string"
+  000a  StrictNeq            r0, r1, r0
+  000e  Ret                  r0
+
+function #3 "isObjectish"  params=2 frame=2 env=0 flags=none  @0x000005c9 size=16
+  0000  LoadParam            r0, 1
+  0003  TypeOf               r1, r0
+  0006  LoadConstString      r0, s26 "object"
+  000a  StrictEq             r0, r1, r0
+  000e  Ret                  r0
+
+function #4 "notFunction"  params=2 frame=2 env=0 flags=none  @0x000005d9 size=16
+  0000  LoadParam            r0, 1
+  0003  TypeOf               r1, r0
+  0006  LoadConstString      r0, s19 "function"
+  000a  StrictNeq            r0, r1, r0
+  000e  Ret                  r0
+
+function #5 ""  params=2 frame=3 env=0 flags=none  @0x000005e9 size=24
+  0000  LoadConstString      r0, s12 "n"
+  0004  LoadParam            r1, 1
+  0007  TypeOf               r2, r1
+  000a  LoadConstString      r1, s27 "symbol"
+  000e  JStrictNotEqual      L1, r2, r1
+  0012  LoadConstString      r0, s14 "y"
+L1:
+  0016  Ret                  r0

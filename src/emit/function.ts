@@ -6,7 +6,8 @@ import type { BlockId, EnvGraph, FunctionCfg, ModuleAnalysis } from "../cfg/type
 import { siteKey } from "../cfg/types.ts";
 import { writtenRegisters } from "../cfg/reg-effects.ts";
 import type { HbcModule } from "../parse/types.ts";
-import type { BuiltinTable } from "../tables/types.ts";
+import type { BuiltinTable, TypeOfIsTable } from "../tables/types.ts";
+import { typeOfIsTableFor } from "./typeofis.ts";
 import type { Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
 import type { Expr, Stmt } from "./ast.ts";
 import { assign, bin, call, id, lit, num, un, UNDEF } from "./ast.ts";
@@ -29,7 +30,9 @@ export interface FunctionEmitter {
   readonly newTargetExpr: Expr;
   useHelper(name: string): void;
   needScratch(): void;
-  resolveEnv(insn: Instruction): number;
+  /** The env node an environment access resolves to, or `null` under
+   *  `--lenient-env` when spec 03 §6 could not resolve it (strict aborts). */
+  resolveEnv(insn: Instruction): number | null;
   recordShape(register: number, keys: readonly string[]): void;
   /** The env node created at `offset`, when its slots are declared inline. */
   loopLocalSlotsAt(offset: number): readonly string[] | undefined;
@@ -57,6 +60,9 @@ export interface EmitFunctionInput {
   readonly useHelper: (name: string) => void;
   readonly diagnostic: (d: Diagnostic) => void;
   readonly provenanceComments: boolean;
+  /** Spec 03 §6.4's R3 rule. False = `--lenient-env`: an unresolvable access
+   *  becomes a loud `__hbc_unresolved_env(...)` marker instead of aborting. */
+  readonly strictEnv: boolean;
 }
 
 /** Blocks whose bytes lie outside `region.bodyBlocks` but inside its try body. */
@@ -184,10 +190,14 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     needScratch(): void {
       needScratch = true;
     },
-    resolveEnv(insn: Instruction): number {
+    resolveEnv(insn: Instruction): number | null {
       const env = envGraph.resolvedAt.get(siteKey(fn.index, insn.offset));
       if (env === undefined) {
-        throw new Hbc2jsError(ErrorCode.E_ENV_UNRESOLVED, `${insn.name} at offset ${insn.offset} has no statically resolved environment`, { functionIndex: fn.index, offset: insn.offset, section: "emit" });
+        if (input.strictEnv) {
+          throw new Hbc2jsError(ErrorCode.E_ENV_UNRESOLVED, `${insn.name} at offset ${insn.offset} has no statically resolved environment`, { functionIndex: fn.index, offset: insn.offset, section: "emit" });
+        }
+        input.diagnostic({ severity: "warn", code: "W_ENV_UNRESOLVED", message: `${insn.name} at offset ${insn.offset} has no statically resolved environment; emitted as a __hbc_unresolved_env marker (--lenient-env)`, context: { functionIndex: fn.index, offset: insn.offset, section: "emit" } });
+        return null;
       }
       return env;
     },
@@ -248,14 +258,17 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     const block = structured.graph.blocks[blockId]!.block!;
     const last = block.instructions[block.instructions.length - 1]!;
     const regs = last.operands.filter((o) => o.role === "reg").map((o) => id(reg(o.value)) as Expr);
-    const extra: { builtin?: Expr; typeOfIsMask?: number } = {};
+    const extra: { builtin?: Expr; typeOfIsMask?: number; typeOfIsTable?: TypeOfIsTable | null } = {};
     if (last.name.startsWith("JmpBuiltinIs")) {
       const number = last.operands[1]!.value;
       const target = resolveBuiltin(builtins.builtins[number], number, fn.index, last.offset);
       if (target.helper !== null) f.useHelper(target.helper);
       extra.builtin = target.callee;
     }
-    if (last.name === "JmpTypeOfIs") extra.typeOfIsMask = last.operands[2]!.value;
+    if (last.name === "JmpTypeOfIs") {
+      extra.typeOfIsMask = last.operands[2]!.value;
+      extra.typeOfIsTable = typeOfIsTableFor(mod);
+    }
     return conditionFor(last, regs, extra, fn.index);
   };
 

@@ -15,8 +15,11 @@ import { HBC98_2024 as BUILTIN_HBC98_2024 } from "./generated/builtins-hbc98-202
 import { HBC98_LATE as BUILTIN_HBC98_LATE } from "./generated/builtins-hbc98-late.ts";
 import { HBC99_FEB2026 as BUILTIN_HBC99_FEB2026 } from "./generated/builtins-hbc99-feb2026.ts";
 import { HBC99_MAR2026 as BUILTIN_HBC99_MAR2026 } from "./generated/builtins-hbc99-mar2026.ts";
+import { HBC98_LATE as TYPEOFIS_HBC98_LATE } from "./generated/typeofis-hbc98-late.ts";
+import { HBC99_FEB2026 as TYPEOFIS_HBC99_FEB2026 } from "./generated/typeofis-hbc99-feb2026.ts";
+import { HBC99_MAR2026 as TYPEOFIS_HBC99_MAR2026 } from "./generated/typeofis-hbc99-mar2026.ts";
 import { ALL_OPCODE_TABLE_IDS } from "./types.ts";
-import type { BuiltinTable, OpcodeTable, OpcodeTableId } from "./types.ts";
+import type { BuiltinTable, OpcodeTable, OpcodeTableId, TypeOfIsTable } from "./types.ts";
 
 const OPCODE_TABLES: Readonly<Record<OpcodeTableId, OpcodeTable>> = {
   hbc84: HBC84,
@@ -36,6 +39,21 @@ const BUILTIN_TABLES: Readonly<Record<OpcodeTableId, BuiltinTable>> = {
   "hbc98-late": BUILTIN_HBC98_LATE,
   "hbc99-feb2026": BUILTIN_HBC99_FEB2026,
   "hbc99-mar2026": BUILTIN_HBC99_MAR2026,
+};
+
+/**
+ * `TypeOfIs` / `JmpTypeOfIs`'s mask decoding, per table. `null` means the pin's
+ * Hermes commit predates the opcode and has no `Typeof.h` to vendor — a mask at
+ * such a version is `E_EMIT_UNSUPPORTED`, never a guess (spec 05 §8).
+ */
+const TYPEOFIS_TABLES: Readonly<Record<OpcodeTableId, TypeOfIsTable | null>> = {
+  hbc84: null,
+  hbc94: null,
+  hbc96: null,
+  "hbc98-2024": null,
+  "hbc98-late": TYPEOFIS_HBC98_LATE,
+  "hbc99-feb2026": TYPEOFIS_HBC99_FEB2026,
+  "hbc99-mar2026": TYPEOFIS_HBC99_MAR2026,
 };
 
 function fail(id: OpcodeTableId, msg: string): never {
@@ -183,6 +201,13 @@ export function getOpcodeTable(id: OpcodeTableId): OpcodeTable {
 export function getBuiltinTable(id: OpcodeTableId): BuiltinTable {
   verifyTables();
   return BUILTIN_TABLES[id];
+}
+
+/** The `TypeOfIsTypes` bit order for a table, or `null` where the opcode does
+ *  not exist at that pin. */
+export function getTypeOfIsTable(id: OpcodeTableId): TypeOfIsTable | null {
+  verifyTables();
+  return TYPEOFIS_TABLES[id];
 }
 
 export function listOpcodeTableIds(): readonly OpcodeTableId[] {

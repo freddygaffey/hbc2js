@@ -9,8 +9,10 @@
 // lower to the same operator as the general form.
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { Instruction } from "../disasm/decode.ts";
+import type { TypeOfIsTable } from "../tables/types.ts";
 import type { BinaryOp, Expr } from "./ast.ts";
 import { bin, un } from "./ast.ts";
+import { typeOfIsExpr } from "./typeofis.ts";
 
 type CondBuilder = (operands: readonly Expr[], insn: Instruction) => Expr;
 
@@ -70,7 +72,7 @@ export function isConditionalJump(name: string): boolean {
  * The JS expression that is true exactly when `insn`'s *taken* edge is taken.
  * `regs` supplies the already-lowered register expressions, in operand order.
  */
-export function conditionFor(insn: Instruction, regs: readonly Expr[], extra: { readonly builtin?: Expr; readonly typeOfIsMask?: number }, functionIndex: number): Expr {
+export function conditionFor(insn: Instruction, regs: readonly Expr[], extra: { readonly builtin?: Expr; readonly typeOfIsMask?: number; readonly typeOfIsTable?: TypeOfIsTable | null }, functionIndex: number): Expr {
   const name = baseName(insn.name);
   const builder = TABLE[name];
   if (builder !== undefined) return builder(regs, insn);
@@ -85,17 +87,10 @@ export function conditionFor(insn: Instruction, regs: readonly Expr[], extra: { 
 
   if (name === "JmpTypeOfIs") {
     const mask = extra.typeOfIsMask ?? -1;
-    // Only the Function bit is confirmed against real bytecode (every
-    // `JmpTypeOfIs` in the corpus is mask 128, guarding
-    // `throwTypeError("Trying to call a non-function")`). `TypeOfIsTypes` is not
-    // in the vendored headers, so any other mask is refused rather than guessed
-    // (D8: never guess on ambiguity).
-    if (mask === 128) return bin("===", un("typeof ", regs[0]!), { k: "lit", text: '"function"' });
-    throw new Hbc2jsError(ErrorCode.E_EMIT_UNSUPPORTED, `JmpTypeOfIs mask ${mask} is not in the verified TypeOfIsTypes set (only 128 = Function is confirmed)`, {
-      functionIndex,
-      offset: insn.offset,
-      section: "emit/conds",
-    });
+    // `TypeOfIsTypes` is now vendored per pin (`Typeof.h`), so every bit of the
+    // mask decodes; a table whose Hermes commit predates the opcode still has
+    // none, and `typeOfIsExpr` refuses there rather than guessing (D8).
+    return typeOfIsExpr(regs[0]!, mask, extra.typeOfIsTable ?? null, { opcode: insn.name, functionIndex, offset: insn.offset, section: "emit/conds" });
   }
 
   throw new Hbc2jsError(ErrorCode.E_EMIT_UNSUPPORTED, `no conditional lowering for ${insn.name}`, { functionIndex, offset: insn.offset, section: "emit/conds" });

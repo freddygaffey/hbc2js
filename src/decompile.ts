@@ -32,6 +32,15 @@ export interface DecompileOptions {
   readonly resolveV98Ambiguity?: boolean;
   readonly analysis?: AnalysisOptions;
   readonly emit?: EmitOptions;
+  /**
+   * Spec 03 §6.4's R3 rule (`--lenient-env`). Default `true`: an environment
+   * access the env graph cannot resolve statically refuses the whole module
+   * with `E_ENV_UNRESOLVED`. `false` emits a loud `__hbc_unresolved_env(...)`
+   * marker per site instead — it throws when reached, and every site is
+   * reported as `W_ENV_UNRESOLVED` — so a production bundle with a handful of
+   * unresolvable sites can still be read (review M4-H2).
+   */
+  readonly strictEnv?: boolean;
   /** Run the spec 04 §5 isomorphism check inline. Default true. */
   readonly verify?: boolean;
   /** Only emit this function's tree (`--emit-tree`, `--function`). */
@@ -60,7 +69,8 @@ export function parseForDecompile(bytes: Uint8Array, opts: DecompileOptions = {}
 
 export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): DecompileResult {
   const { module, forced } = parseForDecompile(bytes, opts);
-  const analysis = analyseModule(module, { strictEnv: true, ...opts.analysis });
+  const strictEnv = opts.strictEnv ?? true;
+  const analysis = analyseModule(module, { strictEnv, ...opts.analysis });
   const diagnostics: Diagnostic[] = [...analysis.diagnostics];
   if (forced) {
     diagnostics.push({
@@ -73,6 +83,7 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
   const result = emitModule(analysis, {
     moduleName: opts.moduleName ?? "input.hbc",
     provenanceComments: false,
+    strictEnv,
     ...opts.emit,
     ...(opts.verify === false ? { structure: { ...opts.emit?.structure, verify: false } } : {}),
   });
@@ -82,7 +93,7 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
 /** `--emit-tree`: the structurer's tree IR for one function (or all of them). */
 export function decompileTree(bytes: Uint8Array, opts: DecompileOptions = {}): string {
   const { module } = parseForDecompile(bytes, opts);
-  const analysis = analyseModule(module, { strictEnv: true, ...opts.analysis });
+  const analysis = analyseModule(module, { strictEnv: opts.strictEnv ?? true, ...opts.analysis });
   const indices = opts.functionIndex !== undefined ? [opts.functionIndex] : module.functions.map((_, i) => i);
   const out: string[] = [];
   for (const i of indices) {

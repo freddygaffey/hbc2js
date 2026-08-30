@@ -17,3 +17,13 @@ vendored under `third_party/hermes/<tableId>/`. See docs/specs/01-parser.md §5.
 **hbc98-late is a patched table, not a literal parse of its vendored commit** — see the `patchHbc98Late` doc comment in `tools/gen-tables/gen.ts` and `docs/AGENT-LOG.md` for the full empirical derivation (no known public commit reproduces the real `hermes-compiler@250829098.0.x` opcode table).
 
 **hbc98-late opcode 15 is `CacheNewObject(Reg8, Reg8, UInt32, UInt8)`** — a real Hermes opcode (added `89bc5f08e` 2024-12-04, removed `7193d4485` 2026-01-21) absent from the vendored `639e5d6a` source but confirmed via its parent commit `f74f6bbe37ec85a52175c723b366b37717b64605` (BYTECODE_VERSION=98, an ancestor of `639e5d6a`) and independently via `tests/fixtures/constructs/50-this-binding/v98.hbc` function 3, which actually uses it (M1 review Finding 2 — see `patchHbc98Late`'s doc comment in tools/gen-tables/gen.ts for the full story).
+
+## `TypeOfIsTypes` bit order (`TypeOfIs` / `JmpTypeOfIs`)
+
+`Typeof.h`'s `HERMES_TYPEOF_IS_TYPES` macro list, in declaration order — bit `i` of the mask is the `i`-th name. There is no negate flag: a `!==` test compiles to the complement mask (e.g. 507 = all but `String` = `typeof x !== "string"`). Pins with no row have no `Typeof.h` at their commit and no `TypeOfIs` opcode, so a mask there is `E_EMIT_UNSUPPORTED`, not a guess.
+
+| tableId | hermesCommit | bit order | Typeof.h sha256 |
+|---|---|---|---|
+| hbc98-late | 639e5d6afb16ce5018afe5005427a4a85f9bf28b | Undefined, Object, String, Symbol, Boolean, Number, Bigint, Function, Null | 30a3fa562e57df77e0fd05399897428717ce0c37b24303f510df141f06c67cbc |
+| hbc99-feb2026 | 42235b8d913f0def9fb13b2eba82ce14a2bc6fcf | Undefined, Object, String, Symbol, Boolean, Number, Bigint, Function, Null | 30a3fa562e57df77e0fd05399897428717ce0c37b24303f510df141f06c67cbc |
+| hbc99-mar2026 | 913d31acd10aff31e0856657c9c566c3e72bd24a | Undefined, Object, String, Symbol, Boolean, Number, Bigint, Function, Null | 30a3fa562e57df77e0fd05399897428717ce0c37b24303f510df141f06c67cbc |

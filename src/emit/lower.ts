@@ -13,6 +13,7 @@ import { resolveBuiltin } from "./builtins.ts";
 import { arrayFromBuffer, bigIntLiteral, objectFromBuffers, objectKeys, regExpExpr, stringLiteral } from "./literals.ts";
 import { EXC_VALUE, envSlot, fnName, GEN_DONE, GEN_IS_RETURN, GEN_SENT, GEN_STATE, isSafePropertyName, quote, reg, SCRATCH } from "./names.ts";
 import type { FunctionEmitter } from "./function.ts";
+import { typeOfIsExpr, typeOfIsTableFor } from "./typeofis.ts";
 
 const R = (n: number): Expr => id(reg(n));
 
@@ -354,10 +355,11 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
       const s = RG(insn, 1);
       return set(V(insn, 0), { k: "cond", test: bin("===", un("typeof ", s), lit('"symbol"')), then: s, else: call(id("String"), [s]) });
     }
-    case "TypeOfIs": {
-      if (V(insn, 2) !== 128) return fail(`TypeOfIs mask ${V(insn, 2)} is not in the verified TypeOfIsTypes set (only 128 = Function is confirmed)`);
-      return set(V(insn, 0), bin("===", un("typeof ", RG(insn, 1)), lit('"function"')));
-    }
+    case "TypeOfIs":
+      // The mask is a `TypeOfIsTypes` bitset; `Typeof.h` is vendored per pin, so
+      // every bit decodes (review M4-H2). A pin without the header still
+      // refuses.
+      return set(V(insn, 0), typeOfIsExpr(RG(insn, 1), V(insn, 2), typeOfIsTableFor(f.mod), { opcode: insn.name, functionIndex: f.fn.index, offset: insn.offset, section: "emit/lower" }));
   }
 
   // --- properties ----------------------------------------------------------
@@ -542,18 +544,30 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
   }
 
   // --- environment ----------------------------------------------------------
+  // `resolveEnv` returns null only under `--lenient-env` (review M4-H2); the
+  // default is still spec 03 §6.4's R3 refusal. The marker throws when reached,
+  // so an unknown environment can never be read as `undefined`.
+  const unresolvedEnvMarker = (kind: "load" | "store", slot: number): Expr => {
+    f.useHelper("__hbc_unresolved_env");
+    return call(id("__hbc_unresolved_env"), [lit(JSON.stringify(kind)), num(f.fn.index), num(insn.offset), num(slot)]);
+  };
   switch (name) {
     case "LoadFromEnvironment":
-    case "LoadFromEnvironmentL":
-      return set(V(insn, 0), id(envSlot(f.resolveEnv(insn), V(insn, 2))));
+    case "LoadFromEnvironmentL": {
+      const env = f.resolveEnv(insn);
+      return set(V(insn, 0), env === null ? unresolvedEnvMarker("load", V(insn, 2)) : id(envSlot(env, V(insn, 2))));
+    }
     case "StoreToEnvironment":
     case "StoreToEnvironmentL":
     case "StoreNPToEnvironment":
-    case "StoreNPToEnvironmentL":
+    case "StoreNPToEnvironmentL": {
       // `StoreNPToEnvironment` is `StoreToEnvironment`: the NP is a GC
       // write-barrier hint, and emitting anything different is a bug.
-      out.push(assign(id(envSlot(f.resolveEnv(insn), V(insn, 1))), RG(insn, 2)));
+      const env = f.resolveEnv(insn);
+      if (env === null) out.push({ k: "expr", expr: unresolvedEnvMarker("store", V(insn, 1)) });
+      else out.push(assign(id(envSlot(env, V(insn, 1))), RG(insn, 2)));
       return;
+    }
     case "GetEnvironment":
     case "GetParentEnvironment":
     case "GetClosureEnvironment":

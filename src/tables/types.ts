@@ -92,3 +92,19 @@ export interface BuiltinTable {
   readonly hermesCommit: string;
   readonly builtins: readonly BuiltinDef[];
 }
+
+/**
+ * `TypeOfIs` / `JmpTypeOfIs`'s mask operand, from
+ * `include/hermes/FrontEndDefs/Typeof.h`'s `HERMES_TYPEOF_IS_TYPES` macro list.
+ * `TypeOfIsTypes` is a `uint16_t` bitset whose bit *i* is the *i*-th name in
+ * declaration order, so the macro list IS the table: `types[i]` is bit `i`.
+ * There is no "negate" flag — a `!==` test is compiled as the complement mask.
+ *
+ * Only pins whose Hermes commit has the opcode carry the header (v98-late on).
+ */
+export interface TypeOfIsTable {
+  readonly id: OpcodeTableId;
+  readonly hermesCommit: string;
+  /** Bit order, index = bit position. */
+  readonly types: readonly string[];
+}

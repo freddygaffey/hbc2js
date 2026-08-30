@@ -510,11 +510,24 @@ Fetches, from `https://raw.githubusercontent.com/facebook/hermes/<sha>/`:
 | `include/hermes/BCGen/HBC/BytecodeList.def` | opcode numbering + operand types |
 | `include/hermes/FrontEndDefs/Builtins.def` | builtin numbering |
 | `include/hermes/BCGen/HBC/BytecodeVersion.h` | assert `BYTECODE_VERSION` |
+| `include/hermes/FrontEndDefs/Typeof.h` | `TypeOfIsTypes` bit order (see below) |
 | `LICENSE` | MIT text, kept beside the sources |
 
 into `third_party/hermes/<tableId>/`, **committed to the repo**. Vendoring makes
 table generation hermetic (CI's `gen:tables:check` needs no network) and makes
 the provenance auditable. Record `sha256` of each file.
+
+`Typeof.h` is **optional per pin**: it appears with the `TypeOfIs` /
+`JmpTypeOfIs` opcodes (v98-late onwards), so `hbc84`…`hbc98-2024` have no such
+file and get no `TypeOfIsTypes` table. That is deliberate — a mask at a version
+whose bit order is unknown must be `E_EMIT_UNSUPPORTED`, never a guess (D8).
+The three pins that do have it are byte-identical (sha256
+`30a3fa56…`), and its `HERMES_TYPEOF_IS_TYPES` macro list IS the table: bit `i`
+of the mask is the `i`-th name, because `enum class Types` is generated from the
+same list. There is no negate flag — a `!==` test compiles to the complement
+mask, so `typeof x !== "string"` is 507. Generated into
+`src/tables/generated/typeofis-<tableId>.ts` (review M4-H2; this is what
+unblocked the 53 MB Discord and 35 MB Shopify bundles).
 
 ### 5.2 The pinned commits
 
@@ -594,7 +607,8 @@ shipped).
 ### 5.4 The generator (`tools/gen-tables/gen.ts`)
 
 Input: `third_party/hermes/<tableId>/`. Output:
-`src/tables/generated/opcodes-<tableId>.ts` and `builtins-<tableId>.ts`, plus a
+`src/tables/generated/opcodes-<tableId>.ts` and `builtins-<tableId>.ts`,
+`typeofis-<tableId>.ts` for the pins that have a `Typeof.h`, plus a
 rewritten `src/tables/generated/PROVENANCE.md`.
 
 Parsing rules for `BytecodeList.def` (all derived from the file itself; cite

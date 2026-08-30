@@ -1,0 +1,5 @@
+describe: SNBUFYGOZO
+notString: 0111111111
+typeofObject: 0000000111
+notFunction: 1111011111
+ternary: nnnnnynnnn

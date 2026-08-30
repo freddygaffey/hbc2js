@@ -1,0 +1,14 @@
+v84: FAILS - "invalid numeric literal" on the `10n` BigInt literal. That
+     hermesc build's lexer does not recognize the ES2020 BigInt suffix at all
+     (same reason as 46-bigint-arithmetic), and the `Bigint` bit of
+     `TypeOfIsTypes` cannot be exercised without a bigint value.
+v94: OK - compiles, but v94 has no `TypeOfIs`/`JmpTypeOfIs` opcode: the
+     `typeof` comparisons lower to `TypeOf` + a string compare. Kept as the
+     control that the *answers* are the same either way.
+v96: OK - same as v94.
+v98: OK - the point of this fixture. Measured masks: 1 (Undefined), 4
+     (String), 8 (Symbol), 16 (Boolean), 32 (Number), 64 (Bigint), 128
+     (Function), 258 (Object|Null, twice) and the complements 383
+     (`!== "function"`), 503 (`!== "symbol"`) and 507 (`!== "string"` -- the
+     mask that used to stop the Discord and Shopify bundles).
+v99: OK - same as v98.

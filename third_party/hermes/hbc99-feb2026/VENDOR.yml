@@ -1,8 +1,9 @@
 tableId: hbc99-feb2026
 hermesCommit: 42235b8d913f0def9fb13b2eba82ce14a2bc6fcf
-fetchedAt: 2026-08-30T03:39:12Z
+fetchedAt: 2026-08-30T10:09:20Z
 files:
   BytecodeList.def: c3b397b8e5047eb9591fb089022af96f3999482fa95acf81ce2d60af9d88feb1
   Builtins.def: 9eaeeca967dec2fbdf13928136e90a04b2a0490b380d44ab22e535fabbedd8ad
   BytecodeVersion.h: fbfe74875ec6f01b5cf9221acdad0261e979172121ef5fee3f0816aa9d3686af
   LICENSE: da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93
+  Typeof.h: 30a3fa562e57df77e0fd05399897428717ce0c37b24303f510df141f06c67cbc

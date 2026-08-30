@@ -294,3 +294,46 @@ export function parseBuiltinsDef(text: string): readonly BuiltinDef[] {
 
   return builtins;
 }
+
+
+/**
+ * `include/hermes/FrontEndDefs/Typeof.h` -> the `TypeOfIsTypes` bit order.
+ *
+ * The header defines the set once, as a macro list:
+ *
+ *   #define HERMES_TYPEOF_IS_TYPES           \\
+ *     HERMES_TYPEOF_IS_TYPES_TYPE(Undefined) \\
+ *     HERMES_TYPEOF_IS_TYPES_TYPE(Object)    \\
+ *     ...
+ *
+ * and `enum class Types` is generated from it, so declaration order IS bit
+ * order (`raw_ & (1 << (int)Types::name)`). Only the `#define` block is read —
+ * the same macro name is re-invoked further down for the accessors and the
+ * printer, and those must not be counted twice.
+ */
+export function parseTypeofDef(text: string): readonly string[] {
+  const start = text.indexOf("#define HERMES_TYPEOF_IS_TYPES");
+  if (start === -1) throw new Error("parseTypeofDef: no #define HERMES_TYPEOF_IS_TYPES in Typeof.h");
+  // The macro body is the continued line run: every line ending in a backslash,
+  // plus the first that does not.
+  let end = start;
+  const lines = text.slice(start).split("\n");
+  let consumed = 0;
+  const body: string[] = [];
+  for (const line of lines) {
+    consumed += line.length + 1;
+    body.push(line);
+    if (!line.trimEnd().endsWith("\\")) break;
+  }
+  end = start + consumed;
+  void end;
+  const names: string[] = [];
+  const re = /HERMES_TYPEOF_IS_TYPES_TYPE\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
+  for (const line of body) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line)) !== null) names.push(m[1]!);
+  }
+  if (names.length === 0) throw new Error("parseTypeofDef: HERMES_TYPEOF_IS_TYPES macro body listed no types");
+  if (new Set(names).size !== names.length) throw new Error(`parseTypeofDef: duplicate type in ${names.join(",")}`);
+  return names;
+}

@@ -68,6 +68,26 @@ var __hbc_HermesInternal = {
   // "the one currently stepping".
   h("__hbc_delegated", `var __hbc_delegated = false;`),
 
+  // `--lenient-env` only. Spec 03 §6.4's R3 rule says an environment access
+  // that cannot be resolved statically is an error, and the default stays
+  // exactly that (`E_ENV_UNRESOLVED`). `--lenient-env` trades the *whole
+  // module* refusing for a per-site marker so a 50 MB production bundle can be
+  // read at all -- but the marker must be LOUD: it throws the moment control
+  // reaches it, naming the site, instead of quietly reading `undefined`.
+  h(
+    "__hbc_unresolved_env",
+    `
+function __hbc_unresolved_env(kind, fnIndex, offset, slot) {
+  throw new Error(
+    "hbc2js: unresolved environment " + kind + " of slot " + slot +
+    " (fn#" + fnIndex + " @" + offset + "). Decompiled with --lenient-env, so this " +
+    "access was emitted as a marker instead of aborting the module; its value is " +
+    "genuinely unknown. See docs/specs/03-cfg.md 6.4."
+  );
+}
+`,
+  ),
+
   // -------------------------------------------------------------------------
   // §7.2.1 — v<=96 generator protocol.
   //

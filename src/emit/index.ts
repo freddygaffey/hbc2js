@@ -21,6 +21,7 @@ export interface EmitOptions {
   /** Include `// fn#N @0x…` provenance comments. Default true. */
   readonly provenanceComments?: boolean;
   readonly helpers?: "inline" | "import";
+  /** Spec 03 §6.4's R3 rule. Default true; false is `--lenient-env`. */
   readonly strictEnv?: boolean;
   readonly indent?: string;
   readonly moduleName?: string;
@@ -57,6 +58,10 @@ function inCycle(cfg: import("../cfg/types.ts").FunctionCfg, block: number): boo
 export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): EmitResult {
   const mod = analysis.module;
   const provenanceComments = opts.provenanceComments ?? true;
+  // Spec 03 §6.4's R3 rule, restated at emit time. Default strict; the CLI's
+  // `--lenient-env` turns each unresolvable access into a loud marker instead
+  // of refusing the module (review M4-H2).
+  const strictEnv = opts.strictEnv ?? true;
   const indent = opts.indent ?? "  ";
   const diagnostics: Diagnostic[] = [];
   const envGraph = analysis.envGraph;
@@ -200,6 +205,7 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       useHelper,
       diagnostic: (d) => diagnostics.push(d),
       provenanceComments,
+      strictEnv,
     });
   };
 
