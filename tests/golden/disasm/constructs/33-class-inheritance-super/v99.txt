@@ -1,0 +1,149 @@
+; hbc2js disassembly of 33-class-inheritance-super/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=9 strings=20 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=dbg,overflowed  @0x000001e8 size=276
+  0000  CreateFunctionEnvironment r4, 4
+  0003  LoadConstUndefined   r0
+  0005  CreateBaseClass      r5, r3, r0, 1
+  000b  Mov                  r6, r3
+  000e  LoadConstString      r9, s19 "speak"
+  0012  CreateClosure        r3, r0, f2 "speak"
+  0017  DefineOwnByVal       r6, r3, r9, 0
+  001c  LoadConstString      r8, s14 "describe"
+  0020  CreateClosure        r3, r0, f3 "describe"
+  0025  DefineOwnByVal       r6, r3, r8, 0
+  002a  CreateDerivedClass   r6, r3, r4, r5, 4
+  0031  CreateClosure        r7, r4, f5 "speak"
+  0036  DefineOwnByVal       r3, r7, r9, 0
+  003b  CreateClosure        r7, r4, f6 "describe"
+  0040  DefineOwnByVal       r3, r7, r8, 0
+  0045  StoreToEnvironment   r4, 1, r6
+  0049  StoreToEnvironment   r4, 0, r3
+  004d  CreateDerivedClass   r7, r3, r4, r6, 7
+  0054  CreateClosure        r8, r4, f8 "speak"
+  0059  DefineOwnByVal       r3, r8, r9, 0
+  005e  StoreToEnvironment   r4, 3, r7
+  0062  StoreToEnvironment   r4, 2, r3
+  0066  GetByIdShort         r3, r5, #c0, s18 "prototype"
+  006b  NewObjectWithParent  r10, r3
+  006e  LoadConstString      r3, s8 "Generic"
+  0072  PutByIdStrict        r10, r3, #c0, s16 "name"
+  0078  LoadParentNoTraps    r8, r6
+  007b  CreateThisForSuper   r4, r8, r6, 0
+  0080  LoadConstString      r12, s12 "Rex"
+  0084  Mov                  r13, r4
+  0087  CallWithNewTarget    r3, r8, r6, 2
+  008c  SelectObject         r9, r4, r3
+  0090  LoadConstEmpty       r3
+  0092  ThrowIfThisInitialized r3
+  0094  LoadConstString      r3, s9 "Labrador"
+  0098  PutByIdStrict        r9, r3, #c1, s15 "breed"
+  009e  LoadConstString      r11, s10 "Poodle"
+  00a2  LoadConstString      r12, s13 "Tiny"
+  00a6  LoadConstUndefined   r13
+  00a8  Construct            r4, r7, 3
+  00ac  GetGlobalObject      r3
+  00ae  TryGetById           r8, r3, #c1, s17 "print"
+  00b4  GetByIdShort         r7, r10, #c2, s19 "speak"
+  00b9  Call1                r7, r7, r10
+  00bd  Call2                r7, r8, r0, r7
+  00c2  TryGetById           r8, r3, #c1, s17 "print"
+  00c8  GetByIdShort         r7, r9, #c2, s19 "speak"
+  00cd  Call1                r7, r7, r9
+  00d1  Call2                r7, r8, r0, r7
+  00d6  TryGetById           r8, r3, #c1, s17 "print"
+  00dc  GetByIdShort         r7, r9, #c3, s14 "describe"
+  00e1  Call1                r7, r7, r9
+  00e5  Call2                r7, r8, r0, r7
+  00ea  TryGetById           r8, r3, #c1, s17 "print"
+  00f0  GetByIdShort         r7, r4, #c2, s19 "speak"
+  00f5  Call1                r7, r7, r4
+  00f9  Call2                r7, r8, r0, r7
+  00fe  TryGetById           r3, r3, #c1, s17 "print"
+  0104  InstanceOf           r1, r4, r6
+  0108  InstanceOf           r2, r4, r5
+  010c  Call3                r3, r3, r0, r1, r2
+  0112  Ret                  r3
+
+function #1 "Animal"  params=2 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x000002fc size=21
+  0000  GetNewTarget         r0
+  0002  GetByIdShort         r0, r0, #c0, s18 "prototype"
+  0007  NewObjectWithParent  r0, r0
+  000a  LoadParam            r1, 1
+  000d  PutByIdStrict        r0, r1, #c0, s16 "name"
+  0013  Ret                  r0
+
+function #2 "speak"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x00000311 size=18
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r1, r0, #c0, s16 "name"
+  0008  LoadConstString      r0, s2 " makes a sound"
+  000c  Add                  r0, r1, r0
+  0010  Ret                  r0
+
+function #3 "describe"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x00000323 size=18
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r1, r0, #c0, s16 "name"
+  0008  LoadConstString      r0, s5 "Animal:"
+  000c  Add                  r0, r0, r1
+  0010  Ret                  r0
+
+function #4 "Dog"  params=3 frame=13 env=0 flags=strict,dbg,overflowed,ctor  @0x00000335 size=47
+  0000  GetNewTarget         r3
+  0002  GetParentEnvironment r0, 0
+  0005  LoadFromEnvironment  r0, r0, 1
+  0009  LoadParentNoTraps    r2, r0
+  000c  CreateThisForSuper   r1, r2, r3, 0
+  0011  LoadParam            r4, 1
+  0014  Mov                  r5, r1
+  0017  CallWithNewTarget    r0, r2, r3, 2
+  001c  SelectObject         r0, r1, r0
+  0020  LoadConstEmpty       r1
+  0022  ThrowIfThisInitialized r1
+  0024  LoadParam            r1, 2
+  0027  PutByIdStrict        r0, r1, #c0, s15 "breed"
+  002d  Ret                  r0
+
+function #5 "speak"  params=1 frame=10 env=0 flags=strict,dbg,overflowed,nc  @0x00000364 size=36
+  0000  LoadParam            r1, 0
+  0003  GetParentEnvironment r0, 0
+  0006  LoadFromEnvironment  r0, r0, 0
+  000a  LoadParentNoTraps    r0, r0
+  000d  GetByIdWithReceiverLong r0, r0, #c0, r1, s19 "speak"
+  0016  Call1                r1, r0, r1
+  001a  LoadConstString      r0, s0 " (specifically, barks)"
+  001e  Add                  r0, r1, r0
+  0022  Ret                  r0
+
+function #6 "describe"  params=1 frame=11 env=0 flags=strict,dbg,overflowed,nc  @0x00000388 size=45
+  0000  LoadParam            r0, 0
+  0003  GetParentEnvironment r1, 0
+  0006  LoadFromEnvironment  r1, r1, 0
+  000a  LoadParentNoTraps    r1, r1
+  000d  GetByIdWithReceiverLong r1, r1, #c0, r0, s14 "describe"
+  0016  Call1                r2, r1, r0
+  001a  LoadConstString      r1, s3 ", breed="
+  001e  Add                  r1, r2, r1
+  0022  GetByIdShort         r0, r0, #c1, s15 "breed"
+  0027  Add                  r0, r1, r0
+  002b  Ret                  r0
+
+function #7 "Puppy"  params=1 frame=14 env=0 flags=strict,dbg,overflowed,ctor  @0x000003b5 size=29
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r0, r0, 3
+  0007  LoadParentNoTraps    r2, r0
+  000a  GetNewTarget         r1
+  000c  CreateThisForSuper   r4, r2, r1, 0
+  0011  Mov                  r5, r2
+  0014  Mov                  r3, r1
+  0017  CallBuiltin          r0, b50 "applyArguments", 4
+  001b  Ret                  r0
+
+function #8 "speak"  params=1 frame=10 env=0 flags=strict,dbg,overflowed,nc  @0x000003d2 size=36
+  0000  LoadParam            r1, 0
+  0003  GetParentEnvironment r0, 0
+  0006  LoadFromEnvironment  r0, r0, 2
+  000a  LoadParentNoTraps    r0, r0
+  000d  GetByIdWithReceiverLong r0, r0, #c0, r1, s19 "speak"
+  0016  Call1                r1, r0, r1
+  001a  LoadConstString      r0, s1 " [in a tiny voice]"
+  001e  Add                  r0, r1, r0
+  0022  Ret                  r0

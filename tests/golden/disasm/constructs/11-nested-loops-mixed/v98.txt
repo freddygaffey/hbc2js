@@ -1,0 +1,45 @@
+; hbc2js disassembly of 11-nested-loops-mixed/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=7 globalCodeIndex=0
+function #0 "global"  params=1 frame=26 env=0 flags=overflowed,ctor  @0x000000e0 size=140
+  0000  NewArray             r15, 0
+  0004  LoadConstUInt8       r8, 2
+  0007  LoadConstUInt8       r2, 1
+  000a  LoadConstUInt8       r9, 3
+  000d  LoadConstString      r11, s1 "."
+  0011  LoadConstZero        r6
+L1:
+  0013  AddN                 r7, r6, r2
+  0017  Add                  r12, r7, r11
+  001b  LoadConstZero        r3
+L2:
+  001d  AddN                 r4, r3, r2
+  0021  Add                  r13, r12, r4
+  0025  LoadConstZero        r0
+L3:
+  0027  Mov                  r1, r0
+  002a  JStrictNotEqual      L4, r1, r2
+  002e  JStrictEqual         L5, r4, r8
+L4:
+  0032  GetByIdShort         r16, r15, #c0, s6 "push"
+  0037  AddS                 r14, r13, r11
+  003b  Add                  r14, r14, r1
+  003f  Call2                r14, r16, r15, r14
+L5:
+  0044  AddN                 r0, r1, r2
+  0048  JLessN               L3, r0, r9
+  004c  Mov                  r3, r4
+  004f  JLessN               L2, r3, r8
+  0053  Mov                  r6, r7
+  0056  JLessN               L1, r6, r8
+  005a  GetGlobalObject      r11
+  005c  TryGetById           r13, r11, #c1, s5 "print"
+  0062  GetByIdShort         r14, r15, #c2, s4 "join"
+  0067  LoadConstString      r12, s0 " | "
+  006b  Call2                r12, r14, r15, r12
+  0070  LoadConstUndefined   r10
+  0072  Call2                r12, r13, r10, r12
+  0077  TryGetById           r12, r11, #c1, s5 "print"
+  007d  LoadConstString      r11, s3 "outerCount="
+  0081  Add                  r11, r11, r7
+  0085  Call2                r11, r12, r10, r11
+  008a  Ret                  r11

@@ -1,0 +1,109 @@
+; hbc2js disassembly of 40-spread-array/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=4 strings=13 globalCodeIndex=0
+function #0 "global"  params=1 frame=23 env=0 flags=dbg,overflowed  @0x00000160 size=335
+  0000  DeclareGlobalVar     s11 "sum3"
+  0005  DeclareGlobalVar     s12 "variadicSum"
+  000a  GetGlobalObject      r4
+  000c  LoadConstUndefined   r3
+  000e  CreateClosure        r5, r3, f1 "sum3"
+  0013  PutByIdLoose         r4, r5, #c0, s11 "sum3"
+  0019  CreateClosure        r5, r3, f2 "variadicSum"
+  001e  PutByIdLoose         r4, r5, #c1, s12 "variadicSum"
+  0024  NewArrayWithBuffer   r7, 3, 3, lit@0x0000
+  002c  NewArrayWithBuffer   r10, 3, 1, lit@0x000d
+  0034  LoadConstUInt8       r1, 1
+  0037  Mov                  r14, r10
+  003a  Mov                  r13, r7
+  003d  Mov                  r12, r1
+  0040  CallBuiltin          r0, b48 "arraySpread", 4
+  0044  LoadConstUInt8       r2, 4
+  0047  DefineOwnByVal       r10, r2, r0, 1
+  004c  AddN                 r12, r0, r1
+  0050  Mov                  r14, r10
+  0053  Mov                  r13, r7
+  0056  CallBuiltin          r1, b48 "arraySpread", 4
+  005a  LoadConstUInt8       r0, 5
+  005d  DefineOwnByVal       r10, r0, r1, 1
+  0062  TryGetById           r8, r4, #c0, s8 "print"
+  0068  GetByIdShort         r5, r10, #c1, s7 "join"
+  006d  LoadConstString      r6, s1 ","
+  0071  Call2                r5, r5, r10, r6
+  0076  Call2                r5, r8, r3, r5
+  007b  TryGetById           r8, r4, #c0, s8 "print"
+  0081  GetByIdShort         r9, r4, #c2, s11 "sum3"
+  0086  NewArray             r5, 0
+  008a  Mov                  r14, r5
+  008d  Mov                  r13, r7
+  0090  LoadConstZero        r12
+  0092  CallBuiltin          r1, b48 "arraySpread", 4
+  0096  Mov                  r14, r9
+  0099  Mov                  r13, r5
+  009c  LoadConstUndefined   r12
+  009e  CallBuiltin          r5, b49 "apply", 4
+  00a2  Call2                r5, r8, r3, r5
+  00a7  TryGetById           r8, r4, #c0, s8 "print"
+  00ad  GetByIdShort         r9, r4, #c3, s12 "variadicSum"
+  00b2  NewArray             r5, 0
+  00b6  Mov                  r14, r5
+  00b9  Mov                  r13, r7
+  00bc  LoadConstZero        r12
+  00be  CallBuiltin          r12, b48 "arraySpread", 4
+  00c2  Mov                  r14, r5
+  00c5  Mov                  r13, r10
+  00c8  CallBuiltin          r1, b48 "arraySpread", 4
+  00cc  Mov                  r14, r9
+  00cf  Mov                  r13, r5
+  00d2  LoadConstUndefined   r12
+  00d4  CallBuiltin          r5, b49 "apply", 4
+  00d8  Call2                r5, r8, r3, r5
+  00dd  TryGetById           r8, r4, #c0, s8 "print"
+  00e3  NewArray             r10, 0
+  00e7  LoadConstString      r13, s3 "abc"
+  00eb  Mov                  r14, r10
+  00ee  LoadConstZero        r12
+  00f0  CallBuiltin          r1, b48 "arraySpread", 4
+  00f4  GetByIdShort         r9, r10, #c1, s7 "join"
+  00f9  LoadConstString      r5, s2 "-"
+  00fd  Call2                r5, r9, r10, r5
+  0102  Call2                r5, r8, r3, r5
+  0107  NewArray             r5, 0
+  010b  Mov                  r14, r5
+  010e  Mov                  r13, r7
+  0111  CallBuiltin          r0, b48 "arraySpread", 4
+  0115  GetByIdShort         r8, r5, #c4, s9 "push"
+  011a  LoadConstInt         r0, 999
+  0120  Call2                r8, r8, r5, r0
+  0125  TryGetById           r8, r4, #c0, s8 "print"
+  012b  GetByIdShort         r4, r7, #c1, s7 "join"
+  0130  Call2                r13, r4, r7, r6
+  0135  GetByIdShort         r4, r5, #c1, s7 "join"
+  013a  Call2                r11, r4, r5, r6
+  013f  LoadConstString      r12, s4 "copy:"
+  0143  LoadConstString      r14, s6 "original unaffected:"
+  0147  LoadConstUndefined   r15
+  0149  Call                 r4, r8, 5
+  014d  Ret                  r4
+
+function #1 "sum3"  params=4 frame=2 env=0 flags=dbg,overflowed  @0x000002af size=19
+  0000  LoadParam            r1, 2
+  0003  LoadParam            r0, 1
+  0006  Add                  r1, r0, r1
+  000a  LoadParam            r0, 3
+  000d  Add                  r0, r1, r0
+  0011  Ret                  r0
+
+function #2 "variadicSum"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x000002c2 size=28
+  0000  LoadConstZero        r0
+  0002  LoadConstZero        r6
+  0004  CallBuiltin          r4, b47 "copyRestArgs", 2
+  0008  GetByIdShort         r3, r4, #c0, s10 "reduce"
+  000d  LoadConstUndefined   r1
+  000f  CreateClosure        r2, r1, f3 ""
+  0014  Call3                r2, r3, r4, r2, r0
+  001a  Ret                  r2
+
+function #3 ""  params=3 frame=2 env=0 flags=dbg,overflowed  @0x000002de size=12
+  0000  LoadParam            r1, 2
+  0003  LoadParam            r0, 1
+  0006  Add                  r0, r0, r1
+  000a  Ret                  r0

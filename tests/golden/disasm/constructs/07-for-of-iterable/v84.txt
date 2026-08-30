@@ -1,0 +1,183 @@
+; hbc2js disassembly of 07-for-of-iterable/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=3 strings=23 globalCodeIndex=0
+function #0 "global"  params=1 frame=26 env=0 flags=exc,dbg  @0x000001e8 size=485
+  .try T1..T2 -> L5 ; handler 0
+  .try T3..T4 -> L8 ; handler 1
+  .try T5..T6 -> L11 ; handler 2
+  0000  LoadConstUndefined   r3
+  0002  LoadConstString      r9, s4 ":"
+  0006  LoadConstEmpty       r1
+  0008  Mov                  r4, r1
+  000b  Mov                  r8, r1
+  000e  Mov                  r6, r1
+  0011  Mov                  r2, r1
+  0014  Mov                  r0, r1
+  0017  GetGlobalObject      r1
+  0019  TryGetById           r10, r1, #c1, s11 "Map"
+  001f  NewArray             r5, 3
+  0023  NewArrayWithBuffer   r7, 2, 2, lit@0x0000
+  002b  PutOwnByIndex        r5, r7, 0
+  002f  NewArrayWithBuffer   r7, 2, 2, lit@0x0007
+  0037  PutOwnByIndex        r5, r7, 1
+  003b  NewArrayWithBuffer   r7, 2, 2, lit@0x000e
+  0043  PutOwnByIndex        r5, r7, 2
+  0047  GetByIdShort         r7, r10, #c2, s20 "prototype"
+  004c  CreateThis           r7, r7, r10
+  0050  Mov                  r19, r7
+  0053  Mov                  r18, r5
+  0056  Construct            r5, r10, 2
+  005a  SelectObject         r10, r7, r5
+  005e  NewArray             r4, 0
+  0062  Mov                  r5, r10
+  0065  IteratorBegin        r7, r5
+L1:
+  0068  IteratorNext         r11, r7, r5
+  006c  Mov                  r10, r7
+  006f  JStrictEqual         L6, r10, r3
+  0073  Mov                  r13, r11
+  0076  IteratorBegin        r10, r13
+  0079  LoadConstUndefined   r11
+  007b  LoadConstUndefined   r12
+  007d  IteratorNext         r14, r10, r13
+  0081  Mov                  r15, r10
+  0084  StrictEq             r15, r15, r3
+  0088  Mov                  r11, r15
+  008b  JmpTrue              L2, r15
+  008e  Mov                  r12, r14
+L2:
+  0091  Mov                  r8, r12
+  0094  LoadConstUndefined   r12
+  0096  Mov                  r14, r11
+  0099  JmpTrue              L3, r14
+  009c  IteratorNext         r13, r10, r13
+  00a0  Mov                  r14, r10
+  00a3  StrictEq             r14, r14, r3
+  00a7  Mov                  r11, r14
+  00aa  JmpTrue              L3, r14
+  00ad  Mov                  r12, r13
+L3:
+  00b0  Mov                  r6, r12
+  00b3  JmpTrue              L4, r11
+  00b6  IteratorClose        r10, 0
+L4:
+  00b9  Mov                  r12, r4
+  00bc  GetByIdShort         r11, r12, #c3, s21 "push"
+  00c1  Mov                  r10, r8
+  00c4  ThrowIfEmpty         r10, r10
+  00c7  Add                  r13, r10, r9
+  00cb  Mov                  r10, r6
+  00ce  ThrowIfEmpty         r10, r10
+  00d1  Add                  r10, r13, r10
+  00d5  Call2                r10, r11, r12, r10
+  00da  Jmp                  L1
+L5:
+  00dc  Catch                r5
+  00de  IteratorClose        r7, 1
+  00e1  Throw                r5
+L6:
+  00e3  TryGetById           r8, r1, #c4, s12 "print"
+  00e9  Mov                  r7, r4
+  00ec  GetByIdShort         r5, r7, #c5, s19 "join"
+  00f1  LoadConstString      r4, s1 ","
+  00f5  Call2                r7, r5, r7, r4
+  00fa  LoadConstString      r5, s8 "map:"
+  00fe  Call3                r5, r8, r3, r5, r7
+  0104  TryGetById           r8, r1, #c6, s13 "Set"
+  010a  GetByIdShort         r5, r8, #c2, s20 "prototype"
+  010f  CreateThis           r7, r5, r8
+  0113  NewArrayWithBuffer   r18, 6, 6, lit@0x0015
+  011b  Mov                  r19, r7
+  011e  Construct            r5, r8, 2
+  0122  SelectObject         r8, r7, r5
+  0126  NewArray             r2, 0
+  012a  Mov                  r5, r8
+  012d  IteratorBegin        r7, r5
+L7:
+  0130  IteratorNext         r8, r7, r5
+  0134  Mov                  r9, r7
+  0137  JStrictEqual         L9, r9, r3
+  013b  Mov                  r6, r8
+  013e  Mov                  r10, r2
+  0141  GetByIdShort         r9, r10, #c3, s21 "push"
+  0146  ThrowIfEmpty         r8, r8
+  0149  Call2                r8, r9, r10, r8
+  014e  Jmp                  L7
+L8:
+  0150  Catch                r5
+  0152  IteratorClose        r7, 1
+  0155  Throw                r5
+L9:
+  0157  TryGetById           r7, r1, #c4, s12 "print"
+  015d  Mov                  r5, r2
+  0160  GetByIdShort         r2, r5, #c5, s19 "join"
+  0165  Call2                r5, r2, r5, r4
+  016a  LoadConstString      r2, s9 "set (dedup):"
+  016e  Call3                r2, r7, r3, r2, r5
+  0174  NewObjectWithBuffer  r7, 3, 2, lit@0x0000, lit@0x0000
+  017e  TryGetById           r2, r1, #c7, s15 "Symbol"
+  0184  GetByIdShort         r5, r2, #c8, s18 "iterator"
+  0189  CreateEnvironment    r2
+  018b  CreateClosure        r2, r2, f1 ""
+  0190  PutOwnByVal          r7, r2, r5, 1
+  0195  NewArray             r0, 0
+  0199  Mov                  r2, r7
+  019c  IteratorBegin        r5, r2
+L10:
+  019f  IteratorNext         r7, r5, r2
+  01a3  Mov                  r8, r5
+  01a6  JStrictEqual         L12, r8, r3
+  01aa  Mov                  r6, r7
+  01ad  Mov                  r9, r0
+  01b0  GetByIdShort         r8, r9, #c3, s21 "push"
+  01b5  ThrowIfEmpty         r7, r7
+  01b8  Call2                r7, r8, r9, r7
+  01bd  Jmp                  L10
+L11:
+  01bf  Catch                r2
+  01c1  IteratorClose        r5, 1
+  01c4  Throw                r2
+L12:
+  01c6  TryGetById           r2, r1, #c4, s12 "print"
+  01cc  Mov                  r1, r0
+  01cf  GetByIdShort         r0, r1, #c5, s19 "join"
+  01d4  Call2                r1, r0, r1, r4
+  01d9  LoadConstString      r0, s3 "custom range:"
+  01dd  Call3                r0, r2, r3, r0, r1
+  01e3  Ret                  r0
+
+function #1 ""  params=1 frame=3 env=2 flags=dbg  @0x000003cd size=35
+  0000  CreateEnvironment    r1
+  0002  LoadThisNS           r0
+  0004  GetByIdShort         r2, r0, #c1, s10 "from"
+  0009  StoreToEnvironment   r1, 0, r2
+  000d  GetByIdShort         r0, r0, #c2, s14 "to"
+  0012  StoreToEnvironment   r1, 1, r0
+  0016  NewObject            r0
+  0018  CreateClosure        r1, r1, f2 "next"
+  001d  PutNewOwnByIdShort   r0, r1, s17 "next"
+  0021  Ret                  r0
+
+function #2 "next"  params=1 frame=4 env=0 flags=dbg  @0x000003f0 size=69
+  0000  GetEnvironment       r3, 0
+  0003  LoadFromEnvironment  r0, r3, 0
+  0007  ThrowIfEmpty         r1, r0
+  000a  LoadFromEnvironment  r0, r3, 1
+  000e  ThrowIfEmpty         r0, r0
+  0011  JLessEqual           L1, r1, r0
+  0015  NewObject            r0
+  0017  LoadConstUndefined   r1
+  0019  PutNewOwnByIdShort   r0, r1, s22 "value"
+  001d  LoadConstTrue        r1
+  001f  PutNewOwnByIdShort   r0, r1, s16 "done"
+  0023  Ret                  r0
+L1:
+  0025  NewObject            r0
+  0027  LoadFromEnvironment  r1, r3, 0
+  002b  ToNumber             r1, r1
+  002e  LoadConstUInt8       r2, 1
+  0031  AddN                 r2, r1, r2
+  0035  StoreNPToEnvironment r3, 0, r2
+  0039  PutNewOwnByIdShort   r0, r1, s22 "value"
+  003d  LoadConstFalse       r1
+  003f  PutNewOwnByIdShort   r0, r1, s16 "done"
+  0043  Ret                  r0

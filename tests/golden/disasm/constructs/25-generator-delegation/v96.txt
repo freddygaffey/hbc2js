@@ -1,0 +1,491 @@
+; hbc2js disassembly of 25-generator-delegation/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=7 strings=36 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=exc,dbg  @0x00000324 size=196
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s24 "inner"
+  0005  DeclareGlobalVar     s27 "outer"
+  000a  DeclareGlobalVar     s25 "delegatesToArray"
+  000f  CreateEnvironment    r3
+  0011  LoadConstUndefined   r2
+  0013  LoadConstUndefined   r1
+  0015  CreateGeneratorClosure r4, r3, f1 "inner"
+  001a  GetGlobalObject      r0
+  001c  PutById              r0, r4, #c1, s24 "inner"
+  0022  CreateGeneratorClosure r4, r3, f3 "outer"
+  0027  PutById              r0, r4, #c2, s27 "outer"
+  002d  CreateGeneratorClosure r3, r3, f5 "delegatesToArray"
+  0032  PutById              r0, r3, #c3, s25 "delegatesToArray"
+  0038  NewArray             r1, 0
+  003c  GetByIdShort         r3, r0, #c1, s27 "outer"
+  0041  Call1                r5, r3, r2
+  0045  Mov                  r3, r5
+  0048  IteratorBegin        r4, r3
+L1:
+  004b  IteratorNext         r8, r4, r3
+  004f  Mov                  r5, r4
+  0052  JStrictEqual         L3, r5, r2
+  0056  Mov                  r7, r1
+  0059  GetByIdShort         r6, r7, #c2, s34 "push"
+  005e  TryGetById           r5, r0, #c3, s28 "String"
+  0064  Call2                r5, r5, r2, r8
+  0069  Call2                r5, r6, r7, r5
+  006e  Jmp                  L1
+L2:
+  0070  Catch                r3
+  0072  IteratorClose        r4, 1
+  0075  Throw                r3
+L3:
+  0077  TryGetById           r3, r0, #c4, s33 "print"
+  007d  Mov                  r5, r1
+  0080  GetByIdShort         r4, r5, #c5, s29 "join"
+  0085  LoadConstString      r1, s4 " | "
+  0089  Call2                r1, r4, r5, r1
+  008e  Call2                r1, r3, r2, r1
+  0093  TryGetById           r1, r0, #c4, s33 "print"
+  0099  GetByIdShort         r0, r0, #c6, s25 "delegatesToArray"
+  009e  Call1                r10, r0, r2
+  00a2  NewArray             r4, 0
+  00a6  LoadConstZero        r9
+  00a8  Mov                  r11, r4
+  00ab  CallBuiltin          r0, b46 "arraySpread", 4
+  00af  GetByIdShort         r3, r4, #c5, s29 "join"
+  00b4  LoadConstString      r0, s5 ","
+  00b8  Call2                r0, r3, r4, r0
+  00bd  Call2                r0, r1, r2, r0
+  00c2  Ret                  r0
+
+function #1 "inner"  params=1 frame=1 env=0 flags=nc  @0x000003e8 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f2 "?anon_0_inner"
+  0007  Ret                  r0
+
+function #2 "?anon_0_inner"  params=1 frame=4 env=0 flags=dbg  @0x000003f1 size=51
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrue              L5, r1
+  0007  LoadConstString      r1, s14 "i1"
+  000b  SaveGenerator        L1
+  000d  Ret                  r1
+L1:
+  000f  ResumeGenerator      r1, r2
+  0012  JmpTrue              L4, r2
+  0015  LoadConstString      r2, s15 "i2"
+  0019  SaveGenerator        L2
+  001b  Ret                  r2
+L2:
+  001d  ResumeGenerator      r2, r3
+  0020  JmpTrue              L3, r3
+  0023  LoadConstString      r3, s16 "inner-return"
+  0027  CompleteGenerator
+  0028  Ret                  r3
+L3:
+  002a  CompleteGenerator
+  002b  Ret                  r2
+L4:
+  002d  CompleteGenerator
+  002e  Ret                  r1
+L5:
+  0030  CompleteGenerator
+  0031  Ret                  r0
+
+function #3 "outer"  params=1 frame=1 env=0 flags=nc  @0x00000424 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f4 "?anon_0_outer"
+  0007  Ret                  r0
+
+function #4 "?anon_0_outer"  params=1 frame=27 env=0 flags=exc,dbg  @0x0000042d size=856
+  .try T1..T2 -> L3 ; handler 0
+  .try T3..T4 -> L3 ; handler 1
+  .try T5..T6 -> L13 ; handler 2
+  .try T7..T8 -> L13 ; handler 3
+  .try T9..T10 -> L22 ; handler 4
+  .try T11..T12 -> L22 ; handler 5
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L34, r1
+  000a  LoadConstString      r1, s11 "before"
+  000e  SaveGenerator        L1
+  0010  Ret                  r1
+L1:
+  0012  ResumeGenerator      r1, r2
+  0015  JmpTrueLong          L33, r2
+  001b  GetGlobalObject      r5
+  001d  GetByIdShort         r2, r5, #c1, s24 "inner"
+  0022  LoadConstUndefined   r4
+  0024  Call1                r3, r2, r4
+  0028  TryGetById           r2, r5, #c2, s32 "Symbol"
+  002e  GetByIdShort         r2, r2, #c3, s30 "iterator"
+  0033  GetByVal             r2, r3, r2
+  0037  Call1                r7, r2, r3
+  003b  LoadConstString      r3, s17 "iterator is not an object"
+  003f  Mov                  r19, r7
+  0042  Mov                  r18, r3
+  0045  CallBuiltin          r2, b40 "ensureObject", 3
+  0049  GetByIdShort         r15, r7, #c4, s31 "next"
+  004e  LoadConstUndefined   r11
+  0050  LoadConstString      r14, s21 "iterator.throw() did not return …"
+  0054  LoadConstString      r13, s22 "throw"
+  0058  LoadConstString      r12, s18 "iterator.next() did not return a…"
+L2:
+  005c  Mov                  r6, r11
+  005f  Call2                r6, r15, r7, r6
+  0064  Mov                  r19, r6
+  0067  Mov                  r18, r12
+  006a  CallBuiltin          r8, b40 "ensureObject", 3
+  006e  Mov                  r2, r6
+  0071  GetByIdShort         r8, r6, #c5, s26 "done"
+  0076  JmpTrueLong          L10, r8
+  007c  CallBuiltin          r8, b43 "generatorSetDelegated", 1
+  0080  SaveGenerator        L4
+  0082  Ret                  r6
+L3:
+  0084  Catch                r8
+  0086  Mov                  r19, r7
+  0089  Mov                  r18, r13
+  008c  CallBuiltin          r6, b41 "getMethod", 3
+  0090  JStrictEqual         L8, r6, r4
+  0094  Call2                r6, r6, r7, r8
+  0099  Mov                  r19, r6
+  009c  Mov                  r18, r14
+  009f  CallBuiltin          r8, b40 "ensureObject", 3
+  00a3  GetByIdShort         r8, r6, #c5, s26 "done"
+  00a8  JmpTrue              L7, r8
+  00ab  CallBuiltin          r8, b43 "generatorSetDelegated", 1
+  00af  SaveGenerator        L4
+  00b1  Ret                  r6
+L4:
+  00b3  ResumeGenerator      r8, r10
+  00b6  Mov                  r11, r8
+  00b9  Mov                  r9, r10
+  00bc  JmpFalse             L2, r9
+  00bf  Mov                  r11, r8
+  00c2  LoadConstString      r18, s3 "return"
+  00c6  Mov                  r19, r7
+  00c9  CallBuiltin          r16, b41 "getMethod", 3
+  00cd  JStrictEqual         L6, r16, r4
+  00d1  Mov                  r9, r11
+  00d4  Call2                r9, r16, r7, r9
+  00d9  LoadConstString      r18, s20 "iterator.return() did not return…"
+  00dd  Mov                  r19, r9
+  00e0  CallBuiltin          r16, b40 "ensureObject", 3
+  00e4  GetByIdShort         r16, r9, #c5, s26 "done"
+  00e9  JmpTrue              L5, r16
+  00ec  CallBuiltin          r16, b43 "generatorSetDelegated", 1
+  00f0  SaveGenerator        L4
+  00f2  Ret                  r9
+L5:
+  00f4  GetByIdShort         r9, r9, #c6, s35 "value"
+  00f9  CompleteGenerator
+  00fa  Ret                  r9
+L6:
+  00fc  CompleteGenerator
+  00fd  Ret                  r8
+L7:
+  00ff  Mov                  r2, r6
+  0102  Jmp                  L10
+L8:
+  0104  LoadConstString      r18, s3 "return"
+  0108  Mov                  r19, r7
+  010b  CallBuiltin          r6, b41 "getMethod", 3
+  010f  JStrictEqual         L9, r6, r4
+  0113  Call1                r19, r6, r7
+  0117  LoadConstString      r18, s20 "iterator.return() did not return…"
+  011b  CallBuiltin          r6, b40 "ensureObject", 3
+L9:
+  011f  LoadConstString      r19, s8 "yield* delegate must have a .thr…"
+  0123  CallBuiltin          r6, b42 "throwTypeError", 2
+  0127  Throw                r4
+L10:
+  0129  GetByIdShort         r6, r2, #c6, s35 "value"
+  012e  LoadConstString      r2, s2 "inner returned: "
+  0132  Add                  r2, r2, r6
+  0136  SaveGenerator        L11
+  0138  Ret                  r2
+L11:
+  013a  ResumeGenerator      r2, r6
+  013d  JmpTrueLong          L32, r6
+  0143  NewArrayWithBuffer   r7, 3, 3, lit@0x0001
+  014b  TryGetById           r6, r5, #c2, s32 "Symbol"
+  0151  GetByIdShort         r6, r6, #c3, s30 "iterator"
+  0156  GetByVal             r6, r7, r6
+  015a  Call1                r8, r6, r7
+  015e  Mov                  r19, r8
+  0161  Mov                  r18, r3
+  0164  CallBuiltin          r6, b40 "ensureObject", 3
+  0168  GetByIdShort         r16, r8, #c4, s31 "next"
+  016d  LoadConstUndefined   r15
+L12:
+  016f  Mov                  r7, r15
+  0172  Call2                r7, r16, r8, r7
+  0177  Mov                  r19, r7
+  017a  Mov                  r18, r12
+  017d  CallBuiltin          r9, b40 "ensureObject", 3
+  0181  Mov                  r6, r7
+  0184  GetByIdShort         r9, r7, #c5, s26 "done"
+  0189  JmpTrueLong          L20, r9
+  018f  CallBuiltin          r9, b43 "generatorSetDelegated", 1
+  0193  SaveGenerator        L14
+  0195  Ret                  r7
+L13:
+  0197  Catch                r9
+  0199  Mov                  r19, r8
+  019c  Mov                  r18, r13
+  019f  CallBuiltin          r7, b41 "getMethod", 3
+  01a3  JStrictEqual         L18, r7, r4
+  01a7  Call2                r7, r7, r8, r9
+  01ac  Mov                  r19, r7
+  01af  Mov                  r18, r14
+  01b2  CallBuiltin          r9, b40 "ensureObject", 3
+  01b6  GetByIdShort         r9, r7, #c5, s26 "done"
+  01bb  JmpTrue              L17, r9
+  01be  CallBuiltin          r9, b43 "generatorSetDelegated", 1
+  01c2  SaveGenerator        L14
+  01c4  Ret                  r7
+L14:
+  01c6  ResumeGenerator      r9, r11
+  01c9  Mov                  r15, r9
+  01cc  Mov                  r10, r11
+  01cf  JmpFalse             L12, r10
+  01d2  Mov                  r15, r9
+  01d5  LoadConstString      r18, s3 "return"
+  01d9  Mov                  r19, r8
+  01dc  CallBuiltin          r17, b41 "getMethod", 3
+  01e0  JStrictEqual         L16, r17, r4
+  01e4  Mov                  r10, r15
+  01e7  Call2                r10, r17, r8, r10
+  01ec  LoadConstString      r18, s20 "iterator.return() did not return…"
+  01f0  Mov                  r19, r10
+  01f3  CallBuiltin          r17, b40 "ensureObject", 3
+  01f7  GetByIdShort         r17, r10, #c5, s26 "done"
+  01fc  JmpTrue              L15, r17
+  01ff  CallBuiltin          r17, b43 "generatorSetDelegated", 1
+  0203  SaveGenerator        L14
+  0205  Ret                  r10
+L15:
+  0207  GetByIdShort         r10, r10, #c6, s35 "value"
+  020c  CompleteGenerator
+  020d  Ret                  r10
+L16:
+  020f  CompleteGenerator
+  0210  Ret                  r9
+L17:
+  0212  Mov                  r6, r7
+  0215  Jmp                  L20
+L18:
+  0217  LoadConstString      r18, s3 "return"
+  021b  Mov                  r19, r8
+  021e  CallBuiltin          r7, b41 "getMethod", 3
+  0222  JStrictEqual         L19, r7, r4
+  0226  Call1                r19, r7, r8
+  022a  LoadConstString      r18, s20 "iterator.return() did not return…"
+  022e  CallBuiltin          r7, b40 "ensureObject", 3
+L19:
+  0232  LoadConstString      r19, s8 "yield* delegate must have a .thr…"
+  0236  CallBuiltin          r7, b42 "throwTypeError", 2
+  023a  Throw                r4
+L20:
+  023c  GetByIdShort         r6, r6, #c6, s35 "value"
+  0241  TryGetById           r5, r5, #c2, s32 "Symbol"
+  0247  GetByIdShort         r5, r5, #c3, s30 "iterator"
+  024c  LoadConstString      r6, s10 "ab"
+  0250  GetByVal             r5, r6, r5
+  0254  Call1                r6, r5, r6
+  0258  Mov                  r19, r6
+  025b  Mov                  r18, r3
+  025e  CallBuiltin          r3, b40 "ensureObject", 3
+  0262  GetByIdShort         r11, r6, #c4, s31 "next"
+  0267  LoadConstUndefined   r10
+L21:
+  0269  Mov                  r5, r10
+  026c  Call2                r5, r11, r6, r5
+  0271  Mov                  r19, r5
+  0274  Mov                  r18, r12
+  0277  CallBuiltin          r7, b40 "ensureObject", 3
+  027b  Mov                  r3, r5
+  027e  GetByIdShort         r7, r5, #c5, s26 "done"
+  0283  JmpTrueLong          L29, r7
+  0289  CallBuiltin          r7, b43 "generatorSetDelegated", 1
+  028d  SaveGenerator        L23
+  028f  Ret                  r5
+L22:
+  0291  Catch                r7
+  0293  Mov                  r19, r6
+  0296  Mov                  r18, r13
+  0299  CallBuiltin          r5, b41 "getMethod", 3
+  029d  JStrictEqual         L27, r5, r4
+  02a1  Call2                r5, r5, r6, r7
+  02a6  Mov                  r19, r5
+  02a9  Mov                  r18, r14
+  02ac  CallBuiltin          r7, b40 "ensureObject", 3
+  02b0  GetByIdShort         r7, r5, #c5, s26 "done"
+  02b5  JmpTrue              L26, r7
+  02b8  CallBuiltin          r7, b43 "generatorSetDelegated", 1
+  02bc  SaveGenerator        L23
+  02be  Ret                  r5
+L23:
+  02c0  ResumeGenerator      r7, r9
+  02c3  Mov                  r10, r7
+  02c6  Mov                  r8, r9
+  02c9  JmpFalse             L21, r8
+  02cc  Mov                  r10, r7
+  02cf  LoadConstString      r18, s3 "return"
+  02d3  Mov                  r19, r6
+  02d6  CallBuiltin          r15, b41 "getMethod", 3
+  02da  JStrictEqual         L25, r15, r4
+  02de  Mov                  r8, r10
+  02e1  Call2                r8, r15, r6, r8
+  02e6  LoadConstString      r18, s20 "iterator.return() did not return…"
+  02ea  Mov                  r19, r8
+  02ed  CallBuiltin          r15, b40 "ensureObject", 3
+  02f1  GetByIdShort         r15, r8, #c5, s26 "done"
+  02f6  JmpTrue              L24, r15
+  02f9  CallBuiltin          r15, b43 "generatorSetDelegated", 1
+  02fd  SaveGenerator        L23
+  02ff  Ret                  r8
+L24:
+  0301  GetByIdShort         r8, r8, #c6, s35 "value"
+  0306  CompleteGenerator
+  0307  Ret                  r8
+L25:
+  0309  CompleteGenerator
+  030a  Ret                  r7
+L26:
+  030c  Mov                  r3, r5
+  030f  Jmp                  L29
+L27:
+  0311  LoadConstString      r18, s3 "return"
+  0315  Mov                  r19, r6
+  0318  CallBuiltin          r5, b41 "getMethod", 3
+  031c  JStrictEqual         L28, r5, r4
+  0320  Call1                r19, r5, r6
+  0324  LoadConstString      r18, s20 "iterator.return() did not return…"
+  0328  CallBuiltin          r5, b40 "ensureObject", 3
+L28:
+  032c  LoadConstString      r19, s8 "yield* delegate must have a .thr…"
+  0330  CallBuiltin          r5, b42 "throwTypeError", 2
+  0334  Throw                r4
+L29:
+  0336  GetByIdShort         r3, r3, #c6, s35 "value"
+  033b  LoadConstString      r3, s12 "after"
+  033f  SaveGenerator        L30
+  0341  Ret                  r3
+L30:
+  0343  ResumeGenerator      r3, r5
+  0346  JmpTrue              L31, r5
+  0349  CompleteGenerator
+  034a  Ret                  r4
+L31:
+  034c  CompleteGenerator
+  034d  Ret                  r3
+L32:
+  034f  CompleteGenerator
+  0350  Ret                  r2
+L33:
+  0352  CompleteGenerator
+  0353  Ret                  r1
+L34:
+  0355  CompleteGenerator
+  0356  Ret                  r0
+
+function #5 "delegatesToArray"  params=1 frame=1 env=0 flags=nc  @0x00000785 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f6 "?anon_0_delegatesToArray"
+  0007  Ret                  r0
+
+function #6 "?anon_0_delegatesToArray"  params=1 frame=23 env=0 flags=exc,dbg  @0x0000078e size=287
+  .try T1..T2 -> L2 ; handler 0
+  .try T3..T4 -> L2 ; handler 1
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L10, r1
+  000a  NewArrayWithBuffer   r2, 3, 3, lit@0x000e
+  0012  GetGlobalObject      r1
+  0014  TryGetById           r1, r1, #c1, s32 "Symbol"
+  001a  GetByIdShort         r1, r1, #c2, s30 "iterator"
+  001f  GetByVal             r1, r2, r1
+  0023  Call1                r4, r1, r2
+  0027  LoadConstString      r14, s17 "iterator is not an object"
+  002b  Mov                  r15, r4
+  002e  CallBuiltin          r1, b40 "ensureObject", 3
+  0032  GetByIdShort         r12, r4, #c3, s31 "next"
+  0037  LoadConstUndefined   r1
+  0039  LoadConstUndefined   r11
+  003b  LoadConstString      r9, s21 "iterator.throw() did not return …"
+  003f  LoadConstString      r8, s22 "throw"
+  0043  LoadConstString      r7, s18 "iterator.next() did not return a…"
+L1:
+  0047  Mov                  r3, r11
+  004a  Call2                r3, r12, r4, r3
+  004f  Mov                  r15, r3
+  0052  Mov                  r14, r7
+  0055  CallBuiltin          r5, b40 "ensureObject", 3
+  0059  Mov                  r2, r3
+  005c  GetByIdShort         r5, r3, #c4, s26 "done"
+  0061  JmpTrueLong          L9, r5
+  0067  CallBuiltin          r5, b43 "generatorSetDelegated", 1
+  006b  SaveGenerator        L3
+  006d  Ret                  r3
+L2:
+  006f  Catch                r5
+  0071  Mov                  r15, r4
+  0074  Mov                  r14, r8
+  0077  CallBuiltin          r3, b41 "getMethod", 3
+  007b  JStrictEqual         L7, r3, r1
+  007f  Call2                r3, r3, r4, r5
+  0084  Mov                  r15, r3
+  0087  Mov                  r14, r9
+  008a  CallBuiltin          r5, b40 "ensureObject", 3
+  008e  GetByIdShort         r5, r3, #c4, s26 "done"
+  0093  JmpTrue              L6, r5
+  0096  CallBuiltin          r5, b43 "generatorSetDelegated", 1
+  009a  SaveGenerator        L3
+  009c  Ret                  r3
+L3:
+  009e  ResumeGenerator      r5, r10
+  00a1  Mov                  r11, r5
+  00a4  Mov                  r6, r10
+  00a7  JmpFalse             L1, r6
+  00aa  Mov                  r11, r5
+  00ad  LoadConstString      r14, s3 "return"
+  00b1  Mov                  r15, r4
+  00b4  CallBuiltin          r13, b41 "getMethod", 3
+  00b8  JStrictEqual         L5, r13, r1
+  00bc  Mov                  r6, r11
+  00bf  Call2                r6, r13, r4, r6
+  00c4  LoadConstString      r14, s20 "iterator.return() did not return…"
+  00c8  Mov                  r15, r6
+  00cb  CallBuiltin          r13, b40 "ensureObject", 3
+  00cf  GetByIdShort         r13, r6, #c4, s26 "done"
+  00d4  JmpTrue              L4, r13
+  00d7  CallBuiltin          r13, b43 "generatorSetDelegated", 1
+  00db  SaveGenerator        L3
+  00dd  Ret                  r6
+L4:
+  00df  GetByIdShort         r6, r6, #c5, s35 "value"
+  00e4  CompleteGenerator
+  00e5  Ret                  r6
+L5:
+  00e7  CompleteGenerator
+  00e8  Ret                  r5
+L6:
+  00ea  Mov                  r2, r3
+  00ed  Jmp                  L9
+L7:
+  00ef  LoadConstString      r14, s3 "return"
+  00f3  Mov                  r15, r4
+  00f6  CallBuiltin          r3, b41 "getMethod", 3
+  00fa  JStrictEqual         L8, r3, r1
+  00fe  Call1                r15, r3, r4
+  0102  LoadConstString      r14, s20 "iterator.return() did not return…"
+  0106  CallBuiltin          r3, b40 "ensureObject", 3
+L8:
+  010a  LoadConstString      r15, s8 "yield* delegate must have a .thr…"
+  010e  CallBuiltin          r3, b42 "throwTypeError", 2
+  0112  Throw                r1
+L9:
+  0114  GetByIdShort         r2, r2, #c5, s35 "value"
+  0119  CompleteGenerator
+  011a  Ret                  r1
+L10:
+  011c  CompleteGenerator
+  011d  Ret                  r0

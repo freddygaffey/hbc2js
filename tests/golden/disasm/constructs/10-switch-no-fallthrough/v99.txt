@@ -1,0 +1,58 @@
+; hbc2js disassembly of 10-switch-no-fallthrough/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=2 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg,overflowed  @0x00000118 size=85
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s6 "describe"
+  0005  GetGlobalObject      r5
+  0007  LoadConstUndefined   r4
+  0009  CreateClosure        r0, r4, f1 "describe"
+  000e  PutByIdLoose         r5, r0, #c0, s6 "describe"
+  0014  LoadConstUndefined   r0
+  0016  NewArrayWithBuffer   r3, 6, 6, lit@0x0000
+  001e  IteratorBegin        r2, r3
+  0021  LoadConstString      r1, s0 "->"
+L1:
+  0025  Mov                  r6, r3
+  0028  IteratorNext         r8, r2, r6
+  002c  Mov                  r6, r2
+  002f  JStrictEqual         L3, r6, r4
+  0033  TryGetById           r7, r5, #c0, s7 "print"
+  0039  GetByIdShort         r6, r5, #c1, s6 "describe"
+  003e  Call2                r6, r6, r4, r8
+  0043  Call4                r0, r7, r4, r8, r1, r6
+  004a  Jmp                  L1
+L2:
+  004c  Catch                r1
+  004e  IteratorClose        r2, 1
+  0051  Throw                r1
+L3:
+  0053  Ret                  r0
+
+function #1 "describe"  params=2 frame=3 env=0 flags=dbg,overflowed  @0x0000016d size=79
+  0000  LoadParam            r2, 1
+  0003  LoadConstZero        r0
+  0005  JStrictEqual         L3, r0, r2
+  0009  LoadConstUInt8       r0, 1
+  000c  JStrictEqual         L2, r0, r2
+  0010  LoadConstUInt8       r0, 2
+  0013  JStrictEqual         L2, r0, r2
+  0017  LoadConstUInt8       r0, 3
+  001a  JStrictEqual         L2, r0, r2
+  001e  LoadConstUInt8       r0, 4
+  0021  JStrictEqual         L2, r0, r2
+  0025  LoadConstUInt8       r0, 5
+  0028  JStrictEqual         L2, r0, r2
+  002c  LoadConstUInt8       r0, 6
+  002f  JStrictEqual         L1, r0, r2
+  0033  LoadConstString      r1, s5 "invalid"
+  0037  Ret                  r1
+L1:
+  0039  LoadConstString      r1, s1 "Saturday"
+  003d  Ret                  r1
+L2:
+  003f  LoadConstString      r1, s3 "Weekday#"
+  0043  Add                  r1, r1, r2
+  0047  Ret                  r1
+L3:
+  0049  LoadConstString      r1, s2 "Sunday"
+  004d  Ret                  r1

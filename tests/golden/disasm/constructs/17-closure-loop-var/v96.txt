@@ -1,0 +1,91 @@
+; hbc2js disassembly of 17-closure-loop-var/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=6 strings=11 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=1 flags=dbg  @0x00000180 size=227
+  0000  DeclareGlobalVar     s5 "i"
+  0005  DeclareGlobalVar     s6 "j"
+  000a  CreateEnvironment    r0
+  000c  NewArray             r5, 0
+  0010  LoadConstZero        r2
+  0012  GetGlobalObject      r1
+  0014  PutById              r1, r2, #c1, s5 "i"
+  001a  GetByIdShort         r3, r1, #c1, s5 "i"
+  001f  LoadConstUInt8       r6, 3
+  0022  JNotLess             L2, r3, r6
+L1:
+  0026  GetByIdShort         r4, r5, #c2, s10 "push"
+  002b  CreateClosure        r3, r0, f1 ""
+  0030  Call2                r3, r4, r5, r3
+  0035  GetByIdShort         r3, r1, #c1, s5 "i"
+  003a  Inc                  r3, r3
+  003d  PutById              r1, r3, #c1, s5 "i"
+  0043  GetByIdShort         r3, r1, #c1, s5 "i"
+  0048  JLess                L1, r3, r6
+L2:
+  004c  TryGetById           r8, r1, #c3, s9 "print"
+  0052  GetByIdShort         r4, r5, #c4, s8 "map"
+  0057  CreateClosure        r3, r0, f2 ""
+  005c  Call2                r5, r4, r5, r3
+  0061  GetByIdShort         r3, r5, #c5, s7 "join"
+  0066  LoadConstString      r4, s1 ","
+  006a  Call2                r7, r3, r5, r4
+  006f  LoadConstUndefined   r3
+  0071  LoadConstString      r5, s4 "var closures all see final i:"
+  0075  Call3                r5, r8, r3, r5, r7
+  007b  NewArray             r5, 0
+  007f  StoreToEnvironment   r0, 0, r5
+  0083  PutById              r1, r2, #c2, s6 "j"
+  0089  GetByIdShort         r2, r1, #c6, s6 "j"
+  008e  JNotLess             L4, r2, r6
+L3:
+  0092  GetByIdShort         r7, r1, #c6, s6 "j"
+  0097  CreateClosure        r2, r0, f3 ""
+  009c  Call2                r2, r2, r3, r7
+  00a1  GetByIdShort         r2, r1, #c6, s6 "j"
+  00a6  Inc                  r2, r2
+  00a9  PutById              r1, r2, #c2, s6 "j"
+  00af  GetByIdShort         r2, r1, #c6, s6 "j"
+  00b4  JLess                L3, r2, r6
+L4:
+  00b8  TryGetById           r2, r1, #c3, s9 "print"
+  00be  GetByIdShort         r1, r5, #c4, s8 "map"
+  00c3  CreateClosure        r0, r0, f5 ""
+  00c8  Call2                r1, r1, r5, r0
+  00cd  GetByIdShort         r0, r1, #c5, s7 "join"
+  00d2  Call2                r1, r0, r1, r4
+  00d7  LoadConstString      r0, s2 "IIFE-captured var closures:"
+  00db  Call3                r0, r2, r3, r0, r1
+  00e1  Ret                  r0
+
+function #1 ""  params=1 frame=1 env=0 flags=dbg  @0x00000263 size=9
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r0, r0, #c1, s5 "i"
+  0007  Ret                  r0
+
+function #2 ""  params=2 frame=9 env=0 flags=dbg  @0x0000026c size=11
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  Call1                r0, r1, r0
+  0009  Ret                  r0
+
+function #3 ""  params=2 frame=11 env=1 flags=dbg  @0x00000277 size=35
+  0000  CreateEnvironment    r0
+  0002  LoadParam            r1, 1
+  0005  StoreToEnvironment   r0, 0, r1
+  0009  GetEnvironment       r1, 0
+  000c  LoadFromEnvironment  r2, r1, 0
+  0010  GetByIdShort         r1, r2, #c1, s10 "push"
+  0015  CreateClosure        r0, r0, f4 ""
+  001a  Call2                r0, r1, r2, r0
+  001f  LoadConstUndefined   r0
+  0021  Ret                  r0
+
+function #4 ""  params=1 frame=1 env=0 flags=none  @0x0000029a size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  Ret                  r0
+
+function #5 ""  params=2 frame=9 env=0 flags=dbg  @0x0000026c size=11
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  Call1                r0, r1, r0
+  0009  Ret                  r0

@@ -1,0 +1,162 @@
+; hbc2js disassembly of 48-optional-chaining-nullish/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=3 strings=26 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=1 flags=dbg  @0x0000025c size=532
+  0000  DeclareGlobalVar     s25 "withSideEffect"
+  0005  CreateEnvironment    r1
+  0007  CreateClosure        r2, r1, f1 "withSideEffect"
+  000c  GetGlobalObject      r0
+  000e  PutById              r0, r2, #c1, s25 "withSideEffect"
+  0014  NewObject            r6
+  0016  LoadConstNull        r5
+  0018  NewObjectWithBuffer  r2, 2, 2, lit@0x0000, lit@0x0000
+  0022  PutNewOwnByIdShort   r6, r2, s22 "profile"
+  0026  TryGetById           r4, r0, #c1, s21 "print"
+  002c  Eq                   r7, r6, r5
+  0030  LoadConstUndefined   r3
+  0032  LoadConstUndefined   r2
+  0034  JmpTrue              L1, r7
+  0037  GetByIdShort         r7, r6, #c2, s22 "profile"
+  003c  Eq                   r8, r7, r5
+  0040  LoadConstUndefined   r2
+  0042  JmpTrue              L1, r8
+  0045  GetByIdShort         r2, r7, #c3, s17 "name"
+L1:
+  004a  Call2                r2, r4, r3, r2
+  004f  TryGetById           r4, r0, #c1, s21 "print"
+  0055  Eq                   r7, r6, r5
+  0059  LoadConstUndefined   r2
+  005b  JmpTrue              L2, r7
+  005e  GetByIdShort         r7, r6, #c2, s22 "profile"
+  0063  Eq                   r8, r7, r5
+  0067  LoadConstUndefined   r2
+  0069  JmpTrue              L2, r8
+  006c  GetByIdShort         r7, r7, #c4, s18 "contacts"
+  0071  Eq                   r8, r7, r5
+  0075  LoadConstUndefined   r2
+  0077  JmpTrue              L2, r8
+  007a  GetByIdShort         r2, r7, #c5, s14 "email"
+L2:
+  007f  Call2                r2, r4, r3, r2
+  0084  TryGetById           r4, r0, #c1, s21 "print"
+  008a  Eq                   r7, r6, r5
+  008e  LoadConstUndefined   r2
+  0090  JmpTrue              L3, r7
+  0093  GetByIdShort         r7, r6, #c6, s19 "missing"
+  0098  Eq                   r8, r7, r5
+  009c  LoadConstUndefined   r2
+  009e  JmpTrue              L3, r8
+  00a1  GetByIdShort         r7, r7, #c7, s16 "deeper"
+  00a6  Eq                   r8, r7, r5
+  00aa  LoadConstUndefined   r2
+  00ac  JmpTrue              L3, r8
+  00af  GetByIdShort         r2, r7, #c8, s24 "value"
+L3:
+  00b4  Call2                r2, r4, r3, r2
+  00b9  TryGetById           r4, r0, #c1, s21 "print"
+  00bf  Eq                   r7, r6, r5
+  00c3  LoadConstUndefined   r2
+  00c5  JmpTrue              L4, r7
+  00c8  GetByIdShort         r6, r6, #c2, s22 "profile"
+  00cd  Eq                   r7, r6, r5
+  00d1  LoadConstUndefined   r2
+  00d3  JmpTrue              L4, r7
+  00d6  GetByIdShort         r6, r6, #c4, s18 "contacts"
+  00db  Eq                   r7, r6, r5
+  00df  LoadConstUndefined   r2
+  00e1  JmpTrue              L4, r7
+  00e4  GetByIdShort         r2, r6, #c5, s14 "email"
+L4:
+  00e9  JNotEqual            L5, r2, r5
+  00ed  LoadConstString      r2, s3 "no-email-on-file"
+L5:
+  00f1  Call2                r2, r4, r3, r2
+  00f6  NewArrayWithBuffer   r8, 3, 3, lit@0x0000
+  00fe  TryGetById           r6, r0, #c1, s21 "print"
+  0104  Eq                   r2, r8, r5
+  0108  LoadConstUndefined   r4
+  010a  JmpTrue              L6, r2
+  010d  LoadConstZero        r2
+  010f  GetByVal             r4, r8, r2
+L6:
+  0113  Eq                   r7, r8, r5
+  0117  LoadConstUndefined   r2
+  0119  JmpTrue              L7, r7
+  011c  LoadConstUInt8       r7, 10
+  011f  GetByVal             r2, r8, r7
+L7:
+  0123  JNotEqual            L8, r2, r5
+  0127  LoadConstString      r2, s11 "out-of-range"
+L8:
+  012b  Call3                r2, r6, r3, r4, r2
+  0131  NewObject            r7
+  0133  CreateClosure        r2, r1, f2 "fetch"
+  0138  PutNewOwnByIdShort   r7, r2, s15 "fetch"
+  013c  TryGetById           r4, r0, #c1, s21 "print"
+  0142  Eq                   r6, r7, r5
+  0146  LoadConstUndefined   r2
+  0148  JmpTrue              L9, r6
+  014b  GetByIdShort         r6, r7, #c9, s15 "fetch"
+  0150  Eq                   r8, r6, r5
+  0154  LoadConstUndefined   r2
+  0156  JmpTrue              L9, r8
+  0159  Call1                r2, r6, r7
+L9:
+  015d  Call2                r2, r4, r3, r2
+  0162  TryGetById           r4, r0, #c1, s21 "print"
+  0168  Eq                   r6, r7, r5
+  016c  LoadConstUndefined   r2
+  016e  JmpTrue              L10, r6
+  0171  GetByIdShort         r6, r7, #c10, s20 "missingMethod"
+  0176  Eq                   r8, r6, r5
+  017a  LoadConstUndefined   r2
+  017c  JmpTrue              L10, r8
+  017f  Call1                r2, r6, r7
+L10:
+  0183  JNotEqual            L11, r2, r5
+  0187  LoadConstString      r2, s10 "method-not-found"
+L11:
+  018b  Call2                r2, r4, r3, r2
+  0190  LoadConstZero        r4
+  0192  StoreNPToEnvironment r1, 0, r4
+  0196  GetByIdShort         r2, r0, #c11, s25 "withSideEffect"
+  019b  Call1                r2, r2, r3
+  019f  Eq                   r5, r2, r5
+  01a3  LoadConstUndefined   r7
+  01a5  JmpTrue              L12, r5
+  01a8  GetByIdShort         r7, r2, #c12, s23 "property"
+L12:
+  01ad  TryGetById           r6, r0, #c1, s21 "print"
+  01b3  LoadFromEnvironment  r9, r1, 0
+  01b7  LoadConstString      r12, s12 "short-circuit result:"
+  01bb  LoadConstString      r10, s2 "calls:"
+  01bf  LoadConstUndefined   r13
+  01c1  Mov                  r11, r7
+  01c4  Call                 r1, r6, 5
+  01c8  TryGetById           r2, r0, #c1, s21 "print"
+  01ce  LoadConstString      r1, s13 "zero is not nullish:"
+  01d2  Call3                r1, r2, r3, r1, r4
+  01d8  TryGetById           r4, r0, #c1, s21 "print"
+  01de  LoadConstString      r2, s4 "empty string is not nullish:"
+  01e2  LoadConstString      r1, s0 ""
+  01e6  Call3                r1, r4, r3, r2, r1
+  01ec  TryGetById           r4, r0, #c1, s21 "print"
+  01f2  LoadConstString      r2, s5 "null triggers fallback:"
+  01f6  LoadConstString      r1, s6 "fallback"
+  01fa  Call3                r1, r4, r3, r2, r1
+  0200  TryGetById           r2, r0, #c1, s21 "print"
+  0206  LoadConstString      r1, s7 "false is not nullish:"
+  020a  LoadConstFalse       r0
+  020c  Call3                r0, r2, r3, r1, r0
+  0212  Ret                  r0
+
+function #1 "withSideEffect"  params=1 frame=2 env=0 flags=dbg  @0x00000470 size=18
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r0, r1, 0
+  0007  Inc                  r0, r0
+  000a  StoreToEnvironment   r1, 0, r0
+  000e  LoadConstNull        r0
+  0010  Ret                  r0
+
+function #2 "fetch"  params=1 frame=1 env=0 flags=none  @0x00000482 size=6
+  0000  LoadConstString      r0, s8 "fetched"
+  0004  Ret                  r0

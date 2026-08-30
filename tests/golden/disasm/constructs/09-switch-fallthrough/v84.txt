@@ -1,0 +1,71 @@
+; hbc2js disassembly of 09-switch-fallthrough/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=2 strings=12 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg  @0x00000154 size=87
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s9 "classify"
+  0005  LoadConstUndefined   r5
+  0007  GetGlobalObject      r4
+  0009  LoadConstString      r3, s1 "=>"
+  000d  CreateEnvironment    r0
+  000f  CreateClosure        r0, r0, f1 "classify"
+  0014  PutById              r4, r0, #c1, s9 "classify"
+  001a  LoadConstUndefined   r0
+  001c  NewArrayWithBuffer   r1, 6, 6, lit@0x0000
+  0024  IteratorBegin        r2, r1
+L1:
+  0027  IteratorNext         r9, r2, r1
+  002b  Mov                  r6, r2
+  002e  JStrictEqual         L3, r6, r5
+  0032  TryGetById           r8, r4, #c1, s8 "print"
+  0038  ThrowIfEmpty         r7, r9
+  003b  GetByIdShort         r6, r4, #c2, s9 "classify"
+  0040  Call2                r6, r6, r5, r9
+  0045  Call4                r0, r8, r5, r7, r3, r6
+  004c  Jmp                  L1
+L2:
+  004e  Catch                r1
+  0050  IteratorClose        r2, 1
+  0053  Throw                r1
+L3:
+  0055  Ret                  r0
+
+function #1 "classify"  params=2 frame=11 env=0 flags=dbg  @0x000001ab size=134
+  0000  LoadParam            r1, 1
+  0003  NewArray             r2, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  JStrictEqual         L3, r0, r1
+  000e  LoadConstUInt8       r0, 2
+  0011  JStrictEqual         L3, r0, r1
+  0015  LoadConstUInt8       r0, 3
+  0018  JStrictEqual         L4, r0, r1
+  001c  LoadConstUInt8       r0, 100
+  001f  JStrictEqual         L2, r0, r1
+  0023  LoadConstUInt8       r0, 4
+  0026  JStrictEqual         L1, r0, r1
+  002a  GetByIdShort         r1, r2, #c1, s11 "push"
+  002f  LoadConstString      r0, s3 "default-hit"
+  0033  Call2                r0, r1, r2, r0
+  0038  Jmp                  L2
+L1:
+  003a  GetByIdShort         r1, r2, #c1, s11 "push"
+  003f  LoadConstString      r0, s5 "four"
+  0043  Call2                r0, r1, r2, r0
+  0048  Jmp                  L5
+L2:
+  004a  GetByIdShort         r1, r2, #c1, s11 "push"
+  004f  LoadConstString      r0, s2 "through-hundred"
+  0053  Call2                r0, r1, r2, r0
+  0058  Jmp                  L5
+L3:
+  005a  GetByIdShort         r1, r2, #c1, s11 "push"
+  005f  LoadConstString      r0, s7 "one-or-two"
+  0063  Call2                r0, r1, r2, r0
+L4:
+  0068  GetByIdShort         r1, r2, #c1, s11 "push"
+  006d  LoadConstString      r0, s4 "through-three"
+  0071  Call2                r0, r1, r2, r0
+L5:
+  0076  GetByIdShort         r1, r2, #c2, s10 "join"
+  007b  LoadConstString      r0, s0 "+"
+  007f  Call2                r0, r1, r2, r0
+  0084  Ret                  r0

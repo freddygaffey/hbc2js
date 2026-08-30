@@ -1,0 +1,100 @@
+; hbc2js disassembly of 05-for-in-object/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=3 strings=29 globalCodeIndex=0
+function #0 "global"  params=1 frame=25 env=0 flags=dbg,overflowed  @0x00000244 size=308
+  0000  DeclareGlobalVar     s15 "Base"
+  0005  DeclareGlobalVar     s16 "Derived"
+  000a  GetGlobalObject      r3
+  000c  LoadConstUndefined   r2
+  000e  CreateClosure        r4, r2, f1 "Base"
+  0013  PutByIdLoose         r3, r4, #c0, s15 "Base"
+  0019  CreateClosure        r4, r2, f2 "Derived"
+  001e  PutByIdLoose         r3, r4, #c1, s16 "Derived"
+  0024  GetByIdShort         r4, r3, #c0, s15 "Base"
+  0029  GetByIdShort         r5, r4, #c1, s25 "prototype"
+  002e  LoadConstString      r4, s8 "proto-enumerable"
+  0032  PutByIdLoose         r5, r4, #c2, s24 "protoEnumerable"
+  0038  GetByIdShort         r5, r3, #c2, s16 "Derived"
+  003d  TryGetById           r7, r3, #c3, s18 "Object"
+  0043  GetByIdShort         r6, r7, #c4, s20 "create"
+  0048  GetByIdShort         r4, r3, #c0, s15 "Base"
+  004d  GetByIdShort         r4, r4, #c1, s25 "prototype"
+  0052  Call2                r4, r6, r7, r4
+  0057  PutByIdLoose         r5, r4, #c3, s25 "prototype"
+  005d  GetByIdShort         r4, r3, #c2, s16 "Derived"
+  0062  CreateThisForNew     r5, r4, 1
+  0066  Mov                  r17, r5
+  0069  Construct            r4, r4, 1
+  006d  SelectObject         r4, r5, r4
+  0071  TryGetById           r8, r3, #c3, s18 "Object"
+  0077  GetByIdShort         r7, r8, #c5, s17 "defineProperty"
+  007c  LoadConstString      r6, s4 "hiddenProp"
+  0080  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0000
+  0086  Call4                r5, r7, r8, r4, r6, r5
+  008d  NewArray             r5, 0
+  0091  Mov                  r6, r4
+  0094  GetPNameList         r7, r6, r0, r1
+  0099  JmpUndefined         L2, r7
+L1:
+  009c  GetNextPName         r4, r7, r6, r0, r1
+  00a2  JmpUndefined         L2, r4
+  00a5  Mov                  r9, r4
+  00a8  GetByIdShort         r8, r5, #c6, s10 "push"
+  00ad  Call2                r8, r8, r5, r9
+  00b2  Jmp                  L1
+L2:
+  00b4  TryGetById           r7, r3, #c7, s23 "print"
+  00ba  GetByIdShort         r4, r5, #c8, s26 "sort"
+  00bf  Call1                r5, r4, r5
+  00c3  GetByIdShort         r4, r5, #c9, s11 "join"
+  00c8  LoadConstString      r6, s0 ","
+  00cc  Call2                r5, r4, r5, r6
+  00d1  LoadConstString      r4, s6 "keys:"
+  00d5  Call3                r4, r7, r2, r4, r5
+  00db  NewObjectWithBuffer  r10, sh1(numProps=3), lit@0x0004
+  00e1  NewArray             r4, 0
+  00e5  Mov                  r8, r10
+  00e8  LoadConstString      r5, s1 "="
+  00ec  GetPNameList         r9, r8, r0, r1
+  00f1  JmpUndefined         L4, r9
+L3:
+  00f4  GetNextPName         r7, r9, r8, r0, r1
+  00fa  JmpUndefined         L4, r7
+  00fd  Mov                  r11, r7
+  0100  GetByIdShort         r12, r4, #c6, s10 "push"
+  0105  Add                  r13, r11, r5
+  0109  GetByVal             r11, r10, r11
+  010d  Add                  r11, r13, r11
+  0111  Call2                r11, r12, r4, r11
+  0116  Jmp                  L3
+L4:
+  0118  TryGetById           r5, r3, #c7, s23 "print"
+  011e  GetByIdShort         r3, r4, #c9, s11 "join"
+  0123  Call2                r4, r3, r4, r6
+  0128  LoadConstString      r3, s5 "plain:"
+  012c  Call3                r3, r5, r2, r3, r4
+  0132  Ret                  r3
+
+function #1 "Base"  params=1 frame=3 env=0 flags=dbg,overflowed  @0x00000378 size=16
+  0000  LoadConstString      r2, s2 "from-base"
+  0004  LoadThisNS           r1
+  0006  PutByIdLoose         r1, r2, #c0, s12 "inheritedProp"
+  000c  LoadConstUndefined   r0
+  000e  Ret                  r0
+
+function #2 "Derived"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x00000388 size=51
+  0000  LoadThisNS           r2
+  0002  GetGlobalObject      r3
+  0004  GetByIdShort         r3, r3, #c0, s15 "Base"
+  0009  GetByIdShort         r4, r3, #c1, s19 "call"
+  000e  JmpBuiltinIs         L1, 57, r4
+  0012  Call2                r4, r4, r3, r2
+  0017  Jmp                  L2
+L1:
+  0019  Call1                r3, r3, r2
+L2:
+  001d  LoadConstUInt8       r0, 1
+  0020  PutByIdLoose         r2, r0, #c0, s22 "ownA"
+  0026  LoadConstUInt8       r0, 2
+  0029  PutByIdLoose         r2, r0, #c1, s14 "ownB"
+  002f  LoadConstUndefined   r1
+  0031  Ret                  r1

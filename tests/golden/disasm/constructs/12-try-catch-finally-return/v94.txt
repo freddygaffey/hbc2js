@@ -1,0 +1,75 @@
+; hbc2js disassembly of 12-try-catch-finally-return/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=4 strings=14 globalCodeIndex=0
+function #0 "global"  params=1 frame=12 env=0 flags=dbg  @0x00000190 size=116
+  0000  DeclareGlobalVar     s10 "f1"
+  0005  DeclareGlobalVar     s11 "f2"
+  000a  DeclareGlobalVar     s12 "f3"
+  000f  CreateEnvironment    r1
+  0011  CreateClosure        r2, r1, f1 "f1"
+  0016  GetGlobalObject      r0
+  0018  PutById              r0, r2, #c1, s10 "f1"
+  001e  CreateClosure        r2, r1, f2 "f2"
+  0023  PutById              r0, r2, #c2, s11 "f2"
+  0029  CreateClosure        r1, r1, f3 "f3"
+  002e  PutById              r0, r1, #c3, s12 "f3"
+  0034  TryGetById           r3, r0, #c1, s8 "print"
+  003a  GetByIdShort         r1, r0, #c2, s10 "f1"
+  003f  LoadConstUndefined   r2
+  0041  Call1                r1, r1, r2
+  0045  Call2                r1, r3, r2, r1
+  004a  TryGetById           r3, r0, #c1, s8 "print"
+  0050  GetByIdShort         r1, r0, #c3, s11 "f2"
+  0055  Call1                r1, r1, r2
+  0059  Call2                r1, r3, r2, r1
+  005e  TryGetById           r1, r0, #c1, s8 "print"
+  0064  GetByIdShort         r0, r0, #c4, s12 "f3"
+  0069  Call1                r0, r0, r2
+  006d  Call2                r0, r1, r2, r0
+  0072  Ret                  r0
+
+function #1 "f1"  params=1 frame=1 env=0 flags=dbg  @0x00000204 size=14
+  0000  LoadConstString      r0, s1 "from-finally"
+  0004  Ret                  r0
+  0006  Catch                r0
+  0008  LoadConstString      r0, s1 "from-finally"
+  000c  Ret                  r0
+
+function #2 "f2"  params=1 frame=11 env=0 flags=exc,dbg  @0x00000212 size=63
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T3 -> L2 ; handler 1
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s9 "Error"
+  0008  GetByIdShort         r0, r2, #c2, s13 "prototype"
+  000d  CreateThis           r1, r0, r2
+  0011  LoadConstString      r3, s0 "boom"
+  0015  Mov                  r4, r1
+  0018  Construct            r0, r2, 2
+  001c  SelectObject         r0, r1, r0
+  0020  Throw                r0
+L1:
+  0022  Catch                r0
+  0024  GetByIdShort         r1, r0, #c3, s7 "message"
+  0029  LoadConstString      r0, s4 "from-catch:"
+  002d  Add                  r0, r0, r1
+  0031  LoadConstString      r0, s3 "finally-wins"
+  0035  Ret                  r0
+L2:
+  0037  Catch                r0
+  0039  LoadConstString      r0, s3 "finally-wins"
+  003d  Ret                  r0
+
+function #3 "f3"  params=1 frame=12 env=0 flags=dbg  @0x00000251 size=48
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s8 "print"
+  0008  LoadConstUndefined   r1
+  000a  LoadConstString      r0, s2 "finally ran, but does not return…"
+  000e  Call2                r0, r2, r1, r0
+  0013  LoadConstString      r0, s6 "try-value"
+  0017  Ret                  r0
+  0019  Catch                r0
+  001b  GetGlobalObject      r1
+  001d  TryGetById           r3, r1, #c1, s8 "print"
+  0023  LoadConstUndefined   r2
+  0025  LoadConstString      r1, s2 "finally ran, but does not return…"
+  0029  Call2                r1, r3, r2, r1
+  002e  Throw                r0

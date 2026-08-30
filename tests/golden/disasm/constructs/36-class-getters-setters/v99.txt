@@ -1,0 +1,150 @@
+; hbc2js disassembly of 36-class-getters-setters/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=9 strings=27 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=exc,dbg,overflowed  @0x00000258 size=302
+  .try T1..T2 -> L1 ; handler 0
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  NewObjectWithBuffer  r1, sh0(numProps=1), lit@0x0000
+  000a  LoadConstString      r5, s17 "celsius"
+  000e  CreateClosure        r3, r4, f2 "set celsius"
+  0013  CreateClosure        r2, r4, f1 "get celsius"
+  0018  DefineOwnGetterSetterByVal r1, r5, r2, r3, 1
+  001e  LoadConstString      r5, s19 "fahrenheit"
+  0022  CreateClosure        r3, r4, f4 "set fahrenheit"
+  0027  CreateClosure        r2, r4, f3 "get fahrenheit"
+  002c  DefineOwnGetterSetterByVal r1, r5, r2, r3, 1
+  0032  LoadConstUInt8       r2, 100
+  0035  PutByIdLoose         r1, r2, #c0, s17 "celsius"
+  003b  Mov                  r0, r2
+  003e  GetGlobalObject      r2
+  0040  TryGetById           r6, r2, #c0, s25 "print"
+  0046  GetByIdShort         r5, r1, #c1, s17 "celsius"
+  004b  LoadConstString      r3, s3 "celsius="
+  004f  Add                  r5, r3, r5
+  0053  GetByIdShort         r7, r1, #c2, s19 "fahrenheit"
+  0058  LoadConstString      r3, s8 "fahrenheit="
+  005c  Add                  r3, r3, r7
+  0060  Call3                r0, r6, r4, r5, r3
+  0066  LoadConstUInt8       r3, 32
+  0069  PutByIdLoose         r1, r3, #c1, s19 "fahrenheit"
+  006f  Mov                  r0, r3
+  0072  TryGetById           r3, r2, #c0, s25 "print"
+  0078  GetByIdShort         r5, r1, #c1, s17 "celsius"
+  007d  LoadConstString      r1, s2 "after setting F=32, celsius="
+  0081  Add                  r1, r1, r5
+  0085  Call2                r0, r3, r4, r1
+  008a  CreateBaseClass      r5, r1, r4, 5
+  0090  Mov                  r6, r1
+  0093  LoadConstString      r3, s18 "area"
+  0097  CreateClosure        r1, r4, f6 "get area"
+  009c  DefineOwnGetterSetterByVal r6, r3, r1, r4, 0
+  00a2  LoadConstString      r3, s20 "width"
+  00a6  CreateClosure        r1, r4, f7 "get width"
+  00ab  DefineOwnGetterSetterByVal r6, r3, r1, r4, 0
+  00b1  CreateClosure        r1, r4, f8 "set width"
+  00b6  DefineOwnGetterSetterByVal r6, r3, r4, r1, 0
+  00bc  LoadConstUInt8       r8, 5
+  00bf  LoadConstUInt8       r9, 4
+  00c2  LoadConstUndefined   r10
+  00c4  Construct            r3, r5, 3
+  00c8  TryGetById           r5, r2, #c0, s25 "print"
+  00ce  GetByIdShort         r6, r3, #c3, s18 "area"
+  00d3  LoadConstString      r1, s5 "area="
+  00d7  Add                  r1, r1, r6
+  00db  Call2                r0, r5, r4, r1
+  00e0  LoadConstUInt8       r1, 10
+  00e3  PutByIdLoose         r3, r1, #c2, s20 "width"
+  00e9  Mov                  r0, r1
+  00ec  TryGetById           r5, r2, #c0, s25 "print"
+  00f2  GetByIdShort         r6, r3, #c3, s18 "area"
+  00f7  LoadConstString      r1, s4 "new area="
+  00fb  Add                  r1, r1, r6
+  00ff  Call2                r0, r5, r4, r1
+  0104  LoadConstInt         r1, -1
+  010a  PutByIdLoose         r3, r1, #c2, s20 "width"
+  0110  Mov                  r0, r1
+  0113  Jmp                  L2
+L1:
+  0115  Catch                r1
+  0117  TryGetById           r3, r2, #c0, s25 "print"
+  011d  GetByIdShort         r2, r1, #c4, s16 "message"
+  0122  LoadConstString      r1, s6 "caught:"
+  0126  Call3                r0, r3, r4, r1, r2
+L2:
+  012c  Ret                  r0
+
+function #1 "get celsius"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x00000386 size=9
+  0000  LoadThisNS           r0
+  0002  GetByIdShort         r0, r0, #c0, s21 "_celsius"
+  0007  Ret                  r0
+
+function #2 "set celsius"  params=2 frame=3 env=0 flags=dbg,overflowed  @0x0000038f size=15
+  0000  LoadParam            r2, 1
+  0003  LoadThisNS           r1
+  0005  PutByIdLoose         r1, r2, #c0, s21 "_celsius"
+  000b  LoadConstUndefined   r0
+  000d  Ret                  r0
+
+function #3 "get fahrenheit"  params=1 frame=4 env=0 flags=dbg,overflowed  @0x0000039e size=30
+  0000  LoadThisNS           r3
+  0002  GetByIdShort         r3, r3, #c0, s21 "_celsius"
+  0007  LoadConstUInt8       r0, 9
+  000a  Mul                  r1, r3, r0
+  000e  LoadConstUInt8       r2, 32
+  0011  LoadConstUInt8       r0, 5
+  0014  DivN                 r0, r1, r0
+  0018  AddN                 r0, r0, r2
+  001c  Ret                  r0
+
+function #4 "set fahrenheit"  params=2 frame=5 env=0 flags=dbg,overflowed  @0x000003bc size=36
+  0000  LoadConstUInt8       r0, 32
+  0003  LoadParam            r4, 1
+  0006  Sub                  r1, r4, r0
+  000a  LoadConstUInt8       r2, 9
+  000d  LoadConstUInt8       r0, 5
+  0010  MulN                 r0, r1, r0
+  0014  DivN                 r0, r0, r2
+  0018  LoadThisNS           r4
+  001a  PutByIdLoose         r4, r0, #c0, s21 "_celsius"
+  0020  LoadConstUndefined   r3
+  0022  Ret                  r3
+
+function #5 "Rectangle"  params=3 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x000003e0 size=30
+  0000  GetNewTarget         r0
+  0002  GetByIdShort         r0, r0, #c0, s26 "prototype"
+  0007  NewObjectWithParent  r0, r0
+  000a  LoadParam            r1, 1
+  000d  PutByIdStrict        r0, r1, #c0, s24 "_w"
+  0013  LoadParam            r1, 2
+  0016  PutByIdStrict        r0, r1, #c1, s23 "_h"
+  001c  Ret                  r0
+
+function #6 "get area"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x000003fe size=19
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r1, r0, #c0, s24 "_w"
+  0008  GetByIdShort         r0, r0, #c1, s23 "_h"
+  000d  Mul                  r0, r1, r0
+  0011  Ret                  r0
+
+function #7 "get width"  params=1 frame=1 env=0 flags=strict,dbg,overflowed,nc  @0x00000411 size=10
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r0, r0, #c0, s24 "_w"
+  0008  Ret                  r0
+
+function #8 "set width"  params=2 frame=14 env=0 flags=strict,dbg,overflowed,nc  @0x0000041b size=51
+  0000  LoadParam            r3, 1
+  0003  LoadConstZero        r0
+  0005  JLessEqual           L1, r3, r0
+  0009  LoadParam            r2, 0
+  000c  PutByIdStrict        r2, r3, #c0, s24 "_w"
+  0012  LoadConstUndefined   r1
+  0014  Ret                  r1
+L1:
+  0016  GetGlobalObject      r2
+  0018  TryGetById           r4, r2, #c0, s22 "Error"
+  001e  CreateThisForNew     r3, r4, 1
+  0022  LoadConstString      r5, s14 "invalid width"
+  0026  Mov                  r6, r3
+  0029  Construct            r2, r4, 2
+  002d  SelectObject         r2, r3, r2
+  0031  Throw                r2

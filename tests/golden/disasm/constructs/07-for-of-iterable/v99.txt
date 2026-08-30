@@ -1,0 +1,161 @@
+; hbc2js disassembly of 07-for-of-iterable/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=3 strings=22 globalCodeIndex=0
+function #0 "global"  params=1 frame=24 env=0 flags=exc,dbg,overflowed  @0x000001f0 size=438
+  .try T1..T2 -> L5 ; handler 0
+  .try T3..T4 -> L8 ; handler 1
+  .try T5..T6 -> L11 ; handler 2
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c0, s11 "Map"
+  0008  NewArray             r1, 3
+  000c  NewArrayWithBuffer   r3, 2, 2, lit@0x0000
+  0014  DefineOwnInDenseArray r1, r3, 0
+  0018  NewArrayWithBuffer   r3, 2, 2, lit@0x0008
+  0020  DefineOwnInDenseArray r1, r3, 1
+  0024  NewArrayWithBuffer   r3, 2, 2, lit@0x0010
+  002c  DefineOwnInDenseArray r1, r3, 2
+  0030  CreateThisForNew     r8, r2, 1
+  0034  Mov                  r16, r8
+  0037  Mov                  r15, r1
+  003a  Construct            r1, r2, 2
+  003e  NewArray             r2, 0
+  0042  LoadConstUndefined   r3
+  0044  LoadConstUndefined   r7
+  0046  LoadConstUndefined   r6
+  0048  SelectObject         r5, r8, r1
+  004c  IteratorBegin        r4, r5
+  004f  LoadConstString      r1, s4 ":"
+L1:
+  0053  Mov                  r8, r5
+  0056  IteratorNext         r9, r4, r8
+  005a  Mov                  r8, r4
+  005d  JStrictEqual         L6, r8, r3
+  0061  Mov                  r11, r9
+  0064  IteratorBegin        r8, r11
+  0067  Mov                  r9, r11
+  006a  IteratorNext         r12, r8, r9
+  006e  Mov                  r9, r8
+  0071  StrictEq             r9, r9, r3
+  0075  LoadConstUndefined   r10
+  0077  JmpTrue              L2, r9
+  007a  Mov                  r10, r12
+L2:
+  007d  Mov                  r7, r10
+  0080  LoadConstUndefined   r10
+  0082  JmpTrue              L3, r9
+  0085  IteratorNext         r12, r8, r11
+  0089  Mov                  r11, r8
+  008c  StrictEq             r11, r11, r3
+  0090  LoadConstUndefined   r10
+  0092  Mov                  r9, r11
+  0095  JmpTrue              L3, r11
+  0098  Mov                  r10, r12
+  009b  Mov                  r9, r11
+L3:
+  009e  Mov                  r6, r10
+  00a1  JmpTrue              L4, r9
+  00a4  IteratorClose        r8, 0
+L4:
+  00a7  GetByIdShort         r9, r2, #c2, s20 "push"
+  00ac  Mov                  r8, r7
+  00af  Add                  r10, r8, r1
+  00b3  Mov                  r8, r6
+  00b6  Add                  r8, r10, r8
+  00ba  Call2                r8, r9, r2, r8
+  00bf  Jmp                  L1
+L5:
+  00c1  Catch                r1
+  00c3  IteratorClose        r4, 1
+  00c6  Throw                r1
+L6:
+  00c8  TryGetById           r5, r0, #c3, s12 "print"
+  00ce  GetByIdShort         r1, r2, #c4, s19 "join"
+  00d3  LoadConstString      r4, s1 ","
+  00d7  Call2                r2, r1, r2, r4
+  00dc  LoadConstString      r1, s8 "map:"
+  00e0  Call3                r1, r5, r3, r1, r2
+  00e6  TryGetById           r2, r0, #c5, s13 "Set"
+  00ec  CreateThisForNew     r7, r2, 1
+  00f0  NewArrayWithBuffer   r15, 6, 6, lit@0x0018
+  00f8  Mov                  r16, r7
+  00fb  Construct            r6, r2, 2
+  00ff  NewArray             r2, 0
+  0103  SelectObject         r1, r7, r6
+  0107  IteratorBegin        r5, r1
+L7:
+  010a  Mov                  r6, r1
+  010d  IteratorNext         r7, r5, r6
+  0111  Mov                  r6, r5
+  0114  JStrictEqual         L9, r6, r3
+  0118  GetByIdShort         r6, r2, #c2, s20 "push"
+  011d  Call2                r6, r6, r2, r7
+  0122  Jmp                  L7
+L8:
+  0124  Catch                r1
+  0126  IteratorClose        r5, 1
+  0129  Throw                r1
+L9:
+  012b  TryGetById           r5, r0, #c3, s12 "print"
+  0131  GetByIdShort         r1, r2, #c4, s19 "join"
+  0136  Call2                r2, r1, r2, r4
+  013b  LoadConstString      r1, s9 "set (dedup):"
+  013f  Call3                r1, r5, r3, r1, r2
+  0145  NewObjectWithBuffer  r6, sh0(numProps=2), lit@0x0031
+  014b  TryGetById           r1, r0, #c6, s15 "Symbol"
+  0151  GetByIdShort         r1, r1, #c7, s18 "iterator"
+  0156  ToPropertyKey        r2, r1
+  0159  CreateClosure        r1, r3, f1 ""
+  015e  LoadConstZero        r13
+  0160  Mov                  r15, r1
+  0163  Mov                  r14, r2
+  0166  CallBuiltin          r5, b55 "functionPrototypeApply", 4
+  016a  DefineOwnByVal       r6, r1, r2, 1
+  016f  NewArray             r1, 0
+  0173  Mov                  r2, r6
+  0176  IteratorBegin        r5, r2
+L10:
+  0179  Mov                  r6, r2
+  017c  IteratorNext         r7, r5, r6
+  0180  Mov                  r6, r5
+  0183  JStrictEqual         L12, r6, r3
+  0187  GetByIdShort         r6, r1, #c2, s20 "push"
+  018c  Call2                r6, r6, r1, r7
+  0191  Jmp                  L10
+L11:
+  0193  Catch                r2
+  0195  IteratorClose        r5, 1
+  0198  Throw                r2
+L12:
+  019a  TryGetById           r2, r0, #c3, s12 "print"
+  01a0  GetByIdShort         r0, r1, #c4, s19 "join"
+  01a5  Call2                r1, r0, r1, r4
+  01aa  LoadConstString      r0, s3 "custom range:"
+  01ae  Call3                r0, r2, r3, r0, r1
+  01b4  Ret                  r0
+
+function #1 ""  params=1 frame=3 env=0 flags=dbg,overflowed,nc  @0x000003a6 size=40
+  0000  LoadThisNS           r0
+  0002  CreateFunctionEnvironment r1, 2
+  0005  GetByIdShort         r2, r0, #c0, s10 "from"
+  000a  StoreToEnvironment   r1, 0, r2
+  000e  GetByIdShort         r0, r0, #c1, s14 "to"
+  0013  StoreToEnvironment   r1, 1, r0
+  0017  NewObjectWithBuffer  r0, sh1(numProps=1), lit@0x003a
+  001d  CreateClosure        r1, r1, f2 "next"
+  0022  PutOwnBySlotIdx      r0, r1, 0
+  0026  Ret                  r0
+
+function #2 "next"  params=1 frame=4 env=0 flags=dbg,overflowed,nc  @0x000003ce size=49
+  0000  GetParentEnvironment r3, 0
+  0003  LoadFromEnvironment  r1, r3, 0
+  0007  LoadFromEnvironment  r0, r3, 1
+  000b  JLessEqual           L1, r1, r0
+  000f  NewObjectWithBuffer  r0, sh2(numProps=2), lit@0x003c
+  0015  Ret                  r0
+L1:
+  0017  NewObjectWithBuffer  r0, sh2(numProps=2), lit@0x003a
+  001d  LoadFromEnvironment  r1, r3, 0
+  0021  ToNumeric            r1, r1
+  0024  Inc                  r2, r1
+  0027  StoreToEnvironment   r3, 0, r2
+  002b  PutOwnBySlotIdx      r0, r1, 0
+  002f  Ret                  r0

@@ -1,0 +1,347 @@
+; hbc2js disassembly of 37-destructuring-array/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=2 strings=15 globalCodeIndex=0
+function #0 "global"  params=1 frame=36 env=0 flags=exc,dbg  @0x00000178 size=915
+  .try T1..T2 -> L8 ; handler 0
+  .try T3..T4 -> L29 ; handler 1
+  .try T5..T6 -> L28 ; handler 2
+  0000  DeclareGlobalVar     s13 "firstTwo"
+  0005  LoadConstUndefined   r9
+  0007  LoadConstUInt8       r17, 1
+  000a  LoadConstUndefined   r5
+  000c  LoadConstUndefined   r4
+  000e  LoadConstUndefined   r3
+  0010  LoadConstUndefined   r14
+  0012  LoadConstUndefined   r13
+  0014  LoadConstUndefined   r12
+  0016  LoadConstUndefined   r11
+  0018  LoadConstUndefined   r10
+  001a  LoadConstUndefined   r8
+  001c  LoadConstUndefined   r6
+  001e  CreateEnvironment    r0
+  0020  CreateClosure        r0, r0, f1 "firstTwo"
+  0025  GetGlobalObject      r7
+  0027  PutById              r7, r0, #c1, s13 "firstTwo"
+  002d  NewArrayWithBuffer   r0, 7, 1, lit@0x0000
+  0035  PutOwnByIndex        r0, r9, 1
+  0039  LoadConstString      r1, s1 "skipped"
+  003d  PutOwnByIndex        r0, r1, 2
+  0041  LoadConstUInt8       r1, 4
+  0044  PutOwnByIndex        r0, r1, 3
+  0048  LoadConstUInt8       r1, 5
+  004b  PutOwnByIndex        r0, r1, 4
+  004f  LoadConstUInt8       r1, 6
+  0052  PutOwnByIndex        r0, r1, 5
+  0056  LoadConstUInt8       r1, 7
+  0059  PutOwnByIndex        r0, r1, 6
+  005d  Mov                  r16, r0
+  0060  IteratorBegin        r1, r16
+  0063  LoadConstUndefined   r2
+  0065  LoadConstUndefined   r15
+  0067  IteratorNext         r18, r1, r16
+  006b  Mov                  r19, r1
+  006e  StrictEq             r19, r19, r9
+  0072  Mov                  r2, r19
+  0075  JmpTrue              L1, r19
+  0078  Mov                  r15, r18
+L1:
+  007b  Mov                  r5, r15
+  007e  LoadConstUndefined   r15
+  0080  Mov                  r18, r2
+  0083  JmpTrue              L2, r18
+  0086  IteratorNext         r18, r1, r16
+  008a  Mov                  r19, r1
+  008d  StrictEq             r19, r19, r9
+  0091  Mov                  r2, r19
+  0094  JmpTrue              L3, r19
+  0097  Mov                  r15, r18
+L2:
+  009a  Mov                  r18, r15
+  009d  JStrictNotEqual      L4, r18, r9
+L3:
+  00a1  LoadConstUInt8       r15, 99
+L4:
+  00a4  Mov                  r4, r15
+  00a7  LoadConstUndefined   r15
+  00a9  Mov                  r18, r2
+  00ac  JmpTrue              L5, r18
+  00af  IteratorNext         r18, r1, r16
+  00b3  Mov                  r19, r1
+  00b6  StrictEq             r19, r19, r9
+  00ba  Mov                  r2, r19
+  00bd  JmpTrue              L5, r19
+  00c0  Mov                  r15, r18
+L5:
+  00c3  LoadConstUndefined   r15
+  00c5  Mov                  r18, r2
+  00c8  JmpTrue              L6, r18
+  00cb  IteratorNext         r18, r1, r16
+  00cf  Mov                  r19, r1
+  00d2  StrictEq             r19, r19, r9
+  00d6  Mov                  r2, r19
+  00d9  JmpTrue              L6, r19
+  00dc  Mov                  r15, r18
+L6:
+  00df  Mov                  r3, r15
+  00e2  NewArray             r18, 0
+  00e6  LoadConstZero        r15
+  00e8  Mov                  r19, r2
+  00eb  JmpTrue              L9, r19
+L7:
+  00ee  IteratorNext         r20, r1, r16
+  00f2  Mov                  r19, r1
+  00f5  StrictEq             r19, r19, r9
+  00f9  Mov                  r2, r19
+  00fc  JmpTrue              L9, r19
+  00ff  Mov                  r19, r15
+  0102  PutByVal             r18, r19, r20
+  0106  AddN                 r15, r19, r17
+  010a  Jmp                  L7
+L8:
+  010c  Catch                r0
+  010e  JmpLong              L32
+L9:
+  0113  TryGetById           r16, r7, #c1, s14 "print"
+  0119  Mov                  r15, r5
+  011c  Mov                  r27, r4
+  011f  Mov                  r26, r3
+  0122  GetByIdShort         r17, r18, #c2, s12 "join"
+  0127  LoadConstString      r3, s0 ","
+  012b  Call2                r25, r17, r18, r3
+  0130  LoadConstUndefined   r29
+  0132  Mov                  r28, r15
+  0135  Call                 r3, r16, 5
+  0139  NewArray             r3, 2
+  013d  NewArrayWithBuffer   r4, 2, 2, lit@0x0006
+  0145  PutOwnByIndex        r3, r4, 0
+  0149  NewArrayWithBuffer   r4, 2, 2, lit@0x000f
+  0151  PutOwnByIndex        r3, r4, 1
+  0155  Mov                  r16, r3
+  0158  IteratorBegin        r4, r16
+  015b  LoadConstUndefined   r5
+  015d  LoadConstUndefined   r15
+  015f  IteratorNext         r17, r4, r16
+  0163  Mov                  r18, r4
+  0166  StrictEq             r18, r18, r9
+  016a  Mov                  r5, r18
+  016d  JmpTrue              L10, r18
+  0170  Mov                  r15, r17
+L10:
+  0173  Mov                  r18, r15
+  0176  Mov                  r20, r18
+  0179  IteratorBegin        r17, r20
+  017c  LoadConstUndefined   r18
+  017e  LoadConstUndefined   r19
+  0180  IteratorNext         r21, r17, r20
+  0184  Mov                  r22, r17
+  0187  StrictEq             r22, r22, r9
+  018b  Mov                  r18, r22
+  018e  JmpTrue              L11, r22
+  0191  Mov                  r19, r21
+L11:
+  0194  Mov                  r14, r19
+  0197  LoadConstUndefined   r19
+  0199  Mov                  r21, r18
+  019c  JmpTrue              L12, r21
+  019f  IteratorNext         r20, r17, r20
+  01a3  Mov                  r21, r17
+  01a6  StrictEq             r21, r21, r9
+  01aa  Mov                  r18, r21
+  01ad  JmpTrue              L12, r21
+  01b0  Mov                  r19, r20
+L12:
+  01b3  Mov                  r13, r19
+  01b6  JmpTrue              L13, r18
+  01b9  IteratorClose        r17, 0
+L13:
+  01bc  LoadConstUndefined   r15
+  01be  Mov                  r17, r5
+  01c1  JmpTrue              L14, r17
+  01c4  IteratorNext         r16, r4, r16
+  01c8  Mov                  r17, r4
+  01cb  StrictEq             r17, r17, r9
+  01cf  Mov                  r5, r17
+  01d2  JmpTrue              L14, r17
+  01d5  Mov                  r15, r16
+L14:
+  01d8  Mov                  r16, r15
+  01db  Mov                  r18, r16
+  01de  IteratorBegin        r15, r18
+  01e1  LoadConstUndefined   r16
+  01e3  LoadConstUndefined   r17
+  01e5  IteratorNext         r19, r15, r18
+  01e9  Mov                  r20, r15
+  01ec  StrictEq             r20, r20, r9
+  01f0  Mov                  r16, r20
+  01f3  JmpTrue              L15, r20
+  01f6  Mov                  r17, r19
+L15:
+  01f9  Mov                  r12, r17
+  01fc  LoadConstUndefined   r17
+  01fe  Mov                  r19, r16
+  0201  JmpTrue              L16, r19
+  0204  IteratorNext         r18, r15, r18
+  0208  Mov                  r19, r15
+  020b  StrictEq             r19, r19, r9
+  020f  Mov                  r16, r19
+  0212  JmpTrue              L16, r19
+  0215  Mov                  r17, r18
+L16:
+  0218  Mov                  r11, r17
+  021b  JmpTrue              L17, r16
+  021e  IteratorClose        r15, 0
+L17:
+  0221  Mov                  r15, r5
+  0224  JmpTrue              L18, r15
+  0227  IteratorClose        r4, 0
+L18:
+  022a  TryGetById           r16, r7, #c1, s14 "print"
+  0230  Mov                  r27, r14
+  0233  Mov                  r26, r13
+  0236  Mov                  r25, r12
+  0239  Mov                  r24, r11
+  023c  LoadConstString      r28, s9 "nested:"
+  0240  LoadConstUndefined   r29
+  0242  Call                 r11, r16, 6
+  0246  LoadConstUndefined   r10
+  0248  LoadConstUndefined   r8
+  024a  NewArrayWithBuffer   r14, 2, 2, lit@0x0018
+  0252  IteratorBegin        r11, r14
+  0255  LoadConstUndefined   r12
+  0257  LoadConstUndefined   r13
+  0259  IteratorNext         r15, r11, r14
+  025d  Mov                  r16, r11
+  0260  StrictEq             r16, r16, r9
+  0264  Mov                  r12, r16
+  0267  JmpTrue              L19, r16
+  026a  Mov                  r13, r15
+L19:
+  026d  Mov                  r10, r13
+  0270  LoadConstUndefined   r13
+  0272  Mov                  r15, r12
+  0275  JmpTrue              L20, r15
+  0278  IteratorNext         r14, r11, r14
+  027c  Mov                  r15, r11
+  027f  StrictEq             r15, r15, r9
+  0283  Mov                  r12, r15
+  0286  JmpTrue              L20, r15
+  0289  Mov                  r13, r14
+L20:
+  028c  Mov                  r8, r13
+  028f  JmpTrue              L21, r12
+  0292  IteratorClose        r11, 0
+L21:
+  0295  TryGetById           r14, r7, #c1, s14 "print"
+  029b  Mov                  r11, r10
+  029e  Mov                  r13, r8
+  02a1  LoadConstString      r12, s11 "swap before:"
+  02a5  Call4                r12, r14, r9, r12, r11, r13
+  02ac  NewArray             r12, 2
+  02b0  PutOwnByIndex        r12, r13, 0
+  02b4  PutOwnByIndex        r12, r11, 1
+  02b8  Mov                  r14, r12
+  02bb  IteratorBegin        r11, r14
+  02be  LoadConstUndefined   r12
+  02c0  LoadConstUndefined   r13
+  02c2  IteratorNext         r15, r11, r14
+  02c6  Mov                  r16, r11
+  02c9  StrictEq             r16, r16, r9
+  02cd  Mov                  r12, r16
+  02d0  JmpTrue              L22, r16
+  02d3  Mov                  r13, r15
+L22:
+  02d6  Mov                  r10, r13
+  02d9  LoadConstUndefined   r13
+  02db  Mov                  r15, r12
+  02de  JmpTrue              L23, r15
+  02e1  IteratorNext         r14, r11, r14
+  02e5  Mov                  r15, r11
+  02e8  StrictEq             r15, r15, r9
+  02ec  Mov                  r12, r15
+  02ef  JmpTrue              L23, r15
+  02f2  Mov                  r13, r14
+L23:
+  02f5  Mov                  r8, r13
+  02f8  JmpTrue              L24, r12
+  02fb  IteratorClose        r11, 0
+L24:
+  02fe  TryGetById           r12, r7, #c1, s14 "print"
+  0304  Mov                  r11, r10
+  0307  Mov                  r10, r8
+  030a  LoadConstString      r8, s10 "swap after:"
+  030e  Call4                r8, r12, r9, r8, r11, r10
+  0315  TryGetById           r10, r7, #c1, s14 "print"
+  031b  GetByIdShort         r11, r7, #c3, s13 "firstTwo"
+  0320  NewArrayWithBuffer   r8, 3, 3, lit@0x0021
+  0328  Call2                r8, r11, r9, r8
+  032d  Call2                r8, r10, r9, r8
+  0332  NewArray             r12, 0
+  0336  IteratorBegin        r8, r12
+  0339  LoadConstUndefined   r10
+  033b  LoadConstUndefined   r11
+  033d  IteratorNext         r12, r8, r12
+  0341  Mov                  r13, r8
+  0344  StrictEq             r13, r13, r9
+  0348  Mov                  r10, r13
+  034b  JmpTrue              L25, r13
+  034e  Mov                  r11, r12
+  0351  JStrictNotEqual      L26, r12, r9
+L25:
+  0355  LoadConstString      r11, s7 "fallback"
+L26:
+  0359  Mov                  r6, r11
+  035c  JmpTrue              L27, r10
+  035f  IteratorClose        r8, 0
+L27:
+  0362  TryGetById           r8, r7, #c1, s14 "print"
+  0368  Mov                  r7, r6
+  036b  LoadConstString      r6, s2 "default on empty:"
+  036f  Call3                r6, r8, r9, r6, r7
+  0375  Ret                  r6
+L28:
+  0377  Catch                r3
+  0379  Jmp                  L30
+L29:
+  037b  Catch                r3
+  037d  Jmp                  L30
+  037f  Catch                r3
+L30:
+  0381  JmpTrue              L31, r5
+  0384  IteratorClose        r4, 1
+L31:
+  0387  Throw                r3
+  0389  Catch                r0
+L32:
+  038b  JmpTrue              L33, r2
+  038e  IteratorClose        r1, 1
+L33:
+  0391  Throw                r0
+
+function #1 "firstTwo"  params=2 frame=7 env=0 flags=dbg  @0x0000050b size=77
+  0000  LoadConstUndefined   r6
+  0002  LoadParam            r4, 1
+  0005  IteratorBegin        r0, r4
+  0008  IteratorNext         r1, r0, r4
+  000c  Mov                  r2, r0
+  000f  StrictEq             r3, r2, r6
+  0013  LoadConstUndefined   r2
+  0015  JmpTrue              L1, r3
+  0018  Mov                  r2, r1
+L1:
+  001b  LoadConstUndefined   r1
+  001d  JmpTrue              L2, r3
+  0020  IteratorNext         r5, r0, r4
+  0024  Mov                  r4, r0
+  0027  StrictEq             r4, r4, r6
+  002b  LoadConstUndefined   r1
+  002d  Mov                  r3, r4
+  0030  JmpTrue              L2, r4
+  0033  Mov                  r1, r5
+  0036  Mov                  r3, r4
+L2:
+  0039  JmpTrue              L3, r3
+  003c  IteratorClose        r0, 0
+L3:
+  003f  LoadConstString      r0, s3 ":"
+  0043  Add                  r0, r2, r0
+  0047  Add                  r0, r0, r1
+  004b  Ret                  r0

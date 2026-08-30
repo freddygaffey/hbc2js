@@ -1,0 +1,58 @@
+; hbc2js disassembly of 04-for-loop-basic/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=28 env=0 flags=dbg  @0x000000f8 size=193
+  0000  LoadConstUInt8       r9, 10
+  0003  LoadConstString      r14, s1 ":"
+  0007  LoadConstUInt8       r13, 1
+  000a  LoadConstUInt8       r12, 100
+  000d  LoadConstUInt8       r8, 2
+  0010  LoadConstUInt8       r1, 5
+  0013  LoadConstUInt8       r7, 3
+  0016  GetGlobalObject      r6
+  0018  LoadConstString      r5, s4 "i="
+  001c  LoadConstString      r4, s5 "j="
+  0020  LoadConstString      r3, s2 "dummy="
+  0024  LoadConstUndefined   r2
+  0026  NewArray             r15, 0
+  002a  LoadConstZero        r11
+  002c  Mov                  r0, r9
+L1:
+  002f  GetByIdShort         r17, r15, #c1, s9 "push"
+  0034  Add                  r16, r11, r14
+  0038  Add                  r16, r16, r0
+  003c  Call2                r16, r17, r15, r16
+  0041  Inc                  r11, r11
+  0044  Dec                  r0, r0
+  0047  JLess                L1, r11, r0
+  004b  TryGetById           r11, r6, #c2, s7 "print"
+  0051  GetByIdShort         r14, r15, #c3, s8 "join"
+  0056  LoadConstString      r0, s0 " | "
+  005a  Call2                r0, r14, r15, r0
+  005f  Call2                r0, r11, r2, r0
+  0064  LoadConstZero        r0
+L2:
+  0066  Add                  r11, r13, r12
+  006a  Add                  r11, r0, r11
+  006e  Add                  r13, r13, r8
+  0072  SubN                 r12, r12, r1
+  0076  Mov                  r0, r11
+  0079  JLess                L2, r13, r12
+  007d  TryGetById           r1, r6, #c2, s7 "print"
+  0083  LoadConstString      r0, s6 "total="
+  0087  Add                  r0, r0, r11
+  008b  Call2                r0, r1, r2, r0
+  0090  LoadConstZero        r1
+L3:
+  0092  Add                  r13, r5, r1
+  0096  Mul                  r0, r1, r9
+  009a  Add                  r12, r3, r0
+  009e  LoadConstZero        r11
+L4:
+  00a0  TryGetById           r14, r6, #c2, s7 "print"
+  00a6  Add                  r0, r4, r11
+  00aa  Call4                r0, r14, r2, r13, r0, r12
+  00b1  Inc                  r11, r11
+  00b4  JLess                L4, r11, r8
+  00b8  Inc                  r1, r1
+  00bb  JLess                L3, r1, r7
+  00bf  Ret                  r0

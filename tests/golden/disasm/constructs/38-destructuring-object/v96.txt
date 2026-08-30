@@ -1,0 +1,90 @@
+; hbc2js disassembly of 38-destructuring-object/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=2 strings=28 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=0 flags=dbg  @0x000001dc size=286
+  0000  DeclareGlobalVar     s18 "greet"
+  0005  CreateEnvironment    r0
+  0007  CreateClosure        r1, r0, f1 "greet"
+  000c  GetGlobalObject      r0
+  000e  PutById              r0, r1, #c1, s18 "greet"
+  0014  NewObject            r1
+  0016  LoadConstUInt8       r2, 1
+  0019  PutNewOwnByIdShort   r1, r2, s14 "a"
+  001d  GetByIdShort         r4, r1, #c1, s14 "a"
+  0022  GetByIdShort         r2, r1, #c2, s16 "b"
+  0027  LoadConstUndefined   r3
+  0029  JStrictNotEqual      L1, r2, r3
+  002d  LoadConstString      r2, s8 "default-b"
+L1:
+  0031  TryGetById           r1, r0, #c3, s25 "print"
+  0037  Call3                r1, r1, r3, r4, r2
+  003d  NewObject            r1
+  003f  NewObject            r2
+  0041  PutNewOwnByIdShort   r1, r2, s17 "nested"
+  0045  GetByIdShort         r1, r1, #c4, s17 "nested"
+  004a  JStrictNotEqual      L2, r1, r3
+  004e  NewObject            r1
+L2:
+  0050  GetByIdShort         r4, r1, #c5, s15 "deep"
+  0055  JStrictNotEqual      L3, r4, r3
+  0059  LoadConstString      r4, s7 "deep-default"
+L3:
+  005d  TryGetById           r2, r0, #c3, s25 "print"
+  0063  LoadConstString      r1, s10 "deep:"
+  0067  Call3                r1, r2, r3, r1, r4
+  006d  NewObjectWithBuffer  r5, 3, 3, lit@0x0000, lit@0x0000
+  0077  GetByIdShort         r2, r5, #c6, s20 "x"
+  007c  LoadConstNull        r1
+  007e  NewObjectWithParent  r4, r1
+  0081  LoadConstZero        r1
+  0083  PutNewOwnByIdShort   r4, r1, s20 "x"
+  0087  NewObject            r9
+  0089  Mov                  r8, r5
+  008c  Mov                  r7, r4
+  008f  CallBuiltin          r6, b44 "copyDataProperties", 4
+  0093  TryGetById           r4, r0, #c3, s25 "print"
+  0099  LoadConstString      r1, s13 "x="
+  009d  Add                  r2, r1, r2
+  00a1  TryGetById           r5, r0, #c7, s21 "JSON"
+  00a7  GetByIdShort         r1, r5, #c8, s26 "stringify"
+  00ac  Call2                r5, r1, r5, r6
+  00b1  LoadConstString      r1, s4 "others="
+  00b5  Add                  r1, r1, r5
+  00b9  Call3                r1, r4, r3, r2, r1
+  00bf  TryGetById           r2, r0, #c3, s25 "print"
+  00c5  GetByIdShort         r4, r0, #c9, s18 "greet"
+  00ca  NewObject            r1
+  00cc  LoadConstString      r5, s6 "World"
+  00d0  PutNewOwnByIdShort   r1, r5, s24 "name"
+  00d4  Call2                r1, r4, r3, r1
+  00d9  Call2                r1, r2, r3, r1
+  00de  TryGetById           r2, r0, #c3, s25 "print"
+  00e4  GetByIdShort         r4, r0, #c9, s18 "greet"
+  00e9  NewObjectWithBuffer  r1, 2, 2, lit@0x0004, lit@0x000d
+  00f3  Call2                r1, r4, r3, r1
+  00f8  Call2                r1, r2, r3, r1
+  00fd  NewObject            r1
+  00ff  LoadConstString      r2, s11 "found-it"
+  0103  PutNewOwnByIdShort   r1, r2, s22 "computedKey"
+  0107  GetByIdShort         r2, r1, #c10, s22 "computedKey"
+  010c  TryGetById           r1, r0, #c3, s25 "print"
+  0112  LoadConstString      r0, s9 "computed:"
+  0116  Call3                r0, r1, r3, r0, r2
+  011c  Ret                  r0
+
+function #1 "greet"  params=1 frame=3 env=0 flags=dbg  @0x000002fa size=51
+  0000  LoadParam            r2, 1
+  0003  LoadConstUndefined   r0
+  0005  JStrictNotEqual      L1, r2, r0
+  0009  NewObject            r2
+L1:
+  000b  GetByIdShort         r1, r2, #c1, s24 "name"
+  0010  GetByIdShort         r2, r2, #c2, s19 "greeting"
+  0015  JStrictNotEqual      L2, r2, r0
+  0019  LoadConstString      r2, s3 "Hello"
+L2:
+  001d  LoadConstString      r0, s1 ", "
+  0021  Add                  r0, r2, r0
+  0025  Add                  r1, r0, r1
+  0029  LoadConstString      r0, s0 "!"
+  002d  Add                  r0, r1, r0
+  0031  Ret                  r0

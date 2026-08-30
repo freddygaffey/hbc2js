@@ -1,0 +1,56 @@
+; hbc2js disassembly of 02-while-loop/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=1 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=dbg  @0x000000fc size=176
+  0000  LoadConstZero        r6
+  0002  LoadConstUInt8       r9, 100
+  0005  LoadConstUInt8       r5, 1
+  0008  LoadConstUInt8       r4, 17
+  000b  LoadConstZero        r2
+  000d  LoadConstZero        r1
+L1:
+  000f  Inc                  r3, r2
+  0012  Mul                  r0, r3, r3
+  0016  Mod                  r8, r0, r4
+  001a  Mov                  r0, r1
+  001d  JStrictNotEqual      L2, r8, r6
+  0021  JGreater             L3, r3, r5
+L2:
+  0025  Add                  r1, r0, r3
+  0029  Mov                  r7, r1
+  002c  Mov                  r2, r3
+  002f  JLess                L1, r2, r9
+  0033  Jmp                  L4
+L3:
+  0035  GetGlobalObject      r1
+  0037  TryGetById           r4, r1, #c1, s7 "print"
+  003d  LoadConstUndefined   r2
+  003f  LoadConstString      r1, s1 "breaking at i="
+  0043  Add                  r9, r1, r3
+  0047  LoadConstString      r1, s0 " computed="
+  004b  Add                  r1, r9, r1
+  004f  Add                  r1, r1, r8
+  0053  Call2                r1, r4, r2, r1
+  0058  Mov                  r7, r0
+L4:
+  005b  GetGlobalObject      r0
+  005d  TryGetById           r4, r0, #c1, s7 "print"
+  0063  LoadConstUndefined   r2
+  0065  LoadConstString      r1, s3 "final i="
+  0069  Add                  r3, r1, r3
+  006d  LoadConstString      r1, s5 "sum="
+  0071  Add                  r1, r1, r7
+  0075  Call3                r1, r4, r2, r3, r1
+  007b  LoadConstString      r4, s6 "tick"
+  007f  LoadConstUInt8       r1, 5
+  0082  LoadConstZero        r6
+L5:
+  0084  TryGetById           r3, r0, #c1, s7 "print"
+  008a  Call3                r3, r3, r2, r4, r6
+  0090  Add                  r3, r6, r5
+  0094  Mov                  r6, r3
+  0097  JLess                L5, r6, r1
+  009b  TryGetById           r1, r0, #c1, s7 "print"
+  00a1  LoadConstString      r0, s2 "done, count="
+  00a5  Add                  r0, r0, r3
+  00a9  Call2                r0, r1, r2, r0
+  00ae  Ret                  r0

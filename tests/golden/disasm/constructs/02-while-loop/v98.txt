@@ -1,0 +1,56 @@
+; hbc2js disassembly of 02-while-loop/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=25 env=0 flags=overflowed,ctor  @0x000000f8 size=177
+  0000  LoadConstZero        r1
+  0002  LoadConstUInt8       r9, 100
+  0005  LoadConstUInt8       r6, 1
+  0008  LoadConstUInt8       r7, 17
+  000b  LoadConstZero        r2
+  000d  LoadConstZero        r3
+L1:
+  000f  AddN                 r0, r3, r6
+  0013  MulN                 r4, r0, r0
+  0017  Mod                  r8, r4, r7
+  001b  Mov                  r5, r2
+  001e  JStrictNotEqual      L2, r8, r1
+  0022  JLessN               L3, r6, r0
+L2:
+  0026  AddN                 r2, r5, r0
+  002a  Mov                  r4, r2
+  002d  Mov                  r3, r0
+  0030  JLessN               L1, r3, r9
+  0034  Jmp                  L4
+L3:
+  0036  GetGlobalObject      r11
+  0038  TryGetById           r12, r11, #c0, s7 "print"
+  003e  LoadConstUndefined   r10
+  0040  LoadConstString      r13, s0 " computed="
+  0044  LoadConstString      r11, s1 "breaking at i="
+  0048  Add                  r11, r11, r0
+  004c  AddS                 r11, r11, r13
+  0050  Add                  r11, r11, r8
+  0054  Call2                r11, r12, r10, r11
+  0059  Mov                  r4, r5
+L4:
+  005c  GetGlobalObject      r11
+  005e  TryGetById           r14, r11, #c0, s7 "print"
+  0064  LoadConstUndefined   r10
+  0066  LoadConstString      r12, s5 "sum="
+  006a  Add                  r13, r12, r4
+  006e  LoadConstString      r12, s3 "final i="
+  0072  Add                  r12, r12, r0
+  0076  Call3                r12, r14, r10, r12, r13
+  007c  LoadConstString      r12, s6 "tick"
+  0080  LoadConstUInt8       r4, 5
+  0083  LoadConstZero        r1
+L5:
+  0085  TryGetById           r13, r11, #c0, s7 "print"
+  008b  Call3                r13, r13, r10, r12, r1
+  0091  AddN                 r0, r1, r6
+  0095  Mov                  r1, r0
+  0098  JLessN               L5, r1, r4
+  009c  TryGetById           r12, r11, #c0, s7 "print"
+  00a2  LoadConstString      r11, s2 "done, count="
+  00a6  Add                  r11, r11, r0
+  00aa  Call2                r11, r12, r10, r11
+  00af  Ret                  r11

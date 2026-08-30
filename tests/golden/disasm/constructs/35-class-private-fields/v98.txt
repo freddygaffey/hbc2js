@@ -1,0 +1,178 @@
+; hbc2js disassembly of 35-class-private-fields/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=7 strings=26 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=overflowed,ctor  @0x00000268 size=326
+  0000  CreateFunctionEnvironment r1, 3
+  0003  LoadConstUndefined   r4
+  0005  LoadConstUndefined   r0
+  0007  CreatePrivateName    r2, s13 "#balance"
+  000d  StoreToEnvironment   r1, 0, r2
+  0011  CreatePrivateName    r2, s15 "#history"
+  0017  StoreToEnvironment   r1, 1, r2
+  001b  CreatePrivateName    r2, s19 "BankAccount"
+  0021  StoreToEnvironment   r1, 2, r2
+  0025  CreateBaseClass      r7, r2, r1, 1
+  002b  Mov                  r5, r2
+  002e  LoadConstString      r3, s12 "deposit"
+  0032  CreateClosure        r2, r1, f2 "deposit"
+  0037  DefineOwnByVal       r5, r2, r3, 0
+  003c  LoadConstString      r3, s18 "withdraw"
+  0040  CreateClosure        r2, r1, f3 "withdraw"
+  0045  DefineOwnByVal       r5, r2, r3, 0
+  004a  LoadConstString      r3, s14 "balance"
+  004e  CreateClosure        r2, r1, f4 "balance"
+  0053  DefineOwnGetterSetterByVal r5, r3, r2, r4, 0
+  0059  LoadConstString      r3, s16 "history"
+  005d  CreateClosure        r2, r1, f5 "history"
+  0062  DefineOwnGetterSetterByVal r5, r3, r2, r4, 0
+  0068  LoadConstString      r2, s21 "isAccount"
+  006c  CreateClosure        r1, r1, f6 "isAccount"
+  0071  DefineOwnByVal       r7, r1, r2, 0
+  0076  LoadConstUInt8       r9, 100
+  0079  LoadConstUndefined   r10
+  007b  Construct            r5, r7, 2
+  007f  GetGlobalObject      r2
+  0081  TryGetById           r6, r2, #c0, s23 "print"
+  0087  GetByIdShort         r3, r5, #c1, s12 "deposit"
+  008c  LoadConstUInt8       r1, 50
+  008f  Call2                r3, r3, r5, r1
+  0094  LoadConstString      r1, s3 "deposit:"
+  0098  Call3                r0, r6, r4, r1, r3
+  009e  TryGetById           r6, r2, #c0, s23 "print"
+  00a4  GetByIdShort         r3, r5, #c2, s18 "withdraw"
+  00a9  LoadConstUInt8       r1, 30
+  00ac  Call2                r3, r3, r5, r1
+  00b1  LoadConstString      r1, s11 "withdraw:"
+  00b5  Call3                r0, r6, r4, r1, r3
+  00bb  TryGetById           r6, r2, #c0, s23 "print"
+  00c1  GetByIdShort         r3, r5, #c3, s14 "balance"
+  00c6  LoadConstString      r1, s4 "balance:"
+  00ca  Call3                r0, r6, r4, r1, r3
+  00d0  TryGetById           r6, r2, #c0, s23 "print"
+  00d6  GetByIdShort         r3, r5, #c4, s16 "history"
+  00db  LoadConstString      r1, s9 "history:"
+  00df  Call3                r0, r6, r4, r1, r3
+  00e5  TryGetById           r6, r2, #c0, s23 "print"
+  00eb  GetByIdShort         r1, r7, #c5, s21 "isAccount"
+  00f0  Call2                r3, r1, r7, r5
+  00f5  LoadConstString      r1, s6 "brand check (real account):"
+  00f9  Call3                r0, r6, r4, r1, r3
+  00ff  TryGetById           r6, r2, #c0, s23 "print"
+  0105  GetByIdShort         r3, r7, #c5, s21 "isAccount"
+  010a  NewObject            r1
+  010c  Call2                r3, r3, r7, r1
+  0111  LoadConstString      r1, s5 "brand check (plain object):"
+  0115  Call3                r0, r6, r4, r1, r3
+  011b  GetByIdShort         r3, r5, #c2, s18 "withdraw"
+  0120  LoadConstInt         r1, 99999
+  0126  Call2                r0, r3, r5, r1
+  012b  Jmp                  L1
+  012d  Catch                r1
+  012f  TryGetById           r3, r2, #c0, s23 "print"
+  0135  GetByIdShort         r2, r1, #c6, s22 "message"
+  013a  LoadConstString      r1, s7 "caught:"
+  013e  Call3                r0, r3, r4, r1, r2
+L1:
+  0144  Ret                  r0
+
+function #1 "BankAccount"  params=2 frame=15 env=0 flags=overflowed  @0x000003ae size=69
+  0000  GetParentEnvironment r4, 0
+  0003  GetNewTarget         r1
+  0005  GetByIdShort         r1, r1, #c0, s24 "prototype"
+  000a  NewObjectWithParent  r1, r1
+  000d  LoadFromEnvironment  r2, r4, 2
+  0011  PrivateIsIn          r0, r2, r1, r0
+  0016  JmpTrue              L1, r0
+  0019  LoadParam            r3, 1
+  001c  LoadConstUndefined   r0
+  001e  AddOwnPrivateBySym   r1, r0, r2
+  0022  LoadFromEnvironment  r2, r4, 0
+  0026  AddOwnPrivateBySym   r1, r0, r2
+  002a  LoadFromEnvironment  r5, r4, 1
+  002e  NewArray             r4, 0
+  0032  AddOwnPrivateBySym   r1, r4, r5
+  0036  PutOwnPrivateBySym   r1, r3, 1, r2
+  003b  Ret                  r1
+L1:
+  003d  LoadConstString      r6, s1 "Cannot initialize private field …"
+  0041  CallBuiltin          r1, b44 "throwTypeError", 2
+
+function #2 "deposit"  params=2 frame=16 env=0 flags=overflowed  @0x000003f3 size=81
+  0000  LoadParam            r2, 0
+  0003  GetParentEnvironment r3, 0
+  0006  LoadParam            r6, 1
+  0009  LoadFromEnvironment  r1, r3, 0
+  000d  GetOwnPrivateBySym   r4, r2, 0, r1
+  0012  Add                  r4, r4, r6
+  0016  PutOwnPrivateBySym   r2, r4, 0, r1
+  001b  LoadFromEnvironment  r4, r3, 2
+  001f  PrivateIsIn          r0, r4, r2, r1
+  0024  JmpTrue              L1, r0
+  0027  LoadConstString      r7, s2 "Private element not found"
+  002b  CallBuiltin          r4, b44 "throwTypeError", 2
+L1:
+  002f  LoadFromEnvironment  r3, r3, 1
+  0033  GetOwnPrivateBySym   r5, r2, 2, r3
+  0038  GetByIdShort         r4, r5, #c0, s25 "push"
+  003d  LoadConstString      r3, s3 "deposit:"
+  0041  Add                  r3, r3, r6
+  0045  Call2                r3, r4, r5, r3
+  004a  GetOwnPrivateBySym   r1, r2, 0, r1
+  004f  Ret                  r1
+
+function #3 "withdraw"  params=2 frame=16 env=0 flags=overflowed  @0x00000444 size=119
+  0000  LoadParam            r2, 0
+  0003  GetParentEnvironment r3, 0
+  0006  LoadParam            r6, 1
+  0009  LoadFromEnvironment  r1, r3, 0
+  000d  GetOwnPrivateBySym   r4, r2, 0, r1
+  0012  JGreater             L2, r6, r4
+  0016  GetOwnPrivateBySym   r4, r2, 0, r1
+  001b  Sub                  r4, r4, r6
+  001f  PutOwnPrivateBySym   r2, r4, 0, r1
+  0024  LoadFromEnvironment  r4, r3, 2
+  0028  PrivateIsIn          r0, r4, r2, r1
+  002d  JmpTrue              L1, r0
+  0030  LoadConstString      r7, s2 "Private element not found"
+  0034  CallBuiltin          r4, b44 "throwTypeError", 2
+L1:
+  0038  LoadFromEnvironment  r3, r3, 1
+  003c  GetOwnPrivateBySym   r5, r2, 2, r3
+  0041  GetByIdShort         r4, r5, #c0, s25 "push"
+  0046  LoadConstString      r3, s11 "withdraw:"
+  004a  Add                  r3, r3, r6
+  004e  Call2                r3, r4, r5, r3
+  0053  GetOwnPrivateBySym   r1, r2, 0, r1
+  0058  Ret                  r1
+L2:
+  005a  GetGlobalObject      r1
+  005c  TryGetById           r3, r1, #c1, s20 "Error"
+  0062  CreateThisForNew     r2, r3, 2
+  0066  LoadConstString      r7, s10 "insufficient funds"
+  006a  Mov                  r8, r2
+  006d  Construct            r1, r3, 2
+  0071  SelectObject         r1, r2, r1
+  0075  Throw                r1
+
+function #4 "balance"  params=1 frame=2 env=0 flags=overflowed,nc  @0x000004bb size=17
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadParam            r0, 0
+  000a  GetOwnPrivateBySym   r0, r0, 0, r1
+  000f  Ret                  r0
+
+function #5 "history"  params=1 frame=12 env=0 flags=overflowed,nc  @0x000004cc size=31
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r1, r0, 1
+  0007  LoadParam            r0, 0
+  000a  GetOwnPrivateBySym   r2, r0, 0, r1
+  000f  GetByIdShort         r1, r2, #c0, s17 "join"
+  0014  LoadConstString      r0, s0 ","
+  0018  Call2                r0, r1, r2, r0
+  001d  Ret                  r0
+
+function #6 "isAccount"  params=2 frame=3 env=0 flags=overflowed,nc  @0x000004eb size=17
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r2, r1, 0
+  0007  LoadParam            r1, 1
+  000a  PrivateIsIn          r0, r2, r1, r0
+  000f  Ret                  r0

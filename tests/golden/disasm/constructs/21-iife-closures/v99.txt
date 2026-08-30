@@ -1,0 +1,106 @@
+; hbc2js disassembly of 21-iife-closures/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=6 strings=13 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=dbg,overflowed  @0x00000190 size=277
+  0000  CreateFunctionEnvironment r5, 1
+  0003  CreateFunctionEnvironment r3, 1
+  0006  LoadConstZero        r0
+  0008  StoreNPToEnvironment r3, 0, r0
+  000c  NewObjectWithBuffer  r6, sh0(numProps=4), lit@0x0000
+  0012  CreateClosure        r4, r3, f2 "increment"
+  0017  PutOwnBySlotIdx      r6, r4, 0
+  001b  CreateClosure        r4, r3, f3 "decrement"
+  0020  PutOwnBySlotIdx      r6, r4, 1
+  0024  CreateClosure        r4, r3, f4 "reset"
+  0029  PutOwnBySlotIdx      r6, r4, 2
+  002d  CreateClosure        r3, r3, f5 "value"
+  0032  PutOwnBySlotIdx      r6, r3, 3
+  0036  GetGlobalObject      r3
+  0038  TryGetById           r8, r3, #c0, s12 "print"
+  003e  GetByIdShort         r4, r6, #c1, s8 "value"
+  0043  Call1                r7, r4, r6
+  0047  LoadConstString      r4, s5 "initial:"
+  004b  LoadConstUndefined   r2
+  004d  Call3                r4, r8, r2, r4, r7
+  0053  TryGetById           r7, r3, #c0, s12 "print"
+  0059  GetByIdShort         r4, r6, #c2, s11 "increment"
+  005e  Call1                r4, r4, r6
+  0062  LoadConstString      r8, s4 "inc:"
+  0066  Call3                r4, r7, r2, r8, r4
+  006c  TryGetById           r7, r3, #c0, s12 "print"
+  0072  GetByIdShort         r4, r6, #c2, s11 "increment"
+  0077  Call1                r4, r4, r6
+  007b  Call3                r4, r7, r2, r8, r4
+  0081  TryGetById           r7, r3, #c0, s12 "print"
+  0087  GetByIdShort         r4, r6, #c2, s11 "increment"
+  008c  Call1                r4, r4, r6
+  0090  Call3                r4, r7, r2, r8, r4
+  0096  TryGetById           r8, r3, #c0, s12 "print"
+  009c  GetByIdShort         r4, r6, #c3, s10 "decrement"
+  00a1  Call1                r7, r4, r6
+  00a5  LoadConstString      r4, s0 "dec:"
+  00a9  Call3                r4, r8, r2, r4, r7
+  00af  TryGetById           r8, r3, #c0, s12 "print"
+  00b5  GetByIdShort         r4, r6, #c4, s9 "reset"
+  00ba  Call1                r7, r4, r6
+  00be  LoadConstString      r4, s7 "reset:"
+  00c2  Call3                r4, r8, r2, r4, r7
+  00c8  TryGetById           r7, r3, #c0, s12 "print"
+  00ce  GetByIdShort         r4, r6, #c1, s8 "value"
+  00d3  Call1                r6, r4, r6
+  00d7  LoadConstString      r4, s2 "final value:"
+  00db  Call3                r4, r7, r2, r4, r6
+  00e1  CreateClosure        r4, r5, f1 "selfRef"
+  00e6  StoreToEnvironment   r5, 0, r4
+  00ea  LoadConstUInt8       r0, 3
+  00ed  Call2                r1, r4, r2, r0
+  00f2  LoadConstUInt8       r0, 4
+  00f5  MulN                 r1, r0, r1
+  00f9  TryGetById           r4, r3, #c0, s12 "print"
+  00ff  LoadConstString      r3, s6 "named IIFE factorial(5)="
+  0103  LoadConstUInt8       r0, 5
+  0106  MulN                 r0, r0, r1
+  010a  Add                  r3, r3, r0
+  010e  Call2                r3, r4, r2, r3
+  0113  Ret                  r3
+
+function #1 "selfRef"  params=2 frame=14 env=0 flags=dbg,overflowed  @0x000002a5 size=40
+  0000  LoadParam            r3, 1
+  0003  LoadConstUInt8       r0, 1
+  0006  LessEq               r2, r3, r0
+  000a  Mov                  r1, r0
+  000d  JmpTrue              L1, r2
+  0010  GetParentEnvironment r4, 0
+  0013  LoadFromEnvironment  r4, r4, 0
+  0017  Sub                  r0, r3, r0
+  001b  LoadConstUndefined   r2
+  001d  Call2                r0, r4, r2, r0
+  0022  Mul                  r1, r3, r0
+L1:
+  0026  Ret                  r1
+
+function #2 "increment"  params=1 frame=3 env=0 flags=none  @0x000002cd size=20
+  0000  GetParentEnvironment r2, 0
+  0003  LoadFromEnvironment  r1, r2, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  AddN                 r0, r1, r0
+  000e  StoreNPToEnvironment r2, 0, r0
+  0012  Ret                  r0
+
+function #3 "decrement"  params=1 frame=3 env=0 flags=none  @0x000002e1 size=20
+  0000  GetParentEnvironment r2, 0
+  0003  LoadFromEnvironment  r1, r2, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  SubN                 r0, r1, r0
+  000e  StoreNPToEnvironment r2, 0, r0
+  0012  Ret                  r0
+
+function #4 "reset"  params=1 frame=2 env=0 flags=none  @0x000002f5 size=11
+  0000  LoadConstZero        r0
+  0002  GetParentEnvironment r1, 0
+  0005  StoreNPToEnvironment r1, 0, r0
+  0009  Ret                  r0
+
+function #5 "value"  params=1 frame=2 env=0 flags=none  @0x00000300 size=9
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 0
+  0007  Ret                  r0

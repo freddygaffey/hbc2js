@@ -1,0 +1,115 @@
+; hbc2js disassembly of 42-rest-params/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=5 strings=18 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=dbg  @0x000001dc size=244
+  0000  DeclareGlobalVar     s12 "combine"
+  0005  DeclareGlobalVar     s16 "reflectArguments"
+  000a  DeclareGlobalVar     s13 "mutateParamAffectsArguments"
+  000f  DeclareGlobalVar     s17 "restOnly"
+  0014  CreateEnvironment    r1
+  0016  CreateClosure        r2, r1, f1 "combine"
+  001b  GetGlobalObject      r0
+  001d  PutById              r0, r2, #c1, s12 "combine"
+  0023  CreateClosure        r2, r1, f2 "reflectArguments"
+  0028  PutById              r0, r2, #c2, s16 "reflectArguments"
+  002e  CreateClosure        r2, r1, f3 "mutateParamAffectsArguments"
+  0033  PutById              r0, r2, #c3, s13 "mutateParamAffectsArguments"
+  0039  CreateClosure        r1, r1, f4 "restOnly"
+  003e  PutById              r0, r1, #c4, s17 "restOnly"
+  0044  TryGetById           r6, r0, #c1, s14 "print"
+  004a  GetByIdShort         r1, r0, #c2, s12 "combine"
+  004f  LoadConstUndefined   r2
+  0051  LoadConstUInt8       r5, 1
+  0054  LoadConstUInt8       r4, 2
+  0057  LoadConstUInt8       r3, 3
+  005a  LoadConstUInt8       r8, 4
+  005d  LoadConstUndefined   r14
+  005f  Mov                  r13, r5
+  0062  Mov                  r12, r4
+  0065  Mov                  r11, r3
+  0068  Mov                  r10, r8
+  006b  Call                 r1, r1, 5
+  006f  Call2                r1, r6, r2, r1
+  0074  TryGetById           r6, r0, #c1, s14 "print"
+  007a  GetByIdShort         r7, r0, #c2, s12 "combine"
+  007f  LoadConstString      r1, s8 "only"
+  0083  Call2                r1, r7, r2, r1
+  0088  Call2                r1, r6, r2, r1
+  008d  TryGetById           r6, r0, #c1, s14 "print"
+  0093  GetByIdShort         r7, r0, #c3, s16 "reflectArguments"
+  0098  LoadConstUInt8       r9, 5
+  009b  LoadConstUndefined   r14
+  009d  Mov                  r13, r5
+  00a0  Call                 r1, r7, 6
+  00a4  Call2                r1, r6, r2, r1
+  00a9  TryGetById           r7, r0, #c1, s14 "print"
+  00af  GetByIdShort         r6, r0, #c4, s13 "mutateParamAffectsArguments"
+  00b4  LoadConstString      r1, s9 "original"
+  00b8  Call2                r6, r6, r2, r1
+  00bd  LoadConstString      r1, s3 "non-strict arguments aliasing:"
+  00c1  Call3                r1, r7, r2, r1, r6
+  00c7  TryGetById           r6, r0, #c1, s14 "print"
+  00cd  GetByIdShort         r1, r0, #c5, s17 "restOnly"
+  00d2  Call1                r1, r1, r2
+  00d6  Call2                r1, r6, r2, r1
+  00db  TryGetById           r1, r0, #c1, s14 "print"
+  00e1  GetByIdShort         r0, r0, #c5, s17 "restOnly"
+  00e6  Call4                r0, r0, r2, r5, r4, r3
+  00ed  Call2                r0, r1, r2, r0
+  00f2  Ret                  r0
+
+function #1 "combine"  params=3 frame=13 env=0 flags=dbg  @0x000002d0 size=63
+  0000  LoadConstUndefined   r0
+  0002  LoadConstUInt8       r5, 1
+  0005  CallBuiltin          r4, b45 "copyRestArgs", 2
+  0009  LoadConstString      r2, s6 "first="
+  000d  LoadParam            r1, 1
+  0010  Add                  r3, r2, r1
+  0014  GetByIdShort         r2, r4, #c1, s10 "join"
+  0019  LoadConstString      r1, s1 ","
+  001d  Call2                r2, r2, r4, r1
+  0022  LoadConstString      r1, s0 " rest=["
+  0026  Add                  r1, r3, r1
+  002a  Add                  r2, r1, r2
+  002e  GetArgumentsLength   r1, r0
+  0031  LoadConstString      r0, s5 "] arguments.length="
+  0035  Add                  r0, r2, r0
+  0039  Add                  r0, r0, r1
+  003d  Ret                  r0
+
+function #2 "reflectArguments"  params=3 frame=13 env=0 flags=dbg  @0x0000030f size=58
+  0000  LoadConstUndefined   r3
+  0002  NewArray             r2, 0
+  0006  GetArgumentsLength   r0, r3
+  0009  LoadConstZero        r1
+  000b  Less                 r0, r1, r0
+  000f  JmpFalse             L2, r0
+L1:
+  0012  GetByIdShort         r4, r2, #c1, s15 "push"
+  0017  GetArgumentsPropByVal r0, r1, r3
+  001b  Call2                r0, r4, r2, r0
+  0020  Inc                  r1, r1
+  0023  GetArgumentsLength   r0, r3
+  0026  JLess                L1, r1, r0
+L2:
+  002a  GetByIdShort         r1, r2, #c2, s10 "join"
+  002f  LoadConstString      r0, s1 ","
+  0033  Call2                r0, r1, r2, r0
+  0038  Ret                  r0
+
+function #3 "mutateParamAffectsArguments"  params=2 frame=2 env=0 flags=dbg  @0x00000349 size=10
+  0000  LoadConstUndefined   r1
+  0002  LoadConstZero        r0
+  0004  GetArgumentsPropByVal r0, r0, r1
+  0008  Ret                  r0
+
+function #4 "restOnly"  params=2 frame=12 env=0 flags=dbg  @0x00000353 size=39
+  0000  LoadConstZero        r4
+  0002  CallBuiltin          r3, b45 "copyRestArgs", 2
+  0006  GetByIdShort         r1, r3, #c1, s11 "length"
+  000b  LoadConstString      r0, s4 ":"
+  000f  Add                  r1, r1, r0
+  0013  GetByIdShort         r2, r3, #c2, s10 "join"
+  0018  LoadConstString      r0, s2 "-"
+  001c  Call2                r0, r2, r3, r0
+  0021  Add                  r0, r1, r0
+  0025  Ret                  r0

@@ -1,0 +1,125 @@
+; hbc2js disassembly of 16-finally-with-break-continue/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=1 strings=14 globalCodeIndex=0
+function #0 "global"  params=1 frame=25 env=0 flags=exc,dbg  @0x00000164 size=391
+  .try T1..T2 -> L4 ; handler 0
+  .try T3..T4 -> L4 ; handler 1
+  .try T5..T6 -> L10 ; handler 2
+  .try T7..T8 -> L10 ; handler 3
+  0000  LoadConstUInt8       r13, 5
+  0003  LoadConstUInt8       r12, 2
+  0006  LoadConstString      r11, s2 "after-try:"
+  000a  LoadConstString      r10, s7 "ok:"
+  000e  LoadConstString      r9, s4 "finally-continue-suppresses-thro…"
+  0012  LoadConstUInt8       r8, 10
+  0015  LoadConstUInt8       r6, 3
+  0018  LoadConstString      r7, s6 "iter:"
+  001c  LoadConstUndefined   r2
+  001e  LoadConstUndefined   r0
+  0020  NewArray             r4, 0
+  0024  LoadConstZero        r5
+L1:
+  0026  Mov                  r1, r5
+  0029  JStrictEqual         L3, r1, r12
+  002d  Mov                  r15, r4
+  0030  GetByIdShort         r14, r15, #c1, s13 "push"
+  0035  Mov                  r1, r5
+  0038  Add                  r1, r10, r1
+  003c  Call2                r1, r14, r15, r1
+  0041  Mov                  r1, r5
+  0044  JStrictEqual         L2, r1, r12
+  0048  Mov                  r15, r4
+  004b  GetByIdShort         r14, r15, #c1, s13 "push"
+  0050  Mov                  r1, r5
+  0053  Add                  r1, r11, r1
+  0057  Call2                r1, r14, r15, r1
+  005c  Jmp                  L6
+L2:
+  005e  Mov                  r15, r4
+  0061  GetByIdShort         r14, r15, #c1, s13 "push"
+  0066  Mov                  r1, r5
+  0069  Add                  r1, r9, r1
+  006d  Call2                r1, r14, r15, r1
+  0072  Jmp                  L6
+L3:
+  0074  GetGlobalObject      r1
+  0076  TryGetById           r15, r1, #c2, s10 "Error"
+  007c  Mov                  r16, r5
+  007f  GetByIdShort         r1, r15, #c3, s12 "prototype"
+  0084  CreateThis           r14, r1, r15
+  0088  LoadConstString      r1, s0 "at "
+  008c  Add                  r17, r1, r16
+  0090  Mov                  r18, r14
+  0093  Construct            r1, r15, 2
+  0097  SelectObject         r1, r14, r1
+  009b  Throw                r1
+L4:
+  009d  Catch                r1
+  009f  Mov                  r14, r5
+  00a2  JStrictEqual         L5, r14, r12
+  00a6  Throw                r1
+L5:
+  00a8  Mov                  r15, r4
+  00ab  GetByIdShort         r14, r15, #c1, s13 "push"
+  00b0  Mov                  r1, r5
+  00b3  Add                  r1, r9, r1
+  00b7  Call2                r1, r14, r15, r1
+L6:
+  00bc  Mov                  r1, r5
+  00bf  Inc                  r1, r1
+  00c2  Mov                  r5, r1
+  00c5  JLessLong            L1, r1, r13
+  00cc  GetGlobalObject      r1
+  00ce  TryGetById           r10, r1, #c4, s9 "print"
+  00d4  Mov                  r11, r4
+  00d7  GetByIdShort         r9, r11, #c5, s11 "join"
+  00dc  LoadConstString      r4, s1 " | "
+  00e0  Call2                r9, r9, r11, r4
+  00e5  Call2                r9, r10, r2, r9
+  00ea  NewArray             r0, 0
+  00ee  LoadConstZero        r5
+L7:
+  00f0  Mov                  r3, r5
+  00f3  JStrictEqual         L9, r3, r6
+  00f7  Mov                  r10, r0
+  00fa  GetByIdShort         r9, r10, #c1, s13 "push"
+  00ff  Mov                  r3, r5
+  0102  Add                  r3, r7, r3
+  0106  Call2                r3, r9, r10, r3
+  010b  Mov                  r3, r5
+  010e  JStrictEqual         L8, r3, r6
+  0112  Mov                  r3, r5
+  0115  Inc                  r3, r3
+  0118  Mov                  r5, r3
+  011b  JLess                L7, r3, r8
+  011f  Jmp                  L12
+L8:
+  0121  Mov                  r8, r0
+  0124  GetByIdShort         r7, r8, #c1, s13 "push"
+  0129  LoadConstString      r3, s3 "finally-break-suppresses-throw"
+  012d  Call2                r3, r7, r8, r3
+  0132  Jmp                  L12
+L9:
+  0134  TryGetById           r8, r1, #c2, s10 "Error"
+  013a  GetByIdShort         r3, r8, #c3, s12 "prototype"
+  013f  CreateThis           r7, r3, r8
+  0143  LoadConstString      r17, s8 "stop"
+  0147  Mov                  r18, r7
+  014a  Construct            r3, r8, 2
+  014e  SelectObject         r3, r7, r3
+  0152  Throw                r3
+L10:
+  0154  Catch                r3
+  0156  JStrictEqual         L11, r5, r6
+  015a  Throw                r3
+L11:
+  015c  Mov                  r6, r0
+  015f  GetByIdShort         r5, r6, #c1, s13 "push"
+  0164  LoadConstString      r3, s3 "finally-break-suppresses-throw"
+  0168  Call2                r3, r5, r6, r3
+L12:
+  016d  TryGetById           r1, r1, #c4, s9 "print"
+  0173  Mov                  r3, r0
+  0176  GetByIdShort         r0, r3, #c5, s11 "join"
+  017b  Call2                r0, r0, r3, r4
+  0180  Call2                r0, r1, r2, r0
+  0185  Ret                  r0

@@ -1,0 +1,102 @@
+; hbc2js disassembly of 46-bigint-arithmetic/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=1 strings=19 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg  @0x000001c4 size=440
+  .try T1..T2 -> L1 ; handler 0
+  0000  LoadConstBigInt      r8, bi0 9007199254740993n
+  0004  Mov                  r2, r8
+  0007  GetGlobalObject      r0
+  0009  TryGetById           r6, r0, #c1, s18 "print"
+  000f  TryGetById           r5, r0, #c2, s16 "String"
+  0015  LoadConstUndefined   r3
+  0017  LoadConstBigInt      r1, bi1 2n
+  001b  Add                  r4, r8, r1
+  001f  Call2                r5, r5, r3, r4
+  0024  LoadConstString      r4, s1 "add:"
+  0028  Call3                r4, r6, r3, r4, r5
+  002e  TryGetById           r6, r0, #c1, s18 "print"
+  0034  TryGetById           r5, r0, #c2, s16 "String"
+  003a  Mul                  r4, r8, r1
+  003e  Call2                r5, r5, r3, r4
+  0043  LoadConstString      r4, s9 "mul:"
+  0047  Call3                r4, r6, r3, r4, r5
+  004d  TryGetById           r6, r0, #c1, s18 "print"
+  0053  TryGetById           r5, r0, #c2, s16 "String"
+  0059  Sub                  r4, r8, r1
+  005d  Call2                r5, r5, r3, r4
+  0062  LoadConstString      r4, s11 "sub:"
+  0066  Call3                r4, r6, r3, r4, r5
+  006c  TryGetById           r6, r0, #c1, s18 "print"
+  0072  TryGetById           r5, r0, #c2, s16 "String"
+  0078  Div                  r4, r8, r1
+  007c  Call2                r5, r5, r3, r4
+  0081  LoadConstString      r4, s4 "div:"
+  0085  Call3                r4, r6, r3, r4, r5
+  008b  TryGetById           r6, r0, #c1, s18 "print"
+  0091  TryGetById           r5, r0, #c2, s16 "String"
+  0097  LoadConstBigInt      r4, bi2 1n
+  009b  Add                  r4, r8, r4
+  009f  Mod                  r4, r4, r1
+  00a3  Call2                r5, r5, r3, r4
+  00a8  LoadConstString      r4, s8 "mod:"
+  00ac  Call3                r4, r6, r3, r4, r5
+  00b2  TryGetById           r6, r0, #c1, s18 "print"
+  00b8  TryGetById           r5, r0, #c2, s16 "String"
+  00be  LoadConstBigInt      r11, bi3 10n
+  00c2  Mov                  r12, r1
+  00c5  CallBuiltin          r4, b49 "exponentiationOperator", 3
+  00c9  Call2                r5, r5, r3, r4
+  00ce  LoadConstString      r4, s10 "pow:"
+  00d2  Call3                r4, r6, r3, r4, r5
+  00d8  TryGetById           r7, r0, #c1, s18 "print"
+  00de  LoadConstString      r12, s3 "compare:"
+  00e2  Greater              r11, r8, r1
+  00e6  LoadConstTrue        r10
+  00e8  LoadConstBigInt      r1, bi4 0n
+  00ec  Less                 r9, r8, r1
+  00f0  LoadConstUndefined   r13
+  00f2  Call                 r1, r7, 5
+  00f6  Mov                  r6, r2
+  00f9  TryGetById           r5, r0, #c1, s18 "print"
+  00ff  LoadConstString      r4, s12 "unreachable:"
+  0103  LoadConstUInt8       r1, 1
+  0106  Add                  r1, r6, r1
+  010a  Call3                r1, r5, r3, r4, r1
+  0110  Jmp                  L2
+L1:
+  0112  Catch                r1
+  0114  TryGetById           r5, r0, #c1, s18 "print"
+  011a  GetByIdShort         r1, r1, #c3, s14 "constructor"
+  011f  GetByIdShort         r4, r1, #c4, s15 "name"
+  0124  LoadConstString      r1, s2 "caught:"
+  0128  Call3                r1, r5, r3, r1, r4
+L2:
+  012e  TryGetById           r5, r0, #c1, s18 "print"
+  0134  LoadConstString      r4, s7 "loose equality allowed:"
+  0138  LoadConstBigInt      r6, bi5 5n
+  013c  LoadConstUInt8       r1, 5
+  013f  Eq                   r1, r6, r1
+  0143  Call3                r1, r5, r3, r4, r1
+  0149  TryGetById           r4, r0, #c1, s18 "print"
+  014f  TryGetById           r6, r0, #c5, s17 "Number"
+  0155  Mov                  r5, r2
+  0158  Call2                r6, r6, r3, r5
+  015d  LoadConstDouble      r5, 9007199254740992
+  0167  StrictEq             r6, r6, r5
+  016b  Mov                  r1, r6
+  016e  JmpTrue              L3, r6
+  0171  TryGetById           r6, r0, #c5, s17 "Number"
+  0177  Call2                r2, r6, r3, r2
+  017c  StrictEq             r1, r2, r5
+L3:
+  0180  Mov                  r2, r1
+  0183  LoadConstString      r1, s5 "explicit conversion:"
+  0187  Call3                r1, r4, r3, r1, r2
+  018d  TryGetById           r2, r0, #c1, s18 "print"
+  0193  TryGetById           r1, r0, #c2, s16 "String"
+  0199  TryGetById           r4, r0, #c6, s13 "BigInt"
+  019f  LoadConstUInt8       r0, 123
+  01a2  Call2                r0, r4, r3, r0
+  01a7  Call2                r1, r1, r3, r0
+  01ac  LoadConstString      r0, s0 "BigInt() constructor:"
+  01b0  Call3                r0, r2, r3, r0, r1
+  01b6  Ret                  r0

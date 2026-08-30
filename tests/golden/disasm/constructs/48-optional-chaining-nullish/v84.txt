@@ -1,0 +1,161 @@
+; hbc2js disassembly of 48-optional-chaining-nullish/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=3 strings=26 globalCodeIndex=0
+function #0 "global"  params=1 frame=27 env=1 flags=dbg  @0x0000025c size=514
+  0000  DeclareGlobalVar     s25 "withSideEffect"
+  0005  CreateEnvironment    r5
+  0007  LoadConstNull        r4
+  0009  LoadConstUndefined   r3
+  000b  LoadConstString      r11, s3 "no-email-on-file"
+  000f  LoadConstString      r12, s11 "out-of-range"
+  0013  LoadConstString      r10, s10 "method-not-found"
+  0017  LoadConstZero        r8
+  0019  LoadConstString      r0, s6 "fallback"
+  001d  LoadConstString      r7, s0 ""
+  0021  LoadConstEmpty       r1
+  0023  StoreToEnvironment   r5, 0, r1
+  0027  CreateClosure        r6, r5, f1 "withSideEffect"
+  002c  GetGlobalObject      r1
+  002e  PutById              r1, r6, #c1, s25 "withSideEffect"
+  0034  NewObject            r13
+  0036  NewObjectWithBuffer  r6, 2, 2, lit@0x0000, lit@0x0000
+  0040  PutNewOwnByIdShort   r13, r6, s22 "profile"
+  0044  TryGetById           r9, r1, #c1, s21 "print"
+  004a  LoadConstUndefined   r6
+  004c  JEqual               L1, r13, r4
+  0050  GetByIdShort         r14, r13, #c2, s22 "profile"
+  0055  LoadConstUndefined   r6
+  0057  JEqual               L1, r14, r4
+  005b  GetByIdShort         r6, r14, #c3, s17 "name"
+L1:
+  0060  Call2                r6, r9, r3, r6
+  0065  TryGetById           r9, r1, #c1, s21 "print"
+  006b  LoadConstUndefined   r6
+  006d  JEqual               L2, r13, r4
+  0071  GetByIdShort         r14, r13, #c2, s22 "profile"
+  0076  LoadConstUndefined   r6
+  0078  JEqual               L2, r14, r4
+  007c  GetByIdShort         r14, r14, #c4, s18 "contacts"
+  0081  LoadConstUndefined   r6
+  0083  JEqual               L2, r14, r4
+  0087  GetByIdShort         r6, r14, #c5, s14 "email"
+L2:
+  008c  Call2                r6, r9, r3, r6
+  0091  TryGetById           r9, r1, #c1, s21 "print"
+  0097  LoadConstUndefined   r6
+  0099  JEqual               L3, r13, r4
+  009d  GetByIdShort         r14, r13, #c6, s19 "missing"
+  00a2  LoadConstUndefined   r6
+  00a4  JEqual               L3, r14, r4
+  00a8  GetByIdShort         r14, r14, #c7, s16 "deeper"
+  00ad  LoadConstUndefined   r6
+  00af  JEqual               L3, r14, r4
+  00b3  GetByIdShort         r6, r14, #c8, s24 "value"
+L3:
+  00b8  Call2                r6, r9, r3, r6
+  00bd  TryGetById           r9, r1, #c1, s21 "print"
+  00c3  LoadConstUndefined   r6
+  00c5  JEqual               L4, r13, r4
+  00c9  GetByIdShort         r13, r13, #c2, s22 "profile"
+  00ce  LoadConstUndefined   r6
+  00d0  JEqual               L4, r13, r4
+  00d4  GetByIdShort         r13, r13, #c4, s18 "contacts"
+  00d9  LoadConstUndefined   r6
+  00db  JEqual               L4, r13, r4
+  00df  GetByIdShort         r6, r13, #c5, s14 "email"
+L4:
+  00e4  JNotEqual            L5, r6, r4
+  00e8  Mov                  r6, r11
+L5:
+  00eb  Call2                r6, r9, r3, r6
+  00f0  NewArrayWithBuffer   r14, 3, 3, lit@0x0000
+  00f8  TryGetById           r11, r1, #c1, s21 "print"
+  00fe  LoadConstUndefined   r9
+  0100  JEqual               L6, r14, r4
+  0104  GetByVal             r9, r14, r8
+L6:
+  0108  LoadConstUndefined   r6
+  010a  JEqual               L7, r14, r4
+  010e  LoadConstUInt8       r13, 10
+  0111  GetByVal             r6, r14, r13
+L7:
+  0115  JNotEqual            L8, r6, r4
+  0119  Mov                  r6, r12
+L8:
+  011c  Call3                r6, r11, r3, r9, r6
+  0122  NewObject            r12
+  0124  CreateClosure        r6, r5, f2 "fetch"
+  0129  PutNewOwnByIdShort   r12, r6, s15 "fetch"
+  012d  TryGetById           r9, r1, #c1, s21 "print"
+  0133  LoadConstUndefined   r6
+  0135  JEqual               L9, r12, r4
+  0139  GetByIdShort         r11, r12, #c9, s15 "fetch"
+  013e  LoadConstUndefined   r6
+  0140  JEqual               L9, r11, r4
+  0144  Call1                r6, r11, r12
+L9:
+  0148  Call2                r6, r9, r3, r6
+  014d  TryGetById           r9, r1, #c1, s21 "print"
+  0153  LoadConstUndefined   r6
+  0155  JEqual               L10, r12, r4
+  0159  GetByIdShort         r11, r12, #c10, s20 "missingMethod"
+  015e  LoadConstUndefined   r6
+  0160  JEqual               L10, r11, r4
+  0164  Call1                r6, r11, r12
+L10:
+  0168  JNotEqual            L11, r6, r4
+  016c  Mov                  r6, r10
+L11:
+  016f  Call2                r6, r9, r3, r6
+  0174  StoreNPToEnvironment r5, 0, r8
+  0178  GetByIdShort         r6, r1, #c11, s25 "withSideEffect"
+  017d  Call1                r9, r6, r3
+  0181  LoadConstUndefined   r6
+  0183  JEqual               L12, r9, r4
+  0187  GetByIdShort         r6, r9, #c12, s23 "property"
+L12:
+  018c  TryGetById           r11, r1, #c1, s21 "print"
+  0192  ThrowIfEmpty         r18, r6
+  0195  LoadFromEnvironment  r16, r5, 0
+  0199  LoadConstString      r19, s12 "short-circuit result:"
+  019d  LoadConstString      r17, s2 "calls:"
+  01a1  LoadConstUndefined   r20
+  01a3  Call                 r5, r11, 5
+  01a7  TryGetById           r6, r1, #c1, s21 "print"
+  01ad  LoadConstZero        r8
+  01af  JNotEqual            L13, r8, r4
+  01b3  Mov                  r8, r0
+L13:
+  01b6  LoadConstString      r5, s13 "zero is not nullish:"
+  01ba  Call3                r5, r6, r3, r5, r8
+  01c0  TryGetById           r6, r1, #c1, s21 "print"
+  01c6  JNotEqual            L14, r7, r4
+  01ca  Mov                  r7, r0
+L14:
+  01cd  LoadConstString      r5, s4 "empty string is not nullish:"
+  01d1  Call3                r5, r6, r3, r5, r7
+  01d7  TryGetById           r6, r1, #c1, s21 "print"
+  01dd  LoadConstString      r5, s5 "null triggers fallback:"
+  01e1  Call3                r5, r6, r3, r5, r0
+  01e7  TryGetById           r1, r1, #c1, s21 "print"
+  01ed  LoadConstFalse       r2
+  01ef  JNotEqual            L15, r2, r4
+  01f3  Mov                  r2, r0
+L15:
+  01f6  LoadConstString      r0, s7 "false is not nullish:"
+  01fa  Call3                r0, r1, r3, r0, r2
+  0200  Ret                  r0
+
+function #1 "withSideEffect"  params=1 frame=3 env=0 flags=dbg  @0x0000045e size=28
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r0, r1, 0
+  0007  ThrowIfEmpty         r0, r0
+  000a  ToNumber             r2, r0
+  000d  LoadConstUInt8       r0, 1
+  0010  AddN                 r0, r2, r0
+  0014  StoreNPToEnvironment r1, 0, r0
+  0018  LoadConstNull        r0
+  001a  Ret                  r0
+
+function #2 "fetch"  params=1 frame=1 env=0 flags=none  @0x0000047a size=6
+  0000  LoadConstString      r0, s8 "fetched"
+  0004  Ret                  r0

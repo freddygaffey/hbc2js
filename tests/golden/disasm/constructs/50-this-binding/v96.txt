@@ -1,0 +1,159 @@
+; hbc2js disassembly of 50-this-binding/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=9 strings=31 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=1 flags=exc,dbg  @0x0000030c size=437
+  .try T1..T2 -> L1 ; handler 0
+  0000  DeclareGlobalVar     s25 "plainFn"
+  0005  DeclareGlobalVar     s29 "standalone"
+  000a  DeclareGlobalVar     s19 "Counter"
+  000f  CreateEnvironment    r1
+  0011  LoadThisNS           r0
+  0013  StoreToEnvironment   r1, 0, r0
+  0017  CreateClosure        r3, r1, f1 "plainFn"
+  001c  GetGlobalObject      r0
+  001e  PutById              r0, r3, #c1, s25 "plainFn"
+  0024  CreateClosure        r3, r1, f2 "standalone"
+  0029  PutById              r0, r3, #c2, s29 "standalone"
+  002f  CreateClosure        r3, r1, f3 "Counter"
+  0034  PutById              r0, r3, #c3, s19 "Counter"
+  003a  TryGetById           r6, r0, #c1, s27 "print"
+  0040  GetByIdShort         r4, r0, #c2, s25 "plainFn"
+  0045  LoadConstUndefined   r3
+  0047  Call1                r5, r4, r3
+  004b  LoadConstString      r4, s12 "plain function this (non-strict,…"
+  004f  Call3                r4, r6, r3, r4, r5
+  0055  NewObject            r4
+  0057  LoadConstUInt8       r5, 42
+  005a  PutNewOwnByIdShort   r4, r5, s30 "value"
+  005e  CreateClosure        r5, r1, f5 "getValue"
+  0063  PutNewOwnByIdShort   r4, r5, s21 "getValue"
+  0067  CreateClosure        r5, r1, f6 "getValueArrow"
+  006c  PutNewOwnByIdShort   r4, r5, s22 "getValueArrow"
+  0070  CreateClosure        r1, r1, f7 "makeArrowGetter"
+  0075  PutNewOwnByIdShort   r4, r1, s24 "makeArrowGetter"
+  0079  TryGetById           r6, r0, #c1, s27 "print"
+  007f  GetByIdShort         r1, r4, #c3, s21 "getValue"
+  0084  Call1                r5, r1, r4
+  0088  LoadConstString      r1, s5 "method this:"
+  008c  Call3                r1, r6, r3, r1, r5
+  0092  TryGetById           r6, r0, #c1, s27 "print"
+  0098  GetByIdShort         r1, r4, #c4, s22 "getValueArrow"
+  009d  Call1                r5, r1, r4
+  00a1  LoadConstString      r1, s3 "arrow at object-literal position…"
+  00a5  Call3                r1, r6, r3, r1, r5
+  00ab  TryGetById           r5, r0, #c1, s27 "print"
+  00b1  GetByIdShort         r1, r4, #c5, s24 "makeArrowGetter"
+  00b6  Call1                r1, r1, r4
+  00ba  Call1                r4, r1, r3
+  00be  LoadConstString      r1, s4 "arrow defined inside method capt…"
+  00c2  Call3                r1, r5, r3, r1, r4
+  00c8  TryGetById           r5, r0, #c1, s27 "print"
+  00ce  GetByIdShort         r6, r0, #c6, s29 "standalone"
+  00d3  GetByIdShort         r4, r6, #c7, s17 "call"
+  00d8  NewObject            r1
+  00da  LoadConstString      r7, s9 "via-call"
+  00de  PutNewOwnByIdShort   r1, r7, s30 "value"
+  00e2  Call2                r4, r4, r6, r1
+  00e7  LoadConstString      r1, s10 "call:"
+  00eb  Call3                r1, r5, r3, r1, r4
+  00f1  TryGetById           r5, r0, #c1, s27 "print"
+  00f7  GetByIdShort         r6, r0, #c6, s29 "standalone"
+  00fc  GetByIdShort         r4, r6, #c8, s15 "apply"
+  0101  NewObject            r1
+  0103  LoadConstString      r7, s1 "via-apply"
+  0107  PutNewOwnByIdShort   r1, r7, s30 "value"
+  010b  Call2                r4, r4, r6, r1
+  0110  LoadConstString      r1, s2 "apply:"
+  0114  Call3                r1, r5, r3, r1, r4
+  011a  GetByIdShort         r5, r0, #c6, s29 "standalone"
+  011f  GetByIdShort         r4, r5, #c9, s16 "bind"
+  0124  NewObject            r1
+  0126  LoadConstString      r6, s6 "via-bind"
+  012a  PutNewOwnByIdShort   r1, r6, s30 "value"
+  012e  Call2                r1, r4, r5, r1
+  0133  TryGetById           r5, r0, #c1, s27 "print"
+  0139  Call1                r4, r1, r3
+  013d  LoadConstString      r1, s7 "bind:"
+  0141  Call3                r1, r5, r3, r1, r4
+  0147  GetByIdShort         r1, r0, #c10, s19 "Counter"
+  014c  GetByIdShort         r4, r1, #c11, s28 "prototype"
+  0151  CreateThis           r4, r4, r1
+  0155  Mov                  r10, r4
+  0158  Construct            r1, r1, 1
+  015c  SelectObject         r4, r4, r1
+  0160  GetByIdShort         r1, r4, #c12, s23 "increment"
+  0165  Mov                  r2, r1
+  0168  TryGetById           r6, r0, #c1, s27 "print"
+  016e  Call1                r2, r2, r3
+  0172  Mov                  r5, r2
+  0175  Jmp                  L2
+L1:
+  0177  Catch                r2
+  0179  GetByIdShort         r2, r2, #c13, s20 "constructor"
+  017e  GetByIdShort         r7, r2, #c14, s26 "name"
+  0183  LoadConstString      r2, s14 "threw:"
+  0187  Add                  r5, r2, r7
+L2:
+  018b  LoadConstString      r2, s11 "detached loses this:"
+  018f  Call3                r2, r6, r3, r2, r5
+  0195  TryGetById           r2, r0, #c1, s27 "print"
+  019b  GetByIdShort         r0, r1, #c9, s16 "bind"
+  01a0  Call2                r0, r0, r1, r4
+  01a5  Call1                r1, r0, r3
+  01a9  LoadConstString      r0, s8 "bound retains this:"
+  01ad  Call3                r0, r2, r3, r0, r1
+  01b3  Ret                  r0
+
+function #1 "plainFn"  params=1 frame=1 env=0 flags=none  @0x000004c1 size=7
+  0000  LoadThisNS           r0
+  0002  TypeOf               r0, r0
+  0005  Ret                  r0
+
+function #2 "standalone"  params=1 frame=3 env=0 flags=dbg  @0x000004c8 size=15
+  0000  LoadThisNS           r1
+  0002  Mov                  r0, r1
+  0005  JmpFalse             L1, r0
+  0008  GetByIdShort         r0, r1, #c1, s30 "value"
+L1:
+  000d  Ret                  r0
+
+function #3 "Counter"  params=1 frame=2 env=0 flags=dbg  @0x000004d7 size=27
+  0000  LoadThisNS           r1
+  0002  LoadConstZero        r0
+  0004  PutById              r1, r0, #c1, s18 "count"
+  000a  CreateEnvironment    r0
+  000c  CreateClosure        r0, r0, f4 ""
+  0011  PutById              r1, r0, #c2, s23 "increment"
+  0017  LoadConstUndefined   r0
+  0019  Ret                  r0
+
+function #4 ""  params=1 frame=2 env=0 flags=dbg  @0x000004f2 size=23
+  0000  LoadThisNS           r0
+  0002  GetByIdShort         r1, r0, #c1, s18 "count"
+  0007  Inc                  r1, r1
+  000a  PutById              r0, r1, #c1, s18 "count"
+  0010  GetByIdShort         r0, r0, #c1, s18 "count"
+  0015  Ret                  r0
+
+function #5 "getValue"  params=1 frame=1 env=0 flags=dbg  @0x00000509 size=9
+  0000  LoadThisNS           r0
+  0002  GetByIdShort         r0, r0, #c1, s30 "value"
+  0007  Ret                  r0
+
+function #6 "getValueArrow"  params=1 frame=1 env=0 flags=nc  @0x00000512 size=12
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  TypeOf               r0, r0
+  000a  Ret                  r0
+
+function #7 "makeArrowGetter"  params=1 frame=2 env=1 flags=none  @0x0000051e size=15
+  0000  CreateEnvironment    r0
+  0002  LoadThisNS           r1
+  0004  StoreToEnvironment   r0, 0, r1
+  0008  CreateClosure        r0, r0, f8 ""
+  000d  Ret                  r0
+
+function #8 ""  params=1 frame=1 env=0 flags=dbg,nc  @0x0000052d size=14
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r0, r0, #c1, s30 "value"
+  000c  Ret                  r0

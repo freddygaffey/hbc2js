@@ -1,0 +1,80 @@
+; hbc2js disassembly of 15-catch-without-binding/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=15 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=overflowed,ctor  @0x00000180 size=181
+  0000  CreateFunctionEnvironment r3, 1
+  0003  DeclareGlobalVar     s12 "tryParse"
+  0008  LoadConstUndefined   r2
+  000a  StoreNPToEnvironment r3, 0, r2
+  000e  DeclareGlobalVar     s14 "unreliable"
+  0013  LoadConstUndefined   r0
+  0015  GetGlobalObject      r1
+  0017  CreateClosure        r4, r2, f1 "tryParse"
+  001c  PutByIdLoose         r1, r4, #c0, s12 "tryParse"
+  0022  CreateClosure        r4, r3, f2 "unreliable"
+  0027  PutByIdLoose         r1, r4, #c1, s14 "unreliable"
+  002d  TryGetById           r5, r1, #c0, s11 "print"
+  0033  TryGetById           r7, r1, #c1, s10 "JSON"
+  0039  GetByIdShort         r6, r7, #c2, s13 "stringify"
+  003e  GetByIdShort         r8, r1, #c3, s12 "tryParse"
+  0043  LoadConstString      r4, s7 "{\"a\":1}"
+  0047  Call2                r4, r8, r2, r4
+  004c  Call2                r4, r6, r7, r4
+  0051  Call2                r4, r5, r2, r4
+  0056  TryGetById           r5, r1, #c0, s11 "print"
+  005c  GetByIdShort         r6, r1, #c3, s12 "tryParse"
+  0061  LoadConstString      r4, s5 "not json"
+  0065  Call2                r4, r6, r2, r4
+  006a  Call2                r4, r5, r2, r4
+  006f  LoadConstZero        r7
+  0071  StoreNPToEnvironment r3, 0, r7
+  0075  LoadConstString      r6, s3 "failed, no binding needed"
+  0079  LoadConstString      r5, s1 "attempt"
+  007d  LoadConstUInt8       r4, 1
+  0080  LoadConstUInt8       r3, 5
+L1:
+  0083  Mov                  r8, r7
+  0086  GetByIdShort         r9, r1, #c4, s14 "unreliable"
+  008b  Call1                r0, r9, r2
+  008f  Jmp                  L2
+  0091  Catch                r9
+  0093  TryGetById           r9, r1, #c0, s11 "print"
+  0099  Call4                r9, r9, r2, r5, r8, r6
+  00a0  AddN                 r7, r8, r4
+  00a4  JLessN               L1, r7, r3
+L2:
+  00a8  TryGetById           r1, r1, #c0, s11 "print"
+  00ae  Call2                r0, r1, r2, r0
+  00b3  Ret                  r0
+
+function #1 "tryParse"  params=2 frame=12 env=0 flags=overflowed,ctor  @0x00000235 size=31
+  0000  LoadParam            r2, 1
+  0003  GetGlobalObject      r0
+  0005  TryGetById           r1, r0, #c0, s10 "JSON"
+  000b  GetByIdShort         r0, r1, #c1, s8 "parse"
+  0010  Call2                r0, r0, r1, r2
+  0015  Ret                  r0
+  0017  Catch                r0
+  0019  LoadConstString      r0, s6 "unparseable"
+  001d  Ret                  r0
+
+function #2 "unreliable"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000254 size=68
+  0000  GetParentEnvironment r3, 0
+  0003  LoadFromEnvironment  r2, r3, 0
+  0007  Inc                  r0, r2
+  000a  StoreNPToEnvironment r3, 0, r0
+  000e  LoadConstUInt8       r1, 3
+  0011  JLessN               L1, r0, r1
+  0015  LoadConstString      r4, s0 "succeeded on attempt "
+  0019  Add                  r4, r4, r0
+  001d  Ret                  r4
+L1:
+  001f  GetGlobalObject      r4
+  0021  TryGetById           r5, r4, #c0, s9 "Error"
+  0027  LoadFromEnvironment  r2, r3, 0
+  002b  CreateThisForNew     r4, r5, 1
+  002f  LoadConstString      r3, s2 "fail#"
+  0033  Add                  r6, r3, r2
+  0037  Mov                  r7, r4
+  003a  Construct            r3, r5, 2
+  003e  SelectObject         r3, r4, r3
+  0042  Throw                r3

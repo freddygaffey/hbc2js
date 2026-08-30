@@ -1,0 +1,90 @@
+; hbc2js disassembly of 43-template-literals/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=3 strings=26 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=0 flags=dbg  @0x000001d0 size=260
+  0000  DeclareGlobalVar     s23 "computeExpr"
+  0005  CreateEnvironment    r1
+  0007  CreateClosure        r2, r1, f1 "computeExpr"
+  000c  GetGlobalObject      r0
+  000e  PutById              r0, r2, #c1, s23 "computeExpr"
+  0014  NewArrayWithBuffer   r4, 3, 3, lit@0x0000
+  001c  TryGetById           r2, r0, #c1, s22 "HermesInternal"
+  0022  GetByIdShort         r6, r2, #c2, s25 "concat"
+  0027  LoadConstString      r5, s1 "Hello, "
+  002b  LoadConstString      r3, s13 "World"
+  002f  LoadConstString      r2, s7 "!"
+  0033  Call3                r5, r6, r5, r3, r2
+  0039  TryGetById           r3, r0, #c3, s24 "print"
+  003f  LoadConstUndefined   r2
+  0041  Call2                r3, r3, r2, r5
+  0046  GetByIdShort         r7, r4, #c4, s21 "length"
+  004b  TryGetById           r3, r0, #c1, s22 "HermesInternal"
+  0051  GetByIdShort         r6, r3, #c2, s25 "concat"
+  0056  LoadConstString      r5, s12 "Line one\nLine two with "
+  005a  LoadConstString      r3, s6 " items\nLine three"
+  005e  Call3                r5, r6, r5, r7, r3
+  0064  TryGetById           r3, r0, #c3, s24 "print"
+  006a  Call2                r3, r3, r2, r5
+  006f  TryGetById           r3, r0, #c1, s22 "HermesInternal"
+  0075  GetByIdShort         r6, r3, #c2, s25 "concat"
+  007a  LoadConstString      r5, s8 "inner-"
+  007e  LoadConstUInt8       r3, 2
+  0081  Call2                r7, r6, r5, r3
+  0086  TryGetById           r3, r0, #c1, s22 "HermesInternal"
+  008c  GetByIdShort         r6, r3, #c2, s25 "concat"
+  0091  LoadConstString      r5, s18 "outer-"
+  0095  LoadConstString      r3, s9 "-end"
+  0099  Call3                r5, r6, r5, r7, r3
+  009f  TryGetById           r3, r0, #c3, s24 "print"
+  00a5  Call2                r3, r3, r2, r5
+  00aa  GetByIdShort         r3, r4, #c5, s20 "map"
+  00af  CreateClosure        r1, r1, f2 ""
+  00b4  Call2                r4, r3, r4, r1
+  00b9  GetByIdShort         r3, r4, #c6, s19 "join"
+  00be  LoadConstString      r1, s2 ", "
+  00c2  Call2                r4, r3, r4, r1
+  00c7  TryGetById           r1, r0, #c1, s22 "HermesInternal"
+  00cd  GetByIdShort         r3, r1, #c2, s25 "concat"
+  00d2  LoadConstString      r1, s10 "Items: "
+  00d6  Call2                r3, r3, r1, r4
+  00db  TryGetById           r1, r0, #c3, s24 "print"
+  00e1  Call2                r1, r1, r2, r3
+  00e6  TryGetById           r1, r0, #c3, s24 "print"
+  00ec  GetByIdShort         r4, r0, #c7, s23 "computeExpr"
+  00f1  LoadConstUInt8       r3, 3
+  00f4  LoadConstUInt8       r0, 4
+  00f7  Call3                r0, r4, r2, r3, r0
+  00fd  Call2                r0, r1, r2, r0
+  0102  Ret                  r0
+
+function #1 "computeExpr"  params=3 frame=28 env=0 flags=dbg  @0x000002d4 size=71
+  0000  LoadParam            r9, 1
+  0003  LoadParam            r8, 2
+  0006  Add                  r16, r9, r8
+  000a  Mul                  r10, r9, r8
+  000e  GetGlobalObject      r0
+  0010  TryGetById           r0, r0, #c1, s22 "HermesInternal"
+  0016  GetByIdShort         r5, r0, #c2, s25 "concat"
+  001b  LoadConstString      r21, s0 ""
+  001f  LoadConstString      r19, s4 " + "
+  0023  LoadConstString      r2, s3 " = "
+  0027  LoadConstString      r15, s2 ", "
+  002b  LoadConstString      r13, s5 " * "
+  002f  Mov                  r20, r9
+  0032  Mov                  r18, r8
+  0035  Mov                  r17, r2
+  0038  Mov                  r14, r9
+  003b  Mov                  r12, r8
+  003e  Mov                  r11, r2
+  0041  Call                 r0, r5, 12
+  0045  Ret                  r0
+
+function #2 ""  params=3 frame=15 env=0 flags=dbg  @0x0000031b size=36
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r0, r0, #c1, s22 "HermesInternal"
+  0008  GetByIdShort         r4, r0, #c2, s25 "concat"
+  000d  LoadConstString      r3, s0 ""
+  0011  LoadParam            r2, 2
+  0014  LoadConstString      r1, s11 ":"
+  0018  LoadParam            r0, 1
+  001b  Call4                r0, r4, r3, r2, r1, r0
+  0022  Ret                  r0

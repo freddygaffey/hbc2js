@@ -1,0 +1,126 @@
+; hbc2js disassembly of 49-arguments-object/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=6 strings=20 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=dbg  @0x00000220 size=271
+  0000  DeclareGlobalVar     s10 "aliasDemo"
+  0005  DeclareGlobalVar     s15 "arityDemo"
+  000a  DeclareGlobalVar     s13 "toArray"
+  000f  DeclareGlobalVar     s19 "sumAll"
+  0014  DeclareGlobalVar     s17 "namedAliasAfterAssign"
+  0019  CreateEnvironment    r1
+  001b  CreateClosure        r2, r1, f1 "aliasDemo"
+  0020  GetGlobalObject      r0
+  0022  PutById              r0, r2, #c1, s10 "aliasDemo"
+  0028  CreateClosure        r2, r1, f2 "arityDemo"
+  002d  PutById              r0, r2, #c2, s15 "arityDemo"
+  0033  CreateClosure        r2, r1, f3 "toArray"
+  0038  PutById              r0, r2, #c3, s13 "toArray"
+  003e  CreateClosure        r2, r1, f4 "sumAll"
+  0043  PutById              r0, r2, #c4, s19 "sumAll"
+  0049  CreateClosure        r1, r1, f5 "namedAliasAfterAssign"
+  004e  PutById              r0, r1, #c5, s17 "namedAliasAfterAssign"
+  0054  TryGetById           r2, r0, #c1, s12 "print"
+  005a  GetByIdShort         r5, r0, #c2, s10 "aliasDemo"
+  005f  LoadConstUndefined   r3
+  0061  LoadConstString      r4, s6 "original"
+  0065  LoadConstString      r1, s2 "b"
+  0069  Call3                r1, r5, r3, r4, r1
+  006f  Call2                r1, r2, r3, r1
+  0074  TryGetById           r4, r0, #c1, s12 "print"
+  007a  GetByIdShort         r2, r0, #c3, s15 "arityDemo"
+  007f  LoadConstUInt8       r1, 1
+  0082  Call2                r2, r2, r3, r1
+  0087  Call2                r2, r4, r3, r2
+  008c  TryGetById           r4, r0, #c1, s12 "print"
+  0092  GetByIdShort         r2, r0, #c3, s15 "arityDemo"
+  0097  LoadConstUInt8       r8, 2
+  009a  LoadConstUInt8       r7, 3
+  009d  LoadConstUInt8       r6, 4
+  00a0  LoadConstUInt8       r5, 5
+  00a3  LoadConstUndefined   r14
+  00a5  Mov                  r13, r1
+  00a8  Mov                  r12, r8
+  00ab  Mov                  r11, r7
+  00ae  Mov                  r10, r6
+  00b1  Mov                  r9, r5
+  00b4  Call                 r2, r2, 6
+  00b8  Call2                r2, r4, r3, r2
+  00bd  TryGetById           r4, r0, #c1, s12 "print"
+  00c3  GetByIdShort         r2, r0, #c4, s13 "toArray"
+  00c8  Call4                r2, r2, r3, r1, r8, r7
+  00cf  Call2                r2, r4, r3, r2
+  00d4  TryGetById           r4, r0, #c1, s12 "print"
+  00da  GetByIdShort         r2, r0, #c5, s19 "sumAll"
+  00df  LoadConstUndefined   r14
+  00e1  Mov                  r13, r1
+  00e4  Mov                  r12, r8
+  00e7  Mov                  r11, r7
+  00ea  Call                 r2, r2, 6
+  00ee  Call2                r2, r4, r3, r2
+  00f3  TryGetById           r2, r0, #c1, s12 "print"
+  00f9  GetByIdShort         r0, r0, #c6, s17 "namedAliasAfterAssign"
+  00fe  Call2                r1, r0, r3, r1
+  0103  LoadConstString      r0, s7 "reassigning named param updates …"
+  0107  Call3                r0, r2, r3, r0, r1
+  010d  Ret                  r0
+
+function #1 "aliasDemo"  params=3 frame=3 env=0 flags=dbg  @0x0000032f size=22
+  0000  LoadConstUndefined   r0
+  0002  ReifyArguments       r0
+  0004  Mov                  r2, r0
+  0007  LoadConstString      r1, s3 "changed-via-arguments"
+  000b  LoadConstZero        r0
+  000d  PutByVal             r2, r0, r1
+  0011  LoadParam            r0, 1
+  0014  Ret                  r0
+
+function #2 "arityDemo"  params=4 frame=3 env=0 flags=dbg  @0x00000345 size=39
+  0000  LoadConstUndefined   r0
+  0002  GetGlobalObject      r1
+  0004  GetByIdShort         r1, r1, #c1, s15 "arityDemo"
+  0009  GetByIdShort         r2, r1, #c2, s11 "length"
+  000e  LoadConstString      r1, s4 "declared-arity="
+  0012  Add                  r2, r1, r2
+  0016  GetArgumentsLength   r1, r0
+  0019  LoadConstString      r0, s0 " called-with="
+  001d  Add                  r0, r2, r0
+  0021  Add                  r0, r0, r1
+  0025  Ret                  r0
+
+function #3 "toArray"  params=1 frame=12 env=0 flags=dbg  @0x0000036c size=48
+  0000  LoadConstUndefined   r0
+  0002  GetGlobalObject      r1
+  0004  TryGetById           r1, r1, #c1, s14 "Array"
+  000a  GetByIdShort         r1, r1, #c2, s18 "prototype"
+  000f  GetByIdShort         r2, r1, #c3, s9 "slice"
+  0014  GetByIdShort         r1, r2, #c4, s8 "call"
+  0019  ReifyArguments       r0
+  001b  Call2                r2, r1, r2, r0
+  0020  GetByIdShort         r1, r2, #c5, s16 "join"
+  0025  LoadConstString      r0, s1 ","
+  0029  Call2                r0, r1, r2, r0
+  002e  Ret                  r0
+
+function #4 "sumAll"  params=1 frame=6 env=0 flags=dbg  @0x0000039c size=38
+  0000  LoadConstZero        r3
+  0002  LoadConstUndefined   r4
+  0004  GetArgumentsLength   r1, r4
+  0007  LoadConstZero        r2
+  0009  LoadConstZero        r0
+  000b  JNotLess             L2, r0, r1
+L1:
+  000f  GetArgumentsPropByVal r1, r2, r4
+  0013  Add                  r3, r3, r1
+  0017  Inc                  r2, r2
+  001a  GetArgumentsLength   r1, r4
+  001d  Mov                  r0, r3
+  0020  JLess                L1, r2, r1
+L2:
+  0024  Ret                  r0
+
+function #5 "namedAliasAfterAssign"  params=2 frame=2 env=0 flags=dbg  @0x000003c2 size=17
+  0000  LoadConstUndefined   r1
+  0002  LoadConstZero        r0
+  0004  GetArgumentsPropByVal r1, r0, r1
+  0008  LoadConstUInt8       r0, 99
+  000b  StrictEq             r0, r1, r0
+  000f  Ret                  r0

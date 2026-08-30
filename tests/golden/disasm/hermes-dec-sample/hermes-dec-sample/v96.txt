@@ -1,0 +1,215 @@
+; hbc2js disassembly of hermes-dec-sample/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=8 strings=34 globalCodeIndex=0
+function #0 "global"  params=1 frame=16 env=0 flags=dbg  @0x00000320 size=235
+  0000  DeclareGlobalVar     s17 "testx"
+  0005  DeclareGlobalVar     s19 "gen"
+  000a  DeclareGlobalVar     s25 "ze"
+  000f  CreateEnvironment    r1
+  0011  CreateAsyncClosure   r2, r1, f1 "testx"
+  0016  GetGlobalObject      r0
+  0018  PutById              r0, r2, #c1, s17 "testx"
+  001e  CreateGeneratorClosure r2, r1, f4 "gen"
+  0023  PutById              r0, r2, #c2, s19 "gen"
+  0029  CreateClosure        r1, r1, f6 "ze"
+  002e  PutById              r0, r1, #c3, s25 "ze"
+  0034  TryGetById           r2, r0, #c1, s32 "window"
+  003a  GetByIdShort         r1, r0, #c2, s25 "ze"
+  003f  PutById              r2, r1, #c4, s23 "onload"
+  0045  GetByIdShort         r1, r0, #c2, s25 "ze"
+  004a  LoadConstUndefined   r4
+  004c  Call1                r1, r1, r4
+  0050  CreateRegExp         r1, s12 "dkooDD JPOD D09D\\n\\\\  @ .\\r…", s13 "gmi", re0
+  005e  PutById              r0, r1, #c5, s29 "test2"
+  0064  TryGetById           r3, r0, #c3, s27 "console"
+  006a  GetByIdShort         r2, r3, #c4, s24 "log"
+  006f  TryGetById           r6, r0, #c5, s29 "test2"
+  0075  GetByIdShort         r5, r6, #c6, s26 "exec"
+  007a  LoadConstString      r1, s11 "bonjour"
+  007e  Call2                r1, r5, r6, r1
+  0083  Call2                r1, r2, r3, r1
+  0088  TryGetById           r5, r0, #c3, s27 "console"
+  008e  GetByIdShort         r3, r5, #c4, s24 "log"
+  0093  GetByIdShort         r1, r0, #c7, s19 "gen"
+  0098  Call1                r2, r1, r4
+  009c  GetByIdShort         r1, r2, #c8, s20 "next"
+  00a1  Call1                r2, r1, r2
+  00a5  LoadConstString      r1, s8 "a"
+  00a9  Call3                r1, r3, r5, r1, r2
+  00af  TryGetById           r3, r0, #c3, s27 "console"
+  00b5  GetByIdShort         r2, r3, #c4, s24 "log"
+  00ba  GetByIdShort         r1, r0, #c9, s17 "testx"
+  00bf  LoadConstDouble      r5, 7.3
+  00c9  LoadConstString      r0, s14 "le"
+  00cd  Add                  r0, r5, r0
+  00d1  Call2                r1, r1, r4, r0
+  00d6  GetByIdShort         r0, r1, #c8, s20 "next"
+  00db  Call1                r1, r0, r1
+  00df  LoadConstString      r0, s10 "b"
+  00e3  Call3                r0, r2, r3, r0, r1
+  00e9  Ret                  r0
+
+function #1 "testx"  params=2 frame=15 env=0 flags=dbg,nc  @0x0000040b size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b52 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f2 "?anon_0_testx"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #2 "?anon_0_testx"  params=2 frame=1 env=0 flags=nc  @0x00000429 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f3 "?anon_0_?anon_0_testx"
+  0007  Ret                  r0
+
+function #3 "?anon_0_?anon_0_testx"  params=2 frame=16 env=0 flags=dbg  @0x00000432 size=124
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrue              L5, r1
+  0007  GetGlobalObject      r4
+  0009  GetByIdShort         r2, r4, #c1, s17 "testx"
+  000e  TryGetById           r3, r4, #c2, s29 "test2"
+  0014  LoadConstUInt8       r5, 42
+  0017  LoadConstString      r1, s16 "D+D +D\u202f+D +\nD+\u00c9D "
+  001b  Add                  r1, r5, r1
+  001f  Add                  r1, r1, r3
+  0023  LoadConstUndefined   r3
+  0025  Call2                r1, r2, r3, r1
+  002a  SaveGenerator        L1
+  002c  Ret                  r1
+L1:
+  002e  ResumeGenerator      r1, r2
+  0031  JmpTrue              L4, r2
+  0034  GetByIdShort         r2, r4, #c3, s19 "gen"
+  0039  Call1                r2, r2, r3
+  003d  SaveGenerator        L2
+  003f  Ret                  r2
+L2:
+  0041  ResumeGenerator      r2, r5
+  0044  JmpTrue              L3, r5
+  0047  TryGetById           r7, r4, #c4, s27 "console"
+  004d  GetByIdShort         r6, r7, #c5, s24 "log"
+  0052  LoadParam            r5, 1
+  0055  Call2                r5, r6, r7, r5
+  005a  TryGetById           r6, r4, #c4, s27 "console"
+  0060  GetByIdShort         r5, r6, #c5, s24 "log"
+  0065  TryGetById           r4, r4, #c6, s18 "xy"
+  006b  Call2                r4, r5, r6, r4
+  0070  CompleteGenerator
+  0071  Ret                  r3
+L3:
+  0073  CompleteGenerator
+  0074  Ret                  r2
+L4:
+  0076  CompleteGenerator
+  0077  Ret                  r1
+L5:
+  0079  CompleteGenerator
+  007a  Ret                  r0
+
+function #4 "gen"  params=1 frame=1 env=0 flags=nc  @0x000004ae size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f5 "?anon_0_gen"
+  0007  Ret                  r0
+
+function #5 "?anon_0_gen"  params=1 frame=16 env=0 flags=exc,dbg  @0x000004b7 size=183
+  .try T1..T2 -> L2 ; handler 0
+  .try T1..T3 -> L4 ; handler 1
+  .try T4..T5 -> L6 ; handler 2
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L9, r1
+  000a  LoadConstUInt8       r1, 42
+  000d  SaveGenerator        L1
+  000f  Ret                  r1
+L1:
+  0011  ResumeGenerator      r1, r3
+  0014  JmpTrueLong          L8, r3
+  001a  GetGlobalObject      r3
+  001c  GetByIdShort         r4, r3, #c1, s19 "gen"
+  0021  LoadConstUndefined   r3
+  0023  Call1                r4, r4, r3
+  0027  GetByIdShort         r3, r4, #c2, s20 "next"
+  002c  Call1                r3, r3, r4
+  0030  Jmp                  L3
+L2:
+  0032  Catch                r3
+  0034  GetGlobalObject      r3
+  0036  TryGetById           r5, r3, #c3, s33 "print"
+  003c  LoadConstUndefined   r4
+  003e  LoadConstString      r3, s6 "Hello! Exception handling"
+  0042  Call2                r3, r5, r4, r3
+L3:
+  0047  Jmp                  L7
+L4:
+  0049  Catch                r2
+  004b  LoadConstInt         r4, 432
+  0051  LoadConstString      r3, s15 "d\u00e7d\u00e0\u00e7D\u00b0D+D"
+  0055  Mul                  r4, r4, r3
+  0059  LoadConstInt         r3, 478
+  005f  AddN                 r3, r4, r3
+  0063  JmpFalse             L5, r3
+  0066  GetGlobalObject      r3
+  0068  TryGetById           r5, r3, #c4, s27 "console"
+  006e  GetByIdShort         r4, r5, #c5, s24 "log"
+  0073  Mov                  r6, r2
+  0076  LoadConstString      r2, s5 "Bon-jour : "
+  007a  Add                  r3, r2, r6
+  007e  LoadConstInt         r2, 340000
+  0084  Mul                  r6, r6, r2
+  0088  LoadConstUInt8       r2, 6
+  008b  AddN                 r2, r6, r2
+  008f  Call3                r2, r4, r5, r3, r2
+L5:
+  0095  Jmp                  L7
+L6:
+  0097  Catch                r2
+  0099  GetGlobalObject      r2
+  009b  TryGetById           r4, r2, #c6, s21 "alert"
+  00a1  LoadConstUndefined   r3
+  00a3  LoadConstString      r2, s4 "AAAAAAAA"
+  00a7  Call2                r2, r4, r3, r2
+L7:
+  00ac  LoadConstUndefined   r2
+  00ae  CompleteGenerator
+  00af  Ret                  r2
+L8:
+  00b1  CompleteGenerator
+  00b2  Ret                  r1
+L9:
+  00b4  CompleteGenerator
+  00b5  Ret                  r0
+
+function #6 "ze"  params=1 frame=11 env=1 flags=dbg  @0x0000056e size=50
+  0000  CreateEnvironment    r1
+  0002  GetGlobalObject      r0
+  0004  TryGetById           r3, r0, #c1, s30 "Math"
+  000a  GetByIdShort         r2, r3, #c2, s22 "random"
+  000f  Call1                r2, r2, r3
+  0013  JmpFalse             L1, r2
+  0016  CreateClosure        r2, r1, f7 "zb"
+  001b  StoreToEnvironment   r1, 0, r2
+  001f  LoadConstUndefined   r1
+  0021  Call1                r2, r2, r1
+  0025  GetByIdShort         r0, r0, #c3, s25 "ze"
+  002a  Call1                r0, r0, r1
+L1:
+  002e  LoadConstUndefined   r0
+  0030  Ret                  r0
+
+function #7 "zb"  params=1 frame=9 env=0 flags=dbg  @0x000005a0 size=37
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r1, r0, #c1, s28 "Date"
+  0008  GetByIdShort         r0, r1, #c2, s31 "now"
+  000d  Call1                r0, r0, r1
+  0011  JmpFalse             L1, r0
+  0014  GetEnvironment       r0, 0
+  0017  LoadFromEnvironment  r1, r0, 0
+  001b  LoadConstUndefined   r0
+  001d  Call1                r0, r1, r0
+L1:
+  0021  LoadConstUndefined   r0
+  0023  Ret                  r0

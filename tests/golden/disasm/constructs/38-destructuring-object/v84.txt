@@ -1,0 +1,95 @@
+; hbc2js disassembly of 38-destructuring-object/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=2 strings=28 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=0 flags=dbg  @0x000001e8 size=306
+  0000  DeclareGlobalVar     s18 "greet"
+  0005  LoadConstString      r5, s8 "default-b"
+  0009  LoadConstString      r2, s7 "deep-default"
+  000d  LoadConstUInt8       r3, 1
+  0010  CreateEnvironment    r0
+  0012  CreateClosure        r0, r0, f1 "greet"
+  0017  GetGlobalObject      r1
+  0019  PutById              r1, r0, #c1, s18 "greet"
+  001f  NewObject            r0
+  0021  PutNewOwnByIdShort   r0, r3, s14 "a"
+  0025  GetByIdShort         r4, r0, #c1, s14 "a"
+  002a  GetByIdShort         r0, r0, #c2, s16 "b"
+  002f  LoadConstUndefined   r3
+  0031  JStrictNotEqual      L1, r0, r3
+  0035  Mov                  r0, r5
+L1:
+  0038  TryGetById           r5, r1, #c3, s25 "print"
+  003e  ThrowIfEmpty         r4, r4
+  0041  ThrowIfEmpty         r0, r0
+  0044  Call3                r0, r5, r3, r4, r0
+  004a  NewObject            r0
+  004c  NewObject            r4
+  004e  PutNewOwnByIdShort   r0, r4, s17 "nested"
+  0052  GetByIdShort         r0, r0, #c4, s17 "nested"
+  0057  JStrictNotEqual      L2, r0, r3
+  005b  NewObject            r0
+L2:
+  005d  GetByIdShort         r0, r0, #c5, s15 "deep"
+  0062  JStrictNotEqual      L3, r0, r3
+  0066  Mov                  r0, r2
+L3:
+  0069  TryGetById           r4, r1, #c3, s25 "print"
+  006f  ThrowIfEmpty         r2, r0
+  0072  LoadConstString      r0, s10 "deep:"
+  0076  Call3                r0, r4, r3, r0, r2
+  007c  NewObjectWithBuffer  r5, 3, 3, lit@0x0000, lit@0x0000
+  0086  GetByIdShort         r2, r5, #c6, s20 "x"
+  008b  NewObject            r9
+  008d  NewObjectWithBuffer  r7, 1, 1, lit@0x0004, lit@0x000d
+  0097  Mov                  r8, r5
+  009a  CallBuiltin          r0, b47 "copyDataProperties", 4
+  009e  TryGetById           r4, r1, #c3, s25 "print"
+  00a4  ThrowIfEmpty         r5, r2
+  00a7  LoadConstString      r2, s13 "x="
+  00ab  Add                  r2, r2, r5
+  00af  TryGetById           r6, r1, #c7, s21 "JSON"
+  00b5  GetByIdShort         r5, r6, #c8, s26 "stringify"
+  00ba  ThrowIfEmpty         r0, r0
+  00bd  Call2                r5, r5, r6, r0
+  00c2  LoadConstString      r0, s4 "others="
+  00c6  Add                  r0, r0, r5
+  00ca  Call3                r0, r4, r3, r2, r0
+  00d0  TryGetById           r2, r1, #c3, s25 "print"
+  00d6  GetByIdShort         r4, r1, #c9, s18 "greet"
+  00db  NewObject            r0
+  00dd  LoadConstString      r5, s6 "World"
+  00e1  PutNewOwnByIdShort   r0, r5, s24 "name"
+  00e5  Call2                r0, r4, r3, r0
+  00ea  Call2                r0, r2, r3, r0
+  00ef  TryGetById           r2, r1, #c3, s25 "print"
+  00f5  GetByIdShort         r4, r1, #c9, s18 "greet"
+  00fa  NewObjectWithBuffer  r0, 2, 2, lit@0x0006, lit@0x0012
+  0104  Call2                r0, r4, r3, r0
+  0109  Call2                r0, r2, r3, r0
+  010e  NewObject            r0
+  0110  LoadConstString      r2, s11 "found-it"
+  0114  PutNewOwnByIdShort   r0, r2, s22 "computedKey"
+  0118  GetByIdShort         r0, r0, #c10, s22 "computedKey"
+  011d  TryGetById           r2, r1, #c3, s25 "print"
+  0123  ThrowIfEmpty         r1, r0
+  0126  LoadConstString      r0, s9 "computed:"
+  012a  Call3                r0, r2, r3, r0, r1
+  0130  Ret                  r0
+
+function #1 "greet"  params=1 frame=4 env=0 flags=dbg  @0x0000031a size=54
+  0000  LoadParam            r2, 1
+  0003  LoadConstString      r0, s3 "Hello"
+  0007  LoadConstUndefined   r3
+  0009  JStrictNotEqual      L1, r2, r3
+  000d  NewObject            r2
+L1:
+  000f  GetByIdShort         r1, r2, #c1, s24 "name"
+  0014  GetByIdShort         r2, r2, #c2, s19 "greeting"
+  0019  JStrictNotEqual      L2, r2, r3
+  001d  Mov                  r2, r0
+L2:
+  0020  LoadConstString      r0, s1 ", "
+  0024  Add                  r0, r2, r0
+  0028  Add                  r1, r0, r1
+  002c  LoadConstString      r0, s0 "!"
+  0030  Add                  r0, r1, r0
+  0034  Ret                  r0

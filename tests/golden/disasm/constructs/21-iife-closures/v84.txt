@@ -1,0 +1,106 @@
+; hbc2js disassembly of 21-iife-closures/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=7 strings=14 globalCodeIndex=0
+function #0 "global"  params=1 frame=16 env=1 flags=dbg  @0x000001a4 size=220
+  0000  CreateEnvironment    r1
+  0002  CreateClosure        r0, r1, f1 ""
+  0007  LoadConstUndefined   r2
+  0009  Call1                r4, r0, r2
+  000d  GetGlobalObject      r0
+  000f  TryGetById           r6, r0, #c1, s13 "print"
+  0015  GetByIdShort         r3, r4, #c2, s9 "value"
+  001a  Call1                r5, r3, r4
+  001e  LoadConstString      r3, s6 "initial:"
+  0022  Call3                r3, r6, r2, r3, r5
+  0028  TryGetById           r5, r0, #c1, s13 "print"
+  002e  GetByIdShort         r3, r4, #c3, s12 "increment"
+  0033  Call1                r3, r3, r4
+  0037  LoadConstString      r6, s5 "inc:"
+  003b  Call3                r3, r5, r2, r6, r3
+  0041  TryGetById           r5, r0, #c1, s13 "print"
+  0047  GetByIdShort         r3, r4, #c3, s12 "increment"
+  004c  Call1                r3, r3, r4
+  0050  Call3                r3, r5, r2, r6, r3
+  0056  TryGetById           r5, r0, #c1, s13 "print"
+  005c  GetByIdShort         r3, r4, #c3, s12 "increment"
+  0061  Call1                r3, r3, r4
+  0065  Call3                r3, r5, r2, r6, r3
+  006b  TryGetById           r6, r0, #c1, s13 "print"
+  0071  GetByIdShort         r3, r4, #c4, s11 "decrement"
+  0076  Call1                r5, r3, r4
+  007a  LoadConstString      r3, s1 "dec:"
+  007e  Call3                r3, r6, r2, r3, r5
+  0084  TryGetById           r6, r0, #c1, s13 "print"
+  008a  GetByIdShort         r3, r4, #c5, s10 "reset"
+  008f  Call1                r5, r3, r4
+  0093  LoadConstString      r3, s8 "reset:"
+  0097  Call3                r3, r6, r2, r3, r5
+  009d  TryGetById           r5, r0, #c1, s13 "print"
+  00a3  GetByIdShort         r3, r4, #c2, s9 "value"
+  00a8  Call1                r4, r3, r4
+  00ac  LoadConstString      r3, s3 "final value:"
+  00b0  Call3                r3, r5, r2, r3, r4
+  00b6  CreateClosure        r3, r1, f6 "selfRef"
+  00bb  StoreToEnvironment   r1, 0, r3
+  00bf  LoadConstUInt8       r1, 5
+  00c2  Call2                r3, r3, r2, r1
+  00c7  TryGetById           r1, r0, #c1, s13 "print"
+  00cd  LoadConstString      r0, s7 "named IIFE factorial(5)="
+  00d1  Add                  r0, r0, r3
+  00d5  Call2                r0, r1, r2, r0
+  00da  Ret                  r0
+
+function #1 ""  params=1 frame=3 env=1 flags=dbg  @0x00000280 size=48
+  0000  CreateEnvironment    r1
+  0002  LoadConstZero        r0
+  0004  StoreNPToEnvironment r1, 0, r0
+  0008  NewObject            r0
+  000a  CreateClosure        r2, r1, f2 "increment"
+  000f  PutNewOwnByIdShort   r0, r2, s12 "increment"
+  0013  CreateClosure        r2, r1, f3 "decrement"
+  0018  PutNewOwnByIdShort   r0, r2, s11 "decrement"
+  001c  CreateClosure        r2, r1, f4 "reset"
+  0021  PutNewOwnByIdShort   r0, r2, s10 "reset"
+  0025  CreateClosure        r1, r1, f5 "value"
+  002a  PutNewOwnByIdShort   r0, r1, s9 "value"
+  002e  Ret                  r0
+
+function #2 "increment"  params=1 frame=3 env=0 flags=dbg  @0x000002b0 size=20
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r2, r1, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  Add                  r0, r2, r0
+  000e  StoreNPToEnvironment r1, 0, r0
+  0012  Ret                  r0
+
+function #3 "decrement"  params=1 frame=3 env=0 flags=dbg  @0x000002c4 size=20
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r2, r1, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  Sub                  r0, r2, r0
+  000e  StoreNPToEnvironment r1, 0, r0
+  0012  Ret                  r0
+
+function #4 "reset"  params=1 frame=2 env=0 flags=none  @0x000002d8 size=11
+  0000  GetEnvironment       r1, 0
+  0003  LoadConstZero        r0
+  0005  StoreNPToEnvironment r1, 0, r0
+  0009  Ret                  r0
+
+function #5 "value"  params=1 frame=1 env=0 flags=none  @0x000002e3 size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  Ret                  r0
+
+function #6 "selfRef"  params=2 frame=13 env=0 flags=dbg  @0x000002ec size=37
+  0000  LoadParam            r2, 1
+  0003  LoadConstUInt8       r1, 1
+  0006  Mov                  r0, r1
+  0009  JLessEqual           L1, r2, r0
+  000d  GetEnvironment       r3, 0
+  0010  LoadFromEnvironment  r4, r3, 0
+  0014  Sub                  r3, r2, r1
+  0018  LoadConstUndefined   r1
+  001a  Call2                r1, r4, r1, r3
+  001f  Mul                  r0, r2, r1
+L1:
+  0023  Ret                  r0

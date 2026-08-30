@@ -1,0 +1,42 @@
+; hbc2js disassembly of 03-do-while-loop/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=1 strings=9 globalCodeIndex=0
+function #0 "global"  params=1 frame=16 env=0 flags=dbg  @0x00000128 size=146
+  0000  LoadConstUInt8       r3, 100
+  0003  LoadConstZero        r2
+  0005  LoadConstUInt8       r1, 30
+  0008  LoadConstZero        r0
+L1:
+  000a  Inc                  r4, r0
+  000d  SubN                 r6, r3, r1
+  0011  Mov                  r0, r4
+  0014  Mov                  r3, r6
+  0017  JGreaterN            L1, r3, r2
+  001b  GetGlobalObject      r0
+  001d  TryGetById           r5, r0, #c1, s7 "print"
+  0023  LoadConstUndefined   r3
+  0025  LoadConstString      r1, s4 "iterations="
+  0029  Add                  r4, r1, r4
+  002d  LoadConstString      r1, s2 "final n="
+  0031  Add                  r1, r1, r6
+  0035  Call3                r1, r5, r3, r4, r1
+  003b  TryGetById           r4, r0, #c1, s7 "print"
+  0041  LoadConstString      r5, s1 "body runs even though condition …"
+  0045  LoadConstInt         r1, 999
+  004b  Add                  r1, r5, r1
+  004f  Call2                r1, r4, r3, r1
+  0054  NewArray             r4, 0
+  0058  LoadConstUInt8       r1, 5
+  005b  LoadConstZero        r2
+L2:
+  005d  GetByIdShort         r6, r4, #c2, s8 "push"
+  0062  Mul                  r5, r2, r2
+  0066  Call2                r5, r6, r4, r5
+  006b  Inc                  r2, r2
+  006e  JLess                L2, r2, r1
+  0072  TryGetById           r2, r0, #c1, s7 "print"
+  0078  GetByIdShort         r1, r4, #c3, s6 "join"
+  007d  LoadConstString      r0, s0 ","
+  0081  Call2                r1, r1, r4, r0
+  0086  LoadConstString      r0, s5 "squares:"
+  008a  Call3                r0, r2, r3, r0, r1
+  0090  Ret                  r0

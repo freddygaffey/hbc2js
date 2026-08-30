@@ -1,0 +1,54 @@
+; hbc2js disassembly of 02-while-loop/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=1 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=23 env=0 flags=dbg  @0x000000fc size=172
+  0000  LoadConstZero        r6
+  0002  LoadConstUInt8       r13, 17
+  0005  LoadConstUInt8       r12, 100
+  0008  LoadConstUInt8       r5, 1
+  000b  GetGlobalObject      r0
+  000d  LoadConstUndefined   r2
+  000f  LoadConstString      r4, s6 "tick"
+  0013  LoadConstUInt8       r1, 5
+  0016  LoadConstZero        r10
+  0018  LoadConstZero        r8
+L1:
+  001a  Inc                  r7, r10
+  001d  Mul                  r3, r7, r7
+  0021  Mod                  r11, r3, r13
+  0025  Mov                  r3, r8
+  0028  JStrictNotEqual      L2, r11, r6
+  002c  JGreater             L3, r7, r5
+L2:
+  0030  Add                  r8, r3, r7
+  0034  Mov                  r9, r8
+  0037  Mov                  r10, r7
+  003a  JLess                L1, r10, r12
+  003e  Jmp                  L4
+L3:
+  0040  TryGetById           r10, r0, #c1, s7 "print"
+  0046  LoadConstString      r8, s1 "breaking at i="
+  004a  Add                  r12, r8, r7
+  004e  LoadConstString      r8, s0 " computed="
+  0052  Add                  r8, r12, r8
+  0056  Add                  r8, r8, r11
+  005a  Call2                r8, r10, r2, r8
+  005f  Mov                  r9, r3
+L4:
+  0062  TryGetById           r8, r0, #c1, s7 "print"
+  0068  LoadConstString      r3, s3 "final i="
+  006c  Add                  r7, r3, r7
+  0070  LoadConstString      r3, s5 "sum="
+  0074  Add                  r3, r3, r9
+  0078  Call3                r3, r8, r2, r7, r3
+  007e  LoadConstZero        r6
+L5:
+  0080  TryGetById           r3, r0, #c1, s7 "print"
+  0086  Call3                r3, r3, r2, r4, r6
+  008c  Add                  r3, r6, r5
+  0090  Mov                  r6, r3
+  0093  JLess                L5, r6, r1
+  0097  TryGetById           r1, r0, #c1, s7 "print"
+  009d  LoadConstString      r0, s2 "done, count="
+  00a1  Add                  r0, r0, r3
+  00a5  Call2                r0, r1, r2, r0
+  00aa  Ret                  r0

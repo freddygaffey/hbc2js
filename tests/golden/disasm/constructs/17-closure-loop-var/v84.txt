@@ -1,0 +1,100 @@
+; hbc2js disassembly of 17-closure-loop-var/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=6 strings=11 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=1 flags=dbg  @0x0000017c size=251
+  0000  DeclareGlobalVar     s5 "i"
+  0005  DeclareGlobalVar     s6 "j"
+  000a  CreateEnvironment    r0
+  000c  GetGlobalObject      r1
+  000e  LoadConstUInt8       r6, 1
+  0011  LoadConstUInt8       r5, 3
+  0014  LoadConstUndefined   r3
+  0016  NewArray             r8, 0
+  001a  LoadConstZero        r7
+  001c  PutById              r1, r7, #c1, s5 "i"
+  0022  GetByIdShort         r2, r1, #c1, s5 "i"
+  0027  JNotLess             L2, r2, r5
+L1:
+  002b  GetByIdShort         r4, r8, #c2, s10 "push"
+  0030  CreateClosure        r2, r0, f1 ""
+  0035  Call2                r2, r4, r8, r2
+  003a  GetByIdShort         r2, r1, #c1, s5 "i"
+  003f  ToNumber             r2, r2
+  0042  AddN                 r2, r2, r6
+  0046  PutById              r1, r2, #c1, s5 "i"
+  004c  GetByIdShort         r2, r1, #c1, s5 "i"
+  0051  JLess                L1, r2, r5
+L2:
+  0055  TryGetById           r9, r1, #c3, s9 "print"
+  005b  GetByIdShort         r4, r8, #c4, s8 "map"
+  0060  CreateClosure        r2, r0, f2 ""
+  0065  Call2                r8, r4, r8, r2
+  006a  GetByIdShort         r2, r8, #c5, s7 "join"
+  006f  LoadConstString      r4, s1 ","
+  0073  Call2                r8, r2, r8, r4
+  0078  LoadConstString      r2, s4 "var closures all see final i:"
+  007c  Call3                r2, r9, r3, r2, r8
+  0082  NewArray             r2, 0
+  0086  PutById              r1, r7, #c2, s6 "j"
+  008c  GetByIdShort         r7, r1, #c6, s6 "j"
+  0091  JLess                L3, r7, r5
+  0095  StoreToEnvironment   r0, 0, r2
+  0099  Jmp                  L5
+L3:
+  009b  StoreToEnvironment   r0, 0, r2
+L4:
+  009f  GetByIdShort         r7, r1, #c6, s6 "j"
+  00a4  CreateClosure        r2, r0, f3 ""
+  00a9  Call2                r2, r2, r3, r7
+  00ae  GetByIdShort         r2, r1, #c6, s6 "j"
+  00b3  ToNumber             r2, r2
+  00b6  AddN                 r2, r2, r6
+  00ba  PutById              r1, r2, #c2, s6 "j"
+  00c0  GetByIdShort         r2, r1, #c6, s6 "j"
+  00c5  JLess                L4, r2, r5
+L5:
+  00c9  TryGetById           r2, r1, #c3, s9 "print"
+  00cf  LoadFromEnvironment  r1, r0, 0
+  00d3  ThrowIfEmpty         r5, r1
+  00d6  GetByIdShort         r1, r5, #c4, s8 "map"
+  00db  CreateClosure        r0, r0, f5 ""
+  00e0  Call2                r1, r1, r5, r0
+  00e5  GetByIdShort         r0, r1, #c5, s7 "join"
+  00ea  Call2                r1, r0, r1, r4
+  00ef  LoadConstString      r0, s2 "IIFE-captured var closures:"
+  00f3  Call3                r0, r2, r3, r0, r1
+  00f9  Ret                  r0
+
+function #1 ""  params=1 frame=1 env=0 flags=dbg  @0x00000277 size=9
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r0, r0, #c1, s5 "i"
+  0007  Ret                  r0
+
+function #2 ""  params=2 frame=9 env=0 flags=dbg  @0x00000280 size=11
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  Call1                r0, r1, r0
+  0009  Ret                  r0
+
+function #3 ""  params=2 frame=11 env=1 flags=dbg  @0x0000028b size=38
+  0000  CreateEnvironment    r0
+  0002  LoadParam            r1, 1
+  0005  StoreToEnvironment   r0, 0, r1
+  0009  GetEnvironment       r1, 0
+  000c  LoadFromEnvironment  r1, r1, 0
+  0010  ThrowIfEmpty         r2, r1
+  0013  GetByIdShort         r1, r2, #c1, s10 "push"
+  0018  CreateClosure        r0, r0, f4 ""
+  001d  Call2                r0, r1, r2, r0
+  0022  LoadConstUndefined   r0
+  0024  Ret                  r0
+
+function #4 ""  params=1 frame=1 env=0 flags=none  @0x000002b1 size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  Ret                  r0
+
+function #5 ""  params=2 frame=9 env=0 flags=dbg  @0x00000280 size=11
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  Call1                r0, r1, r0
+  0009  Ret                  r0

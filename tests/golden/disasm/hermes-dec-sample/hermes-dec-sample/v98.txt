@@ -1,0 +1,390 @@
+; hbc2js disassembly of hermes-dec-sample/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=8 strings=35 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=overflowed,ctor  @0x00000358 size=236
+  0000  CreateFunctionEnvironment r3, 0
+  0003  DeclareGlobalVar     s16 "testx"
+  0008  DeclareGlobalVar     s19 "gen"
+  000d  DeclareGlobalVar     s34 "ze"
+  0012  GetGlobalObject      r2
+  0014  CreateClosure        r4, r3, f1 "testx"
+  0019  PutByIdLoose         r2, r4, #c0, s16 "testx"
+  001f  CreateClosure        r3, r3, f2 "gen"
+  0024  PutByIdLoose         r2, r3, #c1, s19 "gen"
+  002a  LoadConstUndefined   r1
+  002c  CreateClosure        r3, r1, f3 "ze"
+  0031  PutByIdLoose         r2, r3, #c2, s34 "ze"
+  0037  TryGetById           r4, r2, #c0, s31 "window"
+  003d  GetByIdShort         r3, r2, #c1, s34 "ze"
+  0042  PutByIdLoose         r4, r3, #c3, s22 "onload"
+  0048  GetByIdShort         r3, r2, #c1, s34 "ze"
+  004d  Call1                r3, r3, r1
+  0051  CreateRegExp         r3, s11 "dkooDD JPOD D09D\\n\\\\  @ .\\r…", s12 "gmi", re0
+  005f  PutByIdLoose         r2, r3, #c4, s26 "test2"
+  0065  TryGetById           r5, r2, #c2, s24 "console"
+  006b  GetByIdShort         r4, r5, #c3, s23 "log"
+  0070  TryGetById           r7, r2, #c4, s26 "test2"
+  0076  GetByIdShort         r6, r7, #c5, s18 "exec"
+  007b  LoadConstString      r3, s10 "bonjour"
+  007f  Call2                r3, r6, r7, r3
+  0084  Call2                r3, r4, r5, r3
+  0089  TryGetById           r6, r2, #c2, s24 "console"
+  008f  GetByIdShort         r5, r6, #c3, s23 "log"
+  0094  GetByIdShort         r3, r2, #c6, s19 "gen"
+  0099  Call1                r4, r3, r1
+  009d  GetByIdShort         r3, r4, #c7, s29 "next"
+  00a2  Call1                r4, r3, r4
+  00a6  LoadConstString      r3, s7 "a"
+  00aa  Call3                r3, r5, r6, r3, r4
+  00b0  TryGetById           r5, r2, #c2, s24 "console"
+  00b6  GetByIdShort         r4, r5, #c3, s23 "log"
+  00bb  GetByIdShort         r3, r2, #c8, s16 "testx"
+  00c0  LoadConstString      r2, s13 "le"
+  00c4  LoadConstDouble      r0, 7.3
+  00ce  Add                  r2, r0, r2
+  00d2  Call2                r3, r3, r1, r2
+  00d7  GetByIdShort         r2, r3, #c7, s29 "next"
+  00dc  Call1                r3, r2, r3
+  00e0  LoadConstString      r2, s9 "b"
+  00e4  Call3                r2, r4, r5, r2, r3
+  00ea  Ret                  r2
+
+function #1 "testx"  params=2 frame=16 env=0 flags=overflowed,ctor  @0x00000444 size=31
+  0000  LoadConstUndefined   r0
+  0002  LoadConstUndefined   r1
+  0004  ReifyArgumentsLoose  r1
+  0006  Mov                  r4, r1
+  0009  GetBuiltinClosure    r3, b57 "spawnAsync"
+  000c  GetParentEnvironment r1, 0
+  000f  CreateClosure        r2, r1, f4 "?anon_0_testx"
+  0014  LoadThisNS           r1
+  0016  Call4                r1, r3, r0, r2, r1, r4
+  001d  Ret                  r1
+
+function #2 "gen"  params=1 frame=2 env=0 flags=nc  @0x00000463 size=24
+  0000  CreateFunctionEnvironment r1, 5
+  0003  LoadConstZero        r0
+  0005  StoreNPToEnvironment r1, 1, r0
+  0009  StoreNPToEnvironment r1, 4, r0
+  000d  StoreNPToEnvironment r1, 3, r0
+  0011  CreateGenerator      r1, r1, f5 "gen"
+  0016  Ret                  r1
+
+function #3 "ze"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x0000047b size=89
+  0000  GetGlobalObject      r1
+  0002  TryGetById           r3, r1, #c0, s27 "Math"
+  0008  GetByIdShort         r2, r3, #c1, s21 "random"
+  000d  Call1                r2, r2, r3
+  0011  JmpFalse             L2, r2
+  0014  CreateFunctionEnvironment r3, 1
+  0017  CreateClosure        r2, r3, f6 "zb"
+  001c  StoreToEnvironment   r3, 0, r2
+  0020  TryGetById           r4, r1, #c2, s25 "Date"
+  0026  GetByIdShort         r3, r4, #c3, s30 "now"
+  002b  Call1                r3, r3, r4
+  002f  JmpFalse             L1, r3
+  0032  TryGetById           r4, r1, #c2, s25 "Date"
+  0038  GetByIdShort         r3, r4, #c3, s30 "now"
+  003d  Call1                r3, r3, r4
+  0041  JmpFalse             L1, r3
+  0044  LoadConstUndefined   r0
+  0046  Call1                r0, r2, r0
+L1:
+  004a  GetByIdShort         r1, r1, #c4, s34 "ze"
+  004f  LoadConstUndefined   r0
+  0051  Call1                r1, r1, r0
+L2:
+  0055  LoadConstUndefined   r0
+  0057  Ret                  r0
+
+function #4 "?anon_0_testx"  params=2 frame=3 env=0 flags=nc  @0x000004d4 size=27
+  0000  CreateFunctionEnvironment r1, 4
+  0003  LoadParam            r2, 1
+  0006  StoreToEnvironment   r1, 0, r2
+  000a  LoadConstZero        r0
+  000c  StoreNPToEnvironment r1, 2, r0
+  0010  StoreNPToEnvironment r1, 3, r0
+  0014  CreateGenerator      r1, r1, f7 "?anon_0_testx"
+  0019  Ret                  r1
+
+function #5 "gen"  params=1 frame=32 env=0 flags=overflowed,ctor  @0x000004ef size=488
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 4
+  0007  Mov                  r2, r0
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L19, r0, r4
+  0014  LoadParam            r0, 2
+  0017  LoadParam            r3, 1
+  001a  Mov                  r18, r2
+  001d  LoadConstUInt8       r7, 3
+  0020  LoadConstUInt8       r17, 4
+  0023  LoadConstUInt8       r5, 1
+  0026  LoadConstZero        r16
+  0028  GetGlobalObject      r15
+  002a  LoadConstUndefined   r14
+  002c  LoadConstString      r13, s3 "Bon-jour : "
+  0030  LoadConstInt         r12, 340000
+  0036  LoadConstUInt8       r11, 6
+  0039  LoadConstInt         r9, 478
+  003f  LoadConstString      r10, s14 "d\u00e7d\u00e0\u00e7D\u00b0D+D"
+  0043  LoadConstInt         r8, 432
+  0049  Mul                  r8, r8, r10
+  004d  AddN                 r10, r8, r9
+  0051  LoadConstString      r9, s2 "AAAAAAAA"
+  0055  LoadConstString      r8, s5 "Hello! Exception handling"
+  0059  JStrictEqualLong     L16, r18, r7
+L1:
+  0060  Mov                  r2, r4
+  0063  StoreNPToEnvironment r1, 4, r4
+  0067  LoadFromEnvironment  r18, r1, 1
+  006b  JStrictEqualLong     L10, r16, r18
+  0072  JStrictEqual         L5, r5, r18
+  0076  JStrictEqual         L3, r4, r18
+  007a  JStrictEqual         L2, r7, r18
+  007e  LoadFromEnvironment  r6, r1, 2
+  0082  StoreNPToEnvironment r1, 3, r5
+  0086  TryGetById           r18, r15, #c0, s32 "print"
+  008c  Call2                r18, r18, r14, r8
+  0091  Jmp                  L6
+L2:
+  0093  LoadFromEnvironment  r6, r1, 2
+  0097  StoreNPToEnvironment r1, 3, r16
+  009b  TryGetById           r18, r15, #c1, s20 "alert"
+  00a1  Call2                r18, r18, r14, r9
+  00a6  Jmp                  L7
+L3:
+  00a8  LoadFromEnvironment  r18, r1, 0
+  00ac  LoadFromEnvironment  r19, r1, 2
+  00b0  Mov                  r6, r19
+  00b3  StoreToEnvironment   r18, 0, r19
+  00b7  StoreNPToEnvironment r1, 3, r4
+  00bb  JmpFalse             L4, r10
+  00be  TryGetById           r21, r15, #c2, s24 "console"
+  00c4  GetByIdShort         r20, r21, #c3, s23 "log"
+  00c9  LoadFromEnvironment  r19, r18, 0
+  00cd  Add                  r19, r13, r19
+  00d1  LoadFromEnvironment  r18, r18, 0
+  00d5  Mul                  r18, r18, r12
+  00d9  AddN                 r18, r18, r11
+  00dd  Call3                r18, r20, r21, r19, r18
+L4:
+  00e3  StoreNPToEnvironment r1, 3, r16
+  00e7  Jmp                  L7
+L5:
+  00e9  JStrictEqual         L9, r3, r5
+  00ed  JStrictEqual         L8, r3, r4
+  00f1  StoreNPToEnvironment r1, 3, r7
+  00f5  GetByIdShort         r18, r15, #c4, s19 "gen"
+  00fa  Call1                r19, r18, r14
+  00fe  GetByIdShort         r18, r19, #c5, s29 "next"
+  0103  Call1                r18, r18, r19
+  0107  StoreNPToEnvironment r1, 3, r5
+L6:
+  010b  StoreNPToEnvironment r1, 3, r16
+L7:
+  010f  Mov                  r2, r7
+  0112  StoreNPToEnvironment r1, 4, r7
+  0116  NewObjectWithBuffer  r18, sh0(numProps=2), lit@0x0002
+  011c  Ret                  r18
+L8:
+  011e  Mov                  r2, r7
+  0121  StoreNPToEnvironment r1, 4, r7
+  0125  NewObjectWithBuffer  r18, sh0(numProps=2), lit@0x0000
+  012b  PutOwnBySlotIdx      r18, r0, 0
+  012f  Ret                  r18
+L9:
+  0131  Mov                  r2, r7
+  0134  StoreNPToEnvironment r1, 4, r7
+  0138  Throw                r0
+L10:
+  013a  JStrictEqual         L12, r3, r5
+  013e  JStrictEqual         L11, r3, r4
+  0142  CreateTopLevelEnvironment r18, 1
+  0148  StoreToEnvironment   r1, 0, r18
+  014c  StoreNPToEnvironment r1, 1, r5
+  0150  Mov                  r2, r5
+  0153  StoreNPToEnvironment r1, 4, r5
+  0157  NewObjectWithBuffer  r18, sh0(numProps=2), lit@0x0004
+  015d  Ret                  r18
+L11:
+  015f  Mov                  r2, r7
+  0162  StoreNPToEnvironment r1, 4, r7
+  0166  NewObjectWithBuffer  r18, sh0(numProps=2), lit@0x0000
+  016c  PutOwnBySlotIdx      r18, r0, 0
+  0170  Ret                  r18
+L12:
+  0172  Mov                  r2, r7
+  0175  StoreNPToEnvironment r1, 4, r7
+  0179  Throw                r0
+  017b  Catch                r18
+  017d  Mov                  r6, r18
+  0180  StoreToEnvironment   r1, 2, r18
+  0184  LoadFromEnvironment  r18, r1, 3
+  0188  JStrictEqual         L15, r16, r18
+  018c  JStrictEqual         L14, r5, r18
+  0190  JStrictEqual         L13, r4, r18
+  0194  StoreNPToEnvironment r1, 1, r17
+  0198  JmpLong              L1
+L13:
+  019d  StoreNPToEnvironment r1, 1, r7
+  01a1  JmpLong              L1
+L14:
+  01a6  StoreNPToEnvironment r1, 1, r4
+  01aa  JmpLong              L1
+L15:
+  01af  Mov                  r2, r7
+  01b2  StoreNPToEnvironment r1, 4, r7
+  01b6  Throw                r6
+L16:
+  01b8  JStrictEqual         L18, r3, r5
+  01bc  JStrictEqual         L17, r3, r4
+  01c0  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
+  01c6  Ret                  r3
+L17:
+  01c8  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
+  01ce  PutOwnBySlotIdx      r3, r0, 0
+  01d2  Ret                  r3
+L18:
+  01d4  Throw                r0
+L19:
+  01d6  LoadConstUInt8       r0, 3
+  01d9  Mov                  r2, r0
+  01dc  StoreNPToEnvironment r1, 4, r0
+  01e0  LoadConstString      r23, s4 "Generator functions may not be c…"
+  01e4  CallBuiltin          r0, b44 "throwTypeError", 2
+
+function #6 "zb"  params=1 frame=11 env=0 flags=overflowed,ctor  @0x000006d7 size=37
+  0000  GetGlobalObject      r1
+  0002  TryGetById           r2, r1, #c0, s25 "Date"
+  0008  GetByIdShort         r1, r2, #c1, s30 "now"
+  000d  Call1                r1, r1, r2
+  0011  JmpFalse             L1, r1
+  0014  GetParentEnvironment r1, 0
+  0017  LoadFromEnvironment  r1, r1, 0
+  001b  LoadConstUndefined   r0
+  001d  Call1                r0, r1, r0
+L1:
+  0021  LoadConstUndefined   r0
+  0023  Ret                  r0
+
+function #7 "?anon_0_testx"  params=2 frame=20 env=0 flags=overflowed,ctor  @0x000006fc size=414
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 3
+  0007  Mov                  r2, r0
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L12, r0, r4
+  0014  LoadParam            r0, 2
+  0017  LoadParam            r3, 1
+  001a  Mov                  r5, r2
+  001d  LoadConstUInt8       r6, 3
+  0020  JStrictEqualLong     L9, r5, r6
+  0027  Mov                  r2, r4
+  002a  StoreNPToEnvironment r1, 3, r4
+  002e  LoadFromEnvironment  r7, r1, 2
+  0032  LoadConstZero        r5
+  0034  JStrictEqualLong     L6, r5, r7
+  003b  LoadConstUInt8       r5, 1
+  003e  JStrictEqual         L3, r5, r7
+  0042  JStrictEqual         L2, r3, r5
+  0046  JStrictEqual         L1, r3, r4
+  004a  LoadFromEnvironment  r8, r1, 1
+  004e  GetGlobalObject      r7
+  0050  TryGetById           r10, r7, #c0, s24 "console"
+  0056  GetByIdShort         r9, r10, #c1, s23 "log"
+  005b  LoadFromEnvironment  r8, r8, 0
+  005f  Call2                r8, r9, r10, r8
+  0064  TryGetById           r9, r7, #c0, s24 "console"
+  006a  GetByIdShort         r8, r9, #c1, s23 "log"
+  006f  TryGetById           r7, r7, #c2, s17 "xy"
+  0075  Call2                r7, r8, r9, r7
+  007a  Mov                  r2, r6
+  007d  StoreNPToEnvironment r1, 3, r6
+  0081  NewObjectWithBuffer  r7, sh0(numProps=2), lit@0x0002
+  0087  Ret                  r7
+L1:
+  0089  Mov                  r2, r6
+  008c  StoreNPToEnvironment r1, 3, r6
+  0090  NewObjectWithBuffer  r7, sh0(numProps=2), lit@0x0000
+  0096  PutOwnBySlotIdx      r7, r0, 0
+  009a  Ret                  r7
+L2:
+  009c  Mov                  r2, r6
+  009f  StoreNPToEnvironment r1, 3, r6
+  00a3  Throw                r0
+L3:
+  00a5  JStrictEqual         L5, r3, r5
+  00a9  JStrictEqual         L4, r3, r4
+  00ad  GetGlobalObject      r7
+  00af  GetByIdShort         r8, r7, #c3, s19 "gen"
+  00b4  LoadConstUndefined   r7
+  00b6  Call1                r7, r8, r7
+  00ba  StoreNPToEnvironment r1, 2, r4
+  00be  Mov                  r2, r5
+  00c1  StoreNPToEnvironment r1, 3, r5
+  00c5  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x000a
+  00cb  PutOwnBySlotIdx      r5, r7, 0
+  00cf  Ret                  r5
+L4:
+  00d1  Mov                  r2, r6
+  00d4  StoreNPToEnvironment r1, 3, r6
+  00d8  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0000
+  00de  PutOwnBySlotIdx      r5, r0, 0
+  00e2  Ret                  r5
+L5:
+  00e4  Mov                  r2, r6
+  00e7  StoreNPToEnvironment r1, 3, r6
+  00eb  Throw                r0
+L6:
+  00ed  LoadConstUInt8       r5, 1
+  00f0  JStrictEqual         L8, r3, r5
+  00f4  JStrictEqual         L7, r3, r4
+  00f8  CreateTopLevelEnvironment r8, 1
+  00fe  StoreToEnvironment   r1, 1, r8
+  0102  LoadFromEnvironment  r7, r1, 0
+  0106  StoreToEnvironment   r8, 0, r7
+  010a  GetGlobalObject      r7
+  010c  GetByIdShort         r9, r7, #c4, s16 "testx"
+  0111  TryGetById           r8, r7, #c5, s26 "test2"
+  0117  LoadConstString      r10, s15 "D+D +D\u202f+D +\nD+\u00c9D "
+  011b  LoadConstUInt8       r7, 42
+  011e  Add                  r7, r7, r10
+  0122  Add                  r8, r7, r8
+  0126  LoadConstUndefined   r7
+  0128  Call2                r7, r9, r7, r8
+  012d  StoreNPToEnvironment r1, 2, r5
+  0131  Mov                  r2, r5
+  0134  StoreNPToEnvironment r1, 3, r5
+  0138  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x000a
+  013e  PutOwnBySlotIdx      r5, r7, 0
+  0142  Ret                  r5
+L7:
+  0144  Mov                  r2, r6
+  0147  StoreNPToEnvironment r1, 3, r6
+  014b  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0000
+  0151  PutOwnBySlotIdx      r5, r0, 0
+  0155  Ret                  r5
+L8:
+  0157  Mov                  r2, r6
+  015a  StoreNPToEnvironment r1, 3, r6
+  015e  Throw                r0
+  0160  Catch                r5
+  0162  Mov                  r2, r6
+  0165  StoreNPToEnvironment r1, 3, r6
+  0169  Throw                r5
+L9:
+  016b  LoadConstUInt8       r5, 1
+  016e  JStrictEqual         L11, r3, r5
+  0172  JStrictEqual         L10, r3, r4
+  0176  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
+  017c  Ret                  r3
+L10:
+  017e  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
+  0184  PutOwnBySlotIdx      r3, r0, 0
+  0188  Ret                  r3
+L11:
+  018a  Throw                r0
+L12:
+  018c  LoadConstUInt8       r0, 3
+  018f  Mov                  r2, r0
+  0192  StoreNPToEnvironment r1, 3, r0
+  0196  LoadConstString      r11, s4 "Generator functions may not be c…"
+  019a  CallBuiltin          r0, b44 "throwTypeError", 2

@@ -1,0 +1,70 @@
+; hbc2js disassembly of 01-if-else-chain/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=2 strings=15 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x0000014c size=124
+  0000  CreateFunctionEnvironment r1, 1
+  0003  DeclareGlobalVar     s11 "check"
+  0008  GetGlobalObject      r0
+  000a  CreateClosure        r2, r1, f1 "check"
+  000f  PutByIdLoose         r0, r2, #c0, s11 "check"
+  0015  NewArray             r4, 0
+  0019  StoreToEnvironment   r1, 0, r4
+  001d  NewArrayWithBuffer   r5, 5, 5, lit@0x0000
+  0025  IteratorBegin        r2, r5
+  0028  LoadConstUndefined   r3
+  002a  LoadConstString      r1, s2 "->"
+L1:
+  002e  Mov                  r6, r5
+  0031  IteratorNext         r8, r2, r6
+  0035  Mov                  r6, r2
+  0038  JStrictEqual         L2, r6, r3
+  003c  TryGetById           r7, r0, #c0, s13 "print"
+  0042  GetByIdShort         r6, r0, #c1, s11 "check"
+  0047  Call2                r6, r6, r3, r8
+  004c  Call4                r6, r7, r3, r8, r1, r6
+  0053  Jmp                  L1
+  0055  Catch                r1
+  0057  IteratorClose        r2, 1
+  005a  Throw                r1
+L2:
+  005c  TryGetById           r2, r0, #c0, s13 "print"
+  0062  GetByIdShort         r1, r4, #c2, s12 "join"
+  0067  LoadConstString      r0, s0 " | "
+  006b  Call2                r1, r1, r4, r0
+  0070  LoadConstString      r0, s8 "side effects:"
+  0074  Call3                r0, r2, r3, r0, r1
+  007a  Ret                  r0
+
+function #1 "check"  params=2 frame=15 env=0 flags=overflowed,ctor  @0x000001c8 size=95
+  0000  LoadParam            r1, 1
+  0003  GetParentEnvironment r2, 0
+  0006  LoadFromEnvironment  r4, r2, 0
+  000a  GetByIdShort         r3, r4, #c0, s14 "push"
+  000f  LoadConstString      r2, s3 "check("
+  0013  Add                  r5, r2, r1
+  0017  LoadConstString      r2, s1 ")"
+  001b  AddS                 r2, r5, r2
+  001f  Call2                r2, r3, r4, r2
+  0024  JmpFalse             L1, r2
+  0027  LoadConstZero        r0
+  0029  JLess                L5, r1, r0
+L1:
+  002d  LoadConstZero        r0
+  002f  JStrictEqual         L4, r1, r0
+  0033  LoadConstUInt8       r0, 10
+  0036  JLess                L3, r1, r0
+  003a  LoadConstUInt8       r0, 100
+  003d  JLess                L2, r1, r0
+  0041  LoadConstString      r1, s5 "large"
+  0045  Ret                  r1
+L2:
+  0047  LoadConstString      r1, s6 "medium"
+  004b  Ret                  r1
+L3:
+  004d  LoadConstString      r1, s9 "small"
+  0051  Ret                  r1
+L4:
+  0053  LoadConstString      r1, s10 "zero"
+  0057  Ret                  r1
+L5:
+  0059  LoadConstString      r1, s7 "negative"
+  005d  Ret                  r1

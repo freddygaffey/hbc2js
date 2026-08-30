@@ -1,0 +1,247 @@
+; hbc2js disassembly of 29-promise-chaining/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=12 strings=25 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=0 flags=dbg  @0x00000270 size=104
+  0000  DeclareGlobalVar     s14 "step"
+  0005  DeclareGlobalVar     s19 "chainStyle"
+  000a  DeclareGlobalVar     s12 "asyncStyle"
+  000f  CreateEnvironment    r0
+  0011  CreateClosure        r2, r0, f1 "step"
+  0016  GetGlobalObject      r1
+  0018  PutById              r1, r2, #c1, s14 "step"
+  001e  CreateClosure        r2, r0, f2 "chainStyle"
+  0023  PutById              r1, r2, #c2, s19 "chainStyle"
+  0029  CreateAsyncClosure   r2, r0, f7 "asyncStyle"
+  002e  PutById              r1, r2, #c3, s12 "asyncStyle"
+  0034  GetByIdShort         r3, r1, #c1, s19 "chainStyle"
+  0039  LoadConstUndefined   r2
+  003b  Call1                r5, r3, r2
+  003f  GetByIdShort         r4, r5, #c2, s24 "then"
+  0044  CreateClosure        r3, r0, f10 ""
+  0049  Call2                r3, r4, r5, r3
+  004e  GetByIdShort         r1, r1, #c3, s12 "asyncStyle"
+  0053  Call1                r2, r1, r2
+  0057  GetByIdShort         r1, r2, #c2, s24 "then"
+  005c  CreateClosure        r0, r0, f11 ""
+  0061  Call2                r0, r1, r2, r0
+  0066  Ret                  r0
+
+function #1 "step"  params=2 frame=12 env=0 flags=dbg  @0x000002d8 size=30
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s18 "Promise"
+  0008  GetByIdShort         r1, r2, #c2, s17 "resolve"
+  000d  LoadParam            r3, 1
+  0010  LoadConstUInt8       r0, 2
+  0013  Mul                  r0, r3, r0
+  0017  Call2                r0, r1, r2, r0
+  001c  Ret                  r0
+
+function #2 "chainStyle"  params=1 frame=12 env=1 flags=dbg  @0x000002f6 size=89
+  0000  CreateEnvironment    r0
+  0002  NewArray             r1, 0
+  0006  StoreToEnvironment   r0, 0, r1
+  000a  GetGlobalObject      r1
+  000c  GetByIdShort         r3, r1, #c1, s14 "step"
+  0011  LoadConstUndefined   r2
+  0013  LoadConstUInt8       r1, 1
+  0016  Call2                r3, r3, r2, r1
+  001b  GetByIdShort         r2, r3, #c2, s24 "then"
+  0020  CreateClosure        r1, r0, f3 ""
+  0025  Call2                r3, r2, r3, r1
+  002a  GetByIdShort         r2, r3, #c2, s24 "then"
+  002f  CreateClosure        r1, r0, f4 ""
+  0034  Call2                r3, r2, r3, r1
+  0039  GetByIdShort         r2, r3, #c2, s24 "then"
+  003e  CreateClosure        r1, r0, f5 ""
+  0043  Call2                r2, r2, r3, r1
+  0048  GetByIdShort         r1, r2, #c3, s13 "catch"
+  004d  CreateClosure        r0, r0, f6 ""
+  0052  Call2                r0, r1, r2, r0
+  0057  Ret                  r0
+
+function #3 ""  params=2 frame=12 env=0 flags=dbg  @0x0000034f size=44
+  0000  LoadParam            r2, 1
+  0003  GetEnvironment       r0, 0
+  0006  LoadFromEnvironment  r3, r0, 0
+  000a  GetByIdShort         r1, r3, #c1, s23 "push"
+  000f  LoadConstString      r0, s4 "a="
+  0013  Add                  r0, r0, r2
+  0017  Call2                r0, r1, r3, r0
+  001c  GetGlobalObject      r0
+  001e  GetByIdShort         r1, r0, #c2, s14 "step"
+  0023  LoadConstUndefined   r0
+  0025  Call2                r0, r1, r0, r2
+  002a  Ret                  r0
+
+function #4 ""  params=2 frame=12 env=0 flags=dbg  @0x0000037b size=85
+  0000  LoadParam            r2, 1
+  0003  GetEnvironment       r0, 0
+  0006  LoadFromEnvironment  r3, r0, 0
+  000a  GetByIdShort         r1, r3, #c1, s23 "push"
+  000f  LoadConstString      r0, s6 "b="
+  0013  Add                  r0, r0, r2
+  0017  Call2                r0, r1, r3, r0
+  001c  LoadConstUInt8       r0, 100
+  001f  JGreater             L1, r2, r0
+  0023  GetGlobalObject      r0
+  0025  GetByIdShort         r1, r0, #c2, s14 "step"
+  002a  LoadConstUndefined   r0
+  002c  Call2                r0, r1, r0, r2
+  0031  Ret                  r0
+L1:
+  0033  GetGlobalObject      r0
+  0035  TryGetById           r2, r0, #c3, s16 "Error"
+  003b  GetByIdShort         r0, r2, #c4, s22 "prototype"
+  0040  CreateThis           r1, r0, r2
+  0044  LoadConstString      r4, s10 "too big"
+  0048  Mov                  r5, r1
+  004b  Construct            r0, r2, 2
+  004f  SelectObject         r0, r1, r0
+  0053  Throw                r0
+
+function #5 ""  params=2 frame=12 env=0 flags=dbg  @0x000003d0 size=30
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r2, r0, #c1, s23 "push"
+  000c  LoadConstString      r3, s7 "c="
+  0010  LoadParam            r1, 1
+  0013  Add                  r1, r3, r1
+  0017  Call2                r1, r2, r0, r1
+  001c  Ret                  r0
+
+function #6 ""  params=2 frame=12 env=0 flags=dbg  @0x000003ee size=35
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r2, r0, #c1, s23 "push"
+  000c  LoadParam            r1, 1
+  000f  GetByIdShort         r3, r1, #c2, s21 "message"
+  0014  LoadConstString      r1, s8 "caught:"
+  0018  Add                  r1, r1, r3
+  001c  Call2                r1, r2, r0, r1
+  0021  Ret                  r0
+
+function #7 "asyncStyle"  params=1 frame=15 env=0 flags=dbg,nc  @0x00000411 size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b52 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f8 "?anon_0_asyncStyle"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #8 "?anon_0_asyncStyle"  params=1 frame=1 env=0 flags=nc  @0x0000042f size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f9 "?anon_0_?anon_0_asyncStyle"
+  0007  Ret                  r0
+
+function #9 "?anon_0_?anon_0_asyncStyle"  params=1 frame=18 env=0 flags=exc,dbg  @0x00000438 size=240
+  .try T1..T2 -> L8 ; handler 0
+  .try T3..T4 -> L8 ; handler 1
+  0000  StartGenerator
+  0001  LoadConstUndefined   r7
+  0003  LoadConstUndefined   r5
+  0005  LoadConstUndefined   r1
+  0007  ResumeGenerator      r0, r2
+  000a  JmpTrueLong          L10, r2
+  0010  LoadConstUndefined   r5
+  0012  NewArray             r1, 0
+  0016  GetGlobalObject      r4
+  0018  GetByIdShort         r3, r4, #c1, s14 "step"
+  001d  LoadConstUInt8       r2, 1
+  0020  Call2                r2, r3, r7, r2
+  0025  SaveGenerator        L1
+  0027  Ret                  r2
+L1:
+  0029  ResumeGenerator      r2, r3
+  002c  JmpTrueLong          L7, r3
+  0032  Mov                  r8, r1
+  0035  GetByIdShort         r6, r8, #c2, s23 "push"
+  003a  LoadConstString      r3, s4 "a="
+  003e  Add                  r3, r3, r2
+  0042  Call2                r3, r6, r8, r3
+  0047  GetByIdShort         r3, r4, #c1, s14 "step"
+  004c  Call2                r3, r3, r7, r2
+  0051  SaveGenerator        L2
+  0053  Ret                  r3
+L2:
+  0055  ResumeGenerator      r3, r6
+  0058  JmpTrue              L6, r6
+  005b  Mov                  r5, r3
+  005e  Mov                  r9, r1
+  0061  GetByIdShort         r8, r9, #c2, s23 "push"
+  0066  LoadConstString      r6, s6 "b="
+  006a  Add                  r6, r6, r3
+  006e  Call2                r6, r8, r9, r6
+  0073  LoadConstUInt8       r6, 100
+  0076  JGreater             L5, r3, r6
+  007a  GetByIdShort         r6, r4, #c1, s14 "step"
+  007f  Call2                r5, r6, r7, r5
+  0084  SaveGenerator        L3
+  0086  Ret                  r5
+L3:
+  0088  ResumeGenerator      r5, r6
+  008b  JmpTrue              L4, r6
+  008e  Mov                  r8, r1
+  0091  GetByIdShort         r7, r8, #c2, s23 "push"
+  0096  LoadConstString      r6, s7 "c="
+  009a  Add                  r6, r6, r5
+  009e  Call2                r6, r7, r8, r6
+  00a3  Jmp                  L9
+L4:
+  00a5  CompleteGenerator
+  00a6  Ret                  r5
+L5:
+  00a8  TryGetById           r6, r4, #c3, s16 "Error"
+  00ae  GetByIdShort         r4, r6, #c4, s22 "prototype"
+  00b3  CreateThis           r5, r4, r6
+  00b7  LoadConstString      r10, s10 "too big"
+  00bb  Mov                  r11, r5
+  00be  Construct            r4, r6, 2
+  00c2  SelectObject         r4, r5, r4
+  00c6  Throw                r4
+L6:
+  00c8  CompleteGenerator
+  00c9  Ret                  r3
+L7:
+  00cb  CompleteGenerator
+  00cc  Ret                  r2
+L8:
+  00ce  Catch                r2
+  00d0  Mov                  r4, r1
+  00d3  GetByIdShort         r3, r4, #c2, s23 "push"
+  00d8  GetByIdShort         r5, r2, #c5, s21 "message"
+  00dd  LoadConstString      r2, s8 "caught:"
+  00e1  Add                  r2, r2, r5
+  00e5  Call2                r2, r3, r4, r2
+L9:
+  00ea  CompleteGenerator
+  00eb  Ret                  r1
+L10:
+  00ed  CompleteGenerator
+  00ee  Ret                  r0
+
+function #10 ""  params=2 frame=13 env=0 flags=dbg  @0x00000528 size=39
+  0000  LoadParam            r2, 1
+  0003  GetGlobalObject      r0
+  0005  TryGetById           r3, r0, #c1, s15 "print"
+  000b  GetByIdShort         r1, r2, #c2, s20 "join"
+  0010  LoadConstString      r0, s1 ","
+  0014  Call2                r2, r1, r2, r0
+  0019  LoadConstUndefined   r0
+  001b  LoadConstString      r1, s9 "chain:"
+  001f  Call3                r1, r3, r0, r1, r2
+  0025  Ret                  r0
+
+function #11 ""  params=2 frame=13 env=0 flags=dbg  @0x0000054f size=39
+  0000  LoadParam            r2, 1
+  0003  GetGlobalObject      r0
+  0005  TryGetById           r3, r0, #c1, s15 "print"
+  000b  GetByIdShort         r1, r2, #c2, s20 "join"
+  0010  LoadConstString      r0, s1 ","
+  0014  Call2                r2, r1, r2, r0
+  0019  LoadConstUndefined   r0
+  001b  LoadConstString      r1, s5 "async:"
+  001f  Call3                r1, r3, r0, r1, r2
+  0025  Ret                  r0

@@ -1,0 +1,59 @@
+; hbc2js disassembly of 04-for-loop-basic/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=28 env=0 flags=dbg  @0x000000f4 size=200
+  0000  LoadConstUInt8       r10, 10
+  0003  LoadConstString      r12, s1 ":"
+  0007  LoadConstUInt8       r9, 1
+  000a  LoadConstUInt8       r14, 100
+  000d  LoadConstUInt8       r8, 2
+  0010  LoadConstUInt8       r13, 5
+  0013  LoadConstUInt8       r7, 3
+  0016  GetGlobalObject      r6
+  0018  LoadConstString      r5, s4 "i="
+  001c  LoadConstString      r4, s5 "j="
+  0020  LoadConstString      r3, s2 "dummy="
+  0024  LoadConstUndefined   r2
+  0026  NewArray             r15, 0
+  002a  LoadConstZero        r1
+  002c  Mov                  r0, r10
+L1:
+  002f  GetByIdShort         r17, r15, #c1, s9 "push"
+  0034  Add                  r16, r1, r12
+  0038  Add                  r16, r16, r0
+  003c  Call2                r16, r17, r15, r16
+  0041  AddN                 r1, r1, r9
+  0045  SubN                 r0, r0, r9
+  0049  JLessN               L1, r1, r0
+  004d  TryGetById           r1, r6, #c2, s7 "print"
+  0053  GetByIdShort         r12, r15, #c3, s8 "join"
+  0058  LoadConstString      r0, s0 " | "
+  005c  Call2                r0, r12, r15, r0
+  0061  Call2                r0, r1, r2, r0
+  0066  LoadConstZero        r1
+  0068  Mov                  r0, r9
+L2:
+  006b  Add                  r12, r0, r14
+  006f  Add                  r12, r1, r12
+  0073  Add                  r0, r0, r8
+  0077  SubN                 r14, r14, r13
+  007b  Mov                  r1, r12
+  007e  JLess                L2, r0, r14
+  0082  TryGetById           r1, r6, #c2, s7 "print"
+  0088  LoadConstString      r0, s6 "total="
+  008c  Add                  r0, r0, r12
+  0090  Call2                r0, r1, r2, r0
+  0095  LoadConstZero        r1
+L3:
+  0097  Add                  r14, r5, r1
+  009b  MulN                 r0, r1, r10
+  009f  Add                  r13, r3, r0
+  00a3  LoadConstZero        r12
+L4:
+  00a5  TryGetById           r15, r6, #c2, s7 "print"
+  00ab  Add                  r0, r4, r12
+  00af  Call4                r0, r15, r2, r14, r0, r13
+  00b6  AddN                 r12, r12, r9
+  00ba  JLessN               L4, r12, r8
+  00be  AddN                 r1, r1, r9
+  00c2  JLessN               L3, r1, r7
+  00c6  Ret                  r0

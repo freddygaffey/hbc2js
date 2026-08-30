@@ -1,0 +1,83 @@
+; hbc2js disassembly of 20-let-const-tdz/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=3 strings=17 globalCodeIndex=0
+function #0 "global"  params=1 frame=10 env=0 flags=dbg  @0x000001b4 size=58
+  0000  DeclareGlobalVar     s12 "tdzDemo"
+  0005  DeclareGlobalVar     s14 "blockTdz"
+  000a  CreateEnvironment    r1
+  000c  CreateClosure        r2, r1, f1 "tdzDemo"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r2, #c1, s12 "tdzDemo"
+  0019  CreateClosure        r1, r1, f2 "blockTdz"
+  001e  PutById              r0, r1, #c2, s14 "blockTdz"
+  0024  GetByIdShort         r2, r0, #c1, s12 "tdzDemo"
+  0029  LoadConstUndefined   r1
+  002b  Call1                r2, r2, r1
+  002f  GetByIdShort         r0, r0, #c2, s14 "blockTdz"
+  0034  Call1                r0, r0, r1
+  0038  Ret                  r0
+
+function #1 "tdzDemo"  params=1 frame=16 env=0 flags=exc,dbg  @0x000001ee size=97
+  .try T1..T2 -> L1 ; handler 0
+  0000  LoadConstEmpty       r0
+  0002  GetGlobalObject      r1
+  0004  TryGetById           r3, r1, #c1, s11 "print"
+  000a  Mov                  r1, r0
+  000d  ThrowIfEmpty         r2, r1
+  0010  LoadConstUndefined   r1
+  0012  Call2                r1, r3, r1, r2
+  0017  Jmp                  L2
+L1:
+  0019  Catch                r2
+  001b  GetGlobalObject      r1
+  001d  TryGetById           r5, r1, #c1, s11 "print"
+  0023  GetByIdShort         r3, r2, #c2, s15 "constructor"
+  0028  GetByIdShort         r4, r3, #c3, s16 "name"
+  002d  TryGetById           r1, r1, #c4, s13 "ReferenceError"
+  0033  InstanceOf           r3, r2, r1
+  0037  LoadConstUndefined   r2
+  0039  LoadConstString      r1, s2 "caught:"
+  003d  Call4                r1, r5, r2, r1, r4, r3
+L2:
+  0044  LoadConstString      r3, s7 "now-initialized"
+  0048  Mov                  r0, r3
+  004b  GetGlobalObject      r0
+  004d  TryGetById           r2, r0, #c1, s11 "print"
+  0053  LoadConstUndefined   r0
+  0055  LoadConstString      r1, s0 "after declaration:"
+  0059  Call3                r1, r2, r0, r1, r3
+  005f  Ret                  r0
+
+function #2 "blockTdz"  params=1 frame=18 env=0 flags=exc,dbg  @0x0000024f size=112
+  .try T1..T2 -> L1 ; handler 0
+  0000  LoadConstString      r0, s8 "outer"
+  0004  GetGlobalObject      r1
+  0006  TryGetById           r3, r1, #c1, s11 "print"
+  000c  Mov                  r2, r0
+  000f  LoadConstUndefined   r1
+  0011  Call2                r1, r3, r1, r2
+  0016  Jmp                  L2
+L1:
+  0018  Catch                r1
+  001a  GetGlobalObject      r2
+  001c  TryGetById           r4, r2, #c1, s11 "print"
+  0022  GetByIdShort         r1, r1, #c2, s15 "constructor"
+  0027  GetByIdShort         r3, r1, #c3, s16 "name"
+  002c  LoadConstUndefined   r2
+  002e  LoadConstString      r1, s1 "inner block TDZ caught:"
+  0032  Call3                r1, r4, r2, r1, r3
+L2:
+  0038  LoadConstString      r3, s6 "shadowed"
+  003c  Mov                  r0, r3
+  003f  GetGlobalObject      r1
+  0041  TryGetById           r6, r1, #c1, s11 "print"
+  0047  LoadConstUndefined   r0
+  0049  LoadConstString      r10, s4 "inner val:"
+  004d  LoadConstString      r8, s10 "val2:"
+  0051  LoadConstString      r7, s5 "inner-shadow"
+  0055  LoadConstUndefined   r11
+  0057  Mov                  r9, r3
+  005a  Call                 r2, r6, 5
+  005e  TryGetById           r2, r1, #c1, s11 "print"
+  0064  LoadConstString      r1, s9 "outer val unchanged:"
+  0068  Call3                r1, r2, r0, r1, r3
+  006e  Ret                  r0

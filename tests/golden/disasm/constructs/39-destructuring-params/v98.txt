@@ -1,0 +1,149 @@
+; hbc2js disassembly of 39-destructuring-params/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=19 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x000001c0 size=259
+  0000  CreateFunctionEnvironment r4, 1
+  0003  DeclareGlobalVar     s12 "defaultFactory"
+  0008  DeclareGlobalVar     s16 "makeUser"
+  000d  DeclareGlobalVar     s15 "sumPair"
+  0012  GetGlobalObject      r3
+  0014  CreateClosure        r5, r4, f1 "defaultFactory"
+  0019  PutByIdLoose         r3, r5, #c0, s12 "defaultFactory"
+  001f  LoadConstUndefined   r1
+  0021  CreateClosure        r5, r1, f2 "makeUser"
+  0026  PutByIdLoose         r3, r5, #c1, s16 "makeUser"
+  002c  CreateClosure        r5, r1, f3 "sumPair"
+  0031  PutByIdLoose         r3, r5, #c2, s15 "sumPair"
+  0037  LoadConstZero        r0
+  0039  StoreNPToEnvironment r4, 0, r0
+  003d  TryGetById           r6, r3, #c0, s17 "print"
+  0043  GetByIdShort         r7, r3, #c1, s16 "makeUser"
+  0048  NewObjectWithBuffer  r5, sh0(numProps=1), lit@0x0000
+  004e  Call2                r5, r7, r1, r5
+  0053  Call2                r5, r6, r1, r5
+  0058  TryGetById           r6, r3, #c0, s17 "print"
+  005e  GetByIdShort         r7, r3, #c1, s16 "makeUser"
+  0063  NewObjectWithBuffer  r5, sh0(numProps=1), lit@0x0005
+  0069  Call2                r5, r7, r1, r5
+  006e  Call2                r5, r6, r1, r5
+  0073  TryGetById           r6, r3, #c0, s17 "print"
+  0079  GetByIdShort         r7, r3, #c1, s16 "makeUser"
+  007e  NewObjectWithBuffer  r5, sh1(numProps=3), lit@0x000a
+  0084  NewArrayWithBuffer   r8, 2, 2, lit@0x0013
+  008c  PutOwnBySlotIdx      r5, r8, 2
+  0090  Call2                r5, r7, r1, r5
+  0095  Call2                r5, r6, r1, r5
+  009a  TryGetById           r6, r3, #c0, s17 "print"
+  00a0  LoadFromEnvironment  r2, r4, 0
+  00a4  LoadConstString      r5, s9 "times"
+  00a8  LoadConstString      r4, s7 "defaultFactory was called"
+  00ac  Call4                r4, r6, r1, r4, r2, r5
+  00b3  TryGetById           r5, r3, #c0, s17 "print"
+  00b9  GetByIdShort         r6, r3, #c2, s15 "sumPair"
+  00be  NewArrayWithBuffer   r4, 2, 2, lit@0x0018
+  00c6  Call2                r4, r6, r1, r4
+  00cb  Call2                r4, r5, r1, r4
+  00d0  TryGetById           r5, r3, #c0, s17 "print"
+  00d6  GetByIdShort         r6, r3, #c2, s15 "sumPair"
+  00db  NewArrayWithBuffer   r4, 1, 1, lit@0x0021
+  00e3  Call2                r4, r6, r1, r4
+  00e8  Call2                r4, r5, r1, r4
+  00ed  TryGetById           r4, r3, #c0, s17 "print"
+  00f3  GetByIdShort         r3, r3, #c2, s15 "sumPair"
+  00f8  Call1                r3, r3, r1
+  00fc  Call2                r3, r4, r1, r3
+  0101  Ret                  r3
+
+function #1 "defaultFactory"  params=1 frame=3 env=0 flags=none  @0x000002c3 size=24
+  0000  GetParentEnvironment r2, 0
+  0003  LoadFromEnvironment  r1, r2, 0
+  0007  Inc                  r0, r1
+  000a  StoreNPToEnvironment r2, 0, r0
+  000e  LoadConstString      r2, s10 "generated-"
+  0012  Add                  r2, r2, r0
+  0016  Ret                  r2
+
+function #2 "makeUser"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x000002db size=97
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  JStrictNotEqual      L1, r1, r0
+  0009  NewObject            r1
+L1:
+  000b  GetByIdShort         r3, r1, #c0, s11 "id"
+  0010  GetByIdShort         r2, r1, #c1, s14 "name"
+  0015  JStrictNotEqual      L2, r2, r0
+  0019  GetGlobalObject      r4
+  001b  GetByIdShort         r4, r4, #c2, s12 "defaultFactory"
+  0020  Call1                r2, r4, r0
+L2:
+  0024  GetByIdShort         r4, r1, #c3, s18 "tags"
+  0029  JStrictNotEqual      L3, r4, r0
+  002d  NewArray             r4, 0
+L3:
+  0031  LoadConstString      r1, s1 ":"
+  0035  Add                  r1, r3, r1
+  0039  Add                  r3, r1, r2
+  003d  GetByIdShort         r2, r4, #c4, s13 "join"
+  0042  LoadConstString      r1, s0 ","
+  0046  Call2                r2, r2, r4, r1
+  004b  LoadConstString      r1, s2 ":["
+  004f  AddS                 r1, r3, r1
+  0053  Add                  r2, r1, r2
+  0057  LoadConstString      r1, s3 "]"
+  005b  AddS                 r1, r2, r1
+  005f  Ret                  r1
+
+function #3 "sumPair"  params=1 frame=9 env=0 flags=overflowed,ctor  @0x0000033c size=133
+  0000  LoadParam            r2, 1
+  0003  LoadConstUndefined   r7
+  0005  JStrictNotEqual      L1, r2, r7
+  0009  NewArray             r2, 0
+L1:
+  000d  Mov                  r0, r2
+  0010  IteratorBegin        r1, r0
+  0013  LoadConstUndefined   r4
+  0015  Mov                  r2, r0
+  0018  IteratorNext         r2, r1, r2
+  001c  Mov                  r3, r1
+  001f  StrictEq             r3, r3, r7
+  0023  JmpTrue              L2, r3
+  0026  Mov                  r4, r2
+  0029  JStrictNotEqual      L3, r2, r7
+L2:
+  002d  LoadConstZero        r4
+L3:
+  002f  Mov                  r5, r4
+  0032  LoadConstUndefined   r4
+  0034  Mov                  r6, r3
+  0037  JmpTrue              L4, r3
+  003a  IteratorNext         r8, r1, r0
+  003e  Mov                  r0, r1
+  0041  StrictEq             r0, r0, r7
+  0045  Mov                  r2, r0
+  0048  JmpTrue              L5, r2
+  004b  Mov                  r4, r8
+  004e  Mov                  r6, r0
+L4:
+  0051  Mov                  r0, r4
+  0054  Mov                  r2, r6
+  0057  Mov                  r6, r2
+  005a  JStrictNotEqual      L6, r0, r7
+L5:
+  005e  LoadConstZero        r4
+  0060  Mov                  r6, r2
+  0063  Jmp                  L6
+  0065  Catch                r0
+  0067  Jmp                  L8
+L6:
+  0069  JmpTrue              L7, r6
+  006c  Mov                  r6, r1
+  006f  IteratorClose        r6, 0
+L7:
+  0072  Add                  r4, r5, r4
+  0076  Ret                  r4
+  0078  Catch                r0
+  007a  Mov                  r2, r3
+L8:
+  007d  JmpTrue              L9, r2
+  0080  IteratorClose        r1, 1
+L9:
+  0083  Throw                r0

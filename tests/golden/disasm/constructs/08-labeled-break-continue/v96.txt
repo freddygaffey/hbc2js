@@ -1,0 +1,56 @@
+; hbc2js disassembly of 08-labeled-break-continue/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=dbg  @0x00000110 size=183
+  0000  NewArray             r2, 0
+  0004  LoadConstUInt8       r5, 5
+  0007  LoadConstString      r4, s1 "*"
+  000b  LoadConstString      r3, s3 "="
+  000f  LoadConstUInt8       r1, 6
+  0012  LoadConstZero        r0
+L1:
+  0014  Add                  r8, r0, r4
+  0018  LoadConstZero        r6
+L2:
+  001a  Mul                  r11, r0, r6
+  001e  JGreater             L3, r11, r1
+  0022  GetByIdShort         r10, r2, #c1, s9 "push"
+  0027  Add                  r9, r8, r6
+  002b  Add                  r9, r9, r3
+  002f  Add                  r9, r9, r11
+  0033  Call2                r9, r10, r2, r9
+  0038  Inc                  r6, r6
+  003b  JLess                L2, r6, r5
+  003f  Inc                  r0, r0
+  0042  JLess                L1, r0, r5
+L3:
+  0046  GetGlobalObject      r0
+  0048  TryGetById           r5, r0, #c2, s8 "print"
+  004e  GetByIdShort         r1, r2, #c3, s7 "join"
+  0053  LoadConstString      r4, s0 " | "
+  0057  Call2                r2, r1, r2, r4
+  005c  LoadConstUndefined   r3
+  005e  LoadConstString      r1, s4 "break outer trail:"
+  0062  Call3                r1, r5, r3, r1, r2
+  0068  NewArray             r1, 0
+  006c  LoadConstUInt8       r6, 4
+  006f  LoadConstString      r5, s2 ","
+  0073  LoadConstZero        r2
+L4:
+  0075  Add                  r9, r2, r5
+  0079  LoadConstZero        r8
+L5:
+  007b  JStrictEqual         L6, r8, r2
+  007f  GetByIdShort         r11, r1, #c1, s9 "push"
+  0084  Add                  r10, r9, r8
+  0088  Call2                r10, r11, r1, r10
+  008d  Inc                  r8, r8
+  0090  JLess                L5, r8, r6
+L6:
+  0094  Inc                  r2, r2
+  0097  JLess                L4, r2, r6
+  009b  TryGetById           r2, r0, #c2, s8 "print"
+  00a1  GetByIdShort         r0, r1, #c3, s7 "join"
+  00a6  Call2                r1, r0, r1, r4
+  00ab  LoadConstString      r0, s5 "continue outer trail:"
+  00af  Call3                r0, r2, r3, r0, r1
+  00b5  Ret                  r0

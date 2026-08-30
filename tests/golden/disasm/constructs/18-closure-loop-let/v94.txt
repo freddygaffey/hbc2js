@@ -1,0 +1,81 @@
+; hbc2js disassembly of 18-closure-loop-let/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=5 strings=11 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=2 flags=dbg  @0x00000160 size=205
+  0000  CreateEnvironment    r0
+  0002  LoadConstUInt8       r7, 3
+  0005  LoadConstZero        r6
+  0007  LoadConstUInt8       r5, 2
+  000a  NewArray             r4, 0
+  000e  StoreNPToEnvironment r0, 0, r6
+L1:
+  0012  GetByIdShort         r2, r4, #c1, s10 "push"
+  0017  CreateClosure        r1, r0, f1 ""
+  001c  Call2                r1, r2, r4, r1
+  0021  LoadFromEnvironment  r1, r0, 0
+  0025  Inc                  r1, r1
+  0028  StoreToEnvironment   r0, 0, r1
+  002c  JLess                L1, r1, r7
+  0030  GetGlobalObject      r1
+  0032  TryGetById           r8, r1, #c2, s9 "print"
+  0038  GetByIdShort         r3, r4, #c3, s8 "map"
+  003d  CreateClosure        r2, r0, f2 ""
+  0042  Call2                r4, r3, r4, r2
+  0047  GetByIdShort         r3, r4, #c4, s7 "join"
+  004c  LoadConstString      r2, s2 ","
+  0050  Call2                r4, r3, r4, r2
+  0055  LoadConstUndefined   r3
+  0057  LoadConstString      r2, s4 "let closures each see own i:"
+  005b  Call3                r2, r8, r3, r2, r4
+  0061  NewArray             r4, 0
+  0065  StoreNPToEnvironment r0, 0, r6
+  0069  StoreNPToEnvironment r0, 1, r3
+L2:
+  006d  StoreNPToEnvironment r0, 1, r6
+L3:
+  0071  GetByIdShort         r8, r4, #c1, s10 "push"
+  0076  CreateClosure        r2, r0, f3 ""
+  007b  Call2                r2, r8, r4, r2
+  0080  LoadFromEnvironment  r2, r0, 1
+  0084  Inc                  r2, r2
+  0087  StoreToEnvironment   r0, 1, r2
+  008b  JLess                L3, r2, r5
+  008f  LoadFromEnvironment  r2, r0, 0
+  0093  Inc                  r2, r2
+  0096  StoreToEnvironment   r0, 0, r2
+  009a  JLess                L2, r2, r7
+  009e  TryGetById           r2, r1, #c2, s9 "print"
+  00a4  GetByIdShort         r1, r4, #c3, s8 "map"
+  00a9  CreateClosure        r0, r0, f4 ""
+  00ae  Call2                r4, r1, r4, r0
+  00b3  GetByIdShort         r1, r4, #c4, s7 "join"
+  00b8  LoadConstString      r0, s1 " | "
+  00bc  Call2                r1, r1, r4, r0
+  00c1  LoadConstString      r0, s6 "nested let closures:"
+  00c5  Call3                r0, r2, r3, r0, r1
+  00cb  Ret                  r0
+
+function #1 ""  params=1 frame=1 env=0 flags=none  @0x0000022d size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  Ret                  r0
+
+function #2 ""  params=2 frame=9 env=0 flags=dbg  @0x00000236 size=11
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  Call1                r0, r1, r0
+  0009  Ret                  r0
+
+function #3 ""  params=1 frame=3 env=0 flags=dbg  @0x00000241 size=25
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  LoadConstString      r1, s5 ":"
+  000b  Add                  r1, r2, r1
+  000f  LoadFromEnvironment  r0, r0, 1
+  0013  Add                  r0, r1, r0
+  0017  Ret                  r0
+
+function #4 ""  params=2 frame=9 env=0 flags=dbg  @0x00000236 size=11
+  0000  LoadParam            r1, 1
+  0003  LoadConstUndefined   r0
+  0005  Call1                r0, r1, r0
+  0009  Ret                  r0

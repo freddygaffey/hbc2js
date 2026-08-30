@@ -1,0 +1,829 @@
+; hbc2js disassembly of 25-generator-delegation/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=7 strings=33 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x00000344 size=192
+  0000  DeclareGlobalVar     s23 "inner"
+  0005  DeclareGlobalVar     s29 "outer"
+  000a  DeclareGlobalVar     s27 "delegatesToArray"
+  000f  GetGlobalObject      r0
+  0011  LoadConstUndefined   r2
+  0013  CreateClosure        r1, r2, f1 "inner"
+  0018  PutByIdLoose         r0, r1, #c0, s23 "inner"
+  001e  CreateFunctionEnvironment r1, 0
+  0021  CreateClosure        r1, r1, f2 "outer"
+  0026  PutByIdLoose         r0, r1, #c1, s29 "outer"
+  002c  CreateClosure        r1, r2, f3 "delegatesToArray"
+  0031  PutByIdLoose         r0, r1, #c2, s27 "delegatesToArray"
+  0037  NewArray             r5, 0
+  003b  GetByIdShort         r1, r0, #c0, s29 "outer"
+  0040  Call1                r4, r1, r2
+  0044  Mov                  r1, r4
+  0047  IteratorBegin        r3, r1
+L1:
+  004a  Mov                  r4, r1
+  004d  IteratorNext         r7, r3, r4
+  0051  Mov                  r4, r3
+  0054  JStrictEqual         L2, r4, r2
+  0058  GetByIdShort         r6, r5, #c1, s31 "push"
+  005d  TryGetById           r4, r0, #c2, s24 "String"
+  0063  Call2                r4, r4, r2, r7
+  0068  Call2                r4, r6, r5, r4
+  006d  Jmp                  L1
+  006f  Catch                r1
+  0071  IteratorClose        r3, 1
+  0074  Throw                r1
+L2:
+  0076  TryGetById           r3, r0, #c3, s30 "print"
+  007c  GetByIdShort         r4, r5, #c4, s22 "join"
+  0081  LoadConstString      r1, s3 " | "
+  0085  Call2                r1, r4, r5, r1
+  008a  Call2                r1, r3, r2, r1
+  008f  TryGetById           r1, r0, #c3, s30 "print"
+  0095  GetByIdShort         r0, r0, #c5, s27 "delegatesToArray"
+  009a  Call1                r9, r0, r2
+  009e  NewArray             r4, 0
+  00a2  LoadConstZero        r8
+  00a4  Mov                  r10, r4
+  00a7  CallBuiltin          r0, b48 "arraySpread", 4
+  00ab  GetByIdShort         r3, r4, #c4, s22 "join"
+  00b0  LoadConstString      r0, s4 ","
+  00b4  Call2                r0, r3, r4, r0
+  00b9  Call2                r0, r1, r2, r0
+  00be  Ret                  r0
+
+function #1 "inner"  params=1 frame=2 env=0 flags=nc  @0x00000404 size=20
+  0000  CreateFunctionEnvironment r1, 2
+  0003  LoadConstZero        r0
+  0005  StoreNPToEnvironment r1, 1, r0
+  0009  StoreNPToEnvironment r1, 0, r0
+  000d  CreateGenerator      r1, r1, f4 "inner"
+  0012  Ret                  r1
+
+function #2 "outer"  params=1 frame=2 env=0 flags=nc  @0x00000418 size=24
+  0000  CreateFunctionEnvironment r1, 17
+  0003  LoadConstZero        r0
+  0005  StoreNPToEnvironment r1, 15, r0
+  0009  StoreNPToEnvironment r1, 16, r0
+  000d  StoreNPToEnvironment r1, 13, r0
+  0011  CreateGenerator      r1, r1, f5 "outer"
+  0016  Ret                  r1
+
+function #3 "delegatesToArray"  params=1 frame=2 env=0 flags=nc  @0x00000430 size=24
+  0000  CreateFunctionEnvironment r1, 8
+  0003  LoadConstZero        r0
+  0005  StoreNPToEnvironment r1, 6, r0
+  0009  StoreNPToEnvironment r1, 7, r0
+  000d  StoreNPToEnvironment r1, 5, r0
+  0011  CreateGenerator      r1, r1, f6 "delegatesToArray"
+  0016  Ret                  r1
+
+function #4 "inner"  params=1 frame=17 env=0 flags=overflowed,ctor  @0x00000448 size=289
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 0
+  0007  Mov                  r2, r0
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L12, r0, r4
+  0014  LoadParam            r0, 2
+  0017  LoadParam            r3, 1
+  001a  Mov                  r5, r2
+  001d  LoadConstUInt8       r6, 3
+  0020  JStrictEqualLong     L9, r5, r6
+  0027  Mov                  r2, r4
+  002a  StoreNPToEnvironment r1, 0, r4
+  002e  LoadFromEnvironment  r7, r1, 1
+  0032  LoadConstZero        r5
+  0034  JStrictEqual         L6, r5, r7
+  0038  LoadConstUInt8       r5, 1
+  003b  JStrictEqual         L3, r5, r7
+  003f  JStrictEqual         L2, r3, r5
+  0043  JStrictEqual         L1, r3, r4
+  0047  Mov                  r2, r6
+  004a  StoreNPToEnvironment r1, 0, r6
+  004e  NewObjectWithBuffer  r7, sh0(numProps=2), lit@0x000c
+  0054  Ret                  r7
+L1:
+  0056  Mov                  r2, r6
+  0059  StoreNPToEnvironment r1, 0, r6
+  005d  NewObjectWithBuffer  r7, sh0(numProps=2), lit@0x0000
+  0063  PutOwnBySlotIdx      r7, r0, 0
+  0067  Ret                  r7
+L2:
+  0069  Mov                  r2, r6
+  006c  StoreNPToEnvironment r1, 0, r6
+  0070  Throw                r0
+L3:
+  0072  JStrictEqual         L5, r3, r5
+  0076  JStrictEqual         L4, r3, r4
+  007a  StoreNPToEnvironment r1, 1, r4
+  007e  Mov                  r2, r5
+  0081  StoreNPToEnvironment r1, 0, r5
+  0085  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0008
+  008b  Ret                  r5
+L4:
+  008d  Mov                  r2, r6
+  0090  StoreNPToEnvironment r1, 0, r6
+  0094  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0000
+  009a  PutOwnBySlotIdx      r5, r0, 0
+  009e  Ret                  r5
+L5:
+  00a0  Mov                  r2, r6
+  00a3  StoreNPToEnvironment r1, 0, r6
+  00a7  Throw                r0
+L6:
+  00a9  LoadConstUInt8       r5, 1
+  00ac  JStrictEqual         L8, r3, r5
+  00b0  JStrictEqual         L7, r3, r4
+  00b4  StoreNPToEnvironment r1, 1, r5
+  00b8  Mov                  r2, r5
+  00bb  StoreNPToEnvironment r1, 0, r5
+  00bf  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0004
+  00c5  Ret                  r5
+L7:
+  00c7  Mov                  r2, r6
+  00ca  StoreNPToEnvironment r1, 0, r6
+  00ce  NewObjectWithBuffer  r5, sh0(numProps=2), lit@0x0000
+  00d4  PutOwnBySlotIdx      r5, r0, 0
+  00d8  Ret                  r5
+L8:
+  00da  Mov                  r2, r6
+  00dd  StoreNPToEnvironment r1, 0, r6
+  00e1  Throw                r0
+  00e3  Catch                r5
+  00e5  Mov                  r2, r6
+  00e8  StoreNPToEnvironment r1, 0, r6
+  00ec  Throw                r5
+L9:
+  00ee  LoadConstUInt8       r5, 1
+  00f1  JStrictEqual         L11, r3, r5
+  00f5  JStrictEqual         L10, r3, r4
+  00f9  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
+  00ff  Ret                  r3
+L10:
+  0101  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
+  0107  PutOwnBySlotIdx      r3, r0, 0
+  010b  Ret                  r3
+L11:
+  010d  Throw                r0
+L12:
+  010f  LoadConstUInt8       r0, 3
+  0112  Mov                  r2, r0
+  0115  StoreNPToEnvironment r1, 0, r0
+  0119  LoadConstString      r8, s5 "Generator functions may not be c…"
+  011d  CallBuiltin          r0, b44 "throwTypeError", 2
+
+function #5 "outer"  params=1 frame=41 env=0 flags=overflowed,ctor  @0x00000569 size=1646
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 16
+  0007  Mov                  r2, r0
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L52, r0, r4
+  0014  LoadParam            r0, 2
+  0017  LoadParam            r3, 1
+  001a  Mov                  r26, r2
+  001d  LoadConstUInt8       r7, 3
+  0020  LoadConstUInt8       r25, 4
+  0023  LoadConstUInt8       r24, 6
+  0026  LoadConstUInt8       r23, 9
+  0029  LoadConstUInt8       r5, 1
+  002c  LoadConstZero        r22
+  002e  LoadConstUndefined   r21
+  0030  LoadConstString      r20, s1 "inner returned: "
+  0034  LoadConstString      r19, s14 "iterator.next() did not return a…"
+  0038  GetGlobalObject      r18
+  003a  GetBuiltinClosure    r17, b0 "globalThis.Symbol"
+  003d  LoadConstString      r16, s13 "iterator is not an object"
+  0041  LoadConstString      r15, s16 "iterator.return() did not return…"
+  0045  LoadConstString      r14, s2 "return"
+  0049  LoadConstUInt8       r13, 8
+  004c  LoadConstUInt8       r12, 7
+  004f  LoadConstString      r11, s6 "ab"
+  0053  LoadConstUInt8       r10, 5
+  0056  LoadConstString      r9, s17 "iterator.throw() did not return …"
+  005a  LoadConstString      r8, s18 "throw"
+  005e  JStrictEqualLong     L49, r26, r7
+L1:
+  0065  Mov                  r2, r4
+  0068  StoreNPToEnvironment r1, 16, r4
+  006c  LoadFromEnvironment  r26, r1, 15
+  0070  JStrictEqualLong     L43, r22, r26
+  0077  JStrictEqualLong     L38, r5, r26
+  007e  JStrictEqualLong     L33, r4, r26
+  0085  JStrictEqualLong     L26, r7, r26
+  008c  JStrictEqualLong     L22, r25, r26
+  0093  JStrictEqualLong     L17, r10, r26
+  009a  JStrictEqualLong     L13, r24, r26
+  00a1  JStrictEqualLong     L8, r12, r26
+  00a8  JStrictEqual         L5, r13, r26
+  00ac  LoadFromEnvironment  r32, r1, 7
+  00b0  LoadFromEnvironment  r28, r1, 14
+  00b4  Mov                  r6, r28
+  00b7  StoreNPToEnvironment r1, 13, r22
+  00bb  Mov                  r31, r8
+  00be  CallBuiltin          r27, b43 "getMethod", 3
+  00c2  JStrictEqual         L3, r27, r21
+  00c6  LoadFromEnvironment  r26, r1, 7
+  00ca  Call2                r26, r27, r26, r28
+  00cf  Mov                  r32, r26
+  00d2  Mov                  r31, r9
+  00d5  CallBuiltin          r27, b42 "ensureObject", 3
+  00d9  GetByIdShort         r27, r26, #c0, s28 "done"
+  00de  JmpTrue              L2, r27
+  00e1  StoreNPToEnvironment r1, 15, r12
+  00e5  Mov                  r2, r5
+  00e8  StoreNPToEnvironment r1, 16, r5
+  00ec  Ret                  r26
+L2:
+  00ee  StoreToEnvironment   r1, 5, r26
+  00f2  JmpLong              L30
+L3:
+  00f7  LoadFromEnvironment  r32, r1, 7
+  00fb  Mov                  r31, r14
+  00fe  CallBuiltin          r27, b43 "getMethod", 3
+  0102  JStrictEqual         L4, r27, r21
+  0106  LoadFromEnvironment  r26, r1, 7
+  010a  Call1                r32, r27, r26
+  010e  Mov                  r31, r15
+  0111  CallBuiltin          r26, b42 "ensureObject", 3
+L4:
+  0115  LoadConstString      r32, s20 "yield* delegate must have a .thr…"
+  0119  CallBuiltin          r26, b44 "throwTypeError", 2
+L5:
+  011d  JStrictEqual         L7, r3, r5
+  0121  JStrictEqual         L6, r3, r4
+  0125  Mov                  r2, r7
+  0128  StoreNPToEnvironment r1, 16, r7
+  012c  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0002
+  0132  Ret                  r26
+L6:
+  0134  Mov                  r2, r7
+  0137  StoreNPToEnvironment r1, 16, r7
+  013b  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  0141  PutOwnBySlotIdx      r26, r0, 0
+  0145  Ret                  r26
+L7:
+  0147  Mov                  r2, r7
+  014a  StoreNPToEnvironment r1, 16, r7
+  014e  Throw                r0
+L8:
+  0150  StoreNPToEnvironment r1, 13, r7
+  0154  JStrictEqualLong     L12, r3, r5
+  015b  StoreToEnvironment   r1, 4, r0
+  015f  JStrictEqual         L9, r3, r4
+  0163  StoreNPToEnvironment r1, 13, r22
+  0167  Mov                  r28, r0
+  016a  JmpLong              L29
+L9:
+  016f  StoreToEnvironment   r1, 4, r0
+  0173  StoreNPToEnvironment r1, 13, r22
+  0177  LoadFromEnvironment  r32, r1, 7
+  017b  Mov                  r31, r14
+  017e  CallBuiltin          r29, b43 "getMethod", 3
+  0182  JStrictEqual         L11, r29, r21
+  0186  LoadFromEnvironment  r27, r1, 7
+  018a  LoadFromEnvironment  r26, r1, 4
+  018e  Call2                r26, r29, r27, r26
+  0193  Mov                  r32, r26
+  0196  Mov                  r31, r15
+  0199  CallBuiltin          r27, b42 "ensureObject", 3
+  019d  GetByIdShort         r27, r26, #c0, s28 "done"
+  01a2  JmpTrue              L10, r27
+  01a5  StoreNPToEnvironment r1, 15, r12
+  01a9  Mov                  r2, r5
+  01ac  StoreNPToEnvironment r1, 16, r5
+  01b0  Ret                  r26
+L10:
+  01b2  GetByIdShort         r27, r26, #c1, s32 "value"
+  01b7  Mov                  r2, r7
+  01ba  StoreNPToEnvironment r1, 16, r7
+  01be  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  01c4  PutOwnBySlotIdx      r26, r27, 0
+  01c8  Ret                  r26
+L11:
+  01ca  Mov                  r2, r7
+  01cd  StoreNPToEnvironment r1, 16, r7
+  01d1  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  01d7  PutOwnBySlotIdx      r26, r0, 0
+  01db  Ret                  r26
+L12:
+  01dd  Mov                  r2, r7
+  01e0  StoreNPToEnvironment r1, 16, r7
+  01e4  Throw                r0
+L13:
+  01e6  LoadFromEnvironment  r32, r1, 9
+  01ea  LoadFromEnvironment  r29, r1, 14
+  01ee  Mov                  r6, r29
+  01f1  StoreNPToEnvironment r1, 13, r22
+  01f5  Mov                  r31, r8
+  01f8  CallBuiltin          r27, b43 "getMethod", 3
+  01fc  JStrictEqual         L15, r27, r21
+  0200  LoadFromEnvironment  r26, r1, 9
+  0204  Call2                r26, r27, r26, r29
+  0209  Mov                  r32, r26
+  020c  Mov                  r31, r9
+  020f  CallBuiltin          r27, b42 "ensureObject", 3
+  0213  GetByIdShort         r27, r26, #c0, s28 "done"
+  0218  JmpTrue              L14, r27
+  021b  StoreNPToEnvironment r1, 15, r10
+  021f  Mov                  r2, r5
+  0222  StoreNPToEnvironment r1, 16, r5
+  0226  Ret                  r26
+L14:
+  0228  StoreToEnvironment   r1, 3, r26
+  022c  JmpLong              L28
+L15:
+  0231  LoadFromEnvironment  r32, r1, 9
+  0235  Mov                  r31, r14
+  0238  CallBuiltin          r27, b43 "getMethod", 3
+  023c  JStrictEqual         L16, r27, r21
+  0240  LoadFromEnvironment  r26, r1, 9
+  0244  Call1                r32, r27, r26
+  0248  Mov                  r31, r15
+  024b  CallBuiltin          r26, b42 "ensureObject", 3
+L16:
+  024f  LoadConstString      r32, s20 "yield* delegate must have a .thr…"
+  0253  CallBuiltin          r26, b44 "throwTypeError", 2
+L17:
+  0257  StoreNPToEnvironment r1, 13, r4
+  025b  JStrictEqualLong     L21, r3, r5
+  0262  StoreToEnvironment   r1, 2, r0
+  0266  JStrictEqual         L18, r3, r4
+  026a  StoreNPToEnvironment r1, 13, r22
+  026e  Mov                  r29, r0
+  0271  JmpLong              L27
+L18:
+  0276  StoreToEnvironment   r1, 2, r0
+  027a  StoreNPToEnvironment r1, 13, r22
+  027e  LoadFromEnvironment  r32, r1, 9
+  0282  Mov                  r31, r14
+  0285  CallBuiltin          r30, b43 "getMethod", 3
+  0289  JStrictEqual         L20, r30, r21
+  028d  LoadFromEnvironment  r27, r1, 9
+  0291  LoadFromEnvironment  r26, r1, 2
+  0295  Call2                r26, r30, r27, r26
+  029a  Mov                  r32, r26
+  029d  Mov                  r31, r15
+  02a0  CallBuiltin          r27, b42 "ensureObject", 3
+  02a4  GetByIdShort         r27, r26, #c0, s28 "done"
+  02a9  JmpTrue              L19, r27
+  02ac  StoreNPToEnvironment r1, 15, r10
+  02b0  Mov                  r2, r5
+  02b3  StoreNPToEnvironment r1, 16, r5
+  02b7  Ret                  r26
+L19:
+  02b9  GetByIdShort         r27, r26, #c1, s32 "value"
+  02be  Mov                  r2, r7
+  02c1  StoreNPToEnvironment r1, 16, r7
+  02c5  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  02cb  PutOwnBySlotIdx      r26, r27, 0
+  02cf  Ret                  r26
+L20:
+  02d1  Mov                  r2, r7
+  02d4  StoreNPToEnvironment r1, 16, r7
+  02d8  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  02de  PutOwnBySlotIdx      r26, r0, 0
+  02e2  Ret                  r26
+L21:
+  02e4  Mov                  r2, r7
+  02e7  StoreNPToEnvironment r1, 16, r7
+  02eb  Throw                r0
+L22:
+  02ed  LoadFromEnvironment  r32, r1, 11
+  02f1  LoadFromEnvironment  r30, r1, 14
+  02f5  Mov                  r6, r30
+  02f8  StoreNPToEnvironment r1, 13, r22
+  02fc  Mov                  r31, r8
+  02ff  CallBuiltin          r27, b43 "getMethod", 3
+  0303  JStrictEqual         L24, r27, r21
+  0307  LoadFromEnvironment  r26, r1, 11
+  030b  Call2                r26, r27, r26, r30
+  0310  Mov                  r32, r26
+  0313  Mov                  r31, r9
+  0316  CallBuiltin          r27, b42 "ensureObject", 3
+  031a  GetByIdShort         r27, r26, #c0, s28 "done"
+  031f  JmpTrue              L23, r27
+  0322  StoreNPToEnvironment r1, 15, r4
+  0326  Mov                  r2, r5
+  0329  StoreNPToEnvironment r1, 16, r5
+  032d  Ret                  r26
+L23:
+  032f  StoreToEnvironment   r1, 1, r26
+  0333  JmpLong              L40
+L24:
+  0338  LoadFromEnvironment  r32, r1, 11
+  033c  Mov                  r31, r14
+  033f  CallBuiltin          r27, b43 "getMethod", 3
+  0343  JStrictEqual         L25, r27, r21
+  0347  LoadFromEnvironment  r26, r1, 11
+  034b  Call1                r32, r27, r26
+  034f  Mov                  r31, r15
+  0352  CallBuiltin          r26, b42 "ensureObject", 3
+L25:
+  0356  LoadConstString      r32, s20 "yield* delegate must have a .thr…"
+  035a  CallBuiltin          r26, b44 "throwTypeError", 2
+L26:
+  035e  JStrictEqualLong     L32, r3, r5
+  0365  JStrictEqualLong     L31, r3, r4
+  036c  NewArrayWithBuffer   r27, 3, 3, lit@0x0010
+  0374  GetByIdShort         r26, r17, #c2, s25 "iterator"
+  0379  GetByVal             r26, r27, r26
+  037d  Call1                r26, r26, r27
+  0381  StoreToEnvironment   r1, 9, r26
+  0385  Mov                  r32, r26
+  0388  Mov                  r31, r16
+  038b  CallBuiltin          r27, b42 "ensureObject", 3
+  038f  GetByIdShort         r26, r26, #c3, s26 "next"
+  0394  StoreToEnvironment   r1, 8, r26
+  0398  StoreNPToEnvironment r1, 2, r21
+  039c  LoadConstUndefined   r29
+L27:
+  039e  LoadFromEnvironment  r27, r1, 8
+  03a2  LoadFromEnvironment  r26, r1, 9
+  03a6  Call2                r26, r27, r26, r29
+  03ab  Mov                  r32, r26
+  03ae  Mov                  r31, r19
+  03b1  CallBuiltin          r27, b42 "ensureObject", 3
+  03b5  StoreToEnvironment   r1, 3, r26
+  03b9  GetByIdShort         r27, r26, #c0, s28 "done"
+  03be  JmpTrue              L28, r27
+  03c1  StoreNPToEnvironment r1, 15, r10
+  03c5  Mov                  r2, r5
+  03c8  StoreNPToEnvironment r1, 16, r5
+  03cc  Ret                  r26
+L28:
+  03ce  LoadFromEnvironment  r26, r1, 3
+  03d2  GetByIdShort         r26, r26, #c1, s32 "value"
+  03d7  GetByIdShort         r26, r17, #c2, s25 "iterator"
+  03dc  GetByVal             r26, r11, r26
+  03e0  Call1                r26, r26, r11
+  03e4  StoreToEnvironment   r1, 7, r26
+  03e8  Mov                  r32, r26
+  03eb  Mov                  r31, r16
+  03ee  CallBuiltin          r27, b42 "ensureObject", 3
+  03f2  GetByIdShort         r26, r26, #c3, s26 "next"
+  03f7  StoreToEnvironment   r1, 6, r26
+  03fb  StoreNPToEnvironment r1, 4, r21
+  03ff  LoadConstUndefined   r28
+L29:
+  0401  LoadFromEnvironment  r27, r1, 6
+  0405  LoadFromEnvironment  r26, r1, 7
+  0409  Call2                r26, r27, r26, r28
+  040e  Mov                  r32, r26
+  0411  Mov                  r31, r19
+  0414  CallBuiltin          r27, b42 "ensureObject", 3
+  0418  StoreToEnvironment   r1, 5, r26
+  041c  GetByIdShort         r27, r26, #c0, s28 "done"
+  0421  JmpTrue              L30, r27
+  0424  StoreNPToEnvironment r1, 15, r12
+  0428  Mov                  r2, r5
+  042b  StoreNPToEnvironment r1, 16, r5
+  042f  Ret                  r26
+L30:
+  0431  LoadFromEnvironment  r26, r1, 5
+  0435  GetByIdShort         r26, r26, #c1, s32 "value"
+  043a  StoreNPToEnvironment r1, 15, r13
+  043e  Mov                  r2, r5
+  0441  StoreNPToEnvironment r1, 16, r5
+  0445  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0023
+  044b  Ret                  r26
+L31:
+  044d  Mov                  r2, r7
+  0450  StoreNPToEnvironment r1, 16, r7
+  0454  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  045a  PutOwnBySlotIdx      r26, r0, 0
+  045e  Ret                  r26
+L32:
+  0460  Mov                  r2, r7
+  0463  StoreNPToEnvironment r1, 16, r7
+  0467  Throw                r0
+L33:
+  0469  StoreNPToEnvironment r1, 13, r5
+  046d  JStrictEqualLong     L37, r3, r5
+  0474  StoreToEnvironment   r1, 0, r0
+  0478  JStrictEqual         L34, r3, r4
+  047c  StoreNPToEnvironment r1, 13, r22
+  0480  Mov                  r28, r0
+  0483  JmpLong              L39
+L34:
+  0488  StoreToEnvironment   r1, 0, r0
+  048c  StoreNPToEnvironment r1, 13, r22
+  0490  LoadFromEnvironment  r32, r1, 11
+  0494  Mov                  r31, r14
+  0497  CallBuiltin          r29, b43 "getMethod", 3
+  049b  JStrictEqual         L36, r29, r21
+  049f  LoadFromEnvironment  r27, r1, 11
+  04a3  LoadFromEnvironment  r26, r1, 0
+  04a7  Call2                r26, r29, r27, r26
+  04ac  Mov                  r32, r26
+  04af  Mov                  r31, r15
+  04b2  CallBuiltin          r27, b42 "ensureObject", 3
+  04b6  GetByIdShort         r27, r26, #c0, s28 "done"
+  04bb  JmpTrue              L35, r27
+  04be  StoreNPToEnvironment r1, 15, r4
+  04c2  Mov                  r2, r5
+  04c5  StoreNPToEnvironment r1, 16, r5
+  04c9  Ret                  r26
+L35:
+  04cb  GetByIdShort         r27, r26, #c1, s32 "value"
+  04d0  Mov                  r2, r7
+  04d3  StoreNPToEnvironment r1, 16, r7
+  04d7  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  04dd  PutOwnBySlotIdx      r26, r27, 0
+  04e1  Ret                  r26
+L36:
+  04e3  Mov                  r2, r7
+  04e6  StoreNPToEnvironment r1, 16, r7
+  04ea  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  04f0  PutOwnBySlotIdx      r26, r0, 0
+  04f4  Ret                  r26
+L37:
+  04f6  Mov                  r2, r7
+  04f9  StoreNPToEnvironment r1, 16, r7
+  04fd  Throw                r0
+L38:
+  04ff  JStrictEqualLong     L42, r3, r5
+  0506  JStrictEqualLong     L41, r3, r4
+  050d  GetByIdShort         r26, r18, #c4, s23 "inner"
+  0512  Call1                r27, r26, r21
+  0516  GetByIdShort         r26, r17, #c2, s25 "iterator"
+  051b  GetByVal             r26, r27, r26
+  051f  Call1                r26, r26, r27
+  0523  StoreToEnvironment   r1, 11, r26
+  0527  Mov                  r32, r26
+  052a  Mov                  r31, r16
+  052d  CallBuiltin          r27, b42 "ensureObject", 3
+  0531  GetByIdShort         r26, r26, #c3, s26 "next"
+  0536  StoreToEnvironment   r1, 12, r26
+  053a  StoreNPToEnvironment r1, 0, r21
+  053e  LoadConstUndefined   r28
+L39:
+  0540  LoadFromEnvironment  r27, r1, 12
+  0544  LoadFromEnvironment  r26, r1, 11
+  0548  Call2                r26, r27, r26, r28
+  054d  Mov                  r32, r26
+  0550  Mov                  r31, r19
+  0553  CallBuiltin          r27, b42 "ensureObject", 3
+  0557  StoreToEnvironment   r1, 1, r26
+  055b  GetByIdShort         r27, r26, #c0, s28 "done"
+  0560  JmpTrue              L40, r27
+  0563  StoreNPToEnvironment r1, 15, r4
+  0567  Mov                  r2, r5
+  056a  StoreNPToEnvironment r1, 16, r5
+  056e  Ret                  r26
+L40:
+  0570  LoadFromEnvironment  r26, r1, 10
+  0574  LoadFromEnvironment  r27, r1, 1
+  0578  GetByIdShort         r27, r27, #c1, s32 "value"
+  057d  StoreToEnvironment   r26, 0, r27
+  0581  LoadFromEnvironment  r26, r26, 0
+  0585  Add                  r27, r20, r26
+  0589  StoreNPToEnvironment r1, 15, r7
+  058d  Mov                  r2, r5
+  0590  StoreNPToEnvironment r1, 16, r5
+  0594  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0021
+  059a  PutOwnBySlotIdx      r26, r27, 0
+  059e  Ret                  r26
+L41:
+  05a0  Mov                  r2, r7
+  05a3  StoreNPToEnvironment r1, 16, r7
+  05a7  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  05ad  PutOwnBySlotIdx      r26, r0, 0
+  05b1  Ret                  r26
+L42:
+  05b3  Mov                  r2, r7
+  05b6  StoreNPToEnvironment r1, 16, r7
+  05ba  Throw                r0
+L43:
+  05bc  JStrictEqual         L45, r3, r5
+  05c0  JStrictEqual         L44, r3, r4
+  05c4  CreateTopLevelEnvironment r26, 1
+  05ca  StoreToEnvironment   r1, 10, r26
+  05ce  StoreNPToEnvironment r26, 0, r21
+  05d2  StoreNPToEnvironment r1, 15, r5
+  05d6  Mov                  r2, r5
+  05d9  StoreNPToEnvironment r1, 16, r5
+  05dd  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x001d
+  05e3  Ret                  r26
+L44:
+  05e5  Mov                  r2, r7
+  05e8  StoreNPToEnvironment r1, 16, r7
+  05ec  NewObjectWithBuffer  r26, sh0(numProps=2), lit@0x0000
+  05f2  PutOwnBySlotIdx      r26, r0, 0
+  05f6  Ret                  r26
+L45:
+  05f8  Mov                  r2, r7
+  05fb  StoreNPToEnvironment r1, 16, r7
+  05ff  Throw                r0
+  0601  Catch                r26
+  0603  Mov                  r6, r26
+  0606  StoreToEnvironment   r1, 14, r26
+  060a  LoadFromEnvironment  r26, r1, 13
+  060e  JStrictEqual         L48, r22, r26
+  0612  JStrictEqual         L47, r5, r26
+  0616  JStrictEqual         L46, r4, r26
+  061a  StoreNPToEnvironment r1, 15, r23
+  061e  JmpLong              L1
+L46:
+  0623  StoreNPToEnvironment r1, 15, r24
+  0627  JmpLong              L1
+L47:
+  062c  StoreNPToEnvironment r1, 15, r25
+  0630  JmpLong              L1
+L48:
+  0635  Mov                  r2, r7
+  0638  StoreNPToEnvironment r1, 16, r7
+  063c  Throw                r6
+L49:
+  063e  JStrictEqual         L51, r3, r5
+  0642  JStrictEqual         L50, r3, r4
+  0646  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
+  064c  Ret                  r3
+L50:
+  064e  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
+  0654  PutOwnBySlotIdx      r3, r0, 0
+  0658  Ret                  r3
+L51:
+  065a  Throw                r0
+L52:
+  065c  LoadConstUInt8       r0, 3
+  065f  Mov                  r2, r0
+  0662  StoreNPToEnvironment r1, 16, r0
+  0666  LoadConstString      r32, s5 "Generator functions may not be c…"
+  066a  CallBuiltin          r0, b44 "throwTypeError", 2
+
+function #6 "delegatesToArray"  params=1 frame=31 env=0 flags=overflowed,ctor  @0x00000bd7 size=605
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 7
+  0007  Mov                  r2, r0
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L19, r0, r4
+  0014  LoadParam            r0, 2
+  0017  LoadParam            r3, 1
+  001a  Mov                  r17, r2
+  001d  LoadConstUInt8       r7, 3
+  0020  LoadConstZero        r16
+  0022  LoadConstUInt8       r5, 1
+  0025  LoadConstString      r15, s14 "iterator.next() did not return a…"
+  0029  GetBuiltinClosure    r14, b0 "globalThis.Symbol"
+  002c  LoadConstString      r13, s13 "iterator is not an object"
+  0030  LoadConstUndefined   r12
+  0032  LoadConstString      r11, s16 "iterator.return() did not return…"
+  0036  LoadConstString      r10, s2 "return"
+  003a  LoadConstString      r9, s17 "iterator.throw() did not return …"
+  003e  LoadConstString      r8, s18 "throw"
+  0042  JStrictEqualLong     L16, r17, r7
+L1:
+  0049  Mov                  r2, r4
+  004c  StoreNPToEnvironment r1, 7, r4
+  0050  LoadFromEnvironment  r17, r1, 6
+  0054  JStrictEqualLong     L10, r16, r17
+  005b  JStrictEqual         L5, r5, r17
+  005f  LoadFromEnvironment  r22, r1, 3
+  0063  LoadFromEnvironment  r19, r1, 4
+  0067  Mov                  r6, r19
+  006a  StoreNPToEnvironment r1, 5, r16
+  006e  Mov                  r21, r8
+  0071  CallBuiltin          r18, b43 "getMethod", 3
+  0075  JStrictEqual         L3, r18, r12
+  0079  LoadFromEnvironment  r17, r1, 3
+  007d  Call2                r17, r18, r17, r19
+  0082  Mov                  r22, r17
+  0085  Mov                  r21, r9
+  0088  CallBuiltin          r18, b42 "ensureObject", 3
+  008c  GetByIdShort         r18, r17, #c0, s28 "done"
+  0091  JmpTrue              L2, r18
+  0094  StoreNPToEnvironment r1, 6, r5
+  0098  Mov                  r2, r5
+  009b  StoreNPToEnvironment r1, 7, r5
+  009f  Ret                  r17
+L2:
+  00a1  StoreToEnvironment   r1, 1, r17
+  00a5  JmpLong              L12
+L3:
+  00aa  LoadFromEnvironment  r22, r1, 3
+  00ae  Mov                  r21, r10
+  00b1  CallBuiltin          r18, b43 "getMethod", 3
+  00b5  JStrictEqual         L4, r18, r12
+  00b9  LoadFromEnvironment  r17, r1, 3
+  00bd  Call1                r22, r18, r17
+  00c1  Mov                  r21, r11
+  00c4  CallBuiltin          r17, b42 "ensureObject", 3
+L4:
+  00c8  LoadConstString      r22, s20 "yield* delegate must have a .thr…"
+  00cc  CallBuiltin          r17, b44 "throwTypeError", 2
+L5:
+  00d0  StoreNPToEnvironment r1, 5, r5
+  00d4  JStrictEqualLong     L9, r3, r5
+  00db  StoreToEnvironment   r1, 0, r0
+  00df  JStrictEqual         L6, r3, r4
+  00e3  StoreNPToEnvironment r1, 5, r16
+  00e7  Mov                  r19, r0
+  00ea  JmpLong              L11
+L6:
+  00ef  StoreToEnvironment   r1, 0, r0
+  00f3  StoreNPToEnvironment r1, 5, r16
+  00f7  LoadFromEnvironment  r22, r1, 3
+  00fb  Mov                  r21, r10
+  00fe  CallBuiltin          r20, b43 "getMethod", 3
+  0102  JStrictEqual         L8, r20, r12
+  0106  LoadFromEnvironment  r18, r1, 3
+  010a  LoadFromEnvironment  r17, r1, 0
+  010e  Call2                r17, r20, r18, r17
+  0113  Mov                  r22, r17
+  0116  Mov                  r21, r11
+  0119  CallBuiltin          r18, b42 "ensureObject", 3
+  011d  GetByIdShort         r18, r17, #c0, s28 "done"
+  0122  JmpTrue              L7, r18
+  0125  StoreNPToEnvironment r1, 6, r5
+  0129  Mov                  r2, r5
+  012c  StoreNPToEnvironment r1, 7, r5
+  0130  Ret                  r17
+L7:
+  0132  GetByIdShort         r18, r17, #c1, s32 "value"
+  0137  Mov                  r2, r7
+  013a  StoreNPToEnvironment r1, 7, r7
+  013e  NewObjectWithBuffer  r17, sh0(numProps=2), lit@0x0000
+  0144  PutOwnBySlotIdx      r17, r18, 0
+  0148  Ret                  r17
+L8:
+  014a  Mov                  r2, r7
+  014d  StoreNPToEnvironment r1, 7, r7
+  0151  NewObjectWithBuffer  r17, sh0(numProps=2), lit@0x0000
+  0157  PutOwnBySlotIdx      r17, r0, 0
+  015b  Ret                  r17
+L9:
+  015d  Mov                  r2, r7
+  0160  StoreNPToEnvironment r1, 7, r7
+  0164  Throw                r0
+L10:
+  0166  JStrictEqualLong     L14, r3, r5
+  016d  JStrictEqualLong     L13, r3, r4
+  0174  NewArrayWithBuffer   r18, 3, 3, lit@0x0027
+  017c  GetByIdShort         r17, r14, #c2, s25 "iterator"
+  0181  GetByVal             r17, r18, r17
+  0185  Call1                r17, r17, r18
+  0189  StoreToEnvironment   r1, 3, r17
+  018d  Mov                  r22, r17
+  0190  Mov                  r21, r13
+  0193  CallBuiltin          r18, b42 "ensureObject", 3
+  0197  GetByIdShort         r17, r17, #c3, s26 "next"
+  019c  StoreToEnvironment   r1, 2, r17
+  01a0  StoreNPToEnvironment r1, 0, r12
+  01a4  LoadConstUndefined   r19
+L11:
+  01a6  LoadFromEnvironment  r18, r1, 2
+  01aa  LoadFromEnvironment  r17, r1, 3
+  01ae  Call2                r17, r18, r17, r19
+  01b3  Mov                  r22, r17
+  01b6  Mov                  r21, r15
+  01b9  CallBuiltin          r18, b42 "ensureObject", 3
+  01bd  StoreToEnvironment   r1, 1, r17
+  01c1  GetByIdShort         r18, r17, #c0, s28 "done"
+  01c6  JmpTrue              L12, r18
+  01c9  StoreNPToEnvironment r1, 6, r5
+  01cd  Mov                  r2, r5
+  01d0  StoreNPToEnvironment r1, 7, r5
+  01d4  Ret                  r17
+L12:
+  01d6  LoadFromEnvironment  r17, r1, 1
+  01da  GetByIdShort         r17, r17, #c1, s32 "value"
+  01df  Mov                  r2, r7
+  01e2  StoreNPToEnvironment r1, 7, r7
+  01e6  NewObjectWithBuffer  r17, sh0(numProps=2), lit@0x0002
+  01ec  Ret                  r17
+L13:
+  01ee  Mov                  r2, r7
+  01f1  StoreNPToEnvironment r1, 7, r7
+  01f5  NewObjectWithBuffer  r17, sh0(numProps=2), lit@0x0000
+  01fb  PutOwnBySlotIdx      r17, r0, 0
+  01ff  Ret                  r17
+L14:
+  0201  Mov                  r2, r7
+  0204  StoreNPToEnvironment r1, 7, r7
+  0208  Throw                r0
+  020a  Catch                r17
+  020c  Mov                  r6, r17
+  020f  StoreToEnvironment   r1, 4, r17
+  0213  LoadFromEnvironment  r17, r1, 5
+  0217  JStrictEqual         L15, r16, r17
+  021b  StoreNPToEnvironment r1, 6, r4
+  021f  JmpLong              L1
+L15:
+  0224  Mov                  r2, r7
+  0227  StoreNPToEnvironment r1, 7, r7
+  022b  Throw                r6
+L16:
+  022d  JStrictEqual         L18, r3, r5
+  0231  JStrictEqual         L17, r3, r4
+  0235  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
+  023b  Ret                  r3
+L17:
+  023d  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
+  0243  PutOwnBySlotIdx      r3, r0, 0
+  0247  Ret                  r3
+L18:
+  0249  Throw                r0
+L19:
+  024b  LoadConstUInt8       r0, 3
+  024e  Mov                  r2, r0
+  0251  StoreNPToEnvironment r1, 7, r0
+  0255  LoadConstString      r22, s5 "Generator functions may not be c…"
+  0259  CallBuiltin          r0, b44 "throwTypeError", 2

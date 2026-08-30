@@ -1,0 +1,164 @@
+; hbc2js disassembly of 23-generator-basic/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=5 strings=20 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=exc,dbg  @0x000001bc size=325
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s13 "sequence"
+  0005  DeclareGlobalVar     s12 "counter"
+  000a  LoadConstUndefined   r3
+  000c  CreateEnvironment    r2
+  000e  LoadConstUndefined   r0
+  0010  CreateGeneratorClosure r4, r2, f1 "sequence"
+  0015  GetGlobalObject      r1
+  0017  PutById              r1, r4, #c1, s13 "sequence"
+  001d  CreateGeneratorClosure r2, r2, f3 "counter"
+  0022  PutById              r1, r2, #c2, s12 "counter"
+  0028  GetByIdShort         r2, r1, #c1, s13 "sequence"
+  002d  Call1                r7, r2, r3
+  0031  TryGetById           r4, r1, #c2, s17 "print"
+  0037  TryGetById           r6, r1, #c3, s15 "JSON"
+  003d  GetByIdShort         r5, r6, #c4, s19 "stringify"
+  0042  GetByIdShort         r2, r7, #c5, s16 "next"
+  0047  Call1                r2, r2, r7
+  004b  Call2                r2, r5, r6, r2
+  0050  Call2                r2, r4, r3, r2
+  0055  TryGetById           r4, r1, #c2, s17 "print"
+  005b  TryGetById           r6, r1, #c3, s15 "JSON"
+  0061  GetByIdShort         r5, r6, #c4, s19 "stringify"
+  0066  GetByIdShort         r2, r7, #c5, s16 "next"
+  006b  Call1                r2, r2, r7
+  006f  Call2                r2, r5, r6, r2
+  0074  Call2                r2, r4, r3, r2
+  0079  TryGetById           r4, r1, #c2, s17 "print"
+  007f  TryGetById           r6, r1, #c3, s15 "JSON"
+  0085  GetByIdShort         r5, r6, #c4, s19 "stringify"
+  008a  GetByIdShort         r2, r7, #c5, s16 "next"
+  008f  Call1                r2, r2, r7
+  0093  Call2                r2, r5, r6, r2
+  0098  Call2                r2, r4, r3, r2
+  009d  TryGetById           r4, r1, #c2, s17 "print"
+  00a3  TryGetById           r6, r1, #c3, s15 "JSON"
+  00a9  GetByIdShort         r5, r6, #c4, s19 "stringify"
+  00ae  GetByIdShort         r8, r7, #c5, s16 "next"
+  00b3  LoadConstString      r2, s10 "injected"
+  00b7  Call2                r2, r8, r7, r2
+  00bc  Call2                r2, r5, r6, r2
+  00c1  Call2                r2, r4, r3, r2
+  00c6  TryGetById           r4, r1, #c2, s17 "print"
+  00cc  TryGetById           r6, r1, #c3, s15 "JSON"
+  00d2  GetByIdShort         r5, r6, #c4, s19 "stringify"
+  00d7  GetByIdShort         r2, r7, #c5, s16 "next"
+  00dc  Call1                r2, r2, r7
+  00e0  Call2                r2, r5, r6, r2
+  00e5  Call2                r2, r4, r3, r2
+  00ea  NewArray             r0, 0
+  00ee  GetByIdShort         r4, r1, #c6, s12 "counter"
+  00f3  LoadConstUInt8       r2, 5
+  00f6  Call2                r5, r4, r3, r2
+  00fb  Mov                  r2, r5
+  00fe  IteratorBegin        r4, r2
+L1:
+  0101  IteratorNext         r7, r4, r2
+  0105  Mov                  r5, r4
+  0108  JStrictEqual         L3, r5, r3
+  010c  Mov                  r6, r0
+  010f  GetByIdShort         r5, r6, #c7, s18 "push"
+  0114  Call2                r5, r5, r6, r7
+  0119  Jmp                  L1
+L2:
+  011b  Catch                r2
+  011d  IteratorClose        r4, 1
+  0120  Throw                r2
+L3:
+  0122  TryGetById           r2, r1, #c2, s17 "print"
+  0128  Mov                  r4, r0
+  012b  GetByIdShort         r1, r4, #c8, s14 "join"
+  0130  LoadConstString      r0, s1 ","
+  0134  Call2                r1, r1, r4, r0
+  0139  LoadConstString      r0, s11 "squares:"
+  013d  Call3                r0, r2, r3, r0, r1
+  0143  Ret                  r0
+
+function #1 "sequence"  params=1 frame=1 env=0 flags=nc  @0x00000301 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f2 "?anon_0_sequence"
+  0007  Ret                  r0
+
+function #2 "?anon_0_sequence"  params=1 frame=6 env=0 flags=dbg  @0x0000030a size=89
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrue              L9, r1
+  0007  LoadConstString      r1, s7 "a"
+  000b  SaveGenerator        L1
+  000d  Ret                  r1
+L1:
+  000f  ResumeGenerator      r1, r2
+  0012  JmpTrue              L8, r2
+  0015  LoadConstString      r2, s8 "b"
+  0019  SaveGenerator        L2
+  001b  Ret                  r2
+L2:
+  001d  ResumeGenerator      r2, r3
+  0020  JmpTrue              L7, r3
+  0023  LoadConstString      r3, s3 "c"
+  0027  SaveGenerator        L3
+  0029  Ret                  r3
+L3:
+  002b  ResumeGenerator      r3, r4
+  002e  JmpTrue              L6, r4
+  0031  LoadConstString      r4, s4 "received:"
+  0035  Add                  r4, r4, r3
+  0039  SaveGenerator        L4
+  003b  Ret                  r4
+L4:
+  003d  ResumeGenerator      r4, r5
+  0040  JmpTrue              L5, r5
+  0043  LoadConstString      r5, s6 "final"
+  0047  CompleteGenerator
+  0048  Ret                  r5
+L5:
+  004a  CompleteGenerator
+  004b  Ret                  r4
+L6:
+  004d  CompleteGenerator
+  004e  Ret                  r3
+L7:
+  0050  CompleteGenerator
+  0051  Ret                  r2
+L8:
+  0053  CompleteGenerator
+  0054  Ret                  r1
+L9:
+  0056  CompleteGenerator
+  0057  Ret                  r0
+
+function #3 "counter"  params=2 frame=1 env=0 flags=nc  @0x00000363 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f4 "?anon_0_counter"
+  0007  Ret                  r0
+
+function #4 "?anon_0_counter"  params=2 frame=5 env=0 flags=dbg  @0x0000036c size=48
+  0000  StartGenerator
+  0001  LoadParam            r3, 1
+  0004  ResumeGenerator      r0, r1
+  0007  JmpTrue              L5, r1
+  000a  LoadConstZero        r2
+  000c  JNotLess             L3, r2, r3
+L1:
+  0010  Mul                  r1, r2, r2
+  0014  SaveGenerator        L2
+  0016  Ret                  r1
+L2:
+  0018  ResumeGenerator      r1, r4
+  001b  JmpTrue              L4, r4
+  001e  Inc                  r2, r2
+  0021  JLess                L1, r2, r3
+L3:
+  0025  LoadConstUndefined   r2
+  0027  CompleteGenerator
+  0028  Ret                  r2
+L4:
+  002a  CompleteGenerator
+  002b  Ret                  r1
+L5:
+  002d  CompleteGenerator
+  002e  Ret                  r0

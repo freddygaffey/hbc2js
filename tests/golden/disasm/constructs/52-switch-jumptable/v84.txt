@@ -1,0 +1,109 @@
+; hbc2js disassembly of 52-switch-jumptable/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=2 strings=20 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg  @0x0000019c size=107
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s17 "classify"
+  0005  LoadConstUndefined   r5
+  0007  GetGlobalObject      r4
+  0009  LoadConstString      r3, s1 "=>"
+  000d  CreateEnvironment    r0
+  000f  CreateClosure        r0, r0, f1 "classify"
+  0014  PutById              r4, r0, #c1, s17 "classify"
+  001a  LoadConstUndefined   r0
+  001c  NewArrayWithBuffer   r6, 15, 13, lit@0x0000
+  0024  LoadConstInt         r1, -1
+  002a  PutOwnByIndex        r6, r1, 13
+  002e  LoadConstUInt8       r1, 100
+  0031  PutOwnByIndex        r6, r1, 14
+  0035  Mov                  r1, r6
+  0038  IteratorBegin        r2, r1
+L1:
+  003b  IteratorNext         r9, r2, r1
+  003f  Mov                  r6, r2
+  0042  JStrictEqual         L3, r6, r5
+  0046  TryGetById           r8, r4, #c1, s16 "print"
+  004c  ThrowIfEmpty         r7, r9
+  004f  GetByIdShort         r6, r4, #c2, s17 "classify"
+  0054  Call2                r6, r6, r5, r9
+  0059  Call4                r0, r8, r5, r7, r3, r6
+  0060  Jmp                  L1
+L2:
+  0062  Catch                r1
+  0064  IteratorClose        r2, 1
+  0067  Throw                r1
+L3:
+  0069  Ret                  r0
+
+function #1 "classify"  params=2 frame=11 env=0 flags=dbg  @0x00000207 size=260
+  0000  NewArray             r2, 0
+  0004  LoadParam            r0, 1
+  .switch SwitchImm @0x0007  min=0 max=12 default=L13
+        0 -> L12   1 -> L11   2 -> L11   3 -> L9   4 -> L10   5 -> L8   6 -> L7   7 -> L6   8 -> L5   9 -> L4   10 -> L3   11 -> L2   12 -> L1
+L1:
+  0019  GetByIdShort         r1, r2, #c1, s19 "push"
+  001e  LoadConstString      r0, s15 "twelve"
+  0022  Call2                r0, r1, r2, r0
+  0027  JmpLong              L14
+L2:
+  002c  GetByIdShort         r1, r2, #c1, s19 "push"
+  0031  LoadConstString      r0, s7 "eleven"
+  0035  Call2                r0, r1, r2, r0
+  003a  JmpLong              L14
+L3:
+  003f  GetByIdShort         r1, r2, #c1, s19 "push"
+  0044  LoadConstString      r0, s4 "ten"
+  0048  Call2                r0, r1, r2, r0
+  004d  JmpLong              L14
+L4:
+  0052  GetByIdShort         r1, r2, #c1, s19 "push"
+  0057  LoadConstString      r0, s6 "nine"
+  005b  Call2                r0, r1, r2, r0
+  0060  JmpLong              L14
+L5:
+  0065  GetByIdShort         r1, r2, #c1, s19 "push"
+  006a  LoadConstString      r0, s3 "eight"
+  006e  Call2                r0, r1, r2, r0
+  0073  JmpLong              L14
+L6:
+  0078  GetByIdShort         r1, r2, #c1, s19 "push"
+  007d  LoadConstString      r0, s5 "seven"
+  0081  Call2                r0, r1, r2, r0
+  0086  Jmp                  L14
+L7:
+  0088  GetByIdShort         r1, r2, #c1, s19 "push"
+  008d  LoadConstString      r0, s12 "six"
+  0091  Call2                r0, r1, r2, r0
+  0096  Jmp                  L14
+L8:
+  0098  GetByIdShort         r1, r2, #c1, s19 "push"
+  009d  LoadConstString      r0, s2 "five"
+  00a1  Call2                r0, r1, r2, r0
+  00a6  Jmp                  L14
+L9:
+  00a8  GetByIdShort         r1, r2, #c1, s19 "push"
+  00ad  LoadConstString      r0, s13 "three"
+  00b1  Call2                r0, r1, r2, r0
+L10:
+  00b6  GetByIdShort         r1, r2, #c1, s19 "push"
+  00bb  LoadConstString      r0, s14 "three-or-four"
+  00bf  Call2                r0, r1, r2, r0
+  00c4  Jmp                  L14
+L11:
+  00c6  GetByIdShort         r1, r2, #c1, s19 "push"
+  00cb  LoadConstString      r0, s10 "one-or-two"
+  00cf  Call2                r0, r1, r2, r0
+  00d4  Jmp                  L14
+L12:
+  00d6  GetByIdShort         r1, r2, #c1, s19 "push"
+  00db  LoadConstString      r0, s9 "zero"
+  00df  Call2                r0, r1, r2, r0
+  00e4  Jmp                  L14
+L13:
+  00e6  GetByIdShort         r1, r2, #c1, s19 "push"
+  00eb  LoadConstString      r0, s11 "other"
+  00ef  Call2                r0, r1, r2, r0
+L14:
+  00f4  GetByIdShort         r1, r2, #c2, s18 "join"
+  00f9  LoadConstString      r0, s0 "+"
+  00fd  Call2                r0, r1, r2, r0
+  0102  Ret                  r0

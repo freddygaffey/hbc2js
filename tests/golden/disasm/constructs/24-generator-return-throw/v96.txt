@@ -1,0 +1,219 @@
+; hbc2js disassembly of 24-generator-return-throw/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=5 strings=23 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=dbg  @0x0000022c size=310
+  0000  DeclareGlobalVar     s12 "g1"
+  0005  DeclareGlobalVar     s14 "g2"
+  000a  CreateEnvironment    r1
+  000c  CreateGeneratorClosure r2, r1, f1 "g1"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r2, #c1, s12 "g1"
+  0019  CreateGeneratorClosure r1, r1, f3 "g2"
+  001e  PutById              r0, r1, #c2, s14 "g2"
+  0024  GetByIdShort         r1, r0, #c1, s12 "g1"
+  0029  LoadConstUndefined   r2
+  002b  Call1                r6, r1, r2
+  002f  TryGetById           r3, r0, #c2, s20 "print"
+  0035  TryGetById           r5, r0, #c3, s17 "JSON"
+  003b  GetByIdShort         r4, r5, #c4, s22 "stringify"
+  0040  GetByIdShort         r1, r6, #c5, s19 "next"
+  0045  Call1                r1, r1, r6
+  0049  Call2                r1, r4, r5, r1
+  004e  Call2                r1, r3, r2, r1
+  0053  TryGetById           r3, r0, #c2, s20 "print"
+  0059  TryGetById           r5, r0, #c3, s17 "JSON"
+  005f  GetByIdShort         r4, r5, #c4, s22 "stringify"
+  0064  GetByIdShort         r7, r6, #c6, s13 "return"
+  0069  LoadConstString      r1, s6 "early-exit"
+  006d  Call2                r1, r7, r6, r1
+  0072  Call2                r1, r4, r5, r1
+  0077  Call2                r1, r3, r2, r1
+  007c  TryGetById           r3, r0, #c2, s20 "print"
+  0082  TryGetById           r5, r0, #c3, s17 "JSON"
+  0088  GetByIdShort         r4, r5, #c4, s22 "stringify"
+  008d  GetByIdShort         r1, r6, #c5, s19 "next"
+  0092  Call1                r1, r1, r6
+  0096  Call2                r1, r4, r5, r1
+  009b  Call2                r1, r3, r2, r1
+  00a0  GetByIdShort         r1, r0, #c7, s14 "g2"
+  00a5  Call1                r5, r1, r2
+  00a9  TryGetById           r3, r0, #c2, s20 "print"
+  00af  TryGetById           r6, r0, #c3, s17 "JSON"
+  00b5  GetByIdShort         r4, r6, #c4, s22 "stringify"
+  00ba  GetByIdShort         r1, r5, #c5, s19 "next"
+  00bf  Call1                r1, r1, r5
+  00c3  Call2                r1, r4, r6, r1
+  00c8  Call2                r1, r3, r2, r1
+  00cd  TryGetById           r3, r0, #c2, s20 "print"
+  00d3  TryGetById           r6, r0, #c3, s17 "JSON"
+  00d9  GetByIdShort         r4, r6, #c4, s22 "stringify"
+  00de  GetByIdShort         r7, r5, #c8, s15 "throw"
+  00e3  TryGetById           r9, r0, #c9, s16 "Error"
+  00e9  GetByIdShort         r1, r9, #c10, s21 "prototype"
+  00ee  CreateThis           r8, r1, r9
+  00f2  LoadConstString      r10, s10 "injected-error"
+  00f6  Mov                  r11, r8
+  00f9  Construct            r1, r9, 2
+  00fd  SelectObject         r1, r8, r1
+  0101  Call2                r1, r7, r5, r1
+  0106  Call2                r1, r4, r6, r1
+  010b  Call2                r1, r3, r2, r1
+  0110  TryGetById           r1, r0, #c2, s20 "print"
+  0116  TryGetById           r4, r0, #c3, s17 "JSON"
+  011c  GetByIdShort         r3, r4, #c4, s22 "stringify"
+  0121  GetByIdShort         r0, r5, #c5, s19 "next"
+  0126  Call1                r0, r0, r5
+  012a  Call2                r0, r3, r4, r0
+  012f  Call2                r0, r1, r2, r0
+  0134  Ret                  r0
+
+function #1 "g1"  params=1 frame=1 env=0 flags=nc  @0x00000362 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f2 "?anon_0_g1"
+  0007  Ret                  r0
+
+function #2 "?anon_0_g1"  params=1 frame=15 env=0 flags=exc,dbg  @0x0000036b size=163
+  .try T1..T2 -> L7 ; handler 0
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L8, r1
+  000a  LoadConstUInt8       r1, 1
+  000d  SaveGenerator        L1
+  000f  Ret                  r1
+L1:
+  0011  ResumeGenerator      r1, r2
+  0014  JmpTrue              L6, r2
+  0017  LoadConstUInt8       r2, 2
+  001a  SaveGenerator        L2
+  001c  Ret                  r2
+L2:
+  001e  ResumeGenerator      r2, r3
+  0021  JmpTrue              L5, r3
+  0024  LoadConstUInt8       r3, 3
+  0027  SaveGenerator        L3
+  0029  Ret                  r3
+L3:
+  002b  ResumeGenerator      r3, r4
+  002e  JmpTrue              L4, r4
+  0031  GetGlobalObject      r4
+  0033  TryGetById           r6, r4, #c1, s20 "print"
+  0039  LoadConstUndefined   r4
+  003b  LoadConstString      r5, s2 "g1 finally ran (return() trigger…"
+  003f  Call2                r5, r6, r4, r5
+  0044  CompleteGenerator
+  0045  Ret                  r4
+L4:
+  0047  GetGlobalObject      r4
+  0049  TryGetById           r6, r4, #c1, s20 "print"
+  004f  LoadConstUndefined   r5
+  0051  LoadConstString      r4, s2 "g1 finally ran (return() trigger…"
+  0055  Call2                r4, r6, r5, r4
+  005a  CompleteGenerator
+  005b  Ret                  r3
+L5:
+  005d  GetGlobalObject      r3
+  005f  TryGetById           r5, r3, #c1, s20 "print"
+  0065  LoadConstUndefined   r4
+  0067  LoadConstString      r3, s2 "g1 finally ran (return() trigger…"
+  006b  Call2                r3, r5, r4, r3
+  0070  CompleteGenerator
+  0071  Ret                  r2
+L6:
+  0073  GetGlobalObject      r2
+  0075  TryGetById           r4, r2, #c1, s20 "print"
+  007b  LoadConstUndefined   r3
+  007d  LoadConstString      r2, s2 "g1 finally ran (return() trigger…"
+  0081  Call2                r2, r4, r3, r2
+  0086  CompleteGenerator
+  0087  Ret                  r1
+L7:
+  0089  Catch                r1
+  008b  GetGlobalObject      r2
+  008d  TryGetById           r4, r2, #c1, s20 "print"
+  0093  LoadConstUndefined   r3
+  0095  LoadConstString      r2, s2 "g1 finally ran (return() trigger…"
+  0099  Call2                r2, r4, r3, r2
+  009e  Throw                r1
+L8:
+  00a0  CompleteGenerator
+  00a1  Ret                  r0
+
+function #3 "g2"  params=1 frame=1 env=0 flags=nc  @0x0000040e size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f4 "?anon_0_g2"
+  0007  Ret                  r0
+
+function #4 "?anon_0_g2"  params=1 frame=16 env=0 flags=exc,dbg  @0x00000417 size=191
+  .try T1..T2 -> L5 ; handler 0
+  .try T1..T3 -> L9 ; handler 1
+  .try T4..T5 -> L9 ; handler 2
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L10, r1
+  000a  LoadConstString      r1, s8 "start"
+  000e  SaveGenerator        L1
+  0010  Ret                  r1
+L1:
+  0012  ResumeGenerator      r1, r2
+  0015  JmpTrue              L4, r2
+  0018  LoadConstString      r2, s5 "unreachable"
+  001c  SaveGenerator        L2
+  001e  Ret                  r2
+L2:
+  0020  ResumeGenerator      r2, r3
+  0023  JmpTrue              L3, r3
+  0026  Jmp                  L7
+L3:
+  0028  GetGlobalObject      r3
+  002a  TryGetById           r5, r3, #c1, s20 "print"
+  0030  LoadConstUndefined   r4
+  0032  LoadConstString      r3, s7 "g2 finally always runs"
+  0036  Call2                r3, r5, r4, r3
+  003b  CompleteGenerator
+  003c  Ret                  r2
+L4:
+  003e  GetGlobalObject      r2
+  0040  TryGetById           r4, r2, #c1, s20 "print"
+  0046  LoadConstUndefined   r3
+  0048  LoadConstString      r2, s7 "g2 finally always runs"
+  004c  Call2                r2, r4, r3, r2
+  0051  CompleteGenerator
+  0052  Ret                  r1
+L5:
+  0054  Catch                r1
+  0056  GetGlobalObject      r2
+  0058  TryGetById           r5, r2, #c1, s20 "print"
+  005e  GetByIdShort         r3, r1, #c2, s18 "message"
+  0063  LoadConstUndefined   r4
+  0065  LoadConstString      r1, s4 "g2 caught:"
+  0069  Call3                r1, r5, r4, r1, r3
+  006f  LoadConstString      r1, s11 "recovered"
+  0073  SaveGenerator        L6
+  0075  Ret                  r1
+L6:
+  0077  ResumeGenerator      r1, r3
+  007a  JmpTrue              L8, r3
+L7:
+  007d  GetGlobalObject      r3
+  007f  TryGetById           r6, r3, #c1, s20 "print"
+  0085  LoadConstUndefined   r3
+  0087  LoadConstString      r5, s7 "g2 finally always runs"
+  008b  Call2                r5, r6, r3, r5
+  0090  CompleteGenerator
+  0091  Ret                  r3
+L8:
+  0093  TryGetById           r3, r2, #c1, s20 "print"
+  0099  LoadConstString      r2, s7 "g2 finally always runs"
+  009d  Call2                r2, r3, r4, r2
+  00a2  CompleteGenerator
+  00a3  Ret                  r1
+L9:
+  00a5  Catch                r1
+  00a7  GetGlobalObject      r2
+  00a9  TryGetById           r4, r2, #c1, s20 "print"
+  00af  LoadConstUndefined   r3
+  00b1  LoadConstString      r2, s7 "g2 finally always runs"
+  00b5  Call2                r2, r4, r3, r2
+  00ba  Throw                r1
+L10:
+  00bc  CompleteGenerator
+  00bd  Ret                  r0

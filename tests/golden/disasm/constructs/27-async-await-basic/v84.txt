@@ -1,0 +1,122 @@
+; hbc2js disassembly of 27-async-await-basic/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=6 strings=16 globalCodeIndex=0
+function #0 "global"  params=1 frame=13 env=0 flags=dbg  @0x000001bc size=79
+  0000  DeclareGlobalVar     s15 "resolveAfter"
+  0005  DeclareGlobalVar     s10 "sequence"
+  000a  CreateEnvironment    r1
+  000c  CreateClosure        r2, r1, f1 "resolveAfter"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r2, #c1, s15 "resolveAfter"
+  0019  CreateAsyncClosure   r2, r1, f2 "sequence"
+  001e  PutById              r0, r2, #c2, s10 "sequence"
+  0024  GetByIdShort         r3, r0, #c1, s10 "sequence"
+  0029  LoadConstUndefined   r2
+  002b  Call1                r4, r3, r2
+  002f  GetByIdShort         r3, r4, #c2, s13 "then"
+  0034  CreateClosure        r1, r1, f5 ""
+  0039  Call2                r1, r3, r4, r1
+  003e  TryGetById           r1, r0, #c3, s12 "print"
+  0044  LoadConstString      r0, s7 "sync code after call runs first"
+  0048  Call2                r0, r1, r2, r0
+  004d  Ret                  r0
+
+function #1 "resolveAfter"  params=2 frame=11 env=0 flags=dbg  @0x0000020b size=23
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s11 "Promise"
+  0008  GetByIdShort         r1, r2, #c2, s14 "resolve"
+  000d  LoadParam            r0, 1
+  0010  Call2                r0, r1, r2, r0
+  0015  Ret                  r0
+
+function #2 "sequence"  params=1 frame=15 env=0 flags=dbg,nc  @0x00000222 size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b53 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f3 "?anon_0_sequence"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #3 "?anon_0_sequence"  params=1 frame=1 env=0 flags=nc  @0x00000240 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f4 "?anon_0_?anon_0_sequence"
+  0007  Ret                  r0
+
+function #4 "?anon_0_?anon_0_sequence"  params=1 frame=16 env=0 flags=dbg  @0x00000249 size=195
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L7, r1
+  000a  GetGlobalObject      r4
+  000c  TryGetById           r2, r4, #c1, s12 "print"
+  0012  LoadConstUndefined   r6
+  0014  LoadConstString      r1, s8 "start"
+  0018  Call2                r1, r2, r6, r1
+  001d  GetByIdShort         r2, r4, #c2, s15 "resolveAfter"
+  0022  LoadConstUInt8       r1, 1
+  0025  Call2                r1, r2, r6, r1
+  002a  SaveGenerator        L1
+  002c  Ret                  r1
+L1:
+  002e  ResumeGenerator      r1, r2
+  0031  JmpTrueLong          L6, r2
+  0037  TryGetById           r3, r4, #c1, s12 "print"
+  003d  ThrowIfEmpty         r5, r1
+  0040  LoadConstString      r2, s4 "got a="
+  0044  Add                  r2, r2, r5
+  0048  Call2                r2, r3, r6, r2
+  004d  GetByIdShort         r3, r4, #c2, s15 "resolveAfter"
+  0052  LoadConstUInt8       r2, 10
+  0055  Add                  r2, r1, r2
+  0059  Call2                r2, r3, r6, r2
+  005e  SaveGenerator        L2
+  0060  Ret                  r2
+L2:
+  0062  ResumeGenerator      r2, r3
+  0065  JmpTrue              L5, r3
+  0068  TryGetById           r5, r4, #c1, s12 "print"
+  006e  ThrowIfEmpty         r7, r2
+  0071  LoadConstString      r3, s5 "got b="
+  0075  Add                  r3, r3, r7
+  0079  Call2                r3, r5, r6, r3
+  007e  GetByIdShort         r5, r4, #c2, s15 "resolveAfter"
+  0083  Add                  r3, r1, r2
+  0087  Call2                r3, r5, r6, r3
+  008c  SaveGenerator        L3
+  008e  Ret                  r3
+L3:
+  0090  ResumeGenerator      r3, r5
+  0093  JmpTrue              L4, r5
+  0096  TryGetById           r5, r4, #c1, s12 "print"
+  009c  ThrowIfEmpty         r7, r3
+  009f  LoadConstString      r4, s6 "got c="
+  00a3  Add                  r4, r4, r7
+  00a7  Call2                r4, r5, r6, r4
+  00ac  Add                  r4, r1, r2
+  00b0  Add                  r4, r4, r3
+  00b4  CompleteGenerator
+  00b5  Ret                  r4
+L4:
+  00b7  CompleteGenerator
+  00b8  Ret                  r3
+L5:
+  00ba  CompleteGenerator
+  00bb  Ret                  r2
+L6:
+  00bd  CompleteGenerator
+  00be  Ret                  r1
+L7:
+  00c0  CompleteGenerator
+  00c1  Ret                  r0
+
+function #5 ""  params=2 frame=11 env=0 flags=dbg  @0x0000030c size=28
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s12 "print"
+  0008  LoadConstString      r1, s9 "total="
+  000c  LoadParam            r0, 1
+  000f  Add                  r1, r1, r0
+  0013  LoadConstUndefined   r0
+  0015  Call2                r1, r2, r0, r1
+  001a  Ret                  r0

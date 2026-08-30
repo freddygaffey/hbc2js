@@ -1,0 +1,61 @@
+; hbc2js disassembly of 08-labeled-break-continue/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=27 env=0 flags=overflowed,ctor  @0x00000108 size=202
+  0000  NewArray             r12, 0
+  0004  LoadConstUInt8       r3, 1
+  0007  LoadConstUInt8       r7, 5
+  000a  LoadConstString      r11, s3 "="
+  000e  LoadConstString      r10, s1 "*"
+  0012  LoadConstUInt8       r8, 6
+  0015  LoadConstZero        r5
+L1:
+  0017  Add                  r13, r5, r10
+  001b  Mov                  r1, r5
+  001e  LoadConstZero        r0
+L2:
+  0020  MulN                 r4, r1, r0
+  0024  Mov                  r2, r0
+  0027  JLessN               L3, r8, r4
+  002b  GetByIdShort         r15, r12, #c0, s9 "push"
+  0030  Add                  r14, r13, r2
+  0034  AddS                 r14, r14, r11
+  0038  Add                  r14, r14, r4
+  003c  Call2                r14, r15, r12, r14
+  0041  AddN                 r0, r2, r3
+  0045  JLessN               L2, r0, r7
+  0049  AddN                 r5, r1, r3
+  004d  JLessN               L1, r5, r7
+L3:
+  0051  GetGlobalObject      r10
+  0053  TryGetById           r14, r10, #c1, s8 "print"
+  0059  GetByIdShort         r11, r12, #c2, s7 "join"
+  005e  LoadConstString      r13, s0 " | "
+  0062  Call2                r12, r11, r12, r13
+  0067  LoadConstString      r11, s4 "break outer trail:"
+  006b  LoadConstUndefined   r9
+  006d  Call3                r11, r14, r9, r11, r12
+  0073  NewArray             r11, 0
+  0077  LoadConstUInt8       r8, 4
+  007a  LoadConstString      r12, s2 ","
+  007e  LoadConstZero        r5
+L4:
+  0080  Add                  r14, r5, r12
+  0084  Mov                  r7, r5
+  0087  LoadConstZero        r1
+L5:
+  0089  Mov                  r0, r1
+  008c  JStrictEqual         L6, r0, r7
+  0090  GetByIdShort         r16, r11, #c0, s9 "push"
+  0095  Add                  r15, r14, r0
+  0099  Call2                r15, r16, r11, r15
+  009e  AddN                 r1, r0, r3
+  00a2  JLessN               L5, r1, r8
+L6:
+  00a6  AddN                 r5, r7, r3
+  00aa  JLessN               L4, r5, r8
+  00ae  TryGetById           r12, r10, #c1, s8 "print"
+  00b4  GetByIdShort         r10, r11, #c2, s7 "join"
+  00b9  Call2                r11, r10, r11, r13
+  00be  LoadConstString      r10, s5 "continue outer trail:"
+  00c2  Call3                r10, r12, r9, r10, r11
+  00c8  Ret                  r10

@@ -1,0 +1,79 @@
+; hbc2js disassembly of 41-spread-object/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=1 strings=18 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=dbg  @0x0000019c size=319
+  0000  NewObjectWithBuffer  r1, 3, 3, lit@0x0000, lit@0x0000
+  000a  NewObjectWithBuffer  r2, 2, 2, lit@0x0004, lit@0x0004
+  0014  NewObject            r6
+  0016  Mov                  r11, r6
+  0019  Mov                  r10, r1
+  001c  CallBuiltin          r0, b44 "copyDataProperties", 3
+  0020  Mov                  r11, r6
+  0023  Mov                  r10, r2
+  0026  CallBuiltin          r0, b44 "copyDataProperties", 3
+  002a  GetGlobalObject      r0
+  002c  TryGetById           r5, r0, #c1, s15 "print"
+  0032  TryGetById           r4, r0, #c2, s14 "JSON"
+  0038  GetByIdShort         r3, r4, #c3, s12 "stringify"
+  003d  Call2                r4, r3, r4, r6
+  0042  LoadConstUndefined   r3
+  0044  Call2                r4, r5, r3, r4
+  0049  NewObject            r6
+  004b  Mov                  r11, r6
+  004e  Mov                  r10, r2
+  0051  CallBuiltin          r2, b44 "copyDataProperties", 3
+  0055  Mov                  r11, r6
+  0058  Mov                  r10, r1
+  005b  CallBuiltin          r2, b44 "copyDataProperties", 3
+  005f  TryGetById           r4, r0, #c1, s15 "print"
+  0065  TryGetById           r5, r0, #c2, s14 "JSON"
+  006b  GetByIdShort         r2, r5, #c3, s12 "stringify"
+  0070  Call2                r2, r2, r5, r6
+  0075  Call2                r2, r4, r3, r2
+  007a  NewObject            r5
+  007c  Mov                  r11, r5
+  007f  Mov                  r10, r1
+  0082  CallBuiltin          r1, b44 "copyDataProperties", 3
+  0086  LoadConstString      r2, s4 "inline-wins-because-last"
+  008a  LoadConstString      r1, s16 "size"
+  008e  PutOwnByVal          r5, r2, r1, 1
+  0093  TryGetById           r2, r0, #c1, s15 "print"
+  0099  TryGetById           r4, r0, #c2, s14 "JSON"
+  009f  GetByIdShort         r1, r4, #c3, s12 "stringify"
+  00a4  Call2                r1, r1, r4, r5
+  00a9  Call2                r1, r2, r3, r1
+  00ae  NewObject            r6
+  00b0  LoadConstUInt8       r2, 1
+  00b3  PutNewOwnByIdShort   r6, r2, s17 "x"
+  00b7  NewObject            r5
+  00b9  Mov                  r11, r5
+  00bc  Mov                  r10, r6
+  00bf  CallBuiltin          r1, b44 "copyDataProperties", 3
+  00c3  LoadConstUInt8       r1, 2
+  00c6  PutById              r5, r1, #c1, s17 "x"
+  00cc  TryGetById           r7, r0, #c1, s15 "print"
+  00d2  TryGetById           r4, r0, #c2, s14 "JSON"
+  00d8  GetByIdShort         r1, r4, #c3, s12 "stringify"
+  00dd  Call2                r10, r1, r4, r6
+  00e2  TryGetById           r4, r0, #c2, s14 "JSON"
+  00e8  GetByIdShort         r1, r4, #c3, s12 "stringify"
+  00ed  Call2                r8, r1, r4, r5
+  00f2  LoadConstString      r11, s8 "original unaffected:"
+  00f6  LoadConstString      r9, s0 "copy:"
+  00fa  LoadConstUndefined   r12
+  00fc  Call                 r1, r7, 5
+  0100  NewObject            r4
+  0102  LoadConstNull        r10
+  0104  Mov                  r11, r4
+  0107  CallBuiltin          r1, b44 "copyDataProperties", 3
+  010b  Mov                  r11, r4
+  010e  LoadConstUndefined   r10
+  0110  CallBuiltin          r1, b44 "copyDataProperties", 3
+  0114  LoadConstString      r1, s1 "y"
+  0118  PutOwnByVal          r4, r2, r1, 1
+  011d  TryGetById           r2, r0, #c1, s15 "print"
+  0123  TryGetById           r1, r0, #c2, s14 "JSON"
+  0129  GetByIdShort         r0, r1, #c3, s12 "stringify"
+  012e  Call2                r1, r0, r1, r4
+  0133  LoadConstString      r0, s9 "spreading null/undefined is a no…"
+  0137  Call3                r0, r2, r3, r0, r1
+  013d  Ret                  r0

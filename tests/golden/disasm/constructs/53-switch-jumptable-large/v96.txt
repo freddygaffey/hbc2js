@@ -1,0 +1,90 @@
+; hbc2js disassembly of 53-switch-jumptable-large/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=2 strings=16 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=exc,dbg  @0x00000190 size=114
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s13 "bucket"
+  0005  CreateEnvironment    r0
+  0007  CreateClosure        r0, r0, f1 "bucket"
+  000c  GetGlobalObject      r5
+  000e  PutById              r5, r0, #c1, s13 "bucket"
+  0014  LoadConstUndefined   r4
+  0016  LoadConstUndefined   r0
+  0018  NewArrayWithBuffer   r1, 17, 14, lit@0x0000
+  0020  LoadConstInt         r2, -5
+  0026  PutOwnByIndex        r1, r2, 14
+  002a  LoadConstUInt8       r2, 40
+  002d  PutOwnByIndex        r1, r2, 15
+  0031  LoadConstInt         r2, 1000
+  0037  PutOwnByIndex        r1, r2, 16
+  003b  Mov                  r3, r1
+  003e  IteratorBegin        r2, r3
+  0041  LoadConstString      r1, s1 "=>"
+L1:
+  0045  IteratorNext         r8, r2, r3
+  0049  Mov                  r6, r2
+  004c  JStrictEqual         L3, r6, r4
+  0050  TryGetById           r7, r5, #c1, s14 "print"
+  0056  GetByIdShort         r6, r5, #c2, s13 "bucket"
+  005b  Call2                r6, r6, r4, r8
+  0060  Call4                r0, r7, r4, r8, r1, r6
+  0067  Jmp                  L1
+L2:
+  0069  Catch                r1
+  006b  IteratorClose        r2, 1
+  006e  Throw                r1
+L3:
+  0070  Ret                  r0
+
+function #1 "bucket"  params=2 frame=11 env=0 flags=dbg  @0x00000202 size=184
+  0000  NewArray             r2, 0
+  0004  LoadParam            r0, 1
+  .switch SwitchImm @0x0007  min=0 max=39 default=L9
+        0 -> L8   1 -> L8   2 -> L8   3 -> L8   4 -> L7   5 -> L7   6 -> L7   7 -> L7   8 -> L7   9 -> L7   10 -> L5   11 -> L6   12 -> L4   13 -> L4   14 -> L4   15 -> L4   16 -> L4   17 -> L4   18 -> L4   19 -> L4   20 -> L4   21 -> L4   22 -> L3   23 -> L3   24 -> L3   25 -> L3   26 -> L3   27 -> L3   28 -> L3   29 -> L3   30 -> L3   31 -> L2   32 -> L2   33 -> L2   34 -> L2   35 -> L2   36 -> L1   37 -> L1   38 -> L1   39 -> L1
+L1:
+  0019  GetByIdShort         r1, r2, #c1, s12 "push"
+  001e  LoadConstString      r0, s3 "late-thirties"
+  0022  Call2                r0, r1, r2, r0
+  0027  JmpLong              L10
+L2:
+  002c  GetByIdShort         r1, r2, #c1, s12 "push"
+  0031  LoadConstString      r0, s4 "thirties"
+  0035  Call2                r0, r1, r2, r0
+  003a  Jmp                  L10
+L3:
+  003c  GetByIdShort         r1, r2, #c1, s12 "push"
+  0041  LoadConstString      r0, s5 "high-twenties"
+  0045  Call2                r0, r1, r2, r0
+  004a  Jmp                  L10
+L4:
+  004c  GetByIdShort         r1, r2, #c1, s12 "push"
+  0051  LoadConstString      r0, s9 "teens-twenties"
+  0055  Call2                r0, r1, r2, r0
+  005a  Jmp                  L10
+L5:
+  005c  GetByIdShort         r1, r2, #c1, s12 "push"
+  0061  LoadConstString      r0, s10 "ten"
+  0065  Call2                r0, r1, r2, r0
+L6:
+  006a  GetByIdShort         r1, r2, #c1, s12 "push"
+  006f  LoadConstString      r0, s11 "ten-or-eleven"
+  0073  Call2                r0, r1, r2, r0
+  0078  Jmp                  L10
+L7:
+  007a  GetByIdShort         r1, r2, #c1, s12 "push"
+  007f  LoadConstString      r0, s6 "mid-low"
+  0083  Call2                r0, r1, r2, r0
+  0088  Jmp                  L10
+L8:
+  008a  GetByIdShort         r1, r2, #c1, s12 "push"
+  008f  LoadConstString      r0, s7 "low"
+  0093  Call2                r0, r1, r2, r0
+  0098  Jmp                  L10
+L9:
+  009a  GetByIdShort         r1, r2, #c1, s12 "push"
+  009f  LoadConstString      r0, s8 "other"
+  00a3  Call2                r0, r1, r2, r0
+L10:
+  00a8  GetByIdShort         r1, r2, #c2, s15 "join"
+  00ad  LoadConstString      r0, s0 "+"
+  00b1  Call2                r0, r1, r2, r0
+  00b6  Ret                  r0

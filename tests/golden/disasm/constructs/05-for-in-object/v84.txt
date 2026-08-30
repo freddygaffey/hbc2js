@@ -1,0 +1,99 @@
+; hbc2js disassembly of 05-for-in-object/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=3 strings=29 globalCodeIndex=0
+function #0 "global"  params=1 frame=24 env=0 flags=dbg  @0x00000238 size=329
+  0000  DeclareGlobalVar     s15 "Base"
+  0005  DeclareGlobalVar     s16 "Derived"
+  000a  CreateEnvironment    r1
+  000c  LoadConstString      r10, s1 "="
+  0010  CreateClosure        r2, r1, f1 "Base"
+  0015  GetGlobalObject      r0
+  0017  PutById              r0, r2, #c1, s15 "Base"
+  001d  CreateClosure        r1, r1, f2 "Derived"
+  0022  PutById              r0, r1, #c2, s16 "Derived"
+  0028  GetByIdShort         r1, r0, #c1, s15 "Base"
+  002d  GetByIdShort         r2, r1, #c2, s25 "prototype"
+  0032  LoadConstString      r1, s8 "proto-enumerable"
+  0036  PutById              r2, r1, #c3, s24 "protoEnumerable"
+  003c  GetByIdShort         r2, r0, #c3, s16 "Derived"
+  0041  TryGetById           r4, r0, #c4, s18 "Object"
+  0047  GetByIdShort         r3, r4, #c5, s20 "create"
+  004c  GetByIdShort         r1, r0, #c1, s15 "Base"
+  0051  GetByIdShort         r1, r1, #c2, s25 "prototype"
+  0056  Call2                r1, r3, r4, r1
+  005b  PutById              r2, r1, #c4, s25 "prototype"
+  0061  GetByIdShort         r1, r0, #c3, s16 "Derived"
+  0066  GetByIdShort         r2, r1, #c2, s25 "prototype"
+  006b  CreateThis           r2, r2, r1
+  006f  Mov                  r17, r2
+  0072  Construct            r1, r1, 1
+  0076  SelectObject         r1, r2, r1
+  007a  TryGetById           r5, r0, #c4, s18 "Object"
+  0080  GetByIdShort         r4, r5, #c6, s17 "defineProperty"
+  0085  LoadConstString      r3, s4 "hiddenProp"
+  0089  NewObjectWithBuffer  r2, 2, 2, lit@0x0000, lit@0x0000
+  0093  Call4                r2, r4, r5, r1, r3, r2
+  009a  NewArray             r2, 0
+  009e  Mov                  r5, r1
+  00a1  GetPNameList         r6, r5, r4, r3
+  00a6  JmpUndefined         L2, r6
+L1:
+  00a9  GetNextPName         r1, r6, r5, r4, r3
+  00af  JmpUndefined         L2, r1
+  00b2  Mov                  r7, r1
+  00b5  GetByIdShort         r8, r2, #c7, s10 "push"
+  00ba  ThrowIfEmpty         r7, r7
+  00bd  Call2                r7, r8, r2, r7
+  00c2  Jmp                  L1
+L2:
+  00c4  TryGetById           r5, r0, #c8, s23 "print"
+  00ca  GetByIdShort         r1, r2, #c9, s26 "sort"
+  00cf  Call1                r2, r1, r2
+  00d3  GetByIdShort         r1, r2, #c10, s11 "join"
+  00d8  LoadConstString      r4, s0 ","
+  00dc  Call2                r2, r1, r2, r4
+  00e1  LoadConstUndefined   r3
+  00e3  LoadConstString      r1, s6 "keys:"
+  00e7  Call3                r1, r5, r3, r1, r2
+  00ed  NewObjectWithBuffer  r9, 3, 3, lit@0x0003, lit@0x0003
+  00f7  NewArray             r1, 0
+  00fb  Mov                  r7, r9
+  00fe  GetPNameList         r8, r7, r6, r5
+  0103  JmpUndefined         L4, r8
+L3:
+  0106  GetNextPName         r2, r8, r7, r6, r5
+  010c  JmpUndefined         L4, r2
+  010f  Mov                  r11, r2
+  0112  GetByIdShort         r12, r1, #c7, s10 "push"
+  0117  ThrowIfEmpty         r13, r11
+  011a  Add                  r13, r13, r10
+  011e  GetByVal             r11, r9, r11
+  0122  Add                  r11, r13, r11
+  0126  Call2                r11, r12, r1, r11
+  012b  Jmp                  L3
+L4:
+  012d  TryGetById           r2, r0, #c8, s23 "print"
+  0133  GetByIdShort         r0, r1, #c10, s11 "join"
+  0138  Call2                r1, r0, r1, r4
+  013d  LoadConstString      r0, s5 "plain:"
+  0141  Call3                r0, r2, r3, r0, r1
+  0147  Ret                  r0
+
+function #1 "Base"  params=1 frame=2 env=0 flags=dbg  @0x00000381 size=16
+  0000  LoadConstString      r1, s2 "from-base"
+  0004  LoadThisNS           r0
+  0006  PutById              r0, r1, #c1, s12 "inheritedProp"
+  000c  LoadConstUndefined   r0
+  000e  Ret                  r0
+
+function #2 "Derived"  params=1 frame=11 env=0 flags=dbg  @0x00000391 size=41
+  0000  LoadThisNS           r1
+  0002  GetGlobalObject      r0
+  0004  GetByIdShort         r2, r0, #c1, s15 "Base"
+  0009  GetByIdShort         r0, r2, #c2, s19 "call"
+  000e  Call2                r0, r0, r2, r1
+  0013  LoadConstUInt8       r0, 1
+  0016  PutById              r1, r0, #c1, s22 "ownA"
+  001c  LoadConstUInt8       r0, 2
+  001f  PutById              r1, r0, #c2, s14 "ownB"
+  0025  LoadConstUndefined   r0
+  0027  Ret                  r0

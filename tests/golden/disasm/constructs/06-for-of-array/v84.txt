@@ -1,0 +1,104 @@
+; hbc2js disassembly of 06-for-of-array/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=23 env=0 flags=exc,dbg  @0x00000148 size=318
+  .try T1..T2 -> L3 ; handler 0
+  .try T3..T4 -> L3 ; handler 1
+  .try T5..T6 -> L6 ; handler 2
+  .try T7..T8 -> L9 ; handler 3
+  0000  LoadConstUndefined   r3
+  0002  LoadConstUInt8       r10, 30
+  0005  LoadConstUInt8       r7, 2
+  0008  GetGlobalObject      r1
+  000a  LoadConstEmpty       r5
+  000c  Mov                  r6, r5
+  000f  Mov                  r2, r5
+  0012  Mov                  r0, r5
+  0015  NewArrayWithBuffer   r8, 5, 5, lit@0x0000
+  001d  LoadConstZero        r4
+  001f  Mov                  r5, r8
+  0022  IteratorBegin        r9, r5
+L1:
+  0025  IteratorNext         r11, r9, r5
+  0029  Mov                  r12, r9
+  002c  JStrictEqual         L4, r12, r3
+  0030  Mov                  r6, r11
+  0033  Mov                  r13, r4
+  0036  ThrowIfEmpty         r12, r11
+  0039  Add                  r4, r13, r12
+  003d  JStrictEqual         L2, r11, r10
+  0041  Jmp                  L1
+L2:
+  0043  TryGetById           r10, r1, #c1, s8 "print"
+  0049  Mov                  r5, r6
+  004c  ThrowIfEmpty         r11, r5
+  004f  LoadConstString      r5, s1 "breaking at v="
+  0053  Add                  r5, r5, r11
+  0057  Call2                r5, r10, r3, r5
+  005c  IteratorClose        r9, 0
+  005f  Jmp                  L4
+L3:
+  0061  Catch                r5
+  0063  IteratorClose        r9, 1
+  0066  Throw                r5
+L4:
+  0068  TryGetById           r5, r1, #c1, s8 "print"
+  006e  Mov                  r9, r4
+  0071  LoadConstString      r4, s5 "sum so far="
+  0075  Add                  r4, r4, r9
+  0079  Call2                r4, r5, r3, r4
+  007e  NewArray             r2, 0
+  0082  Mov                  r4, r8
+  0085  IteratorBegin        r5, r4
+L5:
+  0088  IteratorNext         r8, r5, r4
+  008c  Mov                  r9, r5
+  008f  JStrictEqual         L7, r9, r3
+  0093  Mov                  r6, r8
+  0096  Mov                  r10, r2
+  0099  GetByIdShort         r9, r10, #c2, s9 "push"
+  009e  ThrowIfEmpty         r8, r8
+  00a1  Mul                  r8, r8, r7
+  00a5  Call2                r8, r9, r10, r8
+  00aa  Jmp                  L5
+L6:
+  00ac  Catch                r4
+  00ae  IteratorClose        r5, 1
+  00b1  Throw                r4
+L7:
+  00b3  TryGetById           r7, r1, #c1, s8 "print"
+  00b9  Mov                  r5, r2
+  00bc  GetByIdShort         r2, r5, #c3, s7 "join"
+  00c1  LoadConstString      r4, s0 ","
+  00c5  Call2                r5, r2, r5, r4
+  00ca  LoadConstString      r2, s2 "doubled:"
+  00ce  Call3                r2, r7, r3, r2, r5
+  00d4  NewArrayWithBuffer   r7, 3, 1, lit@0x0015
+  00dc  LoadConstUInt8       r2, 3
+  00df  PutOwnByIndex        r7, r2, 2
+  00e3  NewArray             r0, 0
+  00e7  Mov                  r2, r7
+  00ea  IteratorBegin        r5, r2
+L8:
+  00ed  IteratorNext         r7, r5, r2
+  00f1  Mov                  r8, r5
+  00f4  JStrictEqual         L10, r8, r3
+  00f8  Mov                  r6, r7
+  00fb  Mov                  r9, r0
+  00fe  GetByIdShort         r8, r9, #c2, s9 "push"
+  0103  TryGetById           r10, r1, #c4, s6 "String"
+  0109  ThrowIfEmpty         r7, r7
+  010c  Call2                r7, r10, r3, r7
+  0111  Call2                r7, r8, r9, r7
+  0116  Jmp                  L8
+L9:
+  0118  Catch                r2
+  011a  IteratorClose        r5, 1
+  011d  Throw                r2
+L10:
+  011f  TryGetById           r2, r1, #c1, s8 "print"
+  0125  Mov                  r1, r0
+  0128  GetByIdShort         r0, r1, #c3, s7 "join"
+  012d  Call2                r1, r0, r1, r4
+  0132  LoadConstString      r0, s4 "sparse (holes become undefined):"
+  0136  Call3                r0, r2, r3, r0, r1
+  013c  Ret                  r0

@@ -1,0 +1,60 @@
+; hbc2js disassembly of 04-for-loop-basic/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=31 env=0 flags=dbg,overflowed  @0x000000f0 size=203
+  0000  NewArray             r15, 0
+  0004  LoadConstUInt8       r7, 10
+  0007  LoadConstString      r12, s1 ":"
+  000b  LoadConstUInt8       r2, 1
+  000e  Mov                  r3, r7
+  0011  LoadConstZero        r1
+L1:
+  0013  GetByIdShort         r14, r15, #c0, s9 "push"
+  0018  Add                  r13, r1, r12
+  001c  Add                  r13, r13, r3
+  0020  Call2                r13, r14, r15, r13
+  0025  AddN                 r1, r1, r2
+  0029  SubN                 r3, r3, r2
+  002d  JLessN               L1, r1, r3
+  0031  GetGlobalObject      r16
+  0033  TryGetById           r13, r16, #c1, s7 "print"
+  0039  GetByIdShort         r14, r15, #c2, s8 "join"
+  003e  LoadConstString      r12, s0 " | "
+  0042  Call2                r12, r14, r15, r12
+  0047  LoadConstUndefined   r11
+  0049  Call2                r12, r13, r11, r12
+  004e  LoadConstUInt8       r5, 100
+  0051  LoadConstUInt8       r8, 2
+  0054  LoadConstUInt8       r0, 5
+  0057  Mov                  r4, r2
+  005a  LoadConstZero        r3
+L2:
+  005c  AddN                 r1, r4, r5
+  0060  AddN                 r1, r3, r1
+  0064  AddN                 r4, r4, r8
+  0068  SubN                 r5, r5, r0
+  006c  Mov                  r3, r1
+  006f  JLessN               L2, r4, r5
+  0073  TryGetById           r13, r16, #c1, s7 "print"
+  0079  LoadConstString      r12, s6 "total="
+  007d  Add                  r12, r12, r1
+  0081  Call2                r12, r13, r11, r12
+  0086  LoadConstUInt8       r3, 3
+  0089  LoadConstString      r15, s2 "dummy="
+  008d  LoadConstString      r14, s5 "j="
+  0091  LoadConstString      r13, s4 "i="
+  0095  LoadConstZero        r1
+L3:
+  0097  MulN                 r4, r1, r7
+  009b  Add                  r18, r15, r4
+  009f  Add                  r17, r13, r1
+  00a3  Mov                  r4, r1
+  00a6  LoadConstZero        r0
+L4:
+  00a8  TryGetById           r19, r16, #c1, s7 "print"
+  00ae  Add                  r12, r14, r0
+  00b2  Call4                r12, r19, r11, r17, r12, r18
+  00b9  AddN                 r0, r0, r2
+  00bd  JLessN               L4, r0, r8
+  00c1  AddN                 r1, r4, r2
+  00c5  JLessN               L3, r1, r3
+  00c9  Ret                  r12

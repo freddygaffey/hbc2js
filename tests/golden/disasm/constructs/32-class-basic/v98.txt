@@ -1,0 +1,100 @@
+; hbc2js disassembly of 32-class-basic/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=19 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x000001c4 size=221
+  0000  LoadConstUndefined   r1
+  0002  CreateBaseClass      r3, r2, r1, 1
+  0008  Mov                  r5, r2
+  000b  LoadConstString      r4, s13 "distanceFromOrigin"
+  000f  CreateClosure        r2, r1, f2 "distanceFromOrigin"
+  0014  DefineOwnByVal       r5, r2, r4, 0
+  0019  LoadConstString      r4, s9 "toString"
+  001d  CreateClosure        r2, r1, f3 "toString"
+  0022  DefineOwnByVal       r5, r2, r4, 0
+  0027  LoadConstString      r4, s11 "translate"
+  002b  CreateClosure        r2, r1, f4 "translate"
+  0030  DefineOwnByVal       r5, r2, r4, 0
+  0035  GetByIdShort         r2, r3, #c0, s15 "prototype"
+  003a  NewObjectWithBufferAndParent r5, r2, sh0(numProps=3), lit@0x0000
+  0045  LoadConstUInt8       r0, 3
+  0048  PutByIdStrict        r5, r0, #c0, s17 "x"
+  004e  LoadConstUInt8       r0, 4
+  0051  PutByIdStrict        r5, r0, #c1, s18 "y"
+  0057  GetGlobalObject      r2
+  0059  TryGetById           r7, r2, #c1, s14 "print"
+  005f  GetByIdShort         r4, r5, #c2, s9 "toString"
+  0064  Call1                r6, r4, r5
+  0068  GetByIdShort         r4, r5, #c3, s13 "distanceFromOrigin"
+  006d  Call1                r8, r4, r5
+  0071  LoadConstString      r4, s7 "dist="
+  0075  Add                  r4, r4, r8
+  0079  Call3                r4, r7, r1, r6, r4
+  007f  GetByIdShort         r4, r5, #c4, s11 "translate"
+  0084  LoadConstUInt8       r0, 1
+  0087  Call3                r4, r4, r5, r0, r0
+  008d  TryGetById           r6, r2, #c1, s14 "print"
+  0093  GetByIdShort         r4, r5, #c2, s9 "toString"
+  0098  Call1                r5, r4, r5
+  009c  LoadConstString      r4, s5 "after translate:"
+  00a0  Call3                r4, r6, r1, r4, r5
+  00a6  GetByIdShort         r3, r3, #c0, s15 "prototype"
+  00ab  NewObjectWithBufferAndParent r3, r3, sh0(numProps=3), lit@0x0000
+  00b6  PutByIdStrict        r3, r1, #c0, s17 "x"
+  00bc  PutByIdStrict        r3, r1, #c1, s18 "y"
+  00c2  TryGetById           r4, r2, #c1, s14 "print"
+  00c8  GetByIdShort         r2, r3, #c2, s9 "toString"
+  00cd  Call1                r3, r2, r3
+  00d1  LoadConstString      r2, s6 "defaulted fields:"
+  00d5  Call3                r2, r4, r1, r2, r3
+  00db  Ret                  r2
+
+function #1 "Point"  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000002a1 size=38
+  0000  GetNewTarget         r0
+  0002  GetByIdShort         r0, r0, #c0, s15 "prototype"
+  0007  NewObjectWithBufferAndParent r0, r0, sh0(numProps=3), lit@0x0000
+  0012  LoadParam            r1, 1
+  0015  PutByIdStrict        r0, r1, #c0, s17 "x"
+  001b  LoadParam            r1, 2
+  001e  PutByIdStrict        r0, r1, #c1, s18 "y"
+  0024  Ret                  r0
+
+function #2 "distanceFromOrigin"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x000002c7 size=55
+  0000  LoadParam            r0, 0
+  0003  GetGlobalObject      r1
+  0005  TryGetById           r2, r1, #c0, s12 "Math"
+  000b  GetByIdShort         r1, r2, #c1, s16 "sqrt"
+  0010  GetByIdShort         r4, r0, #c2, s17 "x"
+  0015  GetByIdShort         r3, r0, #c2, s17 "x"
+  001a  Mul                  r3, r4, r3
+  001e  GetByIdShort         r4, r0, #c3, s18 "y"
+  0023  GetByIdShort         r0, r0, #c3, s18 "y"
+  0028  Mul                  r0, r4, r0
+  002c  Add                  r0, r3, r0
+  0030  Call2                r0, r1, r2, r0
+  0035  Ret                  r0
+
+function #3 "toString"  params=1 frame=3 env=0 flags=overflowed,ctor  @0x000002fe size=52
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r2, r0, #c0, s10 "label"
+  0008  LoadConstString      r1, s0 "("
+  000c  Add                  r2, r2, r1
+  0010  GetByIdShort         r1, r0, #c1, s17 "x"
+  0015  Add                  r2, r2, r1
+  0019  GetByIdShort         r1, r0, #c2, s18 "y"
+  001e  LoadConstString      r0, s2 ","
+  0022  AddS                 r0, r2, r0
+  0026  Add                  r1, r0, r1
+  002a  LoadConstString      r0, s1 ")"
+  002e  AddS                 r0, r1, r0
+  0032  Ret                  r0
+
+function #4 "translate"  params=3 frame=3 env=0 flags=overflowed,ctor  @0x00000332 size=41
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r2, r0, #c0, s17 "x"
+  0008  LoadParam            r1, 1
+  000b  Add                  r1, r2, r1
+  000f  PutByIdStrict        r0, r1, #c0, s17 "x"
+  0015  GetByIdShort         r2, r0, #c1, s18 "y"
+  001a  LoadParam            r1, 2
+  001d  Add                  r1, r2, r1
+  0021  PutByIdStrict        r0, r1, #c1, s18 "y"
+  0027  Ret                  r0

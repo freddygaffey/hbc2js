@@ -1,0 +1,163 @@
+; hbc2js disassembly of 31-microtask-ordering/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=10 strings=23 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=1 flags=dbg  @0x00000280 size=233
+  0000  DeclareGlobalVar     s16 "asyncFn"
+  0005  CreateEnvironment    r0
+  0007  CreateAsyncClosure   r2, r0, f1 "asyncFn"
+  000c  GetGlobalObject      r1
+  000e  PutById              r1, r2, #c1, s16 "asyncFn"
+  0014  NewArray             r4, 0
+  0018  StoreToEnvironment   r0, 0, r4
+  001c  GetByIdShort         r3, r4, #c1, s21 "push"
+  0021  LoadConstString      r2, s13 "sync-1"
+  0025  Call2                r2, r3, r4, r2
+  002a  TryGetById           r3, r1, #c2, s18 "Promise"
+  0030  GetByIdShort         r2, r3, #c3, s22 "resolve"
+  0035  Call1                r5, r2, r3
+  0039  GetByIdShort         r3, r5, #c4, s17 "then"
+  003e  CreateClosure        r2, r0, f4 ""
+  0043  Call2                r5, r3, r5, r2
+  0048  GetByIdShort         r3, r5, #c4, s17 "then"
+  004d  CreateClosure        r2, r0, f5 ""
+  0052  Call2                r2, r3, r5, r2
+  0057  TryGetById           r3, r1, #c2, s18 "Promise"
+  005d  GetByIdShort         r2, r3, #c3, s22 "resolve"
+  0062  Call1                r5, r2, r3
+  0066  GetByIdShort         r3, r5, #c4, s17 "then"
+  006b  CreateClosure        r2, r0, f6 ""
+  0070  Call2                r2, r3, r5, r2
+  0075  GetByIdShort         r3, r4, #c1, s21 "push"
+  007a  LoadConstString      r2, s14 "sync-2"
+  007e  Call2                r2, r3, r4, r2
+  0083  GetByIdShort         r3, r1, #c5, s16 "asyncFn"
+  0088  LoadConstUndefined   r2
+  008a  Call1                r2, r3, r2
+  008e  GetByIdShort         r3, r4, #c1, s21 "push"
+  0093  LoadConstString      r2, s15 "sync-3"
+  0097  Call2                r2, r3, r4, r2
+  009c  TryGetById           r3, r1, #c2, s18 "Promise"
+  00a2  GetByIdShort         r2, r3, #c3, s22 "resolve"
+  00a7  Call1                r4, r2, r3
+  00ab  GetByIdShort         r3, r4, #c4, s17 "then"
+  00b0  CreateClosure        r2, r0, f7 ""
+  00b5  Call2                r4, r3, r4, r2
+  00ba  GetByIdShort         r3, r4, #c4, s17 "then"
+  00bf  CreateClosure        r2, r0, f8 ""
+  00c4  Call2                r2, r3, r4, r2
+  00c9  TryGetById           r2, r1, #c2, s18 "Promise"
+  00cf  GetByIdShort         r1, r2, #c3, s22 "resolve"
+  00d4  Call1                r2, r1, r2
+  00d8  GetByIdShort         r1, r2, #c4, s17 "then"
+  00dd  CreateClosure        r0, r0, f9 ""
+  00e2  Call2                r0, r1, r2, r0
+  00e7  Ret                  r0
+
+function #1 "asyncFn"  params=1 frame=15 env=0 flags=dbg,nc  @0x00000369 size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b52 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f2 "?anon_0_asyncFn"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #2 "?anon_0_asyncFn"  params=1 frame=1 env=0 flags=nc  @0x00000387 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f3 "?anon_0_?anon_0_asyncFn"
+  0007  Ret                  r0
+
+function #3 "?anon_0_?anon_0_asyncFn"  params=1 frame=13 env=0 flags=dbg  @0x00000390 size=69
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrue              L3, r1
+  0007  GetEnvironment       r2, 2
+  000a  LoadFromEnvironment  r4, r2, 0
+  000e  GetByIdShort         r3, r4, #c1, s21 "push"
+  0013  LoadConstString      r1, s5 "async-fn-start"
+  0017  Call2                r1, r3, r4, r1
+  001c  LoadConstNull        r1
+  001e  SaveGenerator        L1
+  0020  Ret                  r1
+L1:
+  0022  ResumeGenerator      r1, r3
+  0025  JmpTrue              L2, r3
+  0028  LoadFromEnvironment  r4, r2, 0
+  002c  GetByIdShort         r3, r4, #c1, s21 "push"
+  0031  LoadConstString      r2, s4 "async-fn-after-await"
+  0035  Call2                r2, r3, r4, r2
+  003a  LoadConstUndefined   r2
+  003c  CompleteGenerator
+  003d  Ret                  r2
+L2:
+  003f  CompleteGenerator
+  0040  Ret                  r1
+L3:
+  0042  CompleteGenerator
+  0043  Ret                  r0
+
+function #4 ""  params=1 frame=11 env=0 flags=dbg  @0x000003d5 size=25
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s21 "push"
+  000c  LoadConstString      r0, s8 "microtask-A1"
+  0010  Call2                r0, r1, r2, r0
+  0015  LoadConstUndefined   r0
+  0017  Ret                  r0
+
+function #5 ""  params=1 frame=11 env=0 flags=dbg  @0x000003ee size=25
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s21 "push"
+  000c  LoadConstString      r0, s9 "microtask-A2"
+  0010  Call2                r0, r1, r2, r0
+  0015  LoadConstUndefined   r0
+  0017  Ret                  r0
+
+function #6 ""  params=1 frame=11 env=0 flags=dbg  @0x00000407 size=25
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s21 "push"
+  000c  LoadConstString      r0, s10 "microtask-B1"
+  0010  Call2                r0, r1, r2, r0
+  0015  LoadConstUndefined   r0
+  0017  Ret                  r0
+
+function #7 ""  params=1 frame=11 env=0 flags=dbg  @0x00000420 size=40
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s21 "push"
+  000c  LoadConstString      r0, s11 "microtask-C1"
+  0010  Call2                r0, r1, r2, r0
+  0015  GetGlobalObject      r0
+  0017  TryGetById           r1, r0, #c2, s18 "Promise"
+  001d  GetByIdShort         r0, r1, #c3, s22 "resolve"
+  0022  Call1                r0, r0, r1
+  0026  Ret                  r0
+
+function #8 ""  params=1 frame=11 env=0 flags=dbg  @0x00000448 size=25
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s21 "push"
+  000c  LoadConstString      r0, s12 "microtask-C2 (chained promise fl…"
+  0010  Call2                r0, r1, r2, r0
+  0015  LoadConstUndefined   r0
+  0017  Ret                  r0
+
+function #9 ""  params=1 frame=12 env=0 flags=dbg  @0x00000461 size=56
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r3, r0, 0
+  0007  GetByIdShort         r2, r3, #c1, s21 "push"
+  000c  LoadConstString      r1, s6 "final-tick"
+  0010  Call2                r1, r2, r3, r1
+  0015  GetGlobalObject      r1
+  0017  TryGetById           r2, r1, #c2, s20 "print"
+  001d  LoadFromEnvironment  r3, r0, 0
+  0021  GetByIdShort         r1, r3, #c3, s19 "join"
+  0026  LoadConstString      r0, s1 " -> "
+  002a  Call2                r1, r1, r3, r0
+  002f  LoadConstUndefined   r0
+  0031  Call2                r1, r2, r0, r1
+  0036  Ret                  r0

@@ -1,0 +1,82 @@
+; hbc2js disassembly of 01-if-else-chain/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=2 strings=15 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=1 flags=exc,dbg  @0x00000140 size=159
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s11 "check"
+  0005  CreateEnvironment    r1
+  0007  CreateClosure        r2, r1, f1 "check"
+  000c  GetGlobalObject      r0
+  000e  PutById              r0, r2, #c1, s11 "check"
+  0014  NewArray             r4, 0
+  0018  StoreToEnvironment   r1, 0, r4
+  001c  NewArray             r1, 5
+  0020  LoadConstInt         r2, -5
+  0026  PutOwnByIndex        r1, r2, 0
+  002a  LoadConstZero        r2
+  002c  PutOwnByIndex        r1, r2, 1
+  0030  LoadConstUInt8       r2, 3
+  0033  PutOwnByIndex        r1, r2, 2
+  0037  LoadConstUInt8       r2, 42
+  003a  PutOwnByIndex        r1, r2, 3
+  003e  LoadConstInt         r2, 1000
+  0044  PutOwnByIndex        r1, r2, 4
+  0048  Mov                  r5, r1
+  004b  IteratorBegin        r2, r5
+  004e  LoadConstUndefined   r3
+  0050  LoadConstString      r1, s2 "->"
+L1:
+  0054  IteratorNext         r8, r2, r5
+  0058  Mov                  r6, r2
+  005b  JStrictEqual         L3, r6, r3
+  005f  TryGetById           r7, r0, #c1, s13 "print"
+  0065  GetByIdShort         r6, r0, #c2, s11 "check"
+  006a  Call2                r6, r6, r3, r8
+  006f  Call4                r6, r7, r3, r8, r1, r6
+  0076  Jmp                  L1
+L2:
+  0078  Catch                r1
+  007a  IteratorClose        r2, 1
+  007d  Throw                r1
+L3:
+  007f  TryGetById           r2, r0, #c1, s13 "print"
+  0085  GetByIdShort         r1, r4, #c3, s12 "join"
+  008a  LoadConstString      r0, s0 " | "
+  008e  Call2                r1, r1, r4, r0
+  0093  LoadConstString      r0, s8 "side effects:"
+  0097  Call3                r0, r2, r3, r0, r1
+  009d  Ret                  r0
+
+function #1 "check"  params=2 frame=13 env=0 flags=dbg  @0x000001df size=95
+  0000  LoadParam            r1, 1
+  0003  GetEnvironment       r0, 0
+  0006  LoadFromEnvironment  r3, r0, 0
+  000a  GetByIdShort         r2, r3, #c1, s14 "push"
+  000f  LoadConstString      r0, s3 "check("
+  0013  Add                  r4, r0, r1
+  0017  LoadConstString      r0, s1 ")"
+  001b  Add                  r0, r4, r0
+  001f  Call2                r0, r2, r3, r0
+  0024  JmpFalse             L1, r0
+  0027  LoadConstZero        r0
+  0029  JLess                L5, r1, r0
+L1:
+  002d  LoadConstZero        r0
+  002f  JStrictEqual         L4, r1, r0
+  0033  LoadConstUInt8       r0, 10
+  0036  JLess                L3, r1, r0
+  003a  LoadConstUInt8       r0, 100
+  003d  JLess                L2, r1, r0
+  0041  LoadConstString      r0, s5 "large"
+  0045  Ret                  r0
+L2:
+  0047  LoadConstString      r0, s6 "medium"
+  004b  Ret                  r0
+L3:
+  004d  LoadConstString      r0, s9 "small"
+  0051  Ret                  r0
+L4:
+  0053  LoadConstString      r0, s10 "zero"
+  0057  Ret                  r0
+L5:
+  0059  LoadConstString      r0, s7 "negative"
+  005d  Ret                  r0

@@ -1,0 +1,91 @@
+; hbc2js disassembly of 45-regex-literals/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=2 strings=33 globalCodeIndex=0
+function #0 "global"  params=1 frame=23 env=0 flags=dbg  @0x0000033c size=415
+  0000  LoadConstZero        r8
+  0002  LoadConstString      r7, s7 "@"
+  0006  LoadConstString      r6, s19 "the quick brown fox"
+  000a  LoadConstNull        r4
+  000c  CreateRegExp         r10, s3 "(?<year>\\d{4})-(?<month>\\d{2})…", s0 "", re0
+  001a  NewObjectWithBuffer  r14, 3, 3, lit@0x0000, lit@0x0000
+  0024  Mov                  r15, r10
+  0027  CallBuiltin          r0, b50 "initRegexNamedGroups", 3
+  002b  GetByIdShort         r1, r10, #c1, s26 "exec"
+  0030  LoadConstString      r0, s5 "Meeting on 2024-03-15 confirmed"
+  0034  Call2                r1, r1, r10, r0
+  0039  GetGlobalObject      r0
+  003b  TryGetById           r11, r0, #c2, s28 "print"
+  0041  GetByVal             r15, r1, r8
+  0045  GetByIdShort         r2, r1, #c3, s29 "groups"
+  004a  GetByIdShort         r14, r2, #c4, s23 "year"
+  004f  GetByIdShort         r2, r1, #c3, s29 "groups"
+  0054  GetByIdShort         r13, r2, #c5, s22 "month"
+  0059  GetByIdShort         r1, r1, #c3, s29 "groups"
+  005e  GetByIdShort         r12, r1, #c6, s21 "day"
+  0063  LoadConstUndefined   r2
+  0065  LoadConstUndefined   r16
+  0067  Call                 r1, r11, 5
+  006b  TryGetById           r3, r0, #c2, s28 "print"
+  0071  LoadConstString      r9, s6 "2024-03-15"
+  0075  GetByIdShort         r5, r9, #c7, s27 "replace"
+  007a  LoadConstString      r1, s2 "$<day>/$<month>/$<year>"
+  007e  Call3                r1, r5, r9, r10, r1
+  0084  Call2                r1, r3, r2, r1
+  0089  CreateRegExp         r3, s11 "\\b\\w+\\b", s15 "g", re1
+  0097  NewArray             r5, 0
+  009b  GetByIdShort         r1, r3, #c1, s26 "exec"
+  00a0  Call2                r1, r1, r3, r6
+  00a5  JStrictEqual         L2, r1, r4
+L1:
+  00a9  GetByIdShort         r10, r5, #c8, s32 "push"
+  00ae  GetByVal             r9, r1, r8
+  00b2  Add                  r11, r9, r7
+  00b6  GetByIdShort         r9, r1, #c9, s25 "index"
+  00bb  Add                  r9, r11, r9
+  00bf  Call2                r9, r10, r5, r9
+  00c4  GetByIdShort         r9, r3, #c1, s26 "exec"
+  00c9  Call2                r1, r9, r3, r6
+  00ce  JStrictNotEqual      L1, r1, r4
+L2:
+  00d2  TryGetById           r3, r0, #c2, s28 "print"
+  00d8  GetByIdShort         r4, r5, #c10, s24 "join"
+  00dd  LoadConstString      r1, s4 ","
+  00e1  Call2                r1, r4, r5, r1
+  00e6  Call2                r1, r3, r2, r1
+  00eb  TryGetById           r3, r0, #c2, s28 "print"
+  00f1  CreateRegExp         r5, s1 "^[a-z]+$", s17 "i", re2
+  00ff  GetByIdShort         r4, r5, #c11, s31 "test"
+  0104  LoadConstString      r1, s8 "HELLO"
+  0108  Call2                r1, r4, r5, r1
+  010d  Call2                r1, r3, r2, r1
+  0112  TryGetById           r3, r0, #c2, s28 "print"
+  0118  CreateRegExp         r5, s1 "^[a-z]+$", s17 "i", re2
+  0126  GetByIdShort         r4, r5, #c11, s31 "test"
+  012b  LoadConstString      r1, s9 "HELLO123"
+  012f  Call2                r1, r4, r5, r1
+  0134  Call2                r1, r3, r2, r1
+  0139  TryGetById           r3, r0, #c2, s28 "print"
+  013f  LoadConstString      r6, s14 "a1b2c3"
+  0143  GetByIdShort         r5, r6, #c7, s27 "replace"
+  0148  CreateRegExp         r4, s12 "\\d", s15 "g", re3
+  0156  CreateEnvironment    r1
+  0158  CreateClosure        r1, r1, f1 ""
+  015d  Call3                r1, r5, r6, r4, r1
+  0163  Call2                r1, r3, r2, r1
+  0168  TryGetById           r1, r0, #c2, s28 "print"
+  016e  LoadConstString      r4, s18 "one,two,,four"
+  0172  GetByIdShort         r3, r4, #c12, s30 "split"
+  0177  CreateRegExp         r0, s4 ",", s0 "", re4
+  0185  Call2                r4, r3, r4, r0
+  018a  GetByIdShort         r3, r4, #c10, s24 "join"
+  018f  LoadConstString      r0, s20 "|"
+  0193  Call2                r0, r3, r4, r0
+  0198  Call2                r0, r1, r2, r0
+  019d  Ret                  r0
+
+function #1 ""  params=2 frame=2 env=0 flags=dbg  @0x000004db size=21
+  0000  LoadConstString      r1, s10 "["
+  0004  LoadParam            r0, 1
+  0007  Add                  r1, r1, r0
+  000b  LoadConstString      r0, s13 "]"
+  000f  Add                  r0, r1, r0
+  0013  Ret                  r0

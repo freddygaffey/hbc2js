@@ -1,0 +1,111 @@
+; hbc2js disassembly of 47-typeof-instanceof-in/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=4 strings=27 globalCodeIndex=0
+function #0 "global"  params=1 frame=29 env=0 flags=dbg  @0x00000264 size=429
+  0000  DeclareGlobalVar     s23 "Base"
+  0005  DeclareGlobalVar     s24 "Mid"
+  000a  DeclareGlobalVar     s17 "Leaf"
+  000f  CreateEnvironment    r1
+  0011  CreateClosure        r2, r1, f1 "Base"
+  0016  GetGlobalObject      r0
+  0018  PutById              r0, r2, #c1, s23 "Base"
+  001e  CreateClosure        r2, r1, f2 "Mid"
+  0023  PutById              r0, r2, #c2, s24 "Mid"
+  0029  CreateClosure        r1, r1, f3 "Leaf"
+  002e  PutById              r0, r1, #c3, s17 "Leaf"
+  0034  TryGetById           r3, r0, #c1, s21 "print"
+  003a  GetByIdShort         r1, r0, #c2, s18 "neverDeclared"
+  003f  LoadConstUndefined   r11
+  0041  LoadConstString      r2, s12 "typeof undeclared:"
+  0045  TypeOf               r1, r1
+  0048  Call3                r1, r3, r11, r2, r1
+  004e  TryGetById           r2, r0, #c1, s21 "print"
+  0054  LoadConstString      r1, s13 "typeof undefined var:"
+  0058  LoadConstString      r10, s14 "undefined"
+  005c  Call3                r1, r2, r11, r1, r10
+  0062  TryGetById           r2, r0, #c1, s21 "print"
+  0068  LoadConstString      r1, s11 "typeof let before assignment (de…"
+  006c  Call3                r1, r2, r11, r1, r10
+  0072  GetByIdShort         r2, r0, #c3, s24 "Mid"
+  0077  TryGetById           r4, r0, #c4, s20 "Object"
+  007d  GetByIdShort         r3, r4, #c5, s26 "create"
+  0082  GetByIdShort         r1, r0, #c6, s23 "Base"
+  0087  GetByIdShort         r1, r1, #c7, s19 "prototype"
+  008c  Call2                r1, r3, r4, r1
+  0091  PutById              r2, r1, #c4, s19 "prototype"
+  0097  GetByIdShort         r2, r0, #c8, s17 "Leaf"
+  009c  TryGetById           r4, r0, #c4, s20 "Object"
+  00a2  GetByIdShort         r3, r4, #c5, s26 "create"
+  00a7  GetByIdShort         r1, r0, #c3, s24 "Mid"
+  00ac  GetByIdShort         r1, r1, #c7, s19 "prototype"
+  00b1  Call2                r1, r3, r4, r1
+  00b6  PutById              r2, r1, #c4, s19 "prototype"
+  00bc  GetByIdShort         r1, r0, #c8, s17 "Leaf"
+  00c1  GetByIdShort         r2, r1, #c7, s19 "prototype"
+  00c6  CreateThis           r2, r2, r1
+  00ca  Mov                  r22, r2
+  00cd  Construct            r1, r1, 1
+  00d1  SelectObject         r2, r2, r1
+  00d5  TryGetById           r6, r0, #c1, s21 "print"
+  00db  GetByIdShort         r1, r0, #c8, s17 "Leaf"
+  00e0  InstanceOf           r20, r2, r1
+  00e4  GetByIdShort         r1, r0, #c3, s24 "Mid"
+  00e9  InstanceOf           r19, r2, r1
+  00ed  GetByIdShort         r1, r0, #c6, s23 "Base"
+  00f2  InstanceOf           r18, r2, r1
+  00f6  TryGetById           r1, r0, #c9, s22 "Array"
+  00fc  InstanceOf           r17, r2, r1
+  0100  LoadConstString      r21, s10 "instanceof chain:"
+  0104  LoadConstUndefined   r22
+  0106  Call                 r1, r6, 6
+  010a  NewObject            r2
+  010c  LoadConstUInt8       r1, 1
+  010f  PutNewOwnByIdShort   r2, r1, s15 "a"
+  0113  PutNewOwnByIdShort   r2, r11, s16 "b"
+  0117  TryGetById           r5, r0, #c1, s21 "print"
+  011d  LoadConstString      r1, s15 "a"
+  0121  IsIn                 r20, r1, r2
+  0125  LoadConstString      r1, s16 "b"
+  0129  IsIn                 r19, r1, r2
+  012d  LoadConstString      r1, s4 "c"
+  0131  IsIn                 r18, r1, r2
+  0135  LoadConstString      r21, s9 "in checks:"
+  0139  Call                 r1, r5, 5
+  013d  TryGetById           r4, r0, #c1, s21 "print"
+  0143  LoadConstZero        r2
+  0145  NewArrayWithBuffer   r1, 2, 2, lit@0x0000
+  014d  IsIn                 r3, r2, r1
+  0151  LoadConstUInt8       r2, 5
+  0154  NewArrayWithBuffer   r1, 2, 2, lit@0x0000
+  015c  IsIn                 r2, r2, r1
+  0160  LoadConstString      r1, s0 "array index in:"
+  0164  Call4                r1, r4, r11, r1, r3, r2
+  016b  TryGetById           r9, r0, #c1, s21 "print"
+  0171  TryGetById           r0, r0, #c10, s25 "Symbol"
+  0177  Call1                r0, r0, r11
+  017b  LoadConstString      r21, s5 "typeof primitives:"
+  017f  LoadConstString      r20, s2 "number"
+  0183  LoadConstString      r19, s7 "string"
+  0187  LoadConstString      r18, s1 "boolean"
+  018b  LoadConstString      r17, s3 "object"
+  018f  NewObject            r1
+  0191  TypeOf               r15, r1
+  0194  NewArray             r1, 0
+  0198  TypeOf               r14, r1
+  019b  LoadConstString      r13, s6 "function"
+  019f  TypeOf               r12, r0
+  01a2  LoadConstUndefined   r22
+  01a4  Mov                  r16, r10
+  01a7  Call                 r0, r9, 11
+  01ab  Ret                  r0
+
+function #1 "Base"  params=1 frame=1 env=0 flags=none  @0x00000411 size=4
+  0000  LoadConstUndefined   r0
+  0002  Ret                  r0
+
+function #2 "Mid"  params=1 frame=1 env=0 flags=none  @0x00000411 size=4
+  0000  LoadConstUndefined   r0
+  0002  Ret                  r0
+
+function #3 "Leaf"  params=1 frame=1 env=0 flags=none  @0x00000411 size=4
+  0000  LoadConstUndefined   r0
+  0002  Ret                  r0

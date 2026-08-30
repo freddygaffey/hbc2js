@@ -1,0 +1,203 @@
+; hbc2js disassembly of 26-infinite-generator-take/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=6 strings=14 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg  @0x000001b0 size=222
+  .try T1..T2 -> L3 ; handler 0
+  0000  DeclareGlobalVar     s8 "naturals"
+  0005  DeclareGlobalVar     s12 "take"
+  000a  DeclareGlobalVar     s7 "fibonacci"
+  000f  CreateEnvironment    r2
+  0011  LoadConstUndefined   r3
+  0013  LoadConstUInt8       r7, 50
+  0016  LoadConstEmpty       r1
+  0018  Mov                  r0, r1
+  001b  Mov                  r6, r1
+  001e  CreateGeneratorClosure r4, r2, f1 "naturals"
+  0023  GetGlobalObject      r1
+  0025  PutById              r1, r4, #c1, s8 "naturals"
+  002b  CreateClosure        r4, r2, f3 "take"
+  0030  PutById              r1, r4, #c2, s12 "take"
+  0036  CreateGeneratorClosure r2, r2, f4 "fibonacci"
+  003b  PutById              r1, r2, #c3, s7 "fibonacci"
+  0041  TryGetById           r8, r1, #c1, s11 "print"
+  0047  GetByIdShort         r5, r1, #c2, s12 "take"
+  004c  GetByIdShort         r2, r1, #c3, s8 "naturals"
+  0051  Call1                r4, r2, r3
+  0055  LoadConstUInt8       r2, 5
+  0058  Call3                r5, r5, r3, r4, r2
+  005e  GetByIdShort         r2, r5, #c4, s10 "join"
+  0063  LoadConstString      r4, s1 ","
+  0067  Call2                r5, r2, r5, r4
+  006c  LoadConstString      r2, s5 "first 5 naturals:"
+  0070  Call3                r2, r8, r3, r2, r5
+  0076  NewArray             r0, 0
+  007a  GetByIdShort         r2, r1, #c5, s7 "fibonacci"
+  007f  Call1                r8, r2, r3
+  0083  Mov                  r2, r8
+  0086  IteratorBegin        r5, r2
+L1:
+  0089  IteratorNext         r8, r5, r2
+  008d  Mov                  r9, r5
+  0090  JStrictEqual         L4, r9, r3
+  0094  Mov                  r6, r8
+  0097  ThrowIfEmpty         r8, r8
+  009a  JGreater             L2, r8, r7
+  009e  Mov                  r10, r0
+  00a1  GetByIdShort         r9, r10, #c6, s13 "push"
+  00a6  Mov                  r8, r6
+  00a9  ThrowIfEmpty         r8, r8
+  00ac  Call2                r8, r9, r10, r8
+  00b1  Jmp                  L1
+L2:
+  00b3  IteratorClose        r5, 0
+  00b6  Jmp                  L4
+L3:
+  00b8  Catch                r2
+  00ba  IteratorClose        r5, 1
+  00bd  Throw                r2
+L4:
+  00bf  TryGetById           r2, r1, #c1, s11 "print"
+  00c5  Mov                  r1, r0
+  00c8  GetByIdShort         r0, r1, #c4, s10 "join"
+  00cd  Call2                r1, r0, r1, r4
+  00d2  LoadConstString      r0, s3 "fibonacci under 50:"
+  00d6  Call3                r0, r2, r3, r0, r1
+  00dc  Ret                  r0
+
+function #1 "naturals"  params=1 frame=1 env=0 flags=nc  @0x0000028e size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f2 "?anon_0_naturals"
+  0007  Ret                  r0
+
+function #2 "?anon_0_naturals"  params=1 frame=6 env=0 flags=dbg  @0x00000297 size=36
+  0000  StartGenerator
+  0001  LoadConstUInt8       r4, 1
+  0004  ResumeGenerator      r0, r1
+  0007  Mov                  r3, r4
+  000a  JmpTrue              L3, r1
+L1:
+  000d  AddN                 r5, r3, r4
+  0011  SaveGenerator        L2
+  0013  Ret                  r3
+L2:
+  0015  ResumeGenerator      r1, r2
+  0018  Mov                  r3, r5
+  001b  JmpFalse             L1, r2
+  001e  CompleteGenerator
+  001f  Ret                  r1
+L3:
+  0021  CompleteGenerator
+  0022  Ret                  r0
+
+function #3 "take"  params=3 frame=17 env=0 flags=exc,dbg  @0x000002bb size=78
+  .try T1..T2 -> L3 ; handler 0
+  0000  LoadParam            r5, 2
+  0003  LoadConstUndefined   r4
+  0005  LoadConstEmpty       r3
+  0007  NewArray             r0, 0
+  000b  LoadParam            r1, 1
+  000e  IteratorBegin        r2, r1
+L1:
+  0011  IteratorNext         r6, r2, r1
+  0015  Mov                  r7, r2
+  0018  JStrictEqual         L4, r7, r4
+  001c  Mov                  r3, r6
+  001f  Mov                  r6, r0
+  0022  GetByIdShort         r6, r6, #c1, s9 "length"
+  0027  JGreaterEqual        L2, r6, r5
+  002b  Mov                  r8, r0
+  002e  GetByIdShort         r7, r8, #c2, s13 "push"
+  0033  Mov                  r6, r3
+  0036  ThrowIfEmpty         r6, r6
+  0039  Call2                r6, r7, r8, r6
+  003e  Jmp                  L1
+L2:
+  0040  IteratorClose        r2, 0
+  0043  Jmp                  L4
+L3:
+  0045  Catch                r1
+  0047  IteratorClose        r2, 1
+  004a  Throw                r1
+L4:
+  004c  Ret                  r0
+
+function #4 "fibonacci"  params=1 frame=1 env=0 flags=nc  @0x00000309 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f5 "?anon_0_fibonacci"
+  0007  Ret                  r0
+
+function #5 "?anon_0_fibonacci"  params=1 frame=12 env=0 flags=dbg  @0x00000312 size=203
+  0000  StartGenerator
+  0001  LoadConstUndefined   r4
+  0003  ResumeGenerator      r0, r1
+  0006  JmpTrueLong          L8, r1
+  000c  NewArrayWithBuffer   r2, 2, 2, lit@0x0000
+  0014  IteratorBegin        r6, r2
+  0017  IteratorNext         r1, r6, r2
+  001b  Mov                  r3, r6
+  001e  StrictEq             r7, r3, r4
+  0022  LoadConstUndefined   r5
+  0024  JmpTrue              L1, r7
+  0027  Mov                  r5, r1
+L1:
+  002a  LoadConstUndefined   r1
+  002c  JmpTrue              L2, r7
+  002f  IteratorNext         r3, r6, r2
+  0033  Mov                  r2, r6
+  0036  StrictEq             r2, r2, r4
+  003a  LoadConstUndefined   r1
+  003c  Mov                  r7, r2
+  003f  JmpTrue              L2, r2
+  0042  Mov                  r1, r3
+  0045  Mov                  r7, r2
+L2:
+  0048  Mov                  r3, r5
+  004b  Mov                  r2, r1
+  004e  JmpTrue              L3, r7
+  0051  IteratorClose        r6, 0
+  0054  Mov                  r3, r5
+  0057  Mov                  r2, r1
+L3:
+  005a  ThrowIfEmpty         r1, r3
+  005d  SaveGenerator        L4
+  005f  Ret                  r1
+L4:
+  0061  ResumeGenerator      r1, r5
+  0064  JmpTrue              L7, r5
+  0067  ThrowIfEmpty         r6, r2
+  006a  NewArray             r5, 2
+  006e  PutOwnByIndex        r5, r6, 0
+  0072  Add                  r6, r3, r2
+  0076  PutOwnByIndex        r5, r6, 1
+  007a  Mov                  r9, r5
+  007d  IteratorBegin        r7, r9
+  0080  IteratorNext         r5, r7, r9
+  0084  Mov                  r6, r7
+  0087  StrictEq             r8, r6, r4
+  008b  LoadConstUndefined   r6
+  008d  JmpTrue              L5, r8
+  0090  Mov                  r6, r5
+L5:
+  0093  LoadConstUndefined   r5
+  0095  JmpTrue              L6, r8
+  0098  IteratorNext         r10, r7, r9
+  009c  Mov                  r9, r7
+  009f  StrictEq             r9, r9, r4
+  00a3  LoadConstUndefined   r5
+  00a5  Mov                  r8, r9
+  00a8  JmpTrue              L6, r9
+  00ab  Mov                  r5, r10
+  00ae  Mov                  r8, r9
+L6:
+  00b1  Mov                  r3, r6
+  00b4  Mov                  r2, r5
+  00b7  JmpTrue              L3, r8
+  00ba  IteratorClose        r7, 0
+  00bd  Mov                  r3, r6
+  00c0  Mov                  r2, r5
+  00c3  Jmp                  L3
+L7:
+  00c5  CompleteGenerator
+  00c6  Ret                  r1
+L8:
+  00c8  CompleteGenerator
+  00c9  Ret                  r0

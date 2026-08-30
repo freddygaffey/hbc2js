@@ -1,0 +1,87 @@
+; hbc2js disassembly of 01-if-else-chain/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=2 strings=15 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=1 flags=exc,dbg  @0x0000013c size=172
+  .try T1..T2 -> L2 ; handler 0
+  0000  DeclareGlobalVar     s11 "check"
+  0005  CreateEnvironment    r0
+  0007  LoadConstUndefined   r3
+  0009  GetGlobalObject      r1
+  000b  LoadConstString      r5, s2 "->"
+  000f  LoadConstEmpty       r2
+  0011  StoreToEnvironment   r0, 0, r2
+  0015  CreateClosure        r2, r0, f1 "check"
+  001a  PutById              r1, r2, #c1, s11 "check"
+  0020  NewArray             r2, 0
+  0024  StoreToEnvironment   r0, 0, r2
+  0028  NewArray             r6, 5
+  002c  LoadConstInt         r2, -5
+  0032  PutOwnByIndex        r6, r2, 0
+  0036  LoadConstZero        r2
+  0038  PutOwnByIndex        r6, r2, 1
+  003c  LoadConstUInt8       r2, 3
+  003f  PutOwnByIndex        r6, r2, 2
+  0043  LoadConstUInt8       r2, 42
+  0046  PutOwnByIndex        r6, r2, 3
+  004a  LoadConstInt         r2, 1000
+  0050  PutOwnByIndex        r6, r2, 4
+  0054  Mov                  r2, r6
+  0057  IteratorBegin        r4, r2
+L1:
+  005a  IteratorNext         r9, r4, r2
+  005e  Mov                  r6, r4
+  0061  JStrictEqual         L3, r6, r3
+  0065  TryGetById           r8, r1, #c1, s13 "print"
+  006b  ThrowIfEmpty         r7, r9
+  006e  GetByIdShort         r6, r1, #c2, s11 "check"
+  0073  Call2                r6, r6, r3, r9
+  0078  Call4                r6, r8, r3, r7, r5, r6
+  007f  Jmp                  L1
+L2:
+  0081  Catch                r2
+  0083  IteratorClose        r4, 1
+  0086  Throw                r2
+L3:
+  0088  TryGetById           r2, r1, #c1, s13 "print"
+  008e  LoadFromEnvironment  r4, r0, 0
+  0092  GetByIdShort         r1, r4, #c3, s12 "join"
+  0097  LoadConstString      r0, s0 " | "
+  009b  Call2                r1, r1, r4, r0
+  00a0  LoadConstString      r0, s8 "side effects:"
+  00a4  Call3                r0, r2, r3, r0, r1
+  00aa  Ret                  r0
+
+function #1 "check"  params=2 frame=13 env=0 flags=dbg  @0x000001e8 size=98
+  0000  LoadParam            r1, 1
+  0003  GetEnvironment       r0, 0
+  0006  LoadFromEnvironment  r0, r0, 0
+  000a  ThrowIfEmpty         r3, r0
+  000d  GetByIdShort         r2, r3, #c1, s14 "push"
+  0012  LoadConstString      r0, s3 "check("
+  0016  Add                  r4, r0, r1
+  001a  LoadConstString      r0, s1 ")"
+  001e  Add                  r0, r4, r0
+  0022  Call2                r0, r2, r3, r0
+  0027  JmpFalse             L1, r0
+  002a  LoadConstZero        r0
+  002c  JLess                L5, r1, r0
+L1:
+  0030  LoadConstZero        r0
+  0032  JStrictEqual         L4, r1, r0
+  0036  LoadConstUInt8       r0, 10
+  0039  JLess                L3, r1, r0
+  003d  LoadConstUInt8       r0, 100
+  0040  JLess                L2, r1, r0
+  0044  LoadConstString      r0, s5 "large"
+  0048  Ret                  r0
+L2:
+  004a  LoadConstString      r0, s6 "medium"
+  004e  Ret                  r0
+L3:
+  0050  LoadConstString      r0, s9 "small"
+  0054  Ret                  r0
+L4:
+  0056  LoadConstString      r0, s10 "zero"
+  005a  Ret                  r0
+L5:
+  005c  LoadConstString      r0, s7 "negative"
+  0060  Ret                  r0

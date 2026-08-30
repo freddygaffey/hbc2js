@@ -1,0 +1,98 @@
+; hbc2js disassembly of 22-nested-closures-counters/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=7 strings=14 globalCodeIndex=0
+function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x00000188 size=219
+  0000  DeclareGlobalVar     s11 "makeCounter"
+  0005  DeclareGlobalVar     s9 "makeAccumulatorFactory"
+  000a  GetGlobalObject      r4
+  000c  LoadConstUndefined   r2
+  000e  CreateClosure        r3, r2, f1 "makeCounter"
+  0013  PutByIdLoose         r4, r3, #c0, s11 "makeCounter"
+  0019  CreateClosure        r3, r2, f2 "makeAccumulatorFactory"
+  001e  PutByIdLoose         r4, r3, #c1, s9 "makeAccumulatorFactory"
+  0024  GetByIdShort         r3, r4, #c0, s11 "makeCounter"
+  0029  LoadConstZero        r1
+  002b  Call2                r3, r3, r2, r1
+  0030  GetByIdShort         r5, r4, #c0, s11 "makeCounter"
+  0035  LoadConstUInt8       r0, 100
+  0038  Call2                r5, r5, r2, r0
+  003d  TryGetById           r10, r4, #c1, s10 "print"
+  0043  LoadConstUInt8       r0, 1
+  0046  Call2                r13, r3, r2, r0
+  004b  LoadConstUInt8       r0, 2
+  004e  Call2                r12, r3, r2, r0
+  0053  LoadConstUInt8       r0, 3
+  0056  Call2                r11, r3, r2, r0
+  005b  LoadConstString      r14, s5 "c1:"
+  005f  LoadConstUndefined   r15
+  0061  Call                 r6, r10, 5
+  0065  TryGetById           r8, r4, #c1, s10 "print"
+  006b  LoadConstInt         r0, -10
+  0071  Call2                r7, r5, r2, r0
+  0076  LoadConstInt         r0, -20
+  007c  Call2                r6, r5, r2, r0
+  0081  LoadConstString      r5, s4 "c2:"
+  0085  Call4                r5, r8, r2, r5, r7, r6
+  008c  TryGetById           r6, r4, #c1, s10 "print"
+  0092  Call2                r5, r3, r2, r1
+  0097  LoadConstString      r3, s3 "c1 unaffected by c2:"
+  009b  Call3                r3, r6, r2, r3, r5
+  00a1  GetByIdShort         r3, r4, #c2, s9 "makeAccumulatorFactory"
+  00a6  Call1                r3, r3, r2
+  00aa  Call1                r3, r3, r2
+  00ae  TryGetById           r7, r4, #c1, s10 "print"
+  00b4  LoadConstUInt8       r1, 5
+  00b7  Call2                r13, r3, r2, r1
+  00bc  LoadConstUInt8       r1, 10
+  00bf  Call2                r12, r3, r2, r1
+  00c4  LoadConstInt         r1, -3
+  00ca  Call2                r11, r3, r2, r1
+  00cf  LoadConstString      r14, s1 "acc:"
+  00d3  LoadConstUndefined   r15
+  00d5  Call                 r3, r7, 5
+  00d9  Ret                  r3
+
+function #1 "makeCounter"  params=2 frame=2 env=0 flags=none  @0x00000263 size=17
+  0000  CreateFunctionEnvironment r0, 1
+  0003  LoadParam            r1, 1
+  0006  StoreToEnvironment   r0, 0, r1
+  000a  CreateClosure        r0, r0, f3 "step"
+  000f  Ret                  r0
+
+function #2 "makeAccumulatorFactory"  params=1 frame=2 env=0 flags=none  @0x00000274 size=9
+  0000  LoadConstUndefined   r0
+  0002  CreateClosure        r1, r0, f4 "makeAccumulator"
+  0007  Ret                  r1
+
+function #3 "step"  params=2 frame=3 env=0 flags=overflowed,ctor  @0x0000027d size=20
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r2, r1, 0
+  0007  LoadParam            r0, 1
+  000a  Add                  r0, r2, r0
+  000e  StoreToEnvironment   r1, 0, r0
+  0012  Ret                  r0
+
+function #4 "makeAccumulator"  params=1 frame=2 env=0 flags=none  @0x00000291 size=18
+  0000  CreateFunctionEnvironment r0, 1
+  0003  NewArray             r1, 0
+  0007  StoreToEnvironment   r0, 0, r1
+  000b  CreateClosure        r0, r0, f5 "accumulate"
+  0010  Ret                  r0
+
+function #5 "accumulate"  params=2 frame=15 env=0 flags=overflowed,ctor  @0x000002a3 size=42
+  0000  GetParentEnvironment r2, 0
+  0003  LoadFromEnvironment  r4, r2, 0
+  0007  GetByIdShort         r3, r4, #c0, s13 "push"
+  000c  LoadParam            r2, 1
+  000f  Call2                r2, r3, r4, r2
+  0014  GetByIdShort         r3, r4, #c1, s12 "reduce"
+  0019  LoadConstZero        r0
+  001b  LoadConstUndefined   r1
+  001d  CreateClosure        r2, r1, f6 ""
+  0022  Call3                r2, r3, r4, r2, r0
+  0028  Ret                  r2
+
+function #6 ""  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000002cd size=12
+  0000  LoadParam            r1, 2
+  0003  LoadParam            r0, 1
+  0006  Add                  r0, r0, r1
+  000a  Ret                  r0

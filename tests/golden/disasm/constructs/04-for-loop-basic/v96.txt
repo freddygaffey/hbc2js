@@ -1,0 +1,58 @@
+; hbc2js disassembly of 04-for-loop-basic/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=1 strings=10 globalCodeIndex=0
+function #0 "global"  params=1 frame=25 env=0 flags=dbg  @0x000000f8 size=193
+  0000  NewArray             r3, 0
+  0004  LoadConstUInt8       r9, 10
+  0007  LoadConstString      r2, s1 ":"
+  000b  LoadConstZero        r1
+  000d  Mov                  r0, r9
+L1:
+  0010  GetByIdShort         r5, r3, #c1, s9 "push"
+  0015  Add                  r4, r1, r2
+  0019  Add                  r4, r4, r0
+  001d  Call2                r4, r5, r3, r4
+  0022  Inc                  r1, r1
+  0025  Dec                  r0, r0
+  0028  JLess                L1, r1, r0
+  002c  GetGlobalObject      r8
+  002e  TryGetById           r1, r8, #c2, s7 "print"
+  0034  GetByIdShort         r2, r3, #c3, s8 "join"
+  0039  LoadConstString      r0, s0 " | "
+  003d  Call2                r0, r2, r3, r0
+  0042  LoadConstUndefined   r7
+  0044  Call2                r0, r1, r7, r0
+  0049  LoadConstUInt8       r4, 1
+  004c  LoadConstUInt8       r3, 100
+  004f  LoadConstUInt8       r6, 2
+  0052  LoadConstUInt8       r1, 5
+  0055  LoadConstZero        r0
+L2:
+  0057  Add                  r2, r4, r3
+  005b  Add                  r2, r0, r2
+  005f  Add                  r4, r4, r6
+  0063  SubN                 r3, r3, r1
+  0067  Mov                  r0, r2
+  006a  JLess                L2, r4, r3
+  006e  TryGetById           r1, r8, #c2, s7 "print"
+  0074  LoadConstString      r0, s6 "total="
+  0078  Add                  r0, r0, r2
+  007c  Call2                r0, r1, r7, r0
+  0081  LoadConstUInt8       r5, 3
+  0084  LoadConstString      r4, s4 "i="
+  0088  LoadConstString      r3, s5 "j="
+  008c  LoadConstString      r2, s2 "dummy="
+  0090  LoadConstZero        r1
+L3:
+  0092  Add                  r13, r4, r1
+  0096  Mul                  r0, r1, r9
+  009a  Add                  r12, r2, r0
+  009e  LoadConstZero        r11
+L4:
+  00a0  TryGetById           r14, r8, #c2, s7 "print"
+  00a6  Add                  r0, r3, r11
+  00aa  Call4                r0, r14, r7, r13, r0, r12
+  00b1  Inc                  r11, r11
+  00b4  JLess                L4, r11, r6
+  00b8  Inc                  r1, r1
+  00bb  JLess                L3, r1, r5
+  00bf  Ret                  r0

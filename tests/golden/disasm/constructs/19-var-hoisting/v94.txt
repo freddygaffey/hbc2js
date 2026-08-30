@@ -1,0 +1,54 @@
+; hbc2js disassembly of 19-var-hoisting/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=3 strings=13 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=0 flags=dbg  @0x000001a0 size=114
+  0000  DeclareGlobalVar     s12 "demo"
+  0005  DeclareGlobalVar     s11 "hoistedFn"
+  000a  CreateEnvironment    r1
+  000c  CreateClosure        r2, r1, f1 "demo"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r2, #c1, s12 "demo"
+  0019  CreateClosure        r1, r1, f2 "hoistedFn"
+  001e  PutById              r0, r1, #c2, s11 "hoistedFn"
+  0024  TryGetById           r4, r0, #c1, s10 "print"
+  002a  GetByIdShort         r1, r0, #c2, s12 "demo"
+  002f  LoadConstUndefined   r3
+  0031  Call1                r2, r1, r3
+  0035  LoadConstString      r1, s5 "returned:"
+  0039  Call3                r1, r4, r3, r1, r2
+  003f  TryGetById           r4, r0, #c1, s10 "print"
+  0045  GetByIdShort         r1, r0, #c3, s11 "hoistedFn"
+  004a  LoadConstString      r2, s2 "typeof hoistedFn before def:"
+  004e  TypeOf               r1, r1
+  0051  Call3                r1, r4, r3, r2, r1
+  0057  TryGetById           r2, r0, #c1, s10 "print"
+  005d  GetByIdShort         r0, r0, #c3, s11 "hoistedFn"
+  0062  Call1                r1, r0, r3
+  0066  LoadConstString      r0, s0 "call after def:"
+  006a  Call3                r0, r2, r3, r0, r1
+  0070  Ret                  r0
+
+function #1 "demo"  params=1 frame=14 env=0 flags=dbg  @0x00000212 size=92
+  0000  GetGlobalObject      r1
+  0002  TryGetById           r2, r1, #c1, s10 "print"
+  0008  LoadConstUndefined   r3
+  000a  LoadConstString      r0, s8 "x before declaration:"
+  000e  Call3                r0, r2, r3, r0, r3
+  0014  TryGetById           r4, r1, #c1, s10 "print"
+  001a  LoadConstString      r2, s6 "x after assignment:"
+  001e  LoadConstUInt8       r0, 1
+  0021  Call3                r0, r4, r3, r2, r0
+  0027  TryGetById           r4, r1, #c1, s10 "print"
+  002d  LoadConstString      r2, s9 "x reassigned in block:"
+  0031  LoadConstUInt8       r0, 2
+  0034  Call3                r2, r4, r3, r2, r0
+  003a  TryGetById           r4, r1, #c1, s10 "print"
+  0040  LoadConstString      r2, s7 "x after block:"
+  0044  Call3                r2, r4, r3, r2, r0
+  004a  TryGetById           r2, r1, #c1, s10 "print"
+  0050  LoadConstString      r1, s4 "redeclaration keeps value:"
+  0054  Call3                r1, r2, r3, r1, r0
+  005a  Ret                  r0
+
+function #2 "hoistedFn"  params=1 frame=1 env=0 flags=none  @0x0000026e size=6
+  0000  LoadConstString      r0, s3 "hoisted"
+  0004  Ret                  r0

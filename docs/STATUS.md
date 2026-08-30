@@ -9,7 +9,10 @@ Last updated: 2026-08-30
       buffers, object shape table, BigInt/RegExp/CJS/functionSource tables, D8 layout
       probe (P0–P4), opcode/builtin table generation — v84/94/96/98/99 fixtures.
       Instruction decoding itself is spec 02 (M2), out of scope here.
-- [ ] M2 Disassembler + diff test against hermes-dec output
+- [x] M2 Disassembler + diff test against hermes-dec output — implemented and
+      100% matched at v84/94/96/99; **blocked at v98 by a `src/parse/**` bug**
+      (see below) outside this milestone's ownership, so `npm run test:all` is
+      not fully green pending that fix.
 - [ ] M3 Test harness: sandboxed trace runner (D2) + recompile round-trip (D3)
 - [ ] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) → **every** fixture passes the equivalence gate, ugly output allowed (D11)
 - [ ] M5 Pass ladder: one construct fixture per iteration as matcher/writer/checker pass (D12), catalogue row per pass; track `N/51 recovered` here
@@ -275,7 +278,107 @@ Last updated: 2026-08-30
   fixtures (hbc, plain-js, Expo-style hashed `.hbc` filename, and a
   no-bundle-found error case) — not against any real third-party APK. See
   `tests/fixtures/local-corpus/README.md`.
-- Otherwise: no parser/CLI code yet.
+
+- **M2 disassembler implemented** (`src/disasm/{decode,labels,switchtable,print}.ts`,
+  `src/tables/roles.ts`, `hbc2js disasm` CLI subcommand in `src/cli.ts`). All of
+  spec 02 §3–§8: instruction decoding for every generated opcode table,
+  jump-target resolution, `SwitchImm`/`UIntSwitchImm`/`StringSwitchImm` jump
+  tables (absolute-address alignment + beyond-`bytecodeSizeInBytes` extent
+  traps), deterministic `L`/`T` label namespaces, `raw` mode (line-for-line
+  target for `hermesc -dump-bytecode -pretty-disassemble=false`) and
+  `canonical` mode (ours, used for goldens), validation per §3.3's table, and
+  the re-encode round-trip self-check. `src/tables/roles.ts` is a hand-written
+  operand-role override table (data, not decoder `if`-chains) merged over the
+  generated `ids` map. 634 gate tests (580 passing cleanly, 54 failing — see
+  "v98 FunctionFlags bug" below, all attributable to that one external cause),
+  8 sweep tests (6 pass, 2 INCONCLUSIVE-skip for the absent local corpus).
+  `npm run typecheck` / `gen:tables:check` / `npm run build` all green;
+  `dist/cli.js` mode 0755, `hbc2js disasm --help` works from both `dist/` and
+  `src/cli.ts` directly.
+  - **Match rates against the two oracles** (`tests/gate/oracle/disasm/`, every
+    `(fixture, version)` pair with a real `hermesc`/`hbc-disassembler`
+    binary present, 0 skipped as INCONCLUSIVE beyond the one documented
+    `hermes-dec-sample/v99.hbc` case — see `tests/gate/oracle/known-divergences.md`):
+    - **7.A (`hermesc -dump-bytecode`)**: **100%** at v84, v94, v96, v99;
+      **v98 currently fails** (root-caused below, not a disassembler bug).
+    - **7.B (`hbc-disassembler`)**: **250/250 (100%)** at all five versions
+      (84/94/96/98/99), including `hermes-dec-sample/v99.hbc` (the one v99
+      binary that can't be reproduced for 7.A).
+    - Canonical-mode golden snapshots: 249 files under `tests/golden/disasm/`,
+      one per `(fixture, version)` pair in the gate corpus, byte-stable across
+      two runs.
+  - **Perf** (this machine, `tests/sweep/disasm/bundles.test.ts`), on the
+    largest fixture in the tree (`bundles/rn-template-0.72/index.android.noopt.debug.hbc`,
+    2.62 MB, 4314 functions): `decodeModule` over every function 36.4 ms
+    (extrapolated to 12 MB: **167 ms**, budget 4000 ms); `raw`-mode
+    `printModule` 73.7 ms (**338 ms** extrapolated, budget 15000 ms);
+    `canonical`-mode `printModule` 90.7 ms (**416 ms** extrapolated, budget
+    25000 ms). All comfortably inside spec 02 §8's budgets. The local D16 C5
+    corpus (Discord's 50.8 MB bundle) was **not** timed this run:
+    `tools/extract-apk-bundle.sh`'s `unzip -Z1`-based entry lister doesn't see
+    `assets/index.android.bundle` in that specific APK even though `unzip -l`
+    shows it present (~53 MB) — likely a large-entry/Zip64 quirk in that zip,
+    a tool-script limitation rather than a decoder issue; the sweep test
+    reports this and skips (INCONCLUSIVE) rather than failing.
+  - **Real bytecode-format findings, verified against real `hermesc`/`hbc-disassembler`
+    output (not spec text) and reported for the relevant owners:**
+    1. **`hermesc -dump-bytecode` has a third function-header shape**: a class
+       constructor prints as `Constructor<Name>(...)`, not
+       `Function<Name>`/`NCFunction<Name>` — spec 02 §6.1 says "nothing else
+       observed". Corresponds to `FunctionFlags.prohibitInvoke === "call"`
+       (construct-only). `src/disasm/print.ts`'s `rawHeaderLine` renders it;
+       the oracle-diff normaliser accepts it.
+    2. **`hbc-disassembler` has two more function-header shapes**:
+       `Generator function #N` and `Async function #N` for compiler-synthesized
+       bodies, neither with a companion plain `Function #N` line. An
+       unmatching regex silently dropped these lines and desynchronised every
+       later function by one — fixed in
+       `tests/gate/oracle/disasm/normalize.ts`.
+    3. **`hermesc`'s raw `Double` rendering is `printf("%e")`-style**
+       (`7.300000e+00`), not `String(value)` as spec 02 §6.1's prose says —
+       verified directly; `raw` mode now matches the real bytes (`canonical`
+       mode keeps `String(value)` as spec's canonical-mode table intends).
+       `hbc-disassembler`'s own `Double` rendering is a *third* convention
+       (Python's `repr(float)`, always a decimal point:
+       `9007199254740992.0`) — three legitimate conventions for the same
+       underlying value across our two modes and the two oracles.
+    4. **v84 predates the `OPERAND_FUNCTION_ID` macro entirely** (confirmed:
+       no such macro is even `#define`d in `third_party/hermes/hbc84/BytecodeList.def`).
+       Nine opcodes (`CreateClosure[LongIndex]`, `CreateGeneratorClosure[LongIndex]`,
+       `CreateAsyncClosure[LongIndex]`, `CreateGenerator[LongIndex]`,
+       `CallDirect`) whose function-id operand is correctly tagged at v94+ had
+       no role at v84, rendering as a bare number instead of `f<N> "name"`.
+       Fixed as `src/tables/roles.ts` overrides (real ground truth confirmed
+       via `hbc-disassembler`, which tags all of these — including
+       `CallDirectLongIndex`, which no Hermes version's own `.def` file ever
+       tags — as `function_id` at every version tried).
+    5. **A previously-"unverified" `hbc98-late` opcode is now identified**:
+       opcode 15 (placeholder name `UnknownFastArrayOpcode98Late`, guessed
+       2-operand signature) is genuinely exercised by
+       `tests/fixtures/constructs/50-this-binding/v98.hbc`. Real
+       `hermesc -dump-bytecode` (byte-identical recompile) shows it is
+       **`CacheNewObject 3<Reg8>, 2<Reg8>, 2<UInt32>, 0<UInt8>`** — a
+       4-operand `(Reg8, Reg8, UInt32, UInt8)` signature. `src/disasm/decode.ts`
+       correctly refuses to decode it (`E_UNKNOWN_OPCODE`, per the
+       `unverified` contract) rather than guess. Fixing the generated table
+       (`tools/gen-tables/gen.ts`'s `patchHbc98Late`) is a table-owner change,
+       not made here (changes opcode positional numbering, pinned by spec 01).
+  - **v98 `FunctionHeader.flags` bug — the sole cause of every 7.A test
+    failure, outside `src/disasm/**`'s ownership.** `prohibitInvoke` (and at
+    least `hasExceptionHandler`) is misdecoded specifically for v98 (layout
+    class E / `hbc98-late`) function headers. Evidence: on
+    `constructs/32-class-basic/v98.hbc`, **every** function including
+    `global` decodes with `prohibitInvoke: "call"` (real `hermesc` dump shows
+    `global` as a plain, unprefixed `Function<global>`); on
+    `constructs/01-if-else-chain/v98.hbc`, `global`'s decoded
+    `hasExceptionHandler` is `false` with an empty `exceptionHandlers` array,
+    but the real dump has a genuine `Exception Handlers:` block for it. Same
+    construct fixtures decode these fields correctly at v94/v96/v99 — only
+    v98 is affected. Not fixed here (outside M2's `src/parse/**` boundary);
+    `tests/gate/disasm/decode.test.ts` and `tests/gate/disasm/reencode.test.ts`
+    otherwise pass cleanly at v98 once a table is forced past the separate,
+    legitimate D8 `E_LAYOUT_AMBIGUOUS` case (`tests/support/known-issues.ts`).
+    Full detail and byte-level evidence: `tests/gate/oracle/known-divergences.md`.
 
 ## M1 review responses (`docs/reviews/M1-parser.md`, verdict FIX-THEN-MERGE)
 

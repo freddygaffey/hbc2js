@@ -1,0 +1,125 @@
+; hbc2js disassembly of 14-nested-try-catch/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=4 strings=21 globalCodeIndex=0
+function #0 "global"  params=1 frame=16 env=0 flags=exc,dbg  @0x000001ec size=208
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T3 -> L3 ; handler 1
+  .try T4..T5 -> L3 ; handler 2
+  0000  DeclareGlobalVar     s7 "level3"
+  0005  DeclareGlobalVar     s9 "level2"
+  000a  DeclareGlobalVar     s15 "level1"
+  000f  CreateEnvironment    r0
+  0011  CreateClosure        r3, r0, f1 "level3"
+  0016  GetGlobalObject      r2
+  0018  PutById              r2, r3, #c1, s7 "level3"
+  001e  CreateClosure        r3, r0, f2 "level2"
+  0023  PutById              r2, r3, #c2, s9 "level2"
+  0029  CreateClosure        r0, r0, f3 "level1"
+  002e  PutById              r2, r0, #c3, s15 "level1"
+  0034  LoadConstUndefined   r4
+  0036  LoadConstUndefined   r0
+  0038  TryGetById           r5, r2, #c1, s18 "print"
+  003e  GetByIdShort         r3, r2, #c2, s15 "level1"
+  0043  Call1                r3, r3, r4
+  0047  Call2                r0, r5, r4, r3
+  004c  TryGetById           r6, r2, #c3, s13 "TypeError"
+  0052  GetByIdShort         r3, r6, #c4, s19 "prototype"
+  0057  CreateThis           r5, r3, r6
+  005b  LoadConstString      r8, s6 "inner-type-error"
+  005f  Mov                  r9, r5
+  0062  Construct            r3, r6, 2
+  0066  SelectObject         r3, r5, r3
+  006a  Throw                r3
+L1:
+  006c  Catch                r5
+  006e  Mov                  r1, r5
+  0071  TryGetById           r3, r2, #c3, s13 "TypeError"
+  0077  InstanceOf           r3, r5, r3
+  007b  JmpTrue              L2, r3
+  007e  Jmp                  L4
+L2:
+  0080  TryGetById           r5, r2, #c5, s11 "RangeError"
+  0086  GetByIdShort         r3, r1, #c6, s17 "message"
+  008b  LoadConstString      r1, s1 "rethrown-as-range: "
+  008f  Add                  r8, r1, r3
+  0093  GetByIdShort         r3, r5, #c4, s19 "prototype"
+  0098  CreateThis           r3, r3, r5
+  009c  Mov                  r9, r3
+  009f  Construct            r1, r5, 2
+  00a3  SelectObject         r1, r3, r1
+  00a7  Throw                r1
+L3:
+  00a9  Catch                r1
+  00ab  TryGetById           r3, r2, #c1, s18 "print"
+  00b1  GetByIdShort         r2, r1, #c7, s14 "constructor"
+  00b6  GetByIdShort         r5, r2, #c8, s16 "name"
+  00bb  LoadConstString      r2, s2 ":"
+  00bf  Add                  r2, r5, r2
+  00c3  GetByIdShort         r1, r1, #c6, s17 "message"
+  00c8  Call3                r0, r3, r4, r2, r1
+L4:
+  00ce  Ret                  r0
+
+function #1 "level3"  params=1 frame=11 env=0 flags=dbg  @0x000002bc size=34
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s12 "Error"
+  0008  GetByIdShort         r0, r2, #c2, s19 "prototype"
+  000d  CreateThis           r1, r0, r2
+  0011  LoadConstString      r3, s0 "level3-failure"
+  0015  Mov                  r4, r1
+  0018  Construct            r0, r2, 2
+  001c  SelectObject         r0, r1, r0
+  0020  Throw                r0
+
+function #2 "level2"  params=1 frame=12 env=0 flags=exc,dbg  @0x000002de size=57
+  .try T1..T2 -> L1 ; handler 0
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r1, r0, #c1, s7 "level3"
+  0007  LoadConstUndefined   r0
+  0009  Call1                r1, r1, r0
+  000d  Ret                  r0
+L1:
+  000f  Catch                r1
+  0011  GetGlobalObject      r0
+  0013  TryGetById           r3, r0, #c2, s12 "Error"
+  0019  GetByIdShort         r0, r3, #c3, s19 "prototype"
+  001e  CreateThis           r2, r0, r3
+  0022  LoadConstString      r4, s5 "level2-wrapped"
+  0026  Mov                  r5, r2
+  0029  Construct            r0, r3, 2
+  002d  SelectObject         r0, r2, r0
+  0031  PutById              r0, r1, #c1, s8 "cause"
+  0037  Throw                r0
+
+function #3 "level1"  params=1 frame=14 env=0 flags=exc,dbg  @0x00000317 size=99
+  .try T1..T2 -> L1 ; handler 0
+  0000  LoadConstUndefined   r1
+  0002  LoadConstUndefined   r0
+  0004  LoadConstUndefined   r2
+  0006  GetGlobalObject      r3
+  0008  GetByIdShort         r3, r3, #c1, s9 "level2"
+  000d  Call1                r3, r3, r1
+  0011  Ret                  r1
+L1:
+  0013  Catch                r1
+  0015  GetByIdShort         r4, r1, #c2, s17 "message"
+  001a  NewArray             r3, 1
+  001e  PutOwnByIndex        r3, r4, 0
+  0022  Mov                  r0, r3
+  0025  GetByIdShort         r1, r1, #c3, s8 "cause"
+  002a  Mov                  r2, r1
+  002d  JmpFalse             L3, r1
+L2:
+  0030  Mov                  r5, r0
+  0033  GetByIdShort         r4, r5, #c4, s20 "push"
+  0038  Mov                  r1, r2
+  003b  GetByIdShort         r3, r1, #c2, s17 "message"
+  0040  Call2                r3, r4, r5, r3
+  0045  GetByIdShort         r1, r1, #c3, s8 "cause"
+  004a  Mov                  r2, r1
+  004d  JmpTrue              L2, r1
+L3:
+  0050  Mov                  r2, r0
+  0053  GetByIdShort         r1, r2, #c5, s10 "join"
+  0058  LoadConstString      r0, s3 " <- caused by <- "
+  005c  Call2                r0, r1, r2, r0
+  0061  Ret                  r0

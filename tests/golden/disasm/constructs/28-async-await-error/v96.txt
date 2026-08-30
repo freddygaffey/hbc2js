@@ -1,0 +1,164 @@
+; hbc2js disassembly of 28-async-await-error/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=11 strings=24 globalCodeIndex=0
+function #0 "global"  params=1 frame=15 env=0 flags=dbg  @0x00000284 size=110
+  0000  DeclareGlobalVar     s20 "fail"
+  0005  DeclareGlobalVar     s14 "guarded"
+  000a  DeclareGlobalVar     s15 "unguarded"
+  000f  CreateEnvironment    r0
+  0011  CreateClosure        r2, r0, f1 "fail"
+  0016  GetGlobalObject      r1
+  0018  PutById              r1, r2, #c1, s20 "fail"
+  001e  CreateAsyncClosure   r2, r0, f2 "guarded"
+  0023  PutById              r1, r2, #c2, s14 "guarded"
+  0029  CreateAsyncClosure   r2, r0, f5 "unguarded"
+  002e  PutById              r1, r2, #c3, s15 "unguarded"
+  0034  GetByIdShort         r3, r1, #c1, s14 "guarded"
+  0039  LoadConstUndefined   r2
+  003b  Call1                r5, r3, r2
+  003f  GetByIdShort         r4, r5, #c2, s17 "then"
+  0044  CreateClosure        r3, r0, f8 ""
+  0049  Call2                r3, r4, r5, r3
+  004e  GetByIdShort         r1, r1, #c3, s15 "unguarded"
+  0053  Call1                r3, r1, r2
+  0057  GetByIdShort         r2, r3, #c2, s17 "then"
+  005c  CreateClosure        r1, r0, f9 ""
+  0061  CreateClosure        r0, r0, f10 ""
+  0066  Call3                r0, r2, r3, r1, r0
+  006c  Ret                  r0
+
+function #1 "fail"  params=2 frame=13 env=0 flags=dbg  @0x000002f2 size=49
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s19 "Promise"
+  0008  GetByIdShort         r1, r2, #c2, s16 "reject"
+  000d  TryGetById           r4, r0, #c3, s18 "Error"
+  0013  GetByIdShort         r0, r4, #c4, s23 "prototype"
+  0018  CreateThis           r3, r0, r4
+  001c  LoadParam            r5, 1
+  001f  Mov                  r6, r3
+  0022  Construct            r0, r4, 2
+  0026  SelectObject         r0, r3, r0
+  002a  Call2                r0, r1, r2, r0
+  002f  Ret                  r0
+
+function #2 "guarded"  params=1 frame=15 env=0 flags=dbg,nc  @0x00000323 size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b52 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f3 "?anon_0_guarded"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #3 "?anon_0_guarded"  params=1 frame=1 env=0 flags=nc  @0x00000341 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f4 "?anon_0_?anon_0_guarded"
+  0007  Ret                  r0
+
+function #4 "?anon_0_?anon_0_guarded"  params=1 frame=14 env=0 flags=exc,dbg  @0x0000034a size=92
+  .try T1..T2 -> L3 ; handler 0
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrue              L5, r1
+  0007  GetGlobalObject      r2
+  0009  GetByIdShort         r3, r2, #c1, s20 "fail"
+  000e  LoadConstUndefined   r4
+  0010  LoadConstString      r1, s7 "boom-1"
+  0014  Call2                r1, r3, r4, r1
+  0019  SaveGenerator        L1
+  001b  Ret                  r1
+L1:
+  001d  ResumeGenerator      r1, r3
+  0020  JmpTrue              L2, r3
+  0023  TryGetById           r3, r2, #c2, s22 "print"
+  0029  LoadConstString      r2, s12 "unreachable"
+  002d  Call2                r2, r3, r4, r2
+  0032  Jmp                  L4
+L2:
+  0034  CompleteGenerator
+  0035  Ret                  r1
+L3:
+  0037  Catch                r1
+  0039  GetGlobalObject      r2
+  003b  TryGetById           r4, r2, #c2, s22 "print"
+  0041  GetByIdShort         r3, r1, #c3, s21 "message"
+  0046  LoadConstUndefined   r2
+  0048  LoadConstString      r1, s3 "guarded caught:"
+  004c  Call3                r1, r4, r2, r1, r3
+L4:
+  0052  LoadConstString      r1, s11 "recovered"
+  0056  CompleteGenerator
+  0057  Ret                  r1
+L5:
+  0059  CompleteGenerator
+  005a  Ret                  r0
+
+function #5 "unguarded"  params=1 frame=15 env=0 flags=dbg,nc  @0x000003a6 size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b52 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f6 "?anon_0_unguarded"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #6 "?anon_0_unguarded"  params=1 frame=1 env=0 flags=nc  @0x000003c4 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f7 "?anon_0_?anon_0_unguarded"
+  0007  Ret                  r0
+
+function #7 "?anon_0_?anon_0_unguarded"  params=1 frame=12 env=0 flags=dbg  @0x000003cd size=48
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrue              L3, r1
+  0007  GetGlobalObject      r1
+  0009  GetByIdShort         r3, r1, #c1, s20 "fail"
+  000e  LoadConstUndefined   r2
+  0010  LoadConstString      r1, s8 "boom-2"
+  0014  Call2                r1, r3, r2, r1
+  0019  SaveGenerator        L1
+  001b  Ret                  r1
+L1:
+  001d  ResumeGenerator      r1, r2
+  0020  JmpTrue              L2, r2
+  0023  LoadConstString      r2, s12 "unreachable"
+  0027  CompleteGenerator
+  0028  Ret                  r2
+L2:
+  002a  CompleteGenerator
+  002b  Ret                  r1
+L3:
+  002d  CompleteGenerator
+  002e  Ret                  r0
+
+function #8 ""  params=2 frame=13 env=0 flags=dbg  @0x000003fd size=25
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r3, r0, #c1, s22 "print"
+  0008  LoadConstUndefined   r0
+  000a  LoadConstString      r2, s10 "guarded resolved:"
+  000e  LoadParam            r1, 1
+  0011  Call3                r1, r3, r0, r2, r1
+  0017  Ret                  r0
+
+function #9 ""  params=1 frame=11 env=0 flags=dbg  @0x00000416 size=21
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s22 "print"
+  0008  LoadConstUndefined   r0
+  000a  LoadConstString      r1, s13 "unreachable-then"
+  000e  Call2                r1, r2, r0, r1
+  0013  Ret                  r0
+
+function #10 ""  params=2 frame=13 env=0 flags=dbg  @0x0000042b size=30
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r3, r0, #c1, s22 "print"
+  0008  LoadParam            r0, 1
+  000b  GetByIdShort         r2, r0, #c2, s21 "message"
+  0010  LoadConstUndefined   r0
+  0012  LoadConstString      r1, s6 "unguarded rejected via .then han…"
+  0016  Call3                r1, r3, r0, r1, r2
+  001c  Ret                  r0

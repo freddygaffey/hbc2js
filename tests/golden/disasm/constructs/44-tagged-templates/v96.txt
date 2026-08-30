@@ -1,0 +1,144 @@
+; hbc2js disassembly of 44-tagged-templates/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=5 strings=29 globalCodeIndex=0
+function #0 "global"  params=1 frame=24 env=0 flags=dbg  @0x00000234 size=201
+  0000  DeclareGlobalVar     s23 "inspect"
+  0005  DeclareGlobalVar     s20 "html"
+  000a  DeclareGlobalVar     s25 "firstArgOnly"
+  000f  CreateEnvironment    r1
+  0011  CreateClosure        r2, r1, f1 "inspect"
+  0016  GetGlobalObject      r0
+  0018  PutById              r0, r2, #c1, s23 "inspect"
+  001e  CreateClosure        r2, r1, f2 "html"
+  0023  PutById              r0, r2, #c2, s20 "html"
+  0029  CreateClosure        r1, r1, f4 "firstArgOnly"
+  002e  PutById              r0, r1, #c3, s25 "firstArgOnly"
+  0034  TryGetById           r2, r0, #c1, s26 "print"
+  003a  LoadConstZero        r16
+  003c  LoadConstFalse       r15
+  003e  LoadConstString      r14, s6 "a\\n"
+  0042  LoadConstString      r13, s11 "b\\tc"
+  0046  LoadConstString      r4, s10 "d"
+  004a  LoadConstString      r11, s5 "a\n"
+  004e  LoadConstString      r10, s8 "b\tc"
+  0052  Mov                  r12, r4
+  0055  Mov                  r9, r4
+  0058  CallBuiltin          r6, b39 "getTemplateObject", 9
+  005c  GetByIdShort         r5, r0, #c2, s23 "inspect"
+  0061  LoadConstUndefined   r3
+  0063  LoadConstUInt8       r4, 42
+  0066  LoadConstUInt8       r1, 43
+  0069  Call4                r1, r5, r3, r6, r4, r1
+  0070  Call2                r1, r2, r3, r1
+  0075  TryGetById           r2, r0, #c1, s26 "print"
+  007b  LoadConstUInt8       r16, 1
+  007e  LoadConstString      r14, s3 "<p>"
+  0082  LoadConstString      r13, s2 "</p>"
+  0086  LoadConstTrue        r15
+  0088  CallBuiltin          r6, b39 "getTemplateObject", 5
+  008c  GetByIdShort         r4, r0, #c3, s20 "html"
+  0091  LoadConstString      r1, s14 "safe & sound"
+  0095  Call3                r1, r4, r3, r6, r1
+  009b  Call2                r1, r2, r3, r1
+  00a0  TryGetById           r2, r0, #c1, s26 "print"
+  00a6  LoadConstUInt8       r16, 2
+  00a9  LoadConstString      r14, s7 "no subs here"
+  00ad  LoadConstTrue        r15
+  00af  CallBuiltin          r1, b39 "getTemplateObject", 4
+  00b3  GetByIdShort         r0, r0, #c4, s25 "firstArgOnly"
+  00b8  Call2                r1, r0, r3, r1
+  00bd  LoadConstString      r0, s15 "template with no substitutions h…"
+  00c1  Call3                r0, r2, r3, r0, r1
+  00c7  Ret                  r0
+
+function #1 "inspect"  params=3 frame=21 env=0 flags=dbg  @0x000002fd size=220
+  0000  LoadParam            r9, 1
+  0003  LoadConstUInt8       r13, 1
+  0006  CallBuiltin          r8, b45 "copyRestArgs", 2
+  000a  NewArray             r2, 0
+  000e  GetByIdShort         r0, r9, #c1, s19 "length"
+  0013  LoadConstZero        r7
+  0015  Less                 r0, r7, r0
+  0019  GetGlobalObject      r6
+  001b  LoadConstString      r5, s16 "value["
+  001f  LoadConstString      r4, s4 "]="
+  0023  LoadConstString      r3, s9 "cooked["
+  0027  LoadConstString      r1, s13 "raw["
+  002b  JmpFalseLong         L3, r0
+L1:
+  0031  GetByIdShort         r10, r2, #c2, s27 "push"
+  0036  TryGetById           r12, r6, #c3, s24 "JSON"
+  003c  GetByIdShort         r11, r12, #c4, s28 "stringify"
+  0041  GetByVal             r0, r9, r7
+  0045  Call2                r11, r11, r12, r0
+  004a  Add                  r0, r3, r7
+  004e  Add                  r0, r0, r4
+  0052  Add                  r0, r0, r11
+  0056  Call2                r0, r10, r2, r0
+  005b  GetByIdShort         r10, r2, #c2, s27 "push"
+  0060  TryGetById           r12, r6, #c3, s24 "JSON"
+  0066  GetByIdShort         r11, r12, #c4, s28 "stringify"
+  006b  GetByIdShort         r0, r9, #c5, s21 "raw"
+  0070  GetByVal             r0, r0, r7
+  0074  Call2                r11, r11, r12, r0
+  0079  Add                  r0, r1, r7
+  007d  Add                  r0, r0, r4
+  0081  Add                  r0, r0, r11
+  0085  Call2                r0, r10, r2, r0
+  008a  GetByIdShort         r0, r8, #c1, s19 "length"
+  008f  JNotLess             L2, r7, r0
+  0093  GetByIdShort         r10, r2, #c2, s27 "push"
+  0098  TryGetById           r12, r6, #c3, s24 "JSON"
+  009e  GetByIdShort         r11, r12, #c4, s28 "stringify"
+  00a3  GetByVal             r0, r8, r7
+  00a7  Call2                r11, r11, r12, r0
+  00ac  Add                  r0, r5, r7
+  00b0  Add                  r0, r0, r4
+  00b4  Add                  r0, r0, r11
+  00b8  Call2                r0, r10, r2, r0
+L2:
+  00bd  Inc                  r7, r7
+  00c0  GetByIdShort         r0, r9, #c1, s19 "length"
+  00c5  JLessLong            L1, r7, r0
+L3:
+  00cc  GetByIdShort         r1, r2, #c6, s22 "join"
+  00d1  LoadConstString      r0, s1 " | "
+  00d5  Call2                r0, r1, r2, r0
+  00da  Ret                  r0
+
+function #2 "html"  params=3 frame=13 env=1 flags=dbg  @0x000003d9 size=38
+  0000  CreateEnvironment    r0
+  0002  LoadParam            r3, 1
+  0005  LoadConstUInt8       r5, 1
+  0008  CallBuiltin          r1, b45 "copyRestArgs", 2
+  000c  StoreToEnvironment   r0, 0, r1
+  0010  GetByIdShort         r2, r3, #c1, s17 "reduce"
+  0015  CreateClosure        r1, r0, f3 ""
+  001a  LoadConstString      r0, s0 ""
+  001e  Call3                r0, r2, r3, r1, r0
+  0024  Ret                  r0
+
+function #3 ""  params=4 frame=13 env=0 flags=dbg  @0x000003ff size=65
+  0000  LoadParam            r3, 3
+  0003  LoadParam            r1, 1
+  0006  LoadParam            r0, 2
+  0009  Add                  r1, r1, r0
+  000d  GetEnvironment       r2, 0
+  0010  LoadFromEnvironment  r0, r2, 0
+  0014  GetByIdShort         r0, r0, #c1, s19 "length"
+  0019  Less                 r4, r3, r0
+  001d  LoadConstString      r0, s0 ""
+  0021  JmpFalse             L1, r4
+  0024  GetGlobalObject      r4
+  0026  TryGetById           r4, r4, #c2, s18 "String"
+  002c  LoadFromEnvironment  r2, r2, 0
+  0030  GetByVal             r3, r2, r3
+  0034  LoadConstUndefined   r2
+  0036  Call2                r0, r4, r2, r3
+L1:
+  003b  Add                  r0, r1, r0
+  003f  Ret                  r0
+
+function #4 "firstArgOnly"  params=2 frame=1 env=0 flags=dbg  @0x00000440 size=10
+  0000  LoadParam            r0, 1
+  0003  GetByIdShort         r0, r0, #c1, s19 "length"
+  0008  Ret                  r0
