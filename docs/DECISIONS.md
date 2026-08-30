@@ -38,3 +38,11 @@ Literal buffers, object shape table, BigInt table and switch jump tables are emp
 
 ## D11 — Incremental, fixture-driven development (2026-08-30)
 Build the baseline first (parser → disassembler → CFG → Ramsey structurer → emitter with the D9 shim), until *every* fixture decompiles to JS that passes the equivalence checker — ugly output is fine at this stage. Then iterate one construct at a time: pick the next `tests/fixtures/constructs/<NN-topic>`, add a targeted recovery pass (e.g. `while(c)`, `for-of`, `switch`, closure naming), with the fixture as its red→green test, and the full corpus as the regression gate. Each pass is its own module under `src/passes/`, individually testable and toggleable. Order of passes follows the fixture numbering unless a dependency forces otherwise. The equivalence checker never regresses: a pass that improves readability but breaks any fixture is rejected.
+
+## D12 — Every recovery pass is matcher + writer + checker, catalogued (2026-08-30)
+Each pass under `src/passes/<name>/` exports a pure `match(node, ctx) → Match | null` (recognises one Hermes lowering idiom, never mutates), a `rewrite(match) → node` (emits the idiomatic JS for exactly the captured shape), and a local `check(before, after)` (asserts the rewritten subtree preserves control-flow entry/exit edges; failure aborts the pass for that site and leaves the correct-but-ugly form). `docs/LOWERING-CATALOGUE.md` lists every idiom with its matcher, writer, and the fixture that exercises it; adding a construct = one catalogue row, one fixture, one pass directory. The full-corpus equivalence run is the regression gate for every pass.
+
+## D13 — Test tiers by cost (2026-08-30)
+- **Gate** (every commit, seconds): `tests/fixtures/constructs/**` + `hermes-dec-sample` through parser/disasm goldens and the equivalence checker.
+- **Sweep** (nightly/on demand, minutes): harvested Hermes lit tests, test262/quickjs subsets, Tier 2 bundles via recompile round-trip (D3).
+New gate fixtures must be the red→green test for a pass or a minimised regression from a sweep failure; bulk corpora never enter the gate.
