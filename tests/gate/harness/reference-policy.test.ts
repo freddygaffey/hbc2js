@@ -45,9 +45,8 @@ test("rule 3: no VM, known-divergence construct -> expected-txt WITH a caveat, e
   }
 });
 
-test("the four known divergences are populated for 84/89/94/99 (spec 06 §4's table, from the AGENT-LOG measurement)", () => {
+test("the four construct-tier known divergences are populated for 84/89/94/99 (spec 06 §4's table, from the AGENT-LOG measurement)", () => {
   const expected = ["18-closure-loop-let", "20-let-const-tdz", "42-rest-params", "49-arguments-object"];
-  assert.deepEqual(Object.keys(KNOWN_DIVERGENT_FIXTURES).sort(), expected.sort());
   for (const name of expected) {
     const row = KNOWN_DIVERGENT_FIXTURES[name]!;
     for (const v of [84, 89, 94, 99]) {
@@ -56,6 +55,24 @@ test("the four known divergences are populated for 84/89/94/99 (spec 06 §4's ta
     assert.equal(row[96], undefined, `${name} v96 should be explicitly unmeasured, not assumed`);
     assert.equal(row[98], undefined, `${name} v98 should be explicitly unmeasured, not assumed`);
   }
+});
+
+test("the two adversarial-tier (D22a) known divergences are populated for 94/96/99, NOT assumed at 84/89/98 (2026-08-31 triage)", () => {
+  const expected = ["06-closure-loop-var-vs-let", "30-tdz-shadowing"];
+  for (const name of expected) {
+    const row = KNOWN_DIVERGENT_FIXTURES[name]!;
+    for (const v of [94, 96, 99]) {
+      assert.equal(row[v], "diverges", `${name} v${v} should be measured "diverges"`);
+    }
+    assert.equal(row[84], undefined, `${name} v84 should be explicitly unmeasured, not assumed (no adversarial .hbc exists at v84)`);
+    assert.equal(row[89], undefined, `${name} v89 should be explicitly unmeasured, not assumed`);
+    assert.equal(row[98], undefined, `${name} v98 should be explicitly unmeasured, not assumed`);
+  }
+});
+
+test("KNOWN_DIVERGENT_FIXTURES contains exactly the construct-tier four plus the adversarial-tier two — no untracked entries", () => {
+  const expected = ["18-closure-loop-let", "20-let-const-tdz", "42-rest-params", "49-arguments-object", "06-closure-loop-var-vs-let", "30-tdz-shadowing"];
+  assert.deepEqual(Object.keys(KNOWN_DIVERGENT_FIXTURES).sort(), expected.sort());
 });
 
 test("HA-06: throws on an unmeasured, NON-divergent (fixture, version) pair rather than silently guessing", () => {

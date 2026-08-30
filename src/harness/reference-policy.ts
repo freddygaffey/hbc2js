@@ -83,11 +83,45 @@ const MEASURED_AT_ALL_FOUR: Readonly<Record<number, Measurement>> = {
   // 96, 98: deliberately absent — unmeasured (no VM built/available).
 };
 
+/**
+ * Adversarial-tier (D22a) fixtures, measured directly against
+ * `tools/hermes-vm/v94`, `tools/hermesc/v96/hermes`, and
+ * `tools/hermes-vm/v99` — the three versions the adversarial corpus is
+ * compiled at (docs/AGENT-LOG.md, 2026-08-31 triage of the six
+ * Haiku-flagged fixtures). 84/89 are left unmeasured (no adversarial `.hbc`
+ * exists at those versions) rather than assumed, unlike
+ * `MEASURED_AT_ALL_FOUR` above.
+ */
+const MEASURED_AT_94_96_99: Readonly<Record<number, Measurement>> = {
+  94: "diverges",
+  96: "diverges",
+  99: "diverges",
+};
+
 export const KNOWN_DIVERGENT_FIXTURES: Readonly<Record<string, Readonly<Record<number, Measurement>>>> = {
   "18-closure-loop-let": MEASURED_AT_ALL_FOUR,
   "20-let-const-tdz": MEASURED_AT_ALL_FOUR,
   "42-rest-params": MEASURED_AT_ALL_FOUR,
   "49-arguments-object": MEASURED_AT_ALL_FOUR,
+  // Adversarial tier (D22a) — same root cause as 18-closure-loop-let: Hermes
+  // shares one binding across `for (let ...)` iterations instead of creating
+  // a fresh one per iteration. Verified with the fixture's own v94/v96/v99
+  // .hbc under each VM: all three print "let results: 3,3,3", matching the
+  // decompiled candidate; only Node's committed expected.txt ("0,1,2", true
+  // spec behaviour) differs.
+  "06-closure-loop-var-vs-let": MEASURED_AT_94_96_99,
+  // Adversarial tier (D22a) — Hermes does not raise a TDZ ReferenceError for
+  // `inner` here, even though the access is lexically before its `let`
+  // declaration in a scope that shadows an outer binding of the same name;
+  // it silently reads `undefined`. Verified with the fixture's own
+  // v94/v96/v99 .hbc under each VM: all three print
+  // "trace: start|got-inner:undefined|...", matching the decompiled
+  // candidate; only Node's committed expected.txt ("error:ReferenceError")
+  // differs. This is independent of the this-binding/module-type issue
+  // documented in docs/BUGS.md for 28/29 — confirmed by running the
+  // fixture's source.js explicitly as CommonJS, where Node still throws the
+  // ReferenceError Hermes does not.
+  "30-tdz-shadowing": MEASURED_AT_94_96_99,
 };
 
 function isKnownDivergentFixture(name: string): boolean {
