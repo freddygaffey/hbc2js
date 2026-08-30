@@ -69,7 +69,7 @@ export interface DominatorTree {
 // ---------------------------------------------------------------------------
 
 export interface ExceptionRegion {
-  readonly index: number;
+  readonly index: number; // position in `regions` (spec 03 §5 step 3 order: outermost first)
   readonly startPc: number;
   readonly endPc: number; // EXCLUSIVE
   readonly handlerBlock: BlockId;

@@ -1,0 +1,8 @@
+guarded ok: 5
+guarded throw: null
+seen: reportError boom
+inGuard settled at: 0
+nested: outer caught rethrown inner
+await no-throw: async-ok
+await throw: async-caught async-boom
+final seen: reportError boom | inner-finally | outer-finally | async-finally | async-finally

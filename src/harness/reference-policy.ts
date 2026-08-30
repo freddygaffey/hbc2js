@@ -118,6 +118,9 @@ const VM_LIMITATIONS: Readonly<Record<string, readonly number[]>> = {
   "28-async-await-error": [99],
   "29-promise-chaining": [99],
   "31-microtask-ordering": [99],
+  // Its `guardedAwait` half is an `async function`, so this build's broken
+  // `_makeAsyncIterator` throws before the fixture's second half runs.
+  "54-try-catch-finally-shared-range": [99],
 };
 
 function isVmLimited(name: string, version: number): boolean {

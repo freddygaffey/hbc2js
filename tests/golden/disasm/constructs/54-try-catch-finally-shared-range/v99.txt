@@ -1,0 +1,383 @@
+; hbc2js disassembly of 54-try-catch-finally-shared-range/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=10 strings=39 globalCodeIndex=0
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg,overflowed  @0x0000035c size=311
+  .try T1..T2 -> L1 ; handler 0
+  0000  CreateFunctionEnvironment r1, 2
+  0003  DeclareGlobalVar     s31 "applyWithGuard"
+  0008  DeclareGlobalVar     s26 "boom"
+  000d  DeclareGlobalVar     s24 "guardedAwait"
+  0012  DeclareGlobalVar     s33 "nested"
+  0017  GetGlobalObject      r0
+  0019  CreateClosure        r2, r1, f1 "applyWithGuard"
+  001e  PutByIdLoose         r0, r2, #c0, s31 "applyWithGuard"
+  0024  LoadConstUndefined   r3
+  0026  CreateClosure        r2, r3, f2 "boom"
+  002b  PutByIdLoose         r0, r2, #c1, s26 "boom"
+  0031  CreateClosure        r2, r1, f3 "guardedAwait"
+  0036  PutByIdLoose         r0, r2, #c2, s24 "guardedAwait"
+  003c  CreateClosure        r2, r1, f4 "nested"
+  0041  PutByIdLoose         r0, r2, #c3, s33 "nested"
+  0047  LoadConstZero        r2
+  0049  StoreNPToEnvironment r1, 0, r2
+  004d  NewArray             r6, 0
+  0051  StoreToEnvironment   r1, 1, r6
+  0055  TryGetById           r5, r0, #c0, s35 "print"
+  005b  GetByIdShort         r7, r0, #c1, s31 "applyWithGuard"
+  0060  LoadConstNull        r8
+  0062  NewArrayWithBuffer   r4, 2, 2, lit@0x0000
+  006a  CreateClosure        r2, r3, f5 ""
+  006f  Call4                r4, r7, r3, r2, r8, r4
+  0076  LoadConstString      r2, s14 "guarded ok:"
+  007a  Call3                r2, r5, r3, r2, r4
+  0080  TryGetById           r5, r0, #c0, s35 "print"
+  0086  GetByIdShort         r7, r0, #c1, s31 "applyWithGuard"
+  008b  GetByIdShort         r4, r0, #c2, s26 "boom"
+  0090  NewArray             r2, 0
+  0094  Call4                r4, r7, r3, r4, r8, r2
+  009b  LoadConstString      r2, s15 "guarded throw:"
+  009f  Call3                r2, r5, r3, r2, r4
+  00a5  Jmp                  L2
+L1:
+  00a7  Catch                r2
+  00a9  GetByIdShort         r4, r6, #c3, s36 "push"
+  00ae  GetByIdShort         r5, r2, #c4, s27 "message"
+  00b3  LoadConstString      r2, s10 "escaped "
+  00b7  Add                  r2, r2, r5
+  00bb  Call2                r2, r4, r6, r2
+L2:
+  00c0  TryGetById           r5, r0, #c0, s35 "print"
+  00c6  GetByIdShort         r4, r6, #c5, s29 "join"
+  00cb  LoadConstString      r2, s2 " | "
+  00cf  Call2                r4, r4, r6, r2
+  00d4  LoadConstString      r2, s12 "seen:"
+  00d8  Call3                r2, r5, r3, r2, r4
+  00de  TryGetById           r5, r0, #c0, s35 "print"
+  00e4  LoadFromEnvironment  r4, r1, 0
+  00e8  LoadConstString      r2, s16 "inGuard settled at:"
+  00ec  Call3                r2, r5, r3, r2, r4
+  00f2  GetByIdShort         r4, r0, #c6, s24 "guardedAwait"
+  00f7  LoadConstFalse       r2
+  00f9  Call2                r5, r4, r3, r2
+  00fe  GetByIdShort         r4, r5, #c7, s25 "then"
+  0103  CreateClosure        r2, r3, f6 ""
+  0108  Call2                r4, r4, r5, r2
+  010d  GetByIdShort         r2, r4, #c7, s25 "then"
+  0112  CreateClosure        r1, r1, f7 ""
+  0117  Call2                r1, r2, r4, r1
+  011c  TryGetById           r2, r0, #c0, s35 "print"
+  0122  GetByIdShort         r0, r0, #c8, s33 "nested"
+  0127  Call1                r1, r0, r3
+  012b  LoadConstString      r0, s19 "nested:"
+  012f  Call3                r0, r2, r3, r0, r1
+  0135  Ret                  r0
+
+function #1 "applyWithGuard"  params=4 frame=15 env=0 flags=exc,dbg,overflowed  @0x00000493 size=106
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T2 -> L2 ; handler 1
+  .try T3..T4 -> L2 ; handler 2
+  0000  GetParentEnvironment r2, 0
+  0003  LoadParam            r4, 1
+  0006  LoadParam            r3, 2
+  0009  LoadParam            r1, 3
+  000c  LoadFromEnvironment  r0, r2, 0
+  0010  Inc                  r0, r0
+  0013  StoreNPToEnvironment r2, 0, r0
+  0017  GetByIdShort         r0, r4, #c0, s30 "apply"
+  001c  Call3                r0, r0, r4, r3, r1
+  0022  LoadFromEnvironment  r1, r2, 0
+  0026  Dec                  r1, r1
+  0029  StoreNPToEnvironment r2, 0, r1
+  002d  Ret                  r0
+L1:
+  002f  Catch                r0
+  0031  LoadFromEnvironment  r3, r2, 1
+  0035  GetByIdShort         r1, r3, #c1, s36 "push"
+  003a  GetByIdShort         r4, r0, #c2, s27 "message"
+  003f  LoadConstString      r0, s22 "reportError "
+  0043  Add                  r0, r0, r4
+  0047  Call2                r0, r1, r3, r0
+  004c  LoadFromEnvironment  r0, r2, 0
+  0050  Dec                  r0, r0
+  0053  StoreNPToEnvironment r2, 0, r0
+  0057  LoadConstNull        r0
+  0059  Ret                  r0
+L2:
+  005b  Catch                r0
+  005d  LoadFromEnvironment  r1, r2, 0
+  0061  Dec                  r1, r1
+  0064  StoreNPToEnvironment r2, 0, r1
+  0068  Throw                r0
+
+function #2 "boom"  params=1 frame=12 env=0 flags=dbg,overflowed  @0x000004fd size=29
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c0, s34 "Error"
+  0008  CreateThisForNew     r1, r2, 1
+  000c  LoadConstString      r3, s26 "boom"
+  0010  Mov                  r4, r1
+  0013  Construct            r0, r2, 2
+  0017  SelectObject         r0, r1, r0
+  001b  Throw                r0
+
+function #3 "guardedAwait"  params=2 frame=16 env=0 flags=dbg,overflowed,nc  @0x0000051a size=31
+  0000  LoadConstUndefined   r0
+  0002  LoadConstUndefined   r1
+  0004  ReifyArgumentsLoose  r1
+  0006  Mov                  r4, r1
+  0009  GetBuiltinClosure    r3, b58 "makeAsyncIterator"
+  000c  GetParentEnvironment r1, 0
+  000f  CreateClosure        r2, r1, f8 "?anon_0_guardedAwait"
+  0014  LoadThisNS           r1
+  0016  Call4                r1, r3, r0, r2, r1, r4
+  001d  Ret                  r1
+
+function #4 "nested"  params=1 frame=14 env=0 flags=exc,dbg,overflowed  @0x00000539 size=151
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T3 -> L2 ; handler 1
+  .try T1..T4 -> L3 ; handler 2
+  .try T1..T5 -> L4 ; handler 3
+  0000  GetParentEnvironment r1, 0
+  0003  GetGlobalObject      r0
+  0005  TryGetById           r3, r0, #c0, s34 "Error"
+  000b  CreateThisForNew     r2, r3, 1
+  000f  LoadConstString      r5, s17 "inner"
+  0013  Mov                  r6, r2
+  0016  Construct            r0, r3, 2
+  001a  SelectObject         r0, r2, r0
+  001e  Throw                r0
+L1:
+  0020  Catch                r0
+  0022  GetGlobalObject      r2
+  0024  TryGetById           r3, r2, #c0, s34 "Error"
+  002a  GetByIdShort         r2, r0, #c2, s27 "message"
+  002f  LoadConstString      r0, s23 "rethrown "
+  0033  Add                  r5, r0, r2
+  0037  CreateThisForNew     r2, r3, 1
+  003b  Mov                  r6, r2
+  003e  Construct            r0, r3, 2
+  0042  SelectObject         r0, r2, r0
+  0046  Throw                r0
+L2:
+  0048  Catch                r0
+  004a  LoadFromEnvironment  r4, r1, 1
+  004e  GetByIdShort         r3, r4, #c3, s36 "push"
+  0053  LoadConstString      r2, s18 "inner-finally"
+  0057  Call2                r2, r3, r4, r2
+  005c  Throw                r0
+L3:
+  005e  Catch                r0
+  0060  GetByIdShort         r2, r0, #c2, s27 "message"
+  0065  LoadConstString      r0, s20 "outer caught "
+  0069  Add                  r0, r0, r2
+  006d  LoadFromEnvironment  r4, r1, 1
+  0071  GetByIdShort         r3, r4, #c3, s36 "push"
+  0076  LoadConstString      r2, s21 "outer-finally"
+  007a  Call2                r2, r3, r4, r2
+  007f  Ret                  r0
+L4:
+  0081  Catch                r0
+  0083  LoadFromEnvironment  r3, r1, 1
+  0087  GetByIdShort         r2, r3, #c3, s36 "push"
+  008c  LoadConstString      r1, s21 "outer-finally"
+  0090  Call2                r1, r2, r3, r1
+  0095  Throw                r0
+
+function #5 ""  params=3 frame=2 env=0 flags=dbg,overflowed  @0x000005d0 size=12
+  0000  LoadParam            r1, 2
+  0003  LoadParam            r0, 1
+  0006  Add                  r0, r0, r1
+  000a  Ret                  r0
+
+function #6 ""  params=2 frame=16 env=0 flags=dbg,overflowed  @0x000005dc size=37
+  0000  GetGlobalObject      r2
+  0002  TryGetById           r5, r2, #c0, s35 "print"
+  0008  LoadConstString      r4, s8 "await no-throw:"
+  000c  LoadConstUndefined   r0
+  000e  LoadParam            r3, 1
+  0011  Call3                r3, r5, r0, r4, r3
+  0017  GetByIdShort         r2, r2, #c1, s24 "guardedAwait"
+  001c  LoadConstTrue        r1
+  001e  Call2                r2, r2, r0, r1
+  0023  Ret                  r2
+
+function #7 ""  params=2 frame=15 env=0 flags=dbg,overflowed  @0x00000601 size=62
+  0000  GetGlobalObject      r1
+  0002  TryGetById           r4, r1, #c0, s35 "print"
+  0008  LoadConstString      r3, s9 "await throw:"
+  000c  LoadConstUndefined   r0
+  000e  LoadParam            r2, 1
+  0011  Call3                r2, r4, r0, r3, r2
+  0017  TryGetById           r3, r1, #c0, s35 "print"
+  001d  GetParentEnvironment r1, 0
+  0020  LoadFromEnvironment  r4, r1, 1
+  0024  GetByIdShort         r2, r4, #c1, s29 "join"
+  0029  LoadConstString      r1, s2 " | "
+  002d  Call2                r2, r2, r4, r1
+  0032  LoadConstString      r1, s11 "final seen:"
+  0036  Call3                r1, r3, r0, r1, r2
+  003c  Ret                  r0
+
+function #8 "?anon_0_guardedAwait"  params=2 frame=3 env=0 flags=nc  @0x0000063f size=31
+  0000  CreateFunctionEnvironment r1, 7
+  0003  LoadParam            r2, 1
+  0006  StoreToEnvironment   r1, 0, r2
+  000a  LoadConstZero        r0
+  000c  StoreNPToEnvironment r1, 5, r0
+  0010  StoreNPToEnvironment r1, 6, r0
+  0014  StoreNPToEnvironment r1, 4, r0
+  0018  CreateGenerator      r1, r1, f9 "?anon_0_guardedAwait"
+  001d  Ret                  r1
+
+function #9 "?anon_0_guardedAwait"  params=2 frame=26 env=0 flags=exc,dbg,overflowed  @0x0000065e size=514
+  .try T1..T2 -> L10 ; handler 0
+  .try T3..T4 -> L10 ; handler 1
+  .try T5..T6 -> L10 ; handler 2
+  .try T7..T8 -> L10 ; handler 3
+  .try T9..T10 -> L10 ; handler 4
+  .try T11..T12 -> L10 ; handler 5
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 6
+  0007  Mov                  r2, r0
+  000a  LoadConstUInt8       r4, 2
+  000d  JStrictEqualLong     L16, r0, r4
+  0014  LoadParam            r0, 2
+  0017  LoadParam            r3, 1
+  001a  Mov                  r14, r2
+  001d  LoadConstUInt8       r7, 3
+  0020  LoadConstUInt8       r5, 1
+  0023  LoadConstZero        r13
+  0025  GetParentEnvironment r12, 1
+  0028  GetGlobalObject      r11
+  002a  LoadConstString      r10, s6 "async-finally"
+  002e  LoadConstString      r9, s1 "async-caught "
+  0032  LoadConstString      r8, s5 "async-boom"
+  0036  JStrictEqualLong     L13, r14, r7
+L1:
+  003d  Mov                  r2, r4
+  0040  StoreNPToEnvironment r1, 6, r4
+  0044  LoadFromEnvironment  r14, r1, 5
+  0048  JStrictEqualLong     L7, r13, r14
+  004f  JStrictEqualLong     L6, r5, r14
+  0056  JStrictEqualLong     L5, r4, r14
+  005d  JStrictEqual         L4, r3, r5
+  0061  JStrictEqual         L3, r3, r4
+  0065  LoadFromEnvironment  r14, r1, 1
+  0069  LoadFromEnvironment  r14, r14, 0
+  006d  JmpTrue              L2, r14
+  0070  StoreNPToEnvironment r1, 4, r13
+  0074  LoadFromEnvironment  r14, r1, 2
+  0078  LoadFromEnvironment  r15, r14, 1
+  007c  GetByIdShort         r14, r15, #c0, s36 "push"
+  0081  Call2                r14, r14, r15, r10
+  0086  Mov                  r2, r7
+  0089  StoreNPToEnvironment r1, 6, r7
+  008d  NewObjectWithBuffer  r14, sh0(numProps=2), lit@0x000f
+  0093  Ret                  r14
+L2:
+  0095  TryGetById           r14, r11, #c1, s34 "Error"
+  009b  CreateThisForNew     r15, r14, 2
+  009f  Mov                  r18, r15
+  00a2  Mov                  r17, r8
+  00a5  Construct            r14, r14, 2
+  00a9  SelectObject         r14, r15, r14
+  00ad  Throw                r14
+L3:
+  00af  StoreNPToEnvironment r1, 4, r13
+  00b3  LoadFromEnvironment  r14, r1, 2
+  00b7  LoadFromEnvironment  r15, r14, 1
+  00bb  GetByIdShort         r14, r15, #c0, s36 "push"
+  00c0  Call2                r14, r14, r15, r10
+  00c5  Mov                  r2, r7
+  00c8  StoreNPToEnvironment r1, 6, r7
+  00cc  NewObjectWithBuffer  r14, sh0(numProps=2), lit@0x0009
+  00d2  PutOwnBySlotIdx      r14, r0, 0
+  00d6  Ret                  r14
+L4:
+  00d8  Mov                  r2, r7
+  00db  StoreNPToEnvironment r1, 6, r7
+  00df  Throw                r0
+L5:
+  00e1  LoadFromEnvironment  r14, r1, 3
+  00e5  Mov                  r6, r14
+  00e8  StoreNPToEnvironment r1, 4, r5
+  00ec  GetByIdShort         r14, r14, #c3, s27 "message"
+  00f1  Add                  r15, r9, r14
+  00f5  StoreNPToEnvironment r1, 4, r13
+  00f9  LoadFromEnvironment  r14, r1, 2
+  00fd  LoadFromEnvironment  r16, r14, 1
+  0101  GetByIdShort         r14, r16, #c0, s36 "push"
+  0106  Call2                r14, r14, r16, r10
+  010b  Mov                  r2, r7
+  010e  StoreNPToEnvironment r1, 6, r7
+  0112  NewObjectWithBuffer  r14, sh0(numProps=2), lit@0x0009
+  0118  PutOwnBySlotIdx      r14, r15, 0
+  011c  Ret                  r14
+L6:
+  011e  LoadFromEnvironment  r15, r1, 2
+  0122  LoadFromEnvironment  r14, r1, 3
+  0126  Mov                  r6, r14
+  0129  StoreNPToEnvironment r1, 4, r13
+  012d  LoadFromEnvironment  r16, r15, 1
+  0131  GetByIdShort         r15, r16, #c0, s36 "push"
+  0136  Call2                r15, r15, r16, r10
+  013b  Throw                r14
+L7:
+  013d  JStrictEqual         L9, r3, r5
+  0141  JStrictEqual         L8, r3, r4
+  0145  StoreToEnvironment   r1, 2, r12
+  0149  CreateTopLevelEnvironment r15, 1
+  014f  StoreToEnvironment   r1, 1, r15
+  0153  LoadFromEnvironment  r14, r1, 0
+  0157  StoreToEnvironment   r15, 0, r14
+  015b  StoreNPToEnvironment r1, 4, r4
+  015f  TryGetById           r15, r11, #c4, s28 "Promise"
+  0165  GetByIdShort         r14, r15, #c5, s37 "resolve"
+  016a  Call2                r15, r14, r15, r5
+  016f  StoreNPToEnvironment r1, 5, r7
+  0173  Mov                  r2, r5
+  0176  StoreNPToEnvironment r1, 6, r5
+  017a  NewObjectWithBuffer  r14, sh0(numProps=2), lit@0x000d
+  0180  PutOwnBySlotIdx      r14, r15, 0
+  0184  Ret                  r14
+L8:
+  0186  Mov                  r2, r7
+  0189  StoreNPToEnvironment r1, 6, r7
+  018d  NewObjectWithBuffer  r14, sh0(numProps=2), lit@0x0009
+  0193  PutOwnBySlotIdx      r14, r0, 0
+  0197  Ret                  r14
+L9:
+  0199  Mov                  r2, r7
+  019c  StoreNPToEnvironment r1, 6, r7
+  01a0  Throw                r0
+L10:
+  01a2  Catch                r14
+  01a4  Mov                  r6, r14
+  01a7  StoreToEnvironment   r1, 3, r14
+  01ab  LoadFromEnvironment  r14, r1, 4
+  01af  JStrictEqual         L12, r13, r14
+  01b3  JStrictEqual         L11, r5, r14
+  01b7  StoreNPToEnvironment r1, 5, r4
+  01bb  JmpLong              L1
+L11:
+  01c0  StoreNPToEnvironment r1, 5, r5
+  01c4  JmpLong              L1
+L12:
+  01c9  Mov                  r2, r7
+  01cc  StoreNPToEnvironment r1, 6, r7
+  01d0  Throw                r6
+L13:
+  01d2  JStrictEqual         L15, r3, r5
+  01d6  JStrictEqual         L14, r3, r4
+  01da  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x000b
+  01e0  Ret                  r3
+L14:
+  01e2  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0009
+  01e8  PutOwnBySlotIdx      r3, r0, 0
+  01ec  Ret                  r3
+L15:
+  01ee  Throw                r0
+L16:
+  01f0  LoadConstUInt8       r0, 3
+  01f3  Mov                  r2, r0
+  01f6  StoreNPToEnvironment r1, 6, r0
+  01fa  LoadConstString      r17, s4 "Generator functions may not be c…"
+  01fe  CallBuiltin          r0, b44 "throwTypeError", 2

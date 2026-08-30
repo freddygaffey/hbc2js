@@ -1,0 +1,304 @@
+; hbc2js disassembly of 54-try-catch-finally-shared-range/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=10 strings=38 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=2 flags=exc,dbg  @0x00000330 size=321
+  .try T1..T2 -> L1 ; handler 0
+  0000  DeclareGlobalVar     s33 "applyWithGuard"
+  0005  DeclareGlobalVar     s27 "boom"
+  000a  DeclareGlobalVar     s24 "guardedAwait"
+  000f  DeclareGlobalVar     s26 "nested"
+  0014  CreateEnvironment    r1
+  0016  LoadConstUndefined   r3
+  0018  LoadConstUndefined   r2
+  001a  CreateClosure        r4, r1, f1 "applyWithGuard"
+  001f  GetGlobalObject      r0
+  0021  PutById              r0, r4, #c1, s33 "applyWithGuard"
+  0027  CreateClosure        r4, r1, f2 "boom"
+  002c  PutById              r0, r4, #c2, s27 "boom"
+  0032  CreateAsyncClosure   r4, r1, f3 "guardedAwait"
+  0037  PutById              r0, r4, #c3, s24 "guardedAwait"
+  003d  CreateClosure        r4, r1, f6 "nested"
+  0042  PutById              r0, r4, #c4, s26 "nested"
+  0048  LoadConstZero        r4
+  004a  StoreNPToEnvironment r1, 0, r4
+  004e  NewArray             r4, 0
+  0052  Mov                  r2, r4
+  0055  StoreToEnvironment   r1, 1, r4
+  0059  TryGetById           r6, r0, #c1, s34 "print"
+  005f  GetByIdShort         r7, r0, #c2, s33 "applyWithGuard"
+  0064  CreateClosure        r5, r1, f7 ""
+  0069  LoadConstNull        r8
+  006b  NewArrayWithBuffer   r4, 2, 2, lit@0x0001
+  0073  Call4                r5, r7, r3, r5, r8, r4
+  007a  LoadConstString      r4, s15 "guarded ok:"
+  007e  Call3                r4, r6, r3, r4, r5
+  0084  TryGetById           r6, r0, #c1, s34 "print"
+  008a  GetByIdShort         r7, r0, #c2, s33 "applyWithGuard"
+  008f  GetByIdShort         r5, r0, #c3, s27 "boom"
+  0094  NewArray             r4, 0
+  0098  Call4                r5, r7, r3, r5, r8, r4
+  009f  LoadConstString      r4, s16 "guarded throw:"
+  00a3  Call3                r4, r6, r3, r4, r5
+  00a9  Jmp                  L2
+L1:
+  00ab  Catch                r4
+  00ad  Mov                  r6, r2
+  00b0  GetByIdShort         r5, r6, #c4, s36 "push"
+  00b5  GetByIdShort         r7, r4, #c5, s28 "message"
+  00ba  LoadConstString      r4, s11 "escaped "
+  00be  Add                  r4, r4, r7
+  00c2  Call2                r4, r5, r6, r4
+L2:
+  00c7  TryGetById           r5, r0, #c1, s34 "print"
+  00cd  Mov                  r6, r2
+  00d0  GetByIdShort         r4, r6, #c6, s30 "join"
+  00d5  LoadConstString      r2, s2 " | "
+  00d9  Call2                r4, r4, r6, r2
+  00de  LoadConstString      r2, s13 "seen:"
+  00e2  Call3                r2, r5, r3, r2, r4
+  00e8  TryGetById           r5, r0, #c1, s34 "print"
+  00ee  LoadFromEnvironment  r4, r1, 0
+  00f2  LoadConstString      r2, s17 "inGuard settled at:"
+  00f6  Call3                r2, r5, r3, r2, r4
+  00fc  GetByIdShort         r4, r0, #c7, s24 "guardedAwait"
+  0101  LoadConstFalse       r2
+  0103  Call2                r5, r4, r3, r2
+  0108  GetByIdShort         r4, r5, #c8, s25 "then"
+  010d  CreateClosure        r2, r1, f8 ""
+  0112  Call2                r4, r4, r5, r2
+  0117  GetByIdShort         r2, r4, #c8, s25 "then"
+  011c  CreateClosure        r1, r1, f9 ""
+  0121  Call2                r1, r2, r4, r1
+  0126  TryGetById           r2, r0, #c1, s34 "print"
+  012c  GetByIdShort         r0, r0, #c9, s26 "nested"
+  0131  Call1                r1, r0, r3
+  0135  LoadConstString      r0, s5 "nested:"
+  0139  Call3                r0, r2, r3, r0, r1
+  013f  Ret                  r0
+
+function #1 "applyWithGuard"  params=4 frame=14 env=0 flags=exc,dbg  @0x00000471 size=115
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T2 -> L2 ; handler 1
+  .try T3..T4 -> L2 ; handler 2
+  0000  LoadParam            r3, 1
+  0003  LoadParam            r1, 2
+  0006  LoadParam            r0, 3
+  0009  GetEnvironment       r2, 0
+  000c  LoadFromEnvironment  r4, r2, 0
+  0010  Inc                  r4, r4
+  0013  StoreToEnvironment   r2, 0, r4
+  0017  Mov                  r4, r3
+  001a  GetByIdShort         r3, r4, #c1, s32 "apply"
+  001f  Call3                r0, r3, r4, r1, r0
+  0025  LoadFromEnvironment  r1, r2, 0
+  0029  Dec                  r1, r1
+  002c  StoreToEnvironment   r2, 0, r1
+  0030  Ret                  r0
+L1:
+  0032  Catch                r0
+  0034  GetEnvironment       r1, 0
+  0037  LoadFromEnvironment  r3, r1, 1
+  003b  GetByIdShort         r2, r3, #c2, s36 "push"
+  0040  GetByIdShort         r4, r0, #c3, s28 "message"
+  0045  LoadConstString      r0, s22 "reportError "
+  0049  Add                  r0, r0, r4
+  004d  Call2                r0, r2, r3, r0
+  0052  LoadFromEnvironment  r0, r1, 0
+  0056  Dec                  r0, r0
+  0059  StoreToEnvironment   r1, 0, r0
+  005d  LoadConstNull        r0
+  005f  Ret                  r0
+L2:
+  0061  Catch                r0
+  0063  GetEnvironment       r2, 0
+  0066  LoadFromEnvironment  r1, r2, 0
+  006a  Dec                  r1, r1
+  006d  StoreToEnvironment   r2, 0, r1
+  0071  Throw                r0
+
+function #2 "boom"  params=1 frame=11 env=0 flags=dbg  @0x000004e4 size=34
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s31 "Error"
+  0008  GetByIdShort         r0, r2, #c2, s35 "prototype"
+  000d  CreateThis           r1, r0, r2
+  0011  LoadConstString      r3, s27 "boom"
+  0015  Mov                  r4, r1
+  0018  Construct            r0, r2, 2
+  001c  SelectObject         r0, r1, r0
+  0020  Throw                r0
+
+function #3 "guardedAwait"  params=2 frame=15 env=0 flags=dbg,nc  @0x00000506 size=30
+  0000  LoadConstUndefined   r4
+  0002  LoadConstUndefined   r0
+  0004  ReifyArguments       r0
+  0006  Mov                  r3, r0
+  0009  GetBuiltinClosure    r2, b52 "spawnAsync"
+  000c  CreateEnvironment    r0
+  000e  CreateGeneratorClosure r1, r0, f4 "?anon_0_guardedAwait"
+  0013  LoadThisNS           r0
+  0015  Call4                r0, r2, r4, r1, r0, r3
+  001c  Ret                  r0
+
+function #4 "?anon_0_guardedAwait"  params=2 frame=1 env=0 flags=nc  @0x00000524 size=9
+  0000  CreateEnvironment    r0
+  0002  CreateGenerator      r0, r0, f5 "?anon_0_?anon_0_guardedAwait"
+  0007  Ret                  r0
+
+function #5 "?anon_0_?anon_0_guardedAwait"  params=2 frame=14 env=0 flags=exc,dbg  @0x0000052d size=198
+  .try T1..T2 -> L4 ; handler 0
+  .try T3..T4 -> L4 ; handler 1
+  .try T1..T2 -> L5 ; handler 2
+  .try T3..T4 -> L5 ; handler 3
+  .try T5..T6 -> L5 ; handler 4
+  0000  StartGenerator
+  0001  ResumeGenerator      r0, r1
+  0004  JmpTrueLong          L6, r1
+  000a  LoadParam            r3, 1
+  000d  GetGlobalObject      r2
+  000f  TryGetById           r5, r2, #c1, s29 "Promise"
+  0015  GetByIdShort         r4, r5, #c2, s37 "resolve"
+  001a  LoadConstUInt8       r1, 1
+  001d  Call2                r1, r4, r5, r1
+  0022  SaveGenerator        L1
+  0024  Ret                  r1
+L1:
+  0026  ResumeGenerator      r1, r4
+  0029  JmpTrue              L3, r4
+  002c  JmpTrue              L2, r3
+  002f  GetEnvironment       r3, 2
+  0032  LoadFromEnvironment  r5, r3, 1
+  0036  GetByIdShort         r4, r5, #c3, s36 "push"
+  003b  LoadConstString      r3, s7 "async-finally"
+  003f  Call2                r3, r4, r5, r3
+  0044  LoadConstString      r3, s8 "async-ok"
+  0048  CompleteGenerator
+  0049  Ret                  r3
+L2:
+  004b  TryGetById           r4, r2, #c4, s31 "Error"
+  0051  GetByIdShort         r2, r4, #c5, s35 "prototype"
+  0056  CreateThis           r3, r2, r4
+  005a  LoadConstString      r6, s6 "async-boom"
+  005e  Mov                  r7, r3
+  0061  Construct            r2, r4, 2
+  0065  SelectObject         r2, r3, r2
+  0069  Throw                r2
+L3:
+  006b  GetEnvironment       r2, 2
+  006e  LoadFromEnvironment  r4, r2, 1
+  0072  GetByIdShort         r3, r4, #c3, s36 "push"
+  0077  LoadConstString      r2, s7 "async-finally"
+  007b  Call2                r2, r3, r4, r2
+  0080  CompleteGenerator
+  0081  Ret                  r1
+L4:
+  0083  Catch                r1
+  0085  GetByIdShort         r2, r1, #c6, s28 "message"
+  008a  LoadConstString      r1, s1 "async-caught "
+  008e  Add                  r1, r1, r2
+  0092  GetEnvironment       r2, 2
+  0095  LoadFromEnvironment  r4, r2, 1
+  0099  GetByIdShort         r3, r4, #c3, s36 "push"
+  009e  LoadConstString      r2, s7 "async-finally"
+  00a2  Call2                r2, r3, r4, r2
+  00a7  CompleteGenerator
+  00a8  Ret                  r1
+L5:
+  00aa  Catch                r1
+  00ac  GetEnvironment       r2, 2
+  00af  LoadFromEnvironment  r4, r2, 1
+  00b3  GetByIdShort         r3, r4, #c3, s36 "push"
+  00b8  LoadConstString      r2, s7 "async-finally"
+  00bc  Call2                r2, r3, r4, r2
+  00c1  Throw                r1
+L6:
+  00c3  CompleteGenerator
+  00c4  Ret                  r0
+
+function #6 "nested"  params=1 frame=12 env=0 flags=exc,dbg  @0x000005f3 size=167
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T3 -> L2 ; handler 1
+  .try T1..T4 -> L3 ; handler 2
+  .try T1..T5 -> L4 ; handler 3
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r2, r0, #c1, s31 "Error"
+  0008  GetByIdShort         r0, r2, #c2, s35 "prototype"
+  000d  CreateThis           r1, r0, r2
+  0011  LoadConstString      r4, s18 "inner"
+  0015  Mov                  r5, r1
+  0018  Construct            r0, r2, 2
+  001c  SelectObject         r0, r1, r0
+  0020  Throw                r0
+L1:
+  0022  Catch                r0
+  0024  GetGlobalObject      r1
+  0026  TryGetById           r2, r1, #c1, s31 "Error"
+  002c  GetByIdShort         r1, r0, #c3, s28 "message"
+  0031  LoadConstString      r0, s23 "rethrown "
+  0035  Add                  r4, r0, r1
+  0039  GetByIdShort         r1, r2, #c2, s35 "prototype"
+  003e  CreateThis           r1, r1, r2
+  0042  Mov                  r5, r1
+  0045  Construct            r0, r2, 2
+  0049  SelectObject         r0, r1, r0
+  004d  Throw                r0
+L2:
+  004f  Catch                r0
+  0051  GetEnvironment       r1, 0
+  0054  LoadFromEnvironment  r3, r1, 1
+  0058  GetByIdShort         r2, r3, #c4, s36 "push"
+  005d  LoadConstString      r1, s19 "inner-finally"
+  0061  Call2                r1, r2, r3, r1
+  0066  Throw                r0
+L3:
+  0068  Catch                r0
+  006a  GetByIdShort         r1, r0, #c3, s28 "message"
+  006f  LoadConstString      r0, s20 "outer caught "
+  0073  Add                  r0, r0, r1
+  0077  GetEnvironment       r1, 0
+  007a  LoadFromEnvironment  r3, r1, 1
+  007e  GetByIdShort         r2, r3, #c4, s36 "push"
+  0083  LoadConstString      r1, s21 "outer-finally"
+  0087  Call2                r1, r2, r3, r1
+  008c  Ret                  r0
+L4:
+  008e  Catch                r0
+  0090  GetEnvironment       r1, 0
+  0093  LoadFromEnvironment  r3, r1, 1
+  0097  GetByIdShort         r2, r3, #c4, s36 "push"
+  009c  LoadConstString      r1, s21 "outer-finally"
+  00a0  Call2                r1, r2, r3, r1
+  00a5  Throw                r0
+
+function #7 ""  params=3 frame=2 env=0 flags=dbg  @0x0000069a size=12
+  0000  LoadParam            r1, 1
+  0003  LoadParam            r0, 2
+  0006  Add                  r0, r1, r0
+  000a  Ret                  r0
+
+function #8 ""  params=2 frame=14 env=0 flags=dbg  @0x000006a6 size=37
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r4, r0, #c1, s34 "print"
+  0008  LoadConstUndefined   r2
+  000a  LoadConstString      r3, s9 "await no-throw:"
+  000e  LoadParam            r1, 1
+  0011  Call3                r1, r4, r2, r3, r1
+  0017  GetByIdShort         r1, r0, #c2, s24 "guardedAwait"
+  001c  LoadConstTrue        r0
+  001e  Call2                r0, r1, r2, r0
+  0023  Ret                  r0
+
+function #9 ""  params=2 frame=14 env=0 flags=dbg  @0x000006cb size=62
+  0000  GetGlobalObject      r1
+  0002  TryGetById           r4, r1, #c1, s34 "print"
+  0008  LoadConstUndefined   r0
+  000a  LoadConstString      r3, s10 "await throw:"
+  000e  LoadParam            r2, 1
+  0011  Call3                r2, r4, r0, r3, r2
+  0017  TryGetById           r3, r1, #c1, s34 "print"
+  001d  GetEnvironment       r1, 0
+  0020  LoadFromEnvironment  r4, r1, 1
+  0024  GetByIdShort         r2, r4, #c2, s30 "join"
+  0029  LoadConstString      r1, s2 " | "
+  002d  Call2                r2, r2, r4, r1
+  0032  LoadConstString      r1, s12 "final seen:"
+  0036  Call3                r1, r3, r0, r1, r2
+  003c  Ret                  r0

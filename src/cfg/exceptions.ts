@@ -37,10 +37,16 @@ export function carveRegions(handlers: readonly ExceptionHandler[], blocks: read
     }
   }
 
-  // Step 3 — sort a copy by (start asc, end desc) => outermost first. Ties are
-  // broken by file order so the result is deterministic.
+  // Step 3 — sort a copy by (start asc, end desc) => outermost first. Two entries
+  // with the *identical* range (a `try` with both a `catch` and a `finally`
+  // compiles to exactly that) are ordered by file order DESCENDING, because the
+  // VM's `BCProviderBase::findCatchTargetOffset` returns the FIRST matching
+  // table entry: for equal ranges the earlier entry is the *inner* handler, so
+  // the later entry must sort first (outermost first). Sorting them the other
+  // way round makes the `catch` the outer `try` and the exception is swallowed
+  // by the `finally`'s rethrow instead (review M4-C1).
   const sorted: Sorted[] = handlers.map((handler, fileOrder) => ({ handler, fileOrder }));
-  sorted.sort((a, b) => a.handler.start - b.handler.start || b.handler.end - a.handler.end || a.fileOrder - b.fileOrder);
+  sorted.sort((a, b) => a.handler.start - b.handler.start || b.handler.end - a.handler.end || b.fileOrder - a.fileOrder);
 
   // Step 4 — reject crossing (partially overlapping, non-nested) pairs.
   for (let i = 0; i < sorted.length; i++) {
@@ -84,12 +90,16 @@ export function carveRegions(handlers: readonly ExceptionHandler[], blocks: read
     };
   });
 
-  // Step 7 — parent = nearest preceding region strictly containing this one.
+  // Step 7 — parent = nearest preceding region containing this one. "Containing"
+  // includes an *equal* range: by step 3's ordering the preceding equal-range
+  // region is the one with the higher file order, which the VM's first-match
+  // rule makes the outer handler. Without this, equal-range regions become
+  // siblings and the structurer nests them in table order — inverted (M4-C1).
   for (let i = 0; i < regionsMut.length; i++) {
     const r = regionsMut[i]!;
     for (let j = i - 1; j >= 0; j--) {
       const c = regionsMut[j]!;
-      const contains = c.startPc <= r.startPc && r.endPc <= c.endPc && !(c.startPc === r.startPc && c.endPc === r.endPc);
+      const contains = c.startPc <= r.startPc && r.endPc <= c.endPc;
       if (contains) {
         r.parent = j;
         c.children.push(i);

@@ -169,7 +169,7 @@ export interface DominatorTree {
 
 ```ts
 export interface ExceptionRegion {
-  readonly index: number;                       // position in the handler table (file order)
+  readonly index: number;                       // position in `regions` (§5 step 3 order: outermost first)
   readonly startPc: number;                     // handler.start, function-relative
   readonly endPc: number;                       // handler.end, EXCLUSIVE
   readonly handlerBlock: BlockId;               // handler.target's block; begins with Catch
@@ -189,9 +189,10 @@ export interface ExceptionRegion {
 
 **Nesting.** `docs/HBC-FORMAT.md` §4.3: handlers are innermost-first in file
 order, may overlap and nest, and for a given pc the *first* matching entry in
-file order is the active one. Sort by `(startPc asc, endPc desc)` to get an
-outermost-first order; then a region's parent is the nearest preceding region
-whose range strictly contains it. **Ranges that partially overlap without
+file order is the active one. Sort by `(startPc asc, endPc desc, file order
+desc)` to get an outermost-first order; then a region's parent is the nearest
+preceding region whose range contains it, an **identical** range included (§5
+step 7). **Ranges that partially overlap without
 nesting are not expected** — Hermes emits properly nested ranges — so treat a
 crossing pair as `E_BAD_HANDLER` rather than inventing a semantics for it.
 
@@ -551,17 +552,32 @@ is-return flag from the shim" (spec 05 §7.2).
 1. Read fn.exceptionHandlers (spec 01 §3.4): (start, end, target), function-relative.
 2. Validate: start < end <= bytecodeSize; target < bytecodeSize; each of
    start/target is an instruction boundary.
-3. Sort a copy by (start asc, end desc) -> outermost-first.
+3. Sort a copy by (start asc, end desc, FILE ORDER DESC) -> outermost-first.
 4. Reject crossing (partially overlapping, non-nested) pairs -> E_BAD_HANDLER.
 5. Split blocks at every start/end/target (§4.1 rules 5-6).
 6. For each handler, bodyBlocks = { B : R.start <= B.start && B.end <= R.end }.
-7. parent = nearest preceding region strictly containing this one.
+7. parent = nearest preceding region containing this one, where "containing"
+   INCLUDES an identical range (step 3 has already put the later table entry
+   first, so the preceding equal-range region is the outer one).
 8. Group by target to fill sharesHandlerWith.
 9. Assert every handlerBlock's first instruction is `Catch`; record its register.
 ```
 
 Step 9 is a real check, not a formality: a handler target that does not begin
 with `Catch` means the handler table or the decode is wrong, and it is fatal.
+
+**Why step 3 breaks ties by file order *descending*, and why step 7 admits an
+equal range.** A `try` with both a `catch` and a `finally` compiles to two table
+entries with the *identical* `[start, end)`: the catch first, the finally's
+synthesised catch-and-rethrow second. The VM's
+`BCProviderBase::findCatchTargetOffset` (`lib/BCGen/HBC/BytecodeDataProvider.cpp`)
+scans the table in file order and returns the **first** entry that covers the pc,
+so for equal ranges the *earlier* entry is the *inner* handler. Ordering the tie
+ascending and refusing an equal-range region a parent makes them siblings, and
+spec 04 then emits the earlier entry as the **outer** JS `try` — the catch is
+skipped and the exception is taken by the finally's rethrow. React Native's own
+`ErrorUtils.applyWithGuard` is exactly this shape; see review M4-C1 and
+`tests/fixtures/constructs/54-try-catch-finally-shared-range`.
 
 **Known corpus stress cases.** `hermes-dec-sample` function 5 has 3 handlers at
 v94 and **5 at v99, four of which share one target** (`docs/HBC-FORMAT.md`
