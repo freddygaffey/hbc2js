@@ -280,16 +280,162 @@ export function measureGlobalAccess(versions = ALL_VERSIONS) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// docs/specs/passes/04-call-shape.md §7's corpus metric: the share of
+// emitted functions containing zero `Reflect.apply`/`Reflect.construct`
+// call, with `call-shape` off vs on, across all five HBC versions.
+// `tests/gate/passes/call-shape-metrics.test.ts` imports `measureCallShape`;
+// `measureCallShapeBundle` (sweep-tier only, real bundles are too large for
+// the gate) is the spec's >=90%-on-the-RN-template-bundle half of the same
+// metric.
+// ---------------------------------------------------------------------------
+
+/** Does `stmts` contain a call to `Reflect.apply`/`Reflect.construct`
+ *  anywhere (including nested statement lists and nested `func` bodies — a
+ *  surviving call anywhere in a function still counts against that function
+ *  for this metric, mirroring `containsInGuard`'s own convention above)? */
+function containsReflectCall(stmts) {
+  const isReflectCallee = (callee) => callee.k === "member" && !callee.computed && callee.obj.k === "ident" && callee.obj.name === "Reflect" && callee.prop.k === "lit" && (callee.prop.text === "apply" || callee.prop.text === "construct");
+  const visitExpr = (e) => {
+    switch (e.k) {
+      case "call":
+        return isReflectCallee(e.callee) || visitExpr(e.callee) || e.args.some(visitExpr);
+      case "new":
+        return visitExpr(e.callee) || e.args.some(visitExpr);
+      case "member":
+        return visitExpr(e.obj) || (e.computed && visitExpr(e.prop));
+      case "unary":
+        return visitExpr(e.arg);
+      case "assign":
+        return visitExpr(e.target) || visitExpr(e.value);
+      case "bin":
+      case "logical":
+        return visitExpr(e.left) || visitExpr(e.right);
+      case "cond":
+        return visitExpr(e.test) || visitExpr(e.then) || visitExpr(e.else);
+      case "array":
+        return e.elements.some(visitExpr);
+      case "object":
+        return e.props.some((p) => visitExpr(p.value));
+      case "seq":
+        return e.exprs.some(visitExpr);
+      case "func":
+        return visitStmts(e.body);
+      default:
+        return false;
+    }
+  };
+  const visitStmts = (list) => {
+    for (const s of list) {
+      switch (s.k) {
+        case "expr":
+          if (visitExpr(s.expr)) return true;
+          break;
+        case "init":
+          if (visitExpr(s.value)) return true;
+          break;
+        case "if":
+          if (visitExpr(s.test) || visitStmts(s.then) || visitStmts(s.else)) return true;
+          break;
+        case "while":
+          if ((s.test !== undefined && visitExpr(s.test)) || visitStmts(s.body)) return true;
+          break;
+        case "do-while":
+          if (visitExpr(s.test) || visitStmts(s.body)) return true;
+          break;
+        case "for":
+          if ((s.init !== null && visitExpr(s.init)) || visitExpr(s.test) || (s.update !== null && visitExpr(s.update)) || visitStmts(s.body)) return true;
+          break;
+        case "labeled":
+        case "iife":
+          if (visitStmts(s.body)) return true;
+          break;
+        case "return":
+          if (s.arg !== null && visitExpr(s.arg)) return true;
+          break;
+        case "throw":
+          if (visitExpr(s.arg)) return true;
+          break;
+        case "try":
+          if (visitStmts(s.block) || visitStmts(s.handler)) return true;
+          break;
+        case "switch":
+          if (visitExpr(s.disc) || s.cases.some((c) => (c.test !== null && visitExpr(c.test)) || visitStmts(c.body))) return true;
+          break;
+        case "func":
+          if (visitStmts(s.body)) return true;
+          break;
+        default:
+          break;
+      }
+    }
+    return false;
+  };
+  return visitStmts(stmts);
+}
+
+export function measureCallShape(versions = ALL_VERSIONS) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  let beforeFns = 0;
+  let afterFns = 0;
+  let beforeCleanFns = 0;
+  let afterCleanFns = 0;
+  const perFixture = [];
+  for (const dir of dirs) {
+    for (const version of versions) {
+      const file = join(CORPUS_DIR, dir, `v${version}.hbc`);
+      if (!existsSync(file)) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      const beforeBodies = functionBodies(bytes, dir, { skip: ["call-shape"] }, true);
+      const afterBodies = functionBodies(bytes, dir, {}, true);
+      beforeFns += beforeBodies.length;
+      afterFns += afterBodies.length;
+      const cleanBefore = beforeBodies.filter((b) => !containsReflectCall(b)).length;
+      const cleanAfter = afterBodies.filter((b) => !containsReflectCall(b)).length;
+      beforeCleanFns += cleanBefore;
+      afterCleanFns += cleanAfter;
+      perFixture.push({ fixture: dir, version, functions: afterBodies.length, cleanFunctionsBefore: cleanBefore, cleanFunctionsAfter: cleanAfter });
+    }
+  }
+  const cleanFunctionPctBefore = beforeFns === 0 ? 0 : (beforeCleanFns / beforeFns) * 100;
+  const cleanFunctionPctAfter = afterFns === 0 ? 0 : (afterCleanFns / afterFns) * 100;
+  return {
+    functionCount: afterFns,
+    cleanFunctionPct: cleanFunctionPctAfter,
+    cleanFunctionPctBefore,
+    perFixture,
+  };
+}
+
+/** Spec §7's other half: >=90% on the RN template bundle — a single, large
+ *  `.hbc` file rather than the small per-construct corpus, so this is kept
+ *  as a standalone entry point the sweep tier calls directly instead of
+ *  folding into `measureCallShape`'s per-fixture loop above. */
+export function measureCallShapeBundle(bundlePath) {
+  const bytes = new Uint8Array(readFileSync(bundlePath));
+  const beforeBodies = functionBodies(bytes, "bundle", { skip: ["call-shape"] }, true);
+  const afterBodies = functionBodies(bytes, "bundle", {}, true);
+  const cleanBefore = beforeBodies.filter((b) => !containsReflectCall(b)).length;
+  const cleanAfter = afterBodies.filter((b) => !containsReflectCall(b)).length;
+  return {
+    functionCount: afterBodies.length,
+    cleanFunctionPct: afterBodies.length === 0 ? 0 : (cleanAfter / afterBodies.length) * 100,
+    cleanFunctionPctBefore: beforeBodies.length === 0 ? 0 : (cleanBefore / beforeBodies.length) * 100,
+  };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = measure();
   const ga = measureGlobalAccess();
+  const cs = measureCallShape();
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify({ exprRebuild: result, globalAccess: ga }, null, 2));
+    console.log(JSON.stringify({ exprRebuild: result, globalAccess: ga, callShape: cs }, null, 2));
   } else {
     console.log(`fixtures: ${result.fixtureCount}`);
     console.log(`register occurrences: ${result.registerOccurrences.before} -> ${result.registerOccurrences.after} (${result.registerOccurrences.reductionPct.toFixed(1)}% reduction)`);
     console.log(`median statements/function: ${result.medianStatementsPerFunction.before} -> ${result.medianStatementsPerFunction.after} (${result.medianStatementsPerFunction.reductionPct.toFixed(1)}% reduction)`);
     console.log(`global-access: ${ga.cleanFunctionPctBefore.toFixed(1)}% -> ${ga.cleanFunctionPct.toFixed(1)}% of ${ga.functionCount} functions free of an "in" guard`);
     console.log(`globalThis. occurrences: ${ga.globalThisOccurrences.before} -> ${ga.globalThisOccurrences.after} (${ga.globalThisOccurrences.reductionPct.toFixed(1)}% reduction)`);
+    console.log(`call-shape: ${cs.cleanFunctionPctBefore.toFixed(1)}% -> ${cs.cleanFunctionPct.toFixed(1)}% of ${cs.functionCount} functions free of Reflect.apply/Reflect.construct`);
   }
 }

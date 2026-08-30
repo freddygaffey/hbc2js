@@ -39,3 +39,29 @@ export interface GlobalAccessMetricsResult {
 }
 
 export function measureGlobalAccess(versions?: readonly number[]): GlobalAccessMetricsResult;
+
+// docs/specs/passes/04-call-shape.md §7's corpus metric.
+export interface CallShapePerFixtureMetric {
+  readonly fixture: string;
+  readonly version: number;
+  readonly functions: number;
+  readonly cleanFunctionsBefore: number;
+  readonly cleanFunctionsAfter: number;
+}
+
+export interface CallShapeMetricsResult {
+  readonly functionCount: number;
+  readonly cleanFunctionPct: number;
+  readonly cleanFunctionPctBefore: number;
+  readonly perFixture: readonly CallShapePerFixtureMetric[];
+}
+
+export function measureCallShape(versions?: readonly number[]): CallShapeMetricsResult;
+
+export interface CallShapeBundleResult {
+  readonly functionCount: number;
+  readonly cleanFunctionPct: number;
+  readonly cleanFunctionPctBefore: number;
+}
+
+export function measureCallShapeBundle(bundlePath: string): CallShapeBundleResult;
