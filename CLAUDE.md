@@ -1,6 +1,6 @@
 # hbc2js — instructions for AI contributors
 
-Read `docs/AGENT-BRIEF.md` first (one page). Open other docs only when your task needs them — your brief will name them. For architecture work read `docs/DECISIONS.md` too.
+If you are on the `deb` box (or any fresh machine resuming this project), read `docs/RESUME-ON-DEB.md` first and prompt the user to start the loop. Otherwise read `docs/AGENT-BRIEF.md` first (one page). Open other docs only when your task needs them — your brief will name them. For architecture work read `docs/DECISIONS.md` too.
 
 Hard rules:
 - **Never copy code from hermes-dec** (AGPL). It is a behaviour oracle only. Derive opcode tables from the MIT-licensed Hermes repo (`include/hermes/BCGen/HBC/BytecodeList.def`) or from observation.
