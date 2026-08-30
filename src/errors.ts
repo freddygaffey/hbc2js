@@ -25,6 +25,15 @@ export const ErrorCode = {
   E_SWITCH_TABLE: "E_SWITCH_TABLE",
   // tables
   E_TABLE_ASSERT: "E_TABLE_ASSERT",
+  // cfg / structurer / emitter (M4 — docs/specs/03-cfg.md §7, 04 §7, 05 §10)
+  E_ENV_UNRESOLVED: "E_ENV_UNRESOLVED",
+  E_TOO_COMPLEX: "E_TOO_COMPLEX",
+  E_STRUCTURE_UNSOUND: "E_STRUCTURE_UNSOUND",
+  E_EMIT_UNSUPPORTED: "E_EMIT_UNSUPPORTED",
+  E_UNBOUND_IDENT: "E_UNBOUND_IDENT",
+  // pass ladder (docs/specs/07-pass-ladder.md §2.3)
+  E_PASS_ORDER: "E_PASS_ORDER",
+  E_PASS_CRASH: "E_PASS_CRASH",
   // internal
   E_INTERNAL: "E_INTERNAL",
 } as const;
