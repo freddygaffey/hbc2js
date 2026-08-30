@@ -1028,3 +1028,172 @@ already reads — docs/DEPS.md). No URL is published yet — `HBC2JS_SIGDB_URL`
 has no default; today's archive lives only at
 `deb:~/hbc2js-bulk/dist/sigdb-20260830-partial.tar.zst` and, per §6.4,
 should not be treated as ready for real use until subtracted.
+
+### 6.6 The D17c fix: foundation subtraction in `build-one.mjs`, and a second, separate false-positive class found while validating it (2026-08-30)
+
+Follow-up to §6.4's "do not fetch this archive" finding. `tools/pkgsig/bulk/**`
+scripts only — no `src/**` touched, per this task's ownership split.
+
+#### 6.6.1 Root cause, confirmed precisely
+
+Neither `src/deps/confirm.ts` (the promoted `--confirm` stage) nor the old
+`build-one.mjs` ever calls a baseline-subtraction routine — none exists as
+an importable `src/deps` export today. The checked-in
+`tools/pkgsig/db/*.json` starter files (e.g. `redux@4.2.1__hbc94.json`:
+`rawFunctionCount: 124`, `totalFunctions: 36`, `subtractedBaselines` listing
+3 files) were produced by the pre-promotion prototype `build-db.mjs`
+(`tools/pkgsig/README.md`'s own mapping table), whose subtraction step was
+never carried into the typed pipeline. So "reuse `src/deps`'s exported
+function" (this task's plan A) was not available; the logic is ported
+locally instead, scoped to `tools/pkgsig/bulk/**`.
+
+#### 6.6.2 The fix
+
+- **`tools/pkgsig/bulk/baseline-subtract.mjs`** (new): `computeBaselineUnion(dbDir,
+  hbcVersion)` unions the `exactHash` sets of every `_baselines/*__hbc<N>.json`
+  file for that HBC version; `subtractBaseline(rawFunctions, rawModules,
+  hashes)` filters functions and flags `factoryIsBaseline` on modules — the
+  same two operations the curated `redux@4.2.1__hbc94.json` file's shape
+  implies. **`tools/pkgsig/bulk/test-baseline-subtract.mjs`** (new,
+  network/build-free) reconstructs a "raw" function set from that real
+  checked-in file's own 36 surviving functions plus the real, checked-in
+  baseline files' functions, and asserts `subtractBaseline` reproduces the
+  fixture's exact `exactHash` set and `factoryIsBaseline` flags exactly —
+  passes locally and on `deb`.
+- **`build-one.mjs`**: calls the above after `fingerprintModule`, writes
+  `subtractedBaselines`/`rawFunctionCount`/`totalFunctions` correctly, and
+  stamps every written file with **`bulkBuildFixVersion: 1`** (a marker,
+  not part of the canonical `SigDbFile` schema — extra JSON keys are
+  harmless to existing readers) so a fixed file can be told apart from a
+  pre-fix one. If the (RN, hbc)'s baseline set isn't complete yet, **the job
+  fails loudly** rather than silently writing unsubtracted data under the
+  "fixed" marker — verified live: 603 jobs failed with `"incomplete
+  baseline set"` during the ~6-minute window before baselines existed for
+  hbc96, self-healing on the next `run.sh start`.
+- **Workers load `build-one.mjs` fresh per job** (`worker.sh` invokes
+  `node build-one.mjs ...` per line, no long-lived cache) — confirmed live:
+  the very next jobs after deploying the patched file already showed
+  `"functions":36,"rawFunctions":121"`-style output, no worker restart
+  needed.
+- **`tools/pkgsig/bulk/build-baselines.mjs`** (new) + **`run.sh baselines`**:
+  regenerates the 3 baseline "packages" (`metro-toolchain-empty`,
+  `react-foundation`, `react-native-foundation`) for a given scaffold/HBC
+  pair from that scaffold's **own** installed versions — never hand-picked.
+  This mattered in practice: the repo's checked-in HBC98 baselines were
+  built from RN 0.85.3/metro 0.83 (§5's earlier measurement fixture), but
+  the bulk build's actual `ScaffoldRN87` is **RN 0.87.1/metro 0.87.0** —
+  exactly the §4 S2 "toolchain-baseline staleness" risk, found for real.
+  No baseline at all existed for HBC99. All 12 (3 kinds × {hbc94, hbc96,
+  hbc98, hbc99}) were regenerated fresh from the live scaffolds on `deb`
+  (`react-native-foundation@0.87.1`, `metro-toolchain-empty@0.87.0` for
+  hbc98/99; the RN72-family baselines matched the existing hbc94/96 ones
+  exactly, since `ScaffoldRN72` is the same RN 0.72.17 §5 used). First
+  attempt raced the live build over the shared scaffold slot (an `ENOENT`
+  metro-cache collision + an `npx` timeout) — `run.sh baselines` now claims
+  the same `flock` lock file `worker.sh` uses before touching a slot.
+- **`--refingerprint` mode + hbc-cache**: `build-one.mjs --refingerprint`
+  bypasses the "already on disk → skip" gate and, when a cached compiled
+  `.hbc` exists at `<db>/../hbc-cache/`, re-fingerprints from it with no
+  re-download/re-bundle/re-compile; every successful compile (fresh or
+  refingerprint) now populates that cache. **Caveat found**: the pre-fix
+  `build-one.mjs` never cached `.hbc` output (deleted with its temp dir), so
+  the ~17k already-built entries have no cache hit on their *first*
+  refingerprint pass — that pass necessarily does a full rebuild for each
+  (same cost as the original build), but populates the cache for next time.
+  **`run.sh refingerprint`** builds its job list from `db/*.json` missing
+  `bulkBuildFixVersion`, runs it through **`refingerprint-worker.sh`** (same
+  flock-protected slot semaphore as `worker.sh`, logs to
+  `log/refingerprint-results.jsonl` — never `results.jsonl`) — safe
+  alongside a live `start` (disjoint job sets: `start` only builds what
+  isn't on disk, `refingerprint` only touches what is).
+- **`assemble.sh --fixed-only`**: excludes any entry without
+  `bulkBuildFixVersion: 1` (counted separately as `excludedUnfixed` in
+  `index.json`, not lumped into `skippedUnreadableOrPartial`); output is
+  named `sigdb-<date>-fixed.tar.zst` / `index-fixed.json` (a plain run keeps
+  `-partial.tar.zst` / `index-partial.json`) so the two archive kinds are
+  never confused.
+
+#### 6.6.3 Validation: re-measured on both fixtures, from a fixed-only sample
+
+Deployed to `deb`, baselines regenerated (verified: `run.sh
+refingerprint`'s very next jobs showed correct subtraction), then
+`refingerprint` launched under `nohup` (not waited on — see §6.1.4).
+Rather than wait hours for the full 16,955-entry backlog, 20 packages were
+fast-tracked via `refingerprint-worker.sh` directly: the 6 named
+false-positive examples from §6.4 (`pg-int8`, `postgres-bytea`, `text-hex`,
+`merge-descriptors`, `one-time`, `is-negative-zero`) plus `lucide-react`,
+each at hbc94 and/or hbc98 — all dropped from ~58-84 raw functions to 2-6
+kept, exactly the expected boilerplate-collapse. `assemble.sh --fixed-only`
+then packaged **1,331 already-fixed files** (of ~18.4k on disk at the time)
+into `sigdb-20260830-fixed.tar.zst`, `scp`'d back and extracted locally
+(no proprietary bundle touched `deb` or left it — same rule as §6.4).
+`hbc2js deps --offline` run three ways per fixture (shared-only, +bulk
+fixed layered, bulk fixed alone):
+
+| App | Shared-only | + bulk fixed layered | Bulk fixed alone |
+|---|---|---|---|
+| `rn-template-0.72` | 424/435 modules, 2 confirmedDeps (react, react-native) | **424/435 modules, 2 confirmedDeps — byte-identical** | 0/435 modules, **0 confirmedDeps** |
+| `react-navigation-example-0.85.3` | 1014/1782 modules, **9/9 confirmedDeps, all real** | 1009/1782 modules, 17 confirmedDeps | 34/1782 modules, 9 confirmedDeps (0 real — sample-coverage artifact, see below) |
+
+**`rn-template`: full acceptance met, 0 false positives.** Layering the
+fixed bulk sample in changes nothing — same 2 confirmed packages, same
+module count. None of §6.4's named false-positive examples (nor any other
+bulk package) appear.
+
+**`react-navigation-example`: the named §6.4 bug is fixed, but a second,
+separate false-positive source was found while checking.** None of
+`pg-int8`/`postgres-bytea`/`text-hex`/`merge-descriptors`/`one-time`/
+`is-negative-zero`/`lucide-react` appear anywhere in the layered result —
+the boilerplate-collision class this task targets is gone, and all 9 real
+dependencies are still recovered at High confidence with their exact
+module-hit counts unchanged from §5's own measurement (recall preserved).
+But 8 of the 17 layered `confirmedDeps` are still wrong: `js-md5` (5 built
+versions) and `@emotion/react` (3 built versions) clear `match.ts`'s "high"
+tier from a **single coincidentally-matching module** each (`js-md5`:
+1/2 non-baseline modules = 50% coverage; `@emotion/react`: 1/16-17 ≈ 6%) —
+`scorePackage`'s own `strongModuleSignal = moduleExactHits >= 3 ||
+(moduleExactHits >= 1 && moduleCoverage >= 0.05)` threshold (§3.4) is lenient
+exactly for packages with very few total modules, and neither package is
+anywhere near react/react-native/Metro boilerplate — this is a **different,
+pre-existing root cause** (generic small-module/barrel-file collision +
+a tier-threshold design gap already flagged in §3.4/§4 S3, and partially
+addressed once before per §5.4's "briefly surfaced... demoted to Medium"
+note for a different package), in `src/deps/match.ts`, not
+`tools/pkgsig/bulk/build-one.mjs` — **out of this task's ownership**, not
+fixed here, flagged as a follow-up for whoever owns `src/deps/match.ts`
+next. (A 9th wrong entry, `@react-navigation/native@7.3.18` alongside the
+correct `8.0.0-alpha.44`, is §4 S3's already-documented "wrong version of a
+real package" risk, not a new package-level false positive.) The
+bulk-fixed-alone row's "9 confirmedDeps, 0 real" is a **sample-coverage
+artifact, not a regression**: `packages.json`'s chosen versions for the 7
+real dependencies (e.g. `@react-navigation/stack` 6.3.10-7.10.24) never
+happen to include the fixture's actual pinned `8.0.0-alpha.53` etc., so
+bulk-alone can't recall them by exact-version key regardless of
+subtraction — recall for this fixture comes entirely from the shared
+curated DB (§5), which this fix never touches.
+
+**Conclusion**: D17c's specific bug (unsubtracted shared boilerplate causing
+thousands of false confirms) is fixed and validated — full 0-false-positive
+acceptance on `rn-template`, and the named §6.4 examples eliminated on
+`react-navigation-example` with recall preserved, but that fixture does not
+yet clear D17d's confirmed-tier-FP=0 bar outright because of the
+independently-discovered `match.ts` tier-threshold gap above.
+
+#### 6.6.4 Refingerprint progress
+
+Launched under `nohup` on `deb`, not waited on (per this task's instruction).
+At check-in: **443/16,955 processed (2.6%), ok=401 fail=42** (same expected
+failure classes as §6.2, including a new `metro-cache` `ENOENT` under the
+now-doubled slot contention from running alongside the live build — same
+self-healing tolerance), running alongside the live main build (which was at
+53.4% (28,472/53,276) at the same check-in). Both share the same 16
+`flock`-protected scaffold slots, so each is currently getting roughly half
+the machine; once the main build finishes (§6.1's ETA of ~22:20-22:30 UTC
+same day still holds, hours away at this check-in), refingerprint gets the
+full slot pool and should accelerate substantially. Rough ETA for full
+refingerprint
+completion: several hours after the main build finishes — check with `ssh
+deb '~/hbc2js/tools/pkgsig/bulk/run.sh refingerprint-status'`. Do not fetch
+or re-assemble a "final" archive until `refingerprint-status` reports the
+backlog at or near 0 (or accept a `--fixed-only` partial sample, as this
+task did).

@@ -32,17 +32,36 @@
 // close to pristine for the next job.
 //
 // Usage:
-//   node build-one.mjs <pkg> <version> <hbcVersion> <scaffoldDir> <hermescPath> <outDbDir>
+//   node build-one.mjs <pkg> <version> <hbcVersion> <scaffoldDir> <hermescPath> <outDbDir> [--refingerprint]
 //
-// Exit codes: 0 = written (or already present -> skipped), 1 = failed.
-// Always prints one JSON line on stdout describing the outcome, for run.sh
-// to log verbatim.
+// D17c fix (docs/PACKAGE-SIGNATURES.md §6.4): every raw fingerprint has the
+// (RN, hbc)-scaffold's toolchain/foundation baseline subtracted out before
+// being written, via tools/pkgsig/bulk/baseline-subtract.mjs (ported logic,
+// not importable from src/deps today — see that file's header). A written
+// file always carries `bulkBuildFixVersion: 1` so assemble.sh --fixed-only
+// and run.sh refingerprint can tell a properly-subtracted file from one
+// written before this fix. If the (RN, hbc)'s baseline set isn't present
+// yet (tools/pkgsig/bulk/build-baselines.mjs hasn't been run for it), the
+// job FAILS rather than silently writing an unsubtracted file mislabelled
+// as fixed - a retryable failure (per §6.2's existing failure-class
+// tolerance), never a silent data-quality regression.
+//
+// --refingerprint: re-derive an ALREADY-BUILT entry's signature (bypasses
+// the "already on disk -> skip" gate) using a cached compiled .hbc when one
+// exists at outDbDir/../hbc-cache/<safeName>@<version>__hbc<N>.hbc (no
+// re-download, no recompile), else runs the full install/bundle/compile
+// pipeline exactly like a fresh job and populates that cache for next time.
+//
+// Exit codes: 0 = written (or already present -> skipped, non-refingerprint
+// mode only), 1 = failed. Always prints one JSON line on stdout describing
+// the outcome, for run.sh to log verbatim.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { computeBaselineUnion, hasCompleteBaselineSet, subtractBaseline } from "./baseline-subtract.mjs";
 
 // src/deps/db.ts's writeSignature() does a read-modify-write of a shared
 // index.json (not written atomically or lock-protected - it was designed
@@ -80,9 +99,11 @@ const { parseHbc } = await import(join(REPO_ROOT, "src/parse/module.ts"));
 const { fingerprintModule } = await import(join(REPO_ROOT, "src/deps/fingerprint.ts"));
 const { writeSignature } = await import(join(REPO_ROOT, "src/deps/db.ts"));
 
-const [pkg, version, hbcVersionStr, scaffoldDir, hermescPath, outDbDir] = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const REFINGERPRINT = rawArgs.includes("--refingerprint");
+const [pkg, version, hbcVersionStr, scaffoldDir, hermescPath, outDbDir] = rawArgs.filter((a) => !a.startsWith("--"));
 if (!pkg || !version || !hbcVersionStr || !scaffoldDir || !hermescPath || !outDbDir) {
-  console.error("usage: build-one.mjs <pkg> <version> <hbcVersion> <scaffoldDir> <hermescPath> <outDbDir>");
+  console.error("usage: build-one.mjs <pkg> <version> <hbcVersion> <scaffoldDir> <hermescPath> <outDbDir> [--refingerprint]");
   process.exit(2);
 }
 const hbcVersion = Number(hbcVersionStr);
@@ -92,6 +113,14 @@ function safeName(p) { return p.replace(/\//g, "__"); }
 function alreadyBuilt() {
   const p = join(outDbDir, `${safeName(pkg)}@${version}__hbc${hbcVersion}.json`);
   return existsSync(p);
+}
+
+// hbc-cache: <outDbDir>/../hbc-cache/<safeName>@<version>__hbc<N>.hbc.
+// Populated on every successful compile (fresh build or refingerprint) so a
+// later --refingerprint pass can skip install+bundle+hermesc entirely.
+const hbcCacheDir = join(outDbDir, "..", "hbc-cache");
+function hbcCachePath() {
+  return join(hbcCacheDir, `${safeName(pkg)}@${version}__hbc${hbcVersion}.hbc`);
 }
 
 function installPackage() {
@@ -144,7 +173,7 @@ function bundleAndCompile(workDir) {
 }
 
 async function main() {
-  if (alreadyBuilt()) {
+  if (alreadyBuilt() && !REFINGERPRINT) {
     console.log(JSON.stringify({ package: pkg, version, hbcVersion, ok: true, skipped: true }));
     return;
   }
@@ -152,14 +181,35 @@ async function main() {
   let workDir = null;
   let installed = false;
   try {
-    installPackage();
-    installed = true;
-    workDir = mkdtempSync(join(tmpdir(), "hbc2js-bulk-"));
-    const hbcPath = bundleAndCompile(workDir);
+    const cachePath = hbcCachePath();
+    let bytes;
+    let fromCache = false;
+    if (REFINGERPRINT && existsSync(cachePath)) {
+      bytes = new Uint8Array(readFileSync(cachePath));
+      fromCache = true;
+    } else {
+      installPackage();
+      installed = true;
+      workDir = mkdtempSync(join(tmpdir(), "hbc2js-bulk-"));
+      const hbcPath = bundleAndCompile(workDir);
+      bytes = new Uint8Array(readFileSync(hbcPath));
+      // Populate the cache for next time (fresh builds too, not just
+      // refingerprint runs - cheap, .hbc files are small).
+      mkdirSync(hbcCacheDir, { recursive: true });
+      writeFileSync(cachePath, bytes);
+    }
 
-    const bytes = new Uint8Array(readFileSync(hbcPath));
     const mod = parseHbc(bytes);
-    const { functions, modules } = fingerprintModule(mod, decodeFunction);
+    if (mod.header.version !== hbcVersion) {
+      throw new Error(`hermesc produced HBC version ${mod.header.version}, expected ${hbcVersion} (hermescPath=${hermescPath})`);
+    }
+    const { functions: rawFunctions, modules: rawModules } = fingerprintModule(mod, decodeFunction);
+
+    const { hashes: baselineHashes, paths: subtractedBaselines } = computeBaselineUnion(outDbDir, hbcVersion);
+    if (!hasCompleteBaselineSet(subtractedBaselines)) {
+      throw new Error(`incomplete baseline set for hbc${hbcVersion} in ${outDbDir}/_baselines (found: ${subtractedBaselines.join(", ") || "none"}) - run build-baselines.mjs for this (RN, hbc) first`);
+    }
+    const { functions, modules } = subtractBaseline(rawFunctions, rawModules, baselineHashes);
 
     const db = {
       schema: 2,
@@ -167,11 +217,12 @@ async function main() {
       version,
       hbcVersion: mod.header.version,
       totalFunctions: functions.length,
-      rawFunctionCount: functions.length,
-      subtractedBaselines: [],
+      rawFunctionCount: rawFunctions.length,
+      subtractedBaselines,
       functions,
       modules,
       toolchainBaseline: false,
+      bulkBuildFixVersion: 1,
       provenance: {
         packageSha256: null,
         metroVersion: null,
@@ -183,12 +234,8 @@ async function main() {
       },
     };
 
-    if (mod.header.version !== hbcVersion) {
-      throw new Error(`hermesc produced HBC version ${mod.header.version}, expected ${hbcVersion} (hermescPath=${hermescPath})`);
-    }
-
     const written = withIndexLock(outDbDir, () => writeSignature(outDbDir, db));
-    console.log(JSON.stringify({ package: pkg, version, hbcVersion, ok: true, functions: functions.length, modules: modules.length, writtenTo: written }));
+    console.log(JSON.stringify({ package: pkg, version, hbcVersion, ok: true, functions: functions.length, rawFunctions: rawFunctions.length, modules: modules.length, fromCache, writtenTo: written }));
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.log(JSON.stringify({ package: pkg, version, hbcVersion, ok: false, reason: reason.slice(0, 2000) }));
