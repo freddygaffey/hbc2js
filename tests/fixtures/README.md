@@ -15,6 +15,7 @@ tests/fixtures/
     source.js
     v84.hbc                       # compiled fresh by this project (no historical original)
     v94.hbc                       # PRESERVED historical original — never regenerated
+    v98.hbc                       # compiled fresh by this project (no historical original)
     v99.hbc                       # PRESERVED historical original — never regenerated
     v99-public.hbc                # fresh recompile with the public v99 hermesc, for comparison
     licence.txt
@@ -22,12 +23,22 @@ tests/fixtures/
     01-if-else-chain/
       source.js                   # the fixture program (print()-only output, deterministic)
       expected.txt                # `node source.js` output, captured once, ground truth for D2
-      v84.hbc  v94.hbc  v99.hbc   # compiled bytecode (only for versions that support it)
+      v84.hbc v94.hbc v98.hbc v99.hbc  # compiled bytecode (only for versions that support it)
       versions.txt                # present only if some hermesc version can't compile this one
       licence.txt                 # original work, MIT
     02-while-loop/
       ...
-    ... (51 directories total, 01 through 51, matching docs/TEST-CORPUS.md §1a)
+    ... (53 directories total, 01 through 53 — 01-51 matching docs/TEST-CORPUS.md §1a,
+         52-53 added later to close the switch-jump-table gap, see below)
+  bundles/                         # Tier 2 (D3 round-trip) real Metro bundles, see below
+    rn-template-0.72/
+      index.android.bundle         # Metro-produced JS bundle (--dev false --minify true)
+      index.android.hbc            # hermesc v94 -O (== default flags)
+      index.android.noopt.hbc      # hermesc v94 -O0
+      index.android.debug.hbc      # hermesc v94 -O -g (== -g alone)
+      index.android.noopt.debug.hbc# hermesc v94 -O0 -g
+      licence.txt
+      BUILD.md                     # exact commands, versions, sizes, findings
 ```
 
 Every fixture directory is self-contained: source + every compiled version + licence,
@@ -94,7 +105,7 @@ convention.
 ## How to rebuild
 
 ```sh
-tools/get-hermesc.sh all        # once, fetches v84/v94/v99 (gitignored, not committed)
+tools/get-hermesc.sh all        # once, fetches v84/v94/v98/v99 (gitignored, not committed)
 tests/fixtures/build.sh         # compiles every source.js with every hermesc it can find
 tests/fixtures/build.sh --force # recompile everything even if .hbc looks up to date
 ```
@@ -113,91 +124,164 @@ Only `v84.hbc` and `v99-public.hbc` there are (re)generated.
 
 ## Construct fixture compiler-compatibility table
 
-51/51 fixtures compile and run correctly under Node. Compilation under each
+53/53 fixtures compile and run correctly under Node. Compilation under each
 hermesc version (✅ = compiles, ❌ = documented failure, see that fixture's
 `versions.txt`):
 
-| # | Fixture | v84 | v94 | v99 |
-|---|---|---|---|---|
-| 01 | if-else-chain | ✅ | ✅ | ✅ |
-| 02 | while-loop | ✅ | ✅ | ✅ |
-| 03 | do-while-loop | ✅ | ✅ | ✅ |
-| 04 | for-loop-basic | ✅ | ✅ | ✅ |
-| 05 | for-in-object | ✅ | ✅ | ✅ |
-| 06 | for-of-array | ✅ | ✅ | ✅ |
-| 07 | for-of-iterable | ✅ | ✅ | ✅ |
-| 08 | labeled-break-continue | ✅ | ✅ | ✅ |
-| 09 | switch-fallthrough | ✅ | ✅ | ✅ |
-| 10 | switch-no-fallthrough | ✅ | ✅ | ✅ |
-| 11 | nested-loops-mixed | ✅ | ✅ | ✅ |
-| 12 | try-catch-finally-return | ✅ | ✅ | ✅ |
-| 13 | try-finally-no-catch | ✅ | ✅ | ✅ |
-| 14 | nested-try-catch | ✅ | ✅ | ✅ |
-| 15 | catch-without-binding | ✅ | ✅ | ✅ |
-| 16 | finally-with-break-continue | ✅ | ✅ | ✅ |
-| 17 | closure-loop-var | ✅ | ✅ | ✅ |
-| 18 | closure-loop-let | ✅ | ✅ | ✅ |
-| 19 | var-hoisting | ✅ | ✅ | ✅ |
-| 20 | let-const-tdz | ✅ | ✅ | ✅ |
-| 21 | iife-closures | ✅ | ✅ | ✅ |
-| 22 | nested-closures-counters | ✅ | ✅ | ✅ |
-| 23 | generator-basic | ✅ | ✅ | ✅ |
-| 24 | generator-return-throw | ✅ | ✅ | ✅ |
-| 25 | generator-delegation | ✅ | ✅ | ✅ |
-| 26 | infinite-generator-take | ✅ | ✅ | ✅ |
-| 27 | async-await-basic | ✅ | ✅ | ✅ |
-| 28 | async-await-error | ✅ | ✅ | ✅ |
-| 29 | promise-chaining | ✅ | ✅ | ✅ |
-| 30 | async-generator | ❌ | ❌ | ❌ |
-| 31 | microtask-ordering | ✅ | ✅ | ✅ |
-| 32 | class-basic | ❌ | ❌ | ✅ |
-| 33 | class-inheritance-super | ❌ | ❌ | ✅ |
-| 34 | class-static-members | ❌ | ❌ | ✅ |
-| 35 | class-private-fields | ❌ | ❌ | ✅ |
-| 36 | class-getters-setters | ❌ | ❌ | ✅ |
-| 37 | destructuring-array | ✅ | ✅ | ✅ |
-| 38 | destructuring-object | ✅ | ✅ | ✅ |
-| 39 | destructuring-params | ✅ | ✅ | ✅ |
-| 40 | spread-array | ✅ | ✅ | ✅ |
-| 41 | spread-object | ✅ | ✅ | ✅ |
-| 42 | rest-params | ✅ | ✅ | ✅ |
-| 43 | template-literals | ✅ | ✅ | ✅ |
-| 44 | tagged-templates | ✅ | ✅ | ✅ |
-| 45 | regex-literals | ❌ | ✅ | ✅ |
-| 46 | bigint-arithmetic | ❌ | ✅ | ✅ |
-| 47 | typeof-instanceof-in | ✅ | ✅ | ✅ |
-| 48 | optional-chaining-nullish | ✅ | ✅ | ✅ |
-| 49 | arguments-object | ✅ | ✅ | ✅ |
-| 50 | this-binding | ✅ | ✅ | ✅ |
-| 51 | default-params | ✅ | ✅ | ✅ |
+| # | Fixture | v84 | v94 | v98 | v99 |
+|---|---|---|---|---|---|
+| 01 | if-else-chain | ✅ | ✅ | ✅ | ✅ |
+| 02 | while-loop | ✅ | ✅ | ✅ | ✅ |
+| 03 | do-while-loop | ✅ | ✅ | ✅ | ✅ |
+| 04 | for-loop-basic | ✅ | ✅ | ✅ | ✅ |
+| 05 | for-in-object | ✅ | ✅ | ✅ | ✅ |
+| 06 | for-of-array | ✅ | ✅ | ✅ | ✅ |
+| 07 | for-of-iterable | ✅ | ✅ | ✅ | ✅ |
+| 08 | labeled-break-continue | ✅ | ✅ | ✅ | ✅ |
+| 09 | switch-fallthrough | ✅ | ✅ | ✅ | ✅ |
+| 10 | switch-no-fallthrough | ✅ | ✅ | ✅ | ✅ |
+| 11 | nested-loops-mixed | ✅ | ✅ | ✅ | ✅ |
+| 12 | try-catch-finally-return | ✅ | ✅ | ✅ | ✅ |
+| 13 | try-finally-no-catch | ✅ | ✅ | ✅ | ✅ |
+| 14 | nested-try-catch | ✅ | ✅ | ✅ | ✅ |
+| 15 | catch-without-binding | ✅ | ✅ | ✅ | ✅ |
+| 16 | finally-with-break-continue | ✅ | ✅ | ✅ | ✅ |
+| 17 | closure-loop-var | ✅ | ✅ | ✅ | ✅ |
+| 18 | closure-loop-let | ✅ | ✅ | ✅ | ✅ |
+| 19 | var-hoisting | ✅ | ✅ | ✅ | ✅ |
+| 20 | let-const-tdz | ✅ | ✅ | ✅ | ✅ |
+| 21 | iife-closures | ✅ | ✅ | ✅ | ✅ |
+| 22 | nested-closures-counters | ✅ | ✅ | ✅ | ✅ |
+| 23 | generator-basic | ✅ | ✅ | ✅ | ✅ |
+| 24 | generator-return-throw | ✅ | ✅ | ✅ | ✅ |
+| 25 | generator-delegation | ✅ | ✅ | ✅ | ✅ |
+| 26 | infinite-generator-take | ✅ | ✅ | ✅ | ✅ |
+| 27 | async-await-basic | ✅ | ✅ | ✅ | ✅ |
+| 28 | async-await-error | ✅ | ✅ | ✅ | ✅ |
+| 29 | promise-chaining | ✅ | ✅ | ✅ | ✅ |
+| 30 | async-generator | ❌ | ❌ | ❌ | ❌ |
+| 31 | microtask-ordering | ✅ | ✅ | ✅ | ✅ |
+| 32 | class-basic | ❌ | ❌ | ✅ | ✅ |
+| 33 | class-inheritance-super | ❌ | ❌ | ✅ | ✅ |
+| 34 | class-static-members | ❌ | ❌ | ✅ | ✅ |
+| 35 | class-private-fields | ❌ | ❌ | ✅ | ✅ |
+| 36 | class-getters-setters | ❌ | ❌ | ✅ | ✅ |
+| 37 | destructuring-array | ✅ | ✅ | ✅ | ✅ |
+| 38 | destructuring-object | ✅ | ✅ | ✅ | ✅ |
+| 39 | destructuring-params | ✅ | ✅ | ✅ | ✅ |
+| 40 | spread-array | ✅ | ✅ | ✅ | ✅ |
+| 41 | spread-object | ✅ | ✅ | ✅ | ✅ |
+| 42 | rest-params | ✅ | ✅ | ✅ | ✅ |
+| 43 | template-literals | ✅ | ✅ | ✅ | ✅ |
+| 44 | tagged-templates | ✅ | ✅ | ✅ | ✅ |
+| 45 | regex-literals | ❌ | ✅ | ✅ | ✅ |
+| 46 | bigint-arithmetic | ❌ | ✅ | ✅ | ✅ |
+| 47 | typeof-instanceof-in | ✅ | ✅ | ✅ | ✅ |
+| 48 | optional-chaining-nullish | ✅ | ✅ | ✅ | ✅ |
+| 49 | arguments-object | ✅ | ✅ | ✅ | ✅ |
+| 50 | this-binding | ✅ | ✅ | ✅ | ✅ |
+| 51 | default-params | ✅ | ✅ | ✅ | ✅ |
+| 52 | switch-jumptable | ✅ | ✅ | ✅ | ✅ |
+| 53 | switch-jumptable-large | ✅ | ✅ | ✅ | ✅ |
 
-**Totals: 138/153 (source × version) combinations compile.** The 15 gaps:
+**Totals: 196/212 (source × version) combinations compile.** The 16 gaps (all in 01-51):
 - **`class` syntax is entirely unsupported by hermesc v84 and v94** (32-36,
   5 fixtures × 2 versions = 10 gaps) — this is an IRGen limitation, not a
   parser one (`hermesc -dump-ast` parses classes fine on v84); confirmed with
-  minimal repros. Only `hermes-compiler@260318099.0.1` (v99) lowers classes to
-  bytecode. This was an unexpected finding worth flagging to whoever designs
-  the decompiler's class-recovery logic: **no v84/v94 bytecode fixture will
-  ever exercise class-shaped bytecode**, because Hermes itself couldn't
-  compile classes in that era (React Native's Babel pipeline transpiled
-  classes to ES5 prototype chains before this-era Hermes ever saw them).
+  minimal repros. Only the `static_h`/Static Hermes lineage
+  (`hermes-compiler@250829098.0.10`, v98, and `hermes-compiler@260318099.0.1`,
+  v99) lowers classes to bytecode. This was an unexpected finding worth
+  flagging to whoever designs the decompiler's class-recovery logic: **no
+  v84/v94 bytecode fixture will ever exercise class-shaped bytecode**, because
+  Hermes itself couldn't compile classes in that era (React Native's Babel
+  pipeline transpiled classes to ES5 prototype chains before this-era Hermes
+  ever saw them).
 - **BigInt literals (46) and regex named capture groups (45) are unsupported
   by v84 only** (2 gaps) — straightforward lexer/regex-engine limitations,
-  fixed by v94.
-- **`async function*` / `for await...of` (30) is unsupported by all three**
-  fetched versions (3 gaps) — v84/v94 reject `for await...of` outright at
-  parse time; v99 parses it but rejects `async function*` declarations. Kept
-  as a fixture anyway (runs fine under Node) since some future hermesc may
-  support it, and it documents a real decompiler-scope gap either way.
+  fixed by v94 (and remain fixed in v98/v99).
+- **`async function*` / `for await...of` (30) is unsupported by all four**
+  fetched versions (4 gaps) — v84/v94 reject `for await...of` outright at
+  parse time; v98/v99 (both `static_h`) parse it but reject `async function*`
+  declarations. Kept as a fixture anyway (runs fine under Node) since some
+  future hermesc may support it, and it documents a real decompiler-scope gap
+  either way.
 
 See each gap fixture's own `versions.txt` for the exact hermesc error text and
 reasoning.
 
+## Switch jump tables (52, 53)
+
+`docs/PRIOR-ART.md` and `docs/AGENT-LOG.md` flagged that none of fixtures
+01-51 exercises a `SwitchImm`/`UIntSwitchImm` jump table — every `switch` in
+that corpus (09, 10) lowers to a chain of `JStrictEqual(Long)` compares
+instead. `52-switch-jumptable` and `53-switch-jumptable-large` close that gap:
+
+- **`52-switch-jumptable`**: a 13-case dense integer switch (`0..12`,
+  including a fallthrough run and a `default`) on a value that can't be
+  constant-folded (read from a loop variable). Confirmed present at all three
+  fetched hermesc versions via `hermesc -dump-bytecode`:
+  ```
+  v84: SwitchImm         r0, 253, L13, 0, 12
+  v94: SwitchImm         r0, 253, L13, 0, 12
+  v98: UIntSwitchImm     r0, 253, L13, 0, 12
+  v99: UIntSwitchImm     r0, 253, L13, 0, 12
+  ```
+  (v98/v99, both `static_h`/Static Hermes, renamed the opcode `SwitchImm` →
+  `UIntSwitchImm`, but the operand shape — `Reg8 value, tableOffset,
+  defaultTarget, min, max` — is unchanged; see `docs/HBC-FORMAT.md` §11.1. v98
+  was added to this repo's toolchain after 52/53 were first written — see
+  `docs/TOOLCHAIN.md`'s "v98: which header layout does the public package
+  emit?" for why `v98.hbc` here is always the "98-late"/class-E layout.)
+- **`53-switch-jumptable-large`**: a wider 40-case switch (`0..39`) with
+  multiple fallthrough runs and a `default` placed *in the middle* of the
+  case list (not last), to also exercise: a bigger table (`min=0, max=39`,
+  40 4-byte entries vs. 52's 13), a larger `tableOffset`, and the fact that a
+  decompiler cannot assume `default` is the last case textually or that it
+  sits outside the `[min,max]` jump range. Confirmed present at all three
+  versions the same way (`SwitchImm r0, 177, L9, 0, 39` / `UIntSwitchImm` on
+  v99).
+
+**Grep caveat:** naively `grep -c SwitchImm` on a v99 `-dump-bytecode` dump
+over-counts by one — the disassembly header always prints a
+`StringSwitchImm count: N` summary line (0 when unused) whose text also
+matches the substring `SwitchImm`. Verification above matched the actual
+instruction line (operand register present), not just occurrence count.
+
+**Do string switches ever produce a jump table?** Tested but **not shipped as
+a fixture** (would duplicate 09/10's shape without adding decompiler-relevant
+coverage beyond what's noted here). Result, on a 13-case single-character
+string switch with a `default`:
+- **v84 and v94 (classic Hermes): no.** Always a `JStrictEqual`/
+  `JStrictEqualLong` compare chain, regardless of case count or density —
+  confirmed no `StringSwitchImm`/jump-table opcode exists at all in the
+  classic-Hermes opcode table (`docs/HBC-FORMAT.md` §11.1 only documents
+  `StringSwitchImm` as `v≥99`).
+- **v99 (Static Hermes): yes.** Emits an actual `StringSwitchImm` instruction
+  (`StringSwitchImm r0, 0, 274, L14, 13`), a genuinely different opcode from
+  `SwitchImm`/`UIntSwitchImm` with a `{caseLabelStringID, target}` pair table
+  (`docs/HBC-FORMAT.md` §11.1) rather than a dense integer-indexed table. So
+  the answer is version-dependent, not a flat "never": **integer** switches
+  get `SwitchImm`/`UIntSwitchImm` on all three fetched versions when dense
+  enough; **string** switches never do on v84/v94 but genuinely do on v99.
+  Any decompiler pass that recognizes jump tables must handle
+  `StringSwitchImm`'s table shape as a distinct case, not assume all jump
+  tables are integer-indexed.
+
+**Density threshold, observed (not to be over-generalized to an exact
+formula):** a switch with the same 13-entry `0..12` shape as 52 but sparse
+values (`0, 500, 1000, 1500, 2000`) produced **no** jump table on any
+version (compare chain instead). Adding a single sparse outlier case
+(`5000`) to an otherwise-dense `0..12` switch also killed the jump table
+*entirely* on all three versions — Hermes's switch lowering is all-or-nothing
+per switch statement; it does not split a dense sub-range into a jump table
+while compare-chaining a sparse remainder.
+
 ## Sanity-checking: Node execution
 
-All 51 `constructs/*/source.js` files were run under Node 25 with the print
-shim above; all 51 completed without throwing and their `expected.txt` was
-captured from that run. Command used (from `tests/fixtures/constructs/`):
+All 53 `constructs/*/source.js` files were run under Node 25 with the print
+shim above; all 53 completed without throwing and their `expected.txt` was
+captured from that run (52-53 added later, same method). Command used (from
+`tests/fixtures/constructs/`):
 
 ```sh
 for d in */; do
@@ -213,7 +297,7 @@ done
 `hermes` VM binary any of the three fetched packages ships (`react-native`
 and `hermes-compiler` ship only `hermesc`, the compiler, not an interpreter).
 It can run `.js` source directly (compiling it internally), so it was used to
-cross-check the 43 fixtures that compile under v84 against the Node-captured
+cross-check the 45 fixtures that compile under v84 against the Node-captured
 `expected.txt`:
 
 ```sh
@@ -222,7 +306,8 @@ for d in tests/fixtures/constructs/*/; do
 done
 ```
 
-**39 of 43 matched exactly.** Four genuine Node-vs-Hermes-v84 behavioural
+**41 of 45 matched exactly** (39/43 for 01-51, plus 52 and 53 both matching
+exactly). Four genuine Node-vs-Hermes-v84 behavioural
 differences were found (not fixture bugs — confirmed by inspecting both
 outputs by hand):
 
@@ -262,3 +347,30 @@ runtime behaviour, not the ECMAScript spec's, for byte-for-byte trace
 fidelity. Not independently re-verified under v94/v99 (no `hermes`
 interpreter binary is available from those packages — only `hermesc`); worth
 re-checking if a v94/v96/v99-era `hermes` binary is ever sourced.
+
+## Tier 2: `bundles/rn-template-0.72` (real Metro bundle, D3)
+
+Per `docs/TEST-CORPUS.md` §2 (row 1, "Fresh `npx react-native@latest init`
+template") and `docs/DECISIONS.md` D10, the Tier 1 `constructs/` corpus above
+is entirely hand-written pure JS run through `hermesc` directly — none of it
+is a real Metro-bundled application. `bundles/rn-template-0.72/` closes that
+gap with the cheapest possible real-world case: a stock, unmodified
+`react-native init` template, pinned to RN **0.72.17** (→ HBC bytecode
+version 94, matching this repo's `tools/hermesc/v94`), bundled with Metro
+(`--dev false --minify true`) and compiled with four `hermesc` flag
+combinations. See that directory's own `BUILD.md` for exact commands,
+per-file sizes, and provenance, and `licence.txt` for the MIT licence chain
+(`react-native` + `@react-native-community/template`, both verified via
+`npm view ... license`).
+
+**Notable finding:** this hermesc build applies `-O` optimizations *by
+default* — compiling with no flags at all produces byte-identical output to
+explicit `-O` (and `-g` alone is byte-identical to `-O -g`). The only way to
+get genuinely unoptimized bytecode is the explicit `-O0` disabling flag. A
+decompiler test matrix that assumes "no `-O` flag passed" implies unoptimized
+bytecode would be wrong for this compiler build.
+
+This fixture was scaffolded and built entirely outside this repository (a
+scratch directory), per the task that produced it — only the final JS bundle
+and compiled `.hbc` files were copied in, never `node_modules/` or any
+scaffold-only build artefact.

@@ -1,0 +1,19 @@
+Source: the React Native community CLI's bare "app" template
+(`@react-native-community/template`, pulled transitively by `npx
+react-native@0.72.17 init`), plus `react-native@0.72.17` itself as the
+JS runtime code that Metro bundles alongside the template's own
+`index.js`/`App.tsx`.
+
+Licence: MIT for both.
+- `npm view react-native@0.72.17 license` -> MIT
+- `npm view @react-native-community/template license` -> MIT
+
+Per docs/DECISIONS.md D4, this satisfies the MIT/Apache-2.0/BSD/ISC
+requirement for Tier 2 test-corpus bundles (docs/TEST-CORPUS.md #2, table
+row 1). No modifications were made to the generated template source before
+bundling; `App.tsx`/`index.js` are the CLI's stock generated files.
+
+This directory (tests/fixtures/bundles/rn-template-0.72/) contains only the
+Metro-produced JS bundle and hermesc-compiled bytecode derived from that
+unmodified template plus its `react-native`/`react` dependencies — see
+BUILD.md for the exact commands, versions, and file provenance.

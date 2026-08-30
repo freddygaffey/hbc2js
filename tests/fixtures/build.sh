@@ -39,7 +39,7 @@ HERMESC_DIR="$REPO_ROOT/tools/hermesc"
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
-VERSIONS="84 94 99"
+VERSIONS="84 94 98 99"
 
 built=0
 skipped_uptodate=0
@@ -121,6 +121,7 @@ sample_dir="$REPO_ROOT/tests/fixtures/hermes-dec-sample"
 if [ -f "$sample_dir/source.js" ]; then
   echo "(v94.hbc and v99.hbc are preserved historical originals — never regenerated; see licence.txt)"
   compile_one "$sample_dir/source.js" "$sample_dir/v84.hbc" "84"
+  compile_one "$sample_dir/source.js" "$sample_dir/v98.hbc" "98"
   compile_one "$sample_dir/source.js" "$sample_dir/v99-public.hbc" "99"
 fi
 

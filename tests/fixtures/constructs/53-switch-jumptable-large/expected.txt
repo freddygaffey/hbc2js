@@ -1,0 +1,17 @@
+0 => low
+3 => low
+4 => mid-low
+9 => mid-low
+10 => ten+ten-or-eleven
+11 => ten-or-eleven
+12 => teens-twenties
+21 => teens-twenties
+22 => high-twenties
+30 => high-twenties
+31 => thirties
+35 => thirties
+36 => late-thirties
+39 => late-thirties
+-5 => other
+40 => other
+1000 => other

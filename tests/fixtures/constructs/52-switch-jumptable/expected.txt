@@ -1,0 +1,15 @@
+0 => zero
+1 => one-or-two
+2 => one-or-two
+3 => three+three-or-four
+4 => three-or-four
+5 => five
+6 => six
+7 => seven
+8 => eight
+9 => nine
+10 => ten
+11 => eleven
+12 => twelve
+-1 => other
+100 => other

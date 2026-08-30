@@ -12,20 +12,26 @@ Last updated: 2026-08-30
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
 ## Currently working
-- `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v99 compilers
-  (npm-sourced, not committed) for macOS + Linux x86_64. v94 recompiles
-  `tests/fixtures/hermes-dec-sample/source.js` byte-identical to
+- `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v98/v99
+  compilers (npm-sourced, not committed) for macOS + Linux x86_64. v94
+  recompiles `tests/fixtures/hermes-dec-sample/source.js` byte-identical to
   `tests/fixtures/hermes-dec-sample/v94.hbc`. v99 does not byte-match
-  (different Hermes commit, same wire format — see `docs/TOOLCHAIN.md`).
-  `hermes-dec` 0.1.7 (pip) confirmed working as the behaviour-oracle
-  disassembler/decompiler. Details: `docs/TOOLCHAIN.md`.
-- **Tier 1 fixture corpus built**: 51 hand-written single-construct fixtures
+  (different Hermes commit, same wire format — see `docs/TOOLCHAIN.md`). v98
+  probed across every publicly-published `hermes-compiler@250829098.0.x`
+  patch (alpha through newest): all emit only the "98-late"/class-E header
+  layout, never "98-early"/class-D — see `docs/TOOLCHAIN.md`'s "v98: which
+  header layout does the public package emit?". `hermes-dec` 0.1.7 (pip)
+  confirmed working as the behaviour-oracle disassembler/decompiler. Details:
+  `docs/TOOLCHAIN.md`.
+- **Tier 1 fixture corpus built**: 53 hand-written single-construct fixtures
   under `tests/fixtures/constructs/<NN-topic>/{source.js,expected.txt,vNN.hbc,licence.txt}`
-  (per `docs/TEST-CORPUS.md` §1a), plus the restructured `hermes-dec-sample/`
-  (now also has a `v84.hbc` and a `v99-public.hbc`, alongside the two
-  preserved historical `v94.hbc`/`v99.hbc` binaries). All 51 run correctly
-  under Node 25 (`expected.txt` captured from that run); 138/153
-  (fixture × hermesc-version) combinations compile — the 15 gaps are
+  (01-51 per `docs/TEST-CORPUS.md` §1a; 52-53 added later — dense-integer
+  `SwitchImm`/`UIntSwitchImm` jump-table fixtures, closing the gap flagged in
+  `docs/AGENT-LOG.md`'s spec-writing entry), plus the restructured
+  `hermes-dec-sample/` (now also has `v84.hbc`/`v98.hbc` fresh recompiles,
+  alongside the two preserved historical `v94.hbc`/`v99.hbc` binaries). All 53
+  run correctly under Node 25 (`expected.txt` captured from that run);
+  196/212 (fixture × hermesc-version) combinations compile — the 16 gaps are
   documented per-fixture in `versions.txt` and summarized in
   `tests/fixtures/README.md`'s compatibility table. A same-VM cross-check
   against the real `hermes` interpreter (bundled with the v84 package only)
@@ -34,6 +40,15 @@ Last updated: 2026-08-30
   `arguments`/parameter aliasing) — see `tests/fixtures/README.md` for full
   detail; not fixture bugs, Hermes v84 diverges from spec/Node there.
   `tests/fixtures/build.sh` regenerates every `.hbc` idempotently.
+- **Tier 2 real-bundle fixture**: `tests/fixtures/bundles/rn-template-0.72/`
+  — a stock, unmodified `react-native init` template pinned to RN 0.72.17
+  (HBC v94), Metro-bundled (`--dev false --minify true`, 820,822-byte JS
+  bundle) and compiled with hermesc v94 across four flag combinations
+  (`-O`/`-O0` × with/without `-g`; the `-O`/no-flag pair and `-g`/`-O -g`
+  pair each compiled byte-identical — this hermesc build optimizes by
+  default, `-O0` is the only way to get real unoptimized bytecode). Total
+  fixture size ~8.0 MB. See its `BUILD.md` for exact commands and
+  `licence.txt` for the MIT provenance chain.
 - Prior art + HBC format research done: `docs/PRIOR-ART.md` (survey of 12 tools,
   structuring-literature recommendation, risk register) and `docs/HBC-FORMAT.md`
   (our own format write-up, verified byte-for-byte against the v84/v94/v99/v99-public
@@ -53,13 +68,27 @@ Last updated: 2026-08-30
 
 ## Known gaps
 - No Linux arm64 `hermesc` build published anywhere found; only Linux x86_64.
-- `tests/fixtures/constructs/` is now compiled (138/153 fixture×version
-  combinations; see `tests/fixtures/README.md`), but no `.hbc` fixture yet
-  specifically exercises literal buffers / object shape table / BigInt table /
-  `SwitchImm` jump tables, nor an overflowed string entry, nor an optimised
-  (`-O`) build — see `docs/PRIOR-ART.md` §7.4. A v84 fixture pair now exists
+- `tests/fixtures/constructs/` is now compiled (196/212 fixture×version
+  combinations; see `tests/fixtures/README.md`), and now includes `SwitchImm`
+  /`UIntSwitchImm` jump-table coverage (52, 53) and a real overflowed-string
+  entry / broad regex + BigInt table exercise via `tests/fixtures/bundles/
+  rn-template-0.72/index.android.hbc` (4199 functions, 12 overflow strings,
+  45 regexes — see its `BUILD.md`). Still not exercised anywhere: object
+  shape table with >0 entries in a *construct* fixture (only the real bundle
+  has one), `StringSwitchImm` (string-keyed switch jump table — confirmed to
+  exist only on v98/v99/Static Hermes, never v84/v94, but not shipped as its
+  own fixture; see `tests/fixtures/README.md`'s switch-jump-table section for
+  the probe results), and a genuinely unoptimized (`-O0`) *construct* fixture
+  (the real bundle has one: `index.android.noopt.hbc`) — see
+  `docs/PRIOR-ART.md` §7.4. A v84 fixture pair now exists
   (`tests/fixtures/hermes-dec-sample/v84.hbc`, plus v84.hbc for 43/51
   construct fixtures — 8 don't compile on v84, see that directory's README).
+- **v98's "98-early"/class-D header layout has never been observed in any
+  publicly-obtainable bytecode** (only "98-late"/class-E, from every
+  `hermes-compiler@250829098.0.x` patch probed) — the D8 parser probe's
+  class-D branch for v98 remains untested against real bytecode; only
+  synthetic/hand-constructed test input can exercise it. See
+  `docs/TOOLCHAIN.md`.
 - `docs/TOOLCHAIN.md` still refers to the pre-move fixture paths
   (`tests/fixtures/v94.hbc` etc.); fixtures now live in
   `tests/fixtures/hermes-dec-sample/`.

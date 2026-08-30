@@ -4,11 +4,13 @@
 # to the repo.
 #
 # Usage:
-#   tools/get-hermesc.sh [84|94|99|all]   (default: all)
+#   tools/get-hermesc.sh [84|94|98|99|all]   (default: all)
 #
 # Binaries land in tools/hermesc/v<N>/hermesc (gitignored). See docs/TOOLCHAIN.md
 # for the version table, provenance, and known caveats (esp. v99 not being
-# byte-identical to tests/fixtures/v99.hbc).
+# byte-identical to tests/fixtures/v99.hbc; v98 is only obtainable in the
+# "98-late"/class-E header layout from any publicly published package probed
+# so far — see docs/HBC-FORMAT.md sec 0.1 and docs/TOOLCHAIN.md).
 #
 # Requires: npm (to fetch the tarball — no `npm install`, just `npm pack`), tar.
 # Works on macOS (Darwin, any arch — the packages ship universal x86_64+arm64
@@ -29,11 +31,14 @@ version_84_bindir="package/OSDIR_TOKEN"
 version_94_pkg="react-native@0.72.17"
 version_94_bindir="package/sdks/hermesc/OSDIR_TOKEN"
 
+version_98_pkg="hermes-compiler@250829098.0.10"
+version_98_bindir="package/hermesc/OSDIR_TOKEN"
+
 version_99_pkg="hermes-compiler@260318099.0.1"
 version_99_bindir="package/hermesc/OSDIR_TOKEN"
 
 usage() {
-  echo "Usage: $0 [84|94|99|all]" >&2
+  echo "Usage: $0 [84|94|98|99|all]" >&2
   exit 1
 }
 
@@ -108,10 +113,12 @@ main() {
   case "$requested" in
     84) fetch_one 84 "$version_84_pkg" "$version_84_bindir" ;;
     94) fetch_one 94 "$version_94_pkg" "$version_94_bindir" ;;
+    98) fetch_one 98 "$version_98_pkg" "$version_98_bindir" ;;
     99) fetch_one 99 "$version_99_pkg" "$version_99_bindir" ;;
     all)
       fetch_one 84 "$version_84_pkg" "$version_84_bindir"
       fetch_one 94 "$version_94_pkg" "$version_94_bindir"
+      fetch_one 98 "$version_98_pkg" "$version_98_bindir"
       fetch_one 99 "$version_99_pkg" "$version_99_bindir"
       ;;
     -h|--help) usage ;;

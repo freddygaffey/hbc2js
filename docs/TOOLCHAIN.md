@@ -7,7 +7,7 @@ and without committing binaries to the repo.
 ## TL;DR
 
 ```sh
-tools/get-hermesc.sh all        # fetches v84, v94, v99 into tools/hermesc/v<N>/ (gitignored)
+tools/get-hermesc.sh all        # fetches v84, v94, v98, v99 into tools/hermesc/v<N>/ (gitignored)
 tools/hermesc/v94/hermesc -emit-binary -out=out.hbc input.js
 ```
 
@@ -61,7 +61,7 @@ which prints it directly as "HBC bytecode version").
 | 90 | `react-native@0.71.19` | RN 0.71 | |
 | **94** | **`react-native@0.72.17`** (`sdks/hermesc/`) | RN 0.72 | **Used by `tools/get-hermesc.sh 94`. Byte-identical to `tests/fixtures/hermes-dec-sample/v94.hbc`** — see verification below. |
 | 96 | `react-native@0.73.11` through `0.81.6`, and `hermes-compiler@0.14.0`–`0.17.0` | RN 0.73–0.81 | Bytecode version 96 spans several years and both distribution mechanisms — the RN→hermes-compiler split (RN 0.83) happened without a version bump. |
-| 98 | `hermes-compiler@250829098.0.x` (`latest` dist-tag) | RN 0.86–0.87 (current `latest`) | |
+| **98** | **`hermes-compiler@250829098.0.10`** (also `.0.0`–`.0.17`, `latest` dist-tag family) | RN 0.86–0.87 (current `latest`) | **Used by `tools/get-hermesc.sh 98`. Every published `250829098.0.x` patch probed (`.0.0-alpha.1`, `.0.0`, `.0.10`, `.0.14` — the exact version `react-native@0.86.0` depends on, `.0.17`) emits the "98-late" (class E, v99-shaped) header layout, never "98-early" (class D, v97-shaped) — see below.** |
 | **99** | **`hermes-compiler@260318099.0.0` / `.1`** (`latest-v1` dist-tag) | RN "1000.x" line | **Used by `tools/get-hermesc.sh 99`. Same bytecode *format* version as `tests/fixtures/hermes-dec-sample/v99.hbc` but NOT byte-identical** — see below. |
 
 `hermes-compiler`'s version numbers past `0.17.0` look like `YYMMDD+build.MAJOR.MINOR`
@@ -77,8 +77,9 @@ the table ever needs extending.
 ```sh
 tools/get-hermesc.sh 84     # → tools/hermesc/v84/{hermesc,hbcdump,hdb,hermes}
 tools/get-hermesc.sh 94     # → tools/hermesc/v94/hermesc
+tools/get-hermesc.sh 98     # → tools/hermesc/v98/hermesc
 tools/get-hermesc.sh 99     # → tools/hermesc/v99/hermesc
-tools/get-hermesc.sh all    # all three
+tools/get-hermesc.sh all    # all four
 ```
 
 The script uses `npm pack <pkg>@<version>` to fetch just the tarball (no
@@ -148,6 +149,44 @@ commit that produced it, which is not published to npm as of this writing.
 This is why `docs/DECISIONS.md` D3 normalizes register/label names for
 structural diffing rather than relying on byte equality for real-world
 bundles — the same reasoning applies here.
+
+## v98: which header layout does the public package emit?
+
+`docs/HBC-FORMAT.md` sec 0/0.1 (D8) documents that a file reporting HBC
+version 98 can be in one of two incompatible header layouts: class D
+("98-early", 19 header `uint32`s, 19 bytes of trailing padding, same shape as
+v97) or class E ("98-late", 20 header `uint32`s, 15 bytes of padding, adds
+`numStringSwitchImms`, same shape as v99) — the D→E-shaping commit landed
+*before* the version was bumped to 99, so both layouts can legitimately claim
+to be "version 98".
+
+**Probed directly** (compile `tests/fixtures/hermes-dec-sample/source.js`
+with each candidate, then read header bytes per `docs/HBC-FORMAT.md` §2 —
+try both the class-D and class-E field offsets and see which produces an
+all-zero padding region *and* a `debugInfoOffset` that's `0 < x <= fileLength`):
+
+| Package probed | Hermes release string | Layout |
+|---|---|---|
+| `hermes-compiler@250829098.0.0-alpha.1` | `0.12.0` (stale version string, still HBC 98) | class E |
+| `hermes-compiler@250829098.0.0` | `250829098.0.0` | class E |
+| `hermes-compiler@250829098.0.10` | `250829098.0.10` | class E |
+| `hermes-compiler@250829098.0.14` (what `react-native@0.86.0` itself depends on) | `250829098.0.14` | class E |
+| `hermes-compiler@250829098.0.17` (newest patch at probe time) | `250829098.0.17` | class E |
+
+**Every publicly-obtainable `hermes-compiler` build claiming HBC version 98,
+across the full patch range from first alpha to newest, emits only the
+"98-late" (class E) layout.** No package producing "98-early" (class D) was
+found — consistent with `docs/HBC-FORMAT.md`'s observation that the
+D→E-reshaping commit predates the first `98` npm publish; whatever produced
+"98-early" bytecode apparently never got packaged and shipped externally
+(only internal/CI builds between the `97` and `98` bumps, if any, would have
+seen it). `tools/get-hermesc.sh 98` pins `250829098.0.10` (mid-range patch,
+arbitrary among the equivalent options) — **so `tests/fixtures/hermes-dec-sample/v98.hbc`
+and every construct fixture's `v98.hbc` are class-E-layout files.** A parser
+that only ever sees a real-world "98" file from this toolchain will never
+exercise the class-D branch of the D8 probe ladder from a fixture alone; that
+branch remains untested against real bytecode (same status as before this
+work — just now documented as a known, not merely suspected, gap).
 
 ## Disassembling
 
