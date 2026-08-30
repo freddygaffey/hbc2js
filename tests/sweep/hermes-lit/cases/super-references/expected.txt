@@ -1,0 +1,25 @@
+super properties
+1
+1
+1
+2
+2
+2
+1
+2
+3
+1
+2
+3
+1
+2
+3
+20
+40
+50
+50
+Pass
+read threw TypeError
+read threw TypeError
+write threw TypeError
+write threw TypeError

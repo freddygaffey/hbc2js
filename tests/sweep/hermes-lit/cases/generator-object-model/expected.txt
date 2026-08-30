@@ -1,0 +1,13 @@
+generator object model
+GeneratorFunction
+Generator
+1 true
+2 true
+3 true
+4 true
+5 true
+5 object
+6 true
+Generator
+true
+0

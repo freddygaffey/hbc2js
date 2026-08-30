@@ -1,0 +1,5 @@
+iterator close/return
+caught 1
+caught 1
+caught 1
+caught 0

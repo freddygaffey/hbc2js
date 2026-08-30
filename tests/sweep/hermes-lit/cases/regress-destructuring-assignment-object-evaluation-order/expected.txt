@@ -1,0 +1,10 @@
+init
+keyA
+val
+get a()
+val
+get c()
+keyB
+val
+get b()
+{"a":"this is a","c":"this is c","b":"this is b"}

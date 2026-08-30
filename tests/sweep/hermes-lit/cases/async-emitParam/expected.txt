@@ -1,0 +1,4 @@
+async emit parameter
+OPEN
+START 42
+5

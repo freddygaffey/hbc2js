@@ -1,0 +1,2 @@
+check array.join
+a,str,c

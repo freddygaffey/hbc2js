@@ -1,0 +1,3 @@
+typeof TestClass: function
+has prototype: true
+OK: 1234

@@ -1,0 +1,6 @@
+initializers in destructuring
+abc
+def
+foo bar
+object
+object

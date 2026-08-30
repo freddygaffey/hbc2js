@@ -1,0 +1,7 @@
+promise jobs scheduled in tasks
+task1
+promise in task1
+task2
+promise in task2
+task3
+task4

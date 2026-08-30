@@ -1,0 +1,29 @@
+optional chaining
+undefined
+1
+undefined
+undefined
+undefined
+undefined
+undefined
+undefined
+undefined
+42
+42
+foo called
+50
+foo called
+50
+foo called
+50
+undefined
+true
+true
+true
+3
+true
+undefined
+true
+undefined
+true
+undefined

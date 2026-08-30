@@ -1,0 +1,38 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+
+(function (){
+    let arr = [1,2,3,4];
+    // Call reverse so the prototype gets cached.
+    arr.reverse();
+    print(JSON.stringify(arr));
+
+    // Test adding properties to the indexed storage of the prototype.
+    arr = [1,,,4];
+    let arrProto = arr.__proto__;
+    arrProto[1] = 2;
+    arr.reverse();
+    print(JSON.stringify(arr));
+
+    // Clear the indexed storage in the prototype.
+    arrProto.length = 0;
+    arr.reverse();
+    print(JSON.stringify(arr));
+
+    // Update the parent of arrProto to an object and refresh the cache.
+    let newProtoPar = {};
+    arrProto.__proto__ = newProtoPar;
+    arr = [1,,,4];
+    arr.reverse();
+    print(JSON.stringify(arr));
+
+    // Introduce an index like property in the prototype chain.
+    newProtoPar[2] = 3;
+    arr.reverse();
+    print(JSON.stringify(arr));
+})();

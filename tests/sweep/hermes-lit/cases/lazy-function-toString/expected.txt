@@ -1,0 +1,2 @@
+function foo(x) { "show source"; }
+function baz() { "show source"; return 'baz;' }

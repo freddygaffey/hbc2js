@@ -1,0 +1,21 @@
+testRehashes
+added first set of numbers
+1
+2
+4
+8
+10
+12
+15
+16
+18
+19
+testClear
+0
+1
+0
+1
+333
+333
+444
+444
