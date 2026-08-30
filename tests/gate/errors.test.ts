@@ -25,9 +25,13 @@ const EXPECTED_CODES = [
   "E_INTERNAL",
 ];
 
-test("ErrorCode exports every code from spec 00 section 6.1", () => {
+// Added by M4 (specs 03 §7, 04 §7, 05 §10) and M5's framework (spec 07 §2.3),
+// which spec 00 §6.1's list predates.
+const M4_CODES = ["E_ENV_UNRESOLVED", "E_TOO_COMPLEX", "E_STRUCTURE_UNSOUND", "E_EMIT_UNSUPPORTED", "E_UNBOUND_IDENT", "E_PASS_ORDER", "E_PASS_CRASH"];
+
+test("ErrorCode exports every code from spec 00 section 6.1, plus the M4/M5 codes", () => {
   const actual = Object.values(ErrorCode).sort();
-  assert.deepEqual(actual, EXPECTED_CODES.slice().sort());
+  assert.deepEqual(actual, [...EXPECTED_CODES, ...M4_CODES].sort());
 });
 
 test("Hbc2jsError serialises code, message and context via toJSON", () => {
