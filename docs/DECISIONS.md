@@ -45,4 +45,5 @@ Each pass under `src/passes/<name>/` exports a pure `match(node, ctx) → Match 
 ## D13 — Test tiers by cost (2026-08-30)
 - **Gate** (every commit, seconds): `tests/fixtures/constructs/**` + `hermes-dec-sample` through parser/disasm goldens and the equivalence checker.
 - **Sweep** (nightly/on demand, minutes): harvested Hermes lit tests, test262/quickjs subsets, Tier 2 bundles via recompile round-trip (D3).
+- **Hardened** (after the gate passes): obfuscated variants of gate fixtures (`javascript-obfuscator`: control-flow flattening, string-array encoding, dead code) — these change CFG shape, unlike minification, which Hermes already erases. Minified variants are kept only as a control proving name-erasure. See tests/fixtures/OBFUSCATION.md.
 New gate fixtures must be the red→green test for a pass or a minimised regression from a sweep failure; bulk corpora never enter the gate.
