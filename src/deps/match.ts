@@ -35,6 +35,11 @@ export interface ModuleAttribution {
   readonly instrCount: number;
   readonly stringConstants: readonly string[];
   readonly owners: readonly string[];
+  /** How the owner was established: an exact factory-hash hit, or a fuzzy
+   *  (mnemonic-only) factory hit corroborated by an identical string set
+   *  — the latter is what survives `hermesc -g`'s different register
+   *  allocation (docs/reviews/deps-v1.md). */
+  readonly ownerBasis: "exact" | "fuzzy+strings" | null;
 }
 
 export interface MatchReport {
@@ -46,6 +51,8 @@ export interface MatchReport {
   readonly moduleAttributions: readonly ModuleAttribution[];
   readonly unattributedModules: readonly ModuleAttribution[];
 }
+
+const BASELINE_NAME = /^(metro-toolchain-empty|react-foundation|react-native-foundation)$/;
 
 function tierRank(t: ConfidenceTier): number {
   return { high: 3, medium: 2, low: 1, none: 0 }[t];
@@ -139,23 +146,59 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
   // set contains a given exact hash. A module can still be named even if its
   // package's overall coverage is low.
   const hashOwners = new Map<string, string[]>();
+  // Fallback index for module factories whose exact hash differs only by
+  // register allocation (release vs `-g` builds of the same source): the
+  // factory's mnemonic-only fuzzy hash *and* its full string set must both
+  // match, and the factory must be big enough (instruction and string
+  // count) that the pair is not a trivial-module collision — a bare
+  // `module.exports = require(dep#)` re-export has no strings and the same
+  // mnemonics in every package. Keys claimed by more than one distinct
+  // non-baseline package are ambiguous and never attribute.
+  const fallbackEligible = (instrCount: number, stringCount: number): boolean => instrCount >= minInstr && (stringCount >= 1 || instrCount >= 16);
+  const fuzzyStringOwners = new Map<string, string[]>();
   const packages: PackageScore[] = [];
   for (const entry of eligibleDbs) {
     const score = scorePackage(entry, inventory, targetExact, targetFuzzy, targetStringHash, minInstr);
     if (score !== null) packages.push(score);
+    const owner = `${entry.file.package}@${entry.file.version}`;
+    const fnByIndex = new Map(entry.file.functions.map((f) => [f.index, f]));
     for (const fn of entry.file.functions) {
       let owners = hashOwners.get(fn.exactHash);
       if (owners === undefined) {
         owners = [];
         hashOwners.set(fn.exactHash, owners);
       }
-      owners.push(`${entry.file.package}@${entry.file.version}`);
+      owners.push(owner);
+    }
+    for (const m of entry.file.modules) {
+      if (m.factoryIsBaseline || m.factoryFuzzyHash === null) continue;
+      const factory = fnByIndex.get(m.factoryFunctionIndex);
+      if (factory === undefined || !fallbackEligible(factory.instrCount, factory.stringCount)) continue;
+      const key = `${m.factoryFuzzyHash}|${factory.stringSetHash}`;
+      let owners = fuzzyStringOwners.get(key);
+      if (owners === undefined) {
+        owners = [];
+        fuzzyStringOwners.set(key, owners);
+      }
+      if (!owners.includes(owner)) owners.push(owner);
     }
   }
   packages.sort((a, b) => tierRank(b.tier) - tierRank(a.tier) || b.exactCoverage - a.exactCoverage);
 
   const moduleAttributions: ModuleAttribution[] = inventory.modules.map((m) => {
-    const owners = m.exactHash !== null ? (hashOwners.get(m.exactHash) ?? []) : [];
+    let owners = m.exactHash !== null ? (hashOwners.get(m.exactHash) ?? []) : [];
+    let ownerBasis: ModuleAttribution["ownerBasis"] = owners.length > 0 ? "exact" : null;
+    if (owners.length === 0 && m.fuzzyHash !== null && m.factoryStringSetHash !== null) {
+      const factoryInstr = inventory.functions[m.factoryFunctionIndex]?.instrCount ?? 0;
+      if (fallbackEligible(factoryInstr, m.factoryStringCount)) {
+        const candidates = fuzzyStringOwners.get(`${m.fuzzyHash}|${m.factoryStringSetHash}`) ?? [];
+        const distinctPackages = new Set(candidates.map((o) => o.slice(0, o.lastIndexOf("@"))).filter((p) => !BASELINE_NAME.test(p)));
+        if (candidates.length > 0 && distinctPackages.size <= 1) {
+          owners = candidates;
+          ownerBasis = "fuzzy+strings";
+        }
+      }
+    }
     return {
       localModuleId: m.localModuleId,
       factoryFunctionIndex: m.factoryFunctionIndex,
@@ -164,6 +207,7 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
       instrCount: m.instrCount,
       stringConstants: m.stringConstants,
       owners,
+      ownerBasis,
     };
   });
   const unattributedModules = moduleAttributions.filter((m) => m.owners.length === 0).sort((a, b) => b.instrCount - a.instrCount);

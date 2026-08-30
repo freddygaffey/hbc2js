@@ -23,6 +23,12 @@ export interface InventoryModule {
   readonly exactHash: string | null;
   readonly fuzzyHash: string | null;
   readonly stringSetHash: string;
+  /** The factory function's own string-set hash (not the module-wide
+   *  `stringSetHash`, which is over exact hashes) — corroborates a
+   *  fuzzy-only factory match when register allocation differs between
+   *  builds (`-g`), see `match.ts`. */
+  readonly factoryStringSetHash: string | null;
+  readonly factoryStringCount: number;
 }
 
 export interface ModuleInventory {
@@ -65,6 +71,8 @@ export function buildInventoryFromModule(mod: HbcModule): ModuleInventory {
       exactHash: m.factoryExactHash,
       fuzzyHash: m.factoryFuzzyHash,
       stringSetHash: m.functionSetHash,
+      factoryStringSetHash: byIndex.get(m.factoryFunctionIndex)?.stringSetHash ?? null,
+      factoryStringCount: byIndex.get(m.factoryFunctionIndex)?.stringCount ?? 0,
     };
   });
 
