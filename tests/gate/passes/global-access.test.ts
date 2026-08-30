@@ -5,6 +5,7 @@
 // fixture corpus at all five HBC versions and the .min/.obf tiers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
@@ -26,6 +27,13 @@ const exprStmt = (e: Expr): Stmt => ({ k: "expr", expr: e });
 const call = (callee: Expr, args: readonly Expr[]): Expr => ({ k: "call", callee, args });
 const member = (obj: Expr, prop: string): Expr => ({ k: "member", obj, prop: lit(prop), computed: false });
 const funcStmt = (name: string, body: readonly Stmt[]): Stmt => ({ k: "func", name, params: [], body });
+
+/** A bare identifier the rung folds to — carries `global: true`, the marker
+ *  `src/emit/scope-check.ts`'s EM-01 `checkBindings` accepts as a deliberate
+ *  global read (see `Expr`'s `ident` doc). `rewrite`/`substitute` stamp every
+ *  folded read with it, so a folded `after` must equal `gid(name)`, not
+ *  `id(name)`. */
+const gid = (name: string): Expr => ({ k: "ident", name, global: true });
 
 /** `Reflect.apply(callee, thisArg, args)` — the pre-`call-shape` call shape
  *  every real fixture uses at this point in the pipeline (`call-shape` is
@@ -76,7 +84,7 @@ test("positive: a register proven global (single write, no nested capture) folds
   assert.equal(m.data.guardIndex, 1);
   assert.equal(m.data.useIndex, 2);
   const after = rewrite(m);
-  assert.deepEqual(after, [exprStmt(assignExpr(id("r1"), id("globalThis"))), exprStmt(reflectApply(id("Array"), id("undefined"), []))]);
+  assert.deepEqual(after, [exprStmt(assignExpr(id("r1"), id("globalThis"))), exprStmt(reflectApply(gid("Array"), id("undefined"), []))]);
   assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
@@ -86,7 +94,7 @@ test("positive: `globalThis` used bare (already inlined by expr-rebuild) needs n
   const m = match(before, ctx);
   assert.ok(m !== null);
   const after = rewrite(m);
-  assert.deepEqual(after, [exprStmt(reflectApply(id("Array"), id("undefined"), []))]);
+  assert.deepEqual(after, [exprStmt(reflectApply(gid("Array"), id("undefined"), []))]);
   assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
@@ -167,12 +175,18 @@ test("unsafe-identifier: a reserved word is never introduced as a bare identifie
   assert.deepEqual(v, { ok: false, reason: "unsafe-identifier" });
 });
 
-test("unbound-in-emitted-scope: a real host global (`print`) is refused — src/emit/scope-check.ts's EM-01 guard has no allowance for a pass-proven bare identifier (see match.ts's block comment; a framework gap, not a §4 rule)", () => {
-  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), guardFor("print", id("r1")), exprStmt(call(member(id("r1"), "print"), []))];
-  assert.equal(match(before, ctxFor(before)), null);
+test("positive: a real host global (`print`) now folds — the folded read is stamped `global: true`, which src/emit/scope-check.ts's EM-01 checkBindings accepts as a deliberate global read (the emitter marker, not the old KNOWN_GLOBALS cap)", () => {
+  // `print` is a real host global, not an ECMAScript intrinsic — before the
+  // emitter marker landed this hit `unbound-in-emitted-scope` and refused.
+  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), guardFor("print", id("r1")), exprStmt(reflectApply(member(id("r1"), "print"), id("undefined"), []))];
+  const ctx = ctxFor(before);
   const shape = recognizeGuard(before[1]!)!;
-  const v = classifySite(before, before, 1, shape.name, shape.global);
-  assert.deepEqual(v, { ok: false, reason: "unbound-in-emitted-scope" });
+  assert.deepEqual(classifySite(before, before, 1, shape.name, shape.global), { ok: true, site: { guardIndex: 1, useIndex: 2, name: "print", global: id("r1") } });
+  const m = match(before, ctx);
+  assert.ok(m !== null);
+  const after = rewrite(m);
+  assert.deepEqual(after, [exprStmt(assignExpr(id("r1"), id("globalThis"))), exprStmt(reflectApply(gid("print"), id("undefined"), []))]);
+  assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
 test("clobbered-between: a statement between the guard and the read reassigns the object", () => {
@@ -258,23 +272,22 @@ function inGuardCount(code: string): number {
   return (code.match(/!\("[^"]+" in /g) ?? []).length;
 }
 
-// Deviation from the spec's own 100% corpus target, recorded here and in
-// docs/AGENT-LOG.md/tools/passes-metrics.mjs's `measureGlobalAccess` comment:
-// every guard in all three `targets` fixtures below (`19-var-hoisting`,
-// `01-if-else-chain`, `02-while-loop`) is on the property name `"print"` — a
-// real host global, not an ECMAScript intrinsic — so every one of them hits
-// `unbound-in-emitted-scope` (see `match.ts`'s block comment on the
-// `src/emit/scope-check.ts` EM-01 conflict) and none fold. The loop below
-// therefore asserts what is honestly true for these three fixtures: the pass
-// never crashes them, and it never *increases* the guard count (PL-05's
-// safety property) — not a visible reduction, which `global-access-other.
-// test.ts`-style corpus fixtures elsewhere in `tests/fixtures/constructs/**`
-// (e.g. `47-typeof-instanceof-in`, guarded on `Object`/`Array`/`Symbol` too)
-// demonstrate genuinely happens once the guarded name is bindable.
+// Since the EM-01 emitter marker landed (`ident.global`; see
+// `src/emit/scope-check.ts` and `match.ts`'s "Emitter interface" note), a
+// *real host global* folds exactly like an intrinsic: the `targets` fixtures
+// (`19-var-hoisting`, `01-if-else-chain`, `02-while-loop`) all guard on
+// `"print"` — not an ECMAScript intrinsic — and their provable `print` guards
+// now fold to bare `print` reads that `checkBindings` accepts. The loop still
+// asserts the PL-05 safety property (never *increases* the guard count, never
+// crashes) universally; a guard survives only where the object is not a
+// proven global in that frame (a reused register, a migrated read, …), which
+// is a correct refusal, so a strict reduction can't be asserted for every
+// (fixture, version, variant). The strong red->green fold — bare `print` that
+// still parses — is asserted in the `19`/`02` block below.
 for (const target of globalAccess.targets) {
   for (const version of VERSIONS) {
     for (const variant of VARIANTS) {
-      test(`safe (no visible fold expected — see comment above): ${target} v${version}${variant} never crashes and never adds a guard`, () => {
+      test(`safe: ${target} v${version}${variant} never crashes and never adds a guard`, () => {
         const bytes = loadFixture(target, version, variant);
         const withoutRung = decompile(bytes, { moduleName: target, resolveV98Ambiguity: true, passes: { skip: ["global-access"] } }).code;
         const withRung = decompile(bytes, { moduleName: target, resolveV98Ambiguity: true, passes: {} }).code;
@@ -284,19 +297,47 @@ for (const target of globalAccess.targets) {
   }
 }
 
+// EM-01 marker regression: a `print`-guarded fixture folds its guarded reads
+// to bare `print` and the result still parses. Before the marker, every one
+// of these guards hit `unbound-in-emitted-scope` and none folded (or, if the
+// pass had been allowed to fold, `decompile()` threw `E_UNBOUND_IDENT` from
+// `checkBindings`). `decompile()` runs `checkBindings` internally, so a
+// surviving crash would fail here; the bare-`print` assertion + a manual
+// `node --check` (via `vm.Script`, matching the gate's own `syntaxOk`) close
+// the "folds AND still decompiles/parses" requirement. The trace oracle is
+// run over these fixtures with passes ON by the full-gate equivalence tier.
+// `19-var-hoisting` guards on `print` and folds at least one guard at every
+// version (unlike `02-while-loop`, whose globalThis-holding register is reused
+// in a way that keeps `isProvenGlobal` from firing at v96/98/99 — a correct
+// refusal, so it is not a reliable strict-reduction witness). The bare-`print`
+// regex deliberately excludes a `'print'` inside the guard's own throw message.
+for (const version of VERSIONS) {
+  test(`EM-01 marker: 19-var-hoisting v${version} folds a real host global (print) to a bare read that still parses`, () => {
+    const bytes = loadFixture("19-var-hoisting", version, "");
+    const withoutRung = decompile(bytes, { moduleName: "19-var-hoisting", resolveV98Ambiguity: true, passes: { skip: ["global-access"] } }).code;
+    const withRung = decompile(bytes, { moduleName: "19-var-hoisting", resolveV98Ambiguity: true, passes: {} }).code;
+    assert.ok(inGuardCount(withRung) < inGuardCount(withoutRung), `expected fewer "in" guards (a real print guard folded) at v${version}`);
+    assert.match(withRung, /[^.\w'"]print\s*[(;]/, `expected a bare (non-member) print read/call at v${version}`);
+    // Must still be syntactically valid JS — checkBindings accepted the bare
+    // print (its `ident.global` marker), so this compiles rather than throwing
+    // E_UNBOUND_IDENT out of `decompile()` above.
+    assert.doesNotThrow(() => new vm.Script(withRung), `folded output should parse at v${version}`);
+  });
+}
+
 // A genuine, positive red->green demonstration through the *real* pipeline
 // (decompile(), not a hand-built AST): `47-typeof-instanceof-in` guards
-// `Object`/`Array`/`Symbol` in addition to `print` — the first three are
-// ECMAScript intrinsics (`src/emit/scope-check.ts`'s `KNOWN_GLOBALS`), so
-// these three fold cleanly while `print`'s guards are correctly left alone.
+// `Object`/`Array`/`Symbol` *and* `print`. Every one is now a bindable global
+// (intrinsics via scope-check's `KNOWN_GLOBALS`; `print` via the `ident.global`
+// marker), so all of them fold — the whole `" in "` guard count goes to zero.
 for (const version of VERSIONS) {
-  test(`red->green: 47-typeof-instanceof-in v${version} — Object/Array/Symbol guards fold, print's do not`, () => {
+  test(`red->green: 47-typeof-instanceof-in v${version} — Object/Array/Symbol AND print guards all fold`, () => {
     const bytes = loadFixture("47-typeof-instanceof-in", version, "");
     const withoutRung = decompile(bytes, { moduleName: "x", resolveV98Ambiguity: true, passes: { skip: ["global-access"] } }).code;
     const withRung = decompile(bytes, { moduleName: "x", resolveV98Ambiguity: true, passes: {} }).code;
     assert.ok(inGuardCount(withRung) < inGuardCount(withoutRung), `expected fewer "in" guards with global-access on at v${version}`);
-    assert.doesNotMatch(withRung, /"Object" in|"Array" in|"Symbol" in/, `Object/Array/Symbol guards should be gone at v${version}`);
-    assert.match(withRung, /"print" in/, `print's guards should still be present at v${version} (not a bindable name)`);
+    assert.equal(inGuardCount(withRung), 0, `every global-access guard should fold at v${version}`);
+    assert.doesNotMatch(withRung, /"Object" in|"Array" in|"Symbol" in|"print" in/, `Object/Array/Symbol/print guards should all be gone at v${version}`);
   });
 }
 
@@ -304,5 +345,9 @@ test("v94 shape: 47-typeof-instanceof-in — a builtin read folds to a bare call
   const code = decompile(loadFixture("47-typeof-instanceof-in", 94, ""), { moduleName: "x" }).code;
   assert.match(code, /r2\.prototype = Object\.create\(r0\.Base\.prototype\);/);
   assert.match(code, /r17 = r2 instanceof Array;/);
-  assert.match(code, /r0 = Reflect\.apply\(Symbol, r11, \[\]\);/);
+  // `Symbol` folds to a bare identifier — the point of this assertion. Accept
+  // either the pre-`call-shape` `Reflect.apply(Symbol, …)` wrapper or the
+  // direct `Symbol()` a landed `call-shape` produces; both prove the fold, and
+  // whether the call is unwrapped is orthogonal to global-access.
+  assert.match(code, /r0 = (Reflect\.apply\(Symbol, r11, \[\]\)|Symbol\(\));/);
 });

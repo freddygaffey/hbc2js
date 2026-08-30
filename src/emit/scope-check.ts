@@ -1,5 +1,12 @@
 // docs/specs/05-emitter.md §6 / EM-01 — every emitted identifier must be
-// declared in an enclosing emitted scope.
+// declared in an enclosing emitted scope, OR be a bare identifier the
+// decompiler deliberately emitted for a proven global read (an `ident` node
+// carrying `global: true`; see `Expr`'s `ident` doc and `src/passes/
+// global-access`). The marker is the emitter's licence for the one idiom that
+// legitimately produces a free bare name — a host-global read (`print`,
+// `console`, `window`, …) folded out of a `"x" in globalThis` guard. An
+// unmarked free identifier remains an error, which is what still catches real
+// emitter bugs (R1).
 //
 // This is the R3 guard. hermes-dec ships `_closure1_slot1` identifiers that are
 // never declared, and its output throws ReferenceError before semantics are even
@@ -81,7 +88,13 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
   const walkExpr = (e: Expr, scopes: readonly Set<string>[], where: string): void => {
     switch (e.k) {
       case "ident":
-        if (!scopes.some((s) => s.has(e.name))) fail(e.name, where);
+        // A bare identifier the decompiler deliberately emitted as a proven
+        // global read (`e.global`, set only by the `global-access` rung — see
+        // `Expr`'s `ident` doc) is intentional, not an unbound-variable bug:
+        // accept it even though no module binding declares it. Any *unmarked*
+        // free identifier is still an emitter bug (R1) and still throws — that
+        // is what keeps `_closure1_slot1`-style leaks unrepresentable.
+        if (e.global !== true && !scopes.some((s) => s.has(e.name))) fail(e.name, where);
         return;
       case "lit":
       case "this":

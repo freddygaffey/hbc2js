@@ -12,7 +12,11 @@ import type { GlobalAccessMatch } from "./match.ts";
  *  read with a bare identifier. Never descends into a nested `func` (a
  *  different frame `match` never looked inside). */
 function replaceRead(e: Expr, global: Expr, name: string): Expr {
-  if (isTargetRead(e, global, name)) return { k: "ident", name };
+  // `global: true` tells `src/emit/scope-check.ts`'s EM-01 `checkBindings`
+  // that this bare name is a deliberately-emitted global read, not an unbound
+  // identifier — the emitter's one licence to accept a free name (a global
+  // *read* only; writes / `DeclareGlobalVar` keep their `globalThis.x` form).
+  if (isTargetRead(e, global, name)) return { k: "ident", name, global: true };
   switch (e.k) {
     case "member": {
       const obj = replaceRead(e.obj, global, name);

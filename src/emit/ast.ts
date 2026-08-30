@@ -2,7 +2,17 @@
 // ESTree. Node names are kept ESTree-compatible in spirit so a spec 07 pass that
 // wants a parser-based `check` can map them mechanically.
 export type Expr =
-  | { readonly k: "ident"; readonly name: string }
+  /**
+   * A bare identifier. `global: true` marks a reference the decompiler
+   * *deliberately* emitted as a proven global read (the `global-access` rung
+   * folding `globalThis.print` -> `print`, EM-01 / scope-check.ts): such a
+   * name is intentionally free of any module binding, so `checkBindings`
+   * accepts it instead of raising `E_UNBOUND_IDENT`. An *unmarked* bare name
+   * that is not in scope is still an emitter bug and still throws. Only a
+   * global *read* is marked — a write or a `DeclareGlobalVar` keeps its
+   * `globalThis.<name>` form (D14).
+   */
+  | { readonly k: "ident"; readonly name: string; readonly global?: true }
   /** A pre-rendered literal: number, string, bigint, boolean, null, undefined. */
   | { readonly k: "lit"; readonly text: string }
   | { readonly k: "this" }

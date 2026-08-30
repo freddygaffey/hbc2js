@@ -9,7 +9,7 @@
 import type { Effect, Expr, Stmt } from "../ast.ts";
 import { defUse, effectSequence, isSafeIdentifier } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
-import { isProvenGlobal, isShadowed, isTargetRead, isUnboundInEmittedScope, recognizeGuard } from "./match.ts";
+import { isProvenGlobal, isShadowed, isTargetRead, recognizeGuard } from "./match.ts";
 import { substitute } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
@@ -124,9 +124,6 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // Item 5: `p` is not a declared name in `before`.
   if (!isSafeIdentifier(name)) return { ok: false, reason: "unsafe-identifier" };
   if (isShadowed(name, fnBody)) return { ok: false, reason: "shadowed" };
-  // Not part of §6 — mirrors `classifySite`'s own extra gate against
-  // `src/emit/scope-check.ts`'s EM-01 guard (see `match.ts`'s block comment).
-  if (isUnboundInEmittedScope(name)) return { ok: false, reason: "unbound-in-emitted-scope" };
 
   // Item 3: the one effect pair the rung is licensed to change — the guard's
   // `in` test + its unreached `throw new ReferenceError(...)`, and the one

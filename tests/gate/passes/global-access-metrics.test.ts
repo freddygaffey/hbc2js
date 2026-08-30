@@ -4,31 +4,31 @@
 // versions, with `global-access` off vs on.
 //
 // Deviation from the spec's own stated targets (100% clean functions, >=60%
-// `globalThis.` occurrence reduction; recorded here, in
-// `docs/AGENT-LOG.md`, and in `tools/passes-metrics.mjs`'s own comment —
-// mirroring `expr-rebuild-metrics.test.ts`'s precedent of measuring reality
-// rather than restating an unreached target):
+// `globalThis.` occurrence reduction; recorded here, in `docs/AGENT-LOG.md`,
+// and in `tools/passes-metrics.mjs`'s own comment — mirroring
+// `expr-rebuild-metrics.test.ts`'s precedent of measuring reality rather than
+// restating an unreached target). The former dominant shortfall — EM-01's
+// `KNOWN_GLOBALS` cap, which let R2 fold only ECMAScript-intrinsic guards and
+// never a real host global (`print`, `console`, `window`, …) — is **resolved**:
+// `src/emit/scope-check.ts`'s `checkBindings` now accepts a bare identifier the
+// decompiler deliberately emitted for a proven global (the `ident.global`
+// marker `src/passes/global-access/rewrite.ts` stamps; see that file, `match.ts`'s
+// "Emitter interface" note, and scope-check's header). The clean-function share
+// jumped 61.2% -> 73.7% as a result. The remaining residual to the spec's
+// ~95%:
 //
-// 1. **`src/emit/scope-check.ts`'s EM-01 guard has no allowance for a bare
-//    identifier a stage-B pass has proven sound** (`src/passes/global-access/
-//    match.ts`'s block comment has the full account). Its `KNOWN_GLOBALS`
-//    allowlist is deliberately narrow (ECMAScript intrinsics only), on the
-//    standing assumption that a program-defined global is always read via
-//    `globalThis.<name>` — the exact assumption R2 exists to break. Without
-//    an emit-side fix (out of this rung's ownership: D12a keeps a pass out
-//    of `src/emit`, and this rung must not touch it), `global-access` can
-//    only safely fold a guard whose property name is already an ECMAScript
-//    intrinsic (`Object`, `Array`, `Error`, `Symbol`, `Map`, `JSON`, …) —
-//    never a real host global (`print`, the only guarded name in any of
-//    this rung's own `targets` fixtures, none of which therefore fold at
-//    all; see `global-access.test.ts`'s corpus loop and its comment). Most
-//    of the shortfall below is this one gap.
+// 1. Genuine `in` operators in the source (e.g. `47-typeof-instanceof-in`'s
+//    own `"a" in obj` tests, or an intrinsic guard in a nested list) that are
+//    not the deletable `!("x" in G)` guard idiom, plus the `DeclareGlobalVar`
+//    idiom (`if (!Object.prototype.hasOwnProperty.call(globalThis, "x")) …`),
+//    both correctly left alone (§7).
 // 2. `isProvenGlobal`'s own departure from §4's literal "exactly one write in
-//    the whole function" (also documented in `match.ts`) recovers the
-//    common "register reused for scratch once its globalThis role ends"
-//    shape, but a register genuinely reused as `globalThis` a *second* time
-//    is still refused (`unproven-global`, ambiguous) — this corpus does not
-//    appear to hit that case, but it is a real, if narrow, residual gap.
+//    the whole function" (documented in `match.ts`) recovers the common
+//    "register reused for scratch once its globalThis role ends" shape, but a
+//    register genuinely reassigned `globalThis` a *second* time, or reused in
+//    a way that defeats the proof at some versions (e.g. `02-while-loop`'s
+//    do-while at v96/98/99), is still refused (`unproven-global`) — a correct,
+//    if lossy, refusal.
 //
 // The floors below sit comfortably under the measured numbers, as a
 // regression guard on what this rung actually achieves rather than a
@@ -37,7 +37,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measureGlobalAccess } from "../../../tools/passes-metrics.mjs";
 
-const CLEAN_FUNCTION_PCT_FLOOR = 55;
+// 73.7% measured; floor sits under it with headroom for the concurrent
+// call-shape work's small drift on the shared emitted output.
+const CLEAN_FUNCTION_PCT_FLOOR = 70;
 // `globalThis.` occurrences come overwhelmingly from the `DeclareGlobalVar`
 // idiom (`if (!Object.prototype.hasOwnProperty.call(globalThis, "x")) {
 // globalThis.x = undefined; }`) and the module wrapper's own

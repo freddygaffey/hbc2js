@@ -22,7 +22,7 @@ export interface GlobalAccessSite {
 
 export type GlobalAccessMatch = Match<readonly Stmt[], GlobalAccessSite>;
 
-export type RefuseReason = "unproven-global" | "shadowed" | "unsafe-identifier" | "no-read-after-guard" | "clobbered-between" | "read-twice" | "guard-in-other-list" | "unbound-in-emitted-scope";
+export type RefuseReason = "unproven-global" | "shadowed" | "unsafe-identifier" | "no-read-after-guard" | "clobbered-between" | "read-twice" | "guard-in-other-list";
 
 export type ClassifyResult = { readonly ok: true; readonly site: GlobalAccessSite } | { readonly ok: false; readonly reason: RefuseReason };
 
@@ -200,79 +200,29 @@ export function isShadowed(name: string, fnBody: readonly Stmt[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Framework gap: `src/emit/scope-check.ts`'s EM-01 guard.
+// Emitter interface: `src/emit/scope-check.ts`'s EM-01 guard.
 // ---------------------------------------------------------------------------
 
 /**
- * **Not in the spec — a required addition, flagged for follow-up.**
- * `src/emit/scope-check.ts`'s `checkBindings` runs, unconditionally, on every
- * emitted program (`emit/index.ts`'s `emitModule`, after every stage-B pass
- * including this one) and throws `E_UNBOUND_IDENT` for any identifier that is
- * neither declared in an enclosing scope nor in its own `KNOWN_GLOBALS` set —
- * by its own comment, on the standing assumption that "everything the
- * *program* touches goes through `globalThis.<name>`", i.e. a bare identifier
- * is never how a program-defined global is read. This rung's entire idiom is
- * to break exactly that assumption (`globalThis.print` -> `print`), so
- * without this gate the pass crashes `decompile()` for any function it
- * successfully rewrites (verified directly: `19-var-hoisting` throws
- * `E_UNBOUND_IDENT: emitted identifier "print" is not declared…` the moment
- * `isProvenGlobal` above is allowed to fire on it).
- *
- * `src/emit/scope-check.ts` is out of this rung's ownership (D12a; the
- * project's own boundary keeps a pass out of `src/emit`, and there is no
- * hook `EmitOptions`/`Pass` exposes for a rung to extend `KNOWN_GLOBALS`), so
- * the only correctness-preserving choice available here is the conservative
- * one: refuse (`unbound-in-emitted-scope`) unless `name` is already on that
- * allowlist. `KNOWN_GLOBALS` is copied verbatim (same convention
- * `isSafeIdentifier` above already follows for `names.ts`) rather than
- * imported, since `../../emit/scope-check.ts` is not on D12a's allowlist
- * either. **This is the dominant reason the corpus metric (§7) falls far
- * short of the spec's 100%/95% targets** — a real host global (`print`,
- * `console`, `require`, `fetch`, `__DEV__`, …) is exactly what R2 exists to
- * recover, and essentially none of those are ECMAScript intrinsics. The
- * actionable follow-up: extend `checkBindings` to also accept a plain,
- * non-reserved, non-synthetic identifier (i.e. one that already fails every
- * `looksSynthetic` pattern above) as a legitimate global reference — nothing
- * else in the pipeline introduces a free bare identifier that would need
- * catching by the stricter rule, once `global-access` is the one rung
- * licensed to.
+ * How a folded read survives EM-01. `src/emit/scope-check.ts`'s
+ * `checkBindings` runs, unconditionally, on every emitted program
+ * (`emit/index.ts`'s `emitModule`, after every stage-B pass including this
+ * one) and throws `E_UNBOUND_IDENT` for any free bare identifier — a program
+ * global is normally read through `globalThis.<name>`, so a free name would
+ * otherwise only ever be an emitter bug. This rung's entire idiom
+ * (`globalThis.print` -> `print`) legitimately produces one, so
+ * `rewrite.ts` tags the folded `ident` node with `global: true` and the
+ * emitter accepts a so-marked read as intentional (a *read* only — a write
+ * or a `DeclareGlobalVar` keeps its `globalThis.x` form, D14). That marker
+ * is the whole interface: because it exists, this rung folds any *proven*
+ * global whose name is a safe, non-shadowed identifier — a real host global
+ * (`print`, `console`, `window`, `alert`, `require`, …) just as much as an
+ * ECMAScript intrinsic — with no allowlist to consult. Previously the rung
+ * had to refuse (`unbound-in-emitted-scope`) every name outside a copied
+ * `KNOWN_GLOBALS` set to avoid crashing `decompile()`; that cap (and its
+ * ~61% ceiling on §7's metric) is gone now that the emitter carries the
+ * marker.
  */
-const KNOWN_GLOBALS: ReadonlySet<string> = new Set([
-  "globalThis",
-  "undefined",
-  "Infinity",
-  "NaN",
-  "Object",
-  "Array",
-  "String",
-  "Number",
-  "Boolean",
-  "Symbol",
-  "BigInt",
-  "Math",
-  "JSON",
-  "Reflect",
-  "Promise",
-  "RegExp",
-  "Function",
-  "Error",
-  "TypeError",
-  "ReferenceError",
-  "SyntaxError",
-  "RangeError",
-  "Date",
-  "Map",
-  "Set",
-  "WeakMap",
-  "WeakSet",
-  "Proxy",
-  "eval",
-]);
-
-/** See the block comment above: a real, tracked limitation, not part of §4. */
-export function isUnboundInEmittedScope(name: string): boolean {
-  return !KNOWN_GLOBALS.has(name);
-}
 
 // ---------------------------------------------------------------------------
 // The one property read the guard licenses deleting.
@@ -410,7 +360,6 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
   if (!isSafeIdentifier(name)) return { ok: false, reason: "unsafe-identifier" };
   if (!isProvenGlobal(fnBody, global)) return { ok: false, reason: "unproven-global" };
   if (isShadowed(name, fnBody)) return { ok: false, reason: "shadowed" };
-  if (isUnboundInEmittedScope(name)) return { ok: false, reason: "unbound-in-emitted-scope" };
 
   for (let k = i + 1; k < list.length; k++) {
     const s = list[k]!;
