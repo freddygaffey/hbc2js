@@ -2,11 +2,11 @@
 
 **Fixture:** none — no construct fixture in `tests/fixtures/constructs/`
 exercises these operators (checked: `grep -rl '&&=\|||=\|??=' source.js`
-across the whole corpus returns nothing). This file is built from an ad hoc
-probe file, exactly analogous to `switch.md`'s `StringSwitchImm` section
-and spec 07 §12 O-3 — **a pass must not be implemented against this row
-until a real fixture exists** (spec 07 §4).
-**Confidence:** ⛔ inferred (ad hoc probe, v94 and v99)
+across the whole corpus returned nothing when this file was first written.
+**T9 (2026-08-30) added the fixture** — `57-logical-assignment`, compiled and
+gate-checked at all five versions — so the spec 07 §4 block on this row is
+lifted.
+**Confidence:** ✅ measured (fixture `57-logical-assignment`, v84–v99)
 
 ## 1. Source (probe, not a fixture)
 
@@ -43,6 +43,31 @@ function f(o) {
 At v99 the same shape reproduces (`JmpTrue`/`JmpFalse`/`PutById` count
 unchanged, spot-checked by instruction-count `grep`, not a full re-read).
 
+### 2c. Measured on the fixture (T9) — `??=` is a loose `!= null` test
+
+There is **no dedicated opcode** for any of the three operators at any version
+(`LogicalAssign`/`NullishCoalesce` appear nowhere in the corpus). `??=` on a
+run-time value lowers to a single loose comparison against `null`, which covers
+`null` and `undefined` in one jump. `57-logical-assignment`'s loop, v99:
+
+```
+  0174  GetByVal             r11, r13, r0    ; v = inputs[i]
+  017e  JNotEqual            L4, r11, r8     ; r8 = LoadConstNull -> `v != null` skips
+  0182  Mov                  r11, r12        ; v = "defaulted"
+L4:
+```
+
+v94 is the same shape (`GetByVal` / `JNotEqual` against a hoisted
+`LoadConstNull` / `Mov`), so this is stable across both eras.
+
+**Fixture-design warning, found by writing this one.** `hermesc` constant-folds
+logical assignment whose target is statically known: the fixture's first
+section (`let a = 0; a ||= rhs(…)` and friends) compiles to *unconditional*
+calls at v99, with the test eliminated entirely. Only the run-time-valued cases
+— the loop above, and the getter/setter property cases — actually exercise the
+branch. A matcher developed against folded code would be developed against
+nothing.
+
 ## 3. CFG/IR shape
 
 Exactly `optional-chaining.md`'s short-circuit branch shape, reused for the
@@ -52,7 +77,7 @@ and conditionally execute a plain assignment. No new opcode of any kind —
 this is composed entirely from idioms already covered elsewhere in this
 catalogue (`GetByIdShort`+conditional branch+`PutById`).
 
-## 4. Matcher (hypothesis only — do not implement)
+## 4. Matcher
 
 Would recognise: a property/variable read immediately tested by
 `JmpTrue`/`JmpFalse`/`Eq null+JmpFalse` whose only reachable effect on the

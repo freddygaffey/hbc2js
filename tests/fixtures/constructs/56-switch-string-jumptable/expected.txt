@@ -1,0 +1,8 @@
+alpha -> 1
+mike -> 13
+xray -> 24
+quebec -> 17
+not-a-word -> -1
+echo -> 5
+warm cool other
+total=59
