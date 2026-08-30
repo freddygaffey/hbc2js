@@ -27,6 +27,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "${{ matrix.node }}", cache: npm }
+      - uses: actions/setup-python@v5    # for the hermes-dec oracle (7.B diff, hbc-file-parser cross-check)
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/oracles/requirements-hermes-dec.txt
+      - run: pip install -r tools/oracles/requirements-hermes-dec.txt
       - run: npm ci
       - run: npm run typecheck
       - run: npm run gen:tables:check      # generated tables are reproducible
@@ -50,9 +56,17 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "24", cache: npm }
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install "hermes-dec==0.1.7"
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/oracles/requirements-hermes-dec.txt
+      - run: pip install -r tools/oracles/requirements-hermes-dec.txt
       - run: npm ci
+      - uses: actions/cache@v4             # hermesc binaries, keyed on the fetch script (see build-test)
+        with:
+          path: tools/hermesc
+          key: hermesc-${{ runner.os }}-${{ hashFiles('tools/get-hermesc.sh') }}
+      - run: tools/get-hermesc.sh all      # v84, v94, v96, v98, v99 — needed for 7.A diff + round-trip oracle
       - run: npm run test:gate
 
   licence-guard:

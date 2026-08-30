@@ -182,7 +182,8 @@ test("an environment created inside a loop gets one binding per iteration", () =
   // function-top `let` made every IIFE-captured closure share it (2,2,2
   // instead of 0,1,2).
   const text = code("17-closure-loop-var", 99);
-  const inLoop = /while \(true\) \{[\s\S]*?let _e\d+_\d+;[\s\S]*?\}/.exec(text);
+  // Any loop form: spec 07's loop-cond prints this one as `do { … } while (c)`.
+  const inLoop = /(while \(|do \{|for \()[\s\S]*?let _e\d+_\d+;[\s\S]*?\}/.exec(text);
   assert.ok(inLoop !== null, "the loop-local environment declaration was hoisted again");
 });
 

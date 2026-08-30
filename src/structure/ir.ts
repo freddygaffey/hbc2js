@@ -14,8 +14,14 @@ export type Stmt =
   | { readonly k: "seq"; readonly body: readonly Stmt[] }
   /** `label: { body }` — target of a forward multi-level break. */
   | { readonly k: "labeled"; readonly label: LabelId; readonly body: Stmt }
-  /** `label: while (true) { body }`. */
-  | { readonly k: "loop"; readonly label: LabelId; readonly body: Stmt }
+  /**
+   * `label: while (true) { body }`. `form` is a spec 07 stage-A annotation
+   * (src/passes/loop-cond): it names which `if` inside `body` is the loop test
+   * so the emitter can print `while (c)` / `do … while (c)` / `for (…)`. It is
+   * transparent to verify.ts — the guarded `if`/`continue`/`break` stay in the
+   * tree, so the §5 round-trip proves the annotated tree exactly as before.
+   */
+  | { readonly k: "loop"; readonly label: LabelId; readonly body: Stmt; readonly form?: LoopForm }
   /** Two-way branch on the terminator of `cfgBlock`. */
   | { readonly k: "if"; readonly cfgBlock: BlockId; readonly then: Stmt; readonly else: Stmt }
   | { readonly k: "break"; readonly label: LabelId }
@@ -43,6 +49,30 @@ export type Stmt =
    * block and no edge of its own.
    */
   | { readonly k: "setState"; readonly variable: DispatchVar; readonly value: number };
+
+/** See the `loop` node. Written by src/passes, read by src/emit. */
+export interface LoopForm {
+  /** "while": the test runs before every iteration; "do-while": after. */
+  readonly kind: "while" | "do-while";
+  /** The `if` block (inside `body`) whose terminator is the test. */
+  readonly cond: BlockId;
+  /**
+   * Where the guarded `if` sits: "head" = `block cond; if cond { break L } else { body… }`
+   * is the first thing in the loop; "tail" = `…; block cond; if cond { continue L } else { break L }`
+   * is the last. (A two-statement body is otherwise ambiguous.)
+   */
+  readonly at: "head" | "tail";
+  /** True when the taken edge of `cond` leaves the loop (print `!c`). */
+  readonly negate: boolean;
+  /**
+   * for-header (src/passes/for-header): `init` = instructions [from, end) of
+   * the `block` sibling immediately preceding the loop; `step` = instructions
+   * [from, end) of a body block. The emitter prints `for (init; c; step)` only
+   * when it finds both exactly where declared, else it falls back to `while`.
+   */
+  readonly init?: { readonly cfgBlock: BlockId; readonly from: number };
+  readonly step?: { readonly cfgBlock: BlockId; readonly from: number };
+}
 
 export type Scrutinee =
   | { readonly t: "jumptable"; readonly table: SwitchTable }

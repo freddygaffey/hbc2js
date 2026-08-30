@@ -19,6 +19,8 @@ import type { EmitOptions } from "./emit/index.ts";
 import { parseHbc } from "./parse/module.ts";
 import type { HbcModule, OpcodeTableId } from "./parse/types.ts";
 import { printTree, structure } from "./structure/index.ts";
+import { passHook, runPasses } from "./passes/index.ts";
+import type { PassPipelineOptions } from "./passes/index.ts";
 
 export interface DecompileOptions {
   readonly moduleName?: string;
@@ -45,6 +47,12 @@ export interface DecompileOptions {
   readonly verify?: boolean;
   /** Only emit this function's tree (`--emit-tree`, `--function`). */
   readonly functionIndex?: number;
+  /**
+   * Spec 07 pass pipeline. Every registered pass runs by default;
+   * `{ skip: ["loop-cond"] }` is `--no-pass loop-cond`, `{ none: true }` is
+   * `--passes=none` (the M4 baseline, PL-05).
+   */
+  readonly passes?: PassPipelineOptions;
 }
 
 export interface DecompileResult {
@@ -84,6 +92,7 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
     moduleName: opts.moduleName ?? "input.hbc",
     provenanceComments: false,
     strictEnv,
+    passes: passHook(analysis, opts.passes),
     ...opts.emit,
     ...(opts.verify === false ? { structure: { ...opts.emit?.structure, verify: false } } : {}),
   });
@@ -97,8 +106,11 @@ export function decompileTree(bytes: Uint8Array, opts: DecompileOptions = {}): s
   const indices = opts.functionIndex !== undefined ? [opts.functionIndex] : module.functions.map((_, i) => i);
   const out: string[] = [];
   for (const i of indices) {
-    const s = structure(analysis.cfg(i), { verify: opts.verify !== false });
-    out.push(`; fn#${i} ${JSON.stringify(analysis.decoded(i).name)}  ${JSON.stringify(s.stats)}`);
+    const cfg = analysis.cfg(i);
+    const structured = structure(cfg, { verify: opts.verify !== false });
+    const passed = runPasses(analysis, structured, cfg, opts.passes);
+    const s = passed.fn;
+    out.push(`; fn#${i} ${JSON.stringify(analysis.decoded(i).name)}  ${JSON.stringify(s.stats)}${passed.applied.length > 0 ? `  passes=${passed.applied.map((a) => `${a.pass}@${a.at.offset}`).join(",")}` : ""}${passed.abandoned.length > 0 ? `  abandoned=${passed.abandoned.map((a) => `${a.pass}@${a.at.offset}(${a.reason})`).join(",")}` : ""}`);
     out.push(printTree(s));
   }
   return out.join("\n");

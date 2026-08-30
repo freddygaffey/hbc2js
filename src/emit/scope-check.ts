@@ -156,6 +156,19 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         walkNested(s.else, scopes, where);
         return;
       case "while":
+        if (s.test !== undefined) walkExpr(s.test, scopes, where);
+        walkNested(s.body, scopes, where);
+        return;
+      case "do-while":
+        walkExpr(s.test, scopes, where);
+        walkNested(s.body, scopes, where);
+        return;
+      case "for":
+        if (s.init !== null) walkExpr(s.init, scopes, where);
+        walkExpr(s.test, scopes, where);
+        if (s.update !== null) walkExpr(s.update, scopes, where);
+        walkNested(s.body, scopes, where);
+        return;
       case "labeled":
         walkNested(s.body, scopes, where);
         return;

@@ -236,16 +236,24 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   };
 
   // --- block lowering -------------------------------------------------------
-  const lowerBlock = (blockId: BlockId): Stmt[] => {
+  /**
+   * `range` (spec 07 loop-cond/for-header) lowers only instructions
+   * [from, to) — a loop head's init/step slices. The block prelude (pc, provenance)
+   * belongs to the first slice only.
+   */
+  const lowerBlock = (blockId: BlockId, range?: { readonly from?: number; readonly to?: number }): Stmt[] => {
     const out: Stmt[] = [];
     // `cfgBlock: -1` is §4.4's dispatch switch, which stands for no CFG block.
     if (blockId < 0) return out;
     const aug = structured.graph.blocks[blockId]!;
     if (aug.block === null) return out; // synthetic try-head owns no bytes
-    if (tryPlan.needsPc) out.push(assign(id(PC_VAR), num(blockId)));
-    if (input.provenanceComments && aug.block.start >= 0) out.push({ k: "comment", text: `@0x${aug.block.start.toString(16)}` });
+    const from = range?.from ?? 0;
+    const to = range?.to ?? aug.block.instructions.length;
+    if (from === 0 && tryPlan.needsPc) out.push(assign(id(PC_VAR), num(blockId)));
+    if (from === 0 && input.provenanceComments && aug.block.start >= 0) out.push({ k: "comment", text: `@0x${aug.block.start.toString(16)}` });
     const plan = planBlock(aug.block, fn.instructions);
     for (const [i, insn] of aug.block.instructions.entries()) {
+      if (i < from || i >= to) continue;
       lowerInstruction(f, insn, i, plan, out);
       // Keep the object-shape map honest: a register written by anything other
       // than a `NewObjectWithBuffer` no longer holds that shape.
@@ -296,13 +304,97 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   const armTest = (arm: SwitchArm): Expr => (arm.isString ? lit(quote(mod.strings.get(arm.value))) : num(arm.value));
 
   // --- tree -> statements (§4) ---------------------------------------------
+  // Loop-form state (spec 07): a `for` head's init comes from the block that
+  // precedes the loop, its step from a block inside the body; both are printed
+  // once, in the head, and trimmed where they would otherwise appear.
+  const trims = new Map<BlockId, number>();
+  let pendingInit: Expr | null = null;
+
+  /** All plain expression statements, or null. */
+  const asExprs = (stmts: readonly Stmt[]): Expr | null => {
+    const exprs: Expr[] = [];
+    for (const s of stmts) {
+      if (s.k === "comment") continue;
+      if (s.k !== "expr") return null;
+      exprs.push(s.expr);
+    }
+    if (exprs.length === 0) return null;
+    return exprs.length === 1 ? exprs[0]! : { k: "seq", exprs };
+  };
+
+  /**
+   * spec 07 loop-cond / for-header. The annotated `if` (the loop test) is
+   * dropped from the body and printed as the loop condition; the `continue`
+   * / `break` it guarded are implied by the loop form. Returns false — and
+   * prints nothing — when the tree is not the shape the annotation promises,
+   * in which case the caller prints the plain `while (true)`.
+   */
+  const lowerFormedLoop = (node: IrStmt & { k: "loop" }, form: NonNullable<(IrStmt & { k: "loop" })["form"]>, init: Expr | null, out: Stmt[]): boolean => {
+    const items = node.body.k === "seq" ? node.body.body : [node.body];
+    const gi = items.findIndex((s) => s.k === "if" && s.cfgBlock === form.cond);
+    if (gi < 1 || items[gi - 1]!.k !== "block" || (items[gi - 1] as IrStmt & { k: "block" }).cfgBlock !== form.cond) return false;
+    const guard = items[gi] as IrStmt & { k: "if" };
+    const isHead = form.at === "head" && gi === 1;
+    const isTail = form.at === "tail" && gi === items.length - 1;
+    if (!isHead && !isTail) return false;
+    const test = form.negate ? un("!", conditionOf(form.cond)) : conditionOf(form.cond);
+    const label = labelName(node.label);
+    const body: Stmt[] = [];
+    let update: Expr | null = null;
+    const step = form.step;
+    const stepInsns = step === undefined ? undefined : structured.graph.blocks[step.cfgBlock]?.block?.instructions.length;
+    if (step !== undefined && stepInsns !== undefined) trims.set(step.cfgBlock, step.from);
+    if (isHead) {
+      // Only the jump may live in the head block: anything else has nowhere to go.
+      if (lowerBlock(form.cond).some((s) => s.k !== "comment")) {
+        if (step !== undefined) trims.delete(step.cfgBlock);
+        return false;
+      }
+      lowerTree(form.negate ? guard.else : guard.then, body);
+      lowerItems(items.slice(2), body);
+    } else {
+      lowerItems(items.slice(0, gi - 1), body);
+      body.push(...(step !== undefined && step.cfgBlock === form.cond ? lowerBlock(form.cond, { to: step.from }) : lowerBlock(form.cond)));
+    }
+    if (step !== undefined && stepInsns !== undefined) {
+      trims.delete(step.cfgBlock);
+      const end = step.cfgBlock === form.cond ? stepInsns - 1 : stepInsns;
+      const stmts = lowerBlock(step.cfgBlock, { from: step.from, to: end });
+      update = asExprs(stmts);
+      if (update === null) body.push(...stmts);
+    }
+    if (form.kind === "do-while") out.push({ k: "do-while", label, test, body });
+    else if (init !== null || update !== null) out.push({ k: "for", label, init, test, update, body });
+    else out.push({ k: "while", label, test, body });
+    return true;
+  };
+
+  /** A statement list; a block followed by a `for`-form loop hands its init slice to the loop. */
+  const lowerItems = (list: readonly IrStmt[], out: Stmt[]): void => {
+    for (const [i, c] of list.entries()) {
+      const next = list[i + 1];
+      const init = next?.k === "loop" ? next.form?.init : undefined;
+      if (c.k === "block" && init !== undefined && init.cfgBlock === c.cfgBlock) {
+        const head = asExprs(lowerBlock(c.cfgBlock, { from: init.from }));
+        if (head !== null) {
+          out.push(...lowerBlock(c.cfgBlock, { to: init.from }));
+          pendingInit = head;
+          continue;
+        }
+      }
+      lowerTree(c, out);
+    }
+  };
+
   const lowerTree = (node: IrStmt, out: Stmt[]): void => {
     switch (node.k) {
-      case "block":
-        out.push(...lowerBlock(node.cfgBlock));
+      case "block": {
+        const to = trims.get(node.cfgBlock);
+        out.push(...(to === undefined ? lowerBlock(node.cfgBlock) : lowerBlock(node.cfgBlock, { to })));
         return;
+      }
       case "seq":
-        for (const c of node.body) lowerTree(c, out);
+        lowerItems(node.body, out);
         return;
       case "labeled": {
         const body: Stmt[] = [];
@@ -311,6 +403,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       }
       case "loop": {
+        const init = pendingInit;
+        pendingInit = null;
+        if (node.form !== undefined && lowerFormedLoop(node, node.form, init, out)) return;
         const body: Stmt[] = [];
         lowerTree(node.body, body);
         out.push({ k: "while", label: labelName(node.label), body });

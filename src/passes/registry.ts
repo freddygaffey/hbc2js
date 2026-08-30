@@ -1,10 +1,13 @@
 // docs/specs/07-pass-ladder.md §2.3 — the ordered list of enabled passes. The
-// only place a pass is switched on. Empty at M4 (D11); `--passes=none`
-// reproduces this baseline exactly, which is the required capability.
+// only place a pass is switched on. `--passes=none` reproduces the M4 baseline
+// exactly, which is the required capability (PL-05).
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import { forHeader } from "./for-header/index.ts";
+import { loopCond } from "./loop-cond/index.ts";
 import type { Pass, Stage } from "./types.ts";
 
-export const REGISTRY: readonly Pass[] = [];
+/** Order is explicit data (§2.3). Stage A first; within a stage, dependency order. */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
@@ -20,8 +23,8 @@ export interface EnabledPassOptions {
  * §2.3: every stage-B pass except `expr-rebuild` gets `after: ["expr-rebuild"]`
  * injected before validation.
  */
-export function enabledPasses(opts: EnabledPassOptions = {}): readonly Pass[] {
-  let list = REGISTRY.filter((p) => (opts.stage === undefined || p.stage === opts.stage) && (opts.only === undefined || opts.only.includes(p.name)) && (opts.skip === undefined || !opts.skip.includes(p.name)));
+export function enabledPasses(opts: EnabledPassOptions = {}, registry: readonly Pass[] = REGISTRY): readonly Pass[] {
+  let list = registry.filter((p) => (opts.stage === undefined || p.stage === opts.stage) && (opts.only === undefined || opts.only.includes(p.name)) && (opts.skip === undefined || !opts.skip.includes(p.name)));
 
   list = list.map((p) => (p.stage === "B" && p.name !== "expr-rebuild" && !(p.after ?? []).includes("expr-rebuild") ? { ...p, after: [...(p.after ?? []), "expr-rebuild"] } : p));
 
