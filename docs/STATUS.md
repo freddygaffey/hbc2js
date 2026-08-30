@@ -87,6 +87,7 @@ Last updated: 2026-08-30
 - Otherwise: no parser/CLI code yet.
 
 ## Known gaps
+- **HBC 96 has no compiler/fixture yet**, but two of five pulled production apps (Xbox, Bloomberg, Teams) ship v96; Discord and Shopify ship v98. Add 96 to `tools/get-hermesc.sh` and to the corpus. Local proprietary corpus (D16 C5): 5 bundles, 10–52 MB, in `~/hbc2js-local-corpus/apks/` (not in repo).
 - No Linux arm64 `hermesc` build published anywhere found; only Linux x86_64.
 - `tests/fixtures/constructs/` is now compiled (196/212 fixture×version
   combinations; see `tests/fixtures/README.md`), and now includes `SwitchImm`
