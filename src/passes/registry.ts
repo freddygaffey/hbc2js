@@ -24,6 +24,26 @@ export interface EnabledPassOptions {
  * injected before validation.
  */
 export function enabledPasses(opts: EnabledPassOptions = {}, registry: readonly Pass[] = REGISTRY): readonly Pass[] {
+  // review M5-pass-1 F5: a mistyped `only`/`skip` name, or an `after`/`before`
+  // naming a pass that does not exist anywhere in the registry, used to be
+  // silently ignored — `--no-pass nonexistent` exited 0 and disabled nothing.
+  // Validated against the *whole* registry, not the stage/only/skip-filtered
+  // list below: a dependency on a name that exists but got filtered out is
+  // fine (its ordering constraint is simply moot); a dependency on a name
+  // that never existed anywhere is always a mistake.
+  const allNames = new Set(registry.map((p) => p.name));
+  for (const name of opts.only ?? []) {
+    if (!allNames.has(name)) throw new Hbc2jsError(ErrorCode.E_PASS_ORDER, `--passes names unknown pass "${name}"`, { section: "passes/registry" });
+  }
+  for (const name of opts.skip ?? []) {
+    if (!allNames.has(name)) throw new Hbc2jsError(ErrorCode.E_PASS_ORDER, `--no-pass names unknown pass "${name}"`, { section: "passes/registry" });
+  }
+  for (const p of registry) {
+    for (const dep of [...(p.after ?? []), ...(p.before ?? [])]) {
+      if (!allNames.has(dep)) throw new Hbc2jsError(ErrorCode.E_PASS_ORDER, `pass "${p.name}" declares a dependency on unknown pass "${dep}"`, { section: "passes/registry" });
+    }
+  }
+
   let list = registry.filter((p) => (opts.stage === undefined || p.stage === opts.stage) && (opts.only === undefined || opts.only.includes(p.name)) && (opts.skip === undefined || !opts.skip.includes(p.name)));
 
   list = list.map((p) => (p.stage === "B" && p.name !== "expr-rebuild" && !(p.after ?? []).includes("expr-rebuild") ? { ...p, after: [...(p.after ?? []), "expr-rebuild"] } : p));

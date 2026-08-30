@@ -70,6 +70,13 @@ test("PL-07: registry order must satisfy after/before; skip/only/stage select", 
   for (const p of REGISTRY) assert.ok(p.catalogue.length > 0, `${p.name} declares no catalogue row`);
 });
 
+test("review M5-pass-1 F5: a mistyped only/skip/after/before name is E_PASS_ORDER, not silently ignored", () => {
+  assert.throws(() => enabledPasses({ only: ["nonexistent-pass"] }), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
+  assert.throws(() => enabledPasses({ skip: ["nonexistent-pass"] }), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
+  const badDep: Pass<Stmt> = { ...(loopCond as Pass<Stmt>), after: ["loop-condd"] };
+  assert.throws(() => enabledPasses({}, [badDep, forHeader as Pass]), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
+});
+
 test("PL-05: --passes=none reproduces the M4 emitter output byte for byte", () => {
   const bytes = new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", "04-for-loop-basic", "v94.hbc")));
   const none = decompile(bytes, { passes: { none: true }, moduleName: "x" }).code;
