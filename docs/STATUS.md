@@ -29,6 +29,7 @@ Last updated: 2026-08-30
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
 ## Queued next (after current agents)
+- **Deps review (medium, Sonnet)** as soon as `hbc2js deps` lands: (a) code works — re-run offline gate + seed results independently, adversarial matcher tests (absent package, wrong version, same package two versions); (b) architecture sound — evidence scoring, confirm loop, DB layering, robustness to a new RN version. Verdict MERGE / REFACTOR / REWRITE; only not-sound triggers an architect spec (`08-deps.md`) and rework.
 - **On-device round-trip (D16 C6)**: build the RN 0.72 template APK (Android SDK at ~/Library/Android/sdk), pull `index.android.bundle` → `hbc2js` → swap the **decompiled .js directly** into the APK as `index.android.bundle` (Hermes compiles plain JS at load; no recompile needed) — optional second variant pre-compiles with `hermesc` → re-sign (debug key) → `adb install` on the connected tablet → launch → screenshot + logcat comparison against the original build. Script it as `tools/device-roundtrip.sh` so it becomes a sweep-tier test whenever a device is attached. Then repeat with the react-navigation example.
 
 ## Queued before M5
