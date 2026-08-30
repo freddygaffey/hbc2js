@@ -24,7 +24,7 @@ Last updated: 2026-08-30
       caveat, 22 skipped-by-design) and on a mutation negative control
       (DIVERGENT on every fixture tried). `npm run test:all` for this
       milestone's own files is green; see "Currently working" below.
-- [x] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) — **492/492 gate checks PASS, 0 DIVERGENT, 0 ERROR** under `syntax` + `trace`, at v84/94/96/98/99. See the M4 section below for the numbers, the residual `fuzz` divergences and the known gaps.
+- [x] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) — **MERGED** after the adversarial review (`docs/reviews/M4-baseline.md`, verdict FIX-THEN-MERGE) and its response. **501/501 gate checks PASS, 0 DIVERGENT, 0 INCONCLUSIVE, 0 ERROR** under `syntax` + `trace`, at v84/94/96/98/99 — and the gate now runs the *real* decompiler on every `npm test`, not the identity stand-in. See the M4 section below.
 - [ ] M5 Pass ladder: one construct fixture per iteration as matcher/writer/checker pass (D12), catalogue row per pass; track `N/51 recovered` here
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
@@ -38,6 +38,7 @@ Last updated: 2026-08-30
 ## Queued before M5
 - Measure `npm run test:all` and `hbc2js gate` wall time after M4 lands. If either exceeds ~2 min, parallelise: `node --test --test-concurrency=<cores>` across files, and per-fixture worker pool inside the gate runner (fixtures are independent). Keep a `--serial` escape hatch for debugging. Record timings here.
   - Measured 2026-08-30 19:15 after M4: `npm test` (gate) = 69 s wall, 5.7 cores busy — node's runner already parallelises across files. `test:all`/`hbc2js gate` timings pending (M4 reviewer to record).
+  - Re-measured after the M4 review response, with the real decompiler's 501-check equivalence run *inside* the gate: `npm test` (855 tests) = **88 s**, `npm run test:all` (855 + 20) = **118 s**, `hbc2js gate` = **49 s**. It got *faster* despite the added run because `syntaxOk` stopped spawning `node --check` per candidate and compiles with `vm.Script` in process (review timing win 1, ~33 s). `test:all` now runs the two tiers sequentially — sharing one `node --test` invocation made the gate's 7-worker pool compete with the sweep's wall-clock budgets. Timing wins 2 (worker pool for the 7.B disassembler diff) and 3 (`--test-concurrency`) are still unspent and not yet needed.
 
 ## Currently working
 - **M1 parser implemented** (`src/`, spec 00 skeleton + spec 01 parser). TypeScript
@@ -653,11 +654,22 @@ duplicated `finally` bodies, generator shims.
 | Version | Checks | PASS | DIVERGENT | ERROR |
 |---|---|---|---|---|
 | 84 | 91 | 91 | 0 | 0 |
-| 94 | 95 | 95 | 0 | 0 |
-| 96 | 95 | 95 | 0 | 0 |
-| 98 | 105 | 105 | 0 | 0 |
-| 99 | 106 | 106 | 0 | 0 |
-| **total** | **492** | **492** | **0** | **0** |
+| 94 | 97 | 97 | 0 | 0 |
+| 96 | 97 | 97 | 0 | 0 |
+| 98 | 107 | 107 | 0 | 0 |
+| 99 | 109 | 109 | 0 | 0 |
+| **total** | **501** | **501** | **0** | **0** |
+
+(492 before the review response; the two new regression fixtures
+`54-try-catch-finally-shared-range` and `55-typeof-is-masks` add nine checks.)
+
+**The gate runs the real decompiler.** Until the review, `hbc2js gate` and
+`npm test` both scored the *identity* decompiler — the command the docs pointed
+at contained no execution-equivalence check at all, and the real run lived only
+in a sweep test `npm test` never executes. `runTierCmd` now passes
+`hbc2jsDecompiler` by default (`--identity` keeps the harness self-test,
+`--oracles` overrides the set) and the 501-check run is
+`tests/gate/decompile/equivalence.test.ts`, asserted on every `npm test`.
 
 22 (fixture, version) pairs are skipped-by-design (`versions.txt`). The eight
 `KNOWN_AMBIGUOUS_V98` fixtures are decompiled with `--force-v98-table`
@@ -718,21 +730,62 @@ function needs a dispatch variable. Max tree nesting 319, well under ST-09's 100
 |---|---|---|---|
 | Teams org-chart | 96 | 0.7 MB | 3179 functions, 0 unresolved, `node --check` OK, 5.1 MB out, 0.5 s |
 | Bloomberg | 96 | 10.5 MB | 58 932 functions, 0 unresolved, `node --check` OK, 83 MB out, 20 s |
-| Discord | 98 | 51 MB | parses and analyses in 26 s, then **refuses**: `JmpTypeOfIs mask 507` |
-| Shopify | 98 | 34 MB | same refusal, 17 s |
+| Discord | 98 | 53 MB | past `E_ENV_UNRESOLVED` and `JmpTypeOfIs`; now refuses on `PutOwnBySlotIdx` (see below), 10 s |
+| Shopify | 98 | 35 MB | same, 9 s |
 
-The refusal is deliberate. Only `TypeOfIsTypes` bit 7 (`Function`, mask 128) is
-confirmed against real bytecode — every `JmpTypeOfIs` in the whole construct corpus
-is mask 128, guarding `throwTypeError("Trying to call a non-function")` — and
-`Typeof.h` is not among the vendored Hermes headers. Guessing the rest of the enum
-would be a silently wrong lowering of a type test, so it is `E_EMIT_UNSUPPORTED`
-naming the mask (EM-05). **Vendoring `Typeof.h` and pinning the enum is the single
-change that unblocks two 30–50 MB production bundles.**
+`Typeof.h` is now vendored and every `TypeOfIs`/`JmpTypeOfIs` mask decodes
+(review M4-H2), and `--lenient-env` gets past the 4 018 unresolvable environment
+accesses, so both bundles go much further than the M4 baseline's
+`JmpTypeOfIs mask 507`. They now stop at a **different** loud refusal:
+
+```
+E_EMIT_UNSUPPORTED: slot 0 of r4 has no known object shape at offset 106
+```
+
+`PutOwnBySlotIdx` writes to slot *n* of an object's shape, and the emitter only
+knows a register's shape when the `NewObjectWithBuffer*` that created it was
+lowered in the same pass on the same register. In these bundles the creation is
+in another block, so the key is genuinely unknown at that point.
+31–37 % of their functions contain a `*BySlotIdx` (Discord 37 889/120 522,
+Shopify 35 812/97 752), though only the cross-block ones fail. **Propagating the
+recorded shape across blocks/`Mov` is the next thing standing between the CLI and
+a 30–50 MB production bundle**, and it is a distinct defect from the two the
+review named.
+
+Two operational notes measured on the same runs: peak heap is ~300× the input
+(so 53 MB needs `--max-old-space-size=16000`, which `hbc2js` now tells you before
+it starts instead of dying in the collector), and Shopify has a function whose
+structure tree is deep enough to overflow Node's default stack in `lowerTree` —
+`--stack-size=6000` clears it. Neither bundle is committed; both were extracted
+to a scratch directory (D16 C5).
+
+### Review response (`docs/reviews/M4-baseline.md`, verdict FIX-THEN-MERGE)
+
+| # | Finding | Status |
+|---|---|---|
+| **C1** | Identical-range exception regions nested in inverted priority — the `catch` was skipped and the exception went to the `finally`'s rethrow | **Fixed.** `carveRegions` tie-breaks equal ranges by file order *descending* and lets an equal range be a parent. Regression: fixture `54-try-catch-finally-shared-range` at all five versions, a CFG invariant, and RN's own `ErrorUtils` polyfill lifted verbatim out of `index.android.bundle`, compiled with hermesc v94 and compared against the Hermes VM |
+| **H1** | `hbc2js gate` / `npm test` scored the identity decompiler | **Fixed.** Real decompiler by default, `--identity` for the self-test, T2 moved into the gate |
+| **H2** | Discord/Shopify unreachable through the CLI (OOM, hard-coded `strictEnv`, `JmpTypeOfIs`) | **Fixed** as far as this finding goes — `Typeof.h` vendored, `--lenient-env`, heap guidance. Both bundles now stop on a *different*, newly-visible refusal (object shapes; see the corpus table above) |
+| **H3** | No helper had a unit test or a catalogue row (spec 05 §7.1 rule 4) | **Fixed.** `tests/gate/runtime/helpers.test.ts`, one test per helper, plus a "Runtime helpers" table in `docs/LOWERING-CATALOGUE.md`; two ratchet tests fail if a new helper arrives without either |
+| M8 / correction 1 | HBC-FORMAT §6.3 tag 6 at v≥97 | **Fixed** in the doc and in `src/parse/buffers.ts` |
+| Correction 9 | Spec 04 §4.2's loop-wrapper placement | **Fixed** in the spec (the implementation was already right) |
+| M1 | `__hbc_b_spawnAsync` defers a thenable's `then` by one tick vs Hermes ≤96 | **Recorded**, in the helper's catalogue row. Not fixed — it needs the driver to mirror Hermes's own InternalBytecode `spawnAsync` |
+| M2, M3, M4, M5, M6, M7, L1–L6 | `SelectObject`, the P8 try-priority property, D18's nominal `Frontend` boundary + duplicate number, the fuzz relax list, the round-trip ratchet floor, the over-reach `[min,max]` premise, printing/label nits | **Not addressed** — queued for M5; none blocks the merge. L2's "16 unexplained ERRORs" turned out to be already asserted: `tiers.test.ts` attributes each one to `KNOWN_AMBIGUOUS_V98` |
+
+Timing win 1 was taken (in-process `vm.Script` instead of a `node --check`
+subprocess per candidate, ~33 s), which is what let the 501-check equivalence
+run join the gate without the gate getting slower.
 
 ### Known gaps and deviations from the specs
 
-1. **`TypeOfIsTypes` beyond `Function`** — above. The only thing stopping Discord
-   and Shopify.
+1. ~~**`TypeOfIsTypes` beyond `Function`**~~ — **fixed** (review M4-H2).
+   `include/hermes/FrontEndDefs/Typeof.h` is vendored for the three pins that
+   have the opcode (byte-identical, sha256 in each `VENDOR.yml`) and the bit
+   order generated into `src/tables/generated/typeofis-<id>.ts`; pins whose
+   commit predates the opcode still have no table and still refuse, so the mask
+   is decoded rather than guessed. `55-typeof-is-masks` exercises masks 1, 4, 8,
+   16, 32, 64, 128, 258, 383, 503 and 507 against the Hermes VM. The new blocker
+   for Discord/Shopify is the object-shape one above.
 2. **Spec 05 §7.5's loud fallback is a diagnostic, not an error.** A `CreateThis`
    or `SelectObject` outside a recognised triple is lowered directly (they *do*
    have exact JS forms: `Object.create(proto)` and
@@ -741,7 +794,11 @@ change that unblocks two 30–50 MB production bundles.**
    always close. Totality on 4200-function inputs was judged worth more than the
    loud stop; the diagnostic keeps it visible.
 3. **Spec 05 §7.3's four-helper list** is D18's larger set.
-4. **`docs/HBC-FORMAT.md` §6.3's ByteString row is wrong for v≥97.** Tag 6 carries
+4. ~~**`docs/HBC-FORMAT.md` §6.3's ByteString row is wrong for v≥97.**~~ — the doc
+   is **corrected** (tag 6 = `UndefinedTag`, no payload, at v≥97), and
+   `src/parse/buffers.ts` now takes an optional `version` so it can read either
+   era (`tests/gate/parse/literals.test.ts`). The original finding, for the
+   record: Tag 6 carries
    no payload there and marks `undefined` (§6.3's "undefined has no tag" case);
    short string ids go through ShortString. Measured: 0 of 162 v≥97 key buffers use
    tag 6, all 51 legacy ones do, and reading it with a payload decodes
