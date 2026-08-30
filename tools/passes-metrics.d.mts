@@ -65,3 +65,29 @@ export interface CallShapeBundleResult {
 }
 
 export function measureCallShapeBundle(bundlePath: string): CallShapeBundleResult;
+
+// docs/specs/passes/05-fn-naming.md §7's corpus metric.
+export interface FnNamingPerFixtureMetric {
+  readonly fixture: string;
+  readonly version: number;
+  readonly functions: number;
+  readonly named: number;
+}
+
+export interface FnNamingMetricsResult {
+  readonly functionCount: number;
+  readonly namedPct: number;
+  readonly namedPctBefore: number;
+  readonly perFixture: readonly FnNamingPerFixtureMetric[];
+}
+
+export function measureFnNaming(versions?: readonly number[]): FnNamingMetricsResult;
+
+export interface FnNamingBundleResult {
+  readonly functionCount: number;
+  readonly namedPct: number;
+  readonly namedPctBefore: number;
+  readonly survivingFnTokens: number;
+}
+
+export function measureFnNamingBundle(bundlePath: string): FnNamingBundleResult;

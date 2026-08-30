@@ -15,7 +15,15 @@ import type { CheckResult, OracleName, Verdict } from "./ladder.ts";
 import { hbcVersion } from "./hermes-vm.ts";
 import { decompile } from "../decompile.ts";
 
-export type Tier = "gate" | "sweep" | "hardened" | "local-corpus";
+/**
+ * `"adversarial"` (D22a) is a distinct tier value from `"sweep"` (bundles):
+ * it lives under `tests/sweep/adversarial/*.test.ts` — picked up by
+ * `npm run test:sweep`'s glob, never by `npm test`'s `tests/gate/**` glob —
+ * and is reported-but-non-gating (docs/BUGS.md tracks real findings; a
+ * DIVERGENT/ERROR verdict here is never a test failure, see that test
+ * file's own comment).
+ */
+export type Tier = "gate" | "sweep" | "hardened" | "local-corpus" | "adversarial";
 
 /** Mirrors `tests/support/tiers.ts`'s `timeScale()` exactly (env var, default,
  *  and non-positive/unparsable fallback all match): `src/` must not import
@@ -88,7 +96,7 @@ interface TierInput {
    *  reference-policy.ts's known-divergence table is keyed on. Equal to
    *  `fixtureName` for every group except `constructs`' variant discovery. */
   readonly baseName: string;
-  readonly group: "constructs" | "hermes-dec-sample" | "bundles" | "local-corpus";
+  readonly group: "constructs" | "hermes-dec-sample" | "bundles" | "local-corpus" | "adversarial";
   readonly dir: string;
   readonly sourcePath: string | null;
   readonly version: number;
@@ -197,6 +205,50 @@ function discoverHermesDecSample(): TierInput[] {
   return out;
 }
 
+/** `adversarial/<NN-name>/` (D22a): one hand-written `source.js` per fixture,
+ *  compiled at whichever of v94/v96/v99 actually exist for it (the class
+ *  fixtures 21-24 are v99-only, per that README's "Compilation note").
+ *
+ *  Deliberately does **not** consult `versions.txt` the way
+ *  `discoverConstructInputs` does: two adversarial fixtures
+ *  (02-proxy-trap-counting, 06-closure-loop-var-vs-let) carry a stale
+ *  `versions.txt` claiming every version "FAILS" even though their
+ *  v94/v96/v99 `.hbc` files are present and run fine (docs/BUGS.md has the
+ *  note) — trusting that text would silently drop exactly the fixtures this
+ *  tier exists to report on. A `.hbc` file's own presence is ground truth
+ *  for "did this version compile"; `versions.txt` is not consulted here at
+ *  all. */
+function discoverAdversarialInputs(): TierInput[] {
+  const out: TierInput[] = [];
+  const advDir = join(fixturesRoot(), "adversarial");
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(advDir);
+  } catch {
+    return out;
+  }
+  for (const name of entries.sort()) {
+    const dir = join(advDir, name);
+    if (!statSync(dir).isDirectory()) continue; // skips README.md
+    const sourcePath = join(dir, "source.js");
+    try {
+      statSync(sourcePath);
+    } catch {
+      continue;
+    }
+    for (const version of FIXTURE_VERSIONS) {
+      const hbcPath = join(dir, `v${version}.hbc`);
+      try {
+        statSync(hbcPath);
+      } catch {
+        continue; // this version wasn't compiled for this fixture
+      }
+      out.push({ fixtureName: name, baseName: name, group: "adversarial", dir, sourcePath, version, hbcPath, embeddedFilename: "source.js" });
+    }
+  }
+  return out;
+}
+
 function discoverBundles(): TierInput[] {
   const bundlesDir = join(fixturesRoot(), "bundles");
   const out: TierInput[] = [];
@@ -264,6 +316,7 @@ function inputsForTier(tier: Tier): TierInput[] {
   if (tier === "gate") return [...discoverConstructInputs(""), ...discoverConstructInputs(".min"), ...discoverHermesDecSample()];
   if (tier === "hardened") return discoverConstructInputs(".obf");
   if (tier === "sweep") return discoverBundles();
+  if (tier === "adversarial") return discoverAdversarialInputs();
   return discoverLocalCorpus();
 }
 
@@ -280,6 +333,10 @@ function inputsForTier(tier: Tier): TierInput[] {
 function defaultOraclesForTier(tier: Tier, identity: boolean): readonly OracleName[] {
   if (tier === "gate") return identity ? ["syntax", "trace", "fuzz", "roundtrip"] : ["syntax", "trace"];
   if (tier === "hardened") return ["syntax", "trace"];
+  // D22a: adversarial fixtures carry a hand-written source.js, same shape as
+  // hardened's obfuscated constructs — syntax + trace (D14/D15's Hermes VM
+  // cross-check included, via chooseReference), no fuzz/roundtrip.
+  if (tier === "adversarial") return ["syntax", "trace"];
   return ["syntax", "roundtrip"]; // sweep, local-corpus: no source to trace against
 }
 

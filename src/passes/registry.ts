@@ -4,6 +4,7 @@
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { callShape } from "./call-shape/index.ts";
 import { exprRebuild } from "./expr-rebuild/index.ts";
+import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
 import { globalAccess } from "./global-access/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
@@ -17,8 +18,11 @@ import type { Pass, Stage } from "./types.ts";
  *  consumer to locate it at all, and must land before `call-shape`
  *  (docs/specs/passes/04-call-shape.md §7: `call-shape`'s own `after`
  *  declares both dependencies explicitly, so no `before` needed on
- *  `global-access`'s side). */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass];
+ *  `global-access`'s side). `fn-naming` (docs/specs/passes/05-fn-naming.md
+ *  §7) runs last: `after: ["expr-rebuild", "global-access"]` only — it needs
+ *  no explicit ordering against `call-shape` (neither reads or writes a
+ *  shape the other depends on), so it is simply appended. */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];

@@ -21,6 +21,13 @@ import type { AbandonedRecord, AppliedRecord, CheckResult, Pass, PassContext } f
 // file) is. Without this re-export no stage-B rung could be typed at all.
 export type { Expr, Stmt } from "../emit/ast.ts";
 
+// docs/specs/passes/05-fn-naming.md §6 obligation 3 ("printing `before`, and
+// printing `after` with the rename undone, is byte-identical — implement
+// literally: `printProgram(before) === printProgram(renameIdent(after, to,
+// from))`") needs `printProgram` itself, same D12a gap as the type re-export
+// above: `../../emit/print.ts` is not on the allowlist, only this file is.
+export { printProgram } from "../emit/print.ts";
+
 // ---------------------------------------------------------------------------
 // Visitor / rebuilding maps over Stmt / Expr.
 // ---------------------------------------------------------------------------

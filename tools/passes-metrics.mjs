@@ -424,12 +424,90 @@ export function measureCallShapeBundle(bundlePath) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// docs/specs/passes/05-fn-naming.md §7's corpus metric: the share of
+// non-global emitted functions whose declaration is no longer `_fnN`, with
+// `fn-naming` off vs on, at v94 only (spec §7's own scope — unlike the other
+// three rungs' all-five-versions metric).
+// ---------------------------------------------------------------------------
+
+// A rename is only visible in the *parent* body that declares the `func`
+// statement (fn-naming's site is the declaring list, not the child's own
+// top-level `fn` node the `astPassHook` tap in the other `measure*` helpers
+// above hands back) — the child's own hook invocation never touches its own
+// name. Scanning the fully-assembled emitted text for `function _fnN(`
+// declarations sidesteps that entirely: skipping `fn-naming` leaves *every*
+// function (global included) `_fnN`-shaped, so the "before" text's count of
+// distinct `_fnN(` declarations is the module's total function count, and
+// every one no longer present in the "after" text's own count was renamed —
+// the one exception (the global function, never renamed either way) is
+// exactly the `-1` in `nonGlobalTotal` below.
+const FN_DECL_RE = /\bfunction (_fn\d+)\(/g;
+
+function fnDecls(code) {
+  return new Set([...code.matchAll(FN_DECL_RE)].map((m) => m[1]));
+}
+
+export function measureFnNaming(versions = [94]) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  let nonGlobalTotal = 0;
+  let namedAfter = 0;
+  const perFixture = [];
+  for (const dir of dirs) {
+    for (const version of versions) {
+      const file = join(CORPUS_DIR, dir, `v${version}.hbc`);
+      if (!existsSync(file)) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      const before = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true, passes: { skip: ["fn-naming"] } }).code;
+      const after = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true }).code;
+      const beforeDecls = fnDecls(before);
+      const afterDecls = fnDecls(after);
+      const total = beforeDecls.size;
+      if (total === 0) continue; // no functions at all in this fixture/version
+      const renamed = total - afterDecls.size; // every declaration that disappeared from the _fnN count
+      const fixtureNonGlobal = total - 1; // exactly one global function per module, never renamed
+      nonGlobalTotal += fixtureNonGlobal;
+      namedAfter += renamed;
+      perFixture.push({ fixture: dir, version, functions: fixtureNonGlobal, named: renamed });
+    }
+  }
+  return {
+    functionCount: nonGlobalTotal,
+    namedPct: nonGlobalTotal === 0 ? 0 : (namedAfter / nonGlobalTotal) * 100,
+    namedPctBefore: 0, // skipping fn-naming leaves every function _fnN-shaped, by construction
+    perFixture,
+  };
+}
+
+/** Spec §7's other half: the count of surviving `_fn` tokens on the RN
+ *  template bundle — a single, large `.hbc` file, kept as a standalone entry
+ *  point (mirrors `measureCallShapeBundle`) rather than folded into the
+ *  per-fixture loop above. Reported in `docs/STATUS.md`, not gated (the
+ *  bundle is too large for the gate's time budget, same convention as
+ *  `measureCallShapeBundle`). */
+export function measureFnNamingBundle(bundlePath) {
+  const bytes = new Uint8Array(readFileSync(bundlePath));
+  const before = decompile(bytes, { moduleName: "bundle", resolveV98Ambiguity: true, passes: { skip: ["fn-naming"] } }).code;
+  const after = decompile(bytes, { moduleName: "bundle", resolveV98Ambiguity: true }).code;
+  const total = fnDecls(before).size;
+  const survivingFnTokens = fnDecls(after).size;
+  const namedAfter = total - survivingFnTokens;
+  const nonGlobalTotal = total === 0 ? 0 : total - 1;
+  return {
+    functionCount: nonGlobalTotal,
+    namedPct: nonGlobalTotal === 0 ? 0 : (namedAfter / nonGlobalTotal) * 100,
+    namedPctBefore: 0,
+    survivingFnTokens: survivingFnTokens - (total === 0 ? 0 : 1), // exclude the never-renamed global function itself
+  };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = measure();
   const ga = measureGlobalAccess();
   const cs = measureCallShape();
+  const fn = measureFnNaming();
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify({ exprRebuild: result, globalAccess: ga, callShape: cs }, null, 2));
+    console.log(JSON.stringify({ exprRebuild: result, globalAccess: ga, callShape: cs, fnNaming: fn }, null, 2));
   } else {
     console.log(`fixtures: ${result.fixtureCount}`);
     console.log(`register occurrences: ${result.registerOccurrences.before} -> ${result.registerOccurrences.after} (${result.registerOccurrences.reductionPct.toFixed(1)}% reduction)`);
@@ -437,5 +515,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`global-access: ${ga.cleanFunctionPctBefore.toFixed(1)}% -> ${ga.cleanFunctionPct.toFixed(1)}% of ${ga.functionCount} functions free of an "in" guard`);
     console.log(`globalThis. occurrences: ${ga.globalThisOccurrences.before} -> ${ga.globalThisOccurrences.after} (${ga.globalThisOccurrences.reductionPct.toFixed(1)}% reduction)`);
     console.log(`call-shape: ${cs.cleanFunctionPctBefore.toFixed(1)}% -> ${cs.cleanFunctionPct.toFixed(1)}% of ${cs.functionCount} functions free of Reflect.apply/Reflect.construct`);
+    console.log(`fn-naming: ${fn.namedPctBefore.toFixed(1)}% -> ${fn.namedPct.toFixed(1)}% of ${fn.functionCount} non-global functions named (v94)`);
   }
 }
