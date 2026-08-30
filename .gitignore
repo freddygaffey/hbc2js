@@ -7,3 +7,8 @@ tools/hermes-vm/
 tests/fixtures/local-corpus/*/
 !tests/fixtures/local-corpus/README.md
 !tests/fixtures/local-corpus/MANIFEST.json
+tests/fixtures/bundles/react-navigation-example-0.85.3/index.android.bundle
+tests/fixtures/bundles/react-navigation-example-0.85.3/*.hbc
+tests/fixtures/bundles/expensify-*/index.android.bundle
+tests/fixtures/bundles/expensify-*/*.hbc
+.claude/
