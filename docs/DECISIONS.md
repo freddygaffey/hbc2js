@@ -113,3 +113,6 @@ and cannot be reproduced without one) and `__hbc_delegated` (`CallBuiltin
 generatorSetDelegated` names no generator — it always means "the one currently
 stepping").
 
+
+## D16a — On-device round-trip tier (C6) (2026-08-30)
+For apps whose source and build we control (RN template, react-navigation example), the ultimate test: decompile → recompile with `hermesc` → repackage the APK → install on an attached Android device via adb → launch → compare screenshots and logcat with the original build. Runs as a sweep-tier test when a device is present, INCONCLUSIVE otherwise. Never applied to proprietary APKs.
