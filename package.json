@@ -1,0 +1,28 @@
+{
+  "name": "hbc2js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hermes bytecode (HBC) -> runnable JavaScript decompiler",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "bin": { "hbc2js": "./dist/cli.js" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"tests/gate/**/*.test.ts\"",
+    "test:gate": "node --test \"tests/gate/**/*.test.ts\"",
+    "test:sweep": "HBC2JS_TIER=sweep node --test \"tests/sweep/**/*.test.ts\"",
+    "test:all": "HBC2JS_TIER=all node --test \"tests/gate/**/*.test.ts\" \"tests/sweep/**/*.test.ts\"",
+    "gen:tables": "node tools/gen-tables/gen.ts",
+    "gen:tables:check": "node tools/gen-tables/gen.ts --check",
+    "fixtures": "tests/fixtures/build.sh",
+    "cli": "node src/cli.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "@types/node": "^22.15.0"
+  }
+}
