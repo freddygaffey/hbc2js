@@ -59,10 +59,10 @@ which prints it directly as "HBC bytecode version").
 | 85 | `react-native@0.69.6` (`sdks/hermesc/`) | RN 0.69 | react-native itself started bundling hermesc here |
 | 89 | `react-native@0.70.15` | RN 0.70 | |
 | 90 | `react-native@0.71.19` | RN 0.71 | |
-| **94** | **`react-native@0.72.17`** (`sdks/hermesc/`) | RN 0.72 | **Used by `tools/get-hermesc.sh 94`. Byte-identical to `tests/fixtures/v94.hbc`** — see verification below. |
+| **94** | **`react-native@0.72.17`** (`sdks/hermesc/`) | RN 0.72 | **Used by `tools/get-hermesc.sh 94`. Byte-identical to `tests/fixtures/hermes-dec-sample/v94.hbc`** — see verification below. |
 | 96 | `react-native@0.73.11` through `0.81.6`, and `hermes-compiler@0.14.0`–`0.17.0` | RN 0.73–0.81 | Bytecode version 96 spans several years and both distribution mechanisms — the RN→hermes-compiler split (RN 0.83) happened without a version bump. |
 | 98 | `hermes-compiler@250829098.0.x` (`latest` dist-tag) | RN 0.86–0.87 (current `latest`) | |
-| **99** | **`hermes-compiler@260318099.0.0` / `.1`** (`latest-v1` dist-tag) | RN "1000.x" line | **Used by `tools/get-hermesc.sh 99`. Same bytecode *format* version as `tests/fixtures/v99.hbc` but NOT byte-identical** — see below. |
+| **99** | **`hermes-compiler@260318099.0.0` / `.1`** (`latest-v1` dist-tag) | RN "1000.x" line | **Used by `tools/get-hermesc.sh 99`. Same bytecode *format* version as `tests/fixtures/hermes-dec-sample/v99.hbc` but NOT byte-identical** — see below. |
 
 `hermes-compiler`'s version numbers past `0.17.0` look like `YYMMDD+build.MAJOR.MINOR`
 (e.g. `260318099` ≈ 2026-03-18, sequence 099) rather than semver-for-humans;
@@ -92,7 +92,7 @@ Requires: `npm`, `tar`, `bash`. No global installs.
 
 ## Verification: byte-identical recompilation
 
-`tests/fixtures/v94.js` and `tests/fixtures/v99.js` are the *same source* (diff
+`tests/fixtures/hermes-dec-sample/source.js` is the single source for all versions (the original v94.js/v99.js were identical; diff
 is empty) compiled twice under different Hermes versions. The debug info
 records the compiled file's name, so it must be invoked as `sample.js` in the
 current directory to match (the original fixture author evidently ran
@@ -100,22 +100,22 @@ current directory to match (the original fixture author evidently ran
 string table even without any `-g` flag).
 
 ```sh
-cp tests/fixtures/v94.js /tmp/sample.js
+cp tests/fixtures/hermes-dec-sample/source.js /tmp/sample.js
 cd /tmp
 /path/to/tools/hermesc/v94/hermesc -emit-binary -out=v94_out.hbc sample.js
-cmp v94_out.hbc /path/to/tests/fixtures/v94.hbc
+cmp v94_out.hbc /path/to/tests/fixtures/hermes-dec-sample/v94.hbc
 # → no output, exit 0: BYTE-IDENTICAL
 ```
 
 **v94: byte-identical.** `react-native@0.72.17`'s bundled `hermesc`, invoked
-with no flags beyond `-emit-binary -out=...`, reproduces `tests/fixtures/v94.hbc`
+with no flags beyond `-emit-binary -out=...`, reproduces `tests/fixtures/hermes-dec-sample/v94.hbc`
 exactly.
 
 ```sh
-cp tests/fixtures/v99.js /tmp/sample.js
+cp tests/fixtures/hermes-dec-sample/source.js /tmp/sample.js
 cd /tmp
 /path/to/tools/hermesc/v99/hermesc -emit-binary -out=v99_out.hbc sample.js
-cmp v99_out.hbc /path/to/tests/fixtures/v99.hbc
+cmp v99_out.hbc /path/to/tests/fixtures/hermes-dec-sample/v99.hbc
 # → differs (2981 bytes vs. 2999 bytes)
 ```
 
@@ -143,7 +143,7 @@ different Hermes commits over time can all emit format-version-99 bytecode
 while differing in instruction selection and builtin ordering.
 `hermes-compiler@260318099.0.x` is the closest and only publicly-obtainable
 match (correct format version, semantically equivalent output); reproducing
-`tests/fixtures/v99.hbc` byte-for-byte would require the exact internal Hermes
+`tests/fixtures/hermes-dec-sample/v99.hbc` byte-for-byte would require the exact internal Hermes
 commit that produced it, which is not published to npm as of this writing.
 This is why `docs/DECISIONS.md` D3 normalizes register/label names for
 structural diffing rather than relying on byte equality for real-world
@@ -159,7 +159,7 @@ construction — always use the *same-version* `hermesc` as the file's HBC
 version):
 
 ```sh
-tools/hermesc/v94/hermesc -dump-bytecode tests/fixtures/v94.hbc   # from source, if you still have it
+tools/hermesc/v94/hermesc -dump-bytecode tests/fixtures/hermes-dec-sample/v94.hbc   # from source, if you still have it
 # or, given only a .js file:
 tools/hermesc/v94/hermesc -dump-bytecode input.js
 ```
@@ -190,9 +190,9 @@ installed in this environment at version 0.1.7). Per `CLAUDE.md`, this is a
 **behaviour oracle only** — read its output, never its source:
 
 ```sh
-hbc-disassembler tests/fixtures/v94.hbc out.disasm
-hbc-decompiler tests/fixtures/v94.hbc out.decompiled.js   # pseudo-code, not valid JS (see SPEC.md)
-hbc-file-parser tests/fixtures/v94.hbc                     # header/section dump
+hbc-disassembler tests/fixtures/hermes-dec-sample/v94.hbc out.disasm
+hbc-decompiler tests/fixtures/hermes-dec-sample/v94.hbc out.decompiled.js   # pseudo-code, not valid JS (see SPEC.md)
+hbc-file-parser tests/fixtures/hermes-dec-sample/v94.hbc                     # header/section dump
 ```
 
 Confirmed working entry points from the `hermes-dec` 0.1.7 install:
