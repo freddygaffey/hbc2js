@@ -1,0 +1,6 @@
+# Pinned oracle-only dependency (D4: AGPL, used as an external CLI tool via
+# subprocess — never imported into src/ — see docs/DECISIONS.md D4 and the
+# licence-guard job in .github/workflows/ci.yml). Shared by every CI job that
+# needs `hbc-disassembler` / `hbc-file-parser` on PATH, so both jobs stay in
+# sync and actions/setup-python's pip cache has one dependency file to key on.
+hermes-dec==0.1.7
