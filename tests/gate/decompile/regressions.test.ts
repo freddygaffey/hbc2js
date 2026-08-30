@@ -4,7 +4,8 @@
 // only as "some fixture broke"; these say which invariant was lost.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { parseM4 } from "../../support/m4.ts";
@@ -12,6 +13,9 @@ import { analyseModule } from "../../../src/cfg/index.ts";
 import { augment, structure } from "../../../src/structure/index.ts";
 import { emitModule } from "../../../src/emit/index.ts";
 import { decompile } from "../../../src/decompile.ts";
+import { runProgram } from "../../../src/harness/runner.ts";
+import { findHermesVm, runHermes } from "../../../src/harness/hermes-vm.ts";
+import { printLines } from "../../../src/harness/trace.ts";
 
 function path(name: string, version: number): string {
   return join(repoRoot(), "tests", "fixtures", "constructs", name, `v${version}.hbc`);
@@ -201,3 +205,45 @@ test("emitModule reports the helpers it used and no others", () => {
   const r = emitModule(analyseModule(module, { strictEnv: true }), { provenanceComments: false });
   assert.deepEqual([...r.helpersUsed].sort(), ["__hbc_iterBegin", "__hbc_iterClose", "__hbc_iterNext"]);
 });
+
+// docs/BUGS.md "02-proxy-trap-counting" / docs/DECISIONS.md D14: an `in`
+// expression invokes a Proxy's `has` trap, an observable side effect, even
+// when its boolean result is discarded (`const hasX = 'x' in proxy;` with
+// `hasX` unused). `expr-rebuild`'s R1b dead-store rule used to ask
+// `isPure(value)` whether it could delete the whole statement outright
+// instead of keeping it as a bare expression statement for its effect, and
+// `isPure` treated every `bin`/`unary` node as pure regardless of operator —
+// so at v94/v96 (where the store landed on a register never read again) the
+// `in` vanished entirely and the VM's has-trap invocation went unobserved.
+// v99's bytecode shape happened to read the register back, so it never hit
+// the same rule and was never affected. Cross-checked directly against the
+// Hermes VM (D14 ground truth), not just Node, at every version a VM exists
+// for.
+for (const version of [94, 96, 99] as const) {
+  test(`adversarial/02-proxy-trap-counting v${version}: an unused 'in' still invokes the Proxy has-trap (matches the Hermes VM)`, async (t) => {
+    const vm = findHermesVm(version);
+    if (vm === null) {
+      t.skip(`no Hermes VM for v${version} (see docs/TOOLCHAIN.md "Hermes VM (source build)")`);
+      return;
+    }
+
+    const hbcPath = join(repoRoot(), "tests", "fixtures", "adversarial", "02-proxy-trap-counting", `v${version}.hbc`);
+    const hbcBytes = new Uint8Array(readFileSync(hbcPath));
+    const src = decompile(hbcBytes, { resolveV98Ambiguity: true, moduleName: "02-proxy-trap-counting" }).code;
+
+    const dir = mkdtempSync(join(tmpdir(), "hbc2js-proxy-trap-"));
+    try {
+      const candidatePath = join(dir, "candidate.js");
+      writeFileSync(candidatePath, src);
+
+      const reference = runHermes(vm.path, hbcPath, { timeout: 10000, bytecode: true });
+      assert.ok(reference.ok, `Hermes VM run failed at v${version}: ${reference.raw}`);
+      assert.deepEqual(reference.lines, ["read value: 10", "get traps: 1", "has traps: 1", "set traps: 1"], `the VM itself didn't report has-traps: 1 at v${version} — the fixture, not the decompiler, would be wrong`);
+
+      const candidate = await runProgram(candidatePath, { timeout: 10000 });
+      assert.deepEqual(printLines(candidate.records), reference.lines, `decompiled v${version} output diverges from the Hermes VM — the 'in' statement (and its has-trap side effect) was dropped as dead code:\n${src}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

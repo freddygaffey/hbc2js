@@ -760,7 +760,20 @@ export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
 /** Literals, idents, `this`, and unary/binary/logical/cond built entirely
  *  from pure operands. Deliberately **not** `member` (getters), `call`,
  *  `new`, or `assign` — those may have side effects a caller must not fold
- *  away or reorder. */
+ *  away or reorder.
+ *
+ *  Also deliberately **not** pure regardless of operand purity: `in`
+ *  (invokes a Proxy's `has` trap on its right operand — D14/§8, the
+ *  02-proxy-trap-counting fixture) and `instanceof` (reads `.prototype` off
+ *  its right operand, itself a `member` get that can be a Proxy `get` trap,
+ *  and may delegate to a user `Symbol.hasInstance`), and unary `delete `
+ *  (invokes a Proxy's `deleteProperty` trap). Every one of these can run
+ *  arbitrary user code as an observable side effect even though the
+ *  expression *looks* like a plain operator to the caller, so a caller must
+ *  never fold, reorder past, or drop one just because its result goes
+ *  unused — see `expr-rebuild/rewrite.ts`'s R1b dead-store rule, which uses
+ *  `isPure` to decide whether it may delete a dead store outright instead of
+ *  keeping it as a bare expression statement for its effect. */
 export function isPure(e: Expr): boolean {
   switch (e.k) {
     case "lit":
@@ -768,8 +781,9 @@ export function isPure(e: Expr): boolean {
     case "this":
       return true;
     case "unary":
-      return isPure(e.arg);
+      return e.op !== "delete " && isPure(e.arg);
     case "bin":
+      return e.op !== "in" && e.op !== "instanceof" && isPure(e.left) && isPure(e.right);
     case "logical":
       return isPure(e.left) && isPure(e.right);
     case "cond":
