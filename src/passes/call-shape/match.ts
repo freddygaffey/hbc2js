@@ -19,7 +19,7 @@ import type { Match, PassContext } from "../types.ts";
 
 export type CallShapeRule = "R3a" | "R3b" | "R3c" | "R3d";
 
-export type RefuseReason = "dynamic-args" | "impure-callee" | "unproven-this" | "member-callee-with-undefined-this" | "explicit-new-target" | "helper-arity" | "not-a-call-shape-site";
+export type RefuseReason = "dynamic-args" | "impure-callee" | "unproven-this" | "member-callee-with-undefined-this" | "explicit-new-target" | "duplicated-construct-callee" | "helper-arity" | "not-a-call-shape-site";
 
 export interface CallShapeSite {
   readonly rule: CallShapeRule;
@@ -178,7 +178,19 @@ function classifyReflectConstruct(node: Expr & { readonly k: "call" }): Classify
   const args = extractArgsArray(arr);
   if (args === null) return { ok: false, reason: "dynamic-args" };
   if (!isSimpleCalleeChain(C)) return { ok: false, reason: "impure-callee" };
-  if (NT !== undefined && JSON.stringify(NT) !== JSON.stringify(C)) return { ok: false, reason: "explicit-new-target" };
+  if (NT !== undefined) {
+    if (JSON.stringify(NT) !== JSON.stringify(C)) return { ok: false, reason: "explicit-new-target" };
+    // Same syntactic new-target as the callee: `new C(args)` evaluates `C`
+    // ONCE, but `Reflect.construct(C, args, C)` evaluates it TWICE (once as
+    // target, once as new-target). Free only when `C` is an identifier/
+    // register — re-reading an identifier is side-effect-free. A member
+    // callee (`a.b`) is NOT free to re-evaluate: a getter or Proxy trap on
+    // `b` would fire once instead of twice, an observable behaviour change
+    // the recompute-and-compare `check` cannot see (it re-derives the same
+    // verdict from the same rule, so it agrees with a bug in the rule
+    // itself). See docs/reviews/M5-pass-4.md H1.
+    if (C.k !== "ident") return { ok: false, reason: "duplicated-construct-callee" };
+  }
   return { ok: true, rule: "R3c", replacement: { k: "new", callee: C, args } };
 }
 

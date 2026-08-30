@@ -140,6 +140,30 @@ test("R3c: construct with a new-target syntactically identical to the callee is 
   assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
+test("duplicated-construct-callee: a member callee syntactically identical to the new-target is refused, not folded (H1 regression)", () => {
+  // Reflect.construct(a.b, [x], a.b): the baseline evaluates the member
+  // `a.b` TWICE (once as callee, once as new-target). `new a.b(x)` would
+  // evaluate it only ONCE — a getter/Proxy on `b` fires a different number
+  // of times. Unlike the identifier case (a register/ident is free to
+  // re-evaluate), this must refuse per-site, not fold. docs/reviews/M5-pass-4.md H1.
+  const memberCallee = member(id("a"), "b");
+  const node = reflectConstruct(memberCallee, [id("x")], member(id("a"), "b"));
+  assert.deepEqual(classifyNode(node, []), { ok: false, reason: "duplicated-construct-callee" });
+  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), node))];
+  assert.equal(match(before, ctxFor(before)), null);
+});
+
+test("R3c: a plain identifier callee with an identical-identifier 3-arg new-target still folds", () => {
+  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), reflectConstruct(id("C"), [id("x")], id("C"))))];
+  const ctx = ctxFor(before);
+  const m = match(before, ctx);
+  assert.ok(m !== null);
+  assert.equal(m.data.rule, "R3c");
+  const after = rewrite(m);
+  assert.deepEqual(after, [exprStmt(assignExpr(id("r1"), { k: "new", callee: id("C"), args: [id("x")] }))]);
+  assert.deepEqual(check(before, after, ctx), { ok: true });
+});
+
 test("R3c: zero-argument construct still prints its parens (emitter's job, not this rung's — checked structurally here)", () => {
   const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), reflectConstruct(id("C"), [])))];
   const ctx = ctxFor(before);

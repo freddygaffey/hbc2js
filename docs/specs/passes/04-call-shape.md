@@ -77,7 +77,14 @@ identifier is what makes evaluating `O` twice free.
 **R3c — construct.** `Reflect.construct(C, [a…])` → `new C(a…)`. With a third
 argument `NT`, rewrite only when `NT` is syntactically identical to `C`
 (`new.target === C`, i.e. an ordinary `new`); otherwise refuse
-(`explicit-new-target`).
+(`explicit-new-target`). In that 3-argument form the baseline evaluates `C`
+*twice* (once as the target, once as the new-target) while `new C(a…)`
+evaluates it *once*, so the fold is additionally sound only when `C` is an
+`ident` (a register/identifier is free to re-evaluate); a member `C`
+(`a.b`) could carry a getter/Proxy that would fire once instead of twice —
+refuse (`duplicated-construct-callee`). This case is not reachable from the
+current emitter (`docs/reviews/M5-pass-4.md` H1) but the guard is load-bearing
+against future emitter changes.
 
 **R3d — `Function.prototype` helpers.**
 `__hbc_b_functionPrototypeCall(F, T, a…)` → `F.call(T, a…)`;
@@ -106,7 +113,8 @@ asserts that plus what `rewrite` assumed:
 4. R3a: `T` is the literal `undefined`, or its register still has exactly one
    `undefined` write in `before` and `nested === 0`;
 5. R3b: `O` and `R` are the same identifier name in `before`;
-6. R3c: no third argument, or the third is syntactically identical to `C`;
+6. R3c: no third argument, or the third is syntactically identical to `C` and
+   `C` is an `ident` (recomputed via `classifyNode`, same as `match`);
 7. `parses` is run once per function by the driver (`01` F1).
 
 ## 7. Ordering, refusals, semantics, metrics
@@ -117,8 +125,9 @@ spread call arguments and optional calls are shapes *of a call*, not of
 `Reflect.apply`.
 
 **Refuse (per-site):** `dynamic-args`, `impure-callee`, `unproven-this`,
-`member-callee-with-undefined-this`, `explicit-new-target`, `helper-arity`,
-`reflect-get-set` (never matched at all).
+`member-callee-with-undefined-this`, `explicit-new-target`,
+`duplicated-construct-callee`, `helper-arity`, `reflect-get-set` (never
+matched at all).
 
 **D14 / semantics.**
 * `Reflect.apply` throws `TypeError: Function.prototype.apply was called on
