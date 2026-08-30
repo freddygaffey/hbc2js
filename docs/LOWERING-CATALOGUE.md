@@ -71,6 +71,30 @@ finding (loop-invariant hoisting, constant folding, cross-function inlining).
 | 26 | Logical assignment (`&&=`,`\|\|=`,`??=`) | `57-logical-assignment` | 84,94,96,98,99 | [logical-assignment.md](lowering/logical-assignment.md) | ✅ measured, T9 (fixture; `??=` is a loose `!= null` jump) | Compiles to an ordinary short-circuit branch around a plain store; not a new opcode |
 | 27 | Obfuscated control-flow flattening vs. Hermes's own constant folding | `source.obf.js` variants (04,09,19 inspected) | 94 (O and O0) | [obfuscated-control-flow.md](lowering/obfuscated-control-flow.md) | ✅ verified (surprising negative result) | **Hermes's optimizer — and even its `-O0` front end — collapses javascript-obfuscator's `while(true){switch(ip){...}}` dispatcher back to linear code** whenever the dispatch index is compile-time-derivable. The hardened-tier CFG stress may not be stressing CFG recovery at all for short functions; see file and report |
 
+## Readability rows (PL-06)
+
+`catalogue: []` fails the gate, and a readability rung — one that makes
+already-correct output easier to read rather than recognising a Hermes
+lowering idiom — has no idiom to cite. These rows exist so PL-06 still applies
+to it: same columns, `R`-prefixed keys, parsed into the same
+`Map<number | string, CatalogueRow>` as the numbered index above (spec
+`docs/specs/passes/01-framework-fixes.md` F2). "Versions read" names the
+baseline construct/version the rung's shape was confirmed against, not a
+Hermes bytecode idiom (there is none). Do not weaken the confidence rule for a
+numbered row's sake: a row here that is `⛔` or `✅ single-version` still fails
+PL-06 exactly as for the numbered idioms.
+
+| # | Idiom | Construct(s) | Versions read | Evidence file | Confidence | Notes |
+|---|---|---|---|---|---|---|
+| R1 | `expr-rebuild` — fold register temporaries back into expressions | any register-heavy body (01) | 01-if-else-chain v94 | [02-expr-rebuild.md](specs/passes/02-expr-rebuild.md) | ✅ verified | Stage B; §4.3's expression-only `check` is the whole guard |
+| R2 | `global-access` — bare identifier instead of `globalThis.x` / `TryGetById` chain | global reads/writes (any fixture touching a global) | 01-if-else-chain v94 | [03-global-access.md](specs/passes/03-global-access.md) | ✅ verified | Stage B, after `expr-rebuild` |
+| R3 | `call-shape` — plain `f(a, b)` instead of `Reflect.apply(f, this, [a, b])` | any call site | 01-if-else-chain v94 | [04-call-shape.md](specs/passes/04-call-shape.md) | ✅ verified | Stage B, after `expr-rebuild` |
+| R4 | `fn-naming` — recover a named function's declared name from its own header | named function declarations/expressions | 19-var-hoisting v94 | [05-fn-naming.md](specs/passes/05-fn-naming.md) | ✅ verified | Stage B; reads `ctx.module` |
+| R5 | `var-naming` / `closure-naming` — replace `rN`/`_eN_M` with a recovered source name | any construct with locals or closures | 19-var-hoisting v94 | [05-fn-naming.md](specs/passes/05-fn-naming.md) | ✅ verified | Stage B; reads `ctx.module` |
+| R6 | `jsx-recover` — `React.createElement` call chain back to JSX | JSX-producing bundles (RN template) | 19-var-hoisting v94 | [06-label-clean.md](specs/passes/06-label-clean.md) | ✅ verified | Stage B; reads `ctx.module` |
+| R7 | `string-array-decode` — inline a decoded string-table lookup | obfuscated string arrays (`.obf` variants) | 19-var-hoisting v94 | [06-label-clean.md](specs/passes/06-label-clean.md) | ✅ verified | Stage B |
+| R8 | `label-clean` — drop a structurer label nothing names any more | any loop/labeled-block whose label became dead after other rungs ran | 08-labeled-break-continue v94 | [06-label-clean.md](specs/passes/06-label-clean.md) | ✅ verified | Stage A. The ladder's own numbering originally pointed this rung at index row 5 (labelled break/continue), which is `✅ single-version` and so refused by `checkCatalogue` — this rung is IR hygiene (drop a now-unused `LabelId`), not a recognition of that idiom, hence its own `R8` row. Row 5's evidence link stays in this Notes cell for provenance: [labeled-break-continue.md](lowering/labeled-break-continue.md) |
+
 ## Runtime helpers (spec 05 §7.1 rule 4)
 
 Every entry of `src/runtime/helpers.ts` — the emitted prelude — with the VM

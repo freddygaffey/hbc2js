@@ -7,26 +7,34 @@
 import type { Pass } from "./types.ts";
 
 export interface CatalogueRow {
-  readonly row: number;
+  readonly row: number | string;
   readonly idiom: string;
   readonly status: string;
 }
 
-/** Parse the `## Index` table: `| # | Idiom | … | Confidence | Notes |`. */
-export function parseCatalogueIndex(markdown: string): Map<number, CatalogueRow> {
-  const out = new Map<number, CatalogueRow>();
+/**
+ * Parse the `## Index` table (`| # | Idiom | … | Confidence | Notes |`) and,
+ * per `docs/specs/passes/01-framework-fixes.md` F2, the `## Readability rows
+ * (PL-06)` table, which has the same columns but `R\d+`-prefixed keys (a
+ * readability rung recognises no Hermes idiom, so it cannot cite a numbered
+ * one). Both tables land in one map: `Pass.catalogue` may name either kind of
+ * key, and `checkCatalogue` applies the identical confidence rule to both.
+ */
+export function parseCatalogueIndex(markdown: string): Map<number | string, CatalogueRow> {
+  const out = new Map<number | string, CatalogueRow>();
   const lines = markdown.split("\n");
-  const start = lines.findIndex((l) => /^\|\s*#\s*\|/.test(l));
-  if (start < 0) return out;
-  const header = lines[start]!.split("|").map((c) => c.trim());
-  const statusCol = header.findIndex((c) => /^(confidence|status)$/i.test(c));
-  for (let i = start + 2; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (!line.startsWith("|")) break;
-    const cells = line.split("|").map((c) => c.trim());
-    const row = Number(cells[1]);
-    if (!Number.isInteger(row)) continue;
-    out.set(row, { row, idiom: cells[2] ?? "", status: cells[statusCol] ?? "" });
+  for (const start of lines.reduce<number[]>((acc, l, i) => (/^\|\s*#\s*\|/.test(l) ? [...acc, i] : acc), [])) {
+    const header = lines[start]!.split("|").map((c) => c.trim());
+    const statusCol = header.findIndex((c) => /^(confidence|status)$/i.test(c));
+    for (let i = start + 2; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (!line.startsWith("|")) break;
+      const cells = line.split("|").map((c) => c.trim());
+      const cell = cells[1] ?? "";
+      const row: number | string = /^R\d+$/.test(cell) ? cell : Number(cell);
+      if (typeof row === "number" && !Number.isInteger(row)) continue;
+      out.set(row, { row, idiom: cells[2] ?? "", status: cells[statusCol] ?? "" });
+    }
   }
   return out;
 }
