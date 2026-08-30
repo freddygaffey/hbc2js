@@ -3,8 +3,7 @@
 **Fixtures:** `09-switch-fallthrough`, `10-switch-no-fallthrough`,
 `52-switch-jumptable`, `53-switch-jumptable-large`
 **Confidence:** ✅ verified (compare chain, `SwitchImm`/`UIntSwitchImm` and — since T9 — `StringSwitchImm`, all
-four versions); ⛔ inferred (`StringSwitchImm` — ad hoc probe file, not a
-fixture; see catalogue O-3)
+four versions); `StringSwitchImm` measured on fixture `56-switch-string-jumptable` at v98/v99 (absent below v98)
 
 Hermes emits **three different bytecode idioms** for `switch`, chosen
 per-`switch` by the compiler based on case density/type, not by HBC version

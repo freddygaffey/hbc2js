@@ -1,11 +1,6 @@
 # Logical assignment (`&&=`, `||=`, `??=`)
 
-**Fixture:** none — no construct fixture in `tests/fixtures/constructs/`
-exercises these operators (checked: `grep -rl '&&=\|||=\|??=' source.js`
-across the whole corpus returned nothing when this file was first written.
-**T9 (2026-08-30) added the fixture** — `57-logical-assignment`, compiled and
-gate-checked at all five versions — so the spec 07 §4 block on this row is
-lifted.
+**Fixture:** `57-logical-assignment` — added by T9 (2026-08-30), compiled and gate-checked at all five versions; the spec 07 §4 block on this row is lifted.
 **Confidence:** ✅ measured (fixture `57-logical-assignment`, v84–v99)
 
 ## 1. Source (probe, not a fixture)
