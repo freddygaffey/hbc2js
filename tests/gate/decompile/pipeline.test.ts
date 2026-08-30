@@ -72,7 +72,11 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
   for (const b of m4Binaries(["", ".min"])) {
     try {
       const r = decompile(new Uint8Array(readFileSync(b.path)), { resolveV98Ambiguity: true, moduleName: b.path });
-      const unexpected = r.diagnostics.filter((d) => d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV");
+      // W_PASS_ABANDONED (M5): per-site abandonment is D12's designed outcome
+      // for a site a rung's `check` refuses, not an error — expr-rebuild's
+      // conservative deadness proof legitimately abandons many sites across
+      // this corpus (see docs/AGENT-LOG.md's expr-rebuild entry).
+      const unexpected = r.diagnostics.filter((d) => d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED");
       if (unexpected.length > 0) failures.push(`${b.fixture} v${b.version}${b.variant}: ${unexpected.map((d) => d.code).join(", ")}`);
     } catch (e) {
       failures.push(`${b.fixture} v${b.version}${b.variant}: ${e instanceof Error ? e.message : String(e)}`);
@@ -84,10 +88,10 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
 test("the pass registry lists the M5 passes in dependency order", () => {
   // Was "empty at M4"; spec 07 §2.3. The ordering/negative tests live in
   // tests/gate/passes/framework.test.ts.
-  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header"]);
+  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "expr-rebuild"]);
   assert.deepEqual(enabledPasses({ stage: "A" }).map((p) => p.name), ["loop-cond", "for-header"]);
-  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header"]);
-  assert.deepEqual(enabledPasses({ stage: "B" }), []);
+  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "expr-rebuild"]);
+  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild"]);
 });
 
 test("decompileTree covers every function of a module", () => {

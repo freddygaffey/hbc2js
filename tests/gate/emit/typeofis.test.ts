@@ -91,6 +91,10 @@ test("review-M4-H2: 55-typeof-is-masks decompiles at v98/v99 and covers non-128 
     assert.ok([...masks].filter((m) => m !== 128).length >= 8, `v${version}: only ${masks.size} distinct masks: ${[...masks].join(",")}`);
     // And the whole module decompiles, which it did not before.
     const code = decompile(bytes, { resolveV98Ambiguity: true, moduleName: "55-typeof-is-masks" }).code;
-    assert.match(code, /!\(typeof r\d+ === "string"\)/, `v${version}: mask 507 did not lower to the negated string test`);
+    // `\w+` rather than `r\d+`: expr-rebuild (M5) may fold the tested value
+    // all the way down to a parameter name (e.g. `!(typeof a1 === "string")`)
+    // rather than leaving it in a register; either way proves mask 507
+    // lowered to the negated string test, which is this test's actual point.
+    assert.match(code, /!\(typeof \w+ === "string"\)/, `v${version}: mask 507 did not lower to the negated string test`);
   }
 });
