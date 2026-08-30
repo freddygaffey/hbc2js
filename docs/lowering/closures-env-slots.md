@@ -2,7 +2,7 @@
 
 **Fixtures:** `17-closure-loop-var`, `18-closure-loop-let`,
 `21-iife-closures`, `22-nested-closures-counters`
-**Confidence:** ✅ verified (v84 execution; v94/v99 bytecode shape) for the
+**Confidence:** ✅ verified (executed directly on v84, v94, and v99 Hermes VMs) for the
 D14 finding — the single most important surprise from this research pass.
 
 ## 1. Source
@@ -133,11 +133,14 @@ the whole function no matter how many nested `let`-headed loops it contains.
 
 ## 6. Version differences
 
-None in the "no per-iteration environment" finding — v84 (executed), v94
-and v99 (bytecode shape only, no VM binary available for those versions in
-`tools/hermesc/`) all show the identical single-`CreateEnvironment`-per-
-function shape. This should be treated as **verified for v84** and
-**single-version-equivalent-shape for v94/v99** — if a future Hermes VM
-build for those versions becomes available (`docs/DECISIONS.md` D14
-mentions this as a sanctioned toolchain task), re-running this exact
-executable check is high priority.
+None in the "no per-iteration environment" finding. **Now fully verified,
+not just single-version**: `tools/hermes-vm/v{94,99}/bin/hermes` (built per
+D14's sanctioned toolchain task, available as of this update) were used to
+execute `18-closure-loop-let` directly at v94 and v99, in addition to v84.
+All three print the identical, spec-violating result:
+`let closures each see own i: 3,3,3` / `nested let closures: 3:2 | 3:2 |
+3:2 | 3:2 | 3:2 | 3:2` — byte-for-byte identical output at v84, v94, and
+v99. This closes the gap this file previously flagged (v94/v99 were bytecode-
+shape-only pending a VM) and upgrades the finding from "verified at v84,
+shape-equivalent at v94/v99" to **verified at all three tested versions
+directly**.

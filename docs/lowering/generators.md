@@ -207,6 +207,31 @@ other iterator consumption inside the lowered body. **Confidence: ⛔ not
 measured — do not assume either prediction without reading the actual
 dump.**
 
+## 5b. CFG hazard: v≤96 resume blocks have no static predecessor
+
+Cross-referenced after `docs/specs/03-cfg.md` §4.5 was added (commit
+`908cc1d`, blocker B1) — **consistent with, and derived from the same
+fixture as**, §2 above, no disagreement. Worth restating here because it is
+a correctness trap for anyone implementing against this file directly: in
+`?anon_0_sequence`'s bytecode, each block starting at a `ResumeGenerator`
+(offsets 15, 29, 43, 61 in §2's dump) has **zero static predecessors** — the
+only way to reach them is the VM re-entering at a saved pc, which is opaque
+runtime state, not a CFG edge. A dominator computation or reverse-postorder
+walk that does not account for this will never visit those blocks, and
+spec 04's structurer will silently omit the code that runs on the second and
+subsequent `.next()` calls — not ugly output, *absent* output. Spec 03 §4.5
+fixes this with a synthetic `B_dispatch` entry block: a fabricated
+`switch`-terminated block (no real bytes, `start === end === -1`) prepended
+as the function's entry, with `switch-case 0` to the real entry and
+`switch-case k` to `suspendPoints[k-1].resumeBlock` for each saved state —
+turning the opaque VM re-entry into an ordinary multi-way branch that
+Ramsey structures into `switch (state) { case 0: ... case 1: ... }`, which
+is, not coincidentally, exactly what the VM does at runtime. This applies
+**only** to `era: "opcode"` bodies with `suspendPoints.length > 0` — the
+v≥97 lowered era's dispatch chain (§3 above) is already reached by ordinary
+branches from a single entry and needs no such fix (verified at v99 in this
+file's own §3).
+
 ## 6. Version differences
 
 | | v≤96 | v≥97 |

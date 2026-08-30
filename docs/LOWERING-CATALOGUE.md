@@ -2,7 +2,14 @@
 
 Empirical record of what `hermesc` actually emits for each source construct in
 `tests/fixtures/constructs/`, at HBC versions 84, 94, 98, 99 (and 96 where a
-divergence was suspected — none was found for the idioms below). Produced for
+divergence was suspected — none was found for the idioms below). **v96
+fixtures were added to the corpus after most of this catalogue was written;
+v96 shares v94's opcode table** (per `docs/TASKS.md`'s note when the v96
+toolchain/fixtures landed), and this was spot-checked directly on
+`while-loop` and `try-finally-dedup` — both byte-for-byte structurally
+identical to v94 modulo scratch-register numbering. Rows below that read
+"94,98,99" or similar without "96" have not been individually re-verified
+at v96, but no idiom in this catalogue is expected to differ there. Produced for
 task **T3** (`docs/TASKS.md`). Every row here is read from
 `hermesc -dump-bytecode -pretty-disassemble=false` output, not guessed from
 source or from hermes-dec (D4: hermes-dec is a behaviour oracle only, never a
@@ -48,8 +55,9 @@ finding (loop-invariant hoisting, constant folding, cross-function inlining).
 | 11 | `try`/`catch`: handler-table region + `Catch` leader | try/catch (12,14,15) | 94,99 (O0) | [try-catch.md](lowering/try-catch.md) | ✅ verified | Optional catch binding (`catch {}`) simply omits the `StoreToEnvironment`/local bind after `Catch` |
 | 12 | `finally`: duplicated into normal path + synthesized catch-rethrow | try/finally (12,13,16) | 94,99 (O0) | [try-finally-dedup.md](lowering/try-finally-dedup.md) | ✅ verified | `continue`/`break` inside `finally` **never reach** the synthesized `Throw`; they jump straight to the loop's continue/break target, which is *how* the pending exception gets silently dropped |
 | 13 | Closures: one flat `CreateEnvironment` per function, `Load/StoreToEnvironment` by slot | closures (17,18,21,22) | 94,99 | [closures-env-slots.md](lowering/closures-env-slots.md) | ✅ verified | See #14 for the `var`-vs-`let` loop divergence this exposes |
-| 14 | **D14**: `for (let ...)` closures share ONE binding — no per-iteration environment | closure-loop-let (18) vs closure-loop-var (17) | 84 (executed), 94/99 (bytecode shape) | [closures-env-slots.md](lowering/closures-env-slots.md) | ✅ verified (v84 execution), ✅ single-version (v94/99 shape) | **Major surprise** — see report. Hermes's `let` in a `for` loop behaves exactly like `var`; this contradicts spec/Node and is *not* an edge case, it's the common "closures in a loop" pattern |
-| 15 | **D14**: TDZ is not enforced by a runtime check | let/const TDZ (20) | 84 (executed), 94 (bytecode) | [tdz.md](lowering/tdz.md) | ✅ verified (partial) | `let` is pre-initialized to `undefined` at `CreateEnvironment` time exactly like hoisted `var`; the "TDZ throw" the fixture observes comes from a **different** mechanism (see file) and shadowing inside a block can alias the outer slot |
+| 14 | **D14**: `for (let ...)` closures share ONE binding — no per-iteration environment | closure-loop-let (18) vs closure-loop-var (17) | 84, 94, 99 (all three **executed** on real Hermes VMs) | [closures-env-slots.md](lowering/closures-env-slots.md) | ✅ verified | **Major surprise** — see report. Hermes's `let` in a `for` loop behaves exactly like `var` at every version tested; this contradicts spec/Node and is *not* an edge case, it's the common "closures in a loop" pattern |
+| 15 | **D14**: TDZ enforcement is version-dependent (v84 has it, v94/v99 don't); the shadowing bug is a slot-aliasing artifact that v99 half-fixes | let/const TDZ (20) | 84, 94, 99 (all three executed) | [tdz.md](lowering/tdz.md) | ✅ verified | v84: real `LoadConstEmpty`/`ThrowIfEmpty` TDZ check. v94/v99: `LoadConstUndefined`, no check at all — a genuine cross-version conformance regression. Shadowing: v84/94 alias the outer and inner `let` to one slot (so the check, when present, never fires); **v99 gives them separate slots**, correcting spec 05 §8's table for that one column — see file §4 |
+| 20a | `new X(...)`: `CreateThis`/`CreateThisForNew` + `Construct` + `SelectObject` triple, never a bare `Construct` | any `new` expression, incl. class instantiation (12/53 v94 fixtures per spec 05 §7.5's count, plus 32–36) | 84, 94, 96, 98, 99 | [new-expression.md](lowering/new-expression.md) | ✅ verified | Independently measured here and in `docs/specs/05-emitter.md` §7.5 (commit `908cc1d`) — **no disagreement**; this file adds the v96 spot-check and the general (non-class) case |
 | 16 | `arguments` object: real reified object, aliases named params (sloppy mode) | `arguments` (42,49) | 94 (O0) | [arguments-object.md](lowering/arguments-object.md) | ✅ single-version | `CreateArguments`-family opcode confirmed; mapped-arguments aliasing is a live `Store/LoadFromEnvironment` on the *same* slot the parameter uses |
 | 17 | Generators, v≤96: VM opcode-driven coroutine | `function*` (23,24,25,26) at v84/94 | 84,94 | [generators.md](lowering/generators.md) | ✅ verified | `StartGenerator`/`ResumeGenerator`/`SaveGenerator`/`CompleteGenerator`, exactly as PRIOR-ART §6.2 predicted |
 | 18 | Generators, v≥97: `CreateGenerator` + compiler-lowered state machine | `function*` (23,24,25,26) at v98/99 | 98,99 | [generators.md](lowering/generators.md) | ✅ verified (shape); ⛔ inferred (exact resume-ABI integer codes) | **D9 shim boundary** — full account of the wrapper/body split, env slot roles, and what remains unpinned |
