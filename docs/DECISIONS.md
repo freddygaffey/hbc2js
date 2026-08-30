@@ -116,3 +116,6 @@ stepping").
 
 ## D16a — On-device round-trip tier (C6) (2026-08-30)
 For apps whose source and build we control (RN template, react-navigation example), the ultimate test: decompile → recompile with `hermesc` → repackage the APK → install on an attached Android device via adb → launch → compare screenshots and logcat with the original build. Runs as a sweep-tier test when a device is present, INCONCLUSIVE otherwise. Never applied to proprietary APKs.
+
+## D19a — Multi-bundle apps are decompiled as one app (2026-08-30)
+Real apps ship multiple Hermes bundles: Wix (30 micro-frontend bundles with one shared-dependencies bundle the others `require` into), Klarna (1,108 per-feature bundles, each paired with a plain-JS twin — OTA/code-push style), Teams (three feature bundles inside a native app). `hbc2js <app.apk>` therefore treats the APK as the unit: enumerate every bundle (`.hbc`, `.bundle`, plain JS), decompile each, resolve cross-bundle module references (a feature bundle's external requires bind to the shared bundle's exports), de-duplicate bytecode/JS twins by content, and emit one project tree with a subdirectory per bundle plus `BUNDLES.md` describing the graph. Dependency extraction (D17) runs once over the union so shared packages are reported once. Single-bundle apps are the degenerate case.
