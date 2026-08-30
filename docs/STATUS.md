@@ -28,6 +28,9 @@ Last updated: 2026-08-30
 - [ ] M5 Pass ladder: one construct fixture per iteration as matcher/writer/checker pass (D12), catalogue row per pass; track `N/51 recovered` here
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
+## Queued before M5
+- Measure `npm run test:all` and `hbc2js gate` wall time after M4 lands. If either exceeds ~2 min, parallelise: `node --test --test-concurrency=<cores>` across files, and per-fixture worker pool inside the gate runner (fixtures are independent). Keep a `--serial` escape hatch for debugging. Record timings here.
+
 ## Currently working
 - **M1 parser implemented** (`src/`, spec 00 skeleton + spec 01 parser). TypeScript
   strict, ESM, zero runtime deps; `node --test` runs `.ts` directly on Node 25 with no
