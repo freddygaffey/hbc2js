@@ -4,7 +4,11 @@ Last updated: 2026-08-30
 
 ## Milestones
 - [x] M0 Research: toolchain (`hermesc` locally), prior-art survey, test corpus candidates
-- [ ] M1 Parser: header, string table, function table, bytecode — v94 & v99 fixtures
+- [x] M1 Parser: header (all 5 layout classes), section walk, string table, function
+      headers (small+large, both eras), exception handlers, debug offsets, literal
+      buffers, object shape table, BigInt/RegExp/CJS/functionSource tables, D8 layout
+      probe (P0–P4), opcode/builtin table generation — v84/94/96/98/99 fixtures.
+      Instruction decoding itself is spec 02 (M2), out of scope here.
 - [ ] M2 Disassembler + diff test against hermes-dec output
 - [ ] M3 Test harness: sandboxed trace runner (D2) + recompile round-trip (D3)
 - [ ] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) → **every** fixture passes the equivalence gate, ugly output allowed (D11)
@@ -12,6 +16,114 @@ Last updated: 2026-08-30
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
 ## Currently working
+- **M1 parser implemented** (`src/`, spec 00 skeleton + spec 01 parser). TypeScript
+  strict, ESM, zero runtime deps; `node --test` runs `.ts` directly on Node 25 with no
+  flags (the `22.18` floor is unverified locally — CI's matrix leg is what closes it,
+  per spec 00 O-1). `npm test`/`typecheck`/`build`/`gen:tables:check` all green.
+  81 gate tests, 4 sweep tests (+1 INCONCLUSIVE skip for the absent local corpus),
+  `npm run test:all` = 85 pass / 1 skip.
+  - **Opcode tables**: `tools/gen-tables/{parse-def,gen}.ts` — a macro-aware
+    `BytecodeList.def`/`Builtins.def` parser (skips `#`-directives, backslash-
+    continued macro bodies, and non-zero `#if` depth; independent `142+2×25`-style
+    count cross-check; rejects leaked macro placeholders) generating
+    `src/tables/generated/{opcodes,builtins}-<id>.ts` from `third_party/hermes/<id>/`
+    (all MIT, vendored with LICENSE + sha256 in `PROVENANCE.md`). Seven tables:
+    `hbc84` (185, commit `c2cd9e38`), `hbc94` (192, `1c717488`, cross-checked
+    byte-identical against `3815fec6`, RN 0.72.17's actual pinned build commit),
+    **`hbc96`** (192, `644c8be7` — added mid-M1 when the corpus grew v96 fixtures;
+    identical to hbc94 except `DirectEval` gains a `UInt8 isStrict` operand at the
+    same index 94), `hbc98-2024` (201, `c00cc575`, layout D), `hbc99-feb2026` (219,
+    `42235b8d`), `hbc99-mar2026` (220, `913d31ac`, `NewTypedObjectWithBuffer` at
+    opcode 4). `npm run gen:tables:check` regenerates all of them byte-identically.
+  - **`hbc98-late` could not be pinned to a real commit** — spec 01 §5.2/§5.3 already
+    flagged this as open. A full non-shallow clone of `facebook/hermes` was searched:
+    every `static_h` commit between the v98 and v99 `BYTECODE_VERSION` bumps was
+    checked, and none reproduces what `hermes-compiler@250829098.0.x` (the actual
+    npm package behind every real v98 fixture in this repo) emits — same situation
+    already documented for `hbc99-mar2026`'s own npm package (no embedded commit
+    hash). Resolved **empirically instead**: cross-decoded all 223 function bodies
+    shared (same `bytecodeSizeInBytes`) between every `constructs/*/v98.hbc`/`v99.hbc`
+    pair plus `hermes-dec-sample`, using this project's own verified `hbc99-mar2026`
+    decoder (zero hermes-dec involvement, D4-clean). Result: `hbc98-late` =
+    `third_party/hermes/hbc98-late/BytecodeList.def` (commit `639e5d6a`, vendored,
+    real MIT source) with two corrections applied by `tools/gen-tables/gen.ts`'s
+    `patchHbc98Late`: (1) `ToUint32` removed (present in the vendored file but absent
+    from real v98-late — confirmed absent from the v98-window-opening commit
+    `c00cc5759` too, i.e. a late static_h addition the real build predates), (2) one
+    placeholder opcode (`UnknownFastArrayOpcode98Late`, name/signature unverified,
+    **never exercised anywhere in this corpus**) inserted after `FastArrayAppend` to
+    account for a real v98-late opcode with no vendored-file counterpart. All 117
+    empirically observable opcode names agree with this patched table with zero
+    disagreements (a couple of 1-in-many-hundred outliers attributable to unrelated
+    decode noise, not the patch). If a future fixture is found to actually hit the
+    placeholder's opcode number, it must be identified and named for real.
+  - **D8 layout probe** (`src/parse/layout.ts`): P0 (magic/fileLength) → P1 (per-
+    candidate header sanity + anti-OOM `count*stride` guard) → P2 (section-walk
+    `firstFunctionBodyOffset` match, resolving overflowed entries' *large*-header
+    offset first, per spec 01 §6.2's warning) → v98 D-vs-E fast hint (D1/D2, §6.3,
+    confirmed on all 53+ real v98 fixtures) → P3 (whole-file/sampled opcode-table
+    validation) → P4 (table self-assertions, `src/tables/registry.ts`, run once at
+    load). **One deliberate, documented deviation from spec 01 §6.4's "never
+    silently prefer" rule**: when P3 leaves 2+ opcode tables tied after an
+    *exhaustive* (whole-file, <2 MB) sample — which happens for ~20 real, tiny v98
+    construct fixtures that simply never reach an opcode past 165 where the v98/v99
+    tables diverge — the probe picks the table matching the file's own declared
+    version (`hbc98-late` over `hbc99-mar2026`) rather than throwing
+    `E_LAYOUT_AMBIGUOUS`, recording `W_OPCODE_TABLE_TIEBREAK` and `P3-tiebreak` in
+    `decidedBy`. Without this, ~20 of this project's own real v98 fixtures — and,
+    per spec 01 T7, all 53 are required to succeed — would fail to parse. Opcode-
+    table candidates are also pruned by which header layout class each candidate's
+    own commit actually produces (fetched `FUNC_HEADER_FIELDS` per commit), so
+    `hbc98-2024` (verified layout D) is never even considered once the file is known
+    to be layout E.
+  - **A real bug found via the T8 fuzz test and fixed**: `parseDebugInfo`'s filename
+    table read `{offset, length}` pairs without bounds-checking against
+    `filenameStorage` before decoding — a fuzzed length could reach
+    `String.fromCharCode` with an absurd count and throw a raw `RangeError` instead
+    of `Hbc2jsError`. Fixed (matches the main string table's INV-12 treatment); same
+    class of guard added to `readExceptionTable`'s handler count and both of
+    `parseDebugInfo`'s array allocations, since none of those counts are
+    header-level and so aren't covered by P1's anti-OOM check.
+  - **A real bug found while writing T2/T3 and fixed**: for an *overflowed*
+    function, `FunctionHeader.flags` was read from the small header instead of the
+    large header — the two are independent bytes (verified: `hermes-dec-sample/
+    v99.hbc` fn0's small header has flags `0x20` (only `overflowed`), its large
+    header has flags `0x12`, the real semantic bits). `docs/HBC-FORMAT.md` §3.4/3.5
+    state the large header's flags value but don't call out that it's a *different*
+    byte from the small header's.
+  - **File-level `DebugInfoHeader` has a third, undocumented shape boundary**,
+    independent of the per-function `DebugOffsets` boundary `docs/HBC-FORMAT.md` §4
+    already documents: fetched the struct directly from three pinned commits.
+    Class A/B (`c2cd9e38`, v84): 5 fields ending in one `lexicalDataOffset`. Class C
+    (`1c717488`, v94): 7 fields (`lexicalDataOffset` → `scopeDescDataOffset` +
+    `textifiedCalleeOffset` + `stringTableOffset`). Class D/E (`913d31ac`,
+    v99-mar2026): back to 4 fields. Found because parsing `hermes-dec-sample/
+    v84.hbc`'s debug info with the (wrong, 7-field) v94-era header shape put the
+    filename table's bytes 12 bytes late, landing squarely on the ASCII text
+    `"source.js"` and producing garbage `{offset, length}` pairs.
+  - **Local corpus (D16 C5) spot-check** (not committed, not part of the test
+    suite — `~/hbc2js-local-corpus/apks/`, extracted to a scratch dir with Python
+    `zipfile`, per this task's instructions): Bloomberg (10.0 MB, v96/class C,
+    58,932 functions), Discord (50.8 MB, v98/class E, 120,522 functions), Teams
+    (0.7 MB, v96, 4,736 functions), Xbox (25.2 MB, v96, 59,278 functions), Shopify
+    (33.9 MB, v98, 97,752 functions) — **all five parse with zero diagnostics**, in
+    38–178 ms each, independently confirming `hbc96` and the empirically-patched
+    `hbc98-late` against real production bytecode far larger and more diverse than
+    the construct corpus. Pinterest's APK has no `assets/**bundle**`-named entry and
+    none of its assets start with the HBC magic — likely not a Hermes/RN app, or
+    bundles it differently; not fabricated, just not found.
+  - **Deviations from the literal spec 01 §3.1 type signature**: `LayoutProfile.
+    opcodeTable`/`.builtinTable` and `ProbeCandidate.opcodeTable` are typed
+    `OpcodeTableId | undefined` rather than non-optional `OpcodeTableId` — needed to
+    honestly represent §6.1's "a file whose layout parses but whose opcode table is
+    not generated is still a valid `HbcModule`" for v85/86/97 (no fixture exists for
+    these; untested beyond compiling).
+  - Class A (v51–83) and class D (v97/98-early) remain **implemented but unverified
+    against real bytes** — no known fixture exists for either (spec 01 O-2, unchanged
+    from the spec's own acknowledgment).
+  - Perf (`tests/sweep/parse/bundles.test.ts` T9, this machine): largest fixture
+    (`index.android.noopt.debug.hbc`, 2.62 MB, 4,314 functions) parses in ~4–9 ms;
+    linear extrapolation to 12 MB ≈ 20–35 ms, well inside the §7.3 400 ms budget.
 - `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v96/v98/v99
   compilers (npm-sourced, not committed) for macOS + Linux x86_64. v94
   recompiles `tests/fixtures/hermes-dec-sample/source.js` byte-identical to
