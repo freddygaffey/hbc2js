@@ -906,3 +906,125 @@ module recovered from the target bundle:
 - **Version-ambiguity (S3, §4)** remains completely unmeasured — no fixture
   or corpus app in this task exercised two candidate versions with identical
   matched hashes.
+
+## 6. D17c bulk build: first check-in and coverage measurement (2026-08-30)
+
+Check-in on the bulk build D17c kicked off on `deb` (STATUS.md), plus
+assembling and measuring what exists so far. `tools/pkgsig/bulk/**` scripts
+only — no `src/**` touched.
+
+### 6.1 Progress at check-in
+
+At 2026-08-30 15:54 UTC (run started 10:56 UTC, ~5h in): **23,046/53,276
+jobs processed (43.3%)**, ok=15,727, fail=7,319 (31.8% fail rate — see §6.2,
+this is expected, not a health problem), ~77 jobs/min, **ETA ~22:20-22:30
+UTC same day** (~6.5 h more). Process alive (checked via its recorded pid,
+not restarted). DB on disk: **3.1 GB** raw across 15,728 signature files;
+host disk has 85 GB free (91% used) — enough headroom for the run to finish.
+
+### 6.2 Failure classes (7,319 failures, sampled by parsing `results.jsonl`)
+
+All failures fall into the three classes STATUS.md already called out as
+expected, plus one new transient class worth naming:
+
+| Class | Count | Example |
+|---|---|---|
+| Package is Node-only / not RN-bundlable — `require("fs")`/`"path"`/`"crypto"`/`"stream"`/`"util"`/`"process"`/deep internal submodule paths (e.g. `core-js`'s `../modules/esnext.iterator.zip`) that Metro can't resolve in an RN scaffold | ~5,900 | `fast-json-stringify` → `Unable to resolve module crypto` |
+| Unresolved peer dependency — package needs a peer (`expo-modules-core`, `@react-navigation/native`, `react-native-svg`, `reanimated`, `safe-area-context`, `gesture-handler`, `@react-native-firebase/*`, `graphql`, …) the bare scaffold doesn't have installed | (counted within the above — `expo-modules-core` alone: 702) | `expo-file-system` → `Unable to resolve module expo-modules-core` |
+| Self-fingerprinting `react-native`/`react-dom` against a scaffold already pinned to a different version of the same package | 916 | `react-native@0.83.1` bundle fails inside the RN-0.72.17-pinned scaffold |
+| **New: transient `ENOBUFS` from `hermesc`** under sustained 16-way load (~150 occurrences) — not a build bug, a resource-exhaustion hiccup; the job is simply missing from the DB and gets silently retried by the *next* `run.sh start` invocation (resumable, per-file skip) | ~150 | `spawnSync .../hermesc ENOBUFS` |
+
+No unexpected failure class found. Nothing here indicates the run should be
+restarted — `run.sh` is still alive and making progress; missing jobs
+(including the `ENOBUFS` ones) are automatically picked up whenever `start`
+is next invoked, since `build-one.mjs` skips anything already on disk.
+
+### 6.3 Assembler: `tools/pkgsig/bulk/assemble.sh`
+
+New script, idempotent and safe to run while the build continues (a file
+`writeSignature()` is mid-writing simply fails `JSON.parse` and is skipped —
+picked up on the next run). One pass hashes+sizes every `db/*.json` (except
+`index.json`, `src/deps/db.ts`'s own flat manifest) with a single Node
+process (sha256 while already holding the bytes, no `sha256sum` fork per
+file), writing:
+
+- `~/hbc2js-bulk/dist/index.json` (+ a dated copy) — nested
+  `package → version → hbcVersion → {file, size, sha256, totalFunctions,
+  rawFunctionCount, moduleCount, toolchainBaseline, subtractedBaselines,
+  provenance}`, plus top-level `totalFiles`/`totalBytes`/
+  `skippedUnreadableOrPartial`.
+- `~/hbc2js-bulk/dist/sigdb-<YYYYMMDD>-partial.tar.zst` — flat archive of
+  every successfully-indexed signature file (basenames only, matching
+  `index.json`'s `file` field) plus a copy of `index.json` at the archive
+  root for self-description. `zstd` preferred (present on `deb`), `--gzip`
+  flag falls back to `.tar.gz`. Publish is a same-filesystem `mv` into the
+  final name, so a concurrent fetcher never sees a half-written archive.
+
+First run (15,420 files): **29 s, archive 348 MB** (3.1 GB raw db/, ~9:1
+compression). Re-run 3 minutes later while the build kept going picked up
+58 more files with zero errors, confirming the idempotent/live-build claim.
+
+### 6.4 Coverage measurement — and an important negative result
+
+Per the brief: no proprietary bundle ever left this machine or was copied
+onto `deb`. The two apps checked are our own (committed fixture / fetched
+via `fetch.sh`): `rn-template-0.72` (HBC94) and
+`react-navigation-example-0.85.3` (HBC98). The current partial archive was
+`scp`'d back (348 MB) and extracted locally; `hbc2js deps --offline` was run
+three ways per app: shared DB only (today's `docs/DEPS.md` baseline,
+re-measured fresh rather than trusted from the doc), shared DB + the bulk
+DB layered in via `--sigdb`, and bulk DB alone (`--no-shared-db --sigdb`) to
+isolate its own signal.
+
+| App | Shared-DB-only (module attribution) | + bulk DB layered in | Bulk DB alone |
+|---|---|---|---|
+| `rn-template-0.72` | 97.7% (425/435) | 97.9% (426/435) | — |
+| `react-navigation-example-0.85.3` | 57.8% (1030/1782) | 57.6% (1025/1782) | 5.0% (78/1782), yet 1,027 packages in `confirmedDeps` |
+
+**Module-attribution % barely moves — and for react-navigation-example it
+goes slightly backward.** The real finding is in `confirmedDeps`: layering
+the raw bulk DB in ballooned the confirmed-package list from a handful of
+genuine dependencies to **thousands of entries**, most obviously wrong
+(`pg-int8`, `postgres-bytea`, `text-hex`, `merge-descriptors`, `lucide-react`
+at three unrelated versions, `one-time`, `is-negative-zero`, …) — small,
+generic utility packages that could not plausibly be real dependencies of
+either app.
+
+**Root cause: `tools/pkgsig/bulk/build-one.mjs` never runs the
+foundation-subtraction step §5.2 describes.** The curated shared DB
+(`tools/pkgsig/build-db.mjs`) subtracts `metro-toolchain-empty` +
+`react-foundation` + `react-native-foundation`'s function hashes from every
+package before writing it; the bulk builder (by design — see its own header
+comment, and D17c/STATUS's framing as "populate the shared DB
+unconditionally, there is no target yet") writes each package's **raw**
+signature, including a full, unsubtracted copy of every react-native/Metro
+boilerplate function the scaffold happens to share with everything else.
+With ~15,000 files each independently carrying that same boilerplate, a
+target app's ordinary Metro/react-native scaffolding functions collide
+against thousands of unrelated bulk-built packages simultaneously, and (at
+least for whole-package tiers like ">=90% overall exact-function coverage")
+enough of those collisions clear "High" confidence on packages that only
+ever contributed a handful of functions to their own signature file in the
+first place. `--no-shared-db` alone shows this starkly: 1,027 "confirmed"
+packages from a DB that only actually explains 5% of the target's modules.
+
+**Conclusion for whoever runs the next step of D17c: do not fetch/layer
+this partial archive into a real `--sigdb` today.** It needs foundation
+subtraction (§5.2) applied — either as a post-process over the existing
+`db/` directory (subtract `react-foundation`/`react-native-foundation`/
+`metro-toolchain-empty`'s hash sets from every file already written, cheap
+and doesn't require re-running any job) or built into `build-one.mjs` for
+everything built from here on — before republishing. This is a data-quality
+gate, not a code bug in `assemble.sh`/`run.sh` themselves, which did exactly
+what they were asked to (package and measure what exists).
+
+### 6.5 Fetching the archive later
+
+`tools/pkgsig/fetch-db.sh` (new stub): `HBC2JS_SIGDB_URL=<url>
+tools/pkgsig/fetch-db.sh [dest-dir]` downloads and unpacks a published
+`sigdb-*.tar.zst`/`.tar.gz` into `dest-dir` (default
+`$XDG_CACHE_HOME/hbc2js/sigdb`, the same user-cache layer `hbc2js deps`
+already reads — docs/DEPS.md). No URL is published yet — `HBC2JS_SIGDB_URL`
+has no default; today's archive lives only at
+`deb:~/hbc2js-bulk/dist/sigdb-20260830-partial.tar.zst` and, per §6.4,
+should not be treated as ready for real use until subtracted.
