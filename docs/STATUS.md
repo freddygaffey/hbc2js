@@ -277,6 +277,145 @@ Last updated: 2026-08-30
   `tests/fixtures/local-corpus/README.md`.
 - Otherwise: no parser/CLI code yet.
 
+## M1 review responses (`docs/reviews/M1-parser.md`, verdict FIX-THEN-MERGE)
+
+All HIGH/MEDIUM findings fixed; LOW/nit items fixed or justified below.
+
+**Undisclosed deviations (review §4) — now disclosed:**
+- T8 fuzz mutant count: was 200/binary (a deliberate time-budget scale-down from the
+  spec's 2000/binary), now **2000/binary by default** (`HBC2JS_FUZZ_MUTANTS_PER_BINARY`
+  env var overrides it for a faster local/CI run) — matches spec exactly out of the
+  box. ~498k mutants across all 249 gate binaries run in ~8.6s here, well inside T8's
+  30s budget.
+- Known-divergences allowlist (T6) was an inline code comment; moved to the
+  spec-named `tests/gate/oracle/known-divergences.md`.
+
+**Finding 1 (HIGH) — P3 opcode-table tie-break resolved by verification, not array
+order.** `src/parse/layout.ts` now, when >1 opcode table survives the cheap
+sample-based probe: decodes **every** function in the whole file (never just the
+probe sample) under every remaining candidate with a stronger check
+(`decodeAndVerifyFunction`) that additionally requires every jump target to land on
+an actual instruction-start boundary within that candidate's own decode (not just
+"in range"), and every switch instruction's jump table to be 4-aligned and fit inside
+the file. Only if that still leaves >1 survivor does it fall back to preferring the
+first-listed (declared-version) candidate — and **only** when every surviving
+candidate decodes **every function identically** (same opcode name + operand values),
+i.e. the choice is proven immaterial. Otherwise it now throws `E_LAYOUT_AMBIGUOUS`
+naming the disagreeing function ids. Added the reviewer's own motivating case as a
+test (`hermes-dec-sample/v98.hbc` fn2 decodes differently under `hbc98-late` vs
+`hbc99-feb2026`, both "cleanly") and a comment on `candidatesForVersion()`'s array
+literal stating plainly that its order is load-bearing.
+
+**A major, unanticipated consequence of implementing Finding 1 correctly:** applying
+the stronger, whole-file verification surfaced that **8 real `constructs/*/v98.hbc`
+fixtures are genuinely ambiguous** between `hbc98-late` and `hbc99-mar2026` — not by
+luck of sampling, but because `hbc99-mar2026`'s misreading of specific bytes (e.g.
+`constructs/40-spread-array/v98.hbc` fn0: `hbc99-mar2026` decodes 16 bytes as
+`NewObjectWithParent`/`Unreachable`/`NewObjectWithBufferAndParent`/`Unreachable` with
+multi-million-value "operands" that are still individually valid `UInt32`s, no
+id-checked, no jump — then coincidentally realigns with the correct decode 16 bytes
+later) passes **every** structural check this project can write, including the new
+boundary/switch checks. This is not a bug in the fix; it is the fix correctly
+detecting real, provable ambiguity that the old array-order tie-break was papering
+over. Per the coordinator's algorithm, these now throw `E_LAYOUT_AMBIGUOUS` on plain
+`parseHbc()` — which is the intended, safer behavior (D8: refuse rather than guess).
+`--opcode-table=hbc98-late` resolves every one of them correctly (verified against
+this project's 223-function cross-validation and, for one of them, the review's own
+`hbc-disassembler` cross-check). The gate test suite now treats these 8 fixtures
+explicitly: `tests/support/known-issues.ts` documents them, `module.test.ts` asserts
+both that auto-probe refuses and that forcing resolves them, and their golden
+snapshots pin the forced (`hbc98-late`) parse. **Real bundles are unaffected** — all
+5 production APKs (0.7-50.8MB, v96/v98) and all 4 `rn-template-0.72` variants still
+parse cleanly with zero diagnostics; the ambiguity only bites tiny hand-written
+construct fixtures whose functions happen to never use a byte value that both tables
+interpret as a checkable operand.
+
+**Finding 2 (MEDIUM) — hbc98-late's placeholder is no longer a guess.** Per the
+review's request, decoders were changed to fail loudly (`E_UNKNOWN_OPCODE`) rather
+than consume a guessed `(Reg8, Reg8)` signature at opcode 15. Doing so immediately
+surfaced that `tests/fixtures/constructs/50-this-binding/v98.hbc` (a real,
+previously-passing gate fixture) **actually uses opcode 15** — investigating that
+regression identified the real opcode: **`CacheNewObject(Reg8, Reg8, UInt32,
+UInt8)`**, a genuine Hermes opcode (added `89bc5f08e` 2024-12-04, removed `7193d4485`
+2026-01-21, "superseded by the AddPropertyCache optimization"), confirmed two
+independent ways: (a) its direct parent commit
+`f74f6bbe37ec85a52175c723b366b37717b64605` (2026-01-21, `BYTECODE_VERSION=98`, an
+ancestor of the vendored `639e5d6a`) has the exact signature sitting immediately
+before `Mov` — the exact position this project's own evidence already pointed to;
+(b) decoding `50-this-binding`'s function 3 against that signature consumes exactly
+8 bytes and realigns perfectly with the next instruction, and hermes-dec's own
+(D4-compliant, output-only) disassembly of those bytes independently names it
+`CacheNewObject` with the same operand values. `f74f6bbe37e`'s own table still has
+`ToUint32` (added 2025-11-06, well before this commit), so no single commit has both
+"CacheNewObject present" and "ToUint32 absent" — the two-correction patch (not a
+single-commit pin) remains the honest representation of the evidence. The
+`unverified`/fail-loud mechanism (`OpcodeDef.unverified`, checked in both
+`decodeForProbe` and `decodeAndVerifyFunction`) is kept in `src/tables/types.ts` for
+any future such gap; no table currently sets it. `PROVENANCE.md` documents the find.
+
+**Finding 3 (MEDIUM)** — see "undisclosed deviations" above.
+
+**Finding 4 (MEDIUM) — error offsets + memory budget.**
+- All 6 previously-bare `Hbc2jsError` throws in `src/parse/layout.ts` now carry an
+  offset (`8` for version-driven decisions, the header/function-table offset for
+  layout/opcode-table ambiguity).
+- Memory: profiled `parseHbc` phase-by-phase against the 50.8MB Discord bundle
+  (extracted from `~/hbc2js-local-corpus/apks/com.discord.apk` to scratch space only,
+  per D16 — never copied into the repo) in an isolated process with `--expose-gc`.
+  Clean before/after-parse RSS delta was **~4.0x file size** (203MB for 50.8MB),
+  matching the review's ~4.5x finding. Phase breakdown (RSS delta from
+  post-`readFileSync` baseline, cumulative):
+  | Phase | Cumulative RSS delta | Ratio |
+  |---|---|---|
+  | header + sections + layout probe | 6.8MB | 0.13x |
+  | + `parseStringTable` (metadata only, 327,121 strings) | 61.0MB | 1.20x |
+  | + decode every string's text (`.get()` x 327,121) | 112.7MB | 2.22x |
+  | + read every function record (120,522) | 188.3MB | 3.71x |
+
+  The single largest identified cost was eagerly building one boxed `StringEntry`-
+  shaped object per string just to validate it (INV-12), before any text was even
+  decoded. Fixed in `src/parse/strings.ts`: string metadata is now resolved into
+  parallel typed arrays (structure-of-arrays: `Uint8Array`/`Uint32Array` per field)
+  instead of one object per string; `entry(id)` builds a single `StringEntry` object
+  on demand per call (matching `get()`'s existing on-demand-decode pattern), and
+  INV-12's bounds check still runs eagerly for every string exactly as spec 01 §2
+  requires — it just no longer allocates a JS object to do it. Re-measured clean:
+  **parse-delta RSS is now ~2.6x file size** (133MB for 50.8MB), inside the §7.3
+  budget. Function-record construction (120,522 `FunctionRecord`+`FunctionHeader`+
+  `FunctionFlags` objects, ~76MB) remains the largest residual cost; restructuring
+  that would touch the public `FunctionRecord`/`FunctionHeader` API shape and was
+  judged too invasive for this review-response pass — left as a documented M2+
+  candidate if bundle-scale memory becomes a problem again. All 5 production APKs and
+  all fixture-corpus tests re-verified clean after this change (golden snapshots
+  byte-identical, confirming the refactor is behavior-preserving).
+
+**Finding 5 — folded into Finding 4** (same investigation).
+
+**Finding 6 (LOW) — fixed.** `tests/sweep/parse/bundles.test.ts` now asserts
+`probe.exhaustive === true` for every bundle (all four are <2.7MB, well under the
+spec's 4MB threshold for this assertion).
+
+**Finding 7 (LOW) — not fixed here.** `src/cli.ts` is concurrently owned by another
+agent (per this task's routing); the CLI arg-parsing robustness fix (skip flag-shaped
+tokens when filling `--info`'s argument) is deferred to that agent/spec 02's CLI work.
+Not spec-mandated behavior either way, per the review's own assessment.
+
+**Finding 8 (NIT) — accepted as-is.** `Hbc2jsError.toJSON()`'s `message` field
+intentionally duplicates `code`/`context.offset` in already-formatted, human-readable
+form; this is a deliberate convenience for `--json` CLI consumers and log output, not
+an oversight. No change made.
+
+**Cross-cutting note for the overseer:** `src/disasm/**`'s concurrent test suite
+(`tests/gate/disasm/**`, `tests/gate/oracle/disasm/**`) also calls `parseHbc()`
+directly over the full fixture corpus without forcing an opcode table, and will hit
+the same 8 now-correctly-`E_LAYOUT_AMBIGUOUS` v98 fixtures documented above. This
+wasn't introduced by that agent's work — it's a direct, correct consequence of this
+review's Finding 1 fix applied to shared `src/parse/` infrastructure. Since
+`src/disasm/**` and its tests are outside this task's ownership, they weren't
+modified here; whoever picks that up next should reuse
+`tests/support/known-issues.ts`'s `KNOWN_AMBIGUOUS_V98` list the same way
+`tests/gate/parse/module.test.ts` and `strings.test.ts` do.
+
 ## Known gaps
 - ~~**HBC 96 has no compiler/fixture yet**~~ **Closed.** Three of the five
   pulled production apps (Xbox, Bloomberg, Teams) ship v96; Discord and
