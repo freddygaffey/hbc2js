@@ -1,0 +1,98 @@
+# Destructuring (array and object) — iterator protocol + `undefined`-check defaults
+
+**Fixtures:** `37-destructuring-array`, `38-destructuring-object`,
+`39-destructuring-params`
+**Confidence:** ✅ single-version (v94, `-O0`)
+
+## 1. Source
+
+```js
+const [a, b = 99, , d, ...rest] = [1, undefined, 'skipped', 4, 5, 6, 7];
+const { a: renamedA, b: renamedB = 'default-b' } = { a: 1 };
+```
+
+## 2. Bytecode — array destructuring
+
+`tools/hermesc/v94/hermesc -O0 -dump-bytecode -pretty-disassemble=false`:
+
+```
+[@ 152] IteratorBegin 0<Reg8>, 5<Reg8>                    ; same opcode as for-of.md
+[@ 164] IteratorNext 13<Reg8>, 1<Reg8>, 5<Reg8>           ; -> a
+[@ 168] Mov 18<Reg8>, 1<Reg8>
+[@ 171] StrictEq 18<Reg8>, 18<Reg8>, 10<Reg8>             ; state === undefined? (exhausted check, per-position)
+[@ 178] JmpTrue 6<Addr8>, 18<Reg8>
+[@ 181] Mov 3<Reg8>, 13<Reg8>
+[@ 184] Mov 13<Reg8>, 3<Reg8>
+[@ 187] StoreToEnvironment 7<Reg8>, 0<UInt8>, 13<Reg8>    ; a = value
+...
+[@ 200] IteratorNext 13<Reg8>, 1<Reg8>, 5<Reg8>           ; -> b (raw value, BEFORE default check)
+...
+[@ 223] StrictNeq 13<Reg8>, 13<Reg8>, 10<Reg8>            ; raw value !== undefined ?
+[@ 227] JmpTrue 6<Addr8>, 13<Reg8>                         ; true -> skip the default, use the raw value
+[@ 230] Mov 3<Reg8>, 4<Reg8>                                ; false -> use the default (99)
+[@ 233] Mov 4<Reg8>, 3<Reg8>
+[@ 236] StoreToEnvironment 7<Reg8>, 1<UInt8>, 4<Reg8>      ; b = (raw !== undefined) ? raw : 99
+```
+
+**Elided positions** (`, ,` — a hole) call `IteratorNext` (to advance the
+iterator) but never store the result anywhere — confirmed by the absence of
+any `StoreToEnvironment`/`Mov`-into-a-named-register between one
+`IteratorNext` and the next for the skipped position. **Rest** (`...rest`)
+switches to a plain loop building a real array via ordinary
+`NewArray`/`PutOwnByIndex` in a tail loop that keeps calling `IteratorNext`
+until exhaustion — the identical "drain the rest of an iterator into an
+array" shape as `40-spread-array`'s `[...iterable]` (`spread-rest.md`).
+
+**Object destructuring** (`38`) uses ordinary `GetByIdShort`/`GetByVal`
+(for computed keys) instead of the iterator protocol — there is no
+`ObjectPattern`-specific opcode; `{ a: renamedA, b: renamedB = 'default-b'
+}` is exactly `renamedA = obj.a; renamedB = obj.b !== undefined ? obj.b :
+'default-b';` in bytecode, using the **same** `StrictNeq undefined`
+default-check idiom as the array case. Rest in an object pattern
+(`const { x, ...others } = obj`) uses a `CallBuiltin` (the same
+`CopyDataProperties`-shaped builtin as object spread, see
+`spread-rest.md`) seeded with an object literal listing the **excluded**
+keys (`x`), rather than a positional/count-based mechanism.
+
+## 3. CFG/IR shape
+
+Array destructuring is **entirely** the `for-of.md` idiom, applied once per
+target position instead of once per loop iteration — no new CFG shape.
+Default values are a plain two-way branch (`StrictNeq undefined; JmpTrue
+skip`), structurally identical to `default-params.md`'s idiom — the same
+matcher should serve both call sites. Object destructuring is ordinary
+straight-line property access, sometimes with the same default-value branch.
+
+## 4. Matcher
+
+**Array**: recognises a sequence of `IteratorNext`/`Mov`/`Store*` groups
+sharing one `IteratorBegin`, where a "hole" position is an `IteratorNext`
+whose result is never stored, and a "default" position wraps its store in
+the `StrictNeq undefined` branch. **Object**: recognises a
+destructuring-shaped group of `GetByIdShort`/`GetByVal` immediately after a
+single source value becomes live, one property read per binding, with the
+same optional default-value branch. Both refuse to match when the
+extracted values are used for anything other than immediate binding
+(ordinary property/iterator access unrelated to a pattern looks identical
+in isolation — this idiom is a *readability* recognition over already-
+correct code, same caveat as `template-literals.md`).
+
+## 5. Writer
+
+Emits `const [a, b = 99, , d, ...rest] = <src>;` / `const { a: renamedA, b:
+renamedB = 'default-b' } = <src>;`.
+
+## 6. Checker
+
+Beyond stage-B default: asserts the recovered pattern's evaluation order
+matches the bytecode's actual instruction order (left-to-right,
+iterator-protocol-driven for arrays) — destructuring patterns have
+observable per-property evaluation order in JS and a matcher must not
+reorder them for cosmetic reasons.
+
+## 7. Version differences
+
+Not cross-checked against v99 in this research pass (v94 `-O0` only); no
+reason to expect a difference since this idiom is built entirely from
+already-version-checked primitives (`for-of.md`'s iterator opcodes,
+ordinary property access).
