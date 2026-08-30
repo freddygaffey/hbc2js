@@ -9,18 +9,23 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 259,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 20,
@@ -72,18 +77,23 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 102,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 97,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 14,
@@ -104,18 +114,34 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 137,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 47,
+          "start": 45,
+          "target": 120
+        },
+        {
+          "end": 101,
+          "start": 94,
+          "target": 101
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 133,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 9,

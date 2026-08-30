@@ -16,18 +16,23 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 114,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 13,
@@ -48,18 +53,23 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 60,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 14,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 1,
@@ -80,18 +90,34 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 71,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 29,
+          "start": 0,
+          "target": 29
+        },
+        {
+          "end": 44,
+          "start": 0,
+          "target": 50
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 58,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 12,
@@ -112,18 +138,23 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 106,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 48,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 13,

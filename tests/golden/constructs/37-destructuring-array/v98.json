@@ -9,18 +9,49 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 159,
+          "start": 151,
+          "target": 159
+        },
+        {
+          "end": 273,
+          "start": 269,
+          "target": 279
+        },
+        {
+          "end": 450,
+          "start": 380,
+          "target": 876
+        },
+        {
+          "end": 553,
+          "start": 483,
+          "target": 872
+        },
+        {
+          "end": 832,
+          "start": 828,
+          "target": 862
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 908,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 33,
@@ -41,18 +72,23 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 228,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 80,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 8,

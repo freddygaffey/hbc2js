@@ -36,7 +36,7 @@ export function parseHbc(bytes: Uint8Array, options: ParseOptions = {}): HbcModu
   const infoBlocks: { offset: number; index: number }[] = [];
 
   for (let i = 0; i < header.functionCount; i++) {
-    const rec = readFunctionRecord(bytes, functionHeadersOffset + i * layout.smallFuncHeaderSize, i, layout.layoutClass);
+    const rec = readFunctionRecord(bytes, functionHeadersOffset + i * layout.smallFuncHeaderSize, i, layout.layoutClass, header.version);
     offsetCounts.set(rec.header.offset, (offsetCounts.get(rec.header.offset) ?? 0) + 1);
     if (rec.unexpectedInfoFlags) {
       sink.push({

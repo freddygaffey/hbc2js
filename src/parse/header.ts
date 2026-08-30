@@ -210,29 +210,55 @@ export function optionsOffset(layoutClass: LayoutClass): number {
 
 export interface ClassLayoutConstants {
   readonly smallFuncHeaderSize: 12 | 16;
-  readonly largeFuncHeaderSize: 23 | 31 | 36;
+  readonly largeFuncHeaderSize: 23 | 31 | 36 | 37;
   readonly debugOffsetsSize: 4 | 8 | 12;
   readonly funcKindInFlags: boolean;
   readonly hasBigIntTable: boolean;
   readonly hasShapeTable: boolean;
   readonly hasFunctionSourceTable: boolean;
   readonly hasStringSwitchImms: boolean;
+  /** Class E only, version-dependent (see `readSmallHeaderAt`/`readLargeHeaderAt`
+   *  in functions.ts): hbc98-late's `FUNC_HEADER_FIELDS` briefly carried an extra
+   *  1-bit `NumCacheNewObject` field (Hermes commit f74f6bbe37, present for
+   *  BYTECODE_VERSION 98, reverted by 913d31acd1 before v99 shipped) squeezed
+   *  into small-header byte 10 between `writeCacheSize` (7 bits -> 6) and
+   *  `privateNameCacheSize` (unaffected, still the top bit). Packed byte 10 stays
+   *  the same size either way, but the *unpacked* large header gives every field
+   *  — including this 1-bit one — its own full byte (docs/HBC-FORMAT.md's
+   *  `DECLARE_FIELD` one-member-per-field convention), so v98's large header is
+   *  37 bytes, not 36: `flags` sits at offset 36, not 35. Getting this wrong is
+   *  exactly the bug this field exists to prevent. */
+  readonly hasNumCacheNewObjectField: boolean;
 }
 
 /** docs/HBC-FORMAT.md §0.1, §3 — everything about a layout class that doesn't depend
  *  on which opcode table is chosen. Shared by layout.ts (building LayoutProfile) and
- *  functions.ts (reading function headers), so the two can never disagree. */
-export function classLayoutConstants(layoutClass: LayoutClass): ClassLayoutConstants {
+ *  functions.ts (reading function headers), so the two can never disagree.
+ *  `version` only matters for class E (see `hasNumCacheNewObjectField` above) —
+ *  every other class ignores it. */
+export function classLayoutConstants(layoutClass: LayoutClass, version: number): ClassLayoutConstants {
   const o = CLASS_OFFSETS[layoutClass];
   switch (layoutClass) {
     case "A":
-      return { smallFuncHeaderSize: 16, largeFuncHeaderSize: 31, debugOffsetsSize: 8, funcKindInFlags: false, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms };
+      return { smallFuncHeaderSize: 16, largeFuncHeaderSize: 31, debugOffsetsSize: 8, funcKindInFlags: false, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms, hasNumCacheNewObjectField: false };
     case "B":
     case "C":
-      return { smallFuncHeaderSize: 16, largeFuncHeaderSize: 31, debugOffsetsSize: 12, funcKindInFlags: false, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms };
+      return { smallFuncHeaderSize: 16, largeFuncHeaderSize: 31, debugOffsetsSize: 12, funcKindInFlags: false, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms, hasNumCacheNewObjectField: false };
     case "D":
-      return { smallFuncHeaderSize: 12, largeFuncHeaderSize: 23, debugOffsetsSize: 4, funcKindInFlags: true, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms };
-    case "E":
-      return { smallFuncHeaderSize: 12, largeFuncHeaderSize: 36, debugOffsetsSize: 4, funcKindInFlags: true, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms };
+      return { smallFuncHeaderSize: 12, largeFuncHeaderSize: 23, debugOffsetsSize: 4, funcKindInFlags: true, hasBigIntTable: o.hasBigInt, hasShapeTable: o.hasShapeTable, hasFunctionSourceTable: o.hasFunctionSourceCount, hasStringSwitchImms: o.hasStringSwitchImms, hasNumCacheNewObjectField: false };
+    case "E": {
+      const hasNumCacheNewObjectField = version === 98;
+      return {
+        smallFuncHeaderSize: 12,
+        largeFuncHeaderSize: hasNumCacheNewObjectField ? 37 : 36,
+        debugOffsetsSize: 4,
+        funcKindInFlags: true,
+        hasBigIntTable: o.hasBigInt,
+        hasShapeTable: o.hasShapeTable,
+        hasFunctionSourceTable: o.hasFunctionSourceCount,
+        hasStringSwitchImms: o.hasStringSwitchImms,
+        hasNumCacheNewObjectField,
+      };
+    }
   }
 }

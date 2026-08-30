@@ -88,6 +88,26 @@ entries named in T6").
      ownership for M2). `src/disasm/print.ts`'s `Constructor<...>` rendering
      rule (item 3) is verified correct independent of this bug — it was
      confirmed against fixtures whose flags decode correctly.
+   - **FIXED (M1, `src/parse/functions.ts`/`header.ts`).** Root cause: Hermes
+     commit `f74f6bbe37` (present only for `BYTECODE_VERSION` 98, reverted by
+     `913d31acd1` before v99 shipped) added an extra 1-bit `NumCacheNewObject`
+     field to class E's `FUNC_HEADER_FIELDS`, squeezed into small-header byte
+     10 alongside `writeCacheSize`/`privateNameCacheSize` (packed size
+     unaffected) but promoted to its own full byte in the *unpacked* large
+     header (one member per field, regardless of bit-width). That makes
+     v98's large header 37 bytes, not 36, shifting `flags` from offset 35 to
+     36 — every overflowed v98 function's flags were read one byte early.
+     `classLayoutConstants` is now version-aware for class E
+     (`largeFuncHeaderSize`: 37 for v98, 36 otherwise); see
+     `tests/gate/parse/functions.test.ts`'s byte-exact v98 flags test (3
+     fixtures, cross-checked against this project's own already-correct v99
+     decode of the same sources). The `01-if-else-chain` handler above is
+     `start=60,end=85,target=85` in this project's byte numbering (file
+     offsets, not the disassembly-relative ones `hermesc -dump-bytecode`'s
+     label view implies) — verified against the real `Exception Handlers:`
+     block and against v99's decode of the same source, both byte-identical.
+     This exposed a **matching, still-open bug in `hermes-dec`** itself — see
+     7.B item 9 below.
 
 5. **A real, previously-"unverified" `hbc98-late` opcode is now identified.**
    `src/tables/types.ts`'s `OpcodeDef.unverified` flag (opcode 15,
@@ -157,3 +177,23 @@ handle):
    the mnemonic (`"0 StartGenerator "`) rather than nothing. `ourInstructionLine`
    now always emits that trailing space + (possibly empty) operand text to
    match, instead of conditionally omitting it.
+9. **`hbc-disassembler` (hermes-dec) has the same v98/`hbc98-late` large-header
+   flags bug this project's own parser had (see item 4 above, now fixed) —
+   its `FUNC` line's `exc`/`dbg` fields are `0`/`0` for essentially every
+   overflowed v98 function, even ones with a genuine exception handler or
+   debug info.** Evidence: `constructs/01-if-else-chain/v98.hbc` `global`
+   (real `hermesc -dump-bytecode`: has both) — ours: `FUNC 0 124 1 20 0 1 1
+   332`; hermes-dec: `FUNC 0 124 1 20 0 0 0 332` (`strict exc dbg` = `0 0 0`).
+   `constructs/02-while-loop/v98.hbc`'s function 0 (debug info only, no
+   handler) shows the same one-field pattern (`dbg`: ours `1`, hermes-dec
+   `0`). Before this project's v98 flags bug was fixed, our decoder's
+   flags were *also* wrong in a way that happened to agree with hermes-dec's
+   wrongness, so `tests/gate/oracle/disasm/hermes-dec.test.ts` passed by
+   coincidence; fixing our decoder (item 4) correctly diverges from
+   hermes-dec here rather than reintroducing our own bug to match it. Not
+   fixed in the normaliser — this is hermes-dec's own decode error, not a
+   formatting difference, and 7.B's own instructions (top of this section)
+   say a genuine tool disagreement is not something to widen away. Affects
+   every gate-tier v98 construct fixture whose overflowed functions have
+   `hasExceptionHandler` and/or `hasDebugInfo` true (the common case — see
+   item 4's "almost every real v98 function is overflowed").

@@ -9,18 +9,29 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 111,
+          "start": 88,
+          "target": 111
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 192,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 19,
@@ -134,18 +145,59 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 93,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 78,
+          "start": 39,
+          "target": 227
+        },
+        {
+          "end": 93,
+          "start": 86,
+          "target": 227
+        },
+        {
+          "end": 133,
+          "start": 105,
+          "target": 227
+        },
+        {
+          "end": 148,
+          "start": 141,
+          "target": 227
+        },
+        {
+          "end": 191,
+          "start": 160,
+          "target": 227
+        },
+        {
+          "end": 206,
+          "start": 199,
+          "target": 227
+        },
+        {
+          "end": 227,
+          "start": 218,
+          "target": 227
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 289,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 17,
@@ -166,18 +218,144 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 131,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 236,
+          "start": 101,
+          "target": 1537
+        },
+        {
+          "end": 300,
+          "start": 238,
+          "target": 1537
+        },
+        {
+          "end": 315,
+          "start": 308,
+          "target": 1537
+        },
+        {
+          "end": 432,
+          "start": 327,
+          "target": 1537
+        },
+        {
+          "end": 446,
+          "start": 434,
+          "target": 1537
+        },
+        {
+          "end": 465,
+          "start": 458,
+          "target": 1537
+        },
+        {
+          "end": 550,
+          "start": 477,
+          "target": 1537
+        },
+        {
+          "end": 695,
+          "start": 552,
+          "target": 1537
+        },
+        {
+          "end": 709,
+          "start": 697,
+          "target": 1537
+        },
+        {
+          "end": 728,
+          "start": 721,
+          "target": 1537
+        },
+        {
+          "end": 813,
+          "start": 740,
+          "target": 1537
+        },
+        {
+          "end": 972,
+          "start": 815,
+          "target": 1537
+        },
+        {
+          "end": 1071,
+          "start": 974,
+          "target": 1537
+        },
+        {
+          "end": 1093,
+          "start": 1073,
+          "target": 1537
+        },
+        {
+          "end": 1108,
+          "start": 1101,
+          "target": 1537
+        },
+        {
+          "end": 1225,
+          "start": 1120,
+          "target": 1537
+        },
+        {
+          "end": 1239,
+          "start": 1227,
+          "target": 1537
+        },
+        {
+          "end": 1258,
+          "start": 1251,
+          "target": 1537
+        },
+        {
+          "end": 1390,
+          "start": 1270,
+          "target": 1537
+        },
+        {
+          "end": 1428,
+          "start": 1392,
+          "target": 1537
+        },
+        {
+          "end": 1447,
+          "start": 1440,
+          "target": 1537
+        },
+        {
+          "end": 1501,
+          "start": 1459,
+          "target": 1537
+        },
+        {
+          "end": 1516,
+          "start": 1509,
+          "target": 1537
+        },
+        {
+          "end": 1537,
+          "start": 1528,
+          "target": 1537
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 1646,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 41,
@@ -198,18 +376,64 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 432,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 159,
+          "start": 73,
+          "target": 522
+        },
+        {
+          "end": 304,
+          "start": 161,
+          "target": 522
+        },
+        {
+          "end": 318,
+          "start": 306,
+          "target": 522
+        },
+        {
+          "end": 337,
+          "start": 330,
+          "target": 522
+        },
+        {
+          "end": 468,
+          "start": 349,
+          "target": 522
+        },
+        {
+          "end": 486,
+          "start": 470,
+          "target": 522
+        },
+        {
+          "end": 501,
+          "start": 494,
+          "target": 522
+        },
+        {
+          "end": 522,
+          "start": 513,
+          "target": 522
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 605,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 31,

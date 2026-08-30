@@ -46,8 +46,8 @@ interface RawSmallHeader {
   readonly flags: FunctionFlags;
 }
 
-function readSmallHeaderAt(bytes: Uint8Array, offset: number, layoutClass: LayoutClass): RawSmallHeader {
-  const c = classLayoutConstants(layoutClass);
+function readSmallHeaderAt(bytes: Uint8Array, offset: number, layoutClass: LayoutClass, version: number): RawSmallHeader {
+  const c = classLayoutConstants(layoutClass, version);
   const r = new BinaryReader(bytes.subarray(offset, offset + c.smallFuncHeaderSize), "functionHeaders");
   if (layoutClass === "A" || layoutClass === "B" || layoutClass === "C") {
     const word0 = r.u32();
@@ -121,7 +121,12 @@ function readSmallHeaderAt(bytes: Uint8Array, offset: number, layoutClass: Layou
   const frameSize = r.u8();
   const readCacheSize = r.u8();
   const b10 = r.u8();
-  const writeCacheSize = extractBits(b10, 0, 7);
+  // hbc98-late only (Hermes commit f74f6bbe37, reverted by 913d31acd1 before v99
+  // shipped): byte 10 briefly re-split as writeCacheSize:6/numCacheNewObject:1
+  // (discarded, not part of the public API) instead of the standard
+  // writeCacheSize:7 — see ClassLayoutConstants.hasNumCacheNewObjectField.
+  // privateNameCacheSize stays the top bit either way, so it's unaffected.
+  const writeCacheSize = extractBits(b10, 0, c.hasNumCacheNewObjectField ? 6 : 7);
   const privateNameCacheSize = extractBits(b10, 7, 1);
   const flagsRaw = r.u8();
   return {
@@ -172,8 +177,8 @@ interface LargeHeaderFields {
   readonly consumedBytes: number;
 }
 
-function readLargeHeaderAt(bytes: Uint8Array, offset: number, layoutClass: LayoutClass): LargeHeaderFields {
-  const c = classLayoutConstants(layoutClass);
+function readLargeHeaderAt(bytes: Uint8Array, offset: number, layoutClass: LayoutClass, version: number): LargeHeaderFields {
+  const c = classLayoutConstants(layoutClass, version);
   const r = new BinaryReader(bytes.subarray(offset, offset + c.largeFuncHeaderSize), "functionInfo");
   if (layoutClass === "A" || layoutClass === "B" || layoutClass === "C") {
     const off = r.u32();
@@ -242,6 +247,14 @@ function readLargeHeaderAt(bytes: Uint8Array, offset: number, layoutClass: Layou
   const frameSize = r.u32();
   const readCacheSize = r.u8();
   const writeCacheSize = r.u8();
+  // hbc98-late only: an extra full-byte NumCacheNewObject field sits between
+  // WriteCacheSize and PrivateNameCacheSize in the *unpacked* large header (each
+  // field gets its own byte-or-wider member regardless of its packed bit-width —
+  // docs/HBC-FORMAT.md's `DECLARE_FIELD` convention), growing this header to 37
+  // bytes and shifting `flags` from offset 35 to 36. Reverted before v99 shipped.
+  // Discarded here: not part of the public API, and its value is redundant with
+  // the small header's per docs/HBC-FORMAT.md §3.3.
+  if (c.hasNumCacheNewObjectField) r.u8();
   const privateNameCacheSize = r.u8();
   const flagsRaw = r.u8();
   return {
@@ -273,17 +286,19 @@ export interface ResolvedFunction {
   readonly unexpectedInfoFlags: boolean;
 }
 
-/** Resolve one function's complete header + info block. `bytes` is the whole file. */
-export function readFunctionRecord(bytes: Uint8Array, smallHeaderOffset: number, index: number, layoutClass: LayoutClass): ResolvedFunction {
-  const c = classLayoutConstants(layoutClass);
-  const small = readSmallHeaderAt(bytes, smallHeaderOffset, layoutClass);
+/** Resolve one function's complete header + info block. `bytes` is the whole file.
+ *  `version` (spec 01 §6.1's already-established layout-class version) only affects
+ *  class E — see `ClassLayoutConstants.hasNumCacheNewObjectField`. */
+export function readFunctionRecord(bytes: Uint8Array, smallHeaderOffset: number, index: number, layoutClass: LayoutClass, version: number): ResolvedFunction {
+  const c = classLayoutConstants(layoutClass, version);
+  const small = readSmallHeaderAt(bytes, smallHeaderOffset, layoutClass, version);
 
   let header: FunctionHeader;
   let infoBlockStart: number | undefined;
 
   if (small.flags.overflowed) {
     const lho = largeHeaderOffset(small, layoutClass);
-    const large = readLargeHeaderAt(bytes, lho, layoutClass);
+    const large = readLargeHeaderAt(bytes, lho, layoutClass, version);
     header = {
       index,
       offset: large.offset,

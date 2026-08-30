@@ -9,18 +9,44 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 54,
+          "start": 36,
+          "target": 117
+        },
+        {
+          "end": 117,
+          "start": 90,
+          "target": 117
+        },
+        {
+          "end": 211,
+          "start": 193,
+          "target": 268
+        },
+        {
+          "end": 268,
+          "start": 241,
+          "target": 268
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 313,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 24,

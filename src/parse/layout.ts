@@ -7,7 +7,7 @@ import { alignUp, buildSectionMap } from "./sections.ts";
 import { readFunctionRecord } from "./functions.ts";
 import { getOpcodeTable } from "../tables/registry.ts";
 import type { OpcodeDef, OpcodeTable, OpcodeTableId, OperandTypeName } from "../tables/types.ts";
-import type { HbcHeader, LayoutClass, LayoutProfile, ParseOptions, ProbeCandidate } from "./types.ts";
+import type { HbcHeader, LayoutClass, LayoutProfile, ParseOptions, ProbeCandidate, ProbeReport } from "./types.ts";
 
 export interface DiagnosticSink {
   push(d: Diagnostic): void;
@@ -80,7 +80,7 @@ function probeP1(bytes: Uint8Array, header: HbcHeader, layoutClass: LayoutClass)
   if (!(header.debugInfoOffset === 0 || (header.debugInfoOffset >= HEADER_SIZE && header.debugInfoOffset < header.fileLength))) {
     return { ok: false, detail: "debugInfoOffset out of range" };
   }
-  const c = classLayoutConstants(layoutClass);
+  const c = classLayoutConstants(layoutClass, header.version);
   const counts: readonly [number, number][] = [
     [header.functionCount, c.smallFuncHeaderSize],
     [header.stringKindCount, 4],
@@ -130,7 +130,7 @@ function probeP2(bytes: Uint8Array, header: HbcHeader, layout: LayoutProfile): P
   for (let i = 0; i < header.functionCount; i++) {
     let resolved;
     try {
-      resolved = readFunctionRecord(bytes, functionHeadersOffset + i * layout.smallFuncHeaderSize, i, layout.layoutClass);
+      resolved = readFunctionRecord(bytes, functionHeadersOffset + i * layout.smallFuncHeaderSize, i, layout.layoutClass, header.version);
     } catch (e) {
       return { ok: false, detail: `function ${i} info block unreadable: ${e instanceof Error ? e.message : String(e)}` };
     }
@@ -421,7 +421,7 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
       report.push({ layoutClass, opcodeTable: undefined, passed: false, failedProbe: "P1", ...(p1.detail !== undefined ? { detail: p1.detail } : {}) });
       continue;
     }
-    const c = classLayoutConstants(layoutClass);
+    const c = classLayoutConstants(layoutClass, version);
     const provisionalLayout: LayoutProfile = {
       layoutClass,
       version,
@@ -475,7 +475,7 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
   if (survivors.length === 1 && decidedBy.length === 0) decidedBy.push("P2");
 
   const chosen = survivors[0]!;
-  const c = classLayoutConstants(chosen.layoutClass);
+  const c = classLayoutConstants(chosen.layoutClass, version);
 
   // --- opcode table selection ---
   const opcodeCandidates: readonly OpcodeTableId[] =
@@ -488,6 +488,7 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
   let exhaustive = true;
   let sampledFunctions = chosen.header.functionCount;
   let totalFunctions = chosen.header.functionCount;
+  let sampledIndices: readonly number[] | undefined;
 
   if (opcodeCandidates.length === 0) {
     chosenOpcodeTable = undefined;
@@ -515,10 +516,11 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
     const sample = bySize ? { indices: Array.from({ length: chosen.header.functionCount }, (_, i) => i), exhaustive: true } : probeSet(chosen.header.functionCount, chosen.header.globalCodeIndex);
     exhaustive = bySize || sample.exhaustive;
     sampledFunctions = sample.indices.length;
+    if (!exhaustive) sampledIndices = sample.indices;
 
     const resolvedByIndex = new Map<number, { offset: number; bytecodeSizeInBytes: number }>();
     for (const i of sample.indices) {
-      const rec = readFunctionRecord(bytes, functionHeadersOffset + i * c.smallFuncHeaderSize, i, chosen.layoutClass);
+      const rec = readFunctionRecord(bytes, functionHeadersOffset + i * c.smallFuncHeaderSize, i, chosen.layoutClass, version);
       resolvedByIndex.set(i, { offset: rec.header.offset, bytecodeSizeInBytes: rec.header.bytecodeSizeInBytes });
     }
 
@@ -555,7 +557,7 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
       // candidate that survives that for every function stays eligible.
       const allOffsets: { offset: number; bytecodeSizeInBytes: number }[] = new Array(chosen.header.functionCount);
       for (let i = 0; i < chosen.header.functionCount; i++) {
-        const rec = readFunctionRecord(bytes, functionHeadersOffset + i * c.smallFuncHeaderSize, i, chosen.layoutClass);
+        const rec = readFunctionRecord(bytes, functionHeadersOffset + i * c.smallFuncHeaderSize, i, chosen.layoutClass, version);
         allOffsets[i] = { offset: rec.header.offset, bytecodeSizeInBytes: rec.header.bytecodeSizeInBytes };
       }
 
@@ -665,6 +667,20 @@ export function probeLayout(bytes: Uint8Array, options: ParseOptions, diagnostic
       exhaustive,
       sampledFunctions,
       totalFunctions,
+      ...(sampledIndices !== undefined ? { sampledIndices } : {}),
     },
   };
+}
+
+/** M1 follow-up (spec 02 §3.3 review note): "was function `functionIndex` part of
+ *  the P3 opcode-table probe sample?", exact rather than `sampledFunctions`/
+ *  `totalFunctions`'s approximate counts. Exhaustive probes (the common case —
+ *  small files, or an unambiguous single opcode-table candidate) trivially sampled
+ *  every function. A non-exhaustive probe without `sampledIndices` (a `ProbeReport`
+ *  built before this field existed) can't answer precisely; assume unsampled so a
+ *  caller's hint still fires rather than going silent. */
+export function wasSampled(probe: ProbeReport, functionIndex: number): boolean {
+  if (probe.exhaustive) return true;
+  if (probe.sampledIndices !== undefined) return probe.sampledIndices.includes(functionIndex);
+  return false;
 }

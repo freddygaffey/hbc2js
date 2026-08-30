@@ -3,7 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseHbc } from "../../../src/index.ts";
 import { Hbc2jsError, ErrorCode } from "../../../src/errors.ts";
-import { decodeAndVerifyFunction } from "../../../src/parse/layout.ts";
+import { decodeAndVerifyFunction, wasSampled } from "../../../src/parse/layout.ts";
+import type { ProbeReport } from "../../../src/parse/types.ts";
 import { getOpcodeTable } from "../../../src/tables/registry.ts";
 import { readHeaderFields } from "../../../src/parse/header.ts";
 import { fixture } from "../../support/fixtures.ts";
@@ -131,4 +132,46 @@ test("real v98.hbc: hbc99-feb2026 is eliminated at the whole-file cheap probe, s
   const m = parseHbc(bin(98));
   assert.equal(m.layout.opcodeTable, "hbc98-late");
   assert.ok(m.layout.probe.decidedBy.includes("D1"));
+});
+
+// M1 follow-up (spec 02 §3.3 review note): `ProbeReport.sampledFunctions` was
+// only a count, so a consumer (e.g. the disasm decoder's probe-aware error
+// hint) couldn't tell whether any *particular* function index was in a
+// non-exhaustive P3 sample -- only that N of M were, approximately. `wasSampled`
+// answers that exactly from the new `sampledIndices` field.
+function probeReport(overrides: Partial<ProbeReport>): ProbeReport {
+  return { candidates: [], chosen: "", forced: false, decidedBy: [], exhaustive: true, ...overrides };
+}
+
+test("wasSampled: exhaustive probes trivially sampled every index", () => {
+  const probe = probeReport({ exhaustive: true });
+  assert.equal(wasSampled(probe, 0), true);
+  assert.equal(wasSampled(probe, 999), true);
+});
+
+test("wasSampled: non-exhaustive probe with sampledIndices answers exactly, not approximately", () => {
+  const probe = probeReport({ exhaustive: false, sampledFunctions: 2, totalFunctions: 5, sampledIndices: [0, 3] });
+  assert.equal(wasSampled(probe, 0), true);
+  assert.equal(wasSampled(probe, 3), true);
+  // Indices 1, 2, 4 were NOT sampled, even though the old count-only fields
+  // (sampledFunctions: 2 of totalFunctions: 5) can't distinguish them from 0/3.
+  assert.equal(wasSampled(probe, 1), false);
+  assert.equal(wasSampled(probe, 2), false);
+  assert.equal(wasSampled(probe, 4), false);
+});
+
+test("wasSampled: non-exhaustive probe without sampledIndices (pre-follow-up ProbeReport) assumes unsampled, not sampled", () => {
+  // A caller like the disasm decoder's hint must fail toward attaching the
+  // "may be wrong" hint rather than silently going quiet when it can't tell.
+  const probe = probeReport({ exhaustive: false, sampledFunctions: 2, totalFunctions: 5 });
+  assert.equal(wasSampled(probe, 0), false);
+});
+
+test("probeLayout attaches sampledIndices exactly when the P3 sample is non-exhaustive", () => {
+  // Gate-tier fixtures are all under the 2MB exhaustive-by-size threshold, so
+  // sampledIndices is never populated for them -- confirm that documented
+  // absence rather than asserting a fabricated non-exhaustive scenario.
+  const m = parseHbc(bin(98), { opcodeTable: "hbc98-late" });
+  assert.equal(m.layout.probe.exhaustive, true);
+  assert.equal(m.layout.probe.sampledIndices, undefined);
 });

@@ -19,7 +19,7 @@ export interface LayoutProfile {
   readonly opcodeTable: OpcodeTableId | undefined;
   readonly builtinTable: BuiltinTableId | undefined;
   readonly smallFuncHeaderSize: 12 | 16;
-  readonly largeFuncHeaderSize: 23 | 31 | 36;
+  readonly largeFuncHeaderSize: 23 | 31 | 36 | 37;
   readonly debugOffsetsSize: 4 | 8 | 12;
   readonly hasBigIntTable: boolean;
   readonly hasShapeTable: boolean;
@@ -37,6 +37,14 @@ export interface ProbeReport {
   readonly exhaustive: boolean;
   readonly sampledFunctions?: number;
   readonly totalFunctions?: number;
+  /** Exact function indices included in a non-exhaustive P3 probe sample (§6.4 /
+   *  M1 follow-up). `undefined` when `exhaustive` is true (every function was
+   *  checked, so "was N sampled" is trivially true for all N) or when the sample
+   *  loop never ran (opcode table was unambiguous). Lets a consumer — e.g. spec
+   *  02 §3.3's decoder hint — ask "was *this* function index in the sample?"
+   *  exactly, instead of approximating from `sampledFunctions`/`totalFunctions`
+   *  counts alone. See `wasSampled` in parse/layout.ts. */
+  readonly sampledIndices?: readonly number[];
 }
 
 export interface ProbeCandidate {

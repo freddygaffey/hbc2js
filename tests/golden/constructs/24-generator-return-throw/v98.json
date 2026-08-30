@@ -9,18 +9,23 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
       "exceptionHandlers": [],
       "header": {
         "bytecodeSizeInBytes": 306,
         "flags": {
-          "hasDebugInfo": false,
+          "hasDebugInfo": true,
           "hasExceptionHandler": false,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 18,
           "strictMode": false
         },
         "frameSize": 19,
@@ -103,18 +108,69 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 166,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 121,
+          "start": 55,
+          "target": 395
+        },
+        {
+          "end": 151,
+          "start": 129,
+          "target": 395
+        },
+        {
+          "end": 191,
+          "start": 163,
+          "target": 395
+        },
+        {
+          "end": 221,
+          "start": 199,
+          "target": 395
+        },
+        {
+          "end": 261,
+          "start": 233,
+          "target": 395
+        },
+        {
+          "end": 291,
+          "start": 269,
+          "target": 395
+        },
+        {
+          "end": 359,
+          "start": 303,
+          "target": 395
+        },
+        {
+          "end": 374,
+          "start": 367,
+          "target": 395
+        },
+        {
+          "end": 395,
+          "start": 386,
+          "target": 395
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 478,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 24,
@@ -135,18 +191,69 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 246,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 141,
+          "start": 62,
+          "target": 465
+        },
+        {
+          "end": 181,
+          "start": 153,
+          "target": 465
+        },
+        {
+          "end": 211,
+          "start": 189,
+          "target": 465
+        },
+        {
+          "end": 262,
+          "start": 223,
+          "target": 465
+        },
+        {
+          "end": 292,
+          "start": 270,
+          "target": 465
+        },
+        {
+          "end": 364,
+          "start": 304,
+          "target": 465
+        },
+        {
+          "end": 429,
+          "start": 372,
+          "target": 465
+        },
+        {
+          "end": 444,
+          "start": 437,
+          "target": 465
+        },
+        {
+          "end": 465,
+          "start": 456,
+          "target": 465
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 561,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 27,

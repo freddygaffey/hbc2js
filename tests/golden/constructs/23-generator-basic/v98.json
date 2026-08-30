@@ -9,18 +9,29 @@
   "functions": [
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 282,
+          "start": 270,
+          "target": 282
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 321,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 18,
@@ -103,18 +114,79 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 170,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 95,
+          "start": 39,
+          "target": 397
+        },
+        {
+          "end": 110,
+          "start": 103,
+          "target": 397
+        },
+        {
+          "end": 173,
+          "start": 122,
+          "target": 397
+        },
+        {
+          "end": 192,
+          "start": 185,
+          "target": 397
+        },
+        {
+          "end": 232,
+          "start": 204,
+          "target": 397
+        },
+        {
+          "end": 247,
+          "start": 240,
+          "target": 397
+        },
+        {
+          "end": 287,
+          "start": 259,
+          "target": 397
+        },
+        {
+          "end": 302,
+          "start": 295,
+          "target": 397
+        },
+        {
+          "end": 361,
+          "start": 314,
+          "target": 397
+        },
+        {
+          "end": 376,
+          "start": 369,
+          "target": 397
+        },
+        {
+          "end": 397,
+          "start": 388,
+          "target": 397
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 459,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 18,
@@ -135,18 +207,49 @@
     },
     {
       "bodyShared": false,
-      "debugOffsets": null,
-      "exceptionHandlers": [],
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 229,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 104,
+          "start": 39,
+          "target": 251
+        },
+        {
+          "end": 173,
+          "start": 116,
+          "target": 251
+        },
+        {
+          "end": 207,
+          "start": 181,
+          "target": 251
+        },
+        {
+          "end": 230,
+          "start": 223,
+          "target": 251
+        },
+        {
+          "end": 251,
+          "start": 242,
+          "target": 251
+        }
+      ],
       "header": {
         "bytecodeSizeInBytes": 313,
         "flags": {
-          "hasDebugInfo": false,
-          "hasExceptionHandler": false,
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
           "kind": "Normal",
           "kindKnown": true,
           "overflowed": true,
-          "prohibitInvoke": "call",
-          "raw": 0,
+          "prohibitInvoke": "none",
+          "raw": 26,
           "strictMode": false
         },
         "frameSize": 19,
