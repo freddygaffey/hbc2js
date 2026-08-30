@@ -7,9 +7,9 @@ import { readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { analyzeApk, apkHintsFromEvidence, extractBundleFromApk } from "./apk.ts";
 import type { ApkEvidence } from "./apk.ts";
-import { confirmCandidates } from "./confirm.ts";
+import { confirmCandidates, detectRnVersionFromBaselineFilenames } from "./confirm.ts";
 import type { ConfirmResult } from "./confirm.ts";
-import { resolveDbLayers, loadSignatures } from "./db.ts";
+import { resolveDbLayers, loadSignatures, defaultSharedDbDir } from "./db.ts";
 import { guessModules } from "./guess.ts";
 import type { ModuleGuess } from "./guess.ts";
 import { buildInventory } from "./inventory.ts";
@@ -28,6 +28,9 @@ export interface DepsOptions {
   readonly minInstr?: number;
   readonly scratchDir?: string;
   readonly hermescDir?: string; // defaults to `tools/hermesc` under the repo/package root
+  /** Forwarded to `confirmCandidates` — see its own doc comment. Ignored
+   *  unless `confirm` is also set. */
+  readonly onProgress?: (message: string) => void;
 }
 
 export interface DepsRunResult {
@@ -68,16 +71,30 @@ export async function runDeps(inputPath: string, opts: DepsOptions = {}): Promis
 
   let confirmResults: ConfirmResult[] = [];
   if (opts.confirm === true && opts.offline !== true) {
-    const rnVersion = matchReport.packages.find((p) => p.package === "react-native" && (p.tier === "high" || p.tier === "medium"))?.version;
+    const projectDbDir = resolveDbLayers({ ...(opts.out !== undefined ? { outDir: opts.out } : {}), ...(opts.sigdb !== undefined ? { sigdb: opts.sigdb } : {}) })[0]!.dir;
+    const userCacheDbDir = resolveDbLayers({})[1]!.dir;
+    const sharedDbDir = defaultSharedDbDir();
+    // Baselines (`_baselines/*`, see `confirm.ts`) are toolchain
+    // noise-cancellation, not curated package data — read from every DB dir
+    // including `sharedDbDir` even under `--no-shared-db` (that flag governs
+    // which *package* signatures are trusted for match/guess scoring, not
+    // this). Also this exercise's only source of a react-native version to
+    // scaffold the confirm project with when the match stage found no
+    // react-native signature to detect one from at all — the common case on
+    // an empty/`--no-shared-db` DB, which is exactly when `--confirm` is
+    // most needed (docs/DEPS.md §4, D17a/D17b).
+    const baselineDirs = [projectDbDir, userCacheDbDir, sharedDbDir];
+    const rnVersion = matchReport.packages.find((p) => p.package === "react-native" && (p.tier === "high" || p.tier === "medium"))?.version ?? detectRnVersionFromBaselineFilenames(baselineDirs, inventory.hbcVersion) ?? undefined;
     const hermescPath = join(opts.hermescDir ?? join(process.cwd(), "tools", "hermesc"), `v${inventory.hbcVersion}`, "hermesc");
     if (rnVersion !== undefined) {
       const scratchDir = opts.scratchDir ?? join(opts.out ?? ".", ".hbc2js", "confirm-scratch");
-      const candidates = guesses
-        .map((g) => g.candidates[0])
-        .filter((c): c is NonNullable<typeof c> => c !== undefined && c.version !== null)
-        .map((c) => ({ package: c.package, version: c.version! }));
-      const projectDbDir = resolveDbLayers({ ...(opts.out !== undefined ? { outDir: opts.out } : {}), ...(opts.sigdb !== undefined ? { sigdb: opts.sigdb } : {}) })[0]!.dir;
-      const userCacheDbDir = resolveDbLayers({})[1]!.dir;
+      // One candidate per raw per-module guess, best-ranked first — no
+      // `version !== null` filter: most of the highest-value evidence (a
+      // curated `NativeModules.X` name) never carries one, and
+      // `confirmCandidates` itself now resolves a missing version to the
+      // npm release nearest its reference date before packing anything, and
+      // dedupes by package (docs/DEPS.md §4).
+      const candidates = guesses.map((g) => g.candidates[0]).filter((c): c is NonNullable<typeof c> => c !== undefined);
       confirmResults = await confirmCandidates(candidates, inventory, {
         scratchProjectDir: scratchDir,
         rnVersion,
@@ -85,8 +102,10 @@ export async function runDeps(inputPath: string, opts: DepsOptions = {}): Promis
         hermescPath,
         projectDbDir,
         userCacheDbDir,
+        baselineDirs,
         rateLimitMs: 500,
         failureLogPath: join(scratchDir, "..", "confirm-failures.json"),
+        ...(opts.onProgress !== undefined ? { onProgress: opts.onProgress } : {}),
       });
     }
   }

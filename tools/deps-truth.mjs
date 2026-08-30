@@ -74,23 +74,48 @@ function packageFromSource(source) {
   return { name, root };
 }
 
+// A pnpm/yarn/npm/lerna workspace monorepo's own sibling packages (e.g. this
+// tool's own react-navigation-example fixture, whose `example/` app depends
+// on `@react-navigation/*` via the workspace protocol) resolve straight to
+// that package's *source* directory, never through `node_modules/` at all —
+// Metro's source map records e.g. `/packages/native/src/index.tsx`, not a
+// `node_modules/@react-navigation/native/...` path. `packageFromSource`
+// above has no way to see these; only fires when the caller passes `--root`
+// (the workspace root the bundle was built from — a temp clone, gone by the
+// time a fixture's committed `truth.json` is later scored, so this is a
+// generation-time-only fallback, opt-in, never required for scoring).
+function packageFromWorkspaceSource(source, root) {
+  const m = /^\/?packages\/([^/]+)\//.exec(source);
+  if (m === null) return null;
+  const pkgDir = join(root, "packages", m[1]);
+  try {
+    const doc = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
+    if (typeof doc.name !== "string" || doc.name.length === 0) return null;
+    return { name: doc.name, root: pkgDir };
+  } catch {
+    return null;
+  }
+}
+
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-export function truthFromMap(hbcPaths, mapPath, bundleJsPath) {
+export function truthFromMap(hbcPaths, mapPath, bundleJsPath, opts = {}) {
   const map = JSON.parse(readFileSync(mapPath, "utf8"));
   const srcPerLine = sourcePerLine(map);
   const jsLines = readFileSync(bundleJsPath, "utf8").split("\n");
   const modules = {};
   const versions = new Map();
+  const rootByPackageName = new Map();
   jsLines.forEach((text, i) => {
     if (!text.startsWith("__d(")) return;
     const m = /\},(\d+),\[[\d,]*\]\);\s*$/.exec(text);
     if (m === null) return;
     const srcIdx = srcPerLine[i];
     const source = srcIdx === null || srcIdx === undefined ? null : map.sources[srcIdx];
-    const pkg = source === null ? null : packageFromSource(source);
+    let pkg = source === null ? null : packageFromSource(source);
+    if (pkg === null && source !== null && opts.root !== undefined) pkg = packageFromWorkspaceSource(source, opts.root);
     let version = null;
     if (pkg !== null) {
       if (!versions.has(pkg.root)) {
@@ -101,15 +126,20 @@ export function truthFromMap(hbcPaths, mapPath, bundleJsPath) {
         }
       }
       version = versions.get(pkg.root);
+      if (!rootByPackageName.has(pkg.name)) rootByPackageName.set(pkg.name, pkg.root);
     }
     modules[m[1]] = { package: pkg?.name ?? null, version, source: source === null ? null : source.slice(source.lastIndexOf("node_modules/") >= 0 ? source.lastIndexOf("node_modules/") : Math.max(0, dirname(bundleJsPath).length + 1)) };
   });
   const packages = {};
+  // Keyed off `rootByPackageName` (recorded at insertion time above) rather
+  // than re-derived by matching `node_modules/<name>` against `versions`'
+  // keys — that suffix match can never find a workspace package's root
+  // (`packageFromWorkspaceSource` above), and is redundant work besides.
   const roots = new Map();
   for (const m of Object.values(modules)) {
     if (m.package === null || m.package in packages) continue;
     packages[m.package] = m.version;
-    roots.set(m.package, [...versions.keys()].find((r) => r.endsWith(`node_modules/${m.package}`)));
+    roots.set(m.package, rootByPackageName.get(m.package));
   }
   // A truth package that some other truth package declares as a dependency
   // is "transitive": the signature DB fingerprints a package *with* its
@@ -235,6 +265,7 @@ async function main(argv) {
   const positional = [];
   let bundleJs;
   let writeTruth;
+  let root;
   const alsoHbc = [];
   let json = false;
   for (let i = 0; i < argv.length; i++) {
@@ -242,12 +273,13 @@ async function main(argv) {
     if (a === "--bundle-js") bundleJs = argv[++i];
     else if (a === "--write-truth") writeTruth = argv[++i];
     else if (a === "--also-hbc") alsoHbc.push(argv[++i]);
+    else if (a === "--root") root = argv[++i];
     else if (a === "--json") json = true;
     else positional.push(a);
   }
   const [hbcPath, truthOrMap] = positional;
   if (hbcPath === undefined || truthOrMap === undefined) {
-    process.stderr.write("usage: deps-truth.mjs <bundle.hbc> <bundle.map|truth.json> [--bundle-js <bundle.js>] [--write-truth <truth.json>] [--also-hbc <other.hbc>] [--json]\n");
+    process.stderr.write("usage: deps-truth.mjs <bundle.hbc> <bundle.map|truth.json> [--bundle-js <bundle.js>] [--write-truth <truth.json>] [--also-hbc <other.hbc>] [--root <workspace-dir>] [--json]\n");
     return 2;
   }
   let truth;
@@ -256,7 +288,7 @@ async function main(argv) {
       process.stderr.write("--bundle-js <bundle.js> is required with a .map (module ids come from the bundle's __d lines)\n");
       return 2;
     }
-    truth = truthFromMap([hbcPath, ...alsoHbc], truthOrMap, bundleJs);
+    truth = truthFromMap([hbcPath, ...alsoHbc], truthOrMap, bundleJs, root !== undefined ? { root } : {});
     if (writeTruth !== undefined) writeFileSync(writeTruth, JSON.stringify(truth, null, 1) + "\n");
   } else {
     truth = JSON.parse(readFileSync(truthOrMap, "utf8"));

@@ -604,6 +604,11 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
       ...(args.sigdb !== undefined ? { sigdb: args.sigdb } : {}),
       noSharedDb: args.noSharedDb,
       ...(args.minInstr !== undefined ? { minInstr: args.minInstr } : {}),
+      // `--confirm` can take several minutes with no other output (a real
+      // scratch `npm install`, then one npm-pack + Metro bundle + hermesc
+      // compile per candidate) — always to stderr, so it never mixes into
+      // `--json`'s stdout.
+      ...(args.confirm ? { onProgress: (message: string) => process.stderr.write(`hbc2js deps --confirm: ${message}\n`) } : {}),
     });
     if (args.out !== undefined) {
       const deps = packageJsonDependencies(result.report);

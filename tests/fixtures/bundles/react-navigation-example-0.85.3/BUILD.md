@@ -25,12 +25,17 @@ pnpm install --frozen-lockfile
 
 cd example
 # Expo app: `expo export` invokes Metro + hermesc internally. Pass --no-bytecode
-# to keep the raw JS text bundle instead of (or in addition to) the .hbc.
-node_modules/.bin/expo export --platform android --output-dir dist-js --no-bytecode
+# to keep the raw JS text bundle instead of (or in addition to) the .hbc, and
+# --source-maps so Metro emits a source map alongside it (D17d ground truth —
+# docs/DECISIONS.md D17d, docs/DEPS.md "Ground truth"): each `__d(...)` line's
+# source path, via the map, tells you the npm package (and, from that
+# package's own package.json next to it in node_modules, its exact version)
+# that module came from.
+node_modules/.bin/expo export --platform android --output-dir dist-js --no-bytecode --source-maps
 node_modules/.bin/expo export --platform android --output-dir dist-hbc
-# JS bundle lands at dist-js/_expo/static/js/android/App-<hash>.js
-# .hbc (Expo's own hermesc invocation, for cross-check) at
-#   dist-hbc/_expo/static/js/android/App-<hash>.hbc
+# JS bundle lands at dist-js/_expo/static/js/android/App-<hash>.js, its
+# source map at dist-js/_expo/static/js/android/App-<hash>.map (Expo's own
+# .hbc, for cross-check, at dist-hbc/_expo/static/js/android/App-<hash>.hbc).
 
 # Compile the JS bundle ourselves with the matching HBC-98 hermesc, recording
 # both a release (-O) and debug (-O -g) variant:
@@ -39,9 +44,49 @@ HERMESC=../../../tools/hermesc/v98/hermesc
 cp dist-js/_expo/static/js/android/App-*.js index.android.bundle
 $HERMESC -O -emit-binary -out=react-navigation-example.hbc index.android.bundle
 $HERMESC -O -g -emit-binary -out=react-navigation-example.debug.hbc index.android.bundle
+
+# Derive the truth file straight from the map, while node_modules is still on
+# disk (run this from `example/`, against the *original* dist-js/.js + .map,
+# not the copies above, so the map's relative `sources` entries resolve):
+node ../../../../tools/deps-truth.mjs react-navigation-example.hbc \
+  dist-js/_expo/static/js/android/App-*.map \
+  --bundle-js dist-js/_expo/static/js/android/App-*.js \
+  --write-truth deps-truth.json \
+  --also-hbc react-navigation-example.debug.hbc \
+  --root ../..   # the rn-nav workspace root — see note below
 ```
 
-Or just run `./fetch.sh` in this directory, which does the above end to end.
+Or just run `./fetch.sh` in this directory, which does the above end to end
+(including the truth derivation).
+
+## Ground truth (D17d)
+
+`fetch.sh` also writes `react-navigation-example.map` (the Metro source map)
+and `deps-truth.json` (the compact module-id -> package@version truth derived
+from it, `tools/deps-truth.mjs`) alongside the bundle. Like the bundle/`.hbc`
+files, **neither is committed** (the map is several MB; `deps-truth.json` is
+small but is a build artefact like the rest of this fixture's regenerable
+files) — run `fetch.sh` to get them locally.  `tests/sweep/deps/truth-react-navigation.test.ts`
+scores `hbc2js deps` against `deps-truth.json` (skips, INCONCLUSIVE, until
+it exists).
+
+**Workspace-package caveat.** This app is `react-navigation/react-navigation`'s
+own `example/`, so `@react-navigation/{native,stack,core,routers,elements,
+drawer,bottom-tabs,devtools,...}` resolve via the pnpm workspace straight to
+that monorepo's own `packages/<name>/src/...` sources, never through
+`node_modules/<pkg>/...` — Metro's source map records e.g.
+`/packages/native/src/index.tsx`. `tools/deps-truth.mjs`'s `packageFromSource`
+only recognises `node_modules/`, so without help every one of those modules'
+truth would come back `package: null` (counted as "app code"), and a real,
+correct `@react-navigation/native`/`stack` detection from `hbc2js deps` would
+score as a **false positive** instead of a true positive. `fetch.sh` passes
+`--root "$WORK/rn-nav"` (the cloned workspace root, still on disk at that
+point) so `truthFromMap`'s `packageFromWorkspaceSource` fallback can resolve
+`/packages/<name>/` sources to that package's own `package.json` (`name` +
+`version`) the same way `node_modules/` ones resolve — generic to any
+npm/yarn/pnpm/lerna workspace using the common `packages/<name>` layout, not
+special-cased to this repo. Only active when `--root` is passed (fixture
+generation time); scoring a committed `truth.json` never needs it.
 
 ## Sizes, timing, hashes
 

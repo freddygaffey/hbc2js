@@ -71,6 +71,25 @@ const HOST_TO_PACKAGE: ReadonlyMap<string, string> = new Map(Object.entries({
   "firebaseinstallations.googleapis.com": "@react-native-firebase/app",
   "app-measurement.com": "@react-native-firebase/analytics",
   "googlesyndication.com": "react-native-google-mobile-ads",
+  // Not third-party SDKs — react/react-native/@react-navigation's own
+  // user-facing warning messages link to their doc sites (e.g. React's
+  // "Warning: ...%s more hooks..." -> react.dev/link/..., RN's changelog
+  // links -> reactnative.dev/blog/..., @react-navigation's troubleshooting
+  // links -> reactnavigation.org/docs/...), and those links are NOT gated
+  // behind `__DEV__` (unlike most of these libraries' verbose dev-only
+  // assertion text, which Metro's `--dev false` dead-code-eliminates), so
+  // they're one of the only name clues left for these core packages once a
+  // signature-DB match is unavailable (docs/DEPS.md D17a "confirm" —
+  // measured live on `tests/fixtures/bundles/react-navigation-example-0.85.3`,
+  // `--no-shared-db`: without these three, react/react-native/
+  // @react-navigation/native have no guess-stage evidence at all to seed a
+  // `--confirm` attempt from). `@react-navigation/native` specifically
+  // because `reactnavigation.org` itself can't disambiguate which
+  // `@react-navigation/*` sub-package a given warning came from — `native`
+  // hosts `NavigationContainer`, the most central of them.
+  "react.dev": "react",
+  "reactnative.dev": "react-native",
+  "reactnavigation.org": "@react-navigation/native",
 }));
 
 // A conservative shape for "this string looks like an npm package name" —
@@ -88,11 +107,23 @@ const STOPWORD_LIKE_NAMES = new Set(["true", "false", "null", "undefined", "defa
 // version is effectively self-corroborating.
 const PACKAGE_NAME_AT_VERSION = /^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
 
+// A real `scheme://host` occurrence is unambiguous enough to find anywhere
+// in a string, not just when the whole string *is* the URL — a library's
+// warning/error message routinely embeds a doc link mid-sentence ("...for
+// more details, see https://reactnavigation.org/docs/..." — measured live
+// on `react-navigation-example-0.85.3`; every doc-link host in it appears
+// this way, none as a bare-string constant), so anchoring at `^` here
+// missed every one of them. The bare-domain heuristic (no scheme, e.g. a
+// literal `"api.stripe.com"` used to build a request) stays anchored at the
+// start — de-anchoring *that* one risks matching arbitrary dotted
+// substrings inside unrelated code.
+const URL_SCHEME_HOST = /[a-z][a-z0-9+.-]*:\/\/([^/\s'"]+)/gi;
 function extractUrlHosts(strings: readonly string[]): string[] {
   const hosts = new Set<string>();
   for (const s of strings) {
-    const m = /^[a-z][a-z0-9+.-]*:\/\/([^/\s]+)/i.exec(s) ?? /^([a-z0-9-]+(?:\.[a-z0-9-]+)+\.[a-z]{2,})(?:[/:]|$)/i.exec(s);
-    if (m) hosts.add(m[1]!.toLowerCase());
+    for (const m of s.matchAll(URL_SCHEME_HOST)) hosts.add(m[1]!.toLowerCase());
+    const bare = /^([a-z0-9-]+(?:\.[a-z0-9-]+)+\.[a-z]{2,})(?:[/:]|$)/i.exec(s);
+    if (bare) hosts.add(bare[1]!.toLowerCase());
   }
   return [...hosts];
 }

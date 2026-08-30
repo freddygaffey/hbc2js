@@ -19,10 +19,11 @@ echo "==> pnpm install --frozen-lockfile"
 pnpm install --frozen-lockfile
 
 cd example
-echo "==> expo export (JS bundle, no bytecode)"
-node_modules/.bin/expo export --platform android --output-dir dist-js --no-bytecode
+echo "==> expo export (JS bundle, no bytecode, with Metro source map for D17d ground truth)"
+node_modules/.bin/expo export --platform android --output-dir dist-js --no-bytecode --source-maps
 
 JSBUNDLE="$(find dist-js -name '*.js' | head -1)"
+JSMAP="$(find dist-js -name '*.map' | head -1)"
 cp "$JSBUNDLE" "$HERE/index.android.bundle"
 
 echo "==> fetching hermesc v98 (HBC bytecode version for RN 0.85.3)"
@@ -36,3 +37,25 @@ echo "==> compiling -O -g"
 
 echo "==> done. sha256:"
 shasum -a 256 "$HERE/index.android.bundle" "$HERE/react-navigation-example.hbc" "$HERE/react-navigation-example.debug.hbc"
+
+# D17d ground truth (docs/DECISIONS.md D17d, docs/DEPS.md "Ground truth"):
+# derive per-module package@version truth from the Metro source map while
+# node_modules is still on disk (tools/deps-truth.mjs's truthFromMap reads
+# each source's node_modules/<pkg>/package.json for its exact version).
+# Run against the *original* dist-js/.map + .js (still sitting next to the
+# example project's own node_modules) rather than the copies under $HERE,
+# so the map's relative `sources` paths resolve. Neither the map nor
+# deps-truth.json is committed (see BUILD.md) — regenerate by re-running
+# this script.
+if [ -n "$JSMAP" ]; then
+  cp "$JSMAP" "$HERE/react-navigation-example.map"
+  echo "==> deriving D17d ground truth from the source map"
+  node "$REPO_ROOT/tools/deps-truth.mjs" \
+    "$HERE/react-navigation-example.hbc" "$JSMAP" \
+    --bundle-js "$JSBUNDLE" \
+    --write-truth "$HERE/deps-truth.json" \
+    --also-hbc "$HERE/react-navigation-example.debug.hbc" \
+    --root "$WORK/rn-nav"
+else
+  echo "WARNING: expo export --source-maps produced no .map file; deps-truth.json not written" >&2
+fi
