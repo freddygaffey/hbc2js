@@ -1,0 +1,459 @@
+{
+  "bigInts": [],
+  "counts": {
+    "cjsModules": 0,
+    "functionSources": 0,
+    "regExps": 0
+  },
+  "diagnostics": [],
+  "functions": [
+    {
+      "bodyShared": false,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 0,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [],
+      "header": {
+        "bytecodeSizeInBytes": 259,
+        "flags": {
+          "hasDebugInfo": true,
+          "hasExceptionHandler": false,
+          "kind": "Normal",
+          "kindKnown": true,
+          "overflowed": true,
+          "prohibitInvoke": "none",
+          "raw": 18,
+          "strictMode": false
+        },
+        "frameSize": 20,
+        "fromLargeHeader": true,
+        "functionNameStringId": 4,
+        "index": 0,
+        "infoOffset": 964,
+        "loopDepth": 0,
+        "nonPtrRegCount": 2,
+        "numberRegCount": 1,
+        "offset": 448,
+        "paramCount": 1,
+        "privateNameCacheSize": 0,
+        "readCacheSize": 3,
+        "writeCacheSize": 3
+      },
+      "name": "global"
+    },
+    {
+      "bodyShared": false,
+      "debugOffsets": null,
+      "exceptionHandlers": [],
+      "header": {
+        "bytecodeSizeInBytes": 24,
+        "flags": {
+          "hasDebugInfo": false,
+          "hasExceptionHandler": false,
+          "kind": "Normal",
+          "kindKnown": true,
+          "overflowed": false,
+          "prohibitInvoke": "none",
+          "raw": 2,
+          "strictMode": false
+        },
+        "frameSize": 3,
+        "fromLargeHeader": false,
+        "functionNameStringId": 12,
+        "index": 1,
+        "loopDepth": 0,
+        "nonPtrRegCount": 1,
+        "numberRegCount": 1,
+        "offset": 707,
+        "paramCount": 1,
+        "privateNameCacheSize": 0,
+        "readCacheSize": 0,
+        "writeCacheSize": 0
+      },
+      "name": "defaultFactory"
+    },
+    {
+      "bodyShared": false,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 102,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [],
+      "header": {
+        "bytecodeSizeInBytes": 97,
+        "flags": {
+          "hasDebugInfo": true,
+          "hasExceptionHandler": false,
+          "kind": "Normal",
+          "kindKnown": true,
+          "overflowed": true,
+          "prohibitInvoke": "none",
+          "raw": 18,
+          "strictMode": false
+        },
+        "frameSize": 14,
+        "fromLargeHeader": true,
+        "functionNameStringId": 16,
+        "index": 2,
+        "infoOffset": 1004,
+        "loopDepth": 0,
+        "nonPtrRegCount": 1,
+        "numberRegCount": 0,
+        "offset": 731,
+        "paramCount": 1,
+        "privateNameCacheSize": 0,
+        "readCacheSize": 5,
+        "writeCacheSize": 0
+      },
+      "name": "makeUser"
+    },
+    {
+      "bodyShared": false,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": null,
+        "sourceLocations": 137,
+        "textifiedCallees": null
+      },
+      "exceptionHandlers": [
+        {
+          "end": 47,
+          "start": 45,
+          "target": 120
+        },
+        {
+          "end": 101,
+          "start": 94,
+          "target": 101
+        }
+      ],
+      "header": {
+        "bytecodeSizeInBytes": 133,
+        "flags": {
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
+          "kind": "Normal",
+          "kindKnown": true,
+          "overflowed": true,
+          "prohibitInvoke": "none",
+          "raw": 26,
+          "strictMode": false
+        },
+        "frameSize": 9,
+        "fromLargeHeader": true,
+        "functionNameStringId": 15,
+        "index": 3,
+        "infoOffset": 1044,
+        "loopDepth": 0,
+        "nonPtrRegCount": 0,
+        "numberRegCount": 0,
+        "offset": 828,
+        "paramCount": 1,
+        "privateNameCacheSize": 0,
+        "readCacheSize": 0,
+        "writeCacheSize": 0
+      },
+      "name": "sumPair"
+    }
+  ],
+  "header": {
+    "bigIntCount": 0,
+    "bigIntStorageSize": 0,
+    "cjsModuleCount": 0,
+    "debugInfoOffset": 1112,
+    "fileLength": 1354,
+    "functionCount": 4,
+    "functionSourceCount": 0,
+    "globalCodeIndex": 0,
+    "identifierCount": 8,
+    "literalValueBufferSize": 38,
+    "magic": "2240826417119764422",
+    "numStringSwitchImms": 0,
+    "objKeyBufferSize": 10,
+    "objShapeTableCount": 2,
+    "objValueBufferSize": 0,
+    "options": {
+      "cjsModulesStaticallyResolved": false,
+      "hasAsync": false,
+      "raw": 0,
+      "staticBuiltins": false
+    },
+    "overflowStringCount": 0,
+    "regExpCount": 0,
+    "regExpStorageSize": 0,
+    "segmentID": 0,
+    "sourceHash": "e34f0d4303ca2b468cff55593e8cf3babcb454b2",
+    "stringCount": 19,
+    "stringKindCount": 2,
+    "stringStorageSize": 87,
+    "version": 99
+  },
+  "layout": {
+    "layoutClass": "E",
+    "opcodeTable": "hbc99-mar2026",
+    "probe": {
+      "chosen": "E/hbc99-mar2026",
+      "decidedBy": [
+        "P2",
+        "P3"
+      ],
+      "exhaustive": true,
+      "forced": false
+    },
+    "version": 99
+  },
+  "sections": [
+    {
+      "name": "header",
+      "offset": 0,
+      "size": 128
+    },
+    {
+      "name": "functionHeaders",
+      "offset": 128,
+      "size": 48
+    },
+    {
+      "name": "stringKinds",
+      "offset": 176,
+      "size": 8
+    },
+    {
+      "name": "identifierHashes",
+      "offset": 184,
+      "size": 32
+    },
+    {
+      "name": "smallStringTable",
+      "offset": 216,
+      "size": 76
+    },
+    {
+      "name": "overflowStringTable",
+      "offset": 292,
+      "size": 0
+    },
+    {
+      "name": "stringStorage",
+      "offset": 292,
+      "size": 87
+    },
+    {
+      "name": "literalValueBuffer",
+      "offset": 380,
+      "size": 38
+    },
+    {
+      "name": "objKeyBuffer",
+      "offset": 420,
+      "size": 10
+    },
+    {
+      "name": "objShapeTable",
+      "offset": 432,
+      "size": 16
+    },
+    {
+      "name": "bigIntTable",
+      "offset": 448,
+      "size": 0
+    },
+    {
+      "name": "bigIntStorage",
+      "offset": 448,
+      "size": 0
+    },
+    {
+      "name": "regExpTable",
+      "offset": 448,
+      "size": 0
+    },
+    {
+      "name": "regExpStorage",
+      "offset": 448,
+      "size": 0
+    },
+    {
+      "name": "cjsModuleTable",
+      "offset": 448,
+      "size": 0
+    },
+    {
+      "name": "functionSourceTable",
+      "offset": 448,
+      "size": 0
+    },
+    {
+      "name": "functionBodies",
+      "offset": 448,
+      "size": 664
+    },
+    {
+      "name": "functionInfo",
+      "offset": 448,
+      "size": 664
+    },
+    {
+      "name": "debugInfo",
+      "offset": 1112,
+      "size": 222
+    },
+    {
+      "name": "footer",
+      "offset": 1334,
+      "size": 20
+    }
+  ],
+  "shapes": [
+    {
+      "index": 0,
+      "keyBufferOffset": 0,
+      "numProps": 1
+    },
+    {
+      "index": 1,
+      "keyBufferOffset": 3,
+      "numProps": 3
+    }
+  ],
+  "strings": [
+    {
+      "id": 0,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 1,
+      "text": ","
+    },
+    {
+      "id": 1,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 1,
+      "text": ":"
+    },
+    {
+      "id": 2,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 2,
+      "text": ":["
+    },
+    {
+      "id": 3,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 1,
+      "text": "]"
+    },
+    {
+      "id": 4,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 6,
+      "text": "global"
+    },
+    {
+      "id": 5,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 1,
+      "text": "a"
+    },
+    {
+      "id": 6,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 1,
+      "text": "b"
+    },
+    {
+      "id": 7,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 25,
+      "text": "defaultFactory was called"
+    },
+    {
+      "id": 8,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 8,
+      "text": "explicit"
+    },
+    {
+      "id": 9,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 5,
+      "text": "times"
+    },
+    {
+      "id": 10,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 10,
+      "text": "generated-"
+    },
+    {
+      "id": 11,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 2,
+      "text": "id"
+    },
+    {
+      "id": 12,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 14,
+      "text": "defaultFactory"
+    },
+    {
+      "id": 13,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "join"
+    },
+    {
+      "id": 14,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "name"
+    },
+    {
+      "id": 15,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 7,
+      "text": "sumPair"
+    },
+    {
+      "id": 16,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 8,
+      "text": "makeUser"
+    },
+    {
+      "id": 17,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 5,
+      "text": "print"
+    },
+    {
+      "id": 18,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "tags"
+    }
+  ]
+}

@@ -1,0 +1,426 @@
+{
+  "bigInts": [],
+  "counts": {
+    "cjsModules": 0,
+    "functionSources": 0,
+    "regExps": 0
+  },
+  "diagnostics": [],
+  "functions": [
+    {
+      "bodyShared": false,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": 0,
+        "sourceLocations": 0,
+        "textifiedCallees": 0
+      },
+      "exceptionHandlers": [],
+      "header": {
+        "bytecodeSizeInBytes": 289,
+        "environmentSize": 0,
+        "flags": {
+          "hasDebugInfo": true,
+          "hasExceptionHandler": false,
+          "kind": "Normal",
+          "kindKnown": false,
+          "overflowed": false,
+          "prohibitInvoke": "none",
+          "raw": 18,
+          "strictMode": false
+        },
+        "frameSize": 17,
+        "fromLargeHeader": false,
+        "functionNameStringId": 12,
+        "index": 0,
+        "infoOffset": 820,
+        "offset": 476,
+        "paramCount": 1,
+        "readCacheSize": 10,
+        "writeCacheSize": 1
+      },
+      "name": "global"
+    },
+    {
+      "bodyShared": false,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": 0,
+        "sourceLocations": 174,
+        "textifiedCallees": 0
+      },
+      "exceptionHandlers": [],
+      "header": {
+        "bytecodeSizeInBytes": 54,
+        "environmentSize": 0,
+        "flags": {
+          "hasDebugInfo": true,
+          "hasExceptionHandler": false,
+          "kind": "Normal",
+          "kindKnown": false,
+          "overflowed": false,
+          "prohibitInvoke": "none",
+          "raw": 18,
+          "strictMode": false
+        },
+        "frameSize": 4,
+        "fromLargeHeader": false,
+        "functionNameStringId": 18,
+        "index": 1,
+        "infoOffset": 832,
+        "offset": 765,
+        "paramCount": 1,
+        "readCacheSize": 2,
+        "writeCacheSize": 0
+      },
+      "name": "greet"
+    }
+  ],
+  "header": {
+    "bigIntCount": 0,
+    "bigIntStorageSize": 0,
+    "cjsModuleCount": 0,
+    "debugInfoOffset": 844,
+    "fileLength": 1139,
+    "functionCount": 2,
+    "functionSourceCount": 0,
+    "globalCodeIndex": 0,
+    "identifierCount": 14,
+    "literalValueBufferSize": 0,
+    "magic": "2240826417119764422",
+    "numStringSwitchImms": 0,
+    "objKeyBufferSize": 7,
+    "objShapeTableCount": 0,
+    "objValueBufferSize": 16,
+    "options": {
+      "cjsModulesStaticallyResolved": false,
+      "hasAsync": false,
+      "raw": 0,
+      "staticBuiltins": false
+    },
+    "overflowStringCount": 0,
+    "regExpCount": 0,
+    "regExpStorageSize": 0,
+    "segmentID": 0,
+    "sourceHash": "bee7588c4d0972a42ac554a961f9818e2cbc2e06",
+    "stringCount": 28,
+    "stringKindCount": 2,
+    "stringStorageSize": 113,
+    "version": 94
+  },
+  "layout": {
+    "layoutClass": "C",
+    "opcodeTable": "hbc94",
+    "probe": {
+      "chosen": "C/hbc94",
+      "decidedBy": [
+        "P2",
+        "version"
+      ],
+      "exhaustive": true,
+      "forced": false
+    },
+    "version": 94
+  },
+  "sections": [
+    {
+      "name": "header",
+      "offset": 0,
+      "size": 128
+    },
+    {
+      "name": "functionHeaders",
+      "offset": 128,
+      "size": 32
+    },
+    {
+      "name": "stringKinds",
+      "offset": 160,
+      "size": 8
+    },
+    {
+      "name": "identifierHashes",
+      "offset": 168,
+      "size": 56
+    },
+    {
+      "name": "smallStringTable",
+      "offset": 224,
+      "size": 112
+    },
+    {
+      "name": "overflowStringTable",
+      "offset": 336,
+      "size": 0
+    },
+    {
+      "name": "stringStorage",
+      "offset": 336,
+      "size": 113
+    },
+    {
+      "name": "literalValueBuffer",
+      "offset": 452,
+      "size": 0
+    },
+    {
+      "name": "objKeyBuffer",
+      "offset": 452,
+      "size": 7
+    },
+    {
+      "name": "objValueBuffer",
+      "offset": 460,
+      "size": 16
+    },
+    {
+      "name": "bigIntTable",
+      "offset": 476,
+      "size": 0
+    },
+    {
+      "name": "bigIntStorage",
+      "offset": 476,
+      "size": 0
+    },
+    {
+      "name": "regExpTable",
+      "offset": 476,
+      "size": 0
+    },
+    {
+      "name": "regExpStorage",
+      "offset": 476,
+      "size": 0
+    },
+    {
+      "name": "cjsModuleTable",
+      "offset": 476,
+      "size": 0
+    },
+    {
+      "name": "functionSourceTable",
+      "offset": 476,
+      "size": 0
+    },
+    {
+      "name": "functionBodies",
+      "offset": 476,
+      "size": 368
+    },
+    {
+      "name": "functionInfo",
+      "offset": 476,
+      "size": 368
+    },
+    {
+      "name": "debugInfo",
+      "offset": 844,
+      "size": 275
+    },
+    {
+      "name": "footer",
+      "offset": 1119,
+      "size": 20
+    }
+  ],
+  "shapes": [],
+  "strings": [
+    {
+      "id": 0,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 1,
+      "text": "!"
+    },
+    {
+      "id": 1,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 2,
+      "text": ", "
+    },
+    {
+      "id": 2,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 3,
+      "text": "Ada"
+    },
+    {
+      "id": 3,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 5,
+      "text": "Hello"
+    },
+    {
+      "id": 4,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 7,
+      "text": "others="
+    },
+    {
+      "id": 5,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 2,
+      "text": "Hi"
+    },
+    {
+      "id": 6,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 5,
+      "text": "World"
+    },
+    {
+      "id": 7,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 12,
+      "text": "deep-default"
+    },
+    {
+      "id": 8,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 9,
+      "text": "default-b"
+    },
+    {
+      "id": 9,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 9,
+      "text": "computed:"
+    },
+    {
+      "id": 10,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 5,
+      "text": "deep:"
+    },
+    {
+      "id": 11,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 8,
+      "text": "found-it"
+    },
+    {
+      "id": 12,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 6,
+      "text": "global"
+    },
+    {
+      "id": 13,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 2,
+      "text": "x="
+    },
+    {
+      "id": 14,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 1,
+      "text": "a"
+    },
+    {
+      "id": 15,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "deep"
+    },
+    {
+      "id": 16,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 1,
+      "text": "b"
+    },
+    {
+      "id": 17,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 6,
+      "text": "nested"
+    },
+    {
+      "id": 18,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 5,
+      "text": "greet"
+    },
+    {
+      "id": 19,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 8,
+      "text": "greeting"
+    },
+    {
+      "id": 20,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 1,
+      "text": "x"
+    },
+    {
+      "id": 21,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "JSON"
+    },
+    {
+      "id": 22,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 11,
+      "text": "computedKey"
+    },
+    {
+      "id": 23,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 1,
+      "text": "y"
+    },
+    {
+      "id": 24,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "name"
+    },
+    {
+      "id": 25,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 5,
+      "text": "print"
+    },
+    {
+      "id": 26,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 9,
+      "text": "stringify"
+    },
+    {
+      "id": 27,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 1,
+      "text": "z"
+    }
+  ]
+}

@@ -1,0 +1,315 @@
+{
+  "bigInts": [],
+  "counts": {
+    "cjsModules": 0,
+    "functionSources": 0,
+    "regExps": 0
+  },
+  "diagnostics": [],
+  "functions": [
+    {
+      "bodyShared": false,
+      "debugOffsets": {
+        "lexicalData": null,
+        "scopeDescData": 0,
+        "sourceLocations": 0,
+        "textifiedCallees": 0
+      },
+      "exceptionHandlers": [
+        {
+          "end": 55,
+          "start": 28,
+          "target": 147
+        },
+        {
+          "end": 147,
+          "start": 106,
+          "target": 147
+        },
+        {
+          "end": 267,
+          "start": 240,
+          "target": 340
+        },
+        {
+          "end": 340,
+          "start": 308,
+          "target": 340
+        }
+      ],
+      "header": {
+        "bytecodeSizeInBytes": 391,
+        "environmentSize": 0,
+        "flags": {
+          "hasDebugInfo": true,
+          "hasExceptionHandler": true,
+          "kind": "Normal",
+          "kindKnown": false,
+          "overflowed": false,
+          "prohibitInvoke": "none",
+          "raw": 26,
+          "strictMode": false
+        },
+        "frameSize": 22,
+        "fromLargeHeader": false,
+        "functionNameStringId": 5,
+        "index": 0,
+        "infoOffset": 748,
+        "offset": 356,
+        "paramCount": 1,
+        "readCacheSize": 5,
+        "writeCacheSize": 0
+      },
+      "name": "global"
+    }
+  ],
+  "header": {
+    "bigIntCount": 0,
+    "bigIntStorageSize": 0,
+    "cjsModuleCount": 0,
+    "debugInfoOffset": 812,
+    "fileLength": 1239,
+    "functionCount": 1,
+    "functionSourceCount": 0,
+    "globalCodeIndex": 0,
+    "identifierCount": 5,
+    "literalValueBufferSize": 1,
+    "magic": "2240826417119764422",
+    "numStringSwitchImms": 0,
+    "objKeyBufferSize": 0,
+    "objShapeTableCount": 0,
+    "objValueBufferSize": 0,
+    "options": {
+      "cjsModulesStaticallyResolved": false,
+      "hasAsync": false,
+      "raw": 0,
+      "staticBuiltins": false
+    },
+    "overflowStringCount": 0,
+    "regExpCount": 0,
+    "regExpStorageSize": 0,
+    "segmentID": 0,
+    "sourceHash": "089386abf6fd53b319db91d44fda2174f2dc2bd1",
+    "stringCount": 14,
+    "stringKindCount": 2,
+    "stringStorageSize": 123,
+    "version": 96
+  },
+  "layout": {
+    "layoutClass": "C",
+    "opcodeTable": "hbc96",
+    "probe": {
+      "chosen": "C/hbc96",
+      "decidedBy": [
+        "P2",
+        "version"
+      ],
+      "exhaustive": true,
+      "forced": false
+    },
+    "version": 96
+  },
+  "sections": [
+    {
+      "name": "header",
+      "offset": 0,
+      "size": 128
+    },
+    {
+      "name": "functionHeaders",
+      "offset": 128,
+      "size": 16
+    },
+    {
+      "name": "stringKinds",
+      "offset": 144,
+      "size": 8
+    },
+    {
+      "name": "identifierHashes",
+      "offset": 152,
+      "size": 20
+    },
+    {
+      "name": "smallStringTable",
+      "offset": 172,
+      "size": 56
+    },
+    {
+      "name": "overflowStringTable",
+      "offset": 228,
+      "size": 0
+    },
+    {
+      "name": "stringStorage",
+      "offset": 228,
+      "size": 123
+    },
+    {
+      "name": "literalValueBuffer",
+      "offset": 352,
+      "size": 1
+    },
+    {
+      "name": "objKeyBuffer",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "objValueBuffer",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "bigIntTable",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "bigIntStorage",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "regExpTable",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "regExpStorage",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "cjsModuleTable",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "functionSourceTable",
+      "offset": 356,
+      "size": 0
+    },
+    {
+      "name": "functionBodies",
+      "offset": 356,
+      "size": 456
+    },
+    {
+      "name": "functionInfo",
+      "offset": 356,
+      "size": 456
+    },
+    {
+      "name": "debugInfo",
+      "offset": 812,
+      "size": 407
+    },
+    {
+      "name": "footer",
+      "offset": 1219,
+      "size": 20
+    }
+  ],
+  "shapes": [],
+  "strings": [
+    {
+      "id": 0,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 3,
+      "text": "at "
+    },
+    {
+      "id": 1,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 3,
+      "text": " | "
+    },
+    {
+      "id": 2,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 10,
+      "text": "after-try:"
+    },
+    {
+      "id": 3,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 30,
+      "text": "finally-break-suppresses-throw"
+    },
+    {
+      "id": 4,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 34,
+      "text": "finally-continue-suppresses-throw:"
+    },
+    {
+      "id": 5,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 6,
+      "text": "global"
+    },
+    {
+      "id": 6,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 5,
+      "text": "iter:"
+    },
+    {
+      "id": 7,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 3,
+      "text": "ok:"
+    },
+    {
+      "id": 8,
+      "isUTF16": false,
+      "kind": "String",
+      "length": 4,
+      "text": "stop"
+    },
+    {
+      "id": 9,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 5,
+      "text": "print"
+    },
+    {
+      "id": 10,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 5,
+      "text": "Error"
+    },
+    {
+      "id": 11,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "join"
+    },
+    {
+      "id": 12,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 9,
+      "text": "prototype"
+    },
+    {
+      "id": 13,
+      "isUTF16": false,
+      "kind": "Identifier",
+      "length": 4,
+      "text": "push"
+    }
+  ]
+}
