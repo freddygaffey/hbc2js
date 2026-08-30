@@ -9,12 +9,25 @@ import { printModule } from "./disasm/print.ts";
 import type { DisasmMode } from "./disasm/print.ts";
 import { basename } from "node:path";
 import { VERSION } from "./version.ts";
+import { runProgram } from "./harness/runner.ts";
+import type { RunOptions } from "./harness/runner.ts";
+import { compareTraces, TRACE_VERDICT } from "./harness/compare.ts";
+import { hbcVersion, findHermesVm, runHermes, findAllHermesVms } from "./harness/hermes-vm.ts";
+import { normaliseModule, diffNormalised } from "./harness/roundtrip.ts";
+import { runTier } from "./harness/tiers.ts";
+import type { Tier } from "./harness/tiers.ts";
+import { VERDICT } from "./harness/ladder.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
 Usage:
   hbc2js --info <input.hbc>        print header/layout/section info and exit
   hbc2js disasm <input.hbc> [options]   disassemble to text (spec 02)
+  hbc2js equiv <a.js> <b.js>       execution-trace equivalence (spec 06)
+  hbc2js equiv --hbc <a.hbc> <b.js>     bytecode (Hermes VM) vs decompiled JS
+  hbc2js equiv normalise <a.hbc> <b.hbc>  normalised-disassembly diff (D3)
+  hbc2js gate [options]            run the gate tier (spec 06 §7)
+  hbc2js sweep [options]           run the sweep tier (spec 06 §7)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -29,6 +42,21 @@ Options (disasm):
   --function=N                     disassemble only function index N
   --no-cache-indices                omit inline-cache index annotations
   -o <file>                        write to a file instead of stdout
+
+Options (equiv):
+  --hbc                     first file is bytecode; run under a matching Hermes VM
+  --timeout <ms>            wall-clock budget per program (default 5000)
+  --seed <n>                PRNG seed for Math.random and fuzzing (default 0)
+  --fuzz[=<n>]              differential function fuzzing, <n> tuples (default 50)
+  --relax <list>            fn-names,key-order,error-messages (default fn-names)
+  --json                    machine-readable result on stdout
+  exit 0 PASS  1 DIVERGENT  2 INCONCLUSIVE  3 harness error
+
+Options (gate, sweep):
+  --json                    machine-readable TierReport on stdout
+  --only <names>            comma-separated fixture names to restrict to
+  --versions <list>         comma-separated HBC versions to restrict to
+  exit 0 all PASS  1 any DIVERGENT/ERROR  2 any INCONCLUSIVE only
 `;
 
 interface ParsedArgs {
@@ -155,10 +183,192 @@ function runDisasm(argv: readonly string[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// `hbc2js equiv` — docs/specs/06-harness.md §8 (additive; folded into the main
+// CLI rather than a separate `hbc2js-equiv` binary per this milestone's task
+// boundary).
+// ---------------------------------------------------------------------------
+
+interface EquivArgs {
+  readonly help: boolean;
+  readonly hbc: boolean;
+  readonly json: boolean;
+  readonly timeout: number;
+  readonly seed: number;
+  readonly fuzz: number;
+  readonly relax: readonly string[];
+  readonly positional: string[];
+}
+
+function parseEquivArgs(argv: readonly string[]): EquivArgs {
+  let help = false;
+  let hbc = false;
+  let json = false;
+  let timeout = 5000;
+  let seed = 0;
+  let fuzz = 0;
+  let relax: string[] = ["fn-names"];
+  const positional: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--help" || a === "-h") help = true;
+    else if (a === "--hbc") hbc = true;
+    else if (a === "--json") json = true;
+    else if (a === "--timeout") timeout = Number(argv[++i]);
+    else if (a === "--seed") seed = Number(argv[++i]);
+    else if (a === "--fuzz") fuzz = 50;
+    else if (a.startsWith("--fuzz=")) fuzz = Number(a.slice("--fuzz=".length));
+    else if (a === "--relax") relax = String(argv[++i]).split(",").filter((s) => s.length > 0);
+    else positional.push(a);
+  }
+  return { help, hbc, json, timeout, seed, fuzz, relax, positional };
+}
+
+function equivCode(v: string): number {
+  return v === TRACE_VERDICT.EQUIVALENT || v === VERDICT.PASS ? 0 : v === TRACE_VERDICT.DIVERGENT || v === VERDICT.DIVERGENT ? 1 : 2;
+}
+
+function runEquivNormalise(a: string, b: string, json: boolean): number {
+  let bytesA: Uint8Array;
+  let bytesB: Uint8Array;
+  try {
+    bytesA = readFileSync(a);
+    bytesB = readFileSync(b);
+  } catch (e) {
+    process.stderr.write(`hbc2js equiv normalise: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 3;
+  }
+  try {
+    const na = normaliseModule(parseHbc(bytesA));
+    const nb = normaliseModule(parseHbc(bytesB));
+    const d = diffNormalised(na, nb);
+    if (json) {
+      process.stdout.write(JSON.stringify(d, null, 2) + "\n");
+    } else if (d.equal) {
+      process.stdout.write(`EQUIVALENT (normalised disassembly identical, ${na.length} functions)\n`);
+    } else if (d.firstDivergence !== null) {
+      process.stdout.write(`DIVERGENT (similarity ${(d.similarity * 100).toFixed(1)}%)\n  first difference at function ${d.firstDivergence.fn}:\n    - ${d.firstDivergence.a}\n    + ${d.firstDivergence.b}\n`);
+    }
+    return d.equal ? 0 : 1;
+  } catch (e) {
+    process.stderr.write(`hbc2js equiv normalise: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 3;
+  }
+}
+
+function runEquivHermes(a: string, b: string, o: EquivArgs): number {
+  const version = hbcVersion(a);
+  const vm = findHermesVm(version);
+  if (vm === null) {
+    const have = findAllHermesVms()
+      .map((h) => `v${h.hbcVersion}`)
+      .join(", ");
+    const why = `no Hermes VM for HBC version ${version}; available: ${have === "" ? "none" : have}. The Hermes VM refuses bytecode whose version is not exactly its own (HA-05: never falls back to Node).`;
+    process.stdout.write(o.json ? JSON.stringify({ verdict: TRACE_VERDICT.INCONCLUSIVE, why }, null, 2) + "\n" : `INCONCLUSIVE — ${why}\n`);
+    return 2;
+  }
+  const ra = runHermes(vm.path, a, { timeout: o.timeout, bytecode: true });
+  const rb = runHermes(vm.path, b, { timeout: o.timeout, bytecode: false });
+  let i = 0;
+  const n = Math.min(ra.lines.length, rb.lines.length);
+  while (i < n && ra.lines[i] === rb.lines[i]) i++;
+  const equal = ra.lines.length === rb.lines.length && i === ra.lines.length;
+  const verdict = equal ? (ra.lines.length > 0 ? TRACE_VERDICT.EQUIVALENT : TRACE_VERDICT.INCONCLUSIVE) : TRACE_VERDICT.DIVERGENT;
+  const why = equal ? (ra.lines.length > 0 ? `${ra.lines.length} output lines matched under Hermes v${version}` : "both programs produced no output; nothing was observed") : `output diverges at line ${i + 1}`;
+  if (o.json) process.stdout.write(JSON.stringify({ verdict, why, a, b }, null, 2) + "\n");
+  else process.stdout.write(`${verdict} — ${why}\n`);
+  return equivCode(verdict);
+}
+
+async function runEquiv(argv: readonly string[]): Promise<number> {
+  const o = parseEquivArgs(argv);
+  if (o.help || o.positional.length === 0) {
+    process.stdout.write(USAGE);
+    return o.help ? 0 : 3;
+  }
+  if (o.positional[0] === "normalise") {
+    const [, a, b] = o.positional;
+    if (a === undefined || b === undefined) {
+      process.stderr.write("equiv normalise needs two .hbc files\n");
+      return 3;
+    }
+    return runEquivNormalise(a, b, o.json);
+  }
+  const [a, b] = o.positional;
+  if (a === undefined || b === undefined) {
+    process.stderr.write(`equiv needs two files\n\n${USAGE}`);
+    return 3;
+  }
+  if (o.hbc || a.endsWith(".hbc")) return runEquivHermes(a, b, o);
+
+  const runOpts: RunOptions = { seed: o.seed, timeout: o.timeout, syncTimeout: Math.max(100, o.timeout - 500), fuzz: o.fuzz, relax: o.relax, maxRecords: 20000 };
+  const [ta, tb] = await Promise.all([runProgram(a, runOpts), runProgram(b, runOpts)]);
+  const cmp = compareTraces(ta, tb);
+  if (o.json) {
+    process.stdout.write(JSON.stringify({ verdict: cmp.verdict, why: cmp.why, a, b, evidence: cmp.evidence, records: cmp.records, divergence: cmp.divergence }, null, 2) + "\n");
+  } else {
+    process.stdout.write(`${cmp.verdict} — ${cmp.why}\n`);
+    if (cmp.divergence !== null && cmp.context !== null) process.stdout.write(`\n  a = ${a}\n  b = ${b}\n\n${cmp.context}\n`);
+  }
+  return equivCode(cmp.verdict);
+}
+
+// ---------------------------------------------------------------------------
+// `hbc2js gate` / `hbc2js sweep` — docs/specs/06-harness.md §7, §9.
+// ---------------------------------------------------------------------------
+
+interface TierArgs {
+  readonly json: boolean;
+  readonly only: string[] | undefined;
+  readonly versions: number[] | undefined;
+}
+
+function parseTierArgs(argv: readonly string[]): TierArgs {
+  let json = false;
+  let only: string[] | undefined;
+  let versions: number[] | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--json") json = true;
+    else if (a === "--only") only = String(argv[++i]).split(",").filter((s) => s.length > 0);
+    else if (a === "--versions") versions = String(argv[++i])
+        .split(",")
+        .filter((s) => s.length > 0)
+        .map(Number);
+  }
+  return { json, only, versions };
+}
+
+async function runTierCmd(tier: Tier, argv: readonly string[]): Promise<number> {
+  const o = parseTierArgs(argv);
+  const report = await runTier({ tier, ...(o.only !== undefined ? { only: o.only } : {}), ...(o.versions !== undefined ? { versions: o.versions } : {}) });
+  if (o.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  } else {
+    process.stdout.write(`${tier}: ${report.summary.pass} PASS, ${report.summary.divergent} DIVERGENT, ${report.summary.inconclusive} INCONCLUSIVE, ${report.summary.error} ERROR (${report.results.length} checked, ${report.skippedByDesign.length} skipped-by-design)\n`);
+    for (const r of report.results) {
+      if (r.verdict !== VERDICT.PASS) {
+        process.stdout.write(`  ${r.verdict.padEnd(12)} ${r.fixture.name}: ${r.oracles.map((x) => `${x.oracle}=${x.verdict}${x.detail !== undefined ? ` (${x.detail})` : ""}`).join("; ")}\n`);
+      }
+    }
+    const caveatCount = report.results.reduce((n, r) => n + r.caveats.length, 0);
+    if (caveatCount > 0) process.stdout.write(`  (${caveatCount} PASS-with-caveat — see docs/DECISIONS.md D14)\n`);
+  }
+  return report.summary.divergent + report.summary.error > 0 ? 1 : report.summary.inconclusive > 0 ? 2 : 0;
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   if (argv[0] === "disasm") {
     runDisasm(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "equiv") {
+    void runEquiv(argv.slice(1)).then((code) => process.exit(code));
+    return;
+  }
+  if (argv[0] === "gate" || argv[0] === "sweep") {
+    void runTierCmd(argv[0], argv.slice(1)).then((code) => process.exit(code));
     return;
   }
   const args = parseArgs(argv);
