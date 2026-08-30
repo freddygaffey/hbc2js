@@ -15,7 +15,7 @@
     "test": "node --test \"tests/gate/**/*.test.ts\"",
     "test:gate": "node --test \"tests/gate/**/*.test.ts\"",
     "test:sweep": "HBC2JS_TIER=sweep node --test \"tests/sweep/**/*.test.ts\"",
-    "test:all": "HBC2JS_TIER=all node --test \"tests/gate/**/*.test.ts\" \"tests/sweep/**/*.test.ts\"",
+    "test:all": "HBC2JS_TIER=all node --test \"tests/gate/**/*.test.ts\" && HBC2JS_TIER=all node --test \"tests/sweep/**/*.test.ts\"",
     "gen:tables": "node tools/gen-tables/gen.ts",
     "gen:tables:check": "node tools/gen-tables/gen.ts --check",
     "fixtures": "tests/fixtures/build.sh",

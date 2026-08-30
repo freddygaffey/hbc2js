@@ -6,21 +6,37 @@ import { parseHbc } from "../../../src/index.ts";
 import { listBundles } from "../../support/fixtures.ts";
 import { requireSweep } from "../../support/tiers.ts";
 
-test("bundles/rn-template-0.72: every flag variant parses cleanly, zero diagnostics", (t) => {
+// Expectations per bundle family. This used to assert `C`/`hbc94` for EVERY
+// bundle, which broke the moment a second family (react-navigation, HBC 98,
+// layout E) was added to tests/fixtures/bundles/ — the shape is a property of
+// the bundle, not of the directory.
+const BUNDLE_EXPECTATIONS: readonly { dir: string; layoutClass: string; opcodeTable: string; minFunctions: number }[] = [
+  { dir: "rn-template-0.72", layoutClass: "C", opcodeTable: "hbc94", minFunctions: 1000 },
+  { dir: "react-navigation-example-0.85.3", layoutClass: "E", opcodeTable: "hbc98-late", minFunctions: 1000 },
+];
+
+test("bundles: every flag variant of every family parses cleanly, zero diagnostics", (t) => {
   if (!requireSweep(t)) return;
   const bundles = listBundles();
   assert.ok(bundles.length > 0, "no bundles found under tests/fixtures/bundles/**");
+  let checked = 0;
   for (const b of bundles) {
+    const expect = BUNDLE_EXPECTATIONS.find((e) => b.path.includes(e.dir));
+    assert.ok(expect !== undefined, `${b.path}: no BUNDLE_EXPECTATIONS row — add one when a bundle family is added`);
     const m = parseHbc(b.bytes());
     assert.equal(m.diagnostics.length, 0, `${b.path}: unexpected diagnostics ${m.diagnostics.map((d) => d.code).join(",")}`);
-    assert.equal(m.layout.layoutClass, "C");
-    assert.equal(m.layout.opcodeTable, "hbc94");
-    assert.ok(m.functions.length > 1000, `${b.path}: expected a real bundle's function count`);
-    // M1 review Finding 6: spec 01 §9 explicitly requires probe.exhaustive === true
-    // "for every fixture and for every bundle under 4 MB" -- all four rn-template
-    // variants are <= 2.7MB, so this must hold for all of them.
-    assert.equal(m.layout.probe.exhaustive, true, `${b.path}: expected an exhaustive probe (file is under 4MB)`);
+    assert.equal(m.layout.layoutClass, expect.layoutClass, `${b.path}: layout class`);
+    assert.equal(m.layout.opcodeTable, expect.opcodeTable, `${b.path}: opcode table`);
+    assert.ok(m.functions.length > expect.minFunctions, `${b.path}: expected a real bundle's function count`);
+    // M1 review Finding 6: spec 01 §9 requires probe.exhaustive === true "for
+    // every fixture and for every bundle under 4 MB" — and only for those, so
+    // the check is on the size, not on the family.
+    if (b.bytes().length < 4 * 1024 * 1024) {
+      assert.equal(m.layout.probe.exhaustive, true, `${b.path}: expected an exhaustive probe (file is under 4MB)`);
+    }
+    checked++;
   }
+  assert.ok(checked >= 4, `only ${checked} bundle variants checked`);
 });
 
 test("T9: parses the largest bundle within the §7.3 budget, scaled pro rata to the 12MB target", (t) => {

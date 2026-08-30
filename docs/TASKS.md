@@ -15,6 +15,7 @@ Claim a task by editing this file: put your handle and date in the **Claimed** c
 | T9 | Irreducible-CFG stress fixtures (D13a): hand-written JS whose CFG is genuinely irreducible after hermesc (runtime-derived state machines, cross-jumping loops), plus fixtures for `StringSwitchImm` (v98+) and logical assignment, which the catalogue lacks. Verify with `-dump-bytecode`. | JS, bytecode | |
 | T10 | npm release engineering: `bin`, `files`, `engines`, `prepublishOnly` (typecheck+build+gate), `hbc2js setup` for compiler fetch (no silent downloads), signature DB as optional fetch, GitHub Actions publish-on-tag workflow with `NPM_TOKEN` secret, CHANGELOG. Do not publish — Fred runs `npm publish` / pushes the tag. | packaging, CI | |
 | T11 | Mine https://github.com/numandev1/open-source-react-native-apps for corpus candidates: licence (MIT/Apache/BSD/ISC only), RN→HBC version, Expo vs bare; rank for version variety (want more HBC 96/98/99); build fixtures for the best three per the existing `tests/fixtures/bundles/*/BUILD.md` + `fetch.sh` pattern, with a light hardened variant each. | scripting, RN builds | |
+| T12 | Benchmark script (D21): run the corpus bundles through hermes-dec, hermes-decomp, droidsaw-hermes and hbc2js; measure and tabulate per D21; emit Markdown for the README. Tools are used as black boxes (AGPL hermes-dec output only). | scripting | |
 | — | Parser / disassembler implementation (specs 01, 02) | *in-flight (overseer)* | |
 | — | Fixture variants, real-app bundles, Hermes VM build | *in-flight (overseer)* | |
 
