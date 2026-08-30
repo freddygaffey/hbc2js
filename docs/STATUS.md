@@ -7,9 +7,9 @@ Last updated: 2026-08-30
 - [ ] M1 Parser: header, string table, function table, bytecode — v94 & v99 fixtures
 - [ ] M2 Disassembler + diff test against hermes-dec output
 - [ ] M3 Test harness: sandboxed trace runner (D2) + recompile round-trip (D3)
-- [ ] M4 CFG + structurer + emitter → v94/v99 fixtures pass trace equivalence
-- [ ] M5 CLI, real-world bundle survives, docs complete
-- [ ] M6 Open-source RN app corpus passes round-trip
+- [ ] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) → **every** fixture passes the equivalence gate, ugly output allowed (D11)
+- [ ] M5 Pass ladder: one construct fixture per iteration as matcher/writer/checker pass (D12), catalogue row per pass; track `N/51 recovered` here
+- [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
 ## Currently working
 - `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v99 compilers
