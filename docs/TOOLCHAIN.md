@@ -261,3 +261,138 @@ or, if you have any `hermesc` handy that's new enough to at least parse the
 header: `hermesc -dump-bytecode` on the corresponding source won't help for an
 unknown binary — prefer the byte offset above, or `hbc-file-parser` from
 hermes-dec.
+
+## Hermes VM (source build)
+
+`tools/get-hermesc.sh` only ever gets a `hermesc` **compiler**; the only
+prebuilt `hermes` **VM/interpreter** available on npm is bundled with
+`hermes-engine-cli`, whose last release (`0.12.0`) tops out at HBC 89 and hard-
+refuses newer bytecode (`Error deserializing bytecode: Wrong bytecode version.
+Expected 89 but got 94`). `docs/EQUIVALENCE.md` §5 needs a VM for v94 and v99
+to use as the ground-truth oracle (D14) instead of Node, so
+`tools/build-hermes-vm.sh <94|99>` builds `hermes` (+ `hermesc`, `hbcdump`)
+from source at the facebook/hermes commit that produced each version.
+
+```sh
+tools/build-hermes-vm.sh 94   # → tools/hermes-vm/v94/bin/{hermes,hermesc,hbcdump}
+tools/build-hermes-vm.sh 99   # → tools/hermes-vm/v99/bin/{hermes,hermesc,hbcdump}
+tools/hermes-vm/v94/bin/hermes -b tests/fixtures/hermes-dec-sample/v94.hbc
+```
+
+`tools/hermes-vm/` is gitignored; nothing here is committed, same policy as
+`tools/hermesc/`.
+
+### Commit selection
+
+| Version | Commit | Date | Message | How found |
+|---|---|---|---|---|
+| 94 | `3815fec63d1a6667ca3195160d6e12fee6a0d8d5` | 2024-04-26 | "Removing API usage not applicable on iOS (stat and fstat) in libhermes" | `react-native@0.72.17`'s `packages/react-native/sdks/.hermesversion` records `hermes-2024-04-29-RNv0.72.14-3815fec63d1a6667ca3195160d6e12fee6a0d8d5` verbatim — no guessing needed. |
+| 99 | `913d31acd10aff31e0856657c9c566c3e72bd24a` | 2026-03-05 | "Revert bytecode version to 99" | This is the commit `docs/HBC-FORMAT.md` §0 already names as the one that inserts `NewTypedObjectWithBuffer` at opcode index 4, producing the 220-opcode table both `v99.hbc` and `v99-public.hbc` require (confirmed there by hand-decoding). `hermes-compiler@260318099.0.x`'s npm tarball carries no commit hash anywhere (checked: `package.json` has no `gitHead` field, `hermesc --version` prints only the npm release string, and the binary has no embedded 40-hex-char strings), so it can't be pinned more precisely than "the earliest commit with the right opcode table" — see below for how close that gets. |
+
+Both repos were fetched with `git clone --filter=blob:none` (partial clone,
+full commit graph, blobs fetched lazily on checkout) and share one object
+store via `git worktree add` — cheap even though facebook/hermes is fairly
+large. Note also: **facebook/react-native on GitHub now redirects to
+`react/react-native`** (org rename) as of this writing; `facebook/hermes`
+itself has not moved and its default branch is now `static_h`.
+
+### Build notes (macOS, Apple Silicon, cmake 4.4.0, this environment)
+
+- **Dependencies**: `cmake`, `git`, `python3`, a C++14 compiler (Xcode CLT
+  clang). `ninja` was not preinstalled; `brew install ninja` (a few seconds,
+  bottled). No ICU install needed — Hermes's `CMakeLists.txt` special-cases
+  `APPLE` to skip the ICU search entirely and use the platform's built-in ICU.
+- **One build fix needed, v94 only**: the v94-era top-level `CMakeLists.txt`
+  unconditionally does `cmake_policy(SET CMP0026 OLD)`. CMake >= 4.0 removed
+  `CMP0026`'s OLD behavior outright (not just gated behind a policy-version
+  floor), so this hard-errors at configure time ("Policy CMP0026 may not be
+  set to OLD behavior because this version of CMake no longer supports it").
+  The only consumer of the OLD behavior (`get_target_property(... LOCATION)`
+  in `API/hermes/CMakeLists.txt`) is itself gated behind
+  `HERMES_BUILD_APPLE_DSYM`, which we never enable, so
+  `tools/build-hermes-vm.sh` just comments the block out in its local clone
+  before configuring (v99/`static_h`'s `CMakeLists.txt` has already dropped
+  this block upstream — no patch needed there). No other build failures on
+  either version.
+- **Configure**: `cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`.
+  v99/`static_h` requires `CMAKE_BUILD_TYPE` to be set explicitly (`message
+  (FATAL_ERROR "Please set CMAKE_BUILD_TYPE")` otherwise); v94 doesn't but we
+  pass it either way.
+- **Build scope**: `cmake --build build --target hermes hermesc hbcdump -j
+  $(nproc)`. Building just these three (not `check-hermes`, not
+  `node-hermes`, not the Apple `libhermes` framework, not fuzzers) is fast —
+  the top-level `tools/CMakeLists.txt` still configures all of those
+  subdirectories, but only the requested targets and their dependencies get
+  compiled by ninja.
+
+### Build results
+
+Two builds ran concurrently (10 physical/logical cores, `-j10` each,
+competing) on Apple Silicon (arm64):
+
+| Version | Wall time | `hermes` release string reported | Binary sizes (hermes / hermesc / hbcdump) |
+|---|---|---|---|
+| 94 | 1m58s (356 ninja steps) | `Hermes release version: 0.12.0`, `HBC bytecode version: 94` | 4.0M / 2.5M / 1.2M |
+| 99 | 2m22s (430 ninja steps) | `Hermes release version: 1.0.0`, `HBC bytecode version: 99` | 4.7M / 3.0M / 592K |
+
+(Both would likely be somewhat faster built one at a time with the full core
+count; still well inside the 90-minute timebox even run head-to-head.)
+
+### Verification
+
+**Running the fixtures under the matching VM** (`hermes -b file.hbc`):
+
+- `tests/fixtures/hermes-dec-sample/v94.hbc` under v94: runs, then
+  `Uncaught ReferenceError: Property 'window' doesn't exist` at
+  `sample.js:52` — expected, bare Hermes has no `window` global; this is the
+  same fixture, not a fixture bug.
+- `tests/fixtures/hermes-dec-sample/v99.hbc` and `v99-public.hbc` under v99:
+  same `window` ReferenceError, at the same source line, for both — meaning
+  our v99 VM decodes both the original and the publicly-recompiled v99
+  bytecode without a version/opcode-table mismatch (a wrong opcode table
+  would misdecode the instruction stream well before reaching line 52, not
+  fail cleanly at the same spot both times).
+- 10 `tests/fixtures/constructs/*` fixtures run under both VMs and diffed
+  against `expected.txt` (Node): `01-if-else-chain`, `09-switch-fallthrough`,
+  `18-closure-loop-let`, `20-let-const-tdz`, `23-generator-basic`,
+  `32-class-basic`, `37-destructuring-array`, `42-rest-params`,
+  `46-bigint-arithmetic`, `49-arguments-object`. (`32-class-basic` has no
+  `v94.hbc` — classes are unsupported by the v94-era IRGen, a pre-existing,
+  documented gap, not new here.)
+
+**D14's 4 known Node-vs-Hermes divergences all persist at both v94 and v99**,
+confirming (not refuting) the assumption in `docs/DECISIONS.md` D14 that they
+hold "at every version tested":
+
+| Fixture | Divergence | v94 | v99 |
+|---|---|---|---|
+| `18-closure-loop-let` | per-iteration `let` closure capture | still collapses to one binding (`3,3,3` / `3:2` repeated) | same |
+| `20-let-const-tdz` | TDZ vs. outer-`let` shadowing | still no TDZ (reads `undefined`/outer value instead of throwing) | same |
+| `42-rest-params` | sloppy `arguments` aliasing | still `original` (no aliasing) instead of `mutated` | same |
+| `49-arguments-object` | sloppy `arguments`/param aliasing | still `original`/`false` instead of `changed-via-arguments`/`true` | same |
+
+All 6 other sampled fixtures matched `expected.txt` exactly under both VMs.
+
+**`hermesc` recompilation** (`tests/fixtures/hermes-dec-sample/source.js` →
+`sample.js` in cwd, per the byte-identical recipe above):
+
+- **v94: byte-identical** to `tests/fixtures/hermes-dec-sample/v94.hbc`
+  (`cmp` exit 0), same as the prebuilt npm `hermesc` — this independently
+  confirms the v94 SHA is right, since a wrong commit would almost certainly
+  produce different bytecode.
+- **v99: matches neither `v99.hbc` nor `v99-public.hbc` byte-for-byte**, but
+  is closer to `v99-public.hbc` than to `v99.hbc`: same file size (2981
+  bytes, vs. `v99.hbc`'s 2999) and disassembles identically to
+  `v99-public.hbc` in every respect **except one** — our build's
+  `GetBuiltinClosure` resolves builtin **`#57 spawnAsync`**, matching
+  **`v99.hbc` (the original, non-public commit)**, not `v99-public.hbc`'s
+  `#58 makeAsyncIterator`. So our commit's builtin-numbering table sits
+  between the two: newer than whatever produced `v99.hbc`, older than
+  `hermes-compiler@260318099.0.x`'s actual build commit. (It also still
+  lacks the extra `Unreachable` instruction `v99.hbc` has at the end of
+  `gen`/`?anon_0_testx` — matching `v99-public.hbc` on that axis instead.)
+  Net: `913d31acd10aff31e0856657c9c566c3e72bd24a` is a real, buildable,
+  correct-opcode-table point on the `static_h` v99 timeline, but — as
+  `docs/HBC-FORMAT.md` already concluded — no single publicly-identifiable
+  commit reproduces `v99.hbc` exactly; ours is bracketed between it and the
+  npm release rather than equal to either.

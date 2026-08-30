@@ -64,6 +64,26 @@ Last updated: 2026-08-30
   `expected.txt` fidelity, 273/318 mutants killed, 41/45 Hermes-VM agreement
   (reproducing the 4 known divergences). Not wired into a build; M3 should treat
   it as an executable spec, not shippable code.
+- **Hermes VM built from source for v94 and v99**: `tools/build-hermes-vm.sh
+  <94|99>` clones `facebook/hermes` at the commit that produced each bytecode
+  version (94: `3815fec63d1a6667ca3195160d6e12fee6a0d8d5`, react-native@0.72.17's
+  pinned commit; 99: `913d31acd10aff31e0856657c9c566c3e72bd24a`, the
+  220-opcode/`NewTypedObjectWithBuffer` commit `docs/HBC-FORMAT.md` already
+  identified) and builds `hermes`/`hermesc`/`hbcdump` with cmake+ninja into
+  `tools/hermes-vm/v<N>/bin/` (gitignored). This closes the gap
+  `docs/EQUIVALENCE.md` §5.1 flagged: the only prebuilt VM (`hermes-engine-cli`)
+  tops out at HBC 89. Verified: v94's built `hermesc` reproduces
+  `tests/fixtures/hermes-dec-sample/v94.hbc` byte-identically (confirms the
+  SHA); v99's is bracketed between `v99.hbc` and `v99-public.hbc` (matches
+  `v99.hbc`'s builtin-table numbering, matches `v99-public.hbc`'s dead-code
+  emission and file size) — no publicly identifiable single commit reproduces
+  `v99.hbc` exactly. Ran both VMs against 10 `tests/fixtures/constructs/*`
+  fixtures: **D14's 4 known Node-vs-Hermes divergences
+  (`18-closure-loop-let`, `20-let-const-tdz`, `42-rest-params`,
+  `49-arguments-object`) persist unchanged at v94 and v99**, confirming (not
+  refuting) D14's "at every version tested" claim; all other sampled fixtures
+  matched. Details, build fix (CMake 4.x vs. `CMP0026 OLD`), timings, and
+  binary sizes: `docs/TOOLCHAIN.md` "Hermes VM (source build)".
 - Otherwise: no parser/CLI code yet.
 
 ## Known gaps
