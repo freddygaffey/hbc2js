@@ -1,0 +1,12 @@
+Ada
+undefined
+undefined
+no-email-on-file
+1 out-of-range
+fetched
+method-not-found
+short-circuit result: undefined calls: 1
+zero is not nullish: 0
+empty string is not nullish: 
+null triggers fallback: fallback
+false is not nullish: false

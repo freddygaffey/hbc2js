@@ -1,0 +1,9 @@
+plain function this (non-strict, global-ish): object
+method this: 42
+arrow at object-literal position ignores obj: object
+arrow defined inside method captures method this: 42
+call: via-call
+apply: via-apply
+bind: via-bind
+detached loses this: NaN
+bound retains this: 1

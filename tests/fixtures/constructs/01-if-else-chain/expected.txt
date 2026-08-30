@@ -1,0 +1,6 @@
+-5 -> negative
+0 -> zero
+3 -> small
+42 -> medium
+1000 -> large
+side effects: check(-5) | check(0) | check(3) | check(42) | check(1000)

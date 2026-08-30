@@ -1,0 +1,1 @@
+sync-1 -> sync-2 -> async-fn-start -> sync-3 -> microtask-A1 -> microtask-B1 -> async-fn-after-await -> microtask-C1 -> final-tick

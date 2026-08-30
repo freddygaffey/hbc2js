@@ -1,0 +1,7 @@
+deposit: 150
+withdraw: 120
+balance: 120
+history: deposit:50,withdraw:30
+brand check (real account): true
+brand check (plain object): false
+caught: insufficient funds

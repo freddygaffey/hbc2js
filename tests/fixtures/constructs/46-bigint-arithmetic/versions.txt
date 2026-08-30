@@ -1,0 +1,10 @@
+v84: FAILS - "invalid numeric literal" on the `9007199254740993n` BigInt
+     literal. This hermesc build's lexer does not recognize the trailing `n`
+     BigInt literal suffix (ES2020) at all -- BigInt is simply not part of
+     this era's Hermes language support.
+v94: OK - react-native@0.72.17's hermesc fully supports BigInt literals and
+     arithmetic.
+v99: OK - same as v94.
+
+Only v94.hbc and v99.hbc exist in this directory; tests/fixtures/build.sh
+skips v84 for this fixture, matching this file.

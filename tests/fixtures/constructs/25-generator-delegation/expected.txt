@@ -1,0 +1,2 @@
+before | i1 | i2 | inner returned: inner-return | 10 | 20 | 30 | a | b | after
+x,y,z

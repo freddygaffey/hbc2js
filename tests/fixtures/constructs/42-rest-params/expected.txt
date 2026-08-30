@@ -1,0 +1,6 @@
+first=1 rest=[2,3,4] arguments.length=4
+first=only rest=[] arguments.length=1
+1,2,3,4,5
+non-strict arguments aliasing: mutated
+0:
+3:1-2-3

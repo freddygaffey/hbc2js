@@ -1,0 +1,5 @@
+{"theme":"light","size":"large","flag":false,"extra":"new"}
+{"size":"medium","extra":"new","theme":"light","flag":false}
+{"theme":"light","size":"inline-wins-because-last","flag":false}
+original unaffected: {"x":1} copy: {"x":2}
+spreading null/undefined is a no-op: {"y":1}

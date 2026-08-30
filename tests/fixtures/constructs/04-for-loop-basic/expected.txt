@@ -1,0 +1,8 @@
+0:10 | 1:9 | 2:8 | 3:7 | 4:6
+total=1200
+i=0 j=0 dummy=0
+i=0 j=1 dummy=0
+i=1 j=0 dummy=10
+i=1 j=1 dummy=10
+i=2 j=0 dummy=20
+i=2 j=1 dummy=20

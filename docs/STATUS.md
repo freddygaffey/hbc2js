@@ -14,10 +14,26 @@ Last updated: 2026-08-30
 ## Currently working
 - `hermesc` toolchain: `tools/get-hermesc.sh` fetches HBC v84/v94/v99 compilers
   (npm-sourced, not committed) for macOS + Linux x86_64. v94 recompiles
-  `tests/fixtures/v94.js` byte-identical to `tests/fixtures/v94.hbc`. v99 does
-  not byte-match (different Hermes commit, same wire format — see
-  `docs/TOOLCHAIN.md`). `hermes-dec` 0.1.7 (pip) confirmed working as the
-  behaviour-oracle disassembler/decompiler. Details: `docs/TOOLCHAIN.md`.
+  `tests/fixtures/hermes-dec-sample/source.js` byte-identical to
+  `tests/fixtures/hermes-dec-sample/v94.hbc`. v99 does not byte-match
+  (different Hermes commit, same wire format — see `docs/TOOLCHAIN.md`).
+  `hermes-dec` 0.1.7 (pip) confirmed working as the behaviour-oracle
+  disassembler/decompiler. Details: `docs/TOOLCHAIN.md`.
+- **Tier 1 fixture corpus built**: 51 hand-written single-construct fixtures
+  under `tests/fixtures/constructs/<NN-topic>/{source.js,expected.txt,vNN.hbc,licence.txt}`
+  (per `docs/TEST-CORPUS.md` §1a), plus the restructured `hermes-dec-sample/`
+  (now also has a `v84.hbc` and a `v99-public.hbc`, alongside the two
+  preserved historical `v94.hbc`/`v99.hbc` binaries). All 51 run correctly
+  under Node 25 (`expected.txt` captured from that run); 138/153
+  (fixture × hermesc-version) combinations compile — the 15 gaps are
+  documented per-fixture in `versions.txt` and summarized in
+  `tests/fixtures/README.md`'s compatibility table. A same-VM cross-check
+  against the real `hermes` interpreter (bundled with the v84 package only)
+  found 4 genuine Node-vs-Hermes-v84 runtime behavioural differences
+  (`let`-in-for-loop closure capture, TDZ-vs-shadowing, and non-strict
+  `arguments`/parameter aliasing) — see `tests/fixtures/README.md` for full
+  detail; not fixture bugs, Hermes v84 diverges from spec/Node there.
+  `tests/fixtures/build.sh` regenerates every `.hbc` idempotently.
 - Prior art + HBC format research done: `docs/PRIOR-ART.md` (survey of 12 tools,
   structuring-literature recommendation, risk register) and `docs/HBC-FORMAT.md`
   (our own format write-up, verified byte-for-byte against the v84/v94/v99/v99-public
@@ -27,10 +43,13 @@ Last updated: 2026-08-30
 
 ## Known gaps
 - No Linux arm64 `hermesc` build published anywhere found; only Linux x86_64.
-- No `.hbc` fixture yet exercises literal buffers / object shape table / BigInt table /
-  `SwitchImm` jump tables, nor an overflowed string entry, nor an optimised (`-O`) build.
-  `tests/fixtures/constructs/` covers the language surface but is not compiled yet —
-  see `docs/PRIOR-ART.md` §7.4. Compile it before M4.
+- `tests/fixtures/constructs/` is now compiled (138/153 fixture×version
+  combinations; see `tests/fixtures/README.md`), but no `.hbc` fixture yet
+  specifically exercises literal buffers / object shape table / BigInt table /
+  `SwitchImm` jump tables, nor an overflowed string entry, nor an optimised
+  (`-O`) build — see `docs/PRIOR-ART.md` §7.4. A v84 fixture pair now exists
+  (`tests/fixtures/hermes-dec-sample/v84.hbc`, plus v84.hbc for 43/51
+  construct fixtures — 8 don't compile on v84, see that directory's README).
 - `docs/TOOLCHAIN.md` still refers to the pre-move fixture paths
   (`tests/fixtures/v94.hbc` etc.); fixtures now live in
   `tests/fixtures/hermes-dec-sample/`.

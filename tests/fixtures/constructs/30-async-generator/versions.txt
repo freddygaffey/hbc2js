@@ -1,0 +1,19 @@
+v84: FAILS - "for await..of loops are currently unsupported" (hermesc parse-time
+     rejection of the for-await-of statement itself, independent of async
+     generators).
+v94: FAILS - same "for await..of loops are currently unsupported" error as v84.
+v99: FAILS - "async generators are unsupported" (a different, later-stage
+     restriction: v99's hermesc accepts for-await-of syntactically but rejects
+     `async function*` declarations outright).
+
+No hermesc version fetched by tools/get-hermesc.sh (84/94/99) can compile this
+fixture. It is kept anyway (per docs/TEST-CORPUS.md #1a construct 30) as a
+forward-looking Tier 1 fixture: it runs correctly under plain Node
+(see expected.txt) and is valid input for the D2 trace-equivalence harness
+once real bytecode support exists in some future Hermes/hermesc version, or
+once this project's own emitter needs to represent the construct in reverse
+(decompiling bytecode that predates async generators is out of scope, but the
+construct fixture documents the gap either way).
+
+No vNN.hbc files exist in this directory; tests/fixtures/build.sh skips this
+fixture for all three compilers, matching this file.

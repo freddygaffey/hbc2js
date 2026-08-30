@@ -1,0 +1,3 @@
+cooked[0]="a\n" | raw[0]="a\\n" | value[0]=42 | cooked[1]="b\tc" | raw[1]="b\\tc" | value[1]=43 | cooked[2]="d" | raw[2]="d"
+<p>safe & sound</p>
+template with no substitutions has 1 string part: 1

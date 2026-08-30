@@ -1,0 +1,3 @@
+guarded caught: boom-1
+guarded resolved: recovered
+unguarded rejected via .then handler: boom-2

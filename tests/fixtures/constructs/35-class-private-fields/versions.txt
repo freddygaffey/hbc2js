@@ -1,0 +1,19 @@
+v84: FAILS - two independent problems, either one fatal on its own:
+     (1) classes are unsupported in IRGen at all (see 32-class-basic/versions.txt);
+     (2) the "#x in obj" ergonomic private-brand-check syntax (a separate,
+     later TC39 proposal than basic private fields) is not recognized by this
+     build's parser at all ("invalid expression" -- a hard parse error, which
+     is why compiling this exact file reports only ONE error instead of the
+     many "private properties are not supported" errors seen on v94: the
+     parse error aborts before semantic validation gets a chance to walk the
+     rest of the private-field usages).
+v94: FAILS - "private properties are not supported", reported once per every
+     `#name` field/method declaration and use-site (14 occurrences in this
+     file) -- react-native@0.72.17's hermesc parses private names but
+     explicitly rejects them in its semantic validator. Also independently
+     blocked by the lack of class support at all (see 32-class-basic).
+v99: OK - hermes-compiler@260318099.0.1 fully supports private fields/methods
+     and the `#x in obj` brand-check form.
+
+Only v99.hbc exists in this directory; tests/fixtures/build.sh skips v84/v94
+for this fixture, matching this file.

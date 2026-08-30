@@ -1,0 +1,8 @@
+x before declaration: undefined
+x after assignment: 1
+x reassigned in block: 2
+x after block: 2
+redeclaration keeps value: 2
+returned: 2
+typeof hoistedFn before def: function
+call after def: hoisted

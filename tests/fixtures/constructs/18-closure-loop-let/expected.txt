@@ -1,0 +1,2 @@
+let closures each see own i: 0,1,2
+nested let closures: 0:0 | 0:1 | 1:0 | 1:1 | 2:0 | 2:1

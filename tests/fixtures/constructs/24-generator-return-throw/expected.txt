@@ -1,0 +1,9 @@
+{"value":1,"done":false}
+g1 finally ran (return() triggered it)
+{"value":"early-exit","done":true}
+{"done":true}
+{"value":"start","done":false}
+g2 caught: injected-error
+{"value":"recovered","done":false}
+g2 finally always runs
+{"done":true}

@@ -1,0 +1,5 @@
+celsius=100 fahrenheit=212
+after setting F=32, celsius=0
+area=20
+new area=50
+caught: invalid width

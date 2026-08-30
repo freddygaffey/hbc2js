@@ -1,0 +1,6 @@
+start
+sync code after call runs first
+got a=1
+got b=11
+got c=12
+total=24

@@ -1,0 +1,5 @@
+caught: ReferenceError true
+after declaration: now-initialized
+inner block TDZ caught: ReferenceError
+inner val: shadowed val2: inner-shadow
+outer val unchanged: outer

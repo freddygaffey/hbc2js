@@ -1,0 +1,6 @@
+1 => one-or-two+through-three
+2 => one-or-two+through-three
+3 => through-three
+4 => four
+50 => default-hit+through-hundred
+100 => through-hundred

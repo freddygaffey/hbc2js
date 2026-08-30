@@ -1,0 +1,11 @@
+Hello, Ada!
+Hi Bo
+default-1
+default-2
+explicit
+side effect only ran for defaulted calls: 2
+1,2,3
+10,11,21
+10,20,30
+10,20,30
+14

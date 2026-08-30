@@ -1,0 +1,7 @@
+typeof undeclared: undefined
+typeof undefined var: undefined
+typeof let before assignment (declared, not TDZ here): undefined
+instanceof chain: true true true false
+in checks: true true false
+array index in: true false
+typeof primitives: number string boolean object undefined object object function symbol

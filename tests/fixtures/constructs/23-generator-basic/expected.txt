@@ -1,0 +1,6 @@
+{"value":"a","done":false}
+{"value":"b","done":false}
+{"value":"c","done":false}
+{"value":"received:injected","done":false}
+{"value":"final","done":true}
+squares: 0,1,4,9,16

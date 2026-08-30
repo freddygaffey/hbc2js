@@ -1,0 +1,6 @@
+1 default-b
+deep: deep-default
+x=1 others={"y":2,"z":3}
+Hello, World!
+Hi, Ada!
+computed: found-it

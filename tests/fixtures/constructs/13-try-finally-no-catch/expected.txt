@@ -1,0 +1,4 @@
+entering try
+finally always runs
+caught outside: propagated
+body,cleanup

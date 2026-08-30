@@ -1,0 +1,6 @@
+changed-via-arguments
+declared-arity=3 called-with=1
+declared-arity=3 called-with=5
+1,2,3
+15
+reassigning named param updates arguments: true

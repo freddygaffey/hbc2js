@@ -1,0 +1,2 @@
+var closures all see final i: 3,3,3
+IIFE-captured var closures: 0,1,2

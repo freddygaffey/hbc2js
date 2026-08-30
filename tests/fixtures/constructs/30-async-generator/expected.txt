@@ -1,0 +1,5 @@
+squares via for-await-of: 1,4,9,16,25
+manual next: 100
+manual next: 121
+manual next: 144
+done

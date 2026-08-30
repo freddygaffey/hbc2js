@@ -1,0 +1,2 @@
+keys: inheritedProp,ownA,ownB,protoEnumerable
+plain: z=1,a=2,m=3

@@ -1,0 +1,20 @@
+v84: FAILS - hermesc rejects the `class` keyword entirely: "invalid statement
+     encountered" pointing at the class declaration itself. This is not a
+     parser limitation (Hermes's parser accepts and produces a full AST for
+     class syntax, verified with `hermesc -dump-ast`) -- it is IRGen: this
+     hermesc build (hermes-engine-cli@0.8.1, HBC v84) has no lowering at all
+     for ClassDeclaration/ClassExpression nodes to bytecode. Confirmed with
+     minimal repros (`class C {}`, `class C { method(){} }`,
+     `class C extends D {}`) -- all fail identically regardless of body
+     contents.
+v94: FAILS - identical "invalid statement encountered" error, same root cause
+     (react-native@0.72.17's bundled hermesc also lacks class lowering in
+     IRGen).
+v99: OK - hermes-compiler@260318099.0.1 fully supports `class` (including
+     this construct's accessors/inheritance/fields as applicable).
+
+Only v99.hbc exists in this directory; tests/fixtures/build.sh skips v84/v94
+for this fixture, matching this file. Historically, React Native's Metro/Babel
+pipeline transpiled all class syntax to ES5 prototype chains before handing
+JS to Hermes in this era, which is presumably why hermesc itself never grew
+class-lowering support until some commit between HBC v94 and v99.

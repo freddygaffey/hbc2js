@@ -1,0 +1,47 @@
+Source: hermes-dec test corpus (P4tr1ckZ0/hermes-dec, formerly bongtrop/hermes-dec),
+sample.js used for round-trip verification (see docs/TOOLCHAIN.md's "byte-identical
+recompilation" section).
+
+hermes-dec itself is AGPL-3.0-licensed. Per docs/DECISIONS.md D4, hermes-dec's CODE
+is never copied into this project — it is used only as a behaviour oracle. This
+particular file is different: it is hermes-dec's *test input* (a synthetic JS
+sample used to exercise its disassembler/decompiler), not a fragment of the
+hermes-dec program itself.
+
+Rationale for treating the sample.js content as usable here despite the AGPL:
+- The file is a short, mechanically-constructed torture-test snippet (BigInt
+  literals, generators, async functions, try/catch nesting, regex literals,
+  recursion) with no narrative or expressive content — it exists purely to
+  poke at bytecode edge cases, and was almost certainly written expressly as
+  test input rather than as a creative work redistributed under the project's
+  own licence terms.
+- It is used here for exactly the same purpose it was written for: a corpus
+  sample to compile with multiple Hermes versions and diff, not as part of
+  hbc2js's own shipped source.
+- No hermes-dec source code, comments, or docstrings are included — only the
+  plain .js sample text (renamed source.js) and .hbc binaries compiled from it
+  by this project's own hermesc invocations.
+
+If this provenance is ever contested, the file should be replaced with an
+originally-written equivalent covering the same bytecode features (BigInt,
+generators, async/await, nested try/catch, regex, recursion) under this
+project's own MIT-equivalent terms (see tests/fixtures/constructs/ for the
+pattern) — nothing in hbc2js's own logic depends on this exact source text.
+
+Files in this directory:
+- source.js       — the original sample (identical to the removed top-level
+                     tests/fixtures/v94.js and v99.js, diff was empty)
+- v94.hbc         — original fixture binary; verified byte-identical to a fresh
+                     `hermesc -emit-binary` recompile under HBC v94
+                     (react-native@0.72.17's bundled hermesc) — see docs/TOOLCHAIN.md
+- v99.hbc         — original fixture binary; HBC format version 99, but NOT
+                     byte-identical to any publicly-obtainable v99 hermesc build
+                     (different Hermes commit; see docs/TOOLCHAIN.md for the two
+                     documented diffs: builtin table ordering, dead-code
+                     Unreachable instruction)
+- v99-public.hbc  — source.js recompiled with the publicly-fetchable
+                     hermes-compiler@260318099.0.1 (tools/get-hermesc.sh 99);
+                     same HBC format version as v99.hbc, semantically
+                     equivalent, not byte-identical to it (see docs/TOOLCHAIN.md)
+- v84.hbc         — source.js compiled with HBC v84 (hermes-engine-cli@0.8.1);
+                     new fixture, no pre-existing v84 binary to compare against

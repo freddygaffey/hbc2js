@@ -1,0 +1,5 @@
+Generic makes a sound
+Rex makes a sound (specifically, barks)
+Animal:Rex, breed=Labrador
+Tiny makes a sound (specifically, barks) [in a tiny voice]
+true true

@@ -1,0 +1,4 @@
+breaking at v=30
+sum so far=60
+doubled: 20,40,60,80,100
+sparse (holes become undefined): 1,undefined,3

@@ -1,0 +1,2 @@
+level2-wrapped <- caused by <- level3-failure
+RangeError: rethrown-as-range: inner-type-error

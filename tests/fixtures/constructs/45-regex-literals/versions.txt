@@ -1,0 +1,12 @@
+v84: FAILS - "Invalid regular expression: Quantifier has nothing to repeat".
+     This hermesc build's regex engine does not recognize named capture group
+     syntax `(?<name>...)` (ES2018) -- it appears to parse `<` as the start of
+     a quantifier context and chokes on `{4}` immediately after, rather than
+     recognizing the group-naming syntax at all.
+v94: OK - react-native@0.72.17's hermesc supports named capture groups fully
+     (both in the regex literal and in `String.replace`'s `$<name>`
+     substitution syntax).
+v99: OK - same as v94.
+
+Only v94.hbc and v99.hbc exist in this directory; tests/fixtures/build.sh
+skips v84 for this fixture, matching this file.

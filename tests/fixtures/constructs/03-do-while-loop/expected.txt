@@ -1,0 +1,3 @@
+iterations=4 final n=-20
+body runs even though condition is false: x=999
+squares: 0,1,4,9,16

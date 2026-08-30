@@ -1,0 +1,11 @@
+add: 9007199254740995
+mul: 18014398509481986
+sub: 9007199254740991
+div: 4503599627370496
+mod: 0
+pow: 1024
+compare: true true false
+caught: TypeError
+loose equality allowed: true
+explicit conversion: true
+BigInt() constructor: 123

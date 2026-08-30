@@ -1,0 +1,3 @@
+point(3,4) dist=5
+after translate: point(4,5)
+defaulted fields: point(undefined,undefined)

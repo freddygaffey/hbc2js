@@ -1,0 +1,2 @@
+ok:0 | after-try:0 | ok:1 | after-try:1 | finally-continue-suppresses-throw:2 | ok:3 | after-try:3 | ok:4 | after-try:4
+iter:0 | iter:1 | iter:2 | finally-break-suppresses-throw

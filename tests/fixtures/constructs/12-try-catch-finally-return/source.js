@@ -1,0 +1,27 @@
+// finally containing a return that overrides the try/catch return value.
+function f1() {
+  try {
+    return 'from-try';
+  } finally {
+    return 'from-finally';
+  }
+}
+function f2() {
+  try {
+    throw new Error('boom');
+  } catch (e) {
+    return 'from-catch:' + e.message;
+  } finally {
+    return 'finally-wins';
+  }
+}
+function f3() {
+  try {
+    return 'try-value';
+  } finally {
+    print('finally ran, but does not return here');
+  }
+}
+print(f1());
+print(f2());
+print(f3());

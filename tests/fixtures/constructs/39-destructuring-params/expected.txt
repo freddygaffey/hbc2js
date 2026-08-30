@@ -1,0 +1,7 @@
+1:generated-1:[]
+2:generated-2:[]
+3:explicit:[a,b]
+defaultFactory was called 2 times
+3
+5
+0

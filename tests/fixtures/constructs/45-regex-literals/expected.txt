@@ -1,0 +1,7 @@
+2024-03-15 2024 03 15
+15/03/2024
+the@0,quick@4,brown@10,fox@16
+true
+false
+a[1]b[2]c[3]
+one|two||four
