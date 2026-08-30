@@ -795,7 +795,7 @@ run join the gate without the gate getting slower.
    bundles separate the triple across basic blocks in ways the matcher does not
    always close. Totality on 4200-function inputs was judged worth more than the
    loud stop; the diagnostic keeps it visible.
-3. **Spec 05 §7.3's four-helper list** is D18's larger set.
+3. **Spec 05 §7.3's four-helper list** is D22's larger set.
 4. ~~**`docs/HBC-FORMAT.md` §6.3's ByteString row is wrong for v≥97.**~~ — the doc
    is **corrected** (tag 6 = `UndefinedTag`, no payload, at v≥97), and
    `src/parse/buffers.ts` now takes an optional `version` so it can read either
