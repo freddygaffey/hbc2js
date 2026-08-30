@@ -20,3 +20,6 @@ Orchestrator hygiene
 
 Bug rule
 - A bug found by a review, a sweep, or a user gets a regression test in the same commit as its fix — one that reproduces the bug (fails on the pre-fix commit) and is named after its source (e.g. `review-M4-C1-catch-finally-order`). Semantic bugs also get a construct fixture so every version is covered from then on.
+
+Brief hygiene
+- Briefs put the facts the agent needs *inline* (numbers, file paths, the exact bug) and name at most the 2–3 files the task touches. `docs/AGENT-BRIEF.md` is the only mandatory read. Don't send agents on reading tours; tokens spent orienting are tokens not spent working.

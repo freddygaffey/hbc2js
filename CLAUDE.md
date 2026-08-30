@@ -1,6 +1,6 @@
 # hbc2js — instructions for AI contributors
 
-Read in this order before doing anything: `SPEC.md` → `docs/RESEARCH-SUMMARY.md` → `docs/DECISIONS.md` → `docs/AGENT-WORKFLOW.md` → `docs/STATUS.md`.
+Read `docs/AGENT-BRIEF.md` first (one page). Open other docs only when your task needs them — your brief will name them. For architecture work read `docs/DECISIONS.md` too.
 
 Hard rules:
 - **Never copy code from hermes-dec** (AGPL). It is a behaviour oracle only. Derive opcode tables from the MIT-licensed Hermes repo (`include/hermes/BCGen/HBC/BytecodeList.def`) or from observation.
