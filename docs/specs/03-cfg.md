@@ -31,6 +31,13 @@ analysis output** — the environment/closure graph the emitter needs to turn
 this spec provides the dominator tree), SSA and expression rebuilding (spec 05
 and the pass ladder), any AST.
 
+**Versions.** Five are now fetched and fixtured: 84, 94, **96**, 98, 99. v96 is
+layout class C with the v94 opcode *numbering* — only `DirectEval` gained a
+third operand (`docs/TOOLCHAIN.md` "v96: opcode table and layout") — so every
+v94 code path in this spec applies verbatim to v96, and `era: "opcode"` covers
+84/94/96 while `era: "lowered"` covers 98/99. Production apps ship 96 and 98, so
+neither is a curiosity.
+
 **Why the env graph lives here and not in the emitter.** It is a whole-*module*
 dataflow analysis over the function table, not a per-function emission concern:
 `CreateClosure r1, rEnv, f#6` in function 0 is what tells you that function 6's
@@ -208,14 +215,23 @@ export interface FunctionKindInfo {
    *  CreateGeneratorClosure/CreateAsyncClosure named this function; "body" = the
    *  body starts with StartGenerator. */
   readonly evidence: readonly ("header" | "creation-site" | "body")[];
-  /** v<=96: the outer stub's inner function; v>=97: CreateGenerator's operand. */
+  /** The function that actually contains the generator body. Resolved by the
+   *  SAME two-hop procedure at BOTH eras — see §3.4.1. Null when no creation
+   *  site was found. */
   readonly innerFunctionIndex: number | null;
-  /** v>=97 only. The D9 shim is required for this function. */
+  /** The intermediate trampoline function, when the two-hop resolution went
+   *  through one (the normal case at both eras). */
+  readonly trampolineFunctionIndex: number | null;
+  /** True for the function that must be wrapped by the D9 shim — i.e. the
+   *  target of a `CreateGenerator`. True at BOTH eras (§3.4.1). */
   readonly shimRequired: boolean;
 }
 
 export interface GeneratorShape {
   readonly info: FunctionKindInfo;
+  /** v<=96 only. The synthetic block prepended by §4.5, and the CFG entry when
+   *  present. Null for every other function. */
+  readonly resumeDispatch: BlockId | null;
   /** v<=96 only. One entry per SaveGenerator: the suspend site and the block the
    *  VM resumes into. This is what the `yield` recovery pass consumes. */
   readonly suspendPoints: readonly SuspendPoint[];
@@ -224,14 +240,59 @@ export interface GeneratorShape {
 }
 
 export interface SuspendPoint {
+  /** 1-based resume state. State 0 is the function's real entry. This is the
+   *  value the D9 shim passes back in to resume here (§4.5, spec 05 §7.2). */
+  readonly state: number;
   readonly saveOffset: number;      // the SaveGenerator instruction
   readonly resumeBlock: BlockId;    // the block at SaveGenerator's target
   /** True when SaveGenerator is immediately followed by `Ret r` — the canonical
-   *  `r = yield v` shape (docs/PRIOR-ART.md §6.2). */
+   *  `r = yield v` shape (docs/PRIOR-ART.md §6.2). Measured: true for all four
+   *  suspend points of 23-generator-basic at v94. */
   readonly canonical: boolean;
   readonly retRegister: number | null;
 }
 ```
+
+#### 3.4.1 Resolving `innerFunctionIndex` — the two-hop rule, identical at both eras
+
+**Do not read the creation-site operand as the body.** Measured on
+`tests/fixtures/constructs/23-generator-basic` at v94 and v99:
+
+```
+v94  global:                CreateGeneratorClosure r4, r2, fn#1     <- fn#1 is a TRAMPOLINE
+v94  fn#1 NCFunction<sequence>(1 params, 1 registers):
+       [@ 0] CreateEnvironment 0<Reg8>
+       [@ 2] CreateGenerator 0<Reg8>, 0<Reg8>, 2<UInt16>            <- fn#2 is the BODY
+       [@ 7] Ret 0<Reg8>
+v94  fn#2 Function<?anon_0_sequence>: StartGenerator; ResumeGenerator; ... SaveGenerator ...
+
+v99  fn NCFunction<sequence>(1 params, 2 registers):
+       [@ 13] CreateGenerator 1<Reg8>, 1<Reg8>, 3<UInt16>           <- fn#3 is the BODY
+v99  fn#3 Function<sequence>: the lowered state machine
+```
+
+The procedure, one rule for both eras:
+
+```
+1. Start at the creation site: CreateGeneratorClosure / CreateAsyncClosure
+   (v<=96) or CreateClosure on a header-kind Generator/Async function (v>=97).
+   Call its function-id operand F.
+2. If F's own body contains a `CreateGenerator`, then
+       trampolineFunctionIndex = F
+       innerFunctionIndex      = that CreateGenerator's function-id operand
+   else
+       trampolineFunctionIndex = null
+       innerFunctionIndex      = F
+3. shimRequired is set on innerFunctionIndex, at both eras.
+```
+
+Reading "the outer stub's inner function" as "the `CreateGeneratorClosure`
+operand" finds a 3-instruction trampoline with **zero** `SaveGenerator`s, so
+`suspendPoints` comes back empty and nothing crashes — a silently wrong
+classification that surfaces much later as "the shim is never called". That is
+why the procedure is written out rather than described.
+
+`CreateGenerator` therefore appears at **both** eras. See the note under CFG-12.
 
 **Two eras, two front-ends — do not let one code path serve both** (D9,
 PRIOR-ART §6.2):
@@ -240,14 +301,16 @@ PRIOR-ART §6.2):
 |---|---|---|
 | How we know | `CreateGeneratorClosure` / `CreateAsyncClosure` at the creation site; `StartGenerator` first in the body | `FunctionHeader.flags.kind` ∈ {Generator, Async} (spec 01 §3.4) |
 | Body shape | VM primitives: `StartGenerator`, `ResumeGenerator`, `SaveGenerator`, `CompleteGenerator` | an explicit compiler-lowered state machine: state slot in an environment, `JStrictEqual` dispatch chain, `NewObjectWithBuffer` `{value, done}` results |
-| CFG treatment | `SaveGenerator` is a **normal** terminator-like instruction: it does *not* end a block by itself, but its target is a leader (a resume point). `ResumeGenerator` is an ordinary instruction | nothing special — it is a plain function with a dispatch `switch`/compare-chain at the top |
-| M4 baseline | structure normally; `yield` recovery is a spec 07 pass | **D9 shim**: emit the body as a plain function and `CreateGenerator` as `__hbc_makeGenerator(body, env)` (spec 05 §7) |
+| CFG treatment | **§4.5's resume dispatcher is required**: `SaveGenerator` targets have no static predecessor, so a synthetic entry must supply one | nothing special — it is a plain function whose dispatch chain is reached by ordinary branches from the single entry (verified at v99) |
+| M4 baseline | §4.5 dispatcher + **D9 shim** (spec 05 §7.2) | **D9 shim**: `CreateGenerator` → `__hbc_makeGenerator(body, env)` (spec 05 §7.2) |
 
-**The shim boundary, stated precisely.** For `era: "lowered"`, the CFG is
-*ordinary*. Nothing in this spec special-cases it. The only obligation here is to
-set `shimRequired: true` and `innerFunctionIndex` from the `CreateGenerator`
-operand, so the emitter knows which function to wrap. Resist the temptation to
-recognise the state machine at CFG level — that is Strategy B, deferred.
+**The shim boundary, stated precisely.** `CreateGenerator` is the shim site at
+**both** eras, and `innerFunctionIndex` (§3.4.1) is the function it wraps. For
+`era: "lowered"` the CFG of that body is *ordinary* — verified at v99: every
+dispatch-chain case is reached by an ordinary `JStrictEqual`/`JmpTrue` branch
+from the single entry. For `era: "opcode"` it is **not** ordinary and §4.5
+applies. Resist the temptation to recognise the v≥97 state machine at CFG level —
+that is Strategy B, deferred.
 
 ### 3.5 Environment / closure graph
 
@@ -328,6 +391,8 @@ A block starts at every offset in the **leader set**:
    step that makes exception regions block-aligned**, and it is the one people
    forget. Without it a region's `bodyBlocks` cannot be a set of whole blocks.
 7. v≤96 generators: the target of every `SaveGenerator` (a resume point).
+   **A leader is not a predecessor** — see §4.5, which is what actually makes
+   these blocks reachable.
 
 Spec 02 already guarantees every jump target is an instruction boundary; assert
 the same for handler `start`/`target` and record `W_HANDLER_MISALIGNED` (not
@@ -347,6 +412,11 @@ Per block, from its last instruction:
 | `Throw`, `ThrowIfEmpty`-family that always throws | `throw` | none |
 | `Unreachable` | `unreachable` | none |
 | anything else (block ended because the next offset is a leader) | `fallthrough` | one `fallthrough` edge |
+
+A `SaveGenerator; Ret` block terminates in `return` and therefore has **no**
+successor — correct, because yielding really does return to the caller. Its
+resume block is entered on the *next* call, from the dispatcher of §4.5, not
+from here.
 
 Duplicate `switch-case` edges to the same target are **kept as distinct edges**
 (fall-through runs and shared targets are semantic — fixture
@@ -377,6 +447,101 @@ Compute over the **normal** graph only.
   the DFS) is a back edge. **This flag is informational.** Spec 04's algorithm is
   total and must not branch on it; it exists for reporting and for the
   obfuscated-fixture stress metric.
+
+### 4.5 Generator resume edges (v≤96) — required, not optional
+
+### The problem, measured
+
+`hermesc -dump-bytecode -pretty-disassemble=false` on
+`tests/fixtures/constructs/23-generator-basic/source.js` at v94, function
+`?anon_0_sequence` (reached by the §3.4.1 two-hop from `global`'s
+`CreateGeneratorClosure r4, r2, fn#1`):
+
+```
+[@ 0]  StartGenerator
+[@ 1]  ResumeGenerator 0<Reg8>, 1<Reg8>
+[@ 4]  JmpTrue 82<Addr8>, 1<Reg8>        -- to 86, the .return() path
+[@ 7]  LoadConstString 1<Reg8>, 7<UInt16>
+[@ 11] SaveGenerator 4<Addr8>            -- target 11+4 = 15
+[@ 13] Ret 1<Reg8>
+[@ 15] ResumeGenerator 1<Reg8>, 2<Reg8>  -- RESUME POINT: zero predecessors
+[@ 18] JmpTrue 65<Addr8>, 2<Reg8>
+[@ 21] LoadConstString 2<Reg8>, 8<UInt16>
+[@ 25] SaveGenerator 4<Addr8>            -- target 29
+[@ 27] Ret 2<Reg8>
+[@ 29] ResumeGenerator 2<Reg8>, 3<Reg8>  -- RESUME POINT
+ ...                                      (4 suspend points: 11, 25, 39, 57
+                                           -> resume blocks 15, 29, 43, 61)
+```
+
+Every `SaveGenerator` is immediately followed by `Ret`, whose row in §4.2's edge
+table is *"return | none"*. Nothing else in the function branches to 15, 29, 43
+or 61 — the only way to reach them is the VM re-entering at the saved pc, which
+is **opaque runtime state, not a static edge**. So without §4.5:
+
+* RPO never visits them; dominators never assign them an `idom`; **CFG-10 fires
+  `E_INTERNAL`** for every generator with more than one `yield` — which is
+  fixtures 23, 24, 25 and 26, i.e. the normal case;
+* even with CFG-10 relaxed, spec 04's translation can never visit an unreached
+  node, so **the code that runs on the second and subsequent `.next()` calls is
+  not emitted at all** — absent, not ugly.
+
+The v≥97 era does **not** have this problem (verified at v99: the dispatch chain
+is reached by ordinary branches from the single entry).
+
+### The fix: a synthetic resume-dispatch entry (option (a))
+
+For every function with `era: "opcode"` and `suspendPoints.length > 0`, prepend
+one synthetic block:
+
+```
+B_dispatch  (id = blocks.length, but it becomes cfg.entry)
+  terminator: { kind: "switch", table: <synthetic> }
+  scrutinee:  the generator's resume state (see the emitter contract below)
+  edges:      switch-case  0 -> the real entry block (offset 0)
+              switch-case  k -> suspendPoints[k-1].resumeBlock,  k = 1..n
+              switch-default -> the real entry block
+```
+
+Properties this buys, each of which is the reason to prefer it over option (b):
+
+1. **Every resume block gets a predecessor**, so RPO, dominators and CFG-10 all
+   work with no special cases anywhere downstream.
+2. **Spec 04 needs no change at all.** The body becomes a single-entry graph
+   whose entry is a multi-way switch; Ramsey structures it into
+   `switch (state) { case 0: … case 1: … }`, which is *exactly what the VM does
+   at runtime*. Not a coincidence — it is the same construct.
+3. **The emitter contract falls out.** `SaveGenerator L_k` lowers to
+   `__state = k;` and its following `Ret r` to `return r;`; the shim calls back
+   with `__state`. Spec 05 §7.2 specifies this.
+
+Rules:
+
+* `B_dispatch` is synthetic: it has `instructions: []` and `start === end === -1`.
+  Code that assumes every block owns bytes must handle it — CFG-02 is amended
+  accordingly (CFG-17).
+* It is added **only** for `era: "opcode"` bodies with suspend points. A v≤96
+  generator *trampoline* (§3.4.1) has none and is an ordinary function.
+* `GeneratorShape.resumeDispatch` records its id; `cfg.entry` is it.
+* State numbering is `suspendPoints` in ascending `saveOffset` order, 1-based.
+  This is stable, deterministic, and is the contract the shim depends on.
+
+### Why not option (b)
+
+Structuring each resume block as its own root and stitching the results together
+at emit time also works, but it moves the join into the emitter, needs its own
+soundness argument, and produces output that no longer corresponds to a single
+CFG — so spec 04 §5's whole-function isomorphism check would have nothing to
+check against. Option (a) keeps one graph, one tree, one proof. Recorded here so
+the choice is not silently revisited.
+
+### The `.return()` / `.throw()` paths
+
+Each `ResumeGenerator dst, isReturnReg` is followed by
+`JmpTrue isReturnReg, <completion>`, and each completion path is
+`CompleteGenerator; Ret`. Those are ordinary instructions and ordinary edges —
+no special handling. `ResumeGenerator` lowers to "read the sent value and the
+is-return flag from the shim" (spec 05 §7.2).
 
 ---
 
@@ -487,10 +652,10 @@ it is the escape hatch for obfuscated or hand-crafted bytecode — not the defau
 | # | Invariant | Violation |
 |---|---|---|
 | CFG-01 | every instruction belongs to exactly one block | `E_INTERNAL` |
-| CFG-02 | blocks partition `[0, bytecodeSizeInBytes)` with no gaps or overlaps | `E_INTERNAL` |
+| CFG-02 | the **non-synthetic** blocks partition `[0, bytecodeSizeInBytes)` with no gaps or overlaps; the §4.5 dispatcher is the only block with `start === -1` | `E_INTERNAL` |
 | CFG-03 | `succs` contains no exception edge | `E_INTERNAL` |
 | CFG-04 | `preds` is exactly the reverse of all `succs`, deduplicated | `E_INTERNAL` |
-| CFG-05 | every block is reachable from `entry` over normal ∪ exception edges | diag `W_UNREACHABLE_BLOCK` (dead code after `Ret` is normal; a handler unreachable both ways is suspicious) |
+| CFG-05 | every block is reachable from `entry` over normal ∪ exception edges | diag `W_UNREACHABLE_BLOCK` **except** in an `era: "opcode"` generator/async body, where it is fatal `E_INTERNAL` — see the note below |
 | CFG-06 | every non-exit block has ≥ 1 successor | `E_INTERNAL` |
 | CFG-07 | handler `target` blocks begin with `Catch` | `E_BAD_HANDLER` |
 | CFG-08 | regions are properly nested (no crossing) | `E_BAD_HANDLER` |
@@ -502,6 +667,22 @@ it is the escape hatch for obfuscated or hand-crafted bytecode — not the defau
 | CFG-14 | `EnvNode.size` ≥ `max(slot)+1` over its slots | diag `W_ENV_SLOT_OOB` — a slot beyond the declared size means the tracker resolved the wrong env |
 | CFG-15 | no `EnvAccess` with `env === null` when `strictEnv` | `E_ENV_UNRESOLVED` |
 | CFG-16 | every function reachable from `globalCodeIndex` via closures has an entry in `closureEnvOf` | diag `W_ORPHAN_FUNCTION` (real bundles contain unreferenced functions) |
+| CFG-17 | `era: "opcode"` **and** `suspendPoints.length > 0` ⟹ `resumeDispatch !== null` and `cfg.entry === resumeDispatch` | `E_INTERNAL` |
+| CFG-18 | every `suspendPoints[k].resumeBlock` has ≥ 1 predecessor, and one of them is `resumeDispatch` | `E_INTERNAL` |
+| CFG-19 | `resumeDispatch`'s case count is `suspendPoints.length + 1` and states are `0..n` with no gaps | `E_INTERNAL` |
+
+**CFG-05's carve-out, and why it is fatal there.** "Dead code after `Ret` is
+normal" is the right intuition for an ordinary function and exactly the wrong one
+for a v≤96 generator body, where the code after `Ret` is the *most* important
+code in the function — it is what the next `.next()` executes. So in an
+`era: "opcode"` body an unreachable block is not a curiosity, it means §4.5's
+dispatcher was not built and the emitted generator will silently lose its
+resume paths. Fail there.
+
+**CFG-12 names only the `*Closure` opcodes, deliberately.** `CreateGenerator`
+itself appears at **both** eras — inside the v≤96 trampoline and as the
+outer-stub-to-body link at v≥97 (§3.4.1). Do not "tighten" CFG-12 to include it;
+that produces a false `E_INTERNAL` on every v≤96 generator.
 
 ---
 
@@ -541,7 +722,9 @@ All gate-tier tests live under `tests/gate/cfg/**`, sweep under
 
 ### T1 — Block structure goldens
 
-For every gate binary and every function, snapshot a canonical JSON:
+For every gate binary (**249** today: 243 `constructs/*/v{84,94,96,98,99}.hbc`
++ 6 `hermes-dec-sample/*.hbc` — re-derive from the tree) and every function,
+snapshot a canonical JSON:
 `{blocks: [{id, start, end, terminator, succs:[{to,kind,caseValue}]}], exits,
 rpo, idom, backEdges, reducible}` to `tests/golden/cfg/<group>/<name>/vNN.json`.
 Deterministic key order; `UPDATE_GOLDEN=1` rewrites. This is the ratchet: any
@@ -569,14 +752,30 @@ Every gate binary: CFG-01…CFG-13 hold for every function. Fixtures
 cases; assert region counts and nesting depth per fixture and record them in the
 golden.
 
-### T4 — Generator classification
+### T4 — Generator classification and resume dispatch
 
-* v84/v94 `23-…`–`26-…` (generators) and `27-…`–`29-…` (async):
-  `era === "opcode"`, `suspendPoints.length` > 0, and every canonical suspend
-  point is `SaveGenerator` immediately followed by `Ret`.
+* **Two-hop resolution (§3.4.1)** on `23-generator-basic` at v94: the global
+  function's `CreateGeneratorClosure r4, r2, fn#1` resolves to
+  `trampolineFunctionIndex = 1` (`NCFunction<sequence>`, 3 instructions) and
+  `innerFunctionIndex = 2` (`?anon_0_sequence`). At v99 the same source resolves
+  through `NCFunction<sequence>`'s `CreateGenerator r1, r1, fn#3` to
+  `innerFunctionIndex = 3`. Assert the trampoline itself has
+  `suspendPoints.length === 0` — that is the trap S2 describes.
+* **Resume dispatch (§4.5)** on `?anon_0_sequence` at v94: exactly **4** suspend
+  points at `saveOffset` 11, 25, 39, 57 with `resumeBlock` starting at offsets
+  15, 29, 43, 61, all `canonical: true` (each `SaveGenerator` is immediately
+  followed by `Ret`); `resumeDispatch !== null`; `cfg.entry === resumeDispatch`;
+  the dispatcher has 5 case edges (states 0–4); every resume block has the
+  dispatcher as a predecessor; and — the point of the whole exercise —
+  **every block has a non-null `idom` (CFG-10) and no block is unreachable**.
+* Negative test: build the same CFG with §4.5 disabled and assert CFG-05 fires
+  as `E_INTERNAL`, proving the carve-out has teeth.
+* v84/v94/v96 `23-…`–`26-…` (generators) and `27-…`–`29-…` (async):
+  `era === "opcode"`, `suspendPoints.length > 0`, `resumeDispatch !== null`.
 * v98/v99 same fixtures: `era === "lowered"`, `kind` from the header flags,
-  `shimRequired === true`, `innerFunctionIndex` equal to the `CreateGenerator`
-  operand, and `suspendPoints.length === 0`.
+  `shimRequired === true` on `innerFunctionIndex`, `suspendPoints.length === 0`,
+  `resumeDispatch === null`, and **no unreachable blocks** (verified: the v99
+  dispatch chain is reached by ordinary branches).
 * `hermes-dec-sample` v99: functions 2 and 4 are the `kind = Generator` stubs
   (spec 01 T2) and each names an inner function.
 * Cross-check: for every fixture that compiles at both v94 and v99, the *set of
@@ -596,7 +795,8 @@ golden.
 
 ### T6 — Obfuscated variants (hardened tier)
 
-For all 194 `vNN.obf.hbc` binaries (`tests/fixtures/OBFUSCATION.md`), run
+For all **241** `vNN.obf.hbc` binaries (`tests/fixtures/OBFUSCATION.md`; count
+re-derived after v96 was added), run
 `analyseModule` and assert only **totality and safety**, not shape:
 
 * it terminates within a per-function budget (2 s) and under `maxBlocks`;
@@ -623,7 +823,7 @@ the concrete R3 work list; it must reach zero before M6.
 ## 10. Acceptance criteria
 
 - [ ] `analyseModule` succeeds on all gate binaries with zero errors.
-- [ ] CFG-01…CFG-16 are each exercised by at least one test; the fatal ones have
+- [ ] CFG-01…CFG-19 are each exercised by at least one test; the fatal ones have
       a negative test (hand-corrupted input) proving they fire.
 - [ ] Exception edges appear in `exceptionSuccs` and **nowhere** in `succs` —
       asserted by a corpus-wide property test, plus a unit test that a dominator
@@ -632,10 +832,15 @@ the concrete R3 work list; it must reach zero before M6.
 - [ ] All T2 byte-anchored numbers match exactly.
 - [ ] Generator classification agrees across v94 and v99 for every fixture that
       compiles at both, with different `era` and different evidence.
+- [ ] **Every v≤96 generator/async body has a resume dispatcher, every resume
+      block is reachable, and every block has an `idom`** — the T4 assertions
+      above, for all of 23–29 at v84/v94/v96.
+- [ ] Two-hop resolution (§3.4.1) is asserted at both eras; a trampoline is
+      never mistaken for a body.
 - [ ] `unresolved.length === 0` for every gate binary at every version, with
       `strictEnv: true`.
-- [ ] All 194 `.obf.hbc` binaries analyse to completion inside budget with all
-      invariants holding.
+- [ ] All `.obf.hbc` binaries (241 today) analyse to completion inside budget
+      with all invariants holding.
 - [ ] Golden CFG snapshots exist for every gate `(fixture, version)` and are
       byte-stable across two runs and across macOS/Linux.
 - [ ] No recursion over graph data: `grep` for a self-recursive DFS in
@@ -684,3 +889,21 @@ last because it needs the CFG's RPO, and it is where the review effort should go
   fixture was shipped ("would duplicate 09/10's shape"). For the CFG that is not
   a duplicate: it is the only source of string-keyed case edges. One fixture
   would close CFG-11 for the string case. Approve?
+
+---
+
+## 13. Review responses (`docs/specs/REVIEW-03-07.md`)
+
+| Item | Verdict | Where |
+|---|---|---|
+| **B1** v≤96 generator resume blocks are unreachable; CFG-10 fires, dominators and Ramsey never see the resume code | **Fixed** | New **§4.5**: a synthetic resume-dispatch entry block (the review's option (a)) with `switch`-case edges to the real entry and to every `SaveGenerator` target, verified line-by-line against the v94 dump of `23-generator-basic` quoted in full. New types (`SuspendPoint.state`, `GeneratorShape.resumeDispatch`), new invariants CFG-17/18/19, CFG-02 amended for the synthetic block, **CFG-05 carve-out made fatal** for `era: "opcode"` bodies, T4 rewritten with the measured offsets (suspends 11/25/39/57 → resumes 15/29/43/61) plus a negative test that disables §4.5 and asserts the failure. Option (b) is recorded as considered and rejected, with the reason (it would leave spec 04 §5's isomorphism check nothing to check against) |
+| **S2** `innerFunctionIndex` doc-comment gives v≤96 a result, not a procedure | **Fixed** | New **§3.4.1**: the two-hop procedure written as pseudocode, identical at both eras, with the verbatim v94 trampoline (`CreateEnvironment; CreateGenerator r0,r0,fn#2; Ret`) and the v99 equivalent. `trampolineFunctionIndex` added to `FunctionKindInfo`. T4 asserts the trampoline has zero suspend points — the exact silent-failure mode described |
+| **S6** CFG-12 could be "tightened" wrongly because `CreateGenerator` exists at both eras | **Fixed** | An explicit note under the invariant table saying so, cross-referencing §3.4.1 |
+| **What holds up** (switch model, region carving incl. shared targets, `finally` duplication, obfuscated reducibility) | Acknowledged, unchanged | Recorded so it is not re-litigated |
+| B2, S1, S3, S4, S5, N1, N2, N3 | Not this spec's | B2/S3 in spec 05; S1 in spec 04; S4 in specs 05 and 06; S5/N1/N2 in spec 07; N3 in spec 06 |
+
+**Beyond the review.** The corpus gained HBC **96** (`docs/TOOLCHAIN.md`) while
+these specs were being written: §1 now states that v96 shares v94's layout class
+and opcode numbering (the only difference is `DirectEval`'s third operand), so
+`era: "opcode"` spans 84/94/96 and every count in §9 was re-derived (249 gate
+binaries, 241 obfuscated).

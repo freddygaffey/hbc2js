@@ -96,6 +96,8 @@ that is not declared** — that is hermes-dec's defect 5 and risk R3.
 | irreducible dispatch variable | `__state<n>` | spec 04 §4.4 |
 | debug `switch(pc)` fallback | `__dispatchPc` | **mandated** by spec 00 §8 — the licence guard greps for `_funN_ip`, hermes-dec's name, and our own must not collide |
 | runtime helper | `__hbc_<name>` | §7 |
+| `CreateThis` / `CreateThisForNew` / `SelectObject` | *(no identifier)* | consumed by the `new` pattern (§7.5); never lowered standalone |
+| generator resume state | `__state` | written by `SaveGenerator`, read by the shim (§7.2) |
 | generator shim state object | `__hbc_gen<n>` | §7 |
 
 `functionName` from the header is used **only in a comment** (`// fn#6 "ze"`),
@@ -265,15 +267,61 @@ PRIOR-ART §2 currently fails.
 combines both. Emit `__hbc_makeAsyncFunction` / `__hbc_makeAsyncGenerator` on the
 same principle.
 
-**v≤96 needs none of this.** The VM opcodes are present, so
-`CreateGeneratorClosure` emits an actual `function*` whose body contains the
-`SaveGenerator`/`ResumeGenerator` blocks — structured normally in M4, with a
-`yield` recovery pass in spec 07 turning the canonical
-`SaveGenerator; Ret` → `ResumeGenerator` triple into `r = yield v`. Until that
-pass lands, M4 emits the v≤96 generator body through the **same shim**, because
-an un-recovered `SaveGenerator` has no JS form. That keeps one code path green
-for both eras at M4 and lets the pass ladder improve v≤96 first (it is the easier
-era).
+### 7.2.1 v≤96 goes through the same shim, at the same instruction
+
+The v≤96 era has VM opcodes rather than a lowered state machine, but the
+*emission* rule is identical, and deliberately so — M4's bar is "a mechanical
+per-opcode lowering, not pattern recognition".
+
+**`CreateGenerator` is the shim site at both eras.** Spec 03 §3.4.1 measured that
+both eras use the same two-hop shape: the creation site names a **trampoline**,
+and the trampoline's own `CreateGenerator` names the body.
+
+```
+v94  global:   CreateGeneratorClosure r4, r2, fn#1     -> ordinary closure creation
+v94  fn#1:     CreateEnvironment r0
+               CreateGenerator r0, r0, fn#2            -> THE SHIM SITE
+               Ret r0
+v99  fn#N:     CreateGenerator r1, r1, fn#3            -> THE SHIM SITE
+```
+
+So the lowering rules are, for every version:
+
+| Opcode | Lowering |
+|---|---|
+| `CreateGeneratorClosure dst, env, fnId` / `CreateAsyncClosure dst, env, fnId` | `r<dst> = _fn<fnId>;` — an **ordinary closure**. No special case. The trampoline body is emitted like any other function |
+| `CreateGenerator dst, env, fnId` | `r<dst> = __hbc_makeGenerator(_fn<fnId>, <env expr>);` |
+
+This is the review's option (a), chosen because it needs **zero** new pattern
+recognition and keeps one rule for both eras. Option (b) — special-casing
+`CreateGeneratorClosure` to skip the trampoline and wrap the true body directly —
+would require resolving the two-hop at emit time and deleting a function, which
+is pattern recognition and belongs in a spec 07 pass if it is ever wanted.
+
+**The body's contract with the shim.** Spec 03 §4.5 gives the v≤96 body a
+synthetic resume-dispatch entry whose `switch` selects state `0` (first call) or
+state `k` (resume at suspend point *k*). The three generator opcodes lower to
+plain assignments against that contract:
+
+| Opcode | Lowering |
+|---|---|
+| `StartGenerator` | *nothing* — the dispatcher `switch` replaces it |
+| `SaveGenerator L_k` | `__state = k;` (`k` is `SuspendPoint.state`) |
+| the `Ret r` that follows it | `return r;` — the yielded value |
+| `ResumeGenerator dst, isReturnReg` | `r<dst> = __sent; r<isReturnReg> = __isReturn;` |
+| `CompleteGenerator` | `__done = true;` |
+
+`__hbc_makeGenerator(body, env)` then drives it: it holds `__state` (initially 0),
+`__sent`, `__isReturn` and `__done` in its own closure, calls `body` on each
+`next(v)` / `return(v)` / `throw(e)`, and builds the `{value, done}` result. That
+is precisely what the VM does with the saved pc, which is why this is
+behaviour-preserving without any recognition of *what* the generator computes.
+
+`yield` recovery — collapsing `__state = k; return v;` … resume-case *k* back
+into `r = yield v` and emitting a real `function*` — is a spec 07 stage-A pass
+(`yield-recovery`), which runs first in stage A and is easier at this era than at
+v≥97. Until it lands, both eras emit the shim, so **one code path is green
+everywhere at M4**.
 
 ### 7.3 The other sanctioned helpers
 
@@ -298,8 +346,72 @@ callee identity comparison, and re-evaluates the receiver. Do not.
   readable, and it covers the overwhelming majority of calls.
 * **General case.** `Reflect.apply(r<callee>, r<this>, [r<a>, r<b>])`. No helper
   needed — `Reflect.apply` is standard.
-* **Construct.** `new r<callee>(…)` for `Construct`/`CallWithNewTarget`; when
-  new.target differs from the callee, `Reflect.construct(callee, args, newTarget)`.
+### 7.5 `new` — a three-instruction pattern, never lowered per opcode
+
+`hermesc` **never** emits a bare `Construct` for `new X(…)`. It emits a triple,
+and `CreateThis`/`CreateThisForNew` and `SelectObject` have no JS expression form
+on their own — so §4's "one instruction, one statement" model does not apply and
+they must be recognised as a unit, exactly like the method-call fast path.
+
+Measured on `tests/fixtures/constructs/13-try-finally-no-catch` (`new Error('propagated')`):
+
+**v84 / v94 / v96** — `CreateThis dst, prototypeReg, closureReg`:
+
+```
+[@ 19] TryGetById    2<Reg8>, 0<Reg8>, 2<UInt8>, 9<UInt16>    ; r2 = global.Error
+[@ 25] GetByIdShort  0<Reg8>, 2<Reg8>, 3<UInt8>, 13<UInt8>    ; r0 = r2.prototype
+[@ 30] CreateThis    1<Reg8>, 0<Reg8>, 2<Reg8>                ; r1 = OrdinaryCreateFromConstructor(r2, r0)
+[@ 34] LoadConstString 4<Reg8>, 6<UInt16>                     ; arg
+[@ 38] Mov           5<Reg8>, 1<Reg8>                         ; thisArg slot <- r1
+[@ 41] Construct     0<Reg8>, 2<Reg8>, 2<UInt8>               ; r0 = r2.[[Construct]](this=r1, arg)
+[@ 45] SelectObject  0<Reg8>, 1<Reg8>, 0<Reg8>                ; r0 = isObject(r0) ? r0 : r1
+```
+
+**v98 / v99** — `CreateThisForNew dst, closureReg, cacheIdx<UInt8>` reads
+`.prototype` itself through an inline cache, so there is no separate
+`GetByIdShort`:
+
+```
+[@ 19] TryGetById       2<Reg8>, 0<Reg8>, 1<UInt8>, 9<UInt16>
+[@ 25] CreateThisForNew 1<Reg8>, 2<Reg8>, 2<UInt8>
+[@ 29] LoadConstString  4<Reg8>, 6<UInt16>
+[@ 33] Mov              5<Reg8>, 1<Reg8>
+[@ 36] Construct        0<Reg8>, 2<Reg8>, 2<UInt8>
+[@ 40] SelectObject     0<Reg8>, 1<Reg8>, 0<Reg8>
+```
+
+**Semantics.** `CreateThis`/`CreateThisForNew` allocate the `this` object from
+the callee's `.prototype` *before* the call; `SelectObject dst, allocatedThis,
+callResult` implements the spec rule "if the constructor returned an object use
+that, else use the allocated `this`" *after* it.
+
+**Matcher.** Recognise the triple:
+
+1. a `CreateThis`/`CreateThisForNew` writing `rT`, whose closure operand is `rC`;
+2. a `Construct rR, rC, argCount` whose `thisArg` frame slot was written by a
+   `Mov` from `rT` (or is `rT` itself);
+3. a `SelectObject rD, rT, rR` combining **the same two registers**.
+
+Emit `r<D> = new r<C>(<args>);` for the whole triple and consume all three
+instructions (plus the `Mov` and, at v≤96, the `GetByIdShort … "prototype"`
+whose only use is the `CreateThis`). Do not emit anything for the individual
+opcodes.
+
+**Fallbacks, both loud.** A `CreateThis`/`CreateThisForNew` or `SelectObject`
+reached **outside** a recognised triple is `E_EMIT_UNSUPPORTED` naming the opcode
+and offset (EM-05) — not a crash, and not a silent skip. A bare `Construct` with
+no surrounding triple (hermesc does not emit one today, but hand-written or
+obfuscated bytecode might) lowers to
+`Reflect.construct(r<callee>, [args])`. `CallWithNewTarget` with a new.target
+distinct from the callee lowers to `Reflect.construct(callee, args, newTarget)`.
+
+**Scope, measured.** `CreateThis` appears in **12 of 53** construct fixtures at
+v94 — `05-for-in-object`, `07-for-of-iterable`, `12`–`16` (all five try/catch
+fixtures), `24-generator-return-throw`, `28-async-await-error`,
+`29-promise-chaining`, `47-typeof-instanceof-in`, `50-this-binding` — through
+ordinary `new Error(…)` / `new Promise(…)`, not contrived cases. Without this
+rule roughly a quarter of the gate corpus throws `E_EMIT_UNSUPPORTED` on the
+first `new`.
 
 ---
 
@@ -318,24 +430,27 @@ gives **41/45 agreement**, and all four disagreements are pre-Static-Hermes
 Hermes simply not implementing part of ES2015+. Reproduced identically on the
 HBC-89 VM, so it is not a v84 quirk.
 
-| Divergence | Node / spec | Hermes ≤ 89 | What the emitter must do |
+| Divergence | Node / spec | Hermes 84–99 (measured at 84, 89, 94, 99) | What the emitter must do |
 |---|---|---|---|
 | per-iteration `let` in a `for` head (`18-closure-loop-let`) | closures capture `0,1,2` | `3,3,3` | **Emit one binding.** The bytecode contains *one* environment slot for `i`; emit `let` **outside** the loop (or `var`). Never re-introduce a per-iteration binding just because the loop header looks like `for(let …)` — there is no such thing in the bytecode |
 | TDZ with shadowing (`20-let-const-tdz`) | inner-block `let` read before init → `ReferenceError` | no TDZ; the inner `let` writes through to the outer binding | **Emit no TDZ.** Only emit a TDZ throw where the bytecode has an explicit `ThrowIfEmpty`/`ThrowIfHasRestrictedGlobalProperty`-style check |
-| non-strict `arguments` aliasing (`42-rest-params`, `49-arguments-object`) | writing `arguments[0]` mutates the parameter | no aliasing — parameter keeps its original value | `__hbc_arguments` builds an **unmapped** object for these versions |
+| non-strict `arguments` aliasing (`42-rest-params`, `49-arguments-object`) | writing `arguments[0]` mutates the parameter | no aliasing — parameter keeps its original value | `__hbc_arguments` builds an **unmapped** object at every version we target |
 
 **Two corollaries the implementer must internalise:**
 
 1. **A "more correct" emission is a bug.** If the emitted JS prints `0,1,2` where
    the bytecode prints `3,3,3`, the equivalence checker reports DIVERGENT and it
    is *right* to. Do not fix it by making the output more spec-compliant.
-2. **The behaviour is version-dependent.** Static Hermes (v97+) may implement
-   these correctly. The emitter therefore consults the **layout/version**, and
-   the harness consults the **matching VM**, per fixture. Do not hardcode
-   "Hermes does not do TDZ"; make it a per-version flag in one place
-   (`src/emit/semantics.ts`) with a comment citing EQUIVALENCE §5.2, and verify
-   it against the v94 and v99 VMs now that `tools/hermes-vm/v{94,99}/bin/hermes`
-   exists — **nobody has measured whether v94/v99 still diverge** (O-2).
+2. **The behaviour is version-dependent in principle — but not in fact, so far.**
+   `docs/AGENT-LOG.md`'s Hermes-VM-from-source entry records the measurement that
+   was still open when this spec was first written: the 10-fixture cross-check
+   under the newly built `tools/hermes-vm/v{94,99}/bin/hermes` found that **all
+   four divergences persist unchanged at v94 and v99**. So Static Hermes has
+   *not* fixed them, and the same emission rules apply at 84, 94, 96, 98 and 99.
+   Keep the mechanism anyway: a per-version flag table in one place
+   (`src/emit/semantics.ts`), citing EQUIVALENCE §5.2 for the behaviour and the
+   AGENT-LOG entry for the v94/v99 confirmation, so that the day a version fixes
+   one, it is a one-line data change and not an archaeology exercise.
 
 ---
 
@@ -425,8 +540,9 @@ spec 07's passes will be seen to improve things. Emit with
 | `17/21/22` (closures) | nested `function` declarations, no `_env` object, every captured variable declared in the right scope |
 | `18-closure-loop-let` | **one** binding for the loop variable; output prints Hermes's answer |
 | `49-arguments-object` | `__hbc_arguments`, unmapped |
-| `23`–`26` v94 | `function*` or the shim, but never a bare `SaveGenerator` in the output |
-| `23`–`26` v98/v99 | `__hbc_makeGenerator(_fn<n>, …)` |
+| `23`–`26` v84/v94/v96 | `__hbc_makeGenerator(_fn<body>, …)` emitted at the **trampoline's** `CreateGenerator`, never at `CreateGeneratorClosure`; the body contains the state `switch`, `__state = k`, and no bare `SaveGenerator`/`StartGenerator`/`ResumeGenerator`/`CompleteGenerator` text |
+| `23`–`26` v98/v99 | `__hbc_makeGenerator(_fn<n>, …)`, same rule, same site |
+| `13-try-finally-no-catch` and the other **12** `new`-using fixtures (§7.5) | `new r<C>(…)` for the triple; no identifier or statement is emitted for `CreateThis`/`CreateThisForNew`/`SelectObject` |
 | `52/53` | a real `switch` with the right case values, or an equivalent `if`-chain — either is acceptable at M4 provided the trace matches |
 | any fixture with `functionSourceTable` entries | the verbatim source is used and parses |
 
@@ -440,7 +556,7 @@ baseline; CI fails on regression, not on absolute score.
 
 ### T6 — Obfuscated variants
 
-All 194 `.obf.hbc`: emit → `node --check` → equivalence against
+All `.obf.hbc` (241 today): emit → `node --check` → equivalence against
 `expected.txt`/VM. These are behaviour-preserving transformations of the same
 programs, so **they must PASS too** — the flattened dispatcher is exactly the
 `while(true)` + `switch` the baseline emits natively, so this is a fair test of
@@ -464,7 +580,18 @@ count of functions using each helper.
       each one listed in `docs/STATUS.md` with a reason.
 - [ ] The four EQUIVALENCE §5.2 divergences PASS against their matching VM, and
       the emitter reproduces Hermes's answer, not Node's, for each.
-- [ ] All 194 `.obf.hbc` variants pass T6.
+- [ ] All `.obf.hbc` variants (241 today) pass T6.
+- [ ] **The 12 `new`-using fixtures emit `new`** (§7.5): `05-for-in-object`,
+      `07-for-of-iterable`, `12`, `13`, `14`, `15`, `16`,
+      `24-generator-return-throw`, `28-async-await-error`, `29-promise-chaining`,
+      `47-typeof-instanceof-in`, `50-this-binding` — at every version they
+      compile at, with the v84/94/96 (`CreateThis`) and v98/99
+      (`CreateThisForNew`) shapes both handled.
+- [ ] A `CreateThis` or `SelectObject` outside a recognised triple raises
+      `E_EMIT_UNSUPPORTED` naming the opcode — negative test, hand-built input.
+- [ ] Every v≤96 generator/async fixture emits the shim at the trampoline's
+      `CreateGenerator` and nothing special at `CreateGeneratorClosure`, and its
+      body honours the §7.2.1 state contract.
 - [ ] EM-01…EM-12 each have a test; EM-01 has a negative test proving it fires.
 - [ ] `helpersUsed` is minimal: no fixture emits a helper it does not call, and
       the total helper set is exactly the four of §7.3.
@@ -489,7 +616,7 @@ count of functions using each helper.
 | `conds.ts` | ~120 lines | Sonnet |
 | `literals.ts` (strings, regexp, bigint, buffers) | ~300 lines | Sonnet |
 | **`env.ts`** (slots → variables, scope stack, EM-01) | ~350 lines — this is R3 | **Opus** |
-| **`calls.ts`** (method fast path, Reflect.apply, builtins) | ~200 lines — defect 4 lives here | **Opus** |
+| **`calls.ts`** (method fast path, the §7.5 `new` triple, Reflect.apply, builtins) | ~280 lines — defect 4 and the `new` pattern both live here | **Opus** |
 | **`runtime.ts`** (`__hbc_makeGenerator` and friends) | ~350 lines — must match VM semantics exactly | **Opus** |
 | `semantics.ts` (D14 per-version flags) | ~80 lines | Opus (judgement, not volume) |
 | tests T1–T7 | ~1200 lines | Sonnet |
@@ -510,16 +637,14 @@ the rest working to test against.
   empirically from `23`–`26` at v98/v99 before `runtime.ts` is written — this is
   precisely a `docs/TASKS.md` **T3** item. Should I file it as an explicit
   sub-task, or fold it into the M4 implementer's brief?
-* **O-2 — do v94 and v99 still diverge from Node?** EQUIVALENCE §5.2 measured
-  the four divergences at v84 and v89 only. The VMs for v94 and v99 now exist
-  (`tools/hermes-vm/`), so this is a 20-minute measurement that determines
-  whether `semantics.ts` needs one flag set or three. Worth doing before M4
-  starts; who runs it?
-* **O-3 — v≤96 generators through the shim at M4?** §7.2 routes both eras through
-  `__hbc_makeGenerator` for the baseline, so one path is green everywhere, and
-  lets spec 07 recover real `yield` for v≤96 first. The alternative is emitting
-  `function*` with `yield` immediately for v≤96, which is prettier but means M4
-  contains a recovery pass. I prefer the uniform floor; confirm?
+* **O-2 — ~~do v94 and v99 still diverge from Node?~~ RESOLVED.**
+  `docs/AGENT-LOG.md`'s Hermes-VM build entry measured it: all four divergences
+  persist unchanged at v94 and v99. Folded into §8; no decision needed.
+* **O-3 — v≤96 generators through the shim at M4?** §7.2.1 now settles the
+  *mechanism* (the shim goes on `CreateGenerator`, at both eras, with no
+  pattern recognition) but the *policy* question stands: the alternative is
+  emitting `function*` with `yield` immediately for v≤96, which is prettier but
+  puts a recovery pass inside M4. I prefer the uniform floor; confirm?
 * **O-4 — `--use-function-sources` default.** Emitting the original source
   verbatim for functions in `functionSourceTable` is a free readability win but
   makes the output a *mix* of decompiled and original code, which could mask a
@@ -527,3 +652,22 @@ the rest working to test against.
 * **O-5 — module format.** I emit one ES module with inline helpers. An RN bundle
   decompiled this way is a single ~10 MB file. Should large bundles be split per
   CJS module (using `cjsModuleTable` when present), or is one file fine for M4?
+
+---
+
+## 15. Review responses (`docs/specs/REVIEW-03-07.md`)
+
+| Item | Verdict | Where |
+|---|---|---|
+| **B2** `CreateThis`/`CreateThisForNew` + `Construct` + `SelectObject` — the real shape of `new` — had no lowering rule, and hits 12/53 fixtures | **Fixed** | New **§7.5** with the verbatim v94 and v99 dumps of `13-try-finally-no-catch`, the operand semantics of both `CreateThis` (dst, prototypeReg, closureReg) and `CreateThisForNew` (dst, closureReg, cacheIdx — it reads `.prototype` through an inline cache, so there is no separate `GetByIdShort`), the three-instruction matcher, and two loud fallbacks. Both opcodes are now in §3's naming table as "consumed by the `new` pattern, never lowered standalone". §11 T4 and §12 list the 12 affected fixtures by name; a negative test asserts `E_EMIT_UNSUPPORTED` for a `CreateThis` outside a triple. I re-measured the 12/53 count independently rather than copying it |
+| **S3** the v≤96 shim-routing rule was prose and ambiguous between two emissions | **Fixed** | New **§7.2.1** picks the review's option (a) explicitly and gives operand-level rules: `CreateGeneratorClosure`/`CreateAsyncClosure` → an ordinary closure; **`CreateGenerator` is the shim site at both eras**. Includes the verbatim v94 trampoline and v99 equivalent, plus the full state contract (`SaveGenerator L_k` → `__state = k`, `ResumeGenerator` → read `__sent`/`__isReturn`, `CompleteGenerator` → `__done`) that spec 03 §4.5's dispatcher makes possible |
+| **S4** O-2 asked for a measurement `docs/AGENT-LOG.md` had already made | **Fixed** | §8 corollary 2 rewritten to cite the AGENT-LOG result — all four divergences persist unchanged at v94 and v99 — the table header now reads "measured at 84, 89, 94, 99", and O-2 is marked RESOLVED rather than left open. The per-version flag table survives as mechanism, not as an open question |
+| **B1** (spec 03's generator resume blocks) | **Consumed here** | §7.2.1's state contract only works because spec 03 §4.5 gives the body a resume dispatcher; the two are written to match |
+| **What holds up** (the method-call fast path, verified by the reviewer against real `GetByIdShort`+`Call` bytes) | Acknowledged, unchanged | §7.4's first bullet stands |
+| S1, S2, S5, S6, N1–N3 | Not this spec's | S1 in spec 04; S2/S6 in spec 03; S5/N1/N2 in spec 07; N3 in spec 06 |
+
+**Beyond the review.** HBC **96** joined the corpus while these specs were in
+review (`docs/TOOLCHAIN.md`): it is layout class C with v94's opcode numbering
+apart from `DirectEval`'s third operand, so every v94 rule here applies to it
+verbatim, and the `era: "opcode"` generator path now spans 84/94/96. Fixture
+counts in §11–§12 were re-derived (249 gate binaries, 241 obfuscated).

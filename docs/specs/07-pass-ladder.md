@@ -154,6 +154,10 @@ export function enabledPasses(opts: { readonly only?: readonly string[];
 * The registry validates `after`/`before` constraints at load and throws
   `E_PASS_ORDER` on a cycle or a violated constraint. Do this at load, not at
   run: a mis-ordered ladder should fail the first test, not the 40th fixture.
+* **Before validating, the registry auto-injects `after: ["expr-rebuild"]` into
+  every stage-B pass except `expr-rebuild`** (§5 constraint 5). A prose-only
+  rule would leave PL-07 with nothing to enforce for the ladder's single most
+  load-bearing dependency.
 * `--passes=none` reproduces the M4 baseline exactly. That is a required
   capability: every bug report starts with "does it reproduce with no passes?"
 
@@ -218,22 +222,36 @@ What is genuinely established today, with a citation:
 | `finally` → **not represented**; the body is duplicated into the normal path and into a synthesised catch-and-rethrow handler | `docs/HBC-FORMAT.md` §4.3, `docs/PRIOR-ART.md` §6.3 | high, **shape unmeasured** |
 | environments → `Create*Environment` / `Load|StoreToEnvironment` / `GetEnvironment` (v≤96) and the explicit-env family (v≥97) | `docs/PRIOR-ART.md` §6.1 | **high** |
 | `CreateRegExp dst, patternStrId, flagsStrId, tableIdx` | `docs/HBC-FORMAT.md` §8, seen in the v94 dump | **high** |
+| `for…in` → `GetPNameList dst, obj, idx, size` then `GetNextPName name, list, obj, idx, size` | **measured** at v94 and v99 on `05-for-in-object`: `GetPNameList 6,5,4,3` / `GetNextPName 1,6,5,4,3` — same family at both eras | **high** |
+| `for…of` → `IteratorBegin it, obj` / `IteratorNext val, it, obj` / `IteratorClose it, ignoreInnerException<UInt8>` | **measured** at v94 and v99 on `06-for-of-array`; note `IteratorClose` appears **twice** (flag `0` on the normal path, `1` on the abrupt/`try` path) | **high** |
+| `new X(…)` → `CreateThis`(v84/94/96) or `CreateThisForNew`(v98/99) + `Construct` + `SelectObject` | **measured** at v94/v96/v99 on `13-try-finally-no-catch`; 12/53 fixtures contain it — see spec 05 §7.5 | **high** |
+| the generator two-hop: creation site → trampoline → `CreateGenerator` → body, at **both** eras | **measured** at v94 and v99 on `23-generator-basic` — see spec 03 §3.4.1 | **high** |
+| v≤96 suspend shape: `SaveGenerator L; Ret r` with `L` = the instruction after the `Ret`, and resume blocks with **zero** static predecessors | **measured** on `23-generator-basic` v94: suspends at 11/25/39/57 → resumes at 15/29/43/61 — see spec 03 §4.5 | **high** |
 
 **Must be measured before any pass is written (all ⛔ today):**
 
-`while`/`do-while`/`for` block shapes · `for…in` (which opcodes: a
-`GetPNameList`/`GetNextPName`-style family is expected but has **not** been
-verified in this repo) · `for…of` (an `Iterator*` family, likewise unverified) ·
-labelled break/continue · template literals · tagged templates · destructuring
-(array and object) · spread and rest · default parameters · optional chaining and
-`??` · `typeof`/`instanceof`/`in` · classes, `super`, static members, private
-fields, getters/setters (v98/v99 only) · `arguments` reification · the v≥97
-generator body's **calling convention** (spec 05 O-1) · the duplicated-`finally`
-block shape.
+`while`/`do-while`/`for` block shapes · labelled break/continue · template
+literals · tagged templates · destructuring (array and object) · spread and rest
+· default parameters · optional chaining and `??` ·
+`typeof`/`instanceof`/`in` · classes, `super`, static members, private fields,
+getters/setters (v98/v99 only) · `arguments` reification · the duplicated-
+`finally` block shape.
 
-That is most of the corpus, and it is not a gap in the research — it is precisely
-what T3 exists to produce. The honest statement of status is: **we know the
-format cold and the lowering hardly at all.**
+Two items that were on this list have since been resolved and moved up:
+`for…in`/`for…of` (one `hermesc` command each, run for this revision) and the
+**v≥97 generator calling convention** — spec 05 §7.2.1 now settles it as a
+consequence of the two-hop finding: the shim goes on `CreateGenerator` at both
+eras, and the v≤96 body's contract with the shim is fully specified by spec 03
+§4.5's resume dispatcher. What is still genuinely unknown at v≥97 is the
+*internal* state-machine encoding, which only Strategy B (`yield` recovery)
+needs — not the M4 shim.
+
+That is still a lot of the corpus, and it is not a gap in the research — it is
+precisely what T3 exists to produce (and T3 is now claimed, per
+`docs/TASKS.md`). The honest statement of status is: **we know the format cold
+and the lowering only in patches.** Note also `docs/lowering/` exists but is
+empty and `docs/LOWERING-CATALOGUE.md` has not landed yet, so every row above
+lives in this spec until T3 moves it.
 
 ---
 
@@ -252,7 +270,13 @@ From spec 04 §6, restated as registry constraints:
    hides the loop.
 5. `expr-rebuild` is **first in stage B** and everything else in stage B depends
    on it: with `let r0…rN` and one statement per instruction, no syntactic
-   matcher can see anything.
+   matcher can see anything. **This is enforced mechanically, not by prose:**
+   `registry.ts` auto-injects `after: ["expr-rebuild"]` into every stage-B pass
+   except `expr-rebuild` itself, at load, before running the `after`/`before`
+   validation. Otherwise PL-07 has nothing to check for the one dependency that
+   matters most, and a future stage-B pass registered without the declaration
+   would silently run against unrebuilt `r0…rN` code. §7's per-pass checklist
+   also lists the declaration, so it is visible as well as enforced.
 6. Any other pair whose order matters declares `after`/`before` **and** says so
    in its catalogue row. An undeclared ordering dependency is a bug.
 
@@ -264,6 +288,11 @@ In fixture order, **except** where a dependency forces otherwise (D11 permits
 this explicitly). Each row: what it recognises, what it emits, and whether it is
 blocked on T3.
 
+> **This table is implementation/session order, not registry or runtime order.**
+> Runtime order is fixed by stage (all of stage A before all of stage B, §5
+> constraint 1) and by each pass's declared `after`/`before`. Rows 1 and 2 are
+> both stage B and therefore run **last** at runtime despite being built first.
+
 | # | Pass | Stage | Fixtures | Recognises | Emits | Blocked on T3? |
 |---|---|---|---|---|---|---|
 | 1 | `expr-rebuild` | B | all | register def-use chains with a single use in the same block | inlined expressions; `let` only for values live across a block boundary | **no** — this is SSA + copy propagation over our own IR (`docs/PRIOR-ART.md` §5, Braun et al.), not a Hermes idiom |
@@ -272,15 +301,20 @@ blocked on T3.
 | 4 | `while-cond` | A | 02 | `loop(L, seq(block B, if(cond, break L, body)))` where `B` has no side effects | `while (!cond) { body }` | **yes** — must confirm the header block is genuinely side-effect-free at v94 and v99 |
 | 5 | `do-while` | A | 03 | `loop(L, seq(body, if(cond, continue L, break L)))` | `do { body } while (cond)` | **yes** |
 | 6 | `for-header` | A | 04, 11 | a `while(c)` (post-pass 4) whose init immediately precedes it and whose update is the last statement of the body, with the update variable not otherwise live out | `for (init; c; update)` | **yes** — the liveness condition is the whole pass and it needs real bytecode |
-| 7 | `for-in` | A | 05 | the `for…in` opcode family | `for (const k in o)` | **yes, hard block** — the opcode family has not been verified in this repo at all |
-| 8 | `for-of` | A | 06, 07 | the iterator opcode family (`Iterator*`), including the `try`-wrapped `IteratorClose` on abrupt exit | `for (const v of it)` | **yes, hard block** — same |
+| 7 | `for-in` | A | 05 | `GetPNameList dst,obj,idx,size` + the loop whose body starts `GetNextPName name,list,obj,idx,size` | `for (const k in o)` | **no — confirmed** at v94 and v99 (§4); only the surrounding loop shape depends on pass 4 |
+| 8 | `for-of` | A | 06, 07 | `IteratorBegin` + `IteratorNext` loop + the **two** `IteratorClose` sites (flag `0` normal, `1` abrupt/`try`) | `for (const v of it)` | **no — confirmed** at v94 and v99 (§4); the abrupt-exit `IteratorClose` inside a handler is the part to get right |
 | 9 | `label-clean` | A | 08, 11 | labels with no `break`/`continue` referring to them (spec 04 ST-06); labels whose only use is an immediate `break` | drops or inlines them | **no** — pure IR hygiene |
 | 10 | `switch-raise` | A | 09, 10, 52, 53 | (a) an IR `switch` with a jump-table scrutinee; (b) a `JStrictEqual` compare chain on one register against constants | a JS `switch` with real fall-through, `default` placed correctly | **partly** — (a) is confirmed and measured; (b) needs the compare-chain shape from `09`/`10` at each version |
 
-**Next after these**, in rough order and all T3-blocked: `finally-dedup` (12–16),
-`yield-recovery` for v≤96 (23–26), `async-await` (27–29), `template-literal`
+**Next after these**, in rough order: `finally-dedup` (12–16, **T3-blocked** —
+the duplicated-block shape is unmeasured), `yield-recovery` for v≤96 (23–26,
+**unblocked**: spec 03 §4.5 and spec 05 §7.2.1 fully specify the baseline shape,
+so the pass collapses `__state = k; return v;` plus resume-case *k* of the
+dispatcher back into `r = yield v` and emits a real `function*`), `async-await`
+(27–29, partly measured — the `spawnAsync` builtin wrapper), `template-literal`
 (43, 44), `destructure` (37–39), `spread-rest` (40–42), `class-recover` (32–36,
-v98/v99 only), `optional-chain` (48), `regexp-literal` (45).
+v98/v99 only), `optional-chain` (48), `regexp-literal` (45) — the last six all
+T3-blocked.
 
 **Note on pass 1's ordering.** `expr-rebuild` is number 1 despite `01-if-else-chain`
 being the first fixture, because every stage-B matcher and every human reading
@@ -302,7 +336,9 @@ clause of D11, and it should be recorded as such in the catalogue.
 4. **Write `rewrite.ts`.** Emits only the captured shape.
 5. **Write `check.ts`.** Beyond the stage default, assert whatever the rewrite
    assumed (e.g. `while-cond` asserts the header block had no side effects).
-6. **Register it** in `registry.ts` with `after`/`before` constraints.
+6. **Register it** in `registry.ts` with `after`/`before` constraints. For a
+   stage-B pass, `after: ["expr-rebuild"]` is auto-injected (§5 constraint 5) —
+   declare it anyway, so the dependency is visible in the pass's own source.
 7. **Red→green on the fixture**, then **the full gate corpus must stay green** —
    including the `.min` control and, nightly, the `.obf` variants.
 8. **Update `docs/STATUS.md`'s `N/53 recovered` counter.**
@@ -323,6 +359,7 @@ clause of D11, and it should be recorded as such in the catalogue.
 | PL-08 | applying passes twice is idempotent (a second run rewrites nothing) | corpus test |
 | PL-09 | for every gate fixture, verdict is PASS with passes on **and** off | the ratchet |
 | PL-10 | pass application is deterministic; two runs give identical output | golden test |
+| PL-11 | every stage-B pass other than `expr-rebuild` has an effective `after` containing it, whether declared or injected | load-time check + unit test |
 
 PL-06 deserves emphasis: a CI job parses the catalogue, extracts pass names and
 Confirmed marks, and fails if a registered pass has no ✅ row. That is the
@@ -346,7 +383,8 @@ rather than advisory.
 5. **`--passes=none` parity** (PL-05) over the whole corpus — the M4 baseline
    must remain reachable forever, because it is the fallback when a pass is
    suspected.
-6. **Hardened tier, nightly.** All 194 `.obf.hbc` with passes on: still PASS.
+6. **Hardened tier, nightly.** All `.obf.hbc` (241 today, across five versions
+   84/94/96/98/99) with passes on: still PASS.
    Obfuscated input is where an over-eager matcher will fire on something it
    should not — control-flow flattening produces loop+switch shapes that look
    exactly like the ones passes 4, 5 and 10 hunt for. Expect abandonment rates
@@ -367,6 +405,9 @@ rather than advisory.
 - [ ] Stage-A `check` reuses spec 04's `checkIsomorphic` on the rewritten subtree.
 - [ ] `--passes=none` reproduces M4 goldens byte-for-byte (PL-05).
 - [ ] Registry order validation fails loudly on a cycle (negative test).
+- [ ] The stage-B `after: ["expr-rebuild"]` injection happens at load and is
+      asserted by a test that registers a stage-B pass *without* the declaration
+      and checks it still runs after `expr-rebuild` (PL-11).
 - [ ] `docs/LOWERING-CATALOGUE.md` has the §3 headers and the §4 evidence table.
 - [ ] The PL-06 CI check exists and fails on a registered pass with a ⛔ row.
 
@@ -399,11 +440,14 @@ two Opus items are the framework and `expr-rebuild`.
 
 ## 12. Open questions for the overseer
 
-* **O-1 — T3 is the critical path for all of M5.** Ten of the first ten passes
-  are wholly or partly blocked on it, and it is currently unclaimed on the task
-  board. Should T3 be split per fixture family (loops / iteration / classes /
-  generators) so several agents can work it in parallel, and should it run
-  *during* M4 rather than after?
+* **O-1 — T3 is still the critical path, but a smaller one than stated.** Six of
+  the first ten passes are now unblocked or only partly blocked (§4 gained
+  `for…in`, `for…of`, the `new` triple and both generator findings, all measured
+  for this revision), and T3 is claimed per `docs/TASKS.md`. `docs/lowering/`
+  exists but is empty and `docs/LOWERING-CATALOGUE.md` has not landed, so PL-06's
+  CI check has nothing to parse yet. Should the catalogue be split per fixture
+  family (loops / iteration / classes / generators) so several agents can work it
+  in parallel, and should the remaining T3 scope run *during* M4?
 * **O-2 — `expr-rebuild` before or inside M4?** It is listed as pass 1 here, but
   M4's output without it is genuinely hard to read, which will slow down every
   M4 debugging session. The counter-argument is D11: M4 is about correctness and
@@ -421,3 +465,29 @@ two Opus items are the framework and `expr-rebuild`.
   `docs/LOWERING-CATALOGUE.md` is per D12, but it will grow to hundreds of lines
   of verbatim disassembly. Split per family (`docs/lowering/loops.md`, …) once it
   exceeds ~500 lines, or keep one file?
+
+---
+
+## 13. Review responses (`docs/specs/REVIEW-03-07.md`)
+
+| Item | Verdict | Where |
+|---|---|---|
+| **S5** `for…in`/`for…of` listed as unverified "hard blocks" when one `hermesc` command each confirms them | **Fixed** | Re-measured independently for this revision at v94 **and** v99 and moved into §4's confirmed table with the operand shapes (`GetPNameList dst,obj,idx,size` / `GetNextPName name,list,obj,idx,size`; `IteratorBegin` / `IteratorNext` / `IteratorClose it,flag` — noting `IteratorClose` appears twice, flag `0` normal and `1` abrupt). Passes 7 and 8 flip to "no — confirmed". §4's remaining-scope paragraph is narrowed accordingly |
+| **N1** the "first ten passes" table reads as runtime order but is not | **Fixed** | A blockquote caption above the table saying it is implementation/session order, that runtime order is fixed by stage and by `after`/`before`, and that rows 1–2 (both stage B) therefore run **last** — covering pass 2 as well as pass 1 |
+| **N2** §5 constraint 5's stage-B dependency on `expr-rebuild` is prose the registry cannot validate | **Fixed** | Made mechanical: §2.3 and §5 now require `registry.ts` to **auto-inject** `after: ["expr-rebuild"]` into every stage-B pass except `expr-rebuild` itself, at load, before validation; new invariant **PL-11**; §7's checklist still asks for the explicit declaration so it is visible in the pass's own source; a negative test registers a stage-B pass without it and asserts the injection |
+| **N2's positive finding** (no cycle in the declared ordering constraints) | Acknowledged, unchanged | §5's chain stands |
+| B1, B2, S1–S4, S6, N3 | Not this spec's | Consumed as inputs — see below |
+
+**Consumed from the other specs' fixes.** §4's evidence table gained four more
+confirmed rows this round, all measured for this revision: the `new` triple
+(spec 05 §7.5, 12/53 fixtures), the generator two-hop at both eras (spec 03
+§3.4.1), the v≤96 suspend/resume shape with its zero-predecessor resume blocks
+(spec 03 §4.5), and — as a consequence of those two — the v≥97 **shim** calling
+convention, which spec 05 §7.2.1 now settles. That last one was previously listed
+as a hard T3 blocker for M4; only Strategy B (`yield` recovery at v≥97) still
+needs the state machine's internal encoding. `yield-recovery` for v≤96 moves from
+T3-blocked to unblocked for the same reason.
+
+**Still true and worth repeating:** `docs/lowering/` is empty and
+`docs/LOWERING-CATALOGUE.md` does not exist yet, so **PL-06's CI check has
+nothing to parse and no pass may be implemented until T3 lands its first rows.**

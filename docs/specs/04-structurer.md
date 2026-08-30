@@ -166,6 +166,13 @@ Hermes-specific details it does not cover.
 ### 4.1 Preliminaries (all from spec 03)
 
 * The **normal** CFG only — `succs`/`preds`, never `exceptionSuccs`.
+* **`cfg.entry`, which is not always block 0.** For a v≤96 generator/async body
+  spec 03 §4.5 prepends a synthetic resume-dispatch block and makes *it* the
+  entry; its terminator is a `switch` whose cases are the real entry and every
+  `SaveGenerator` resume point. Nothing here special-cases that — it is an
+  ordinary single-entry graph with a multi-way head, and it structures into
+  `switch (state) { case 0: … case k: … }`, which is what the VM does at runtime.
+  The only obligation is to start from `cfg.entry`, never from block 0.
 * `dom` (immediate dominators, children, `dominates`), `rpo`, `backEdges`.
 * A block is a **loop header** iff it is the target of a back edge.
 * A block is a **merge point** iff it has ≥ 2 normal predecessors and is not a
@@ -200,10 +207,37 @@ translateTerminator(node, context):
     switch                   -> switch(node, arms = doBranch per case, default)
 
 doBranch(from, to, context):
-    if (from, to) is a back edge          -> continue(labelOf(to))
-    else if `to` is a merge point         -> break(labelOf(to))     -- forward exit
-    else                                  -> doTree(to, context)    -- inline it
+    if (from, to) is a back edge:
+        continue(labelOf(to))                       -- labelOf must succeed: the
+                                                    -- loop header is an enclosing
+                                                    -- `loop` by construction
+    else if `to` is a merge point:
+        if labelOf(to) is FOUND in context:
+            break(labelOf(to))                      -- ordinary forward exit
+        else:
+            IRREDUCIBLE -> §4.4                     -- <-- the trigger
+    else:
+        doTree(to, context)                         -- inline it
 ```
+
+> **"Is a merge point" and "has an in-scope label here" are different tests, and
+> conflating them is the single easiest way to ship a structurer that hangs or
+> throws on the first irreducible region.** §4.1's merge-point property is
+> *static* (≥ 2 normal predecessors, not a loop header). Whether a label for it is
+> in `context` is a *positional* property of this particular call site. For a
+> reducible graph the paper proves the second follows from the first; for an
+> irreducible one it does not, and `labelOf` returning nothing is exactly the
+> signal that the region has two or more entries.
+
+**The counterexample to keep as a unit test** (from the review, reproduced with a
+throwaway transcription of this pseudocode): `entry → A`, `entry → B`, `A → B`,
+`B → A`. Both `A` and `B` have two normal predecessors, so both are merge points
+by §4.1, and both are dominator children of `entry`, so both get nested as
+`labeled` blocks in descending-RPO order. The edge `A → B` then runs from the
+*outer* label's body into the *inner* one, whose label is not yet in `context` —
+`labelOf(B)` fails, and the naive transcription has no branch for that. With the
+clause above it enters §4.4 and resolves cleanly in either mode. This graph is
+T4's first case.
 
 `context` is the immutable stack of enclosing constructs; `labelOf` searches it
 from the innermost outward. Ramsey's paper proves that a target is always found
@@ -225,8 +259,13 @@ order leaking into the output is a real bug.
 
 ### 4.4 Irreducible regions
 
-An irreducible region is one entered at two or more blocks from outside. Two
-sanctioned resolutions, both in the paper:
+An irreducible region is one entered at two or more blocks from outside.
+**Operationally, you discover it exactly when §4.2's `doBranch` wants to `break`
+to a merge point whose label is not in scope** — there is no separate
+irreducibility analysis, and there must not be one (a pre-pass that classifies
+the whole function is both slower and easier to get wrong than the local test).
+
+Two sanctioned resolutions, both in the paper:
 
 * **`duplicate`** — split the offending node so each entry gets its own copy.
   Output quality is better; worst case is exponential, which is why
@@ -421,20 +460,22 @@ them is visible:
 | `52-switch-jumptable` | one IR `switch`, 13 arms + default, arms 1 and 2 sharing a target via a `labeled` block |
 | `53-switch-jumptable-large` | 40 arms, default reachable from the middle of the arm list |
 | `12`–`16` (try family) | `try` nodes matching spec 03's region count; `13-try-finally-no-catch` shows the **duplicated** finally body in both the normal path and the handler — assert the duplication is present, since that is the correct baseline |
-| `23`–`26` (generators, v94) | ordinary structure containing the `SaveGenerator` blocks; no `yield` |
+| `23`–`26` (generators, v84/v94/v96) | the resume dispatcher structures into a top-level `switch` with `n+1` arms (n = suspend points); every `SaveGenerator; Ret` block appears exactly once; no `yield`. For `23-generator-basic` that is 5 arms |
 | `23`–`26` (v99) | ordinary structure; the dispatch chain appears as an `if`-tree, and `shimRequired` is spec 03's business, not visible here |
 
 ### T4 — Irreducibility, synthetically
 
 No fixture is known to be irreducible, so build the graphs directly against the
-`FunctionCfg` interface: the classic two-entry loop, a three-entry irreducible
-region, and a nested pair. Assert: `duplicate` mode succeeds with
+`FunctionCfg` interface. **The first case is §4.2's counterexample**
+(`entry→A`, `entry→B`, `A→B`, `B→A`), which must (a) reach the §4.4 path via a
+failed `labelOf`, not via a separate analysis, and (b) not hang. Then: a
+three-entry irreducible region, and a nested pair. Assert: `duplicate` mode succeeds with
 `duplicatedBlocks.length > 0`; `dispatch` mode succeeds with one `DispatchVar`;
 both pass P1–P7; `auto` picks `dispatch` when `maxExpansion` is set to 1.0.
 
 ### T5 — Obfuscated variants must still be total
 
-All 194 `vNN.obf.hbc`: `structure()` + `checkIsomorphic()` succeed for every
+All `vNN.obf.hbc` (241 today): `structure()` + `checkIsomorphic()` succeed for every
 function, inside a 5 s per-function budget. Assert **nothing about shape** —
 control-flow flattening produces a dispatcher loop with 40–70 blocks per
 function and the output will be ugly, which is fine. Record
@@ -475,7 +516,12 @@ irreducible shipped React Native bytecode is** — record it in `docs/STATUS.md`
       with their fixture names.
 - [ ] Both `duplicate` and `dispatch` irreducibility modes are implemented and
       exercised by T4.
-- [ ] All 194 `.obf.hbc` binaries structure and verify inside budget.
+- [ ] All `.obf.hbc` binaries (241 today) structure and verify inside budget.
+- [ ] Every v≤96 generator body — entered at spec 03 §4.5's dispatcher —
+      structures into a top-level `switch` in which **every** resume block
+      appears, and `checkIsomorphic` passes on it.
+- [ ] The §4.2 counterexample graph resolves via §4.4 in both modes and does not
+      hang (T4 case 1).
 - [ ] Golden tree snapshots are byte-stable across two runs and across
       macOS/Linux.
 - [ ] `structure()` uses no recursion proportional to block count (an explicit
@@ -532,3 +578,19 @@ is a paraphrase, not a substitute.
   reducible loop+switch). If irreducible input matters, someone would have to
   hand-write bytecode or find a bundle containing it. Worth a task, or is
   synthetic coverage enough?
+
+---
+
+## 13. Review responses (`docs/specs/REVIEW-03-07.md`)
+
+| Item | Verdict | Where |
+|---|---|---|
+| **S1** §4.2's `doBranch` never states the trigger for §4.4's irreducibility handling; the reviewer's transcription had no branch for it | **Fixed** | §4.2's pseudocode now has the explicit `else if labelOf(to) is FOUND … else IRREDUCIBLE → §4.4` clause, followed by a call-out that "is a merge point" (static) and "has an in-scope label here" (positional) are different tests. The reviewer's counterexample (`entry→A`, `entry→B`, `A→B`, `B→A`) is written into the spec and becomes T4's first case. §4.4's opening now says irreducibility is *discovered* by that failed lookup and forbids a separate pre-pass classification |
+| **B1** (spec 03's generator resume blocks) | **Consumed here** | §4.1 gains a bullet: `cfg.entry` is not always block 0 — for a v≤96 generator body it is spec 03 §4.5's synthetic dispatcher, and the algorithm needs no other change. T3 gains the expected shape (a top-level `switch` with `n+1` arms; 5 for `23-generator-basic`) and §9 an acceptance bullet requiring every resume block to appear |
+| **What holds up** (the flattened-obfuscated reducibility claim, reproduced by the reviewer with a synthetic loop+switch dispatcher: zero irreducibility markers, one loop header) | Acknowledged, unchanged | §8's T5 expectations stand |
+| B2, S2–S6, N1–N3 | Not this spec's | Addressed in specs 03, 05, 06, 07 |
+
+**Not adopted:** nothing. The one thing I did not change is §5's decision to run
+`checkIsomorphic` inline by default — the review did not challenge it, and B1
+strengthens the case: the generator dispatcher is exactly the kind of synthetic
+edge set where a silent translation bug would otherwise be invisible.

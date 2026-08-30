@@ -43,6 +43,9 @@ reference policy, §7's runners, typed verdicts, golden traces), and keep
 | `src/mutate.mjs` | `src/harness/mutate.ts` | + the R9 operators (§9 O-3) |
 | `src/runner.mjs`, `cli.mjs` | `src/harness/runner.ts`, `src/cli-equiv.ts` | + tier runners (§7) |
 | `selftest.mjs` | `tests/gate/harness/selftest.test.ts` | becomes a real test |
+| `hbc2js-equiv` (executable shell wrapper, distinct from `src/cli.mjs`) | `package.json` `bin` entry → `dist/cli-equiv.js` | the wrapper disappears; npm's bin linking replaces it |
+| `test/equiv.test.mjs` | `tests/gate/harness/*.test.ts` | **all 19 unit tests currently live in one file** — the port splits them per concern; do not go looking for a one-file-per-module layout that does not exist yet |
+| `examples/rt-{original,decompiled-ok,decompiled-noisy}.js` | `tests/fixtures/harness/` | needed verbatim by §11 item 5 |
 
 ---
 
@@ -111,6 +114,10 @@ Discovery order, first hit wins:
 2. `tools/hermes-vm/v<version>/bin/hermes`   ← source-built (94, 99)
 3. `tools/hermesc/v<version>/hermes`         ← prebuilt, v84 only
 
+Available today: **84** (prebuilt), **94** and **99** (source-built). **96** and
+**98** have no VM — 96 could be built (same classic lineage as 94), 98 probably
+cannot (no published source drop, and `hermes-compiler` ships `hermesc` only).
+
 **The VM refuses any bytecode whose version is not exactly its own** — there is
 no forward or backward compatibility, and the error is
 `Wrong bytecode version. Expected N but got M`. So a VM is only ever used for its
@@ -173,25 +180,37 @@ Rules, in order:
    Never silently.
 
 The known-divergence set, from `docs/EQUIVALENCE.md` §5.2 and
-`tests/fixtures/README.md`, measured at v84 and reproduced at v89:
+`tests/fixtures/README.md`, measured at v84, reproduced at v89, and **since
+confirmed unchanged at v94 and v99** under the source-built VMs
+(`docs/AGENT-LOG.md`, the `tools/build-hermes-vm.sh` entry: ten fixtures
+including all four of these were run under both new VMs against `expected.txt`):
 
-| Fixture | Node / spec | Hermes ≤ 89 |
+| Fixture | Node / spec | Hermes 84 / 89 / 94 / 99 |
 |---|---|---|
 | `18-closure-loop-let` | `0,1,2` | `3,3,3` |
 | `20-let-const-tdz` | inner-block TDZ `ReferenceError` | `outer` (no TDZ) |
 | `42-rest-params` | `arguments` aliasing mutates | `original` |
 | `49-arguments-object` | `changed-via-arguments` | `original` |
 
+So the table ships **populated for 84, 94, 96 (inferred: v96 is the same classic
+lineage as v94 — mark it unmeasured until checked), 98 and 99**, not empty. That
+matters because `HA-06` makes the policy throw on an unmeasured pair, and an
+empty table would have blocked the gate for every v94/v99 fixture touching these
+four constructs — which is spec 05 §12's own acceptance criterion.
+
 **This table is machine-readable data, not prose.** It lives in
 `src/harness/reference-policy.ts` as a versioned map keyed by
 `(fixture, hbcVersion)`, and it is the fix for `docs/EQUIVALENCE.md` §9 item 2
 ("without this the harness reports 4 permanent false failures").
 
-**Open measurement (§9 O-1):** the table is empirically established for v84 and
-v89 only. v94 and v99 VMs now exist, so the same cross-check must be run there;
-Static Hermes may well have fixed some or all of these. The policy module must
-therefore key on version, and must *fail loudly* if asked about a version whose
-row has not been measured, rather than assuming the v84 answer.
+**Still unmeasured: v96 and v98.** v96 has a VM only if one is built
+(`tools/build-hermes-vm.sh` covers 94 and 99 today) and v98 has none at all —
+`hermes-compiler` ships `hermesc` only. The policy module keys on version and
+**fails loudly** for an unmeasured pair rather than assuming the v84 answer; for
+v96/v98 fixtures touching these four constructs that means `expected-txt` with
+the caveat flag (rule 3), not a throw, because the constructs are known-divergent
+by name. Extending `build-hermes-vm.sh` to 96 would close it — v96 is the same
+classic-Hermes lineage as v94, so the build recipe should carry over.
 
 ---
 
@@ -294,8 +313,8 @@ export function runTier(o: RunnerOptions): Promise<TierReport>;
 
 | Tier | Inputs | Oracles | Reference | CI |
 |---|---|---|---|---|
-| **gate** | `constructs/*/vNN.hbc` (196) + `hermes-dec-sample` (5) + `constructs/*/vNN.min.hbc` (196) | syntax, trace, fuzz, roundtrip | §4 policy | every commit |
-| **hardened** | `constructs/*/vNN.obf.hbc` (194) | syntax, trace (fuzz optional) | `expected.txt` — the obfuscated source is behaviour-identical by construction, verified at generation time | nightly (D13 puts obf in sweep) |
+| **gate** | `constructs/*/vNN.hbc` (243) + `hermes-dec-sample` (6) + `constructs/*/vNN.min.hbc` (243) | syntax, trace, fuzz, roundtrip | §4 policy | every commit |
+| **hardened** | `constructs/*/vNN.obf.hbc` (241) | syntax, trace (fuzz optional) | `expected.txt` — the obfuscated source is behaviour-identical by construction, verified at generation time | nightly (D13 puts obf in sweep) |
 | **sweep** | `bundles/**` (C3) + hardened bundles (C4) + harvested lit/test262 corpora | syntax, roundtrip only — bundles cannot execute outside an RN host | n/a | nightly |
 | **local-corpus** | `tests/fixtures/local-corpus/**` (C5, gitignored) | syntax, roundtrip | n/a | sweep; **INCONCLUSIVE when absent**, never skipped-as-pass |
 
@@ -310,9 +329,11 @@ Notes that matter:
 * The **obfuscated** variants are the CFG-shape stressor: 5.4×–8.8× the
   instructions, 3.6×–7.7× the basic blocks. They must still PASS, with generous
   budgets.
-* `30-async-generator` has **no** `.hbc` at any version (no fetched hermesc
-  compiles `async function*`), and 16 of 212 fixture×version combinations do not
-  compile. The runner reads each fixture's `versions.txt` and reports those as
+* Counts are as of this revision, over **five** versions (84, 94, **96**, 98,
+  99) and 53 constructs — re-derive them from the tree rather than trusting the
+  numbers. `30-async-generator` has **no** `.hbc` at any version (no fetched
+  hermesc compiles `async function*`), and a documented set of fixture×version
+  combinations does not compile. The runner reads each fixture's `versions.txt` and reports those as
   **skipped-by-design**, a distinct category from INCONCLUSIVE.
 * C5 rules (D16): never commit the bundles or anything derived from them; only
   `MANIFEST.json` (sha256 + Hermes version) is committed.
@@ -434,11 +455,13 @@ Per spec 00 §8 (`ci.yml` gate, `sweep.yml` nightly):
 - [ ] The selftest runs as a gate test: 53/53 determinism, fidelity byte-exact
       against `expected.txt`, mutation kill ≥ 273/318.
 - [ ] `chooseReference` returns `hermes-vm` for v84/v94/v99 when the VM is
-      present, `expected-txt` otherwise, and throws on an unmeasured
-      `(fixture, version)` pair.
+      present, `expected-txt` otherwise (v96/v98 have no VM), and throws on an
+      unmeasured, not-known-divergent `(fixture, version)` pair.
 - [ ] The four known divergences are data in `reference-policy.ts`, keyed by
-      version, and the v94/v99 rows are either measured or explicitly marked
-      unmeasured (which makes the policy throw rather than guess).
+      version, **populated for 84/94/99 from the AGENT-LOG measurement**, with
+      96 and 98 explicitly marked unmeasured; a unit test asserts the policy
+      throws for an unmeasured *non*-divergent pair and returns
+      `expected-txt`-with-caveat for an unmeasured *known-divergent* one.
 - [ ] `hbc2js-equiv tier gate` runs the whole gate tier and produces a
       `TierReport` with per-fixture verdicts and timings.
 - [ ] `--hbc` with a missing VM exits 2 (INCONCLUSIVE) and names available
@@ -471,12 +494,14 @@ runners, typed verdicts, golden traces).
 
 ## 14. Open questions for the overseer
 
-* **O-1 — measure the divergences at v94 and v99.** §4's table is established at
-  v84/v89 only. The VMs now exist. Until measured, the policy must throw for
-  those versions, which blocks the gate. This is a short, high-value task — who
-  runs it, and does the result go in `tests/fixtures/README.md` or in
-  `reference-policy.ts` as the single source of truth? (I propose the latter,
-  with the README pointing at it.)
+* **O-1 — ~~measure the divergences at v94 and v99~~ RESOLVED, with a
+  remainder.** `docs/AGENT-LOG.md` already records the measurement: all four
+  persist unchanged at v94 and v99. Folded into §4's table. What remains is
+  **v96 and v98**: v96 needs `tools/build-hermes-vm.sh` extended (same lineage
+  as v94, should be cheap); v98 has no VM at all and may never have one. Do we
+  build a v96 VM, and where is the table's single source of truth —
+  `reference-policy.ts` (my proposal, with `tests/fixtures/README.md` pointing at
+  it) or the README?
 * **O-2 — `expected.txt` vs Hermes as ground truth.** `docs/EQUIVALENCE.md` O-2
   flags that the README currently treats `expected.txt` (Node) as the oracle
   while D14 says the VM is. §4 resolves it in favour of the VM. Confirm, and the
@@ -492,3 +517,19 @@ runners, typed verdicts, golden traces).
 * **O-5 — retire `tools/equiv/`?** Once the port is green, keeping two
   implementations invites drift. My preference: delete it in a separate commit
   and keep `docs/EQUIVALENCE.md` as the record. Agree?
+
+---
+
+## 15. Review responses (`docs/specs/REVIEW-03-07.md`)
+
+| Item | Verdict | Where |
+|---|---|---|
+| **S4** §4 and O-1 presented "measure the v94/v99 divergences" as open when `docs/AGENT-LOG.md` had already answered it, and `HA-06` would then have blocked the gate | **Fixed** | §4's table is now populated for 84/89/94/99 citing the AGENT-LOG entry, with an explicit statement that it ships populated rather than empty and why that matters for `HA-06`; the "open measurement" paragraph is narrowed to the genuinely remaining cases (**v96 and v98**, neither of which has a VM); O-1 is marked RESOLVED with that remainder; §12's acceptance bullet now requires the populated rows and distinguishes the two unmeasured outcomes (throw vs `expected-txt`-with-caveat) |
+| **N3** §1's promotion table omits the `hbc2js-equiv` wrapper and the fact that all 19 tests live in one file | **Fixed** | Three rows added to the table: the wrapper (which disappears into npm bin linking), `test/equiv.test.mjs` with a note not to expect a per-module split, and `examples/rt-*.js`, which §11 item 5 needs verbatim |
+| **N3's positive finding** (the promotion table otherwise matches `tools/equiv/`'s real tree one-to-one; no defect) | Acknowledged, unchanged | Recorded so it is not re-checked |
+| B1, B2, S1, S2, S3, S5, S6, N1, N2 | Not this spec's | B1/S2/S6 in spec 03; S1 in spec 04; B2/S3 in spec 05; S5/N1/N2 in spec 07 |
+
+**Beyond the review.** HBC **96** is now fetched and fixtured, so §3.1's VM
+availability, §7's tier inputs and every count were refreshed: five versions,
+249 gate binaries, 241 obfuscated. v96's absence from the VM set is a new,
+concrete gap that O-1 now carries.
