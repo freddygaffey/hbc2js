@@ -12,6 +12,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { repoRoot } from "../../support/paths.ts";
+import { findHermesc } from "../../support/hermesc.ts";
+import { requireOracles } from "../../support/tiers.ts";
 
 const CLI = path.join(repoRoot(), "src", "cli.ts");
 
@@ -97,7 +99,7 @@ test("hbc2js gate --json --only produces a parseable TierReport", () => {
 // review-M4-H1: `hbc2js gate` used to score the identity decompiler, so the
 // command the docs point at proved nothing about the decompiler. The real one
 // is the default; `--identity` still reaches the harness self-test.
-test("hbc2js gate scores the real decompiler by default, --identity the stand-in", () => {
+test("hbc2js gate scores the real decompiler by default, --identity the stand-in", (t) => {
   const real = run(["gate", "--json", "--only", "54-try-catch-finally-shared-range", "--versions", "94"]);
   const realReport = JSON.parse(real.stdout) as { results: { verdict: string; oracles: { oracle: string }[] }[] };
   assert.equal(realReport.results.length, 1);
@@ -105,6 +107,15 @@ test("hbc2js gate scores the real decompiler by default, --identity the stand-in
   // A real decompiler's default oracle set is syntax+trace (not fuzz/roundtrip).
   assert.deepEqual(realReport.results[0]!.oracles.map((o) => o.oracle).sort(), ["syntax", "trace"]);
 
+  // The identity stand-in runs the *full* oracle set, and the round-trip
+  // oracle recompiles with hermesc. With no compiler its verdict is
+  // INCONCLUSIVE — correct per D15, never a silent PASS — so asserting PASS
+  // here would report a missing tool as a decompiler failure.
+  if (findHermesc(94) === null) {
+    if (requireOracles()) throw new Error("hermesc v94 required for the --identity oracle set (HBC2JS_REQUIRE_ORACLES=1)");
+    t.skip("hermesc v94 not found (run tools/get-hermesc.sh 94) — the --identity round-trip oracle needs it");
+    return;
+  }
   const identity = run(["gate", "--json", "--identity", "--only", "54-try-catch-finally-shared-range", "--versions", "94"]);
   const idReport = JSON.parse(identity.stdout) as { results: { verdict: string; oracles: { oracle: string }[] }[] };
   assert.equal(idReport.results[0]!.verdict, "PASS");
