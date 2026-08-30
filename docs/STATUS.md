@@ -15,6 +15,10 @@ Last updated: 2026-08-30
       The v98 `src/parse/**` flags bug that previously blocked this is fixed
       (`fddf194`); the remaining v98-only gap was a real, one-directional bug
       in `hbc-disassembler` itself (still present in the pinned version),
+      and T9 later found one more real gap on our side: no fixture contained a
+      `StringSwitchImm` until `56-switch-string-jumptable`, and raw mode was
+      printing its table under hermesc's *integer* heading. Fixed with the
+      fixture as the regression test; 7.A is green again at all five versions.
       allowlisted narrowly per fixture-scoped field, not swallowed generically
       — see `tests/gate/oracle/known-divergences.md` item 9.
 - [x] M3 Test harness: sandboxed trace runner (D2) + recompile round-trip (D3) —

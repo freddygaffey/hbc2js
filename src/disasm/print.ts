@@ -192,14 +192,37 @@ function rawHandlersBlock(fn: DecodedFunction): string[] {
 function rawJumpTablesBlock(fn: DecodedFunction): string[] {
   const switchInsns = fn.instructions.filter((i) => i.switchTable !== undefined);
   if (switchInsns.length === 0) return [];
-  const lines = [" Jump Tables: "];
-  for (const insn of switchInsns) {
+
+  // hermesc uses two different headings, and until `56-switch-string-jumptable`
+  // existed no fixture had a string table to show it: integer tables
+  // (`SwitchImm`/`UIntSwitchImm`) go under " Jump Tables: " inside the
+  // function, while string tables (`StringSwitchImm`) go under
+  // " String switch Tables: ". Emitting the integer heading for a string table
+  // inserted one extra line and shifted the whole 7.A diff by one
+  // (T9 / issue #3). The bodies are identical in both cases: the raw on-disk
+  // table offset, then `i : displacement` per case.
+  const intInsns = switchInsns.filter((i) => i.switchTable!.kind !== "string");
+  const stringInsns = switchInsns.filter((i) => i.switchTable!.kind === "string");
+
+  const body = (insn: Instruction): string[] => {
     const st = insn.switchTable!;
     // SwitchImm/UIntSwitchImm: (Reg8, UInt32 tableOffset, ...) -> operand[1].
     // StringSwitchImm: (Reg8, UInt32 globalIndex, UInt32 tableOffset, ...) -> operand[2].
     const rawTableOffsetOperand = st.kind === "string" ? insn.operands[2]!.value : insn.operands[1]!.value;
-    lines.push(`  offset ${rawTableOffsetOperand}`);
-    st.cases.forEach((c, i) => lines.push(`   ${i} : ${c.target - insn.offset}`));
+    return [`  offset ${rawTableOffsetOperand}`, ...st.cases.map((c, i) => `   ${i} : ${c.target - insn.offset}`)];
+  };
+
+  const lines: string[] = [];
+  if (intInsns.length > 0) {
+    lines.push(" Jump Tables: ");
+    for (const insn of intInsns) lines.push(...body(insn));
+  }
+  if (stringInsns.length > 0) {
+    // hermesc prints this section once per module, after the functions; we
+    // print it per function, which the 7.A normaliser tolerates because it
+    // drops both headings and compares the bodies in order.
+    lines.push(" String switch Tables: ");
+    for (const insn of stringInsns) lines.push(...body(insn));
   }
   return lines;
 }

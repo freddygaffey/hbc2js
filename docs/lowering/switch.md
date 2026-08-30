@@ -2,9 +2,8 @@
 
 **Fixtures:** `09-switch-fallthrough`, `10-switch-no-fallthrough`,
 `52-switch-jumptable`, `53-switch-jumptable-large`
-**Confidence:** ✅ verified (compare chain and `SwitchImm`/`UIntSwitchImm`, all
-four versions); ⛔ inferred (`StringSwitchImm` — ad hoc probe file, not a
-fixture; see catalogue O-3)
+**Confidence:** ✅ verified (compare chain, `SwitchImm`/`UIntSwitchImm` and — since T9 — `StringSwitchImm`, all
+four versions); `StringSwitchImm` measured on fixture `56-switch-string-jumptable` at v98/v99 (absent below v98)
 
 Hermes emits **three different bytecode idioms** for `switch`, chosen
 per-`switch` by the compiler based on case density/type, not by HBC version
@@ -94,7 +93,7 @@ through the last failed compare, never by a dedicated test.
 ```
 **Identical operand shape and identical table**, only the mnemonic changed.
 
-### 2d. `StringSwitchImm` — ad hoc probe (20 string cases), v98/v99 only
+### 2d. `StringSwitchImm` — `56-switch-string-jumptable`, `classify` (24 string cases), v98/v99 only
 
 ```
 [@ 3] StringSwitchImm 1<Reg8>, 0<UInt32>, 125<UInt32>, 117<Addr32>, 20<UInt32>
@@ -108,6 +107,27 @@ does not exist before v98. **Corrects spec 07 §4's claim that this is a
 plain compare chain — `StringSwitchImm` has its own case-count threshold,
 just like `SwitchImm`'s density threshold, and a matcher cannot assume
 "string switch at v98+" always means `StringSwitchImm`.
+
+**✅ Measured (T9, 2026-08-30), fixture not probe.**
+`56-switch-string-jumptable` is now a committed fixture, compiled at all five
+versions, and the opcode counts across its whole module are:
+
+| version | `StringSwitchImm` | `JStrictEqual` |
+|---|---|---|
+| 84 | 0 | 28 |
+| 94 | 0 | 28 |
+| 96 | 0 | 28 |
+| 98 | **1** | 4 |
+| 99 | **1** | 4 |
+
+Two things fall out of the counts. The v96→v98 boundary is confirmed on a real
+fixture, not a probe. And the residual 4 `JStrictEqual` at v98/v99 are the
+*second* switch in the same file — `bucket`, six cases collapsing to three
+bodies — which stays a compare chain at every version. So one module can carry
+both lowerings at once, and a matcher must decide per switch, never per file or
+per version.
+
+The fixture passes the gate at all five versions (5 PASS, 0 DIVERGENT).
 
 ## 3. CFG/IR shape
 

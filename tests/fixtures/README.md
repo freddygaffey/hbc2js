@@ -134,7 +134,10 @@ hardcoded per-version and out of this task's edit scope — see `docs/TOOLCHAIN.
 
 ## Construct fixture compiler-compatibility table
 
-53/53 fixtures compile and run correctly under Node. Compilation under each
+57/57 fixtures compile and run correctly under Node — the table below predates
+T9's two additions, `56-switch-string-jumptable` and `57-logical-assignment`,
+which compile at **all five** versions (v84/v94/v96/v98/v99) with no
+`versions.txt` exclusion and pass the gate 5/5 each. Compilation under each
 hermesc version (✅ = compiles, ❌ = documented failure, see that fixture's
 `versions.txt`):
 

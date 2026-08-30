@@ -1,0 +1,168 @@
+; hbc2js disassembly of 56-switch-string-jumptable/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=3 strings=41 globalCodeIndex=0
+function #0 "global"  params=1 frame=22 env=0 flags=dbg,overflowed  @0x00000230 size=263
+  0000  DeclareGlobalVar     s39 "classify"
+  0005  DeclareGlobalVar     s38 "bucket"
+  000a  GetGlobalObject      r6
+  000c  LoadConstUndefined   r4
+  000e  CreateClosure        r7, r4, f1 "classify"
+  0013  PutByIdLoose         r6, r7, #c0, s39 "classify"
+  0019  CreateClosure        r7, r4, f2 "bucket"
+  001e  PutByIdLoose         r6, r7, #c1, s38 "bucket"
+  0024  NewArrayWithBuffer   r10, 6, 6, lit@0x0000
+  002c  GetByIdShort         r7, r10, #c0, s37 "length"
+  0031  LoadConstZero        r2
+  0033  Less                 r5, r2, r7
+  0037  LoadConstString      r8, s1 " -> "
+  003b  LoadConstUInt8       r1, 1
+  003e  LoadConstZero        r0
+  0040  JmpFalse             L2, r5
+L1:
+  0043  TryGetById           r9, r6, #c1, s40 "print"
+  0049  GetByVal             r7, r10, r0
+  004d  Add                  r11, r7, r8
+  0051  GetByIdShort         r12, r6, #c2, s39 "classify"
+  0056  GetByVal             r7, r10, r0
+  005a  Call2                r7, r12, r4, r7
+  005f  Add                  r7, r11, r7
+  0063  Call2                r7, r9, r4, r7
+  0068  AddN                 r0, r0, r1
+  006c  GetByIdShort         r7, r10, #c0, s37 "length"
+  0071  JLess                L1, r0, r7
+L2:
+  0075  TryGetById           r8, r6, #c1, s40 "print"
+  007b  GetByIdShort         r9, r6, #c3, s38 "bucket"
+  0080  LoadConstString      r7, s5 "red"
+  0084  Call2                r7, r9, r4, r7
+  0089  LoadConstString      r11, s0 " "
+  008d  Add                  r9, r7, r11
+  0091  GetByIdShort         r12, r6, #c3, s38 "bucket"
+  0096  LoadConstString      r7, s4 "azure"
+  009a  Call2                r7, r12, r4, r7
+  009f  Add                  r7, r9, r7
+  00a3  GetByIdShort         r12, r6, #c3, s38 "bucket"
+  00a8  LoadConstString      r9, s22 "green"
+  00ac  Call2                r9, r12, r4, r9
+  00b1  AddS                 r7, r7, r11
+  00b5  Add                  r7, r7, r9
+  00b9  Call2                r7, r8, r4, r7
+  00be  GetByIdShort         r7, r10, #c0, s37 "length"
+  00c3  Less                 r5, r2, r7
+  00c7  LoadConstZero        r0
+  00c9  LoadConstZero        r9
+  00cb  LoadConstZero        r8
+  00cd  JmpFalse             L4, r5
+L3:
+  00d0  GetByIdShort         r11, r6, #c2, s39 "classify"
+  00d5  GetByVal             r7, r10, r0
+  00d9  Call2                r7, r11, r4, r7
+  00de  Add                  r9, r9, r7
+  00e2  AddN                 r0, r0, r1
+  00e6  GetByIdShort         r7, r10, #c0, s37 "length"
+  00eb  Mov                  r8, r9
+  00ee  JLess                L3, r0, r7
+L4:
+  00f2  TryGetById           r7, r6, #c1, s40 "print"
+  00f8  LoadConstString      r6, s27 "total="
+  00fc  Add                  r6, r6, r8
+  0100  Call2                r6, r7, r4, r6
+  0105  Ret                  r6
+
+function #1 "classify"  params=2 frame=2 env=0 flags=none  @0x00000337 size=149
+  0000  LoadParam            r1, 1
+  .switch StringSwitchImm @0x0003  count=24 default=L25
+        s3 "alpha" -> L24   s7 "bravo" -> L23   s9 "charlie" -> L22   s14 "delta" -> L21   s20 "echo" -> L20   s17 "foxtrot" -> L19   s16 "golf" -> L18   s21 "hotel" -> L17   s25 "india" -> L16   s26 "juliett" -> L15   s28 "kilo" -> L14   s11 "lima" -> L13   s30 "mike" -> L12   s23 "november" -> L11   s8 "oscar" -> L10   s31 "papa" -> L9   s19 "quebec" -> L8   s24 "romeo" -> L7   s32 "sierra" -> L6   s15 "tango" -> L5   s29 "uniform" -> L4   s33 "victor" -> L3   s35 "whiskey" -> L2   s36 "xray" -> L1
+L1:
+  0015  LoadConstUInt8       r0, 24
+  0018  Ret                  r0
+L2:
+  001a  LoadConstUInt8       r0, 23
+  001d  Ret                  r0
+L3:
+  001f  LoadConstUInt8       r0, 22
+  0022  Ret                  r0
+L4:
+  0024  LoadConstUInt8       r0, 21
+  0027  Ret                  r0
+L5:
+  0029  LoadConstUInt8       r0, 20
+  002c  Ret                  r0
+L6:
+  002e  LoadConstUInt8       r0, 19
+  0031  Ret                  r0
+L7:
+  0033  LoadConstUInt8       r0, 18
+  0036  Ret                  r0
+L8:
+  0038  LoadConstUInt8       r0, 17
+  003b  Ret                  r0
+L9:
+  003d  LoadConstUInt8       r0, 16
+  0040  Ret                  r0
+L10:
+  0042  LoadConstUInt8       r0, 15
+  0045  Ret                  r0
+L11:
+  0047  LoadConstUInt8       r0, 14
+  004a  Ret                  r0
+L12:
+  004c  LoadConstUInt8       r0, 13
+  004f  Ret                  r0
+L13:
+  0051  LoadConstUInt8       r0, 12
+  0054  Ret                  r0
+L14:
+  0056  LoadConstUInt8       r0, 11
+  0059  Ret                  r0
+L15:
+  005b  LoadConstUInt8       r0, 10
+  005e  Ret                  r0
+L16:
+  0060  LoadConstUInt8       r0, 9
+  0063  Ret                  r0
+L17:
+  0065  LoadConstUInt8       r0, 8
+  0068  Ret                  r0
+L18:
+  006a  LoadConstUInt8       r0, 7
+  006d  Ret                  r0
+L19:
+  006f  LoadConstUInt8       r0, 6
+  0072  Ret                  r0
+L20:
+  0074  LoadConstUInt8       r0, 5
+  0077  Ret                  r0
+L21:
+  0079  LoadConstUInt8       r0, 4
+  007c  Ret                  r0
+L22:
+  007e  LoadConstUInt8       r0, 3
+  0081  Ret                  r0
+L23:
+  0083  LoadConstUInt8       r0, 2
+  0086  Ret                  r0
+L24:
+  0088  LoadConstUInt8       r0, 1
+  008b  Ret                  r0
+L25:
+  008d  LoadConstInt         r0, -1
+  0093  Ret                  r0
+
+function #2 "bucket"  params=2 frame=2 env=0 flags=none  @0x0000048c size=53
+  0000  LoadParam            r1, 1
+  0003  LoadConstString      r0, s5 "red"
+  0007  JStrictEqual         L2, r0, r1
+  000b  LoadConstString      r0, s12 "crimson"
+  000f  JStrictEqual         L2, r0, r1
+  0013  LoadConstString      r0, s6 "blue"
+  0017  JStrictEqual         L1, r0, r1
+  001b  LoadConstString      r0, s4 "azure"
+  001f  JStrictEqual         L1, r0, r1
+  0023  LoadConstString      r0, s18 "other"
+  0027  Ret                  r0
+L1:
+  0029  LoadConstString      r0, s10 "cool"
+  002d  Ret                  r0
+L2:
+  002f  LoadConstString      r0, s34 "warm"
+  0033  Ret                  r0

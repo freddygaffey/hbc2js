@@ -8,7 +8,7 @@
 
 **Semantics rule (D14).** The bytecode under the Hermes VM is ground truth, not the source under Node: Hermes shares one `let` binding across loop iterations, TDZ varies by version, no sloppy `arguments` aliasing. Emit what the bytecode does.
 
-**Fixtures.** `tests/fixtures/constructs/<NN-name>/{source.js,expected.txt,vNN.hbc,…}` (54 constructs × 5 versions, `.obf`/`.min` variants; `build.sh` regenerates), `hermes-dec-sample/`, `bundles/` (RN template committed; react-navigation and Expensify via `fetch.sh`), `local-corpus/` (proprietary APK bundles — NEVER in the repo, hashes only).
+**Fixtures.** `tests/fixtures/constructs/<NN-name>/{source.js,expected.txt,vNN.hbc,…}` (57 constructs × 5 versions, `.obf`/`.min` variants; `build.sh` regenerates), `hermes-dec-sample/`, `bundles/` (RN template committed; react-navigation and Expensify via `fetch.sh`), `local-corpus/` (proprietary APK bundles — NEVER in the repo, hashes only).
 
 **Tests.** `npm test` = gate (~70 s; must stay green, currently 800+ tests, 492/492 fixture PASS through the real decompiler). `npm run test:all` adds sweep (~2 min). `HBC2JS_REQUIRE_ORACLES=1` turns oracle skips into failures.
 
