@@ -8,7 +8,7 @@ import { writtenRegisters } from "../cfg/reg-effects.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { BuiltinTable, TypeOfIsTable } from "../tables/types.ts";
 import { typeOfIsTableFor } from "./typeofis.ts";
-import type { Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
+import type { LabelId, Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
 import type { Expr, Stmt } from "./ast.ts";
 import { assign, bin, call, id, lit, num, un, UNDEF } from "./ast.ts";
 import { conditionFor } from "./conds.ts";
@@ -171,6 +171,22 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   const argsExpr: Expr = isOpcodeGeneratorBody ? id("__args") : { k: "argumentsObject" };
 
   const tryPlan = planTries(structured);
+
+  // F9 (spec `docs/specs/passes/01-framework-fixes.md`): a loop annotated
+  // `hideLabel` has had every break/continue that used to name it rewritten
+  // unlabelled by `06-label-clean`, so the label itself prints as nothing.
+  // Nothing sets `hideLabel` in batch 1, so `hiddenLabels` is always empty
+  // today and every call below behaves exactly like the old `labelName`.
+  const hiddenLabels = new Set<LabelId>();
+  {
+    const stack: IrStmt[] = [structured.root];
+    while (stack.length > 0) {
+      const n = stack.pop()!;
+      if (n.k === "loop" && n.hideLabel === true) hiddenLabels.add(n.label);
+      stack.push(...childrenOf(n));
+    }
+  }
+  const labelOf = (id: LabelId): string | null => (hiddenLabels.has(id) ? null : labelName(id));
 
   const f: FunctionEmitter = {
     analysis,
@@ -338,7 +354,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     const isTail = form.at === "tail" && gi === items.length - 1;
     if (!isHead && !isTail) return false;
     const test = form.negate ? un("!", conditionOf(form.cond)) : conditionOf(form.cond);
-    const label = labelName(node.label);
+    const label = labelOf(node.label);
     const body: Stmt[] = [];
     let update: Expr | null = null;
     const step = form.step;
@@ -406,9 +422,15 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         const init = pendingInit;
         pendingInit = null;
         if (node.form !== undefined && lowerFormedLoop(node, node.form, init, out)) return;
+        // review M5-pass-1 F3: `lowerItems` already trimmed the preceding block
+        // to `{ to: init.from }` on the assumption the loop would print as a
+        // `for`. On this false path it did not, so the tail slice `init` was
+        // captured but never emitted anywhere — print it here, in the same spot
+        // it held in the original block, or it silently disappears.
+        if (init !== null) out.push({ k: "expr", expr: init });
         const body: Stmt[] = [];
         lowerTree(node.body, body);
-        out.push({ k: "while", label: labelName(node.label), body });
+        out.push({ k: "while", label: labelOf(node.label), body });
         return;
       }
       case "if": {
@@ -420,10 +442,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       }
       case "break":
-        out.push({ k: "break", label: labelName(node.label) });
+        out.push({ k: "break", label: labelOf(node.label) });
         return;
       case "continue":
-        out.push({ k: "continue", label: labelName(node.label) });
+        out.push({ k: "continue", label: labelOf(node.label) });
         return;
       case "return":
         out.push(...lowerBlock(node.cfgBlock));
