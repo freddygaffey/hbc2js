@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 48-optional-chaining-nullish/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=26 globalCodeIndex=0
-function #0 "global"  params=1 frame=22 env=0 flags=overflowed,ctor  @0x00000270 size=460
+function #0 "global"  params=1 frame=22 env=0 flags=dbg,overflowed  @0x00000270 size=460
   0000  CreateFunctionEnvironment r5, 1
   0003  DeclareGlobalVar     s25 "withSideEffect"
   0008  GetGlobalObject      r4

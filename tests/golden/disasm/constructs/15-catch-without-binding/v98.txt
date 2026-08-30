@@ -1,6 +1,7 @@
 ; hbc2js disassembly of 15-catch-without-binding/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=15 globalCodeIndex=0
-function #0 "global"  params=1 frame=21 env=0 flags=overflowed,ctor  @0x00000180 size=181
+function #0 "global"  params=1 frame=21 env=0 flags=exc,dbg,overflowed  @0x00000180 size=181
+  .try T1..T2 -> L2 ; handler 0
   0000  CreateFunctionEnvironment r3, 1
   0003  DeclareGlobalVar     s12 "tryParse"
   0008  LoadConstUndefined   r2
@@ -35,29 +36,32 @@ L1:
   0083  Mov                  r8, r7
   0086  GetByIdShort         r9, r1, #c4, s14 "unreliable"
   008b  Call1                r0, r9, r2
-  008f  Jmp                  L2
+  008f  Jmp                  L3
+L2:
   0091  Catch                r9
   0093  TryGetById           r9, r1, #c0, s11 "print"
   0099  Call4                r9, r9, r2, r5, r8, r6
   00a0  AddN                 r7, r8, r4
   00a4  JLessN               L1, r7, r3
-L2:
+L3:
   00a8  TryGetById           r1, r1, #c0, s11 "print"
   00ae  Call2                r0, r1, r2, r0
   00b3  Ret                  r0
 
-function #1 "tryParse"  params=2 frame=12 env=0 flags=overflowed,ctor  @0x00000235 size=31
+function #1 "tryParse"  params=2 frame=12 env=0 flags=exc,dbg,overflowed  @0x00000235 size=31
+  .try T1..T2 -> L1 ; handler 0
   0000  LoadParam            r2, 1
   0003  GetGlobalObject      r0
   0005  TryGetById           r1, r0, #c0, s10 "JSON"
   000b  GetByIdShort         r0, r1, #c1, s8 "parse"
   0010  Call2                r0, r0, r1, r2
   0015  Ret                  r0
+L1:
   0017  Catch                r0
   0019  LoadConstString      r0, s6 "unparseable"
   001d  Ret                  r0
 
-function #2 "unreliable"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000254 size=68
+function #2 "unreliable"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x00000254 size=68
   0000  GetParentEnvironment r3, 0
   0003  LoadFromEnvironment  r2, r3, 0
   0007  Inc                  r0, r2

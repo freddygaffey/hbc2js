@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 47-typeof-instanceof-in/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=27 globalCodeIndex=0
-function #0 "global"  params=1 frame=35 env=0 flags=overflowed,ctor  @0x00000268 size=415
+function #0 "global"  params=1 frame=35 env=0 flags=dbg,overflowed  @0x00000268 size=415
   0000  DeclareGlobalVar     s23 "Base"
   0005  DeclareGlobalVar     s24 "Mid"
   000a  DeclareGlobalVar     s17 "Leaf"

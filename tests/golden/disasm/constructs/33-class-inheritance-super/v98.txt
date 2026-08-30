@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 33-class-inheritance-super/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=9 strings=20 globalCodeIndex=0
-function #0 "global"  params=1 frame=21 env=0 flags=overflowed,ctor  @0x000001e8 size=276
+function #0 "global"  params=1 frame=21 env=0 flags=dbg,overflowed  @0x000001e8 size=276
   0000  CreateFunctionEnvironment r4, 4
   0003  LoadConstUndefined   r0
   0005  CreateBaseClass      r5, r3, r0, 1
@@ -64,7 +64,7 @@ function #0 "global"  params=1 frame=21 env=0 flags=overflowed,ctor  @0x000001e8
   010c  Call3                r3, r3, r0, r1, r2
   0112  Ret                  r3
 
-function #1 "Animal"  params=2 frame=2 env=0 flags=overflowed,ctor  @0x000002fc size=21
+function #1 "Animal"  params=2 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x000002fc size=21
   0000  GetNewTarget         r0
   0002  GetByIdShort         r0, r0, #c0, s18 "prototype"
   0007  NewObjectWithParent  r0, r0
@@ -72,21 +72,21 @@ function #1 "Animal"  params=2 frame=2 env=0 flags=overflowed,ctor  @0x000002fc 
   000d  PutByIdStrict        r0, r1, #c0, s16 "name"
   0013  Ret                  r0
 
-function #2 "speak"  params=1 frame=2 env=0 flags=overflowed,ctor  @0x00000311 size=18
+function #2 "speak"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x00000311 size=18
   0000  LoadParam            r0, 0
   0003  GetByIdShort         r1, r0, #c0, s16 "name"
   0008  LoadConstString      r0, s2 " makes a sound"
   000c  Add                  r0, r1, r0
   0010  Ret                  r0
 
-function #3 "describe"  params=1 frame=2 env=0 flags=overflowed,ctor  @0x00000323 size=18
+function #3 "describe"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x00000323 size=18
   0000  LoadParam            r0, 0
   0003  GetByIdShort         r1, r0, #c0, s16 "name"
   0008  LoadConstString      r0, s5 "Animal:"
   000c  Add                  r0, r0, r1
   0010  Ret                  r0
 
-function #4 "Dog"  params=3 frame=13 env=0 flags=overflowed,ctor  @0x00000335 size=47
+function #4 "Dog"  params=3 frame=13 env=0 flags=strict,dbg,overflowed,ctor  @0x00000335 size=47
   0000  GetNewTarget         r3
   0002  GetParentEnvironment r0, 0
   0005  LoadFromEnvironment  r0, r0, 1
@@ -102,7 +102,7 @@ function #4 "Dog"  params=3 frame=13 env=0 flags=overflowed,ctor  @0x00000335 si
   0027  PutByIdStrict        r0, r1, #c0, s15 "breed"
   002d  Ret                  r0
 
-function #5 "speak"  params=1 frame=10 env=0 flags=overflowed,ctor  @0x00000364 size=36
+function #5 "speak"  params=1 frame=10 env=0 flags=strict,dbg,overflowed,nc  @0x00000364 size=36
   0000  LoadParam            r1, 0
   0003  GetParentEnvironment r0, 0
   0006  LoadFromEnvironment  r0, r0, 0
@@ -113,7 +113,7 @@ function #5 "speak"  params=1 frame=10 env=0 flags=overflowed,ctor  @0x00000364 
   001e  Add                  r0, r1, r0
   0022  Ret                  r0
 
-function #6 "describe"  params=1 frame=11 env=0 flags=overflowed,ctor  @0x00000388 size=45
+function #6 "describe"  params=1 frame=11 env=0 flags=strict,dbg,overflowed,nc  @0x00000388 size=45
   0000  LoadParam            r0, 0
   0003  GetParentEnvironment r1, 0
   0006  LoadFromEnvironment  r1, r1, 0
@@ -126,7 +126,7 @@ function #6 "describe"  params=1 frame=11 env=0 flags=overflowed,ctor  @0x000003
   0027  Add                  r0, r1, r0
   002b  Ret                  r0
 
-function #7 "Puppy"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x000003b5 size=29
+function #7 "Puppy"  params=1 frame=14 env=0 flags=strict,dbg,overflowed,ctor  @0x000003b5 size=29
   0000  GetParentEnvironment r0, 0
   0003  LoadFromEnvironment  r0, r0, 3
   0007  LoadParentNoTraps    r2, r0
@@ -137,7 +137,7 @@ function #7 "Puppy"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x000003b5 
   0017  CallBuiltin          r0, b50 "applyArguments", 4
   001b  Ret                  r0
 
-function #8 "speak"  params=1 frame=10 env=0 flags=overflowed,ctor  @0x000003d2 size=36
+function #8 "speak"  params=1 frame=10 env=0 flags=strict,dbg,overflowed,nc  @0x000003d2 size=36
   0000  LoadParam            r1, 0
   0003  GetParentEnvironment r0, 0
   0006  LoadFromEnvironment  r0, r0, 2

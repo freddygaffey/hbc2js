@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 18-closure-loop-let/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=11 globalCodeIndex=0
-function #0 "global"  params=1 frame=25 env=0 flags=overflowed,ctor  @0x00000148 size=214
+function #0 "global"  params=1 frame=25 env=0 flags=dbg,overflowed  @0x00000148 size=214
   0000  CreateFunctionEnvironment r10, 3
   0003  NewArray             r14, 0
   0007  LoadConstZero        r6
@@ -63,7 +63,7 @@ function #1 ""  params=1 frame=2 env=0 flags=none  @0x0000021e size=9
   0003  LoadFromEnvironment  r0, r1, 0
   0007  Ret                  r0
 
-function #2 ""  params=2 frame=10 env=0 flags=overflowed,ctor  @0x00000227 size=11
+function #2 ""  params=2 frame=10 env=0 flags=dbg,overflowed  @0x00000227 size=11
   0000  LoadConstUndefined   r0
   0002  LoadParam            r1, 1
   0005  Call1                r1, r1, r0
@@ -78,7 +78,7 @@ function #3 ""  params=1 frame=3 env=0 flags=none  @0x00000232 size=25
   0013  Add                  r2, r2, r1
   0017  Ret                  r2
 
-function #4 ""  params=2 frame=10 env=0 flags=overflowed,ctor  @0x00000227 size=11
+function #4 ""  params=2 frame=10 env=0 flags=dbg,overflowed  @0x00000227 size=11
   0000  LoadConstUndefined   r0
   0002  LoadParam            r1, 1
   0005  Call1                r1, r1, r0

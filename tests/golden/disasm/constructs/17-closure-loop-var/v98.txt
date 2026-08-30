@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 17-closure-loop-var/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=11 globalCodeIndex=0
-function #0 "global"  params=1 frame=18 env=0 flags=overflowed,ctor  @0x00000158 size=233
+function #0 "global"  params=1 frame=18 env=0 flags=dbg,overflowed  @0x00000158 size=233
   0000  DeclareGlobalVar     s5 "i"
   0005  DeclareGlobalVar     s6 "j"
   000a  NewArray             r6, 0
@@ -57,18 +57,18 @@ L4:
   00e1  Call3                r3, r5, r2, r3, r4
   00e7  Ret                  r3
 
-function #1 ""  params=1 frame=1 env=0 flags=overflowed,ctor  @0x00000241 size=9
+function #1 ""  params=1 frame=1 env=0 flags=dbg,overflowed  @0x00000241 size=9
   0000  GetGlobalObject      r0
   0002  GetByIdShort         r0, r0, #c0, s5 "i"
   0007  Ret                  r0
 
-function #2 ""  params=2 frame=10 env=0 flags=overflowed,ctor  @0x0000024a size=11
+function #2 ""  params=2 frame=10 env=0 flags=dbg,overflowed  @0x0000024a size=11
   0000  LoadConstUndefined   r0
   0002  LoadParam            r1, 1
   0005  Call1                r1, r1, r0
   0009  Ret                  r1
 
-function #3 ""  params=2 frame=10 env=0 flags=overflowed,ctor  @0x0000024a size=11
+function #3 ""  params=2 frame=10 env=0 flags=dbg,overflowed  @0x0000024a size=11
   0000  LoadConstUndefined   r0
   0002  LoadParam            r1, 1
   0005  Call1                r1, r1, r0

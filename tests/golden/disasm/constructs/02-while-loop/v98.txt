@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 02-while-loop/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=8 globalCodeIndex=0
-function #0 "global"  params=1 frame=25 env=0 flags=overflowed,ctor  @0x000000f8 size=177
+function #0 "global"  params=1 frame=25 env=0 flags=dbg,overflowed  @0x000000f8 size=177
   0000  LoadConstZero        r1
   0002  LoadConstUInt8       r9, 100
   0005  LoadConstUInt8       r6, 1

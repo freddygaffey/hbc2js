@@ -301,12 +301,40 @@ handlers and no debug info have **no info block at all**. Note also that
 `functionName` is only 8 bits in the small header, so any function whose name string id
 exceeds 255 is forced into the large header — in a real bundle that is nearly all of them.
 
-**Large `FunctionHeader` (class E), 36 bytes, packed:**
+**Large `FunctionHeader` (class E), 36 bytes, packed — v99 and v98-early(!) only.**
 ```
 uint32 offset, paramCount, loopDepth, bytecodeSizeInBytes, functionName,
        numberRegCount, nonPtrRegCount, frameSize;
 uint8  readCacheSize, writeCacheSize, privateNameCacheSize, flags;
 ```
+
+**v98-late is 37 bytes, not 36 — `flags` is at offset 36, not 35.** Hermes
+commit `f74f6bbe37` (present for `BYTECODE_VERSION == 98` only; reverted by
+`913d31acd1` before v99 shipped) added a 1-bit `NumCacheNewObject` field to
+class E's `FUNC_HEADER_FIELDS`. In the *packed* small header (above) this
+costs nothing — it is squeezed into byte 10 alongside `writeCacheSize`
+(7 bits to 6) with `privateNameCacheSize` unchanged at bit 7 — but the
+*unpacked* large header gives every field its own byte-or-wider member
+regardless of packed bit-width, so it inserts a whole extra `uint8` between
+`writeCacheSize` and `privateNameCacheSize`:
+
+```
+uint32 offset, paramCount, loopDepth, bytecodeSizeInBytes, functionName,
+       numberRegCount, nonPtrRegCount, frameSize;
+uint8  readCacheSize, writeCacheSize, numCacheNewObject /* v98-late only */,
+       privateNameCacheSize, flags;
+```
+
+This shifts `flags` from offset 35 to offset 36 for v98-late's large header —
+get this wrong and every *overflowed* v98 function (the common case, see the
+class-E overflow note above) reads `prohibitInvoke`/`strictMode`/
+`hasExceptionHandler`/`hasDebugInfo`/`kind` from the wrong byte. `hermes-dec`'s
+`hbc-disassembler` still has exactly this bug as of the version pinned by this
+project (`docs/TOOLCHAIN.md`) — see `tests/gate/oracle/known-divergences.md`
+item 9 for the byte-level evidence and the narrow, function-scoped allowlist
+this project uses to work around it in the 7.B oracle diff. `numCacheNewObject`
+itself is discarded on parse (not part of this project's public API); its
+value is redundant with the small header's own packed copy.
 
 ### 3.4 Verified: v94 function table
 

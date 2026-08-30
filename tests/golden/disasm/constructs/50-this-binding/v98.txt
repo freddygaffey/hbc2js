@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 50-this-binding/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=10 strings=30 globalCodeIndex=0
-function #0 "global"  params=1 frame=17 env=0 flags=overflowed,ctor  @0x00000320 size=413
+function #0 "global"  params=1 frame=17 env=0 flags=dbg,overflowed  @0x00000320 size=413
   0000  CreateFunctionEnvironment r3, 2
   0003  LoadThisNS           r1
   0005  StoreToEnvironment   r3, 1, r1
@@ -96,12 +96,12 @@ function #1 "plainFn"  params=1 frame=1 env=0 flags=none  @0x000004bd size=7
   0002  TypeOf               r0, r0
   0005  Ret                  r0
 
-function #2 "standalone"  params=1 frame=1 env=0 flags=overflowed,ctor  @0x000004c4 size=9
+function #2 "standalone"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x000004c4 size=9
   0000  LoadThisNS           r0
   0002  GetByIdShort         r0, r0, #c0, s29 "value"
   0007  Ret                  r0
 
-function #3 "Counter"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x000004cd size=35
+function #3 "Counter"  params=1 frame=4 env=0 flags=dbg,overflowed  @0x000004cd size=35
   0000  LoadThisNS           r3
   0002  GetNewTarget         r2
   0004  CacheNewObject       r3, r2, 2, 0
@@ -112,7 +112,7 @@ function #3 "Counter"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x000004cd
   001b  PutByIdLoose         r3, r2, #c1, s23 "increment"
   0021  Ret                  r1
 
-function #4 "getValue"  params=1 frame=1 env=0 flags=overflowed,ctor  @0x000004c4 size=9
+function #4 "getValue"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x000004c4 size=9
   0000  LoadThisNS           r0
   0002  GetByIdShort         r0, r0, #c0, s29 "value"
   0007  Ret                  r0
@@ -130,12 +130,14 @@ function #6 "makeArrowGetter"  params=1 frame=2 env=0 flags=none  @0x000004fc si
   0009  CreateClosure        r0, r0, f9 ""
   000e  Ret                  r0
 
-function #7 ""  params=1 frame=10 env=0 flags=overflowed,ctor  @0x0000050c size=37
+function #7 ""  params=1 frame=10 env=0 flags=exc,dbg,overflowed  @0x0000050c size=37
+  .try T1..T2 -> L1 ; handler 0
   0000  GetParentEnvironment r0, 0
   0003  LoadFromEnvironment  r1, r0, 0
   0007  LoadConstUndefined   r0
   0009  Call1                r0, r1, r0
   000d  Ret                  r0
+L1:
   000f  Catch                r0
   0011  GetByIdShort         r0, r0, #c0, s20 "constructor"
   0016  GetByIdShort         r1, r0, #c1, s26 "name"
@@ -143,7 +145,7 @@ function #7 ""  params=1 frame=10 env=0 flags=overflowed,ctor  @0x0000050c size=
   001f  Add                  r0, r0, r1
   0023  Ret                  r0
 
-function #8 ""  params=1 frame=2 env=0 flags=overflowed,ctor  @0x00000531 size=23
+function #8 ""  params=1 frame=2 env=0 flags=dbg,overflowed  @0x00000531 size=23
   0000  LoadThisNS           r0
   0002  GetByIdShort         r1, r0, #c0, s18 "count"
   0007  Inc                  r1, r1
@@ -151,7 +153,7 @@ function #8 ""  params=1 frame=2 env=0 flags=overflowed,ctor  @0x00000531 size=2
   0010  GetByIdShort         r0, r0, #c0, s18 "count"
   0015  Ret                  r0
 
-function #9 ""  params=1 frame=1 env=0 flags=overflowed,ctor  @0x00000548 size=14
+function #9 ""  params=1 frame=1 env=0 flags=dbg,overflowed,nc  @0x00000548 size=14
   0000  GetParentEnvironment r0, 0
   0003  LoadFromEnvironment  r0, r0, 0
   0007  GetByIdShort         r0, r0, #c0, s29 "value"

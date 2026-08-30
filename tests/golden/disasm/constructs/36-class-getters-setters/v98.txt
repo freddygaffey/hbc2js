@@ -1,6 +1,7 @@
 ; hbc2js disassembly of 36-class-getters-setters/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=9 strings=24 globalCodeIndex=0
-function #0 "global"  params=1 frame=18 env=0 flags=overflowed,ctor  @0x00000234 size=302
+function #0 "global"  params=1 frame=18 env=0 flags=exc,dbg,overflowed  @0x00000234 size=302
+  .try T1..T2 -> L1 ; handler 0
   0000  LoadConstUndefined   r4
   0002  LoadConstUndefined   r0
   0004  NewObjectWithBuffer  r1, sh0(numProps=1), lit@0x0000
@@ -62,28 +63,29 @@ function #0 "global"  params=1 frame=18 env=0 flags=overflowed,ctor  @0x00000234
   0104  LoadConstInt         r1, -1
   010a  PutByIdLoose         r3, r1, #c2, s17 "width"
   0110  Mov                  r0, r1
-  0113  Jmp                  L1
+  0113  Jmp                  L2
+L1:
   0115  Catch                r1
   0117  TryGetById           r3, r2, #c0, s22 "print"
   011d  GetByIdShort         r2, r1, #c4, s16 "message"
   0122  LoadConstString      r1, s5 "caught:"
   0126  Call3                r0, r3, r4, r1, r2
-L1:
+L2:
   012c  Ret                  r0
 
-function #1 "get celsius"  params=1 frame=1 env=0 flags=overflowed,ctor  @0x00000362 size=9
+function #1 "get celsius"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x00000362 size=9
   0000  LoadThisNS           r0
   0002  GetByIdShort         r0, r0, #c0, s19 "_celsius"
   0007  Ret                  r0
 
-function #2 "set celsius"  params=2 frame=3 env=0 flags=overflowed,ctor  @0x0000036b size=15
+function #2 "set celsius"  params=2 frame=3 env=0 flags=dbg,overflowed  @0x0000036b size=15
   0000  LoadParam            r2, 1
   0003  LoadThisNS           r1
   0005  PutByIdLoose         r1, r2, #c0, s19 "_celsius"
   000b  LoadConstUndefined   r0
   000d  Ret                  r0
 
-function #3 "get fahrenheit"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x0000037a size=30
+function #3 "get fahrenheit"  params=1 frame=4 env=0 flags=dbg,overflowed  @0x0000037a size=30
   0000  LoadThisNS           r3
   0002  GetByIdShort         r3, r3, #c0, s19 "_celsius"
   0007  LoadConstUInt8       r0, 9
@@ -94,7 +96,7 @@ function #3 "get fahrenheit"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x0
   0018  AddN                 r0, r0, r2
   001c  Ret                  r0
 
-function #4 "set fahrenheit"  params=2 frame=5 env=0 flags=overflowed,ctor  @0x00000398 size=36
+function #4 "set fahrenheit"  params=2 frame=5 env=0 flags=dbg,overflowed  @0x00000398 size=36
   0000  LoadConstUInt8       r0, 32
   0003  LoadParam            r4, 1
   0006  Sub                  r1, r4, r0
@@ -107,7 +109,7 @@ function #4 "set fahrenheit"  params=2 frame=5 env=0 flags=overflowed,ctor  @0x0
   0020  LoadConstUndefined   r3
   0022  Ret                  r3
 
-function #5 "Rectangle"  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000003bc size=30
+function #5 "Rectangle"  params=3 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x000003bc size=30
   0000  GetNewTarget         r0
   0002  GetByIdShort         r0, r0, #c0, s23 "prototype"
   0007  NewObjectWithParent  r0, r0
@@ -117,19 +119,19 @@ function #5 "Rectangle"  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000003
   0016  PutByIdStrict        r0, r1, #c1, s20 "_h"
   001c  Ret                  r0
 
-function #6 "area"  params=1 frame=2 env=0 flags=overflowed,ctor  @0x000003da size=19
+function #6 "area"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x000003da size=19
   0000  LoadParam            r0, 0
   0003  GetByIdShort         r1, r0, #c0, s21 "_w"
   0008  GetByIdShort         r0, r0, #c1, s20 "_h"
   000d  Mul                  r0, r1, r0
   0011  Ret                  r0
 
-function #7 "width"  params=1 frame=1 env=0 flags=overflowed,ctor  @0x000003ed size=10
+function #7 "width"  params=1 frame=1 env=0 flags=strict,dbg,overflowed,nc  @0x000003ed size=10
   0000  LoadParam            r0, 0
   0003  GetByIdShort         r0, r0, #c0, s21 "_w"
   0008  Ret                  r0
 
-function #8 "width"  params=2 frame=14 env=0 flags=overflowed,ctor  @0x000003f7 size=51
+function #8 "width"  params=2 frame=14 env=0 flags=strict,dbg,overflowed,nc  @0x000003f7 size=51
   0000  LoadParam            r3, 1
   0003  LoadConstZero        r0
   0005  JLessEqual           L1, r3, r0

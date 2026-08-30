@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 32-class-basic/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=19 globalCodeIndex=0
-function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x000001c4 size=221
+function #0 "global"  params=1 frame=19 env=0 flags=dbg,overflowed  @0x000001c4 size=221
   0000  LoadConstUndefined   r1
   0002  CreateBaseClass      r3, r2, r1, 1
   0008  Mov                  r5, r2
@@ -47,7 +47,7 @@ function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x000001c4
   00d5  Call3                r2, r4, r1, r2, r3
   00db  Ret                  r2
 
-function #1 "Point"  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000002a1 size=38
+function #1 "Point"  params=3 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x000002a1 size=38
   0000  GetNewTarget         r0
   0002  GetByIdShort         r0, r0, #c0, s15 "prototype"
   0007  NewObjectWithBufferAndParent r0, r0, sh0(numProps=3), lit@0x0000
@@ -57,7 +57,7 @@ function #1 "Point"  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000002a1 s
   001e  PutByIdStrict        r0, r1, #c1, s18 "y"
   0024  Ret                  r0
 
-function #2 "distanceFromOrigin"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x000002c7 size=55
+function #2 "distanceFromOrigin"  params=1 frame=14 env=0 flags=strict,dbg,overflowed,nc  @0x000002c7 size=55
   0000  LoadParam            r0, 0
   0003  GetGlobalObject      r1
   0005  TryGetById           r2, r1, #c0, s12 "Math"
@@ -72,7 +72,7 @@ function #2 "distanceFromOrigin"  params=1 frame=14 env=0 flags=overflowed,ctor 
   0030  Call2                r0, r1, r2, r0
   0035  Ret                  r0
 
-function #3 "toString"  params=1 frame=3 env=0 flags=overflowed,ctor  @0x000002fe size=52
+function #3 "toString"  params=1 frame=3 env=0 flags=strict,dbg,overflowed,nc  @0x000002fe size=52
   0000  LoadParam            r0, 0
   0003  GetByIdShort         r2, r0, #c0, s10 "label"
   0008  LoadConstString      r1, s0 "("
@@ -87,7 +87,7 @@ function #3 "toString"  params=1 frame=3 env=0 flags=overflowed,ctor  @0x000002f
   002e  AddS                 r0, r1, r0
   0032  Ret                  r0
 
-function #4 "translate"  params=3 frame=3 env=0 flags=overflowed,ctor  @0x00000332 size=41
+function #4 "translate"  params=3 frame=3 env=0 flags=strict,dbg,overflowed,nc  @0x00000332 size=41
   0000  LoadParam            r0, 0
   0003  GetByIdShort         r2, r0, #c0, s17 "x"
   0008  LoadParam            r1, 1

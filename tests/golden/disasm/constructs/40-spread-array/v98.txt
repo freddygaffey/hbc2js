@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 40-spread-array/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=13 globalCodeIndex=0
-function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x00000160 size=335
+function #0 "global"  params=1 frame=23 env=0 flags=dbg,overflowed  @0x00000160 size=335
   0000  DeclareGlobalVar     s11 "sum3"
   0005  DeclareGlobalVar     s12 "variadicSum"
   000a  GetGlobalObject      r4
@@ -84,7 +84,7 @@ function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x00000160
   0149  Call                 r4, r8, 5
   014d  Ret                  r4
 
-function #1 "sum3"  params=4 frame=2 env=0 flags=overflowed,ctor  @0x000002af size=19
+function #1 "sum3"  params=4 frame=2 env=0 flags=dbg,overflowed  @0x000002af size=19
   0000  LoadParam            r1, 2
   0003  LoadParam            r0, 1
   0006  Add                  r1, r0, r1
@@ -92,7 +92,7 @@ function #1 "sum3"  params=4 frame=2 env=0 flags=overflowed,ctor  @0x000002af si
   000d  Add                  r0, r1, r0
   0011  Ret                  r0
 
-function #2 "variadicSum"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x000002c2 size=28
+function #2 "variadicSum"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x000002c2 size=28
   0000  LoadConstZero        r0
   0002  LoadConstZero        r6
   0004  CallBuiltin          r4, b47 "copyRestArgs", 2
@@ -102,7 +102,7 @@ function #2 "variadicSum"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x000
   0014  Call3                r2, r3, r4, r2, r0
   001a  Ret                  r2
 
-function #3 ""  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000002de size=12
+function #3 ""  params=3 frame=2 env=0 flags=dbg,overflowed  @0x000002de size=12
   0000  LoadParam            r1, 2
   0003  LoadParam            r0, 1
   0006  Add                  r0, r0, r1

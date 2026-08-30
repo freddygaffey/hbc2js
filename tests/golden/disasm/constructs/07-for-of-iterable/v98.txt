@@ -1,6 +1,9 @@
 ; hbc2js disassembly of 07-for-of-iterable/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=22 globalCodeIndex=0
-function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x000001f0 size=423
+function #0 "global"  params=1 frame=23 env=0 flags=exc,dbg,overflowed  @0x000001f0 size=423
+  .try T1..T2 -> L5 ; handler 0
+  .try T3..T4 -> L8 ; handler 1
+  .try T5..T6 -> L11 ; handler 2
   0000  GetGlobalObject      r0
   0002  TryGetById           r2, r0, #c0, s11 "Map"
   0008  NewArray             r1, 3
@@ -25,7 +28,7 @@ L1:
   0053  Mov                  r8, r5
   0056  IteratorNext         r9, r4, r8
   005a  Mov                  r8, r4
-  005d  JStrictEqual         L5, r8, r3
+  005d  JStrictEqual         L6, r8, r3
   0061  Mov                  r11, r9
   0064  IteratorBegin        r8, r11
   0067  Mov                  r9, r11
@@ -59,10 +62,11 @@ L4:
   00b6  Add                  r8, r10, r8
   00ba  Call2                r8, r9, r2, r8
   00bf  Jmp                  L1
+L5:
   00c1  Catch                r1
   00c3  IteratorClose        r4, 1
   00c6  Throw                r1
-L5:
+L6:
   00c8  TryGetById           r5, r0, #c3, s12 "print"
   00ce  GetByIdShort         r1, r2, #c4, s19 "join"
   00d3  LoadConstString      r4, s1 ","
@@ -77,18 +81,19 @@ L5:
   00ff  NewArray             r2, 0
   0103  SelectObject         r1, r7, r6
   0107  IteratorBegin        r5, r1
-L6:
+L7:
   010a  Mov                  r6, r1
   010d  IteratorNext         r7, r5, r6
   0111  Mov                  r6, r5
-  0114  JStrictEqual         L7, r6, r3
+  0114  JStrictEqual         L9, r6, r3
   0118  GetByIdShort         r6, r2, #c2, s20 "push"
   011d  Call2                r6, r6, r2, r7
-  0122  Jmp                  L6
+  0122  Jmp                  L7
+L8:
   0124  Catch                r1
   0126  IteratorClose        r5, 1
   0129  Throw                r1
-L7:
+L9:
   012b  TryGetById           r5, r0, #c3, s12 "print"
   0131  GetByIdShort         r1, r2, #c4, s19 "join"
   0136  Call2                r2, r1, r2, r4
@@ -102,18 +107,19 @@ L7:
   0160  NewArray             r1, 0
   0164  Mov                  r2, r6
   0167  IteratorBegin        r5, r2
-L8:
+L10:
   016a  Mov                  r6, r2
   016d  IteratorNext         r7, r5, r6
   0171  Mov                  r6, r5
-  0174  JStrictEqual         L9, r6, r3
+  0174  JStrictEqual         L12, r6, r3
   0178  GetByIdShort         r6, r1, #c2, s20 "push"
   017d  Call2                r6, r6, r1, r7
-  0182  Jmp                  L8
+  0182  Jmp                  L10
+L11:
   0184  Catch                r2
   0186  IteratorClose        r5, 1
   0189  Throw                r2
-L9:
+L12:
   018b  TryGetById           r2, r0, #c3, s12 "print"
   0191  GetByIdShort         r0, r1, #c4, s19 "join"
   0196  Call2                r1, r0, r1, r4
@@ -121,7 +127,7 @@ L9:
   019f  Call3                r0, r2, r3, r0, r1
   01a5  Ret                  r0
 
-function #1 ""  params=1 frame=3 env=0 flags=overflowed,ctor  @0x00000397 size=40
+function #1 ""  params=1 frame=3 env=0 flags=dbg,overflowed,nc  @0x00000397 size=40
   0000  LoadThisNS           r0
   0002  CreateFunctionEnvironment r1, 2
   0005  GetByIdShort         r2, r0, #c0, s10 "from"
@@ -133,7 +139,7 @@ function #1 ""  params=1 frame=3 env=0 flags=overflowed,ctor  @0x00000397 size=4
   0022  PutOwnBySlotIdx      r0, r1, 0
   0026  Ret                  r0
 
-function #2 "next"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x000003bf size=49
+function #2 "next"  params=1 frame=4 env=0 flags=dbg,overflowed,nc  @0x000003bf size=49
   0000  GetParentEnvironment r3, 0
   0003  LoadFromEnvironment  r1, r3, 0
   0007  LoadFromEnvironment  r0, r3, 1

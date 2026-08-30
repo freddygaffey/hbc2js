@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 19-var-hoisting/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=13 globalCodeIndex=0
-function #0 "global"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000194 size=112
+function #0 "global"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x00000194 size=112
   0000  DeclareGlobalVar     s12 "demo"
   0005  DeclareGlobalVar     s11 "hoistedFn"
   000a  GetGlobalObject      r1
@@ -26,7 +26,7 @@ function #0 "global"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000194
   0068  Call3                r1, r3, r0, r1, r2
   006e  Ret                  r1
 
-function #1 "demo"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000204 size=92
+function #1 "demo"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x00000204 size=92
   0000  GetGlobalObject      r2
   0002  TryGetById           r4, r2, #c0, s10 "print"
   0008  LoadConstUndefined   r1

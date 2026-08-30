@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 44-tagged-templates/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=29 globalCodeIndex=0
-function #0 "global"  params=1 frame=27 env=0 flags=overflowed,ctor  @0x0000021c size=199
+function #0 "global"  params=1 frame=27 env=0 flags=dbg,overflowed  @0x0000021c size=199
   0000  DeclareGlobalVar     s23 "inspect"
   0005  DeclareGlobalVar     s20 "html"
   000a  DeclareGlobalVar     s25 "firstArgOnly"
@@ -49,7 +49,7 @@ function #0 "global"  params=1 frame=27 env=0 flags=overflowed,ctor  @0x0000021c
   00bf  Call3                r4, r6, r2, r4, r5
   00c5  Ret                  r4
 
-function #1 "inspect"  params=2 frame=25 env=0 flags=overflowed,ctor  @0x000002e3 size=227
+function #1 "inspect"  params=2 frame=25 env=0 flags=dbg,overflowed  @0x000002e3 size=227
   0000  LoadParam            r12, 1
   0003  LoadConstUInt8       r2, 1
   0006  Mov                  r16, r2
@@ -106,7 +106,7 @@ L3:
   00dc  Call2                r4, r5, r6, r4
   00e1  Ret                  r4
 
-function #2 "html"  params=2 frame=15 env=0 flags=overflowed,ctor  @0x000003c6 size=39
+function #2 "html"  params=2 frame=15 env=0 flags=dbg,overflowed  @0x000003c6 size=39
   0000  CreateFunctionEnvironment r1, 1
   0003  LoadParam            r4, 1
   0006  LoadConstUInt8       r6, 1
@@ -118,12 +118,12 @@ function #2 "html"  params=2 frame=15 env=0 flags=overflowed,ctor  @0x000003c6 s
   001f  Call3                r1, r3, r4, r1, r2
   0025  Ret                  r1
 
-function #3 "firstArgOnly"  params=2 frame=1 env=0 flags=overflowed,ctor  @0x000003ed size=10
+function #3 "firstArgOnly"  params=2 frame=1 env=0 flags=dbg,overflowed  @0x000003ed size=10
   0000  LoadParam            r0, 1
   0003  GetByIdShort         r0, r0, #c0, s19 "length"
   0008  Ret                  r0
 
-function #4 ""  params=4 frame=15 env=0 flags=overflowed,ctor  @0x000003f7 size=61
+function #4 ""  params=4 frame=15 env=0 flags=dbg,overflowed  @0x000003f7 size=61
   0000  LoadParam            r5, 3
   0003  LoadParam            r2, 2
   0006  LoadParam            r1, 1

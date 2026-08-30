@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 34-class-static-members/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=12 globalCodeIndex=0
-function #0 "global"  params=1 frame=17 env=0 flags=overflowed,ctor  @0x00000144 size=190
+function #0 "global"  params=1 frame=17 env=0 flags=dbg,overflowed  @0x00000144 size=190
   0000  CreateFunctionEnvironment r3, 1
   0003  LoadConstUndefined   r1
   0005  CreateBaseClass      r2, r2, r1, 1
@@ -43,13 +43,13 @@ function #0 "global"  params=1 frame=17 env=0 flags=overflowed,ctor  @0x00000144
   00b7  Call2                r2, r3, r1, r2
   00bc  Ret                  r2
 
-function #1 "IdGenerator"  params=1 frame=1 env=0 flags=overflowed,ctor  @0x00000202 size=12
+function #1 "IdGenerator"  params=1 frame=1 env=0 flags=strict,dbg,overflowed,ctor  @0x00000202 size=12
   0000  GetNewTarget         r0
   0002  GetByIdShort         r0, r0, #c0, s11 "prototype"
   0007  NewObjectWithParent  r0, r0
   000a  Ret                  r0
 
-function #2 "generate"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x0000020e size=43
+function #2 "generate"  params=1 frame=4 env=0 flags=strict,dbg,overflowed,nc  @0x0000020e size=43
   0000  GetParentEnvironment r0, 0
   0003  LoadFromEnvironment  r3, r0, 0
   0007  GetByIdShort         r1, r3, #c0, s8 "prefix"
@@ -62,7 +62,7 @@ function #2 "generate"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x0000020
   0025  Add                  r0, r1, r0
   0029  Ret                  r0
 
-function #3 "reset"  params=1 frame=3 env=0 flags=overflowed,ctor  @0x00000239 size=20
+function #3 "reset"  params=1 frame=3 env=0 flags=strict,dbg,overflowed,nc  @0x00000239 size=20
   0000  GetParentEnvironment r2, 0
   0003  LoadFromEnvironment  r2, r2, 0
   0007  LoadConstUInt8       r0, 1

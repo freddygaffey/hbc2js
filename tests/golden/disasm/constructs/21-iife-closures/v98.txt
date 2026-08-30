@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 21-iife-closures/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=6 strings=13 globalCodeIndex=0
-function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x00000190 size=277
+function #0 "global"  params=1 frame=19 env=0 flags=dbg,overflowed  @0x00000190 size=277
   0000  CreateFunctionEnvironment r5, 1
   0003  CreateFunctionEnvironment r3, 1
   0006  LoadConstZero        r0
@@ -63,7 +63,7 @@ function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x00000190
   010e  Call2                r3, r4, r2, r3
   0113  Ret                  r3
 
-function #1 "selfRef"  params=2 frame=14 env=0 flags=overflowed,ctor  @0x000002a5 size=40
+function #1 "selfRef"  params=2 frame=14 env=0 flags=dbg,overflowed  @0x000002a5 size=40
   0000  LoadParam            r3, 1
   0003  LoadConstUInt8       r0, 1
   0006  LessEq               r2, r3, r0

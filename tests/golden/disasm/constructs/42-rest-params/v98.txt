@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 42-rest-params/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=18 globalCodeIndex=0
-function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x000001c4 size=242
+function #0 "global"  params=1 frame=23 env=0 flags=dbg,overflowed  @0x000001c4 size=242
   0000  DeclareGlobalVar     s12 "combine"
   0005  DeclareGlobalVar     s16 "reflectArguments"
   000a  DeclareGlobalVar     s13 "mutateParamAffectsArguments"
@@ -56,7 +56,7 @@ function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x000001c4
   00eb  Call2                r6, r7, r5, r6
   00f0  Ret                  r6
 
-function #1 "combine"  params=2 frame=16 env=0 flags=overflowed,ctor  @0x000002b6 size=63
+function #1 "combine"  params=2 frame=16 env=0 flags=dbg,overflowed  @0x000002b6 size=63
   0000  LoadConstUndefined   r2
   0002  LoadConstUInt8       r7, 1
   0005  CallBuiltin          r6, b47 "copyRestArgs", 2
@@ -75,7 +75,7 @@ function #1 "combine"  params=2 frame=16 env=0 flags=overflowed,ctor  @0x000002b
   0039  Add                  r2, r2, r3
   003d  Ret                  r2
 
-function #2 "reflectArguments"  params=3 frame=17 env=0 flags=overflowed,ctor  @0x000002f5 size=68
+function #2 "reflectArguments"  params=3 frame=17 env=0 flags=dbg,overflowed  @0x000002f5 size=68
   0000  LoadConstUndefined   r5
   0002  NewArray             r6, 0
   0006  Mov                  r4, r5
@@ -98,13 +98,13 @@ L2:
   003d  Call2                r4, r5, r6, r4
   0042  Ret                  r4
 
-function #3 "mutateParamAffectsArguments"  params=2 frame=3 env=0 flags=overflowed,ctor  @0x00000339 size=10
+function #3 "mutateParamAffectsArguments"  params=2 frame=3 env=0 flags=dbg,overflowed  @0x00000339 size=10
   0000  LoadConstUndefined   r2
   0002  LoadConstZero        r0
   0004  GetArgumentsPropByValLoose r2, r0, r2
   0008  Ret                  r2
 
-function #4 "restOnly"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x00000343 size=39
+function #4 "restOnly"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x00000343 size=39
   0000  LoadConstZero        r5
   0002  CallBuiltin          r4, b47 "copyRestArgs", 2
   0006  GetByIdShort         r2, r4, #c0, s11 "length"

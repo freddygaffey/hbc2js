@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 08-labeled-break-continue/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=10 globalCodeIndex=0
-function #0 "global"  params=1 frame=27 env=0 flags=overflowed,ctor  @0x00000108 size=202
+function #0 "global"  params=1 frame=27 env=0 flags=dbg,overflowed  @0x00000108 size=202
   0000  NewArray             r12, 0
   0004  LoadConstUInt8       r3, 1
   0007  LoadConstUInt8       r7, 5

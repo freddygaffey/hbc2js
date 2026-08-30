@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 41-spread-object/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=18 globalCodeIndex=0
-function #0 "global"  params=1 frame=22 env=0 flags=overflowed,ctor  @0x000001c4 size=305
+function #0 "global"  params=1 frame=22 env=0 flags=dbg,overflowed  @0x000001c4 size=305
   0000  NewObjectWithBuffer  r4, sh0(numProps=3), lit@0x0000
   0006  NewObjectWithBuffer  r5, sh1(numProps=2), lit@0x0006
   000c  NewObject            r9

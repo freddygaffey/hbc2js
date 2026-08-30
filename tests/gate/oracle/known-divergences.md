@@ -179,21 +179,45 @@ handle):
    match, instead of conditionally omitting it.
 9. **`hbc-disassembler` (hermes-dec) has the same v98/`hbc98-late` large-header
    flags bug this project's own parser had (see item 4 above, now fixed) —
-   its `FUNC` line's `exc`/`dbg` fields are `0`/`0` for essentially every
-   overflowed v98 function, even ones with a genuine exception handler or
-   debug info.** Evidence: `constructs/01-if-else-chain/v98.hbc` `global`
-   (real `hermesc -dump-bytecode`: has both) — ours: `FUNC 0 124 1 20 0 1 1
-   332`; hermes-dec: `FUNC 0 124 1 20 0 0 0 332` (`strict exc dbg` = `0 0 0`).
+   its `FUNC` line's `strict`/`exc`/`dbg` fields are read from the wrong byte
+   for essentially every overflowed v98 function.** Evidence:
+   `constructs/01-if-else-chain/v98.hbc` `global` (real `hermesc
+   -dump-bytecode`: has both a handler and debug info) — ours: `FUNC 0 124 1
+   20 0 1 1 332`; hermes-dec: `FUNC 0 124 1 20 0 0 0 332` (`exc dbg` wrong).
    `constructs/02-while-loop/v98.hbc`'s function 0 (debug info only, no
    handler) shows the same one-field pattern (`dbg`: ours `1`, hermes-dec
-   `0`). Before this project's v98 flags bug was fixed, our decoder's
-   flags were *also* wrong in a way that happened to agree with hermes-dec's
-   wrongness, so `tests/gate/oracle/disasm/hermes-dec.test.ts` passed by
-   coincidence; fixing our decoder (item 4) correctly diverges from
-   hermes-dec here rather than reintroducing our own bug to match it. Not
-   fixed in the normaliser — this is hermes-dec's own decode error, not a
-   formatting difference, and 7.B's own instructions (top of this section)
-   say a genuine tool disagreement is not something to widen away. Affects
-   every gate-tier v98 construct fixture whose overflowed functions have
-   `hasExceptionHandler` and/or `hasDebugInfo` true (the common case — see
-   item 4's "almost every real v98 function is overflowed").
+   `0`). **`strict` is affected too, not just `exc`/`dbg`** (all three bits
+   live in the one misread byte): `constructs/32-class-basic/v98.hbc`
+   function `Point` — a class constructor, necessarily strict — decodes
+   `strict=1` on our side; hermes-dec prints `strict=0`. A second, distinct
+   consequence of the same wrong byte: when hermes-dec's own (wrong) `exc`
+   bit reads `0` for a function that genuinely has a handler, it doesn't
+   print an `[Exception handlers: ...]` line for that function *at all*
+   (verified: `hbc-disassembler` on `01-if-else-chain/v98.hbc` prints "exc
+   handler=0" for `global` and no handler block, while the real bytecode has
+   one covering bytes 60..85) — so naively comparing line-by-line
+   desynchronises every line after the first affected function, which is why
+   this looked like ~52/53 fixtures failing outright rather than one
+   understood field-level divergence. Before this project's v98 flags bug was
+   fixed, our decoder's flags were *also* wrong in a way that happened to
+   agree with hermes-dec's wrongness, so this test passed by coincidence;
+   fixing our decoder (item 4) correctly diverges from hermes-dec here rather
+   than reintroducing our own bug to match it.
+
+   **Now enforced, narrowly** (`tests/gate/oracle/disasm/hermes-dec.test.ts`'s
+   `applyV98Allowlist`/`maskV98FuncExcDbg`, v98 only): split both sides into
+   one block per function; when hermes-dec's own `FUNC` line for a function
+   claims `exc=0`, drop our `EH ...` lines for that same function before
+   comparing (the direct, understood consequence above — not a blanket
+   "ignore all EH lines" rule); then mask only the `strict`/`exc`/`dbg` fields
+   (indices 5/6/7) of every `FUNC` line on both sides. Every other field in
+   that line, every `EH` line that survives the drop, and every instruction
+   line in the file are still compared verbatim — a real future regression in
+   *our* v98 `strict`/`exc`/`dbg`/handler decoding still fails everywhere else
+   in the same function's output. Affects every gate-tier v98 construct
+   fixture whose overflowed functions have `hasExceptionHandler` and/or
+   `hasDebugInfo` and/or `strictMode` true (the common case — see item 4's
+   "almost every real v98 function is overflowed"). This is spec 02 §7.B's
+   allowlist, 5th entry (the spec text still says "at most the four entries
+   in §7.B" — that acceptance-criteria wording needs the architect's update,
+   not made here since it's outside this pass's authorized doc-edit scope).

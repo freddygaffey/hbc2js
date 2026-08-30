@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 43-template-literals/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=26 globalCodeIndex=0
-function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x000001c8 size=258
+function #0 "global"  params=1 frame=19 env=0 flags=dbg,overflowed  @0x000001c8 size=258
   0000  DeclareGlobalVar     s23 "computeExpr"
   0005  GetGlobalObject      r3
   0007  LoadConstUndefined   r2
@@ -55,7 +55,7 @@ function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x000001c8
   00fb  Call2                r3, r4, r2, r3
   0100  Ret                  r3
 
-function #1 "computeExpr"  params=3 frame=29 env=0 flags=overflowed,ctor  @0x000002ca size=71
+function #1 "computeExpr"  params=3 frame=29 env=0 flags=dbg,overflowed  @0x000002ca size=71
   0000  LoadParam            r9, 1
   0003  LoadParam            r8, 2
   0006  Add                  r16, r9, r8
@@ -77,7 +77,7 @@ function #1 "computeExpr"  params=3 frame=29 env=0 flags=overflowed,ctor  @0x000
   0041  Call                 r0, r5, 12
   0045  Ret                  r0
 
-function #2 ""  params=3 frame=16 env=0 flags=overflowed,ctor  @0x00000311 size=36
+function #2 ""  params=3 frame=16 env=0 flags=dbg,overflowed  @0x00000311 size=36
   0000  GetGlobalObject      r0
   0002  TryGetById           r0, r0, #c0, s22 "HermesInternal"
   0008  GetByIdShort         r4, r0, #c1, s25 "concat"

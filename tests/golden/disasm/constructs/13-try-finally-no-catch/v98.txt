@@ -1,6 +1,7 @@
 ; hbc2js disassembly of 13-try-finally-no-catch/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=14 globalCodeIndex=0
-function #0 "global"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000168 size=111
+function #0 "global"  params=1 frame=15 env=0 flags=exc,dbg,overflowed  @0x00000168 size=111
+  .try T1..T2 -> L1 ; handler 0
   0000  DeclareGlobalVar     s10 "risky"
   0005  DeclareGlobalVar     s8 "cleanup"
   000a  GetGlobalObject      r0
@@ -11,13 +12,14 @@ function #0 "global"  params=1 frame=15 env=0 flags=overflowed,ctor  @0x00000168
   001e  PutByIdLoose         r0, r1, #c1, s8 "cleanup"
   0024  GetByIdShort         r1, r0, #c0, s10 "risky"
   0029  Call1                r1, r1, r2
-  002d  Jmp                  L1
+  002d  Jmp                  L2
+L1:
   002f  Catch                r1
   0031  TryGetById           r4, r0, #c1, s12 "print"
   0037  GetByIdShort         r3, r1, #c2, s7 "message"
   003c  LoadConstString      r1, s2 "caught outside:"
   0040  Call3                r1, r4, r2, r1, r3
-L1:
+L2:
   0046  TryGetById           r1, r0, #c1, s12 "print"
   004c  GetByIdShort         r3, r0, #c3, s8 "cleanup"
   0051  NewArray             r0, 0
@@ -28,7 +30,8 @@ L1:
   0068  Call2                r0, r1, r2, r0
   006d  Ret                  r0
 
-function #1 "risky"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000001d7 size=69
+function #1 "risky"  params=1 frame=13 env=0 flags=exc,dbg,overflowed  @0x000001d7 size=69
+  .try T1..T2 -> L1 ; handler 0
   0000  GetGlobalObject      r0
   0002  TryGetById           r3, r0, #c0, s12 "print"
   0008  LoadConstString      r2, s3 "entering try"
@@ -41,6 +44,7 @@ function #1 "risky"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000001d7 
   0024  Construct            r0, r2, 2
   0028  SelectObject         r0, r1, r0
   002c  Throw                r0
+L1:
   002e  Catch                r0
   0030  GetGlobalObject      r1
   0032  TryGetById           r3, r1, #c0, s12 "print"
@@ -49,7 +53,8 @@ function #1 "risky"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000001d7 
   003e  Call2                r1, r3, r1, r2
   0043  Throw                r0
 
-function #2 "cleanup"  params=2 frame=13 env=0 flags=overflowed,ctor  @0x0000021c size=51
+function #2 "cleanup"  params=2 frame=13 env=0 flags=exc,dbg,overflowed  @0x0000021c size=51
+  .try T1..T2 -> L1 ; handler 0
   0000  LoadParam            r3, 1
   0003  GetByIdShort         r1, r3, #c0, s13 "push"
   0008  LoadConstString      r0, s1 "body"
@@ -58,6 +63,7 @@ function #2 "cleanup"  params=2 frame=13 env=0 flags=overflowed,ctor  @0x0000021
   0016  LoadConstString      r0, s8 "cleanup"
   001a  Call2                r0, r1, r3, r0
   001f  Ret                  r3
+L1:
   0021  Catch                r0
   0023  GetByIdShort         r2, r3, #c0, s13 "push"
   0028  LoadConstString      r1, s8 "cleanup"

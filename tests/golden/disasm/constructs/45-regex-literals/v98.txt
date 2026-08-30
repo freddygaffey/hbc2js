@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 45-regex-literals/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=2 strings=33 globalCodeIndex=0
-function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x0000033c size=407
+function #0 "global"  params=1 frame=23 env=0 flags=dbg,overflowed  @0x0000033c size=407
   0000  CreateRegExp         r7, s3 "(?<year>\\d{4})-(?<month>\\d{2})…", s0 "", re0
   000e  NewObjectWithBuffer  r13, sh0(numProps=3), lit@0x0000
   0014  Mov                  r14, r7
@@ -80,7 +80,7 @@ L2:
   0190  Call2                r2, r3, r0, r2
   0195  Ret                  r2
 
-function #1 ""  params=2 frame=2 env=0 flags=overflowed,ctor  @0x000004d3 size=21
+function #1 ""  params=2 frame=2 env=0 flags=dbg,overflowed  @0x000004d3 size=21
   0000  LoadConstString      r1, s10 "["
   0004  LoadParam            r0, 1
   0007  Add                  r1, r1, r0

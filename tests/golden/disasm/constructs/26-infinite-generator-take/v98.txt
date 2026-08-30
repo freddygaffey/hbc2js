@@ -1,6 +1,7 @@
 ; hbc2js disassembly of 26-infinite-generator-take/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=6 strings=15 globalCodeIndex=0
-function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x000001e8 size=211
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg,overflowed  @0x000001e8 size=211
+  .try T1..T2 -> L3 ; handler 0
   0000  CreateFunctionEnvironment r1, 0
   0003  DeclareGlobalVar     s7 "naturals"
   0008  DeclareGlobalVar     s12 "take"
@@ -35,7 +36,7 @@ L1:
   0084  Mov                  r8, r6
   0087  IteratorNext         r8, r5, r8
   008b  Mov                  r9, r5
-  008e  JStrictEqual         L3, r9, r3
+  008e  JStrictEqual         L4, r9, r3
   0092  Mov                  r7, r8
   0095  JGreater             L2, r8, r2
   0099  GetByIdShort         r9, r1, #c5, s13 "push"
@@ -45,11 +46,12 @@ L1:
 L2:
   00a8  Mov                  r2, r5
   00ab  IteratorClose        r2, 0
-  00ae  Jmp                  L3
+  00ae  Jmp                  L4
+L3:
   00b0  Catch                r2
   00b2  IteratorClose        r5, 1
   00b5  Throw                r2
-L3:
+L4:
   00b7  TryGetById           r2, r0, #c0, s11 "print"
   00bd  GetByIdShort         r0, r1, #c3, s10 "join"
   00c2  Call2                r1, r0, r1, r4
@@ -65,7 +67,8 @@ function #1 "naturals"  params=1 frame=2 env=0 flags=nc  @0x000002bb size=20
   000d  CreateGenerator      r1, r1, f4 "naturals"
   0012  Ret                  r1
 
-function #2 "take"  params=3 frame=17 env=0 flags=overflowed,ctor  @0x000002cf size=75
+function #2 "take"  params=3 frame=17 env=0 flags=exc,dbg,overflowed  @0x000002cf size=75
+  .try T1..T2 -> L3 ; handler 0
   0000  LoadParam            r4, 2
   0003  NewArray             r0, 0
   0007  LoadConstUndefined   r3
@@ -76,7 +79,7 @@ L1:
   0011  Mov                  r6, r1
   0014  IteratorNext         r6, r2, r6
   0018  Mov                  r7, r2
-  001b  JStrictEqual         L3, r7, r3
+  001b  JStrictEqual         L4, r7, r3
   001f  Mov                  r5, r6
   0022  GetByIdShort         r6, r0, #c0, s8 "length"
   0027  JGreaterEqual        L2, r6, r4
@@ -87,11 +90,12 @@ L1:
 L2:
   003a  Mov                  r1, r2
   003d  IteratorClose        r1, 0
-  0040  Jmp                  L3
+  0040  Jmp                  L4
+L3:
   0042  Catch                r1
   0044  IteratorClose        r2, 1
   0047  Throw                r1
-L3:
+L4:
   0049  Ret                  r0
 
 function #3 "fibonacci"  params=1 frame=2 env=0 flags=nc  @0x0000031a size=20
@@ -102,17 +106,21 @@ function #3 "fibonacci"  params=1 frame=2 env=0 flags=nc  @0x0000031a size=20
   000d  CreateGenerator      r1, r1, f5 "fibonacci"
   0012  Ret                  r1
 
-function #4 "naturals"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x0000032e size=252
+function #4 "naturals"  params=1 frame=19 env=0 flags=exc,dbg,overflowed  @0x0000032e size=252
+  .try T1..T2 -> L6 ; handler 0
+  .try T3..T4 -> L6 ; handler 1
+  .try T5..T6 -> L6 ; handler 2
+  .try T7..T8 -> L6 ; handler 3
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r0, r1, 2
   0007  Mov                  r2, r0
   000a  LoadConstUInt8       r4, 2
-  000d  JStrictEqualLong     L9, r0, r4
+  000d  JStrictEqualLong     L10, r0, r4
   0014  LoadParam            r0, 2
   0017  LoadParam            r3, 1
   001a  Mov                  r5, r2
   001d  LoadConstUInt8       r6, 3
-  0020  JStrictEqualLong     L6, r5, r6
+  0020  JStrictEqualLong     L7, r5, r6
   0027  Mov                  r2, r4
   002a  StoreNPToEnvironment r1, 2, r4
   002e  LoadFromEnvironment  r7, r1, 1
@@ -159,40 +167,45 @@ L5:
   00b5  Mov                  r2, r6
   00b8  StoreNPToEnvironment r1, 2, r6
   00bc  Throw                r0
+L6:
   00be  Catch                r5
   00c0  Mov                  r2, r6
   00c3  StoreNPToEnvironment r1, 2, r6
   00c7  Throw                r5
-L6:
+L7:
   00c9  LoadConstUInt8       r5, 1
-  00cc  JStrictEqual         L8, r3, r5
-  00d0  JStrictEqual         L7, r3, r4
+  00cc  JStrictEqual         L9, r3, r5
+  00d0  JStrictEqual         L8, r3, r4
   00d4  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
   00da  Ret                  r3
-L7:
+L8:
   00dc  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
   00e2  PutOwnBySlotIdx      r3, r0, 0
   00e6  Ret                  r3
-L8:
-  00e8  Throw                r0
 L9:
+  00e8  Throw                r0
+L10:
   00ea  LoadConstUInt8       r0, 3
   00ed  Mov                  r2, r0
   00f0  StoreNPToEnvironment r1, 2, r0
   00f4  LoadConstString      r10, s2 "Generator functions may not be c…"
   00f8  CallBuiltin          r0, b44 "throwTypeError", 2
 
-function #5 "fibonacci"  params=1 frame=22 env=0 flags=overflowed,ctor  @0x0000042a size=533
+function #5 "fibonacci"  params=1 frame=22 env=0 flags=exc,dbg,overflowed  @0x0000042a size=533
+  .try T1..T2 -> L11 ; handler 0
+  .try T3..T4 -> L11 ; handler 1
+  .try T5..T6 -> L11 ; handler 2
+  .try T7..T8 -> L11 ; handler 3
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r0, r1, 6
   0007  Mov                  r2, r0
   000a  LoadConstUInt8       r4, 2
-  000d  JStrictEqualLong     L14, r0, r4
+  000d  JStrictEqualLong     L15, r0, r4
   0014  LoadParam            r0, 2
   0017  LoadParam            r3, 1
   001a  Mov                  r5, r2
   001d  LoadConstUInt8       r6, 3
-  0020  JStrictEqualLong     L11, r5, r6
+  0020  JStrictEqualLong     L12, r5, r6
   0027  Mov                  r2, r4
   002a  StoreNPToEnvironment r1, 6, r4
   002e  LoadFromEnvironment  r7, r1, 5
@@ -317,23 +330,24 @@ L10:
   01ce  Mov                  r2, r6
   01d1  StoreNPToEnvironment r1, 6, r6
   01d5  Throw                r0
+L11:
   01d7  Catch                r5
   01d9  Mov                  r2, r6
   01dc  StoreNPToEnvironment r1, 6, r6
   01e0  Throw                r5
-L11:
+L12:
   01e2  LoadConstUInt8       r5, 1
-  01e5  JStrictEqual         L13, r3, r5
-  01e9  JStrictEqual         L12, r3, r4
+  01e5  JStrictEqual         L14, r3, r5
+  01e9  JStrictEqual         L13, r3, r4
   01ed  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
   01f3  Ret                  r3
-L12:
+L13:
   01f5  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
   01fb  PutOwnBySlotIdx      r3, r0, 0
   01ff  Ret                  r3
-L13:
-  0201  Throw                r0
 L14:
+  0201  Throw                r0
+L15:
   0203  LoadConstUInt8       r0, 3
   0206  Mov                  r2, r0
   0209  StoreNPToEnvironment r1, 6, r0

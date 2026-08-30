@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 38-destructuring-object/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=2 strings=26 globalCodeIndex=0
-function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x000001fc size=240
+function #0 "global"  params=1 frame=19 env=0 flags=dbg,overflowed  @0x000001fc size=240
   0000  DeclareGlobalVar     s17 "greet"
   0005  GetGlobalObject      r2
   0007  LoadConstUndefined   r0
@@ -54,7 +54,7 @@ L2:
   00e8  Call3                r2, r4, r0, r2, r3
   00ee  Ret                  r2
 
-function #1 "greet"  params=1 frame=4 env=0 flags=overflowed,ctor  @0x000002ec size=51
+function #1 "greet"  params=1 frame=4 env=0 flags=dbg,overflowed  @0x000002ec size=51
   0000  LoadParam            r1, 1
   0003  LoadConstUndefined   r0
   0005  JStrictNotEqual      L1, r1, r0

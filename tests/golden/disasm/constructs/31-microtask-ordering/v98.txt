@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 31-microtask-ordering/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=10 strings=25 globalCodeIndex=0
-function #0 "global"  params=1 frame=16 env=0 flags=overflowed,ctor  @0x000002bc size=234
+function #0 "global"  params=1 frame=16 env=0 flags=dbg,overflowed  @0x000002bc size=234
   0000  CreateFunctionEnvironment r1, 1
   0003  DeclareGlobalVar     s16 "asyncFn"
   0008  GetGlobalObject      r2
@@ -52,7 +52,7 @@ function #0 "global"  params=1 frame=16 env=0 flags=overflowed,ctor  @0x000002bc
   00e3  Call2                r1, r2, r3, r1
   00e8  Ret                  r1
 
-function #1 "asyncFn"  params=1 frame=16 env=0 flags=overflowed,ctor  @0x000003a6 size=31
+function #1 "asyncFn"  params=1 frame=16 env=0 flags=dbg,overflowed,nc  @0x000003a6 size=31
   0000  LoadConstUndefined   r0
   0002  LoadConstUndefined   r1
   0004  ReifyArgumentsLoose  r1
@@ -64,7 +64,7 @@ function #1 "asyncFn"  params=1 frame=16 env=0 flags=overflowed,ctor  @0x000003a
   0016  Call4                r1, r3, r0, r2, r1, r4
   001d  Ret                  r1
 
-function #2 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000003c5 size=25
+function #2 ""  params=1 frame=13 env=0 flags=dbg,overflowed  @0x000003c5 size=25
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r3, r1, 0
   0007  GetByIdShort         r2, r3, #c0, s22 "push"
@@ -73,7 +73,7 @@ function #2 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000003c5 size=
   0015  LoadConstUndefined   r0
   0017  Ret                  r0
 
-function #3 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000003de size=25
+function #3 ""  params=1 frame=13 env=0 flags=dbg,overflowed  @0x000003de size=25
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r3, r1, 0
   0007  GetByIdShort         r2, r3, #c0, s22 "push"
@@ -82,7 +82,7 @@ function #3 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000003de size=
   0015  LoadConstUndefined   r0
   0017  Ret                  r0
 
-function #4 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000003f7 size=25
+function #4 ""  params=1 frame=13 env=0 flags=dbg,overflowed  @0x000003f7 size=25
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r3, r1, 0
   0007  GetByIdShort         r2, r3, #c0, s22 "push"
@@ -91,7 +91,7 @@ function #4 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x000003f7 size=
   0015  LoadConstUndefined   r0
   0017  Ret                  r0
 
-function #5 ""  params=1 frame=12 env=0 flags=overflowed,ctor  @0x00000410 size=40
+function #5 ""  params=1 frame=12 env=0 flags=dbg,overflowed  @0x00000410 size=40
   0000  GetParentEnvironment r0, 0
   0003  LoadFromEnvironment  r2, r0, 0
   0007  GetByIdShort         r1, r2, #c0, s22 "push"
@@ -103,7 +103,7 @@ function #5 ""  params=1 frame=12 env=0 flags=overflowed,ctor  @0x00000410 size=
   0022  Call1                r0, r0, r1
   0026  Ret                  r0
 
-function #6 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x00000438 size=25
+function #6 ""  params=1 frame=13 env=0 flags=dbg,overflowed  @0x00000438 size=25
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r3, r1, 0
   0007  GetByIdShort         r2, r3, #c0, s22 "push"
@@ -112,7 +112,7 @@ function #6 ""  params=1 frame=13 env=0 flags=overflowed,ctor  @0x00000438 size=
   0015  LoadConstUndefined   r0
   0017  Ret                  r0
 
-function #7 ""  params=1 frame=14 env=0 flags=overflowed,ctor  @0x00000451 size=52
+function #7 ""  params=1 frame=14 env=0 flags=dbg,overflowed  @0x00000451 size=52
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r4, r1, 0
   0007  GetByIdShort         r2, r4, #c0, s22 "push"
@@ -135,17 +135,22 @@ function #8 "?anon_0_asyncFn"  params=1 frame=2 env=0 flags=nc  @0x00000485 size
   000d  CreateGenerator      r1, r1, f9 "?anon_0_asyncFn"
   0012  Ret                  r1
 
-function #9 "?anon_0_asyncFn"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x00000499 size=277
+function #9 "?anon_0_asyncFn"  params=1 frame=19 env=0 flags=exc,dbg,overflowed  @0x00000499 size=277
+  .try T1..T2 -> L6 ; handler 0
+  .try T3..T4 -> L6 ; handler 1
+  .try T5..T6 -> L6 ; handler 2
+  .try T7..T8 -> L6 ; handler 3
+  .try T9..T10 -> L6 ; handler 4
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r0, r1, 2
   0007  Mov                  r2, r0
   000a  LoadConstUInt8       r4, 2
-  000d  JStrictEqualLong     L9, r0, r4
+  000d  JStrictEqualLong     L10, r0, r4
   0014  LoadParam            r0, 2
   0017  LoadParam            r3, 1
   001a  Mov                  r5, r2
   001d  LoadConstUInt8       r6, 3
-  0020  JStrictEqualLong     L6, r5, r6
+  0020  JStrictEqualLong     L7, r5, r6
   0027  Mov                  r2, r4
   002a  StoreNPToEnvironment r1, 2, r4
   002e  LoadFromEnvironment  r7, r1, 1
@@ -198,23 +203,24 @@ L5:
   00ce  Mov                  r2, r6
   00d1  StoreNPToEnvironment r1, 2, r6
   00d5  Throw                r0
+L6:
   00d7  Catch                r5
   00d9  Mov                  r2, r6
   00dc  StoreNPToEnvironment r1, 2, r6
   00e0  Throw                r5
-L6:
+L7:
   00e2  LoadConstUInt8       r5, 1
-  00e5  JStrictEqual         L8, r3, r5
-  00e9  JStrictEqual         L7, r3, r4
+  00e5  JStrictEqual         L9, r3, r5
+  00e9  JStrictEqual         L8, r3, r4
   00ed  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
   00f3  Ret                  r3
-L7:
+L8:
   00f5  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
   00fb  PutOwnBySlotIdx      r3, r0, 0
   00ff  Ret                  r3
-L8:
-  0101  Throw                r0
 L9:
+  0101  Throw                r0
+L10:
   0103  LoadConstUInt8       r0, 3
   0106  Mov                  r2, r0
   0109  StoreNPToEnvironment r1, 2, r0

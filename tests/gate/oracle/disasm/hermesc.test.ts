@@ -12,9 +12,11 @@ import type { FixtureBinary, FixtureVersion } from "../../../support/fixtures.ts
 import { requireHermesc, runHermesc } from "../../../support/hermesc.ts";
 import type { Hermesc, HbcVersion } from "../../../support/hermesc.ts";
 import { normaliseHermesc, normaliseOursRaw } from "./normalize.ts";
+import { isKnownAmbiguousV98 } from "../../../support/known-issues.ts";
+import type { OpcodeTableId } from "../../../../src/index.ts";
 
-function ourRawText(bytes: Uint8Array): string {
-  const mod = parseHbc(bytes);
+function ourRawText(bytes: Uint8Array, forceTable?: OpcodeTableId): string {
+  const mod = parseHbc(bytes, forceTable !== undefined ? { opcodeTable: forceTable } : undefined);
   const chunks: string[] = [];
   printModule(mod, { write: (s: string): boolean => (chunks.push(s), true) } as NodeJS.WritableStream, { mode: "raw" });
   return chunks.join("");
@@ -92,13 +94,18 @@ test("7.A: hermesc -dump-bytecode diff, per (fixture, version)", async (t) => {
           assert.equal(result.status, 0, `hermesc -dump-bytecode exited ${result.status} for ${f.group}/${f.name} v${version}`);
 
           const theirs = normaliseHermesc(result.dumpStdout);
-          const ours = normaliseOursRaw(ourRawText(b.bytes()));
+          // D8: the auto-probe correctly refuses to guess on the 8 fixtures where
+          // hbc98-late/hbc99-mar2026 genuinely disagree (tests/support/known-issues.ts);
+          // force the externally-validated table so these are explicit passes, not
+          // uncaught E_LAYOUT_AMBIGUOUS crashes before the diff even runs.
+          const forceTable: OpcodeTableId | undefined = isKnownAmbiguousV98(f.group, f.name, version) ? "hbc98-late" : undefined;
+          const ours = normaliseOursRaw(ourRawText(b.bytes(), forceTable));
 
           assert.equal(ours.headers.length, theirs.headers.length, `${f.group}/${f.name} v${version}: function count mismatch (ours=${ours.headers.length} theirs=${theirs.headers.length})`);
 
           // Free assertion (review B1's own suggestion): the NC/Constructor prefix
           // is ground truth for FunctionFlags.prohibitInvoke.
-          const mod = parseHbc(b.bytes());
+          const mod = parseHbc(b.bytes(), forceTable !== undefined ? { opcodeTable: forceTable } : undefined);
           for (let i = 0; i < theirs.headers.length; i++) {
             const want = theirs.headers[i]!.prefix;
             const flags = mod.functions[i]!.header.flags;

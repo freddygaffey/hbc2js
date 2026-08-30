@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 04-for-loop-basic/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=10 globalCodeIndex=0
-function #0 "global"  params=1 frame=31 env=0 flags=overflowed,ctor  @0x000000f0 size=203
+function #0 "global"  params=1 frame=31 env=0 flags=dbg,overflowed  @0x000000f0 size=203
   0000  NewArray             r15, 0
   0004  LoadConstUInt8       r7, 10
   0007  LoadConstString      r12, s1 ":"

@@ -1,6 +1,7 @@
 ; hbc2js disassembly of 46-bigint-arithmetic/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=1 strings=19 globalCodeIndex=0
-function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x000001c0 size=425
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg,overflowed  @0x000001c0 size=425
+  .try T1..T2 -> L1 ; handler 0
   0000  GetGlobalObject      r0
   0002  TryGetById           r5, r0, #c0, s18 "print"
   0008  TryGetById           r4, r0, #c1, s16 "String"
@@ -58,14 +59,15 @@ function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x000001c0
   00fa  TryGetById           r2, r0, #c0, s18 "print"
   0100  LoadConstString      r1, s12 "unreachable:"
   0104  Call3                r1, r2, r3, r1, r4
-  010a  Jmp                  L1
+  010a  Jmp                  L2
+L1:
   010c  Catch                r1
   010e  TryGetById           r4, r0, #c0, s18 "print"
   0114  GetByIdShort         r1, r1, #c2, s14 "constructor"
   0119  GetByIdShort         r2, r1, #c3, s15 "name"
   011e  LoadConstString      r1, s2 "caught:"
   0122  Call3                r1, r4, r3, r1, r2
-L1:
+L2:
   0128  TryGetById           r4, r0, #c0, s18 "print"
   012e  LoadConstString      r2, s7 "loose equality allowed:"
   0132  LoadConstUInt8       r5, 5
@@ -77,11 +79,11 @@ L1:
   014f  Call2                r1, r1, r3, r6
   0154  LoadConstDouble      r5, 9007199254740992
   015e  StrictEq             r2, r1, r5
-  0162  JmpTrue              L2, r2
+  0162  JmpTrue              L3, r2
   0165  TryGetById           r1, r0, #c4, s17 "Number"
   016b  Call2                r1, r1, r3, r6
   0170  StrictEq             r2, r1, r5
-L2:
+L3:
   0174  LoadConstString      r1, s5 "explicit conversion:"
   0178  Call3                r1, r4, r3, r1, r2
   017e  TryGetById           r2, r0, #c0, s18 "print"

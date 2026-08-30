@@ -1,6 +1,7 @@
 ; hbc2js disassembly of 53-switch-jumptable-large/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=2 strings=16 globalCodeIndex=0
-function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x00000194 size=85
+function #0 "global"  params=1 frame=20 env=0 flags=exc,dbg,overflowed  @0x00000194 size=85
+  .try T1..T2 -> L2 ; handler 0
   0000  DeclareGlobalVar     s13 "bucket"
   0005  GetGlobalObject      r5
   0007  LoadConstUndefined   r4
@@ -14,19 +15,20 @@ L1:
   0025  Mov                  r6, r3
   0028  IteratorNext         r8, r2, r6
   002c  Mov                  r6, r2
-  002f  JStrictEqual         L2, r6, r4
+  002f  JStrictEqual         L3, r6, r4
   0033  TryGetById           r7, r5, #c0, s14 "print"
   0039  GetByIdShort         r6, r5, #c1, s13 "bucket"
   003e  Call2                r6, r6, r4, r8
   0043  Call4                r0, r7, r4, r8, r1, r6
   004a  Jmp                  L1
+L2:
   004c  Catch                r1
   004e  IteratorClose        r2, 1
   0051  Throw                r1
-L2:
+L3:
   0053  Ret                  r0
 
-function #1 "bucket"  params=2 frame=12 env=0 flags=overflowed,ctor  @0x000001e9 size=184
+function #1 "bucket"  params=2 frame=12 env=0 flags=dbg,overflowed  @0x000001e9 size=184
   0000  NewArray             r2, 0
   0004  LoadParam            r0, 1
   .switch UIntSwitchImm @0x0007  min=0 max=39 default=L9

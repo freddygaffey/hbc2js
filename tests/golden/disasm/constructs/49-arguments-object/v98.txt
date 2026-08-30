@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 49-arguments-object/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=6 strings=20 globalCodeIndex=0
-function #0 "global"  params=1 frame=24 env=0 flags=overflowed,ctor  @0x00000208 size=269
+function #0 "global"  params=1 frame=24 env=0 flags=dbg,overflowed  @0x00000208 size=269
   0000  DeclareGlobalVar     s10 "aliasDemo"
   0005  DeclareGlobalVar     s15 "arityDemo"
   000a  DeclareGlobalVar     s13 "toArray"
@@ -62,7 +62,7 @@ function #0 "global"  params=1 frame=24 env=0 flags=overflowed,ctor  @0x00000208
   0105  Call3                r6, r8, r5, r6, r7
   010b  Ret                  r6
 
-function #1 "aliasDemo"  params=3 frame=4 env=0 flags=overflowed,ctor  @0x00000315 size=19
+function #1 "aliasDemo"  params=3 frame=4 env=0 flags=dbg,overflowed  @0x00000315 size=19
   0000  LoadConstUndefined   r2
   0002  ReifyArgumentsLoose  r2
   0004  LoadConstZero        r0
@@ -71,7 +71,7 @@ function #1 "aliasDemo"  params=3 frame=4 env=0 flags=overflowed,ctor  @0x000003
   000e  LoadParam            r2, 1
   0011  Ret                  r2
 
-function #2 "arityDemo"  params=4 frame=4 env=0 flags=overflowed,ctor  @0x00000328 size=39
+function #2 "arityDemo"  params=4 frame=4 env=0 flags=dbg,overflowed  @0x00000328 size=39
   0000  LoadConstUndefined   r1
   0002  GetGlobalObject      r2
   0004  GetByIdShort         r2, r2, #c0, s15 "arityDemo"
@@ -84,7 +84,7 @@ function #2 "arityDemo"  params=4 frame=4 env=0 flags=overflowed,ctor  @0x000003
   0021  Add                  r1, r1, r2
   0025  Ret                  r1
 
-function #3 "toArray"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x0000034f size=63
+function #3 "toArray"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x0000034f size=63
   0000  LoadConstUndefined   r1
   0002  GetGlobalObject      r2
   0004  TryGetById           r2, r2, #c0, s14 "Array"
@@ -105,7 +105,7 @@ L2:
   0038  Call2                r1, r2, r3, r1
   003d  Ret                  r1
 
-function #4 "sumAll"  params=1 frame=9 env=0 flags=overflowed,ctor  @0x0000038e size=53
+function #4 "sumAll"  params=1 frame=9 env=0 flags=dbg,overflowed  @0x0000038e size=53
   0000  LoadConstUndefined   r7
   0002  Mov                  r4, r7
   0005  GetArgumentsLength   r4, r4
@@ -127,7 +127,7 @@ L1:
 L2:
   0033  Ret                  r4
 
-function #5 "namedAliasAfterAssign"  params=2 frame=3 env=0 flags=overflowed,ctor  @0x000003c3 size=17
+function #5 "namedAliasAfterAssign"  params=2 frame=3 env=0 flags=dbg,overflowed  @0x000003c3 size=17
   0000  LoadConstUndefined   r2
   0002  LoadConstZero        r0
   0004  GetArgumentsPropByValLoose r2, r0, r2

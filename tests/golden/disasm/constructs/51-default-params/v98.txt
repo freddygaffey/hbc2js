@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 51-default-params/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=15 globalCodeIndex=0
-function #0 "global"  params=1 frame=22 env=0 flags=overflowed,ctor  @0x000001a4 size=342
+function #0 "global"  params=1 frame=22 env=0 flags=dbg,overflowed  @0x000001a4 size=342
   0000  CreateFunctionEnvironment r6, 1
   0003  DeclareGlobalVar     s12 "greet"
   0008  LoadConstUndefined   r3
@@ -73,7 +73,7 @@ function #0 "global"  params=1 frame=22 env=0 flags=overflowed,ctor  @0x000001a4
   014f  Call2                r5, r6, r3, r5
   0154  Ret                  r5
 
-function #1 "greet"  params=2 frame=4 env=0 flags=overflowed,ctor  @0x000002fa size=30
+function #1 "greet"  params=2 frame=4 env=0 flags=dbg,overflowed  @0x000002fa size=30
   0000  LoadParam            r1, 2
   0003  LoadConstUndefined   r0
   0005  JStrictNotEqual      L1, r1, r0
@@ -98,7 +98,7 @@ function #2 "withSideEffectDefault"  params=1 frame=4 env=0 flags=none  @0x00000
 L1:
   001f  Ret                  r2
 
-function #3 "chainedDefaults"  params=1 frame=6 env=0 flags=overflowed,ctor  @0x00000339 size=59
+function #3 "chainedDefaults"  params=1 frame=6 env=0 flags=dbg,overflowed  @0x00000339 size=59
   0000  LoadParam            r2, 1
   0003  LoadConstUndefined   r1
   0005  JStrictNotEqual      L1, r2, r1
@@ -120,7 +120,7 @@ L3:
   0035  Add                  r2, r2, r3
   0039  Ret                  r2
 
-function #4 "defaultUsesFunction"  params=2 frame=4 env=0 flags=overflowed,ctor  @0x00000374 size=21
+function #4 "defaultUsesFunction"  params=2 frame=4 env=0 flags=dbg,overflowed  @0x00000374 size=21
   0000  LoadParam            r2, 2
   0003  LoadConstUndefined   r1
   0005  JStrictNotEqual      L1, r2, r1

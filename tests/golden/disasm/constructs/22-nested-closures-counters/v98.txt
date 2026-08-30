@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 22-nested-closures-counters/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=7 strings=14 globalCodeIndex=0
-function #0 "global"  params=1 frame=23 env=0 flags=overflowed,ctor  @0x00000188 size=219
+function #0 "global"  params=1 frame=23 env=0 flags=dbg,overflowed  @0x00000188 size=219
   0000  DeclareGlobalVar     s11 "makeCounter"
   0005  DeclareGlobalVar     s9 "makeAccumulatorFactory"
   000a  GetGlobalObject      r4
@@ -63,7 +63,7 @@ function #2 "makeAccumulatorFactory"  params=1 frame=2 env=0 flags=none  @0x0000
   0002  CreateClosure        r1, r0, f4 "makeAccumulator"
   0007  Ret                  r1
 
-function #3 "step"  params=2 frame=3 env=0 flags=overflowed,ctor  @0x0000027d size=20
+function #3 "step"  params=2 frame=3 env=0 flags=dbg,overflowed  @0x0000027d size=20
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r2, r1, 0
   0007  LoadParam            r0, 1
@@ -78,7 +78,7 @@ function #4 "makeAccumulator"  params=1 frame=2 env=0 flags=none  @0x00000291 si
   000b  CreateClosure        r0, r0, f5 "accumulate"
   0010  Ret                  r0
 
-function #5 "accumulate"  params=2 frame=15 env=0 flags=overflowed,ctor  @0x000002a3 size=42
+function #5 "accumulate"  params=2 frame=15 env=0 flags=dbg,overflowed  @0x000002a3 size=42
   0000  GetParentEnvironment r2, 0
   0003  LoadFromEnvironment  r4, r2, 0
   0007  GetByIdShort         r3, r4, #c0, s13 "push"
@@ -91,7 +91,7 @@ function #5 "accumulate"  params=2 frame=15 env=0 flags=overflowed,ctor  @0x0000
   0022  Call3                r2, r3, r4, r2, r0
   0028  Ret                  r2
 
-function #6 ""  params=3 frame=2 env=0 flags=overflowed,ctor  @0x000002cd size=12
+function #6 ""  params=3 frame=2 env=0 flags=dbg,overflowed  @0x000002cd size=12
   0000  LoadParam            r1, 2
   0003  LoadParam            r0, 1
   0006  Add                  r0, r0, r1

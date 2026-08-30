@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 39-destructuring-params/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=19 globalCodeIndex=0
-function #0 "global"  params=1 frame=20 env=0 flags=overflowed,ctor  @0x000001c0 size=259
+function #0 "global"  params=1 frame=20 env=0 flags=dbg,overflowed  @0x000001c0 size=259
   0000  CreateFunctionEnvironment r4, 1
   0003  DeclareGlobalVar     s12 "defaultFactory"
   0008  DeclareGlobalVar     s16 "makeUser"
@@ -62,7 +62,7 @@ function #1 "defaultFactory"  params=1 frame=3 env=0 flags=none  @0x000002c3 siz
   0012  Add                  r2, r2, r0
   0016  Ret                  r2
 
-function #2 "makeUser"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x000002db size=97
+function #2 "makeUser"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x000002db size=97
   0000  LoadParam            r1, 1
   0003  LoadConstUndefined   r0
   0005  JStrictNotEqual      L1, r1, r0
@@ -92,7 +92,9 @@ L3:
   005b  AddS                 r1, r2, r1
   005f  Ret                  r1
 
-function #3 "sumPair"  params=1 frame=9 env=0 flags=overflowed,ctor  @0x0000033c size=133
+function #3 "sumPair"  params=1 frame=9 env=0 flags=exc,dbg,overflowed  @0x0000033c size=133
+  .try T1..T2 -> L9 ; handler 0
+  .try T3..T4 -> L6 ; handler 1
   0000  LoadParam            r2, 1
   0003  LoadConstUndefined   r7
   0005  JStrictNotEqual      L1, r2, r7
@@ -126,24 +128,26 @@ L4:
   0051  Mov                  r0, r4
   0054  Mov                  r2, r6
   0057  Mov                  r6, r2
-  005a  JStrictNotEqual      L6, r0, r7
+  005a  JStrictNotEqual      L7, r0, r7
 L5:
   005e  LoadConstZero        r4
   0060  Mov                  r6, r2
-  0063  Jmp                  L6
-  0065  Catch                r0
-  0067  Jmp                  L8
+  0063  Jmp                  L7
 L6:
-  0069  JmpTrue              L7, r6
+  0065  Catch                r0
+  0067  Jmp                  L10
+L7:
+  0069  JmpTrue              L8, r6
   006c  Mov                  r6, r1
   006f  IteratorClose        r6, 0
-L7:
+L8:
   0072  Add                  r4, r5, r4
   0076  Ret                  r4
+L9:
   0078  Catch                r0
   007a  Mov                  r2, r3
-L8:
-  007d  JmpTrue              L9, r2
+L10:
+  007d  JmpTrue              L11, r2
   0080  IteratorClose        r1, 1
-L9:
+L11:
   0083  Throw                r0

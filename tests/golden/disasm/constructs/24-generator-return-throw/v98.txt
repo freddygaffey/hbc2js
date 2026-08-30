@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 24-generator-return-throw/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=23 globalCodeIndex=0
-function #0 "global"  params=1 frame=19 env=0 flags=overflowed,ctor  @0x00000278 size=306
+function #0 "global"  params=1 frame=19 env=0 flags=dbg,overflowed  @0x00000278 size=306
   0000  DeclareGlobalVar     s12 "g1"
   0005  DeclareGlobalVar     s14 "g2"
   000a  GetGlobalObject      r1
@@ -83,12 +83,21 @@ function #2 "g2"  params=1 frame=2 env=0 flags=nc  @0x000003c2 size=24
   0011  CreateGenerator      r1, r1, f4 "g2"
   0016  Ret                  r1
 
-function #3 "g1"  params=1 frame=24 env=0 flags=overflowed,ctor  @0x000003da size=478
+function #3 "g1"  params=1 frame=24 env=0 flags=exc,dbg,overflowed  @0x000003da size=478
+  .try T1..T2 -> L14 ; handler 0
+  .try T3..T4 -> L14 ; handler 1
+  .try T5..T6 -> L14 ; handler 2
+  .try T7..T8 -> L14 ; handler 3
+  .try T9..T10 -> L14 ; handler 4
+  .try T11..T12 -> L14 ; handler 5
+  .try T13..T14 -> L14 ; handler 6
+  .try T15..T16 -> L14 ; handler 7
+  .try T17..T18 -> L14 ; handler 8
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r0, r1, 0
   0007  Mov                  r2, r0
   000a  LoadConstUInt8       r4, 2
-  000d  JStrictEqualLong     L18, r0, r4
+  000d  JStrictEqualLong     L19, r0, r4
   0014  LoadParam            r0, 2
   0017  LoadParam            r3, 1
   001a  Mov                  r13, r2
@@ -99,7 +108,7 @@ function #3 "g1"  params=1 frame=24 env=0 flags=overflowed,ctor  @0x000003da siz
   0027  LoadConstString      r10, s5 "g1 finally ran (return() trigger…"
   002b  LoadConstUndefined   r9
   002d  LoadConstUInt8       r8, 4
-  0030  JStrictEqualLong     L15, r13, r7
+  0030  JStrictEqualLong     L16, r13, r7
 L1:
   0037  Mov                  r2, r4
   003a  StoreNPToEnvironment r1, 0, r4
@@ -198,41 +207,51 @@ L13:
   0182  Mov                  r2, r7
   0185  StoreNPToEnvironment r1, 0, r7
   0189  Throw                r0
+L14:
   018b  Catch                r13
   018d  Mov                  r6, r13
   0190  StoreToEnvironment   r1, 2, r13
   0194  LoadFromEnvironment  r13, r1, 3
-  0198  JStrictEqual         L14, r12, r13
+  0198  JStrictEqual         L15, r12, r13
   019c  StoreNPToEnvironment r1, 1, r5
   01a0  JmpLong              L1
-L14:
+L15:
   01a5  Mov                  r2, r7
   01a8  StoreNPToEnvironment r1, 0, r7
   01ac  Throw                r6
-L15:
-  01ae  JStrictEqual         L17, r3, r5
-  01b2  JStrictEqual         L16, r3, r4
+L16:
+  01ae  JStrictEqual         L18, r3, r5
+  01b2  JStrictEqual         L17, r3, r4
   01b6  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
   01bc  Ret                  r3
-L16:
+L17:
   01be  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
   01c4  PutOwnBySlotIdx      r3, r0, 0
   01c8  Ret                  r3
-L17:
-  01ca  Throw                r0
 L18:
+  01ca  Throw                r0
+L19:
   01cc  LoadConstUInt8       r0, 3
   01cf  Mov                  r2, r0
   01d2  StoreNPToEnvironment r1, 0, r0
   01d6  LoadConstString      r15, s1 "Generator functions may not be c…"
   01da  CallBuiltin          r0, b44 "throwTypeError", 2
 
-function #4 "g2"  params=1 frame=27 env=0 flags=overflowed,ctor  @0x000005b8 size=561
+function #4 "g2"  params=1 frame=27 env=0 flags=exc,dbg,overflowed  @0x000005b8 size=561
+  .try T1..T2 -> L16 ; handler 0
+  .try T3..T4 -> L16 ; handler 1
+  .try T5..T6 -> L16 ; handler 2
+  .try T7..T8 -> L16 ; handler 3
+  .try T9..T10 -> L16 ; handler 4
+  .try T11..T12 -> L16 ; handler 5
+  .try T13..T14 -> L16 ; handler 6
+  .try T15..T16 -> L16 ; handler 7
+  .try T17..T18 -> L16 ; handler 8
   0000  GetParentEnvironment r1, 0
   0003  LoadFromEnvironment  r0, r1, 4
   0007  Mov                  r2, r0
   000a  LoadConstUInt8       r4, 2
-  000d  JStrictEqualLong     L21, r0, r4
+  000d  JStrictEqualLong     L22, r0, r4
   0014  LoadParam            r0, 2
   0017  LoadParam            r3, 1
   001a  Mov                  r15, r2
@@ -245,7 +264,7 @@ function #4 "g2"  params=1 frame=27 env=0 flags=overflowed,ctor  @0x000005b8 siz
   002e  LoadConstUndefined   r10
   0030  LoadConstString      r9, s6 "g2 caught:"
   0034  LoadConstUInt8       r8, 5
-  0037  JStrictEqualLong     L18, r15, r7
+  0037  JStrictEqualLong     L19, r15, r7
 L1:
   003e  Mov                  r2, r4
   0041  StoreNPToEnvironment r1, 4, r4
@@ -360,33 +379,34 @@ L15:
   01c8  Mov                  r2, r7
   01cb  StoreNPToEnvironment r1, 4, r7
   01cf  Throw                r0
+L16:
   01d1  Catch                r15
   01d3  Mov                  r6, r15
   01d6  StoreToEnvironment   r1, 2, r15
   01da  LoadFromEnvironment  r15, r1, 3
-  01de  JStrictEqual         L17, r14, r15
-  01e2  JStrictEqual         L16, r5, r15
+  01de  JStrictEqual         L18, r14, r15
+  01e2  JStrictEqual         L17, r5, r15
   01e6  StoreNPToEnvironment r1, 1, r4
   01ea  JmpLong              L1
-L16:
+L17:
   01ef  StoreNPToEnvironment r1, 1, r5
   01f3  JmpLong              L1
-L17:
+L18:
   01f8  Mov                  r2, r7
   01fb  StoreNPToEnvironment r1, 4, r7
   01ff  Throw                r6
-L18:
-  0201  JStrictEqual         L20, r3, r5
-  0205  JStrictEqual         L19, r3, r4
+L19:
+  0201  JStrictEqual         L21, r3, r5
+  0205  JStrictEqual         L20, r3, r4
   0209  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0002
   020f  Ret                  r3
-L19:
+L20:
   0211  NewObjectWithBuffer  r3, sh0(numProps=2), lit@0x0000
   0217  PutOwnBySlotIdx      r3, r0, 0
   021b  Ret                  r3
-L20:
-  021d  Throw                r0
 L21:
+  021d  Throw                r0
+L22:
   021f  LoadConstUInt8       r0, 3
   0222  Mov                  r2, r0
   0225  StoreNPToEnvironment r1, 4, r0

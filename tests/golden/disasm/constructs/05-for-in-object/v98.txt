@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 05-for-in-object/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=3 strings=29 globalCodeIndex=0
-function #0 "global"  params=1 frame=25 env=0 flags=overflowed,ctor  @0x00000244 size=308
+function #0 "global"  params=1 frame=25 env=0 flags=dbg,overflowed  @0x00000244 size=308
   0000  DeclareGlobalVar     s15 "Base"
   0005  DeclareGlobalVar     s16 "Derived"
   000a  GetGlobalObject      r3
@@ -74,14 +74,14 @@ L4:
   012c  Call3                r3, r5, r2, r3, r4
   0132  Ret                  r3
 
-function #1 "Base"  params=1 frame=3 env=0 flags=overflowed,ctor  @0x00000378 size=16
+function #1 "Base"  params=1 frame=3 env=0 flags=dbg,overflowed  @0x00000378 size=16
   0000  LoadConstString      r2, s2 "from-base"
   0004  LoadThisNS           r1
   0006  PutByIdLoose         r1, r2, #c0, s12 "inheritedProp"
   000c  LoadConstUndefined   r0
   000e  Ret                  r0
 
-function #2 "Derived"  params=1 frame=14 env=0 flags=overflowed,ctor  @0x00000388 size=51
+function #2 "Derived"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x00000388 size=51
   0000  LoadThisNS           r2
   0002  GetGlobalObject      r3
   0004  GetByIdShort         r3, r3, #c0, s15 "Base"

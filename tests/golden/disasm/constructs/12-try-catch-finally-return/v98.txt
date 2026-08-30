@@ -1,6 +1,6 @@
 ; hbc2js disassembly of 12-try-catch-finally-return/v98.hbc
 ; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=13 globalCodeIndex=0
-function #0 "global"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x00000170 size=114
+function #0 "global"  params=1 frame=13 env=0 flags=dbg,overflowed  @0x00000170 size=114
   0000  DeclareGlobalVar     s10 "f1"
   0005  DeclareGlobalVar     s11 "f2"
   000a  DeclareGlobalVar     s12 "f3"
@@ -26,14 +26,16 @@ function #0 "global"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x00000170
   006b  Call2                r1, r2, r0, r1
   0070  Ret                  r1
 
-function #1 "f1"  params=1 frame=1 env=0 flags=overflowed,ctor  @0x000001e2 size=14
+function #1 "f1"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x000001e2 size=14
   0000  LoadConstString      r0, s1 "from-finally"
   0004  Ret                  r0
   0006  Catch                r0
   0008  LoadConstString      r0, s1 "from-finally"
   000c  Ret                  r0
 
-function #2 "f2"  params=1 frame=12 env=0 flags=overflowed,ctor  @0x000001f0 size=58
+function #2 "f2"  params=1 frame=12 env=0 flags=exc,dbg,overflowed  @0x000001f0 size=58
+  .try T1..T2 -> L1 ; handler 0
+  .try T1..T3 -> L2 ; handler 1
   0000  GetGlobalObject      r0
   0002  TryGetById           r2, r0, #c0, s9 "Error"
   0008  CreateThisForNew     r1, r2, 1
@@ -42,17 +44,19 @@ function #2 "f2"  params=1 frame=12 env=0 flags=overflowed,ctor  @0x000001f0 siz
   0013  Construct            r0, r2, 2
   0017  SelectObject         r0, r1, r0
   001b  Throw                r0
+L1:
   001d  Catch                r0
   001f  GetByIdShort         r1, r0, #c2, s7 "message"
   0024  LoadConstString      r0, s4 "from-catch:"
   0028  Add                  r0, r0, r1
   002c  LoadConstString      r0, s3 "finally-wins"
   0030  Ret                  r0
+L2:
   0032  Catch                r0
   0034  LoadConstString      r0, s3 "finally-wins"
   0038  Ret                  r0
 
-function #3 "f3"  params=1 frame=13 env=0 flags=overflowed,ctor  @0x0000022a size=48
+function #3 "f3"  params=1 frame=13 env=0 flags=dbg,overflowed  @0x0000022a size=48
   0000  GetGlobalObject      r0
   0002  TryGetById           r2, r0, #c0, s8 "print"
   0008  LoadConstString      r1, s2 "finally ran, but does not return…"
