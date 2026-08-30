@@ -1,4 +1,14 @@
-# tools/equiv — `hbc2js-equiv`
+# tools/equiv — `hbc2js-equiv` (DEPRECATED — superseded by `src/harness/`)
+
+**This module has been promoted and is no longer the live implementation.**
+Per `docs/specs/06-harness.md` (M3), every module here now has a typed
+equivalent under [`src/harness/`](../../src/harness/), reachable from the
+main CLI as `hbc2js equiv`/`hbc2js gate`/`hbc2js sweep` — see
+[`docs/TESTING.md`](../../docs/TESTING.md) for how to run it, the trace
+format, verdict semantics, and where the port deliberately differs from this
+PoC's exact shape (and why). This directory is kept as the historical
+reference implementation until its removal, tracked separately per spec 06
+§12/O-5 — do not add new features here; port them to `src/harness/` instead.
 
 Proof-of-concept semantic-equivalence checker for hbc2js. Design study and
 rationale: [`docs/EQUIVALENCE.md`](../../docs/EQUIVALENCE.md).
