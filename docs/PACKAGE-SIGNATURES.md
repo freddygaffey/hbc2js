@@ -397,3 +397,512 @@ convergent-validation result, not a coincidence. The real, mechanically-fixable
 gap is require-call-site immediate operands (§2.4/§3.2), not fundamental
 infeasibility; §3 proposes the fix and the module-graph-anchored architecture
 (exploiting Metro's un-optimised `__d()` calls, §3.1) needed to apply it.
+
+---
+
+## 5. Prototype v2 results (T8 follow-up, 2026-08-30)
+
+Turns §2–§4's feasibility study into a working pipeline: `tools/pkgsig/build-db.mjs`
+(bundle → compile → fingerprint, end to end) and `tools/pkgsig/match.mjs` v2
+(per-package *and* per-Metro-module attribution with confidence tiers),
+measured on real fetched apps and the local production-APK corpus, not just
+the two-package single-fixture sample §2 used. No `src/**` code was touched;
+the require-immediate fix lives in a pkgsig-local fork of the normaliser
+(§5.1), per the task's ownership split with the M4 decompiler agent.
+
+### 5.1 The require-immediate fix, and what it actually turned out to be
+
+§3.2 proposed two fixes for the require-call-site immediate found in §2.4.
+Fix #2 (mask the operand) is implemented in `tools/pkgsig/lib/sig-normalise.mjs`,
+a **fork** of `src/harness/roundtrip.ts`'s `normaliseFunction` (not a change to
+it — D3 requires that oracle to stay byte-exact for round-trip diffing).
+Disassembling the actual call-site pattern (`tools/hermesc/v94`, a real
+`react` bundle) shows Metro's factory functions always receive the
+dependency-map array as their **last** declared parameter, and a
+`require(d[N])`/`_dependencyMap[N]` access compiles to one of two shapes:
+
+```
+LoadParam %d, <lastParamIndex>     ; %d = dependencyMap array (always last param)
+LoadConstZero %i                    ; %i = N (a plain imm operand)   -- v94/v96
+GetByVal %v, %d, %i                 ; %v = d[N]
+```
+```
+LoadParam %d, <lastParamIndex>
+GetByIndex %v, %d, N                ; N baked directly as an imm operand -- v98+/-O
+```
+
+`sig-normalise.mjs`'s `findDependencyIndexOperands` does a flat forward scan
+per function (dependency-map param is always last, so no cross-function
+context is needed — unlike §3.1's fix #1, this needed no module-graph
+resolution) recovering every such `N` and masking it to a canonical `dep#`
+token instead of the literal, for both instruction shapes above, across
+every HBC version's opcode table (`GetByIndex` didn't exist as a distinct
+opcode before v98 — `src/tables/generated/opcodes-hbc98-2024.ts` — so v94/v96
+only ever hit the `GetByVal`+`LoadConst*` shape; the scan handles both
+uniformly).
+
+**Measured effect, and an important negative result.** Re-matching
+`react@18.2.0` (standalone bundle) against `rn-template-0.72`'s target fixture
+moved exact coverage from 46.2% (§2.4) to 48.7% — real, but nowhere near the
+task's ">90%" target. Root-causing the remaining misses (by diffing
+normalised text function-by-function, not just aggregate rates) found that
+**most of react's remaining non-matching functions have zero opcode-sequence
+overlap at all with anything in the target**, not a masked-vs-unmasked
+operand difference — i.e., the dominant remaining gap for `react` specifically
+is not the require-immediate issue §2.4 flagged, it's something else (one
+function inspected in detail, react's ~210-instruction module-top-level
+scope-setup body, differs from every similarly-sized target function starting
+at instruction 2 — a different `LoadParam` index — meaning the two aren't
+actually the same source construct at all; not conclusively root-caused
+further within this task's time budget). Two things rule out toolchain/version
+drift as the explanation, which was the first hypothesis tried: (a) rebuilding
+the identical `entry-react.js` bundle in two independently-`npm install`-ed
+scratch projects produced **byte-identical** `.hbc` output (verified by
+sha256), and (b) rebuilding `rn-template-0.72`'s entire app bundle fresh,
+today, in this session, produced a bundle **99.99% byte-identical** to the
+already-committed fixture (the only diff: the scaffolded project's own name
+string and consequently-shifted minifier variable letters in one
+unrelated module — nothing to do with react). So the effect is real and
+reproducible, not environmental noise, but its root cause is still open —
+flagged as follow-up work below, not swept under the rug.
+
+**However, whole-module anchoring (§3.1) tells a much better story than the
+per-function rate, and is the number that should actually be trusted.**
+Matching `react`'s *module-level* factory-function hashes (recovered by
+`tools/pkgsig/lib/dscan.mjs`, §5.3) against `rn-template-0.72` finds **2 of
+react's 3 `__d()`-registered modules match exactly** — i.e. two-thirds of
+react's own module graph is byte-for-byte identical to what's inside the real
+app, including the module containing the bulk of React's actual API surface.
+`react-native` does even better: **422/422 modules match exactly** (100%),
+with the per-function exact rate at 99.2% (unchanged from §2.4 — react-native
+was never the problem). Per docs §3.4's own architecture (module match first,
+function-level as a fallback signal), `match.mjs` v2 (§5.4) uses module-count
+agreement as its primary "high confidence" signal for exactly this reason —
+a package's *function-level* percentage can look mediocre while its
+module-level identity is unambiguous.
+
+### 5.2 Toolchain-baseline handling, made principled
+
+§2.3/§3.3 established that a Metro/Babel/hermesc toolchain has its own fixed
+"noise floor" of require-runtime/polyfill functions, and that it must be
+subtracted before any package's match rate means anything. v1 subtracted a
+single flat baseline at match time; v2 makes this a **named, versioned,
+layered artifact** built the same way every other signature is built:
+
+1. **`metro-toolchain-empty@<metro-version>__hbc<N>.json`** — `build-db.mjs
+   --hbc-file <compiled empty-entry .hbc> --baseline metro-toolchain-empty`.
+   Built from `module.exports = {};` bundled through the target (RN version,
+   Hermes version) combination. This is the direct successor of §2.3's probe.
+2. **`react-foundation@<version>__hbc<N>.json`** and
+   **`react-native-foundation@<version>__hbc<N>.json`** — the same idea, one
+   layer up: since virtually every real RN bundle contains react and
+   react-native, and §2.3's own parenthetical warns against ever subtracting
+   a *real* package's DB as if it were noise (genuine dependency overlap is
+   signal), these two are built and named explicitly as **foundations**, not
+   folded silently into the toolchain baseline. `build-db.mjs`'s `--subtract`
+   flag takes a comma-separated list of these three files' `exactHash` sets
+   and removes any matching function from a downstream package's *stored*
+   function list before writing it — done once, at DB-build time, not
+   redundantly at every `match.mjs` invocation (v1's `--baseline` flag is
+   gone; every DB under `tools/pkgsig/db/` already has the layered
+   subtraction baked in, `tools/pkgsig/db/_baselines/` holds the reusable
+   baseline files themselves and their own raw, un-subtracted function sets).
+
+This has a large, immediately visible effect on DB size and correctness: a
+package that transitively includes react-native (nearly all of them do, since
+Metro has no export-level tree-shaking, §2.1) would otherwise ship a second
+full copy of react-native's ~4,000 functions in its own signature file. Before
+subtraction, `@react-navigation/native`'s raw HBC94 fingerprint was 4,886
+functions (1.7 MB); after subtracting the three foundations, 860 (304 KB) —
+an 82% reduction, and the 860 remaining are the package's actual own code,
+not noise. `redux`: 124 → 36. `@react-native-async-storage/async-storage`:
+4,221 → 51 (it's a thin native-module shim; almost everything it pulls in
+*is* react-native). Every DB's `rawFunctionCount` field keeps the
+pre-subtraction count for transparency; `subtractedBaselines` records exactly
+which files were subtracted.
+
+**Baselining a new toolchain** (documented here and in
+`tools/pkgsig/README.md`, since this is exactly the "how does a new toolchain
+get baselined" question the task asked for): for a new (RN version, Hermes
+bytecode version) pair not already covered —
+
+1. Scaffold or reuse a project pinned to that RN version (`tests/fixtures/bundles/*/BUILD.md`
+   have working recipes for the RN-CLI path; the Expo path needs a temporary
+   entry-file swap, §5.5).
+2. `build-db.mjs metro-toolchain-empty@<metro-version> --project <dir> --hbc <N> --baseline metro-toolchain-empty`
+   with a `module.exports = {};` entry (or `--hbc-file` if bundled by hand).
+3. Same for `react@<version>` and `react-native@<version>`, each with
+   `--baseline react-foundation` / `--baseline react-native-foundation`.
+4. Every subsequent `build-db.mjs` call for that (RN, hbc) pair passes
+   `--subtract <the three files from steps 2-3>`.
+
+This task did exactly that for three toolchains: HBC94 (RN 0.72.17, plain
+RN-CLI `react-native bundle`, empty baseline = 75 functions), HBC96 (same RN
+0.72.17 source **recompiled** with `tools/hermesc/v96` — a legitimate
+shortcut since HBC version is a property of the compiler invoked, not the
+Metro/Babel output text, §5.5), and HBC98 (RN 0.85.3, Expo's `expo export`
+bundler — a **structurally different** empty baseline: 414 functions, not
+75, because Expo's own runtime/polyfill layer on top of Metro is much
+heavier than plain RN-CLI's. This by itself is a load-bearing finding for S2
+below: "the toolchain baseline" is not one number, it depends on the
+*bundler*, not just the RN/Hermes version pair.
+
+### 5.3 Signature DB format v2
+
+One JSON file per `package@version` × HBC version
+(`tools/pkgsig/db/<pkg>@<version>__hbc<N>.json`, `@scope/name` packages get
+`__` in place of `/`), schema 2:
+
+```jsonc
+{
+  "schema": 2,
+  "package": "redux", "version": "4.2.1", "hbcVersion": 94,
+  "totalFunctions": 36,        // after baseline subtraction (§5.2)
+  "rawFunctionCount": 124,     // before subtraction — transparency, not used by match.mjs
+  "subtractedBaselines": ["_baselines/metro-toolchain-empty@0.76.9__hbc94.json", "..."],
+  "functions": [
+    { "index": 7, "name": "", "paramCount": 3, "instrCount": 42,
+      "exactHash": "…24 hex chars…",   // sha256, truncated to 96 bits — §5.3 note below
+      "fuzzyHash": "…", "stringSetHash": "…", "stringCount": 5 }
+  ],
+  "modules": [   // recovered via dscan.mjs (§3.1's whole-module anchor), one per __d() registration
+    { "factoryFunctionIndex": 7, "localModuleId": 2, "depCount": 3, "depIds": [0,1,4],
+      "factoryExactHash": "…", "factoryFuzzyHash": "…",
+      "nestedFunctionCount": 4, "functionSetHash": "…", "factoryIsBaseline": false }
+  ],
+  "toolchainBaseline": false,
+  "provenance": {
+    "packageSha256": "…",       // sha256 over a sorted relpath+filehash manifest of node_modules/<pkg> (§5.5 — not a registry tarball hash)
+    "metroVersion": "0.76.9", "reactNativeVersion": "0.72.17",
+    "hermescVersion": 94, "hermescRnEra": "0.72.x",
+    "repoCommit": "<this repo's git HEAD at build time>",
+    "builtAt": "2026-08-30T…"
+  }
+}
+```
+
+Three per-function tiers, per the task's spec: **exact** (`sig-normalise.mjs`'s
+masked-canonical-hash, §5.1), **fuzzy** (bare mnemonic sequence, unchanged
+from §2.2 — already invariant to the require-immediate issue since it drops
+*every* operand, which is why §2.4's gap was exact-only), and **string-constant
+set** — stored as a **hash of the sorted set**, not the raw string array
+(§2.2's v1 format kept the full array for a Jaccard-similarity secondary
+signal; v2 trades that away for file size, per the task's "compact — hashes
+and metadata, not code" requirement — `match.mjs` uses hash equality as a
+corroboration signal on fuzzy-only hits instead). All three hashes are sha256
+truncated to 24 hex characters (96 bits) — a deliberate size/collision-risk
+trade documented in `fingerprint.mjs`; no DB in this task's starter set
+exceeds 9,000 functions, so a birthday-bound collision is not a realistic
+risk at this scale. `tools/pkgsig/db/index.json` is a flat manifest (package,
+version, hbcVersion, path, total/baseline flag) for discovery without
+opening every file.
+
+**Size, in practice**: 48 files (16 starter packages × up to 3 HBC versions,
+§5.5, plus 9 baseline files across the 3 toolchains), 16 MB total, largest
+single file 1.4 MB (`@react-navigation/stack` at HBC98 — it transitively
+re-includes react-native-screens/gesture-handler-adjacent code that isn't
+covered by any of the three subtracted foundations, an acknowledged residual
+of the "only subtract the two most-foundational packages" design, §5.2's own
+limitation carried over from §4's risk S3-adjacent reasoning). Every
+individual file is under 2 MB.
+
+### 5.4 Matching: `tools/pkgsig/match.mjs` v2
+
+```sh
+node --experimental-strip-types tools/pkgsig/match.mjs <bundle.hbc> --db tools/pkgsig/db [--min-instr 8] [--json]
+```
+
+Two report sections, per the task's spec:
+
+1. **Whole-bundle package summary** — for every HBC-version-eligible package
+   DB (baselines included, so react/react-native's own presence is still
+   reported, not just third-party packages), exact/fuzzy function coverage,
+   module-exact-match count, and a confidence tier.
+2. **Per-Metro-module attribution** — every `__d()`-registered module
+   recovered from the *target* bundle (`dscan.mjs`) is looked up by its
+   factory function's exact hash against a reverse index built from every
+   eligible package's own function set; modules with no owner are reported as
+   **unmatched**, sorted by instruction count (the size proxy used — no raw
+   byte-range is tracked per function in this format, §5.3), which is exactly
+   where genuine first-party app code should surface.
+
+**Confidence tiers** (revised once during this task, see below):
+
+| Tier | Condition |
+|---|---|
+| High | `moduleExactHits >= 3`, or `moduleExactHits >= 1` **and** module coverage ≥5%, or overall exact-function coverage ≥90% |
+| Medium | overall fuzzy coverage ≥50%, or exactly 1–2 module-exact hits |
+| Low | any exact/fuzzy hit at all, below Medium's floor |
+| None | zero hits after the `--min-instr` floor |
+
+The first version of this table used FLIRT's own naive rule from §3.4
+(`moduleExactHits > 0` alone ⇒ High) and it was wrong in an instructive way:
+on the real Bloomberg/Xbox APK measurements (§5.6) a package with a *single*
+coincidentally-matching module out of hundreds looked identical, by tier, to
+one matching dozens — exactly the single-hash-collision risk §1.2's FLIRT
+discussion warned about, rediscovered again (the second time convergent
+validation from that literature has shown up empirically in this task,
+after §2.3's toolchain-baseline finding). Requiring either several
+independent module hits or a non-trivial fraction of the package's own module
+count fixes it without giving up the core "module match beats raw function
+percentage" insight from §5.1/§3.1.
+
+### 5.5 Signature DB built for the starter set
+
+HBC94 and HBC96 (recompiling the *identical* Metro-output JS text with
+`tools/hermesc/v96` instead of `v94` is legitimate — HBC version is a
+property of which `hermesc` binary is invoked, not of the Metro/Babel
+JS-level output, confirmed by using this exact shortcut to get HBC96 coverage
+at negligible extra cost): all 16 requested packages, built against a single
+scratch RN 0.72.17 project (`react` 18.2.0, `react-native` 0.72.17, plus the
+other 14 at whatever `npm install` resolved on 2026-08-30 — versions recorded
+per-file in `provenance`, e.g. `axios` resolved to 1.20.0, `react-native-reanimated`
+to 3.19.5). No BUILD.md in this repo pins exact versions for any of these 14
+beyond RN itself (checked directly, §5's task instruction), so "current npm
+resolution on the build date" is the documented, reproducible policy —
+recorded in `provenance.builtAt`/`packageSha256` rather than guessed.
+
+HBC98 (RN 0.85.3, Expo/`expo export`, matching `react-navigation-example`'s
+own toolchain so the measurement in §5.6 is apples-to-apples): only **10 of
+16** starter packages, all fetched from `react-navigation-example`'s own
+already-resolved `node_modules` per this task's mid-session redirection to
+"use the apps that are there as the seed" rather than hand-picking versions —
+`@react-navigation/native`, `@react-navigation/stack`, `react-native-gesture-handler`,
+`react-native-reanimated`, `react-native-screens`, `react-native-safe-area-context`,
+`@react-native-async-storage/async-storage`, plus the three foundations
+(react/react-native/toolchain-empty). `redux`/`react-redux`/`@reduxjs/toolkit`/
+`axios`/`lodash`/`moment`/`dayjs`/`zustand`/`immer` are **not** in
+`react-navigation-example`'s dependency tree, so building their HBC98 DBs
+would need a second, separately-provisioned RN-0.85-era project — not done in
+this task's time budget, flagged as follow-up (a straightforward repeat of
+the HBC94 recipe against a v98 project once one exists for other purposes).
+
+Since Expo's own CLI (`expo export`) has no custom-entry-file flag, each
+single-package HBC98 bundle was produced by temporarily overwriting the
+cloned `react-navigation/react-navigation` example app's `App.tsx` with a
+one-line `require('<pkg>')` re-export, running `expo export --no-bytecode`,
+restoring `App.tsx`, then compiling the resulting JS text with this repo's
+own `tools/hermesc/v98` (not Expo's bundled hermesc, to keep hashes
+comparable against everything else in this task's DB). `build-db.mjs`
+documents this as the reason its `--bundler expo` path is not automated
+end-to-end in this prototype (its file header explains why) — the
+`--hbc-file` fast path was used for every HBC98 entry instead, with
+provenance filled in from the fetched project's own `node_modules` metadata.
+
+### 5.6 Measurements
+
+**`rn-template-0.72`** (HBC94, committed fixture — expect react + react-native
+only):
+
+| Package | Tier | Exact% | Fuzzy% | Modules |
+|---|---|---|---|---|
+| `react-native@0.72.17` | High | 99.2% | 99.2% | 422/422 |
+| `react@18.2.0` | High (module-anchored) | 50.0% | 53.1% | 2/3 |
+| everything else (12 absent packages) | Low/None | ≤5.3% | ≤13.0% | 0/N |
+
+424/435 Metro modules (97.5%) matched to a known package; the 11 unmatched
+are the template's own `index.js`/`App.tsx`/app-name module — genuinely
+first-party code, exactly the expected outcome, and a clean false-positive
+control (`@react-navigation/stack` briefly surfaced at 0.1%/1 module before
+the tier fix in §5.4 — correctly demoted to Medium after it, since 1 module
+out of 511 is not "high confidence stack is present," and it plausibly isn't:
+a generic small helper shared by coincidence, not evidence of the package).
+
+**`react-navigation-example` (0.85.3, HBC98)** — fetched fresh
+(`tests/fixtures/bundles/react-navigation-example-0.85.3/fetch.sh`'s recipe,
+run in scratch; same commit the pinned fixture's BUILD.md records,
+`ab1319d`): 15,551 functions, 1,782 `__d()` modules.
+
+| Package | Tier | Exact% | Fuzzy% | Modules |
+|---|---|---|---|---|
+| `@react-navigation/stack` | High | 74.1% | 85.7% | 590/826 |
+| `react-native-gesture-handler` | High | 67.2% | 80.0% | 403/616 |
+| `react-native-reanimated` | High | 64.1% | 77.9% | 292/479 |
+| `react-native-foundation@0.85.3` | High | 68.3% | 74.3% | 348/472 |
+| `@react-navigation/native` | High | 50.9% | 68.8% | 99/252 |
+| `react-foundation@19.2.3` | High | 40.1% | 42.5% | 2/3 |
+| `react-native-screens` | High (module-anchored) | 20.6% | 68.5% | 31/168 |
+| `@react-native-async-storage/async-storage` | High (module-anchored) | 15.5% | 71.3% | 6/122 |
+| `react-native-safe-area-context` | High (module-anchored) | 4.7% | 67.2% | 5/125 |
+
+All 9 packages that are *actually in this app's dependency tree* were
+recovered at High confidence; **1,014/1,782 modules (56.9%) matched to a
+known package**; the largest unmatched modules (637, 621, 503 instructions,
+15-53 nested closures each) are the example app's own showcase screens —
+plausible first-party code, not evidence of a missed library (this app has
+no `redux`/`axios`/etc. dependency, so their absence from the "matched"
+column is correct, not a gap).
+
+**Expensify/App (0.86.0, HBC98) — not measured, timed as instructed.** Per
+the task's "large; time it": `npm_config_engine_strict=false npm ci
+--ignore-scripts` (3,002 packages) took **~60s**. `react-native bundle
+--max-workers 1` (the documented watchman-race workaround) then hit the
+exact race `BUILD.md` describes (`Failed to get the SHA-1 for:
+node_modules/react-native-worklets/.worklets/<id>.js`) on the **first**
+attempt at **12s** in (cache-warm from a prior run). Three retries were
+made, each preceded by `watchman watch-del-all` + a fresh
+`watchman watch-project .` + a settle delay, the last also with
+`--reset-cache`: attempt 2 failed identically at 12s (stale watch state);
+attempt 3, with a genuinely cold cache, ran for **3 min 34s** of real Metro
+transform work before hitting the identical error on a *different* generated
+worklet file (`10978648262198.js` vs. the first attempt's
+`11554788234375.js` — confirming it's a live race against
+`react-native-worklets`' babel plugin writing new per-worklet files
+*during* the transform pass, not a stale-cache artifact: watchman is
+underwatching a directory Metro just started depending on mid-build, on
+this sandbox's filesystem-event delivery specifically). Total time spent:
+~5 minutes across three attempts, no successful bundle. Not root-caused
+further or retried a fourth time within this task's budget — `BUILD.md`
+already documents the underlying cause and workaround; what's new here is
+that the workaround did not suffice in this environment even after a full
+watchman re-crawl, which is itself worth recording. **Follow-up**: retry
+with `--max-workers 1` *and* an explicit `watchman watch-project` performed
+*before* `npm ci` (so the watch is live for the entire worklet-extraction
+window, not just re-armed afterward), or pre-warm by running the Babel
+worklets plugin once standalone before the first `bundle` invocation.
+
+**hbc2js-local-corpus** (`~/hbc2js-local-corpus/apks/*.apk`, 6 APKs, never
+copied into this repo — extracted to scratch, sizes/paths reported here only
+per the task's instruction; note: `tools/extract-apk-bundle.sh`'s candidate-path
+matching silently failed on every one of these six real APKs, root-caused to
+a `set -o pipefail` + `grep -q` SIGPIPE interaction — the script's `unzip -Z1
+| grep -qxF` pipeline reports the *piped writer's* SIGPIPE exit code, not
+grep's success, whenever grep's `-q` closes the pipe early after finding its
+match; extraction was done by hand with plain `unzip -p` instead for this
+task's own measurement, and this bug is flagged here for whoever owns that
+script next, since this task's ownership boundary is `tools/pkgsig/**` only):
+
+| App | HBC ver | Functions | Modules | High-confidence packages (modules matched) |
+|---|---|---|---|---|
+| Bloomberg | 96 | 58,932 | 4,995 | react-redux (13/31), @reduxjs/toolkit (1/6), async-storage (2/6), react-native (84/422), gesture-handler (54/325), reanimated (38/248), nav-stack (70/511), nav-native (5/128), react (2/3) |
+| Xbox | 96 | 59,278 | 6,435 | async-storage (6/6, 94.0% exact), react-redux (17/31), @reduxjs/toolkit (2/6), gesture-handler (125/325), nav-stack (207/511), reanimated (81/248), nav-native (63/128), react-native (146/422), react (2/3) |
+| Teams — `hermes.android.bundle` (rn-common) | 96 | 4,736 | 482 | react-native (184/422, 48.3% exact), react (2/3, 43.8% exact) |
+| Teams — (camera) | 96 | 1,388 | 209 | react-native (17/422) only — a small, mostly-native feature module |
+| Teams — (org-chart) | 96 | 3,179 | 427 | react-native (27/422), @react-navigation/stack (6/511) |
+| Discord | 98 | 120,522 | 17,037 | react-native-foundation (9/472), @react-navigation/{stack,native} (9/826, 4/252) — all at low double-digit-or-under % |
+| Shopify | 98 | 97,752 | 25,439 | react-native-foundation (10/472), @react-navigation/{stack,native} (8/826, 4/252) — similarly low |
+| Pinterest | — | — | — | no JS bundle in the APK at all (confirmed §2.5; not a React Native app, or a fully-native build) |
+
+**Discord and Shopify are the important negative result of this section.**
+Both are genuinely HBC98 (confirmed by header bytes, §2.5) and both *are*
+React Native apps using react-navigation, yet their per-module attribution
+rate is only **0.5%** (85/17,037) and **0.6%** (161/25,439) — dramatically
+worse than Bloomberg/Xbox's HBC96 rates (17-30%+) despite this task's HBC98
+signature set being *larger* and *newer* than the HBC96 one. Root cause:
+this task's HBC98 `react-native-foundation`/`@react-navigation/*` DBs were
+built from **RN 0.85.3 / react-navigation 8.0.0-alpha** (`react-navigation-example`'s
+own current versions, 2026-era), but Discord/Shopify's actual `.hbc` files
+are almost certainly from a considerably **older** RN release that happens
+to still tag its bytecode "version 98" — `docs/HBC-FORMAT.md`'s own
+documented v98 header-layout/opcode-table ambiguity (two distinct real
+layouts share the number) is exactly this problem one level up: **the HBC
+version number is not a proxy for "which react-native source version,"
+even approximately**, once the gap is more than a year or so. This is a
+sharper, corpus-validated restatement of §3.3's "version pinning" design
+principle — a signature DB keyed only by HBC version, without a matching RN
+version close to the target's actual one, will silently under-match on a
+real, older app. Not a pipeline bug; a coverage gap this task's time budget
+didn't allow closing (would need a second HBC98-era project pinned to
+an RN version contemporaneous with Discord/Shopify's actual build, which
+requires knowing or guessing that version — itself research, not measurement).
+
+No HBC94/96/98 DB exists for a package genuinely absent from all six apps to
+serve as a clean single-app false-positive probe the way §2.2's `lodash`
+did for the single-fixture case, but the **within-corpus** cross-check is
+itself informative: `lodash`'s only hit on any of these six apps is Xbox, at
+28.7% exact — and Xbox's `lodash` DB has exactly 1 eligible function after
+the `--min-instr 8` floor, so that "28.7%" is one single function matching,
+not real evidence of lodash (correctly surfaced as "Low" tier, not
+"High" — the tier-fix in §5.4 is exactly what keeps a 1-function coincidence
+from reading as a confident match). Teams' three feature bundles (each a
+separate `hermes.android.bundle` — Teams ships micro-frontends, §2.5) show
+successively weaker, plausible signal as they get smaller and more
+special-purpose (camera capture, org chart) — exactly the pattern a
+real, non-cherry-picked corpus should produce.
+
+### 5.7 What the D17 emitter pass needs from M4's output
+
+Per D17's text and this task's own measured findings, the emitter pass
+(owned by the M4 decompiler agent, not implemented here) needs, per Metro
+module recovered from the target bundle:
+
+1. **The `dscan.mjs`-shaped module graph already, not re-derived**: factory
+   function index, local module id, and the ordered `depIds` array. D17
+   should not re-implement §3.1's `__d()` pattern scan inside `src/**` from
+   scratch — `tools/pkgsig/lib/dscan.mjs` is small, dependency-light (only
+   `src/parse/buffers.ts`'s already-exported `readLiterals`), and could be
+   promoted into `src/**` verbatim by M4 if useful there, or D17 can shell
+   out to `tools/pkgsig`'s fingerprinting as a build step and just consume
+   its module-graph JSON.
+2. **A per-function exact/fuzzy hash pair it can compute itself** on M4's own
+   decoded/normalised function representation, so D17 doesn't need to
+   reimplement `sig-normalise.mjs`'s masking either — or, cleaner, M4 exposes
+   a hook so `sig-normalise.mjs`'s dependency-index-masking logic can run as
+   a documented *variant* of `normaliseFunction` inside `src/**` itself
+   (this task deliberately did not touch `src/**`, per the ownership split,
+   but the fix is small — ~60 lines, §5.1 — and D17 will want it available
+   without importing across the `tools/`/`src/` boundary at decompile time).
+3. **The confidence tier this task's `match.mjs` computes**, or the
+   ingredients to compute it identically (module-exact-hit count, module
+   total, function-level exact/fuzzy coverage) — D17's own emission rule
+   (§3.4, unchanged by this task) is: High ⇒ emit `require("pkg")` only
+   after the round-trip re-bundle-and-diff check D17's spec already requires;
+   Medium ⇒ comment annotation only, never a code substitution; Low/None ⇒
+   ignore. This task's tier revision (§5.4) — requiring several independent
+   module hits, not just one — should be carried into D17's own threshold
+   directly, since it was found to matter on real production bundles, not
+   just synthetic ones.
+4. **A place to file "package present, version ambiguous"**: not
+   encountered in this task's own measurements (every High match happened to
+   have a single, obviously-correct in-tree version to compare against), but
+   §4's risk S3 remains open and unmeasured — D17 should not assume
+   `match.mjs`'s top-ranked version is unique just because this task's
+   fixtures never exercised the ambiguous case.
+
+### 5.8 Remaining blockers / follow-ups
+
+- **S1 (require-immediate), revised**: the masking fix (§5.1) is implemented,
+  correct for the pattern it targets, and measurably improves `react`'s
+  exact rate — but is **not** the dominant cause of `react`'s residual
+  function-level gap, which remains unexplained at the single-function level
+  (§5.1's negative result). Whole-module anchoring (§3.1) already routes
+  around this for the cases measured here (2/3 and 422/422 module-exact
+  hits), so it is not currently blocking D17's own architecture, but the
+  root cause is worth another pass before trusting function-level percentages
+  as a primary signal for any package smaller than react-native.
+- **S2 (toolchain-baseline staleness), confirmed and extended**: §5.2 found
+  the baseline is bundler-shaped, not just (RN, Hermes)-version-shaped
+  (Expo's empty baseline is 414 functions vs. plain RN-CLI's 75, same Hermes
+  bytecode version). A production signature-DB service needs one baseline
+  per (bundler, bundler version, RN version, Hermes version) tuple, a
+  materially larger axis than §3.3 anticipated.
+- **HBC98 starter-set coverage is partial** (§5.5): 10/16 packages, missing
+  redux/react-redux/@reduxjs-toolkit/axios/lodash/moment/dayjs/zustand/immer
+  at HBC98 specifically (all 16 exist at HBC94/HBC96). Needs a second
+  Expo-or-RN-CLI project pinned to an HBC98-era RN version with those
+  packages added.
+- **Expensify measurement did not complete** — §5.6's three-attempt log:
+  Metro's bundling step hit the `react-native-worklets` watchman race
+  `BUILD.md` already documents, and did not clear it even after a full
+  `watchman watch-del-all`/`watch-project` re-crawl and `--reset-cache` on
+  the third attempt (which ran 3m34s of real transform work before hitting
+  the identical error on a different generated file). Reproduce with
+  `tests/fixtures/bundles/expensify-app-0.86.0/fetch.sh`; the follow-up
+  ideas in §5.6 (watch the project *before* `npm ci`, or pre-warm the
+  worklets plugin once standalone first) are untried.
+- **Discord/Shopify (real APKs) attribute under 1% of modules** (§5.6) —
+  root-caused to an HBC-version-vs-RN-source-version mismatch (this task's
+  HBC98 signature set is ~2026-era RN/react-navigation; those apps' actual
+  bytecode is evidently from a considerably older release that also tags
+  itself "v98"). Confirms §3.3's version-pinning principle matters more than
+  the HBC major-version bucket alone once the gap is more than ~a year.
+- **`tools/extract-apk-bundle.sh` bug** (§5.6): the `pipefail`/`grep -q`
+  SIGPIPE issue causes it to report "no bundle found" on every real APK
+  tested (6/6) despite every Hermes-shipping one actually having a bundle at
+  exactly the path it checks first. Not fixed here (outside this task's
+  `tools/pkgsig/**` ownership) — flagged for whoever owns it; the fix is
+  either `grep -qxF ... || true` on the reader side or restructuring to
+  avoid a pipeline under `pipefail` with an early-exiting consumer.
+- **Version-ambiguity (S3, §4)** remains completely unmeasured — no fixture
+  or corpus app in this task exercised two candidate versions with identical
+  matched hashes.

@@ -1,0 +1,389 @@
+{
+ "schema": 1,
+ "entries": [
+  {
+   "package": "@react-native-async-storage/async-storage",
+   "version": "1.24.0",
+   "hbcVersion": 94,
+   "path": "@react-native-async-storage__async-storage@1.24.0__hbc94.json",
+   "totalFunctions": 51,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-native-async-storage/async-storage",
+   "version": "1.24.0",
+   "hbcVersion": 96,
+   "path": "@react-native-async-storage__async-storage@1.24.0__hbc96.json",
+   "totalFunctions": 51,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-native-async-storage/async-storage",
+   "version": "2.2.0",
+   "hbcVersion": 98,
+   "path": "@react-native-async-storage__async-storage@2.2.0__hbc98.json",
+   "totalFunctions": 338,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-navigation/native",
+   "version": "6.1.18",
+   "hbcVersion": 94,
+   "path": "@react-navigation__native@6.1.18__hbc94.json",
+   "totalFunctions": 860,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-navigation/native",
+   "version": "6.1.18",
+   "hbcVersion": 96,
+   "path": "@react-navigation__native@6.1.18__hbc96.json",
+   "totalFunctions": 860,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-navigation/native",
+   "version": "8.0.0-alpha.44",
+   "hbcVersion": 98,
+   "path": "@react-navigation__native@8.0.0-alpha.44__hbc98.json",
+   "totalFunctions": 1489,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-navigation/stack",
+   "version": "6.4.1",
+   "hbcVersion": 94,
+   "path": "@react-navigation__stack@6.4.1__hbc94.json",
+   "totalFunctions": 4396,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-navigation/stack",
+   "version": "6.4.1",
+   "hbcVersion": 96,
+   "path": "@react-navigation__stack@6.4.1__hbc96.json",
+   "totalFunctions": 4396,
+   "isBaseline": false
+  },
+  {
+   "package": "@react-navigation/stack",
+   "version": "8.0.0-alpha.53",
+   "hbcVersion": 98,
+   "path": "@react-navigation__stack@8.0.0-alpha.53__hbc98.json",
+   "totalFunctions": 5805,
+   "isBaseline": false
+  },
+  {
+   "package": "@reduxjs/toolkit",
+   "version": "1.9.7",
+   "hbcVersion": 94,
+   "path": "@reduxjs__toolkit@1.9.7__hbc94.json",
+   "totalFunctions": 510,
+   "isBaseline": false
+  },
+  {
+   "package": "@reduxjs/toolkit",
+   "version": "1.9.7",
+   "hbcVersion": 96,
+   "path": "@reduxjs__toolkit@1.9.7__hbc96.json",
+   "totalFunctions": 510,
+   "isBaseline": false
+  },
+  {
+   "package": "axios",
+   "version": "1.20.0",
+   "hbcVersion": 94,
+   "path": "axios@1.20.0__hbc94.json",
+   "totalFunctions": 397,
+   "isBaseline": false
+  },
+  {
+   "package": "axios",
+   "version": "1.20.0",
+   "hbcVersion": 96,
+   "path": "axios@1.20.0__hbc96.json",
+   "totalFunctions": 397,
+   "isBaseline": false
+  },
+  {
+   "package": "dayjs",
+   "version": "1.11.23",
+   "hbcVersion": 94,
+   "path": "dayjs@1.11.23__hbc94.json",
+   "totalFunctions": 55,
+   "isBaseline": false
+  },
+  {
+   "package": "dayjs",
+   "version": "1.11.23",
+   "hbcVersion": 96,
+   "path": "dayjs@1.11.23__hbc96.json",
+   "totalFunctions": 55,
+   "isBaseline": false
+  },
+  {
+   "package": "immer",
+   "version": "10.2.0",
+   "hbcVersion": 94,
+   "path": "immer@10.2.0__hbc94.json",
+   "totalFunctions": 163,
+   "isBaseline": false
+  },
+  {
+   "package": "immer",
+   "version": "10.2.0",
+   "hbcVersion": 96,
+   "path": "immer@10.2.0__hbc96.json",
+   "totalFunctions": 163,
+   "isBaseline": false
+  },
+  {
+   "package": "lodash",
+   "version": "4.17.21",
+   "hbcVersion": 94,
+   "path": "lodash@4.17.21__hbc94.json",
+   "totalFunctions": 652,
+   "isBaseline": false
+  },
+  {
+   "package": "lodash",
+   "version": "4.17.21",
+   "hbcVersion": 96,
+   "path": "lodash@4.17.21__hbc96.json",
+   "totalFunctions": 652,
+   "isBaseline": false
+  },
+  {
+   "package": "metro-toolchain-empty",
+   "version": "0.76.9",
+   "hbcVersion": 94,
+   "path": "_baselines/metro-toolchain-empty@0.76.9__hbc94.json",
+   "totalFunctions": 75,
+   "isBaseline": true
+  },
+  {
+   "package": "metro-toolchain-empty",
+   "version": "0.76.9",
+   "hbcVersion": 96,
+   "path": "_baselines/metro-toolchain-empty@0.76.9__hbc96.json",
+   "totalFunctions": 75,
+   "isBaseline": true
+  },
+  {
+   "package": "metro-toolchain-empty",
+   "version": "0.83",
+   "hbcVersion": 98,
+   "path": "_baselines/metro-toolchain-empty@0.83__hbc98.json",
+   "totalFunctions": 414,
+   "isBaseline": true
+  },
+  {
+   "package": "moment",
+   "version": "2.30.1",
+   "hbcVersion": 94,
+   "path": "moment@2.30.1__hbc94.json",
+   "totalFunctions": 357,
+   "isBaseline": false
+  },
+  {
+   "package": "moment",
+   "version": "2.30.1",
+   "hbcVersion": 96,
+   "path": "moment@2.30.1__hbc96.json",
+   "totalFunctions": 357,
+   "isBaseline": false
+  },
+  {
+   "package": "react",
+   "version": "18.2.0",
+   "hbcVersion": 94,
+   "path": "react@18.2.0__hbc94.json",
+   "totalFunctions": 131,
+   "isBaseline": false
+  },
+  {
+   "package": "react",
+   "version": "18.2.0",
+   "hbcVersion": 96,
+   "path": "react@18.2.0__hbc96.json",
+   "totalFunctions": 131,
+   "isBaseline": false
+  },
+  {
+   "package": "react-foundation",
+   "version": "18.2.0",
+   "hbcVersion": 94,
+   "path": "_baselines/react-foundation@18.2.0__hbc94.json",
+   "totalFunctions": 131,
+   "isBaseline": true
+  },
+  {
+   "package": "react-foundation",
+   "version": "18.2.0",
+   "hbcVersion": 96,
+   "path": "_baselines/react-foundation@18.2.0__hbc96.json",
+   "totalFunctions": 131,
+   "isBaseline": true
+  },
+  {
+   "package": "react-foundation",
+   "version": "19.2.3",
+   "hbcVersion": 98,
+   "path": "_baselines/react-foundation@19.2.3__hbc98.json",
+   "totalFunctions": 477,
+   "isBaseline": true
+  },
+  {
+   "package": "react-native",
+   "version": "0.72.17",
+   "hbcVersion": 94,
+   "path": "react-native@0.72.17__hbc94.json",
+   "totalFunctions": 4165,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native",
+   "version": "0.72.17",
+   "hbcVersion": 96,
+   "path": "react-native@0.72.17__hbc96.json",
+   "totalFunctions": 4165,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-foundation",
+   "version": "0.72.17",
+   "hbcVersion": 94,
+   "path": "_baselines/react-native-foundation@0.72.17__hbc94.json",
+   "totalFunctions": 4165,
+   "isBaseline": true
+  },
+  {
+   "package": "react-native-foundation",
+   "version": "0.72.17",
+   "hbcVersion": 96,
+   "path": "_baselines/react-native-foundation@0.72.17__hbc96.json",
+   "totalFunctions": 4165,
+   "isBaseline": true
+  },
+  {
+   "package": "react-native-foundation",
+   "version": "0.85.3",
+   "hbcVersion": 98,
+   "path": "_baselines/react-native-foundation@0.85.3__hbc98.json",
+   "totalFunctions": 5308,
+   "isBaseline": true
+  },
+  {
+   "package": "react-native-gesture-handler",
+   "version": "2.32.0",
+   "hbcVersion": 94,
+   "path": "react-native-gesture-handler@2.32.0__hbc94.json",
+   "totalFunctions": 3097,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-gesture-handler",
+   "version": "2.32.0",
+   "hbcVersion": 96,
+   "path": "react-native-gesture-handler@2.32.0__hbc96.json",
+   "totalFunctions": 3097,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-gesture-handler",
+   "version": "3.0.2",
+   "hbcVersion": 98,
+   "path": "react-native-gesture-handler@3.0.2__hbc98.json",
+   "totalFunctions": 4316,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-reanimated",
+   "version": "3.19.5",
+   "hbcVersion": 94,
+   "path": "react-native-reanimated@3.19.5__hbc94.json",
+   "totalFunctions": 2431,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-reanimated",
+   "version": "3.19.5",
+   "hbcVersion": 96,
+   "path": "react-native-reanimated@3.19.5__hbc96.json",
+   "totalFunctions": 2431,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-reanimated",
+   "version": "4.5.3",
+   "hbcVersion": 98,
+   "path": "react-native-reanimated@4.5.3__hbc98.json",
+   "totalFunctions": 3454,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-safe-area-context",
+   "version": "5.7.0",
+   "hbcVersion": 98,
+   "path": "react-native-safe-area-context@5.7.0__hbc98.json",
+   "totalFunctions": 305,
+   "isBaseline": false
+  },
+  {
+   "package": "react-native-screens",
+   "version": "4.26.2",
+   "hbcVersion": 98,
+   "path": "react-native-screens@4.26.2__hbc98.json",
+   "totalFunctions": 476,
+   "isBaseline": false
+  },
+  {
+   "package": "react-redux",
+   "version": "8.1.3",
+   "hbcVersion": 94,
+   "path": "react-redux@8.1.3__hbc94.json",
+   "totalFunctions": 200,
+   "isBaseline": false
+  },
+  {
+   "package": "react-redux",
+   "version": "8.1.3",
+   "hbcVersion": 96,
+   "path": "react-redux@8.1.3__hbc96.json",
+   "totalFunctions": 200,
+   "isBaseline": false
+  },
+  {
+   "package": "redux",
+   "version": "4.2.1",
+   "hbcVersion": 94,
+   "path": "redux@4.2.1__hbc94.json",
+   "totalFunctions": 36,
+   "isBaseline": false
+  },
+  {
+   "package": "redux",
+   "version": "4.2.1",
+   "hbcVersion": 96,
+   "path": "redux@4.2.1__hbc96.json",
+   "totalFunctions": 36,
+   "isBaseline": false
+  },
+  {
+   "package": "zustand",
+   "version": "4.5.7",
+   "hbcVersion": 94,
+   "path": "zustand@4.5.7__hbc94.json",
+   "totalFunctions": 31,
+   "isBaseline": false
+  },
+  {
+   "package": "zustand",
+   "version": "4.5.7",
+   "hbcVersion": 96,
+   "path": "zustand@4.5.7__hbc96.json",
+   "totalFunctions": 31,
+   "isBaseline": false
+  }
+ ]
+}
