@@ -2,12 +2,15 @@
 // only place a pass is switched on. `--passes=none` reproduces the M4 baseline
 // exactly, which is the required capability (PL-05).
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import { exprRebuild } from "./expr-rebuild/index.ts";
 import { forHeader } from "./for-header/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
 import type { Pass, Stage } from "./types.ts";
 
-/** Order is explicit data (§2.3). Stage A first; within a stage, dependency order. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass];
+/** Order is explicit data (§2.3). Stage A first; within a stage, dependency
+ *  order — `expr-rebuild` is first in stage B (PL-11), enforced below by
+ *  injecting `after: ["expr-rebuild"]` into every other stage-B rung. */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, exprRebuild as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
