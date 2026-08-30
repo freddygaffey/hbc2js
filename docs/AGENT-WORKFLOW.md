@@ -16,6 +16,7 @@ Orchestrator hygiene
 - The overseer never reads agent transcripts, source dumps, or long docs. Agents report in ≤300 words; anything larger goes in a file under `docs/` and the report links to it.
 - Diff review of implementation work is delegated to a reviewer agent that returns pass/fail + findings; the overseer reads the verdict only.
 - Rationale: the overseer's context is the project's scarcest resource.
+- **Don't resume large-context agents for follow-ups.** Every turn of a resumed agent re-reads its entire context (cached, but billed). For fixes and follow-up work, launch a fresh agent with a tight brief that points at the review or status doc; resume only when the agent's context is small or the remaining step is trivial. Prefer many small briefs over one long-lived agent.
 
 Bug rule
 - A bug found by a review, a sweep, or a user gets a regression test in the same commit as its fix — one that reproduces the bug (fails on the pre-fix commit) and is named after its source (e.g. `review-M4-C1-catch-finally-order`). Semantic bugs also get a construct fixture so every version is covered from then on.
