@@ -1,0 +1,209 @@
+// docs/specs/05-emitter.md §6 / EM-01 — every emitted identifier must be
+// declared in an enclosing emitted scope.
+//
+// This is the R3 guard. hermes-dec ships `_closure1_slot1` identifiers that are
+// never declared, and its output throws ReferenceError before semantics are even
+// in question; the point of this check is to make that unrepresentable.
+import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import type { Expr, Stmt } from "./ast.ts";
+
+/**
+ * Globals the emitter itself names. Everything the *program* touches goes
+ * through `globalThis.<name>` (that is what `GetGlobalObject` + `GetById`
+ * lowers to), so this list only has to cover the intrinsics our own lowerings
+ * mention.
+ */
+const KNOWN_GLOBALS: ReadonlySet<string> = new Set([
+  "globalThis",
+  "undefined",
+  "Infinity",
+  "NaN",
+  "Object",
+  "Array",
+  "String",
+  "Number",
+  "Boolean",
+  "Symbol",
+  "BigInt",
+  "Math",
+  "JSON",
+  "Reflect",
+  "Promise",
+  "RegExp",
+  "Function",
+  "Error",
+  "TypeError",
+  "ReferenceError",
+  "SyntaxError",
+  "RangeError",
+  "Date",
+  "Map",
+  "Set",
+  "WeakMap",
+  "WeakSet",
+  "Proxy",
+  "eval",
+]);
+
+function declaredBy(stmt: Stmt, into: Set<string>): void {
+  switch (stmt.k) {
+    case "decl":
+      for (const n of stmt.names) into.add(n);
+      return;
+    case "init":
+      into.add(stmt.name);
+      return;
+    case "func":
+      into.add(stmt.name);
+      return;
+    default:
+      return;
+  }
+}
+
+/** Names a `raw` helper block introduces (`function f(` / `var f =`). */
+function declaredByRaw(text: string, into: Set<string>): void {
+  for (const m of text.matchAll(/^(?:function\s+([A-Za-z_$][\w$]*)|var\s+([A-Za-z_$][\w$]*))/gm)) {
+    const name = m[1] ?? m[2];
+    if (name !== undefined) into.add(name);
+  }
+}
+
+export function checkBindings(program: readonly Stmt[], helperNames: readonly string[], globalIndex: number): void {
+  const root = new Set<string>(KNOWN_GLOBALS);
+  for (const n of helperNames) root.add(n);
+  root.add(`_fn${globalIndex}`);
+
+  const fail = (name: string, where: string): never => {
+    throw new Hbc2jsError(ErrorCode.E_UNBOUND_IDENT, `emitted identifier "${name}" is not declared in any enclosing scope (${where})`, { section: "emit/scope-check" });
+  };
+
+  const walkExpr = (e: Expr, scopes: readonly Set<string>[], where: string): void => {
+    switch (e.k) {
+      case "ident":
+        if (!scopes.some((s) => s.has(e.name))) fail(e.name, where);
+        return;
+      case "lit":
+      case "this":
+      case "argumentsObject":
+        return;
+      case "member":
+        walkExpr(e.obj, scopes, where);
+        if (e.computed) walkExpr(e.prop, scopes, where);
+        return;
+      case "call":
+      case "new":
+        walkExpr(e.callee, scopes, where);
+        for (const a of e.args) walkExpr(a, scopes, where);
+        return;
+      case "bin":
+      case "logical":
+        walkExpr(e.left, scopes, where);
+        walkExpr(e.right, scopes, where);
+        return;
+      case "unary":
+        walkExpr(e.arg, scopes, where);
+        return;
+      case "assign":
+        walkExpr(e.target, scopes, where);
+        walkExpr(e.value, scopes, where);
+        return;
+      case "cond":
+        walkExpr(e.test, scopes, where);
+        walkExpr(e.then, scopes, where);
+        walkExpr(e.else, scopes, where);
+        return;
+      case "array":
+        for (const x of e.elements) walkExpr(x, scopes, where);
+        return;
+      case "object":
+        for (const p of e.props) walkExpr(p.value, scopes, where);
+        return;
+      case "seq":
+        for (const x of e.exprs) walkExpr(x, scopes, where);
+        return;
+      case "func": {
+        const inner = new Set<string>(e.params);
+        collect(e.body, inner);
+        walkBody(e.body, [...scopes, inner], where);
+        return;
+      }
+    }
+  };
+
+  const collect = (body: readonly Stmt[], into: Set<string>): void => {
+    for (const s of body) {
+      declaredBy(s, into);
+      if (s.k === "raw") declaredByRaw(s.text, into);
+    }
+  };
+
+  const walkBody = (body: readonly Stmt[], scopes: readonly Set<string>[], where: string): void => {
+    for (const s of body) walkStmt(s, scopes, where);
+  };
+
+  const walkStmt = (s: Stmt, scopes: readonly Set<string>[], where: string): void => {
+    switch (s.k) {
+      case "expr":
+        walkExpr(s.expr, scopes, where);
+        return;
+      case "init":
+        walkExpr(s.value, scopes, where);
+        return;
+      case "if":
+        walkExpr(s.test, scopes, where);
+        walkNested(s.then, scopes, where);
+        walkNested(s.else, scopes, where);
+        return;
+      case "while":
+      case "labeled":
+        walkNested(s.body, scopes, where);
+        return;
+      case "iife": {
+        const inner = new Set<string>();
+        collect(s.body, inner);
+        walkBody(s.body, [...scopes, inner], where);
+        return;
+      }
+      case "return":
+        if (s.arg !== null) walkExpr(s.arg, scopes, where);
+        return;
+      case "throw":
+        walkExpr(s.arg, scopes, where);
+        return;
+      case "try": {
+        walkNested(s.block, scopes, where);
+        const handlerScope = new Set<string>([s.param]);
+        const nested = new Set<string>();
+        collect(s.handler, nested);
+        walkBody(s.handler, [...scopes, handlerScope, nested], where);
+        return;
+      }
+      case "switch":
+        walkExpr(s.disc, scopes, where);
+        for (const c of s.cases) {
+          if (c.test !== null) walkExpr(c.test, scopes, where);
+          walkNested(c.body, scopes, where);
+        }
+        return;
+      case "func": {
+        const inner = new Set<string>(s.params);
+        collect(s.body, inner);
+        walkBody(s.body, [...scopes, inner], `${where} > ${s.name}`);
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
+  /** A nested statement list shares the function scope but may add block-scoped names. */
+  const walkNested = (body: readonly Stmt[], scopes: readonly Set<string>[], where: string): void => {
+    const inner = new Set<string>();
+    collect(body, inner);
+    walkBody(body, inner.size === 0 ? scopes : [...scopes, inner], where);
+  };
+
+  collect(program, root);
+  walkBody(program, [root], "module");
+}

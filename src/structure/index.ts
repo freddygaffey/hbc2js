@@ -34,10 +34,13 @@ export function structure(cfg: FunctionCfg, opts: StructureOptions = {}): Struct
   const maxExpansion = opts.maxExpansion ?? 2.0;
   const verify = opts.verify ?? true;
   const maxDepth = opts.maxDepth ?? 1500;
-  const graph = augment(cfg);
   const diagnostics: Diagnostic[] = [];
 
   const useDispatch = opts.dispatchFallback === true || mode === "dispatch";
+  // Dispatch mode expresses exception regions as a nest of `try` nodes around
+  // one flat state switch, so it works on the plain CFG; Ramsey needs the
+  // try-head augmentation (§4.5).
+  let graph = augment(cfg, { noTryHeads: useDispatch });
   let core = useDispatch ? dispatchStructure(graph) : null;
   if (core === null) {
     try {
@@ -45,6 +48,7 @@ export function structure(cfg: FunctionCfg, opts: StructureOptions = {}): Struct
     } catch (e) {
       if (e instanceof NeedDispatch && mode === "auto") {
         diagnostics.push({ severity: "warn", code: "W_EXPANSION_CAP", message: `falling back to dispatch mode: ${e.why}`, context: { functionIndex: cfg.functionIndex } });
+        graph = augment(cfg, { noTryHeads: true });
         core = dispatchStructure(graph);
       } else if (e instanceof NeedDispatch) {
         throw new Hbc2jsError(ErrorCode.E_TOO_COMPLEX, `irreducible region needs dispatch mode but irreducible="${mode}": ${e.why}`, { functionIndex: cfg.functionIndex, section: "structure" });
@@ -86,6 +90,18 @@ export function structure(cfg: FunctionCfg, opts: StructureOptions = {}): Struct
   if (verify) {
     const result = checkIsomorphic(fn, reconstruct(fn));
     if (!result.ok) {
+      // A P6 failure is the one kind that is a property of the *input*, not of
+      // the translation: a Hermes exception region is a byte range, and a
+      // production bundle can put a block inside that range which is only
+      // reachable after the region's own handler has run (found on a v96 app
+      // bundle, function 1912). No single `try` can then cover the region
+      // without swallowing its handler. §4.4's dispatch mode has no such
+      // constraint — its `try` nest spans the whole function and the emitter's
+      // `__pc` guard picks the handler — so retry there rather than emitting a
+      // `try` that under-reaches, which would let an exception escape.
+      if (result.reason.startsWith("P6") && !usedDispatch && mode === "auto") {
+        return structure(cfg, { ...opts, irreducible: "dispatch" });
+      }
       throw new Hbc2jsError(ErrorCode.E_STRUCTURE_UNSOUND, `function ${cfg.functionIndex}: ${result.reason}${formatEdges(result.missingEdges, "missing")}${formatEdges(result.extraEdges, "extra")}`, {
         functionIndex: cfg.functionIndex,
         section: "structure/verify",

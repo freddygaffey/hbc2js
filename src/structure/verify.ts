@@ -128,8 +128,12 @@ export function reconstruct(fn: StructuredFunction): ReconstructedCfg {
         // The try-head is a synthetic block with two outgoing edges (body,
         // handler); both are real edges of the augmented graph, so both must be
         // reconstructed here — the `try` node is the only place they appear.
+        // §4.4's dispatch nest has no try-head (`cfgBlock: -1`): its `catch`
+        // contributes no *normal* edge, which is exactly the CFG's own model of
+        // an exception edge.
         const body = walk(stmt.body, after, ctx);
         const handler = walk(stmt.handler, after, ctx);
+        if (stmt.cfgBlock < 0) return body;
         order.push(stmt.cfgBlock);
         deferred.push({ from: stmt.cfgBlock, next: body });
         deferred.push({ from: stmt.cfgBlock, next: handler });
@@ -178,7 +182,9 @@ export function checkIsomorphic(fn: StructuredFunction, rec: ReconstructedCfg): 
   }
 
   // Only reachable blocks are in scope for P1/P2 — an unreachable CFG block
-  // (dead code after a Ret) is legitimately absent from the tree.
+  // (dead code after a Ret) is legitimately absent from the tree. Reachability
+  // is over normal *and* exception edges, matching spec 03's CFG-05: a handler
+  // block has no normal predecessor but its own outgoing edges are real.
   const reachable = new Set<BlockId>();
   {
     const stack: BlockId[] = [graph.entry];
@@ -186,6 +192,7 @@ export function checkIsomorphic(fn: StructuredFunction, rec: ReconstructedCfg): 
     while (stack.length > 0) {
       const b = stack.pop()!;
       for (const e of graph.blocks[b]!.succs) if (!reachable.has(e.to)) (reachable.add(e.to), stack.push(e.to));
+      for (const h of graph.cfg.exceptionSuccs.get(b) ?? []) if (!reachable.has(h)) (reachable.add(h), stack.push(h));
     }
   }
 
@@ -261,7 +268,9 @@ function collectShapes(root: Stmt, out: Map<BlockId, string>): void {
   const stack: Stmt[] = [root];
   while (stack.length > 0) {
     const n = stack.pop()!;
-    if (n.k === "if" || n.k === "switch" || n.k === "return" || n.k === "throw" || n.k === "try") out.set(n.cfgBlock, n.k);
+    // `cfgBlock < 0` is a synthetic node (§4.4's flat dispatch switch and the
+    // `try` nest around it), which stands for no CFG block.
+    if ((n.k === "if" || n.k === "switch" || n.k === "return" || n.k === "throw" || n.k === "try") && n.cfgBlock >= 0) out.set(n.cfgBlock, n.k);
     for (const c of children(n)) stack.push(c);
   }
 }

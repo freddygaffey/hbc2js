@@ -501,6 +501,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
     closureEnvOf,
     envsCreatedIn,
     resolvedAt: collected.resolvedAt,
+    envInSlot: new Map([...slotEnv].filter((e): e is [string, EnvNodeId] => e[1] !== "conflict")),
     unresolved,
     diagnostics,
   };

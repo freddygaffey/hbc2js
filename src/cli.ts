@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
-import { closeSync, openSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { parseHbc } from "./parse/module.ts";
 import type { LayoutClass, OpcodeTableId } from "./parse/types.ts";
@@ -17,10 +17,12 @@ import { normaliseModule, diffNormalised } from "./harness/roundtrip.ts";
 import { runTier } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
+import { decompile, decompileTree, nodeCheck } from "./decompile.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
 Usage:
+  hbc2js <input.hbc> [out.js]      decompile to JavaScript (specs 03-05)
   hbc2js --info <input.hbc>        print header/layout/section info and exit
   hbc2js disasm <input.hbc> [options]   disassemble to text (spec 02)
   hbc2js equiv <a.js> <b.js>       execution-trace equivalence (spec 06)
@@ -30,6 +32,16 @@ Usage:
   hbc2js sweep [options]           run the sweep tier (spec 06 §7)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
+
+Options (decompile):
+  --function=N              restrict --emit-tree to function index N
+  --no-verify               skip the structurer's round-trip isomorphism check
+  --emit-tree               print the structurer's tree IR instead of JavaScript
+  --no-node-check           skip the built-in 'node --check' of the output
+  --opcode-table=<id>       force an opcode table instead of probing
+  --force-v98-table         resolve E_LAYOUT_AMBIGUOUS by forcing hbc98-late
+  --stats                   print structurer statistics to stderr
+  -o <file>                 write to a file instead of stdout
 
 Options (--info):
   --layout=<A|B|C|D|E>             force a layout class instead of probing
@@ -357,6 +369,88 @@ async function runTierCmd(tier: Tier, argv: readonly string[]): Promise<number> 
   return report.summary.divergent + report.summary.error > 0 ? 1 : report.summary.inconclusive > 0 ? 2 : 0;
 }
 
+interface DecompileArgs {
+  readonly help: boolean;
+  readonly input: string | undefined;
+  readonly outPath: string | undefined;
+  readonly functionIndex: number | undefined;
+  readonly verify: boolean;
+  readonly emitTree: boolean;
+  readonly nodeCheck: boolean;
+  readonly opcodeTable: OpcodeTableId | undefined;
+  readonly forceV98: boolean;
+  readonly stats: boolean;
+}
+
+function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
+  let help = false;
+  let input: string | undefined;
+  let outPath: string | undefined;
+  let functionIndex: number | undefined;
+  let verify = true;
+  let emitTree = false;
+  let check = true;
+  let opcodeTable: OpcodeTableId | undefined;
+  let forceV98 = false;
+  let stats = false;
+  const positional: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--help" || a === "-h") help = true;
+    else if (a === "-o") outPath = argv[++i];
+    else if (a.startsWith("--function=")) functionIndex = Number(a.slice("--function=".length));
+    else if (a === "--no-verify") verify = false;
+    else if (a === "--emit-tree") emitTree = true;
+    else if (a === "--no-node-check") check = false;
+    else if (a === "--force-v98-table") forceV98 = true;
+    else if (a === "--stats") stats = true;
+    else if (a.startsWith("--opcode-table=")) opcodeTable = a.slice("--opcode-table=".length) as OpcodeTableId;
+    else if (!a.startsWith("-")) positional.push(a);
+  }
+  input = positional[0];
+  if (outPath === undefined) outPath = positional[1];
+  return { help, input, outPath, functionIndex, verify, emitTree, nodeCheck: check, opcodeTable, forceV98, stats };
+}
+
+/** `hbc2js <input.hbc> [out.js]` — docs/specs/05-emitter.md §1. */
+function runDecompile(argv: readonly string[]): void {
+  const args = parseDecompileArgs(argv);
+  if (args.help || args.input === undefined) {
+    process.stdout.write(USAGE);
+    process.exit(args.help ? 0 : 2);
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = readFileSync(args.input);
+  } catch (e) {
+    fail(ErrorCode.E_IO, `cannot read ${args.input}: ${e instanceof Error ? e.message : String(e)}`, 2, false);
+  }
+  try {
+    const opts = {
+      moduleName: basename(args.input),
+      verify: args.verify,
+      resolveV98Ambiguity: args.forceV98,
+      ...(args.opcodeTable !== undefined ? { opcodeTable: args.opcodeTable } : {}),
+      ...(args.functionIndex !== undefined ? { functionIndex: args.functionIndex } : {}),
+    };
+    const text = args.emitTree ? decompileTree(bytes, opts) : decompile(bytes, opts).code;
+    if (!args.emitTree && args.nodeCheck) {
+      const check = nodeCheck(text);
+      if (!check.ok) {
+        process.stderr.write(`hbc2js: emitted JavaScript did not pass 'node --check':\n${check.message}\n`);
+        if (args.outPath !== undefined) writeFileSync(args.outPath, text);
+        process.exit(5);
+      }
+    }
+    if (args.outPath !== undefined) writeFileSync(args.outPath, text);
+    else process.stdout.write(text);
+    process.exit(0);
+  } catch (e) {
+    if (e instanceof Hbc2jsError) fail(e.code, e.message, exitCodeFor(e.code), false);
+    fail(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e), 1, false);
+  }
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   if (argv[0] === "disasm") {
@@ -369,6 +463,14 @@ function main(): void {
   }
   if (argv[0] === "gate" || argv[0] === "sweep") {
     void runTierCmd(argv[0], argv.slice(1)).then((code) => process.exit(code));
+    return;
+  }
+  // `hbc2js <input.hbc> [out.js]` is the default command; `--info` and the other
+  // subcommands keep their existing behaviour (additive, per this milestone's
+  // task boundary).
+  const first = argv[0];
+  if (first !== undefined && !first.startsWith("-") && argv.every((a) => a !== "--info")) {
+    runDecompile(argv);
     return;
   }
   const args = parseArgs(argv);

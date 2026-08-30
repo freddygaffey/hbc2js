@@ -84,3 +84,32 @@ Lookup order: **project-local** (`<out-dir>/.hbc2js/sigdb/`, or `--sigdb <dir>`;
 
 ## D19 — Output is a project tree, split per Metro module, with a screens index (2026-08-30)
 Metro preserves one `__d(fn, id, deps)` entry per source file, so M6 emits one file per module with `require()` edges restored, under `<out-dir>/src/`. Module names come from evidence in priority order: leaked relative import paths in strings, component `displayName`, react-navigation route registrations, error/warning prefixes, `package.json`-style name/version strings; otherwise `module_<id>.js` with a comment listing what requires it. Recognised npm packages (D17) are removed from `src/` and listed in the emitted `package.json`. A `SCREENS.md` index maps navigator route names → screen module file → components rendered, giving a per-page view of the app. Entry module becomes `index.js`.
+
+## D18 — The M4 runtime-helper set is "every VM primitive with no JS surface form", not literally four (2026-08-30)
+Spec 05 §7.3 lists four sanctioned helpers and says a fifth needs a decision here.
+Implementing the baseline showed the *criterion* in §7.1 is right and the *count*
+was an underestimate: the construct corpus reaches VM primitives that have no
+direct JS form beyond the generator protocol, `arguments` reification and
+`CallBuiltin`. The emitted set, each emitted only when used (EM-03):
+
+| Helper | VM primitive |
+|---|---|
+| `__hbc_makeGenerator` | v≤96 generator resume protocol (`SaveGenerator`/`ResumeGenerator`), driving the frame factory spec 05 §7.2.1's state contract requires |
+| `__hbc_makeGeneratorLowered` | v≥97 `CreateGenerator` shim (D9) |
+| `__hbc_arguments` | `ReifyArguments` — an **unmapped** object (D14/§8) |
+| `__hbc_empty` | the "empty" sentinel `LoadConstEmpty` writes and `ThrowIfEmpty` tests; collapsing it to `undefined` would erase every TDZ check the bytecode *does* have |
+| `__hbc_iterBegin` / `__hbc_iterNext` / `__hbc_iterClose` | `IteratorBegin`/`IteratorNext`/`IteratorClose`, each of which writes two registers |
+| `__hbc_pnames` / `__hbc_nextPName` | `GetPNameList`/`GetNextPName` |
+| `__hbc_HermesInternal` | the Hermes *host* object; `hermesc` lowers template literals to unconditional `HermesInternal.concat(...)` with no fallback, so output that reads it off `globalThis` runs nowhere but Hermes |
+| `__hbc_b_*` (18) | the **internal** entries of the `CallBuiltin` table — `arraySpread`, `copyDataProperties`, `copyRestArgs`, `spawnAsync`, `getTemplateObject`, … — which are runtime intrinsics, not JS globals |
+
+Builtins that *are* real globals (`Math.floor`, `JSON.stringify`, `Object.keys`,
+`String.fromCharCode`, `globalThis.Symbol`, …) get no helper: `src/emit/builtins.ts`
+emits the call directly. `exponentiationOperator` is inlined as `a ** b` for the same
+reason — §7.1 forbids a helper for anything with a JS surface form. Every helper is
+self-contained, emitted inline, and covered by a test; the only module state is
+`__hbc_b_getTemplateObject`'s cache (tagged-template object *identity* is observable
+and cannot be reproduced without one) and `__hbc_delegated` (`CallBuiltin
+generatorSetDelegated` names no generator — it always means "the one currently
+stepping").
+

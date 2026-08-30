@@ -241,6 +241,8 @@ export interface RunnerOptions {
   readonly versions?: readonly number[];
   readonly oracles?: readonly OracleName[];
   readonly seeds?: number;
+  /** Passed straight through to the ladder's trace comparison (spec 06 §5). */
+  readonly relax?: readonly string[];
   readonly budgets?: { readonly timeoutMs?: number; readonly maxRecords?: number };
   readonly concurrency?: number;
   readonly decompiler?: DecompilerFn;
@@ -360,6 +362,7 @@ export async function runTier(o: RunnerOptions): Promise<TierReport> {
         oracles,
         seed: 0,
         fuzz: 50,
+        ...(o.relax !== undefined ? { relax: o.relax } : {}),
         timeoutMs: o.budgets?.timeoutMs ?? 8000,
         maxRecords: o.budgets?.maxRecords ?? 20000,
       });

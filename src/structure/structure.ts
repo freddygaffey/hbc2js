@@ -75,9 +75,14 @@ export function ramsey(graph: AugmentedCfg, opts: CoreOptions): CoreResult {
     depth--;
   };
 
+  const seenBlocks = new Set<BlockId>();
   const blockLeaf = (b: AugBlock): Stmt => {
     emitted++;
     if (emitted > budget) throw new NeedDispatch(`expansion budget ${budget} exceeded`);
+    // P3 counts *every* repeated block, not just the node §4.4 split: resolving
+    // one irreducible entry duplicates the whole subtree below it.
+    if (seenBlocks.has(b.id)) duplicated.add(b.id);
+    else seenBlocks.add(b.id);
     return { k: "block", cfgBlock: b.id };
   };
 
@@ -203,31 +208,27 @@ export function ramsey(graph: AugmentedCfg, opts: CoreOptions): CoreResult {
 }
 
 // ---------------------------------------------------------------------------
-// §4.4 `dispatch` mode — never blows up, and unlike a whole-function
-// `for(;;) switch(pc)` it keeps `try`/`catch` lexical: one dispatch loop per
-// exception scope, all sharing one state variable. An edge leaving a scope sets
-// the state and `break`s out of that scope's loop; the enclosing loop picks it up.
+// §4.4 `dispatch` mode — total, and never blows up.
+//
+// One flat `switch (__state)` over every reachable block, wrapped in a nest of
+// `try` nodes, one per exception region, innermost first. Each `catch` is guarded
+// by the emitter's `__pc` check (which records the block that is executing), so
+// an exception is routed to exactly the region that covers the block that threw
+// and rethrown otherwise. That is what makes the flat form correct in the
+// presence of exceptions, where the obvious `for(;;) switch(pc)` is not: a
+// `continue` out of a `try` leaves it, so the protected extent has to be
+// re-entered on every step rather than spanned once.
+//
+// The graph the tree is checked against is the *plain* CFG (no try-heads):
+// every block's outgoing edge is `setState(target); continue L`, whose target
+// verify.ts resolves exactly, and a handler is entered only through a `catch`,
+// which contributes no normal edge — precisely the CFG's own model.
 // ---------------------------------------------------------------------------
 
 export function dispatchStructure(graph: AugmentedCfg): CoreResult {
   const variable: DispatchVar = { id: 0 };
-  const labels: LabelInfo[] = [];
-  let nextLabel = 0;
-
-  // scopeOf(block) = the innermost region whose body contains it; try-heads
-  // belong to their region's *parent* scope (that is where their edges come from).
-  const regions = graph.cfg.regions;
-  const scopeOf = new Map<BlockId, number>(); // block -> region index, or -1 for root
-  for (const b of graph.blocks) {
-    if (b.block === null) continue;
-    let innermost = -1;
-    for (const r of regions) {
-      if (!r.bodyBlocks.has(b.id)) continue;
-      if (innermost === -1 || (regions[innermost]!.endPc - regions[innermost]!.startPc) > r.endPc - r.startPc) innermost = r.index;
-    }
-    scopeOf.set(b.id, innermost);
-  }
-  for (const [head, regionIndex] of graph.tryHeads) scopeOf.set(head, regions[regionIndex]!.parent ?? -1);
+  const label: LabelId = 0;
+  const uses = new Set<"break" | "continue">();
 
   const reachable = new Set<BlockId>([graph.entry]);
   {
@@ -235,65 +236,16 @@ export function dispatchStructure(graph: AugmentedCfg): CoreResult {
     while (stack.length > 0) {
       const b = stack.pop()!;
       for (const e of graph.blocks[b]!.succs) if (!reachable.has(e.to)) (reachable.add(e.to), stack.push(e.to));
+      for (const h of graph.cfg.exceptionSuccs.get(b) ?? []) if (!reachable.has(h)) (reachable.add(h), stack.push(h));
     }
   }
 
-  const membersOf = new Map<number, BlockId[]>();
-  for (const b of graph.blocks) {
-    if (!reachable.has(b.id)) continue;
-    const s = scopeOf.get(b.id);
-    if (s === undefined) continue;
-    const list = membersOf.get(s);
-    if (list === undefined) membersOf.set(s, [b.id]);
-    else list.push(b.id);
-  }
-  for (const l of membersOf.values()) l.sort((a, b) => a - b);
-
-  const goTo = (target: BlockId, loopLabel: LabelId, scope: number): Stmt => {
-    const targetScope = scopeOf.get(target) ?? -1;
-    const set: Stmt = { k: "setState", variable, value: target };
-    if (targetScope === scope) {
-      labelUse(loopLabel, "continue");
-      return seq([set, { k: "continue", label: loopLabel }]);
-    }
-    labelUse(loopLabel, "break");
-    return seq([set, { k: "break", label: loopLabel }]);
-    // (`set` carries the target block id, which is what makes verify.ts able to
-    //  resolve a dispatch jump exactly instead of over-approximating it.)
+  const goTo = (target: BlockId): Stmt => {
+    uses.add("continue");
+    return seq([{ k: "setState", variable, value: target }, { k: "continue", label }]);
   };
 
-  const uses = new Map<LabelId, Set<"break" | "continue">>();
-  function labelUse(l: LabelId, how: "break" | "continue"): void {
-    let s = uses.get(l);
-    if (s === undefined) {
-      s = new Set();
-      uses.set(l, s);
-    }
-    s.add(how);
-  }
-
-  const buildScope = (scope: number, header: BlockId): Stmt => {
-    const label = nextLabel++;
-    uses.set(label, new Set());
-    const members = membersOf.get(scope) ?? [];
-    const cases: SwitchArm[] = [];
-    for (const id of members) {
-      const b = graph.blocks[id]!;
-      cases.push({ value: id, isString: false, body: armFor(b, label, scope) });
-    }
-    labelUse(label, "break");
-    const body: Stmt = {
-      k: "switch",
-      cfgBlock: -1,
-      scrutinee: { t: "dispatch", variable },
-      cases,
-      default: { k: "break", label },
-    };
-    labels.push({ id: label, kind: "loop", header, usedBy: [] });
-    return { k: "loop", label, body };
-  };
-
-  const armFor = (b: AugBlock, label: LabelId, scope: number): Stmt => {
+  const armFor = (b: AugBlock): Stmt => {
     const leaf: Stmt = { k: "block", cfgBlock: b.id };
     const t = b.terminator;
     switch (t.kind) {
@@ -305,40 +257,62 @@ export function dispatchStructure(graph: AugmentedCfg): CoreResult {
         return b.block !== null && b.block.instructions.length > 0 ? seq([leaf, { k: "unreachable" }]) : { k: "unreachable" };
       case "jump":
       case "fallthrough":
-        return seq([leaf, goTo(b.succs[0]!.to, label, scope)]);
+        return seq([leaf, goTo(b.succs[0]!.to)]);
       case "branch": {
         const taken = b.succs.find((e: Edge) => e.kind === "branch-taken")!;
         const notTaken = b.succs.find((e: Edge) => e.kind === "branch-not-taken");
-        return seq([leaf, { k: "if", cfgBlock: b.id, then: goTo(taken.to, label, scope), else: notTaken === undefined ? EMPTY : goTo(notTaken.to, label, scope) }]);
+        return seq([leaf, { k: "if", cfgBlock: b.id, then: goTo(taken.to), else: notTaken === undefined ? EMPTY : goTo(notTaken.to) }]);
       }
       case "switch": {
         const cases: SwitchArm[] = [];
         let dflt: Stmt = EMPTY;
         for (const e of b.succs) {
-          if (e.kind === "switch-default") dflt = goTo(e.to, label, scope);
-          else cases.push({ value: e.caseValue ?? 0, isString: e.caseIsString === true, body: goTo(e.to, label, scope) });
+          if (e.kind === "switch-default") dflt = goTo(e.to);
+          else cases.push({ value: e.caseValue ?? 0, isString: e.caseIsString === true, body: goTo(e.to) });
         }
         const scrutinee = t.synthetic === true ? ({ t: "generator-state" } as const) : ({ t: "jumptable", table: t.table } as const);
         return seq([leaf, { k: "switch", cfgBlock: b.id, scrutinee, cases, default: dflt }]);
       }
-      case "try": {
-        const region = graph.cfg.regions[t.region]!;
-        const bodyEntry = b.succs[0]!.to;
-        const handler = b.succs[1]!.to;
-        const inner = seq([{ k: "setState", variable, value: bodyEntry }, buildScope(t.region, bodyEntry)]);
-        // The inner loop `break`s out with the state already set; re-dispatching
-        // through this scope's own switch either finds the target here or hits
-        // `default: break` and propagates the state one scope further out.
-        labelUse(label, "continue");
-        return seq([
-          { k: "try", region: t.region, cfgBlock: b.id, body: inner, handler: goTo(handler, label, scope), catchRegister: region.catchRegister },
-          { k: "continue", label },
-        ]);
-      }
+      case "try":
+        // Only reachable from the Ramsey path's augmentation, which dispatch
+        // mode does not use.
+        throw new Hbc2jsError(ErrorCode.E_INTERNAL, "dispatch mode saw a synthetic try-head", { functionIndex: graph.cfg.functionIndex, section: "structure" });
     }
   };
 
-  const root = seq([{ k: "setState", variable, value: graph.entry }, buildScope(-1, graph.entry)]);
-  const finalLabels = labels.map((l) => ({ ...l, usedBy: [...(uses.get(l.id) ?? [])].sort() }));
-  return { root, labels: finalLabels, duplicatedBlocks: [], emitted: reachable.size, diagnostics: [] };
+  const members = [...reachable].sort((a, b) => a - b);
+  const flat: Stmt = {
+    k: "switch",
+    cfgBlock: -1,
+    scrutinee: { t: "dispatch", variable },
+    cases: members.map((id) => ({ value: id, isString: false, body: armFor(graph.blocks[id]!) })),
+    default: { k: "unreachable" },
+  };
+
+  // Innermost region first, so an exception is offered to the tightest handler
+  // that could own it before any enclosing one.
+  const depthOf = (index: number): number => {
+    let d = 0;
+    let p = graph.cfg.regions[index]!.parent;
+    while (p !== null) {
+      d++;
+      p = graph.cfg.regions[p]!.parent;
+    }
+    return d;
+  };
+  const ordered = graph.cfg.regions.map((r) => r.index).sort((a, b) => depthOf(b) - depthOf(a) || a - b);
+  let body: Stmt = flat;
+  for (const index of ordered) {
+    const region = graph.cfg.regions[index]!;
+    body = { k: "try", region: index, cfgBlock: -1, body, handler: goTo(region.handlerBlock), catchRegister: region.catchRegister };
+  }
+
+  const root = seq([{ k: "setState", variable, value: graph.entry }, { k: "loop", label, body }]);
+  return {
+    root,
+    labels: [{ id: label, kind: "loop", header: graph.entry, usedBy: [...uses].sort() }],
+    duplicatedBlocks: [],
+    emitted: reachable.size,
+    diagnostics: [],
+  };
 }

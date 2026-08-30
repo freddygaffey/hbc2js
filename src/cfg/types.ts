@@ -175,6 +175,14 @@ export interface EnvGraph {
   readonly envsCreatedIn: ReadonlyMap<number, readonly EnvNodeId[]>;
   /** (functionIndex, offset) -> the resolved env for that access site. */
   readonly resolvedAt: ReadonlyMap<string, EnvNodeId>;
+  /**
+   * `"<env>:<slot>"` -> the environment that slot holds, when every store to it
+   * stores the same one. This is how a v>=97 generator body's inner environment
+   * is found: it is created inside the body but stored into a slot of the
+   * *wrapper's* environment and read back on the next resume, so its lifetime is
+   * the wrapper's, not the body call's (spec 05 §6 "Function nesting").
+   */
+  readonly envInSlot: ReadonlyMap<string, EnvNodeId>;
   readonly unresolved: readonly EnvAccess[];
   readonly diagnostics: readonly Diagnostic[];
 }

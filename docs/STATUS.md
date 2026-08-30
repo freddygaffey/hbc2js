@@ -24,7 +24,7 @@ Last updated: 2026-08-30
       caveat, 22 skipped-by-design) and on a mutation negative control
       (DIVERGENT on every fixture tried). `npm run test:all` for this
       milestone's own files is green; see "Currently working" below.
-- [ ] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) → **every** fixture passes the equivalence gate, ugly output allowed (D11)
+- [x] M4 Baseline: CFG + Ramsey structurer + emitter (with D9 shim) — **492/492 gate checks PASS, 0 DIVERGENT, 0 ERROR** under `syntax` + `trace`, at v84/94/96/98/99. See the M4 section below for the numbers, the residual `fuzz` divergences and the known gaps.
 - [ ] M5 Pass ladder: one construct fixture per iteration as matcher/writer/checker pass (D12), catalogue row per pass; track `N/51 recovered` here
 - [ ] M6 CLI + Tier 2 sweep (D13): RN template bundle and Expensify-scale bundle survive; recompile round-trip clean
 
@@ -630,6 +630,123 @@ review's Finding 1 fix applied to shared `src/parse/` infrastructure. Since
 modified here; whoever picks that up next should reuse
 `tests/support/known-issues.ts`'s `KNOWN_AMBIGUOUS_V98` list the same way
 `tests/gate/parse/module.test.ts` and `strings.test.ts` do.
+
+## M4 baseline (2026-08-30)
+
+`hbc2js <in.hbc>` produces runnable JavaScript for every gate fixture at every
+version it compiles at. Output is deliberately ugly (D11): `while (true)` with
+labelled `break`, one `let rN` per register, `Reflect.apply` for non-method calls,
+duplicated `finally` bodies, generator shims.
+
+### Gate
+
+`syntax` + `trace` oracles, D14 reference policy (Hermes VM where one exists):
+
+| Version | Checks | PASS | DIVERGENT | ERROR |
+|---|---|---|---|---|
+| 84 | 91 | 91 | 0 | 0 |
+| 94 | 95 | 95 | 0 | 0 |
+| 96 | 95 | 95 | 0 | 0 |
+| 98 | 105 | 105 | 0 | 0 |
+| 99 | 106 | 106 | 0 | 0 |
+| **total** | **492** | **492** | **0** | **0** |
+
+22 (fixture, version) pairs are skipped-by-design (`versions.txt`). The eight
+`KNOWN_AMBIGUOUS_V98` fixtures are decompiled with `--force-v98-table`
+(`hbc98-late`), reported as `W_FORCED_OPCODE_TABLE`; D8 keeps the *parser* from
+guessing, so the choice is the caller's and it is recorded.
+
+Hardened tier (241 obfuscated variants, same oracles): **237 PASS, 4 DIVERGENT,
+0 ERROR**. The four are `32/33/34/36-class-*.obf` at v99, where the decompiled
+obfuscator prelude reaches `Reflect` with a non-array-like argument list
+("CreateListFromArrayLike called on non-object"); the same fixtures pass
+unobfuscated at every version.
+
+### Adding `fuzz` to the oracle set
+
+With `fuzz` (50 adversarial argument tuples per exported function) the gate is
+**452 PASS / 40 DIVERGENT**, in four fixture families, and every one is a
+*message-text* difference rather than a behavioural one:
+
+* `13-try-finally-no-catch`, `44-tagged-templates` — V8 builds a TypeError's text
+  out of the **original source identifier** (`log.push is not a function`). A
+  register-named baseline says `r3.push is not a function`. SPEC puts name
+  recovery out of scope, so this is not reachable at M4.
+* `26-infinite-generator-take` — the same, for `for…of` (`iterable is not
+  iterable`). The *destructuring* form of the message carries no expression text
+  and is reproduced exactly, which is why `37-destructuring-array` passes.
+* `43-template-literals` — a genuine Node-vs-Hermes divergence of the same kind as
+  the four in `docs/EQUIVALENCE.md` §5.2: Hermes evaluates the arithmetic before
+  the string conversion, so a Symbol operand throws "Cannot convert a Symbol value
+  to a **number**" under the bytecode and "…to a **string**" under the source.
+  It belongs in `KNOWN_DIVERGENT_FIXTURES`; that table lives in
+  `src/harness/reference-policy.ts`, which this milestone does not own.
+
+The `roundtrip` oracle is also excluded, for a structural reason: it reports a
+**function-count mismatch** as DIVERGENT, and decompiled output can never have the
+original's function count (it carries the runtime-helper prelude and the module
+wrapper). Spec 05 T5 asks for the round-trip as a per-function ratchet, which that
+check pre-empts.
+
+### Sweep — real bundles
+
+Every function of every `bundles/rn-template-0.72/*.hbc` builds a CFG, structures,
+passes the §5 isomorphism check, and the whole module passes `node --check`:
+
+| Bundle | Version | Functions | Duplicated blocks | Dispatch vars | Unresolved (env, slot) | Structure | Emit | Output |
+|---|---|---|---|---|---|---|---|---|
+| index.android.hbc | 94 | 4199 | 79 | 0 | 0 | 0.30 s | 0.51 s | 6.7 MB |
+| index.android.debug.hbc | 94 | 4199 | 83 | 0 | 0 | 0.39 s | 0.77 s | 6.7 MB |
+| index.android.noopt.hbc | 94 | 4314 | 70 | 0 | 0 | 0.50 s | 1.09 s | 10.8 MB |
+| index.android.noopt.debug.hbc | 94 | 4314 | 72 | 0 | 0 | 0.56 s | 1.29 s | 10.8 MB |
+
+**First measurement of how irreducible shipped React Native bytecode is** (spec 04
+T7): ~1.7% of blocks are duplicated to resolve irreducible entries, and *no*
+function needs a dispatch variable. Max tree nesting 319, well under ST-09's 1000.
+
+### Local corpus (C5, report only — never committed, extracted to a scratch dir)
+
+| Bundle | Version | Size | Result |
+|---|---|---|---|
+| Teams org-chart | 96 | 0.7 MB | 3179 functions, 0 unresolved, `node --check` OK, 5.1 MB out, 0.5 s |
+| Bloomberg | 96 | 10.5 MB | 58 932 functions, 0 unresolved, `node --check` OK, 83 MB out, 20 s |
+| Discord | 98 | 51 MB | parses and analyses in 26 s, then **refuses**: `JmpTypeOfIs mask 507` |
+| Shopify | 98 | 34 MB | same refusal, 17 s |
+
+The refusal is deliberate. Only `TypeOfIsTypes` bit 7 (`Function`, mask 128) is
+confirmed against real bytecode — every `JmpTypeOfIs` in the whole construct corpus
+is mask 128, guarding `throwTypeError("Trying to call a non-function")` — and
+`Typeof.h` is not among the vendored Hermes headers. Guessing the rest of the enum
+would be a silently wrong lowering of a type test, so it is `E_EMIT_UNSUPPORTED`
+naming the mask (EM-05). **Vendoring `Typeof.h` and pinning the enum is the single
+change that unblocks two 30–50 MB production bundles.**
+
+### Known gaps and deviations from the specs
+
+1. **`TypeOfIsTypes` beyond `Function`** — above. The only thing stopping Discord
+   and Shopify.
+2. **Spec 05 §7.5's loud fallback is a diagnostic, not an error.** A `CreateThis`
+   or `SelectObject` outside a recognised triple is lowered directly (they *do*
+   have exact JS forms: `Object.create(proto)` and
+   `Arg3 instanceof Object ? Arg3 : Arg2`) with `W_UNPAIRED_NEW`, because real
+   bundles separate the triple across basic blocks in ways the matcher does not
+   always close. Totality on 4200-function inputs was judged worth more than the
+   loud stop; the diagnostic keeps it visible.
+3. **Spec 05 §7.3's four-helper list** is D18's larger set.
+4. **`docs/HBC-FORMAT.md` §6.3's ByteString row is wrong for v≥97.** Tag 6 carries
+   no payload there and marks `undefined` (§6.3's "undefined has no tag" case);
+   short string ids go through ShortString. Measured: 0 of 162 v≥97 key buffers use
+   tag 6, all 51 legacy ones do, and reading it with a payload decodes
+   `24-generator-return-throw` v99's finished-generator result as
+   `{value: "next", done: 1}` instead of `{value: undefined, done: true}`.
+   `src/emit/literals.ts` reads it per era; `src/parse/buffers.ts` is untouched.
+5. **Spec 03 §9 T2's "four of them"** — `hermes-dec-sample` v99 function 5 shares
+   its handler across all **five** regions, not four.
+6. **Spec 04 O-5's "no fixture is known to be irreducible"** —
+   `16-finally-with-break-continue` is, at v84/94/96, once exception flow is
+   modelled: the duplicated `finally` body flows back into the loop, giving it two
+   entries. It is the only gate fixture that uses a dispatch variable.
+7. **v98/v99 `.obf` class fixtures** — the four hardened-tier divergences above.
 
 ## Known gaps
 - ~~**HBC 96 has no compiler/fixture yet**~~ **Closed.** Three of the five

@@ -1,0 +1,466 @@
+// docs/specs/05-emitter.md §3, §4, §6, §9 — one function's shell and body.
+import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import type { Diagnostic } from "../errors.ts";
+import type { DecodedFunction, Instruction } from "../disasm/decode.ts";
+import type { BlockId, EnvGraph, FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
+import { siteKey } from "../cfg/types.ts";
+import { writtenRegisters } from "../cfg/reg-effects.ts";
+import type { HbcModule } from "../parse/types.ts";
+import type { BuiltinTable } from "../tables/types.ts";
+import type { Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
+import type { Expr, Stmt } from "./ast.ts";
+import { assign, bin, call, id, lit, num, un, UNDEF } from "./ast.ts";
+import { conditionFor } from "./conds.ts";
+import { resolveBuiltin } from "./builtins.ts";
+import { lowerInstruction, planBlock, prop } from "./lower.ts";
+import { EXC_VALUE, envSlot, excName, fnName, GEN_DONE, GEN_STATE, labelName, PC_VAR, quote, reg, SCRATCH, stateVar } from "./names.ts";
+import { argSlotBase } from "./semantics.ts";
+
+export interface FunctionEmitter {
+  readonly analysis: ModuleAnalysis;
+  readonly mod: HbcModule;
+  readonly fn: DecodedFunction;
+  readonly cfg: FunctionCfg;
+  readonly version: number;
+  readonly argBase: number;
+  readonly builtins: BuiltinTable;
+  readonly thisExpr: Expr;
+  readonly argsExpr: Expr;
+  readonly newTargetExpr: Expr;
+  useHelper(name: string): void;
+  needScratch(): void;
+  resolveEnv(insn: Instruction): number;
+  recordShape(register: number, keys: readonly string[]): void;
+  /** The env node created at `offset`, when its slots are declared inline. */
+  loopLocalSlotsAt(offset: number): readonly string[] | undefined;
+  /** The function body to inline at a `CreateClosure` of `functionIndex`. */
+  inlineClosure(functionIndex: number): Stmt | undefined;
+  shapeKeyFor(register: number, slot: number, offset: number): string;
+  suspendStateFor(offset: number): number;
+  diagnostic(d: Diagnostic): void;
+  paramExpr(index: number): Expr;
+}
+
+export interface EmitFunctionInput {
+  readonly analysis: ModuleAnalysis;
+  readonly envGraph: EnvGraph;
+  readonly structured: StructuredFunction;
+  readonly cfg: FunctionCfg;
+  readonly fn: DecodedFunction;
+  readonly builtins: BuiltinTable;
+  readonly children: readonly Stmt[];
+  /** Children emitted *at their creation site* rather than hoisted (§6 note). */
+  readonly inlineChildren: ReadonlyMap<number, Stmt>;
+  readonly ownedEnvSlots: readonly string[];
+  /** Env nodes whose slots are declared at the `Create*Environment` instruction. */
+  readonly loopLocalEnvSlots: ReadonlyMap<number, readonly string[]>;
+  readonly useHelper: (name: string) => void;
+  readonly diagnostic: (d: Diagnostic) => void;
+  readonly provenanceComments: boolean;
+}
+
+/** Blocks whose bytes lie outside `region.bodyBlocks` but inside its try body. */
+interface TryPlan {
+  readonly needsPc: boolean;
+  /** region index -> the region's inclusive block-id range. */
+  readonly guard: ReadonlyMap<number, readonly [number, number]>;
+}
+
+function planTries(structured: StructuredFunction): TryPlan {
+  const guard = new Map<BlockId, [number, number]>();
+  let needsPc = false;
+  const stack: IrStmt[] = [structured.root];
+  const bodyBlocksOf = (node: IrStmt): Set<BlockId> => {
+    const out = new Set<BlockId>();
+    const s: IrStmt[] = [node];
+    while (s.length > 0) {
+      const n = s.pop()!;
+      if (n.k === "block" || n.k === "return" || n.k === "throw") out.add(n.cfgBlock);
+      if (n.k === "if" || n.k === "switch" || n.k === "try") out.add(n.cfgBlock);
+      s.push(...childrenOf(n));
+    }
+    return out;
+  };
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    if (n.k === "try") {
+      const region = structured.graph.cfg.regions[n.region]!;
+      const inBody = bodyBlocksOf(n.body);
+      // A `cfgBlock: -1` try is §4.4's dispatch nest, whose extent is the whole
+      // function by construction — there the guard is not an optimisation, it is
+      // what selects the right handler.
+      let over = n.cfgBlock < 0;
+      for (const b of inBody) {
+        if (structured.graph.blocks[b]?.block === null) continue; // synthetic try-head
+        if (!region.bodyBlocks.has(b)) {
+          over = true;
+          break;
+        }
+      }
+      const ids = [...region.bodyBlocks];
+      if (over && ids.length > 0) {
+        needsPc = true;
+        guard.set(n.region, [Math.min(...ids), Math.max(...ids)]);
+      }
+    }
+    stack.push(...childrenOf(n));
+  }
+  return { needsPc, guard };
+}
+
+function childrenOf(node: IrStmt): readonly IrStmt[] {
+  switch (node.k) {
+    case "seq":
+      return node.body;
+    case "labeled":
+    case "loop":
+      return [node.body];
+    case "if":
+      return [node.then, node.else];
+    case "switch":
+      return [...node.cases.map((c) => c.body), node.default];
+    case "try":
+      return [node.body, node.handler];
+    default:
+      return [];
+  }
+}
+
+export function emitFunction(input: EmitFunctionInput): Stmt {
+  const { analysis, envGraph, structured, cfg, fn, builtins } = input;
+  const mod = analysis.module;
+  const version = mod.header.version;
+  const header = fn.header;
+  const frameSize = header.frameSize;
+  const paramCount = header.paramCount;
+  const isGlobal = fn.index === mod.header.globalCodeIndex;
+
+  // A v<=96 generator/async *body* becomes a frame factory returning a `step`
+  // closure (src/runtime/helpers.ts, §7.2.1): the VM saves and restores the whole
+  // register frame across a suspend, so the frame must outlive one call.
+  // Keyed on the *opcodes*, not on `suspendPoints.length`: a v<=96 generator
+  // with no reachable `yield` still runs through the resume protocol and still
+  // needs the frame factory (found on rn-template-0.72, where such a body
+  // referenced `__sent` from an ordinary function shell).
+  const isOpcodeGeneratorBody = fn.instructions.some((i) => i.name === "StartGenerator" || i.name === "ResumeGenerator" || i.name === "CompleteGenerator" || i.name === "SaveGenerator" || i.name === "SaveGeneratorLong");
+
+  const usedHelpers = new Set<string>();
+  let needScratch = false;
+  const shapes = new Map<number, readonly string[]>();
+
+  // `Function.prototype.length` is observable, and a rest parameter does not
+  // count towards it: `function variadicSum(...nums)` has `paramCount = 2` in
+  // the header but `length === 0` in JS. `copyRestArgs` in the body is exactly
+  // the marker for "the last declared parameter is a rest element"
+  // (40-spread-array, 42-rest-params, 44-tagged-templates all trip on this).
+  // v<=96 counts the rest element in `paramCount`, v>=97 does not (measured on
+  // 44-tagged-templates: `html(strings, ...values)` is `params=3` at v94 and
+  // `params=2` at v99, and JS reports `length === 1` for both).
+  const hasRestParam = version <= 96 && fn.instructions.some((i) => (i.name === "CallBuiltin" || i.name === "CallBuiltinLong") && builtins.builtins[i.operands[1]!.value]?.name === "copyRestArgs");
+  const namedParams = Math.max(0, paramCount - (hasRestParam ? 2 : 1));
+  const params: string[] = [];
+  for (let i = 1; i <= namedParams; i++) params.push(`a${i}`);
+
+  const thisExpr: Expr = isOpcodeGeneratorBody ? id("__this") : { k: "this" };
+  const argsExpr: Expr = isOpcodeGeneratorBody ? id("__args") : { k: "argumentsObject" };
+
+  const tryPlan = planTries(structured);
+
+  const f: FunctionEmitter = {
+    analysis,
+    mod,
+    fn,
+    cfg,
+    version,
+    argBase: argSlotBase(version, frameSize),
+    builtins,
+    thisExpr,
+    argsExpr,
+    newTargetExpr: lit("new.target"),
+    useHelper(name: string): void {
+      usedHelpers.add(name);
+      input.useHelper(name);
+    },
+    needScratch(): void {
+      needScratch = true;
+    },
+    resolveEnv(insn: Instruction): number {
+      const env = envGraph.resolvedAt.get(siteKey(fn.index, insn.offset));
+      if (env === undefined) {
+        throw new Hbc2jsError(ErrorCode.E_ENV_UNRESOLVED, `${insn.name} at offset ${insn.offset} has no statically resolved environment`, { functionIndex: fn.index, offset: insn.offset, section: "emit" });
+      }
+      return env;
+    },
+    recordShape(register: number, keys: readonly string[]): void {
+      shapes.set(register, keys);
+    },
+    loopLocalSlotsAt(offset: number): readonly string[] | undefined {
+      return input.loopLocalEnvSlots.get(offset);
+    },
+    inlineClosure(functionIndex: number): Stmt | undefined {
+      return input.inlineChildren.get(functionIndex);
+    },
+    shapeKeyFor(register: number, slot: number, offset: number): string {
+      const keys = shapes.get(register);
+      const key = keys?.[slot];
+      if (key === undefined) {
+        throw new Hbc2jsError(ErrorCode.E_EMIT_UNSUPPORTED, `slot ${slot} of r${register} has no known object shape at offset ${offset}`, { functionIndex: fn.index, offset, section: "emit" });
+      }
+      return key;
+    },
+    diagnostic(d: Diagnostic): void {
+      input.diagnostic(d);
+    },
+    suspendStateFor(offset: number): number {
+      const sp = cfg.generator.suspendPoints.find((s) => s.saveOffset === offset);
+      if (sp === undefined) {
+        throw new Hbc2jsError(ErrorCode.E_INTERNAL, `SaveGenerator at offset ${offset} has no suspend point`, { functionIndex: fn.index, offset, section: "emit" });
+      }
+      return sp.state;
+    },
+    paramExpr(index: number): Expr {
+      if (index === 0) return thisExpr;
+      if (index <= namedParams) return id(`a${index}`);
+      return { k: "member", obj: argsExpr, prop: num(index - 1), computed: true };
+    },
+  };
+
+  // --- block lowering -------------------------------------------------------
+  const lowerBlock = (blockId: BlockId): Stmt[] => {
+    const out: Stmt[] = [];
+    // `cfgBlock: -1` is §4.4's dispatch switch, which stands for no CFG block.
+    if (blockId < 0) return out;
+    const aug = structured.graph.blocks[blockId]!;
+    if (aug.block === null) return out; // synthetic try-head owns no bytes
+    if (tryPlan.needsPc) out.push(assign(id(PC_VAR), num(blockId)));
+    if (input.provenanceComments && aug.block.start >= 0) out.push({ k: "comment", text: `@0x${aug.block.start.toString(16)}` });
+    const plan = planBlock(aug.block, fn.instructions);
+    for (const [i, insn] of aug.block.instructions.entries()) {
+      lowerInstruction(f, insn, i, plan, out);
+      // Keep the object-shape map honest: a register written by anything other
+      // than a `NewObjectWithBuffer` no longer holds that shape.
+      if (!insn.name.startsWith("NewObjectWithBuffer")) for (const r of writtenRegisters(insn)) shapes.delete(r);
+    }
+    return out;
+  };
+
+  const conditionOf = (blockId: BlockId): Expr => {
+    const block = structured.graph.blocks[blockId]!.block!;
+    const last = block.instructions[block.instructions.length - 1]!;
+    const regs = last.operands.filter((o) => o.role === "reg").map((o) => id(reg(o.value)) as Expr);
+    const extra: { builtin?: Expr; typeOfIsMask?: number } = {};
+    if (last.name.startsWith("JmpBuiltinIs")) {
+      const number = last.operands[1]!.value;
+      const target = resolveBuiltin(builtins.builtins[number], number, fn.index, last.offset);
+      if (target.helper !== null) f.useHelper(target.helper);
+      extra.builtin = target.callee;
+    }
+    if (last.name === "JmpTypeOfIs") extra.typeOfIsMask = last.operands[2]!.value;
+    return conditionFor(last, regs, extra, fn.index);
+  };
+
+  const returnValueOf = (blockId: BlockId): Expr => {
+    const block = structured.graph.blocks[blockId]!.block!;
+    const last = block.instructions[block.instructions.length - 1];
+    if (last === undefined || last.name !== "Ret") return UNDEF;
+    return id(reg(last.operands[0]!.value));
+  };
+
+  const throwValueOf = (blockId: BlockId): Expr => {
+    const block = structured.graph.blocks[blockId]!.block!;
+    const last = block.instructions[block.instructions.length - 1]!;
+    return id(reg(last.operands[0]!.value));
+  };
+
+  const scrutineeOf = (node: IrStmt & { k: "switch" }): Expr => {
+    if (node.scrutinee.t === "dispatch") return id(stateVar(node.scrutinee.variable.id));
+    if (node.scrutinee.t === "generator-state") return id(GEN_STATE);
+    const block = structured.graph.blocks[node.cfgBlock]!.block!;
+    const last = block.instructions[block.instructions.length - 1]!;
+    return id(reg(last.operands[0]!.value));
+  };
+
+  const armTest = (arm: SwitchArm): Expr => (arm.isString ? lit(quote(mod.strings.get(arm.value))) : num(arm.value));
+
+  // --- tree -> statements (§4) ---------------------------------------------
+  const lowerTree = (node: IrStmt, out: Stmt[]): void => {
+    switch (node.k) {
+      case "block":
+        out.push(...lowerBlock(node.cfgBlock));
+        return;
+      case "seq":
+        for (const c of node.body) lowerTree(c, out);
+        return;
+      case "labeled": {
+        const body: Stmt[] = [];
+        lowerTree(node.body, body);
+        out.push({ k: "labeled", label: labelName(node.label), body });
+        return;
+      }
+      case "loop": {
+        const body: Stmt[] = [];
+        lowerTree(node.body, body);
+        out.push({ k: "while", label: labelName(node.label), body });
+        return;
+      }
+      case "if": {
+        const then: Stmt[] = [];
+        const els: Stmt[] = [];
+        lowerTree(node.then, then);
+        lowerTree(node.else, els);
+        out.push({ k: "if", test: conditionOf(node.cfgBlock), then, else: els });
+        return;
+      }
+      case "break":
+        out.push({ k: "break", label: labelName(node.label) });
+        return;
+      case "continue":
+        out.push({ k: "continue", label: labelName(node.label) });
+        return;
+      case "return":
+        out.push(...lowerBlock(node.cfgBlock));
+        out.push({ k: "return", arg: isOpcodeGeneratorBody ? { k: "array", elements: [returnValueOf(node.cfgBlock), id(GEN_DONE)] } : returnValueOf(node.cfgBlock) });
+        return;
+      case "throw":
+        out.push(...lowerBlock(node.cfgBlock));
+        out.push({ k: "throw", arg: throwValueOf(node.cfgBlock) });
+        return;
+      case "unreachable":
+        // EM-08: never an empty statement. The Hermes opcode traps, and a silent
+        // fallthrough would change behaviour.
+        out.push({ k: "throw", arg: { k: "new", callee: id("Error"), args: [lit('"hbc2js: unreachable"')] } });
+        return;
+      case "setState":
+        out.push(assign(id(stateVar(node.variable.id)), num(node.value)));
+        return;
+      case "switch": {
+        out.push(...lowerBlock(node.cfgBlock));
+        const cases = node.cases.map((arm) => {
+          const body: Stmt[] = [];
+          lowerTree(arm.body, body);
+          body.push({ k: "break", label: null });
+          return { test: armTest(arm), body };
+        });
+        const dflt: Stmt[] = [];
+        lowerTree(node.default, dflt);
+        dflt.push({ k: "break", label: null });
+        out.push({ k: "switch", disc: scrutineeOf(node), cases: [...cases, { test: null, body: dflt }] });
+        return;
+      }
+      case "try": {
+        const block: Stmt[] = [];
+        lowerTree(node.body, block);
+        const handler: Stmt[] = [];
+        const param = excName(node.region);
+        const range = tryPlan.guard.get(node.region);
+        if (range !== undefined) {
+          // The try's lexical extent is wider than the region's byte range
+          // (src/structure/augment.ts explains why it has to be). Rethrow unless
+          // the block that actually threw was inside the region, which makes the
+          // over-reach unobservable.
+          handler.push({
+            k: "if",
+            test: un("!", { k: "logical", op: "&&", left: bin(">=", id(PC_VAR), num(range[0])), right: bin("<=", id(PC_VAR), num(range[1])) }),
+            then: [{ k: "throw", arg: id(param) }],
+            else: [],
+          });
+        }
+        handler.push(assign(id(EXC_VALUE), id(param)));
+        lowerTree(node.handler, handler);
+        out.push({ k: "try", block, param, handler });
+        return;
+      }
+    }
+  };
+
+  const body: Stmt[] = [];
+  lowerTree(structured.root, body);
+
+  // --- shell (§9) -----------------------------------------------------------
+  const prologue: Stmt[] = [];
+  if (header.flags.strictMode) prologue.push({ k: "directive", text: "use strict" });
+  if (isOpcodeGeneratorBody) {
+    prologue.push({ k: "init", kind: "var", name: "__this", value: { k: "this" } });
+    prologue.push({ k: "init", kind: "var", name: "__args", value: { k: "argumentsObject" } });
+  }
+  const registers: string[] = [];
+  for (let i = 0; i < frameSize; i++) registers.push(reg(i));
+  if (registers.length > 0) prologue.push({ k: "decl", kind: "let", names: registers });
+  if (input.ownedEnvSlots.length > 0) prologue.push({ k: "decl", kind: "let", names: [...input.ownedEnvSlots] });
+  if (needScratch) prologue.push({ k: "decl", kind: "let", names: [SCRATCH] });
+  if (cfg.regions.length > 0) prologue.push({ k: "decl", kind: "let", names: [EXC_VALUE] });
+  if (tryPlan.needsPc) prologue.push({ k: "init", kind: "let", name: PC_VAR, value: num(-1) });
+  for (const v of structured.dispatchVars) prologue.push({ k: "init", kind: "let", name: stateVar(v.id), value: num(-1) });
+  if (isOpcodeGeneratorBody) {
+    prologue.push({ k: "init", kind: "let", name: GEN_STATE, value: num(0) });
+    prologue.push({ k: "init", kind: "let", name: GEN_DONE, value: lit("false") });
+  }
+  prologue.push(...input.children);
+
+  const name = fnName(fn.index);
+  // EM-07: the whole file is pure ASCII, comments included — a function name
+  // can legitimately contain any code unit.
+  const label: Stmt = { k: "comment", text: `fn#${fn.index} ${quote(fn.name)}${isGlobal ? " (global)" : ""}` };
+
+  if (isOpcodeGeneratorBody) {
+    return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: ["__sent", "__isReturn", "__isThrow"], body } }] };
+  }
+  return { k: "func", name, params, body: [label, ...prologue, ...body] };
+}
+
+/**
+ * Which function declares each environment's slot variables.
+ *
+ * Normally that is the function whose body ran the `Create*Environment` — but
+ * an environment whose *reference* is stored into a slot of another environment
+ * outlives the call that created it, and must be declared where that longer-lived
+ * environment lives. This is not a nicety: a v>=97 lowered generator body creates
+ * its locals' environment on the first resume and stores it into the wrapper's
+ * environment (`23-generator-basic` v99 function #3, `CreateTopLevelEnvironment
+ * r8, 1` / `StoreToEnvironment r1, 0, r8`). Declaring those slots in the body
+ * would reset them on every `.next()`, which is exactly the "generator forgets
+ * its state after one iteration" failure.
+ */
+export function envDeclaringFunction(envGraph: EnvGraph, isAncestor: (candidate: number, of: number) => boolean): Map<number, number> {
+  const holderOf = new Map<number, number>(); // env -> the env whose slot holds it
+  for (const [key, env] of envGraph.envInSlot) {
+    const holder = Number(key.slice(0, key.indexOf(":")));
+    if (!holderOf.has(env)) holderOf.set(env, holder);
+  }
+  const out = new Map<number, number>();
+  for (const node of envGraph.nodes) {
+    let target = node.ownerFunction;
+    let cur = node.id;
+    const seen = new Set<number>([cur]);
+    for (;;) {
+      const holder = holderOf.get(cur);
+      if (holder === undefined || seen.has(holder)) break;
+      seen.add(holder);
+      cur = holder;
+      const owner = envGraph.nodes[cur]!.ownerFunction;
+      // Only ever hoist *outwards*. A slot in a more deeply nested environment
+      // can hold a reference to an outer one (an ordinary parent pointer), and
+      // following that would move the declaration somewhere the accessors
+      // cannot see it — E_UNBOUND_IDENT.
+      if (!isAncestor(owner, node.ownerFunction)) break;
+      target = owner;
+    }
+    out.set(node.id, target);
+  }
+  return out;
+}
+
+/** Env slot variable names declared in `functionIndex`. */
+export function ownedEnvSlots(envGraph: EnvGraph, functionIndex: number, declaringFunction: ReadonlyMap<number, number>): string[] {
+  const out: string[] = [];
+  for (const node of envGraph.nodes) {
+    if ((declaringFunction.get(node.id) ?? node.ownerFunction) !== functionIndex) continue;
+    let maxSlot = node.size - 1;
+    for (const s of envGraph.slots) if (s.env === node.id && s.slot > maxSlot) maxSlot = s.slot;
+    for (let i = 0; i <= maxSlot; i++) out.push(envSlot(node.id, i));
+  }
+  return out;
+}
+
+/** Unused, but kept so the module's public surface matches spec 05 §2. */
+export const _unusedHelpers = { call, prop };

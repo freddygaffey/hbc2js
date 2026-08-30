@@ -184,14 +184,21 @@ function lca(info: DomInfo, a: BlockId, b: BlockId, fallback: BlockId): BlockId 
   return x;
 }
 
-export function augment(cfg: FunctionCfg): AugmentedCfg {
+/**
+ * `noTryHeads` builds the same structure with no try-head insertion at all.
+ * §4.4's `dispatch` mode uses it: there, exception regions are expressed as a
+ * nest of `try` nodes wrapped around one flat state switch, selected at runtime
+ * by the emitter's `__pc` guard, so the graph the tree is checked against is the
+ * plain CFG.
+ */
+export function augment(cfg: FunctionCfg, opts: { readonly noTryHeads?: boolean } = {}): AugmentedCfg {
   const blocks: AugBlock[] = cfg.blocks.map((b) => ({ id: b.id, block: b, terminator: b.terminator as AugTerminator, succs: [...b.succs] }));
   const tryHeads = new Map<BlockId, number>();
   let entry = cfg.entry;
   let info = domInfo(blocks, entry, cfg.functionIndex);
 
   // Outermost-first (cfg.regions is already sorted that way).
-  for (const region of cfg.regions) {
+  for (const region of opts.noTryHeads === true ? [] : cfg.regions) {
     const entries: BlockId[] = [];
     for (const b of region.bodyBlocks) {
       if (info.rpoIndex[b] === -1) continue; // not reachable yet
@@ -201,6 +208,26 @@ export function augment(cfg: FunctionCfg): AugmentedCfg {
 
     let d = entries[0]!;
     for (const e of entries.slice(1)) d = lca(info, d, e, entry);
+    // P6 is a hard requirement, so it is *established*, not assumed: walk D
+    // outwards until it dominates every reachable block of the region. The
+    // entry set can miss a block that is only reachable through an exception
+    // edge belonging to a region processed later (found on a v96 production
+    // bundle, function 1912), and one step up the dominator tree per miss fixes
+    // it without needing to know which case it was.
+    for (let guard = 0; guard < blocks.length + 2; guard++) {
+      let covered = true;
+      for (const b of region.bodyBlocks) {
+        if (info.rpoIndex[b] === -1) continue;
+        if (!info.dominates(d, b)) {
+          covered = false;
+          break;
+        }
+      }
+      if (covered) break;
+      const up = info.idom[d];
+      if (up === undefined || up === null) break;
+      d = up;
+    }
 
     const id = blocks.length;
     const succs: Edge[] = [
