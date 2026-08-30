@@ -14,7 +14,7 @@
 // shape it always resolves to either a rule + replacement or one of the
 // named §7 refuse reasons.
 import type { Expr, Stmt } from "../ast.ts";
-import { identUses, isHelperCall, isRegisterName } from "../ast.ts";
+import { isHelperCall, isRegisterName } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
 export type CallShapeRule = "R3a" | "R3b" | "R3c" | "R3d";
@@ -120,16 +120,28 @@ function registerStoreValues(stmts: readonly Stmt[], reg: string): readonly Expr
 }
 
 /** R3a's `T`: the literal `undefined`, or a register with exactly one write
- *  in `fnBody` whose value is the literal `undefined` and no nested-closure
- *  read (§4). Deliberately narrower than `global-access`'s `isProvenGlobal`
- *  (that one tolerates a *later* reuse of the register for scratch; this one
- *  cannot — a second write of *any* value, `undefined` or not, means the
- *  register no longer certifies "this call's `this` was always undefined"
- *  the way a single write does). */
+ *  in `fnBody` whose value is the literal `undefined` (§4). Deliberately
+ *  narrower than `global-access`'s `isProvenGlobal` (that one tolerates a
+ *  *later* reuse of the register for scratch; this one cannot — a second
+ *  write of *any* value, `undefined` or not, means the register no longer
+ *  certifies "this call's `this` was always undefined" the way a single
+ *  write does).
+ *
+ *  §4's literal text also asks for "no nested-closure read" on `t.name`
+ *  (`identUses(fnBody, t.name).nested === 0`); that check is gone —
+ *  `t.name` is a register (just proven above), and Hermes restarts register
+ *  numbering per function, so a nested `func` body's own mention of the same
+ *  number is provably that closure's own, unrelated local, never a read of
+ *  *this* frame's `t`. A genuine capture would show up as a distinct,
+ *  collision-free env-slot name (`_e<env>_<slot>`), never as the raw
+ *  register — see `IdentUses.nested`'s doc in `../ast.ts`. This was the
+ *  `21-iife-closures` gap recorded in `docs/STATUS.md`/`AGENT-LOG.md`: every
+ *  `this`-holding register in a closure-bearing function coincidentally
+ *  collides with some nested closure's own numbering, so the literal-§4
+ *  check refused `unproven-this` on every single site there. */
 export function isProvenUndefinedThis(t: Expr, fnBody: readonly Stmt[]): boolean {
   if (t.k === "lit" && t.text === "undefined") return true;
   if (t.k !== "ident" || !isRegisterName(t.name)) return false;
-  if (identUses(fnBody, t.name).nested !== 0) return false;
   const writes = registerStoreValues(fnBody, t.name);
   return writes.length === 1 && writes[0]!.k === "lit" && writes[0]!.text === "undefined";
 }

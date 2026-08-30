@@ -1,7 +1,9 @@
 // docs/specs/passes/02-expr-rebuild.md — unit tests on hand-built ASTs (§9's
 // checklist item 3: one positive per rule, negatives for two-reads,
-// impure-move, nested-capture, and a real `check` refusal), plus red->green
-// on the fixture corpus at all five HBC versions and the .min/.obf tiers.
+// impure-move, and a real `check` refusal), plus red->green on the fixture
+// corpus at all five HBC versions and the .min/.obf tiers. `nested-capture`
+// (the spec's original §7 refuse reason) was removed as a framework fix —
+// see the "scoped analysis" tests below and `docs/AGENT-LOG.md`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -104,12 +106,39 @@ test("impure-move: an impure value may only travel to the very next statement", 
   assert.deepEqual(v, { ok: false, reason: "impure-move" });
 });
 
-test("nested-capture: a register a nested func reads is never folded, even where locally dead", () => {
+// `nested-capture` (a bare `identUses(fnBody, reg).nested > 0` refusal) was
+// removed: Hermes restarts register numbering per function, so a nested
+// `func`'s own body mentioning the literal name `r1` is provably that
+// closure's *own*, unrelated local (a genuine capture is always copied to a
+// collision-free env-slot name, `_e<env>_<slot>`, before crossing the
+// function boundary — see `IdentUses.nested`'s doc in `../../../src/passes
+// /ast.ts`), never a reference to this frame's `r1`. The shape below used to
+// refuse `nested-capture` even though `g`'s own `r1` has nothing to do with
+// this one; it now correctly folds as an ordinary dead store (R1b).
+test("scoped analysis: a same-numbered register in a nested func's own frame is not a capture — the dead store still folds", () => {
   const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), lit("5"))), funcStmt("g", [exprStmt(call(id("use"), [id("r1")]))])];
   const ctx = ctxFor(before);
-  assert.equal(match(before, ctx), null);
+  const m = match(before, ctx);
+  assert.ok(m !== null);
+  assert.equal(m.data.rule, "R1b");
+  const after = rewrite(m);
+  assert.deepEqual(after, [funcStmt("g", [exprStmt(call(id("use"), [id("r1")]))])]);
+  assert.deepEqual(check(before, after, ctx), { ok: true });
   const v = classifySite(before, before, 0, "r1", lit("5"));
-  assert.deepEqual(v, { ok: false, reason: "nested-capture" });
+  assert.deepEqual(v, { ok: true, rule: "R1b", j: 0 });
+});
+
+// The scoping is symmetric: a genuine capture of *this* frame's `r1` by a
+// nested closure would have to show up as an env-slot write reachable from
+// this list (e.g. `_e0_0 = r1`) followed by the closure reading `_e0_0`, not
+// as a re-mention of `r1` itself — `identUses`'s framework test file covers
+// that non-register, real-cross-scope case directly.
+test("scoped analysis: a *different* register number in the nested func is unaffected either way (sanity)", () => {
+  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), lit("5"))), funcStmt("g", [exprStmt(call(id("use"), [id("r9")]))])];
+  const ctx = ctxFor(before);
+  const m = match(before, ctx);
+  assert.ok(m !== null);
+  assert.equal(m.data.rule, "R1b");
 });
 
 test("input-clobbered: a pure value may not travel across a statement that overwrites a register it reads", () => {
@@ -280,15 +309,19 @@ for (const target of exprRebuild.targets) {
 // access does *not* block D-a, since a single-branch `if` whose only
 // branches are "throw" and "fall through untouched" resolves to `clear`,
 // letting the scan continue past it to the next redefinition. The 14-name
-// register declaration collapses to 5, and three of "demo"'s five
-// `Reflect.apply` calls fold their callee and message argument in place.
+// register declaration collapses to 5, and (a further improvement since the
+// scoped-`identUses` framework fix, docs/AGENT-LOG.md: `fn#0`'s own `r3`
+// no longer collides-and-refuses against nested `demo`/`hoistedFn`'s own,
+// unrelated registers) call-shape now proves every one of "demo"'s five
+// `Reflect.apply` this-registers `undefined` and folds all five to bare
+// calls, not just three.
 test("v94 shape: 19-var-hoisting fn#1 'demo' — guard-`if`s between accesses do not block D-a", () => {
   const code = decompile(loadFixture("19-var-hoisting", 94, ""), { moduleName: "x" }).code;
   assert.match(code, /let r0, r1, r2, r3, r4;/, "14 registers collapse to 5");
-  assert.match(code, /Reflect\.apply\(r2, r3, \["x before declaration:", r3\]\);/, "r2 (impure, non-adjacent) stays a name; the pure literal folds in");
-  assert.match(code, /Reflect\.apply\(r1\.print, r3, \["x after assignment:", 1\]\);/, "an adjacent impure read (no intervening statement) folds");
-  assert.match(code, /Reflect\.apply\(r4, r3, \["x reassigned in block:", r0\]\);/);
-  assert.match(code, /Reflect\.apply\(r4, r3, \["x after block:", r0\]\);/);
+  assert.match(code, /r2\("x before declaration:", r3\);/, "r2 (impure, non-adjacent) stays a name; the pure literal folds in, and call-shape now proves this-undefined and drops Reflect.apply");
+  assert.match(code, /print\("x after assignment:", 1\);/, "an adjacent impure read (no intervening statement) folds, and call-shape now proves this-undefined and drops Reflect.apply");
+  assert.match(code, /r4\("x reassigned in block:", r0\);/);
+  assert.match(code, /r4\("x after block:", r0\);/);
 });
 
 test("v94 shape: 19-var-hoisting fn#2 'hoistedFn' — R1a folds a single-use store into its return", () => {
@@ -299,7 +332,10 @@ test("v94 shape: 19-var-hoisting fn#2 'hoistedFn' — R1a folds a single-use sto
 test("v94 shape: 02-while-loop — a six-times-reused register folds its string concatenation forward", () => {
   const code = decompile(loadFixture("02-while-loop", 94, ""), { moduleName: "x" }).code;
   assert.match(code, /r12 = "breaking at i=" \+ r7;/);
-  assert.match(code, /r8 = Reflect\.apply\(r10, r2, \[r12 \+ " computed=" \+ r11\]\);/);
+  // call-shape (pre-existing, unrelated to this file's own fix) already
+  // proves this call's `this` register undefined and drops Reflect.apply
+  // entirely — see docs/STATUS.md's note on the 3 stale v94-shape assertions.
+  assert.match(code, /r8 = r10\(r12 \+ " computed=" \+ r11\);/);
   // The pre-rung baseline still shows the one-statement-per-instruction shape.
   const baseline = decompile(loadFixture("02-while-loop", 94, ""), { moduleName: "x", passes: { skip: ["expr-rebuild"] } }).code;
   assert.match(baseline, /r8 = "breaking at i=";/);
@@ -308,8 +344,20 @@ test("v94 shape: 02-while-loop — a six-times-reused register folds its string 
 
 test("v94 shape: 01-if-else-chain — a member-read callee folds into its call site", () => {
   const code = decompile(loadFixture("01-if-else-chain", 94, ""), { moduleName: "x" }).code;
+  // `member-callee-with-undefined-this` correctly still refuses this one —
+  // `r1.check.apply(undefined, [r8])` cannot become `r1.check(r8)` (that
+  // would change `this` from `undefined` to `r1.check`'s object, `r1`).
   assert.match(code, /Reflect\.apply\(r1\.check, r3, \[r8\]\)/);
-  const baseline = decompile(loadFixture("01-if-else-chain", 94, ""), { moduleName: "x", passes: { skip: ["expr-rebuild"] } }).code;
+  // The pre-rung baseline: also skip `call-shape` (not just `expr-rebuild`)
+  // to isolate expr-rebuild's own contribution here. Since the scoped-
+  // `identUses` fix (docs/AGENT-LOG.md), call-shape alone — before
+  // expr-rebuild folds `r1.check`'s member-read into the call site — already
+  // proves `r3` undefined for the then-bare-ident callee `r6` and folds it
+  // to a plain call (a *different*, and correct, shape: an already-
+  // materialised callee value called with an undefined `this` has no
+  // receiver to preserve, unlike the member-callee case above), which would
+  // otherwise mask what this test means to demonstrate.
+  const baseline = decompile(loadFixture("01-if-else-chain", 94, ""), { moduleName: "x", passes: { skip: ["expr-rebuild", "call-shape"] } }).code;
   assert.match(baseline, /r6 = r1\.check;/);
   assert.match(baseline, /r6 = Reflect\.apply\(r6, r3, \[r8\]\);/);
 });

@@ -26,9 +26,21 @@
 // is actually shared — `src/passes/call-shape/match.ts`'s `RefuseReason`
 // section and `call-shape.test.ts`'s own `targets`-loop comment have the
 // full account, including a fixture (`21-iife-closures`) that hits this on
-// every single site at every version. The floor below sits comfortably
-// under the measured 61.7%, as a regression guard on what this rung
-// actually achieves rather than a restatement of the unreached target.
+// every single site at every version.
+//
+// **Framework fix landed (docs/AGENT-LOG.md, docs/STATUS.md):** the
+// `identUses(fnBody, t.name).nested !== 0` check in `isProvenUndefinedThis`
+// (`../../../src/passes/call-shape/match.ts`) is gone — a register can never
+// be the same binding a nested `func` body reads (Hermes restarts register
+// numbering per function; a genuine capture is always a distinct,
+// collision-free env-slot name instead). Measured at all five HBC versions
+// immediately before/after that one fix (both against the same otherwise-
+// unchanged HEAD): **64.2% -> 65.7%** of 1,112 functions (the pre-fix number
+// had already drifted up from this file's original 61.7% via other,
+// unrelated concurrent pass work — global-access's emitter-allowlist
+// widening turning more `Reflect.apply` callees into plain idents). The
+// floor below is nudged up to track the new number, still comfortably under
+// it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
@@ -37,7 +49,7 @@ import { repoRoot } from "../../support/paths.ts";
 import { requireSweep } from "../../support/tiers.ts";
 import { measureCallShape, measureCallShapeBundle } from "../../../tools/passes-metrics.mjs";
 
-const CLEAN_FUNCTION_PCT_FLOOR = 58;
+const CLEAN_FUNCTION_PCT_FLOOR = 63;
 
 test("call-shape corpus metric: clean-function share stays above the measured floor", () => {
   const result = measureCallShape();

@@ -126,14 +126,36 @@ test("parses: valid statement lists parse, and a bare unparseable body does not"
 // identUses
 // ---------------------------------------------------------------------------
 
-test("identUses: reads, writes, and uses inside a nested func kept separate", () => {
+test("identUses: reads, writes, and uses inside a nested func kept separate (non-register name — a genuine, collision-free cross-scope reference)", () => {
+  const body: readonly Stmt[] = [
+    { k: "init", kind: "let", name: "_e0_0", value: lit("0") }, // write
+    exprStmt(call(id("f"), [id("_e0_0")])), // read
+    exprStmt(assignExpr(id("_e0_0"), id("_e0_0"))), // read (value) + write (target)
+    { k: "func", name: "g", params: [], body: [exprStmt(id("_e0_0"))] }, // nested: a real capture
+  ];
+  assert.deepEqual(identUses(body, "_e0_0"), { reads: 2, writes: 2, nested: 1 });
+});
+
+// Function-scope-aware fix (docs/AGENT-LOG.md): Hermes restarts register
+// numbering per function, and this codebase's emitter only ever copies a
+// genuinely captured value into a collision-free env-slot name
+// (`_e<env>_<slot>`, see `src/emit/names.ts`) before it crosses a function
+// boundary — a raw register name is always function-local, never itself the
+// captured value. So unlike the non-register case above, a nested `func`
+// mentioning the same register number is *never* counted as a use of this
+// frame's register, no matter how the nested body uses it.
+test("identUses: a register name reused by a nested func's own frame is never counted as nested — `nested` is always 0", () => {
   const body: readonly Stmt[] = [
     { k: "init", kind: "let", name: "r1", value: lit("0") }, // write
     exprStmt(call(id("f"), [id("r1")])), // read
-    exprStmt(assignExpr(id("r1"), id("r1"))), // read (value) + write (target)
-    { k: "func", name: "g", params: [], body: [exprStmt(id("r1"))] }, // nested: neither read nor write
+    { k: "func", name: "g", params: [], body: [exprStmt(assignExpr(id("r1"), call(id("use"), [id("r1")])))] }, // separate frame's own r1: read + write, neither ours
   ];
-  assert.deepEqual(identUses(body, "r1"), { reads: 2, writes: 2, nested: 1 });
+  assert.deepEqual(identUses(body, "r1"), { reads: 1, writes: 1, nested: 0 });
+});
+
+test("identUses: querying the nested function's own body directly attributes its register uses to that scope", () => {
+  const nestedBody: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), call(id("use"), [id("r1")])))];
+  assert.deepEqual(identUses(nestedBody, "r1"), { reads: 1, writes: 1, nested: 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -214,9 +236,17 @@ test("effectSequence: member write, delete, and throw are recorded; a plain rN r
   assert.deepEqual(effectSequence(body), [{ k: "member-write" }, { k: "delete" }, { k: "throw" }]);
 });
 
-test("effectSequence: an rN captured by a nested closure is a visible assignment, and a non-rN name always is", () => {
-  const capturedByNested: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), lit("1"))), { k: "func", name: "g", params: [], body: [exprStmt(id("r1"))] }];
-  assert.deepEqual(effectSequence(capturedByNested), [{ k: "assign", name: "r1" }]);
+// Scoped analysis (docs/AGENT-LOG.md): a raw register name is always
+// function-local (Hermes restarts numbering per function), so a nested
+// `func` mentioning the same number is that closure's own, unrelated local —
+// never a genuine capture of this frame's register, whose reassignment stays
+// invisible. A real capture is always a distinct, non-register name (an env
+// slot, or any other declared name), which is always visible.
+test("effectSequence: a same-numbered rN in a nested func's own frame is still an invisible reassignment, and a non-rN name always is visible", () => {
+  const notActuallyCaptured: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), lit("1"))), { k: "func", name: "g", params: [], body: [exprStmt(id("r1"))] }];
+  assert.deepEqual(effectSequence(notActuallyCaptured), []);
+  const genuineCapture: readonly Stmt[] = [exprStmt(assignExpr(id("_e0_0"), lit("1"))), { k: "func", name: "g", params: [], body: [exprStmt(id("_e0_0"))] }];
+  assert.deepEqual(effectSequence(genuineCapture), [{ k: "assign", name: "_e0_0" }]);
   const namedVar: readonly Stmt[] = [{ k: "init", kind: "let", name: "count", value: lit("0") }];
   assert.deepEqual(effectSequence(namedVar), [{ k: "assign", name: "count" }]);
 });

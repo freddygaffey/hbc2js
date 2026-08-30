@@ -81,12 +81,30 @@
 //    one fast path for exactly that shape, which accounts for most of the
 //    gap between 21.0% and the number first measured right after fix 1
 //    alone (16.4%).
+//
+// Framework fix (docs/AGENT-LOG.md, docs/STATUS.md): `../ast.ts`'s
+// `identUses` computed a register's `nested` use count by testing whether a
+// nested `func`'s own body mentions the same register **name** — sound for a
+// genuinely captured variable (always a distinct env slot, `_eN_M`, once
+// captured in this codebase, never a raw register) but Hermes restarts
+// register numbering at `r0` per function, so a nested closure's own,
+// unrelated local landing on the same number as an outer register is the
+// norm, not the exception. `classifySite`'s `nested-capture` refusal (keyed
+// off exactly that bare count) was removed as a result — a register can
+// never actually be the same binding a nested `func` reads. Measured here at
+// v94 immediately before/after that one fix (both against the same
+// otherwise-unchanged HEAD, so this delta is this fix's alone, not drift
+// from other concurrent pass work): register-occurrence reduction
+// **20.0% -> 24.6%** (11658->9323 became 11045->8331), median-statement
+// reduction unchanged at 25% (this corpus's median-statement count does not
+// move on the sites this fix newly unblocks). The floor below is nudged up
+// to track the new number, still comfortably under it.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measure } from "../../../tools/passes-metrics.mjs";
 
-const REGISTER_REDUCTION_FLOOR_PCT = 12;
+const REGISTER_REDUCTION_FLOOR_PCT = 18;
 const STATEMENT_REDUCTION_FLOOR_PCT = 12;
 
 test("expr-rebuild corpus metric: register-occurrence and median-statement reduction stay above the measured floor", () => {

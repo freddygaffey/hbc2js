@@ -446,13 +446,36 @@ export function parses(stmts: readonly Stmt[]): boolean {
 export interface IdentUses {
   readonly reads: number;
   readonly writes: number;
-  /** Uses inside a nested `func` body — kept separate from `reads`/`writes`,
-   *  which count only this list's own frame. */
+  /** Uses inside a nested `func` body that are *provably the same binding*
+   *  as `name` in this list's own frame — kept separate from `reads`/
+   *  `writes`, which count only this list's own frame. Function-scoped: a
+   *  `k:"func"` node is always emitted from a genuine Hermes `CreateClosure`
+   *  (`src/emit/lower.ts`), i.e. a separate function-table entry with its
+   *  own, independently-numbered register file (Hermes restarts `r0` per
+   *  function — AGENT-BRIEF). A register name (`isRegisterName`) therefore
+   *  can never denote the same binding across that boundary: any real
+   *  capture is copied into a lexical environment slot first, named
+   *  `_e<env>_<slot>` (`src/emit/names.ts`'s `envSlot`, "collision-free by
+   *  construction", keyed by an env id that is never reused the way a
+   *  register number is), and *that* name — never the raw register — is
+   *  what the nested body actually reads. So an `ident rX` found inside a
+   *  nested `func` body is, with certainty, that closure's own distinct
+   *  local that happens to land on the same number, not a reference to the
+   *  outer frame's `rX`: for a register name, `nested` is always `0`. For
+   *  any other name (an env slot, a hoisted var, a free name — all
+   *  collision-free across function boundaries by construction) a match
+   *  inside a nested body is a genuine cross-scope reference, and `nested`
+   *  counts it as such. Querying the nested function's own use of a
+   *  same-numbered register is a separate question, answered by calling
+   *  `identUses` on that function's own body directly (its own frame is
+   *  then this call's top-level scope). */
   readonly nested: number;
 }
 
 /** How `name` is used in `stmts`: read, written (the target of an `assign`,
- *  or an `init` declaring it), or reached only through a nested closure. */
+ *  or an `init` declaring it), or reached only through a nested closure —
+ *  see `IdentUses.nested` for the function-scope boundary this resolves
+ *  register names against. */
 export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
   let reads = 0;
   let writes = 0;
@@ -504,7 +527,11 @@ export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
         e.exprs.forEach((x) => visitExpr(x, inNested));
         return;
       case "func":
-        visitStmts(e.body, true);
+        // Separate register frame (see `IdentUses.nested`'s doc): a register
+        // name can never be the same binding in there, so skip it entirely
+        // rather than let a coincidentally-same-numbered local count as a
+        // "nested" use of this frame's `name`.
+        if (!isRegisterName(name)) visitStmts(e.body, true);
         return;
       default:
         return; // lit, this, argumentsObject
@@ -560,7 +587,8 @@ export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
           }
           break;
         case "func":
-          visitStmts(s.body, true);
+          // Same boundary as the `Expr` "func" case above.
+          if (!isRegisterName(name)) visitStmts(s.body, true);
           break;
         case "iife":
           visitStmts(s.body, inNested);
@@ -846,16 +874,21 @@ function calleeShape(e: Expr): string {
 /**
  * The ordered, observable effects of `stmts`: every `call`/`new` (by callee
  * shape + arity), every member write and every member **read**, `delete`,
- * `throw`, `return`, and an assignment to a non-`rN` name or to an `rN` a
- * nested closure captures (`identUses(stmts, name).nested > 0` — a plain
- * scratch register's reassignment is not observable outside this list, but
- * one a closure has already captured is). This is the whole guard an
+ * `throw`, `return`, and an assignment to a non-`rN` name. A plain scratch
+ * register's reassignment is never observable outside this list: the moment
+ * a nested closure genuinely captures a value, that capture is itself an
+ * assignment to a lexical environment slot (`_e<env>_<slot>`, never a raw
+ * `rN` — see `IdentUses.nested`'s doc), which is a non-register name and so
+ * already counts as an effect on its own; a register name can never *also*
+ * be "the same binding a closure captured" (`identUses(...).nested` is
+ * always `0` for one), so there is nothing further for this function to
+ * detect through the register name itself. This is the whole guard an
  * expression-only stage-B rewrite gets: reorder or drop nothing here, and it
  * may do anything else it likes to how a value gets computed.
  */
 export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
   const out: Effect[] = [];
-  const isVisible = (name: string): boolean => !isRegisterName(name) || identUses(stmts, name).nested > 0;
+  const isVisible = (name: string): boolean => !isRegisterName(name);
   const visitExpr = (e: Expr): void => {
     switch (e.k) {
       case "call":

@@ -74,6 +74,27 @@ test("R3a: a register with exactly one write, valued literal undefined, proves `
   assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
+// Framework fix (docs/AGENT-LOG.md, docs/STATUS.md): §4's literal text asked
+// `isProvenUndefinedThis` to also require "no nested-closure read" on `T`'s
+// register, checked via a bare `identUses(fnBody, t.name).nested === 0` —
+// but Hermes restarts register numbering per function, so a nested `func`
+// mentioning the same number as `T` is provably that closure's own,
+// unrelated local (a real capture is always a distinct env-slot name), never
+// a read of *this* frame's `T`. `21-iife-closures` hit this on every single
+// site. Below: the same shape as the positive test above, except a sibling
+// closure's own body happens to reuse `r1` for something unrelated — this
+// must still prove `this` and fold, exactly as if the closure were not there.
+test("R3a: a nested func's own, same-numbered local does not block proving `this` (scoped analysis)", () => {
+  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), UNDEF)), funcStmt("g", [exprStmt(call(id("use"), [id("r1")]))]), exprStmt(reflectApply(id("f"), id("r1"), [id("a")]))];
+  const ctx = ctxFor(before);
+  const m = match(before, ctx);
+  assert.ok(m !== null);
+  assert.equal(m.data.rule, "R3a");
+  const after = rewrite(m);
+  assert.deepEqual(after, [exprStmt(assignExpr(id("r1"), UNDEF)), funcStmt("g", [exprStmt(call(id("use"), [id("r1")]))]), exprStmt(call(id("f"), [id("a")]))]);
+  assert.deepEqual(check(before, after, ctx), { ok: true });
+});
+
 test("R3b: method call — Reflect.apply(O.P, O, args) becomes O.P(args)", () => {
   const before: readonly Stmt[] = [exprStmt(reflectApply(member(id("r5"), "push"), id("r5"), [id("x")]))];
   const ctx = ctxFor(before);

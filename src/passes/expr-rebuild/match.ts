@@ -25,7 +25,7 @@ export interface ExprRebuildSite {
 
 export type ExprRebuildMatch = Match<readonly Stmt[], ExprRebuildSite>;
 
-export type RefuseReason = "nested-capture" | "not-dead" | "impure-move" | "input-clobbered" | "use-under-control-flow" | "two-reads" | "protocol-name" | "generator-frame" | "loop-variant-input";
+export type RefuseReason = "not-dead" | "impure-move" | "input-clobbered" | "use-under-control-flow" | "two-reads" | "protocol-name" | "generator-frame" | "loop-variant-input";
 
 export type ClassifyResult = { readonly ok: true; readonly rule: ExprRebuildRule; readonly j: number } | { readonly ok: false; readonly reason: RefuseReason };
 
@@ -136,6 +136,13 @@ export function exprCounts(e: Expr, reg: string): ExprCounts {
         x.exprs.forEach(visit);
         return;
       case "func": {
+        // Mirror `identUses`'s own function-scope boundary exactly: `x.body`
+        // is a genuinely separate register frame (Hermes restarts `r0` per
+        // function), so a register name can never be the same binding in
+        // there — only a non-register name (an env slot, collision-free by
+        // construction) can be a real cross-scope reference. See
+        // `IdentUses.nested`'s doc in `../ast.ts`.
+        if (isRegisterName(reg)) return;
         const inner = identUses(x.body, reg);
         nested += inner.reads + inner.writes + inner.nested;
         return;
@@ -358,7 +365,15 @@ function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, 
 export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: number, reg: string, value: Expr): ClassifyResult {
   if (value.k === "ident" && value.name === reg) return { ok: true, rule: "R1c", j: i };
 
-  if (identUses(fnBody, reg).nested > 0) return { ok: false, reason: "nested-capture" };
+  // No `nested-capture` refusal here (removed — see docs/AGENT-LOG.md and
+  // `IdentUses.nested`'s doc in `../ast.ts`): `reg` is a register name
+  // (`match` only calls this after `isRegisterName(reg)`), and a register
+  // can never be the same binding a nested `func` body reads — Hermes
+  // restarts register numbering per function, and a genuine capture is
+  // always copied to a collision-free env-slot name first. A nested `func`
+  // mentioning the literal string `reg` is provably that closure's own,
+  // unrelated local; `isDeadAfter` below (via `identUses(fnBody, reg)
+  // .nested`, always `0` for a register name) already reflects this.
 
   // Forward scan for R1a's candidate read (a top-level occurrence of `reg`),
   // or a statement that redefines `reg` before any read reaches it (R1b's
