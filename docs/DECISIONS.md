@@ -23,3 +23,15 @@ Fable oversees only. An Opus "architect" agent writes specs for each component; 
 
 ## D6 — Irreducible control flow falls back to `for(;;) switch(ip)` (from SPEC)
 Guaranteed-correct emulation; structure recovery is applied wherever it is provably safe.
+
+## D7 — Structurer core: Ramsey (ICFP'22) recursive CFG→structured translation; supersedes D6 (2026-08-30)
+Total algorithm (no irreducibility test), emits labelled blocks + `while(true)` + multi-level `break` that map 1:1 onto JS. Readability rewrites (`while(c)`, `for`, `switch`, early-return flattening) are separate, individually testable AST passes. Exception regions are carved from the handler table *before* structuring; exception edges never enter dominator computation. See docs/PRIOR-ART.md.
+
+## D8 — Parser probes the layout; it never trusts the version field alone (2026-08-30)
+Verified from bytes: v98 exists in two header layouts and v99 in two opcode tables without a version bump. Opcode/layout tables are generated per Hermes commit SHA from MIT sources, and the parser selects them by structural probing plus version. Silent misdecode is risk R1.
+
+## D9 — v97+ generators/async get a runtime shim first (2026-08-30)
+Static Hermes removed the generator opcodes; bodies are compiler-lowered state machines. v1 emits `__hbc_makeGenerator(body, env)` as the provably-correct floor; `yield` recovery is v2. Pre-v97 keeps opcode-driven generator recovery.
+
+## D10 — Fixture corpus must exercise every table before M4 (2026-08-30)
+Literal buffers, object shape table, BigInt table and switch jump tables are empty in all original fixtures (R5). `tests/fixtures/constructs/` compiled with and without `-O`/`-g`, plus one real Metro bundle, are prerequisites for the emitter.

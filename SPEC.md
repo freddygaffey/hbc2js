@@ -11,7 +11,7 @@ Existing tools stop short:
 - **hermes-dec** (P1sec, AGPL): parses, disassembles, and emits *pseudo-code*. Its own README states the output "is not valid JavaScript yet as it does not retranscribe loop/conditional structures."
 - **hbc-toolbox / objdump**: disassembly only.
 
-Nobody produces runnable JS. This project closes that gap.
+**Update 2026-08-30:** newer permissive tools (`SymbioticSec/hermes-decomp`, `droidsaw/droidsaw-hermes`, `kroo/hermes-dec-rs`) do emit structured JS — see `docs/PRIOR-ART.md`. None verifies output by execution or recompilation, and none handles Static Hermes (v97+) generators. That verification (D2/D3) and the version breadth are this project's differentiators.
 
 ## Scope
 
