@@ -1,0 +1,2 @@
+delegated yields: start,1,2,end
+delegation return: got:42 undefined true

@@ -1,0 +1,2 @@
+trace: static-block-1|static-block-2|before-new|constructor|after-new
+counter: 15

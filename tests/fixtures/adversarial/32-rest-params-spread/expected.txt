@@ -1,0 +1,6 @@
+sum: 15
+first: 10
+second: 20
+rest_len: 3
+rest_first: 30
+rest_empty: 0

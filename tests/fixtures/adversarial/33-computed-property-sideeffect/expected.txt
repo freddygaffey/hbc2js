@@ -1,0 +1,4 @@
+prop-1: val-1
+prop-2: val-2
+eval trace: name-1|value-1|name-2|value-2
+obj2 trace: name-a|value-a|name-b|value-b

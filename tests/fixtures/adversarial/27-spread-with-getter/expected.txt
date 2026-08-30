@@ -1,0 +1,6 @@
+a: 1
+b: 2
+c: 3
+getter calls: 1
+array spread: 10,20,30
+destructured: 1 2 3

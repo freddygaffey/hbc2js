@@ -1,0 +1,1 @@
+results: test1:from-finally|test2:from-finally-2|test3:try

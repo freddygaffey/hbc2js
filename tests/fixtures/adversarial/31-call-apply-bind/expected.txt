@@ -1,0 +1,4 @@
+call: Hello Alice!
+apply: Hi Alice?
+bind: Hey Alice~
+bind+partial: Bye Alice.

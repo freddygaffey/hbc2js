@@ -1,0 +1,9 @@
+b.getType(): base
+m.getType(): base-middle
+d.getType(): base-middle-derived
+d instanceof Derived: true
+d instanceof Middle: true
+d instanceof Base: true
+m instanceof Middle: true
+m instanceof Base: true
+m instanceof Derived: false

@@ -1,0 +1,17 @@
+file:///Users/fred/hbc2js/tests/fixtures/adversarial/29-var-hoisting-redeclaration/source.js:15
+var myVar = 'string-value';
+    ^
+
+SyntaxError: Identifier 'myVar' has already been declared
+    at compileSourceTextModule (node:internal/modules/esm/utils:354:16)
+    at ModuleLoader.importSyncForRequire (node:internal/modules/esm/loader:358:18)
+    at loadESMFromCJS (node:internal/modules/cjs/loader:1648:24)
+    at Module._compile (node:internal/modules/cjs/loader:1811:5)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.require (node:internal/modules/cjs/loader:1575:12)
+    at require (node:internal/modules/helpers:191:16)
+
+Node.js v25.9.0

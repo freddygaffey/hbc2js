@@ -1,0 +1,8 @@
+skip-middle: 1 3
+x: 10
+rest: 20,30,40
+first: a
+others: c,d
+u: undefined
+v: fallback
+nested: 1 3 6

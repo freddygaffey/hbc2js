@@ -1,0 +1,2 @@
+trace: start|error:ReferenceError|declared|inner-value|outer-value
+outer after: outer-value

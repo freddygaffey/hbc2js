@@ -1,0 +1,4 @@
+object keys: z,a,m
+array indices: 0,1,2
+sparse keys: 0,2
+child keys: own,inherited

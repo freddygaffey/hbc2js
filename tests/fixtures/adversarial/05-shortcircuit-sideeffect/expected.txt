@@ -1,0 +1,5 @@
+trace: a1|a2|b1|c1|d1
+r1: a2
+r2: b1
+r3: c1
+r4: d1

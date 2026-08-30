@@ -1,0 +1,4 @@
+read value: 10
+get traps: 1
+has traps: 1
+set traps: 1

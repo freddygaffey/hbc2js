@@ -1,0 +1,3 @@
+Original work, written for the hbc2js project. Licensed MIT, same terms as
+the rest of hbc2js (see docs/DECISIONS.md D4 -- adversarial fixtures are
+freely usable test code).

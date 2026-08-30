@@ -1,0 +1,7 @@
+NaN !== NaN: true
+Object.is(NaN, NaN): true
+isNaN(arr[1]): true
+NaN > 5: false
+NaN < 5: false
+NaN === NaN: false
+indexOf(NaN): -1

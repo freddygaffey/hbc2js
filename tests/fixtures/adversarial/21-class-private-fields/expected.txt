@@ -1,0 +1,4 @@
+initial: 0
+after inc: 1 2
+after set: 100
+final: 101

@@ -1,0 +1,4 @@
+sym1 === sym2: false
+obj[sym1]: value1
+obj[sym2]: value2
+custom iterator: 1,2,3

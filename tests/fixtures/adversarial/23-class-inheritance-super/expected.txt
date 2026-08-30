@@ -1,0 +1,4 @@
+name: Rex
+breed: Labrador
+speak: Rex makes sound (woof)
+info: Rex-Labrador

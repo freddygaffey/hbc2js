@@ -1,0 +1,3 @@
+normal call: 42
+extracted: error:TypeError
+explicit this: 42

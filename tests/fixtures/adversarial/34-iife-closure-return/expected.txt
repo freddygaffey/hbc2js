@@ -1,0 +1,4 @@
+increment: 1 2
+decrement: 1
+final: 1
+after reset: 0

@@ -1,0 +1,2 @@
+trace: cond1|cond2|if-body|expr1|expr2
+result: 42

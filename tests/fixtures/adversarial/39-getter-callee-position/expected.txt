@@ -1,0 +1,4 @@
+result: 10
+trace: getter|function:5
+result2: 110
+trace2: getFunc-called|inner:100
