@@ -70,10 +70,21 @@ src/
   cfg/                        M4 — empty until spec 03
   structure/                  M4 — empty until spec 04
   emit/                       M4 — empty until spec 05
-  passes/                     M4+ — one readability/recovery pass per module (D11)
-  harness/                    M3 — empty until spec 06 (reconcile with tools/equiv/ then)
+  passes/                     M4+ — one directory per recovery pass (D11/D12)
+    registry.ts               ordered pass list; the only place a pass is enabled
+    types.ts                  Match, PassContext, Pass interfaces
+    <name>/match.ts           pure `match(node, ctx) => Match | null`, never mutates
+    <name>/rewrite.ts         `rewrite(match) => node`, emits idiomatic JS
+    <name>/check.ts           `check(before, after)` local control-flow guard
+  harness/                    M3 — promoted from tools/equiv/ (D15); spec 06 owns it
+docs/
+  LOWERING-CATALOGUE.md       created empty (headers only) by this spec; one row
+                              per Hermes lowering idiom, grown by M4+ (D12)
 tools/
-  get-hermesc.sh              EXISTS — do not modify
+  get-hermesc.sh              EXISTS — do not modify (fetches v84/v94/v98/v99)
+  build-hermes-vm.sh          EXISTS — do not modify (D14 VM oracle)
+  equiv/                      EXISTS, another agent's — do not modify; promoted
+                              into src/harness/ by spec 06 (D15)
   gen-tables/                 spec 01 §5: opcode/builtin table generator
     vendor.sh                 fetch + pin BytecodeList.def etc. from facebook/hermes
     gen.ts                    parse the .def files, emit src/tables/generated/*
@@ -82,19 +93,73 @@ tests/
   support/
     fixtures.ts               fixture discovery (reads tests/fixtures/, never writes)
     hermesc.ts                locate tools/hermesc/vNN/hermesc; skip helpers
-    oracles.ts               locate hbc-file-parser / hbc-disassembler; skip helpers
+    hermesvm.ts               locate a Hermes VM per D14; skip helpers
+    oracles.ts                locate hbc-file-parser / hbc-disassembler; skip helpers
     golden.ts                 deterministic JSON snapshot read/write/compare
     bytes.ts                  read a fixture .hbc as Uint8Array
-  unit/**/*.test.ts           pure unit tests (no external binaries)
-  golden/**                   committed snapshot JSON (see spec 01 §8 T5)
-  oracle/**/*.test.ts         tests that shell out to hermesc / hermes-dec
+    tiers.ts                  gate/sweep tier selection from env (D13)
+  gate/**/*.test.ts           D13 gate tier — every commit, seconds
+  sweep/**/*.test.ts          D13 sweep tier — nightly/on demand, minutes
+  golden/**                   committed snapshot data (spec 01 §8 T5, spec 02 §7.D)
   fixtures/                   OWNED BY ANOTHER AGENT — read only
 ```
 
-`src/cfg`, `src/structure`, `src/emit`, `src/passes`, `src/harness` are created
-as empty directories with a `.gitkeep` — do not stub types into them; the M3/M4
-specs own their interfaces. `src/passes/` is reserved for D11's one-module-per-
-recovery-pass structure.
+### 2.1 Test tiers (D13, D16)
+
+Tests are filed by **cost tier**, not by subject, because that is what CI splits
+on. Within a tier, mirror the source layout (`tests/gate/parse/…`,
+`tests/gate/disasm/…`).
+
+| Tier | Directory | Runs | Contents |
+|---|---|---|---|
+| **gate** | `tests/gate/**` | every commit, target < 60 s | unit tests; `constructs/**` and `hermes-dec-sample/**` through parser/disassembler goldens and (from M3) the equivalence checker; `constructs/*/source.min.js` variants (C2) |
+| **sweep** | `tests/sweep/**` | nightly + `--sweep`, minutes | `bundles/**` (C3) and their hardened builds (C4); obfuscated construct variants (C2-obf); harvested Hermes lit tests, test262/quickjs subsets; D3 recompile round-trip at bundle scale |
+| **local-corpus** | `tests/sweep/local-corpus/**` | sweep, **skipped as INCONCLUSIVE when absent** | C5 proprietary APK bundles under the gitignored `tests/fixtures/local-corpus/`. Never commit the bundles or anything derived from them; only `MANIFEST.json` (hashes) is committed. |
+
+Tier selection is by env var, read once in `tests/support/tiers.ts`:
+`HBC2JS_TIER=gate` (default) | `sweep` | `all`. A sweep test file starts with a
+`tiers.requireSweep(t)` guard so a bare `npm test` never spends minutes.
+
+**A missing oracle is never a pass.** Per D15, INCONCLUSIVE is its own verdict:
+a skipped test must report the reason, and `HBC2JS_REQUIRE_ORACLES=1` (set in
+CI) turns "oracle missing" skips into failures.
+
+**Oracle precedence for behavioural tests (D14).** The reference trace is the
+**Hermes VM running the original `.hbc`**, not Node running `source.js` —
+Hermes diverges from spec/Node on per-iteration `let`, TDZ with shadowing, and
+sloppy `arguments` aliasing at every version tested. `expected.txt` (captured
+under Node) is the reference **only** when no VM exists for that version and the
+fixture is not in the known-divergence set. `tests/support/hermesvm.ts` locates
+a VM (`tools/hermesc/v84/hermes`, or a build produced by
+`tools/build-hermes-vm.sh`) and reports INCONCLUSIVE when it cannot. M1/M2 do not
+execute anything, so this matters from M3 on — it is specified here because
+`tests/support/` is built now.
+
+`src/cfg`, `src/structure`, `src/emit` are created as empty directories with a
+`.gitkeep` — do not stub types into them; the M4 specs own their interfaces.
+
+`src/passes/` and `src/harness/` are different: their *shape* is fixed by D11–D16
+and is recorded here so that M1/M2 scaffolding does not have to be moved later.
+
+* **`src/passes/` (D11, D12).** Every recovery pass is a directory exporting
+  exactly three pure modules — `match.ts` (recognises one Hermes lowering idiom,
+  returns a `Match` or `null`, never mutates), `rewrite.ts` (emits idiomatic JS
+  for exactly the captured shape), `check.ts` (asserts the rewritten subtree
+  preserves control-flow entry/exit edges; on failure the pass is abandoned *for
+  that site* and the correct-but-ugly form survives). `registry.ts` holds the
+  ordered list and is the only place a pass is switched on — passes are
+  individually toggleable, and pass order follows fixture numbering unless a
+  dependency forces otherwise. Every pass has exactly one row in
+  **`docs/LOWERING-CATALOGUE.md`** (idiom, matcher, writer, the fixture that
+  exercises it); adding a construct is one catalogue row + one fixture + one pass
+  directory. That catalogue is a first-class repo artefact, created empty by
+  this spec with its column headers, and grown by M4+.
+* **`src/harness/` (D15).** Not written from scratch: `tools/equiv/` is the
+  reference implementation of the three-valued equivalence checker
+  (PASS/DIVERGENT/INCONCLUSIVE over the `node --check` → trace → differential-fuzz
+  → recompile-round-trip ladder) and is **promoted** into `src/harness/` by spec
+  06. M1/M2 must not import from `tools/equiv/` and must not pre-empt its
+  interfaces; see `docs/EQUIVALENCE.md`.
 
 ---
 
@@ -113,11 +178,12 @@ recovery-pass structure.
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test \"tests/unit/**/*.test.ts\" \"tests/oracle/**/*.test.ts\"",
-    "test:unit": "node --test \"tests/unit/**/*.test.ts\"",
-    "test:oracle": "node --test \"tests/oracle/**/*.test.ts\"",
+    "test": "node --test \"tests/gate/**/*.test.ts\"",
+    "test:gate": "node --test \"tests/gate/**/*.test.ts\"",
+    "test:sweep": "HBC2JS_TIER=sweep node --test \"tests/sweep/**/*.test.ts\"",
+    "test:all": "HBC2JS_TIER=all node --test \"tests/gate/**/*.test.ts\" \"tests/sweep/**/*.test.ts\"",
     "gen:tables": "node tools/gen-tables/gen.ts",
     "gen:tables:check": "node tools/gen-tables/gen.ts --check",
     "fixtures": "tests/fixtures/build.sh",
@@ -136,6 +202,13 @@ recovery-pass structure.
 |---|---|---|---|
 | `typescript` | dev | Type-stripping does **not** typecheck. `tsc` is the only thing that enforces `strict`, and it emits `dist/` + `.d.ts` for the CLI. | none viable |
 | `@types/node` | dev | Types for `node:fs`, `node:test`, `node:vm`, `import.meta.dirname`. Ships separately from the runtime. | hand-written ambient decls (worse, drifts) |
+
+**Note on the `bin` file mode (review S2).** `tsc` emits `dist/cli.js` as
+`-rw-r--r--` — the shebang survives but the executable bit does not, so
+`./dist/cli.js` fails with `permission denied` (exit 126) until `npm install` /
+`npm link` does its bin-linking. The `build` script therefore `chmod`s it
+explicitly (portably, via `node -e`, not `chmod(1)`). Tests still invoke
+`node dist/cli.js` rather than `./dist/cli.js`.
 
 **Runtime dependencies: none, permanently.** Adding one requires an ADR in
 `docs/DECISIONS.md`. Explicitly rejected and why:
@@ -359,24 +432,32 @@ object on stdout instead.
 ### 7.1 Fixture discovery (`tests/support/fixtures.ts`)
 
 The fixture layout is documented in `tests/fixtures/README.md` (authored by
-another agent). As of writing:
+another agent, and moving fast — **re-read it and re-count before relying on any
+number below**). Surveyed at the time of this revision:
 
 ```
 tests/fixtures/<group>/<name>/
     source.js       always
-    expected.txt    constructs/ only — `node source.js` stdout, D2 ground truth
+    expected.txt    constructs/ only — `node source.js` stdout (see D14 caveat)
     licence.txt     always
     versions.txt    only when some hermesc version cannot compile this fixture
-    v84.hbc v94.hbc v99.hbc [v99-public.hbc]   only for versions that compiled
+    v84.hbc v94.hbc v98.hbc v99.hbc [v99-public.hbc]   only versions that compiled
 ```
 
-Groups today: `constructs/` (51 dirs, `NN-topic`) and `hermes-dec-sample/`
-(one dir, four `.hbc` files, of which `v94.hbc`/`v99.hbc` are **preserved
-historical originals**).
+| Group | Contents |
+|---|---|
+| `constructs/` | **53** dirs `01-…`–`53-…`; 196 of 212 (source × version) combinations compile; 52/53 are the switch-jump-table fixtures |
+| `hermes-dec-sample/` | one dir, **five** `.hbc` (`v84`, `v94`, `v98`, `v99`, `v99-public`); `v94.hbc` and `v99.hbc` are **preserved historical originals** |
+| `bundles/` | C3 real Metro bundles (D16), e.g. `rn-template-0.72/` with four `.hbc` flag variants (1.2–2.7 MB, HBC 94) plus the `.bundle` source |
+| `local-corpus/` | C5, **gitignored**; only `MANIFEST.json` is committed |
+
+Four `hermesc` versions are now fetched (`tools/get-hermesc.sh` handles
+`84|94|98|99|all`), so every version-keyed helper, matrix and table in this
+project must cover **98** as well.
 
 ```ts
 export interface FixtureBinary {
-  readonly version: 84 | 94 | 99;
+  readonly version: 84 | 94 | 98 | 99;
   readonly variant: "" | "public";   // "public" => v99-public.hbc
   readonly path: string;             // absolute
   readonly bytes: () => Uint8Array;  // lazy, cached
@@ -386,7 +467,7 @@ export interface FixtureBinary {
   readonly reproducible: boolean;
 }
 export interface Fixture {
-  readonly group: string;            // "constructs" | "hermes-dec-sample"
+  readonly group: string;            // "constructs" | "hermes-dec-sample" | "bundles"
   readonly name: string;             // "09-switch-fallthrough"
   readonly dir: string;
   readonly sourcePath: string;
@@ -394,6 +475,9 @@ export interface Fixture {
   readonly binaries: readonly FixtureBinary[];
 }
 export function listFixtures(filter?: { group?: string; version?: number }): readonly Fixture[];
+/** C3 bundle inputs (sweep tier). Separate call so a gate test cannot pull in
+ *  megabytes by accident. */
+export function listBundles(): readonly FixtureBinary[];
 export function fixture(group: string, name: string): Fixture;   // throws if absent
 ```
 
@@ -407,13 +491,16 @@ Rules:
   compile, but the file is preserved, not generated; treat `v99.hbc` as the one
   that genuinely cannot be reproduced — see `docs/TOOLCHAIN.md`.)
 * Discovery must be deterministic: sort by `(group, name, version, variant)`.
+* `bundles/**` is **never** returned by `listFixtures()` — gate tests must not
+  touch multi-megabyte inputs. Use `listBundles()` from a sweep test.
 
 ### 7.2 `hermesc` (`tests/support/hermesc.ts`)
 
 ```ts
-export interface Hermesc { readonly version: 84 | 94 | 99; readonly path: string; }
-export function findHermesc(version: 84 | 94 | 99): Hermesc | null;
-export function requireHermesc(t: TestContext, version: 84 | 94 | 99): Hermesc | null;
+export type HbcVersion = 84 | 94 | 98 | 99;
+export interface Hermesc { readonly version: HbcVersion; readonly path: string; }
+export function findHermesc(version: HbcVersion): Hermesc | null;
+export function requireHermesc(t: TestContext, version: HbcVersion): Hermesc | null;
 export function runHermesc(h: Hermesc, args: readonly string[], cwd: string): {
   readonly status: number; readonly stdout: string; readonly stderr: string;
 };
@@ -447,7 +534,12 @@ its source is forbidden** (D4). Put a comment saying so at the top of the file.
 
 ---
 
-## 8. CI outline (`.github/workflows/ci.yml`)
+## 8. CI outline (`.github/workflows/`)
+
+Two workflows, matching D13's cost tiers: `ci.yml` (every push/PR, gate only)
+and `sweep.yml` (nightly + manual, everything else).
+
+### 8.1 `ci.yml` — gate
 
 ```yaml
 name: ci
@@ -469,6 +561,7 @@ jobs:
     timeout-minutes: 25
     env:
       HBC2JS_REQUIRE_ORACLES: "1"
+      HBC2JS_TIER: gate
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -476,19 +569,20 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run gen:tables:check      # generated tables are reproducible
-      - uses: actions/cache@v4             # hermesc binaries (~40 MB), keyed on the fetch script
+      - uses: actions/cache@v4             # hermesc binaries, keyed on the fetch script
         with:
           path: tools/hermesc
           key: hermesc-${{ runner.os }}-${{ hashFiles('tools/get-hermesc.sh') }}
-      - run: tools/get-hermesc.sh all
-      - run: npm run test:unit
-      - run: npm run test:oracle           # hermesc-backed diff tests (spec 02 §7A)
+      - run: tools/get-hermesc.sh all      # v84, v94, v98, v99
+      - run: npm run build                 # also proves dist/cli.js is executable
+      - run: npm run test:gate
 
   oracle-hermes-dec:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       HBC2JS_REQUIRE_ORACLES: "1"
+      HBC2JS_TIER: gate
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -497,7 +591,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install "hermes-dec==0.1.7"
       - run: npm ci
-      - run: npm run test:oracle
+      - run: npm run test:gate
 
   licence-guard:
     runs-on: ubuntu-latest
@@ -506,9 +600,34 @@ jobs:
       - name: No AGPL contamination (D4 / risk R6)
         run: |
           set -e
-          ! grep -rInE 'hermes_dec|hermes-dec/|site-packages|pass[0-9]_transform_code|CatchBlockStart|_fun[0-9]*_ip' \
+          ! grep -rInE 'hermes_dec|hermes-dec/|site-packages|pass[0-9]_transform_code|_fun[0-9]+_ip|CatchBlockStart' \
               src/ tools/gen-tables/ \
             || { echo "hermes-dec-derived identifier found in src/ — see docs/DECISIONS.md D4"; exit 1; }
+```
+
+### 8.2 `sweep.yml` — sweep
+
+```yaml
+name: sweep
+on:
+  schedule: [{ cron: "0 3 * * *" }]
+  workflow_dispatch:
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      HBC2JS_REQUIRE_ORACLES: "1"
+      HBC2JS_TIER: sweep
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm }
+      - uses: actions/cache@v4
+        with: { path: tools/hermesc, key: hermesc-Linux-${{ hashFiles('tools/get-hermesc.sh') }} }
+      - run: npm ci
+      - run: tools/get-hermesc.sh all
+      - run: npm run test:sweep            # bundles/**, round-trip, obfuscated variants
 ```
 
 Notes:
@@ -517,20 +636,27 @@ Notes:
   on by default); `24` is current LTS-track. macOS runners are arm64 and the npm
   `hermesc` builds are universal Mach-O, so they work; Linux runners are x86_64,
   the only Linux arch with a published `hermesc` (`docs/TOOLCHAIN.md`). **Do not
-  add a Linux arm64 runner** until a source-built `hermesc` exists.
-* `npm run test:oracle` appears in both jobs on purpose: in `build-test` the
-  hermes-dec oracles skip (not installed) and the hermesc ones run; in
-  `oracle-hermes-dec` the reverse. Together they cover both. If that double-run
-  becomes slow, split the oracle tests into `tests/oracle/hermesc/**` and
-  `tests/oracle/hermes-dec/**` and give each job its own glob.
+  add a Linux arm64 runner** until a source-built `hermesc` exists. The `22.18`
+  leg is the *only* place that floor gets exercised — it was never verified
+  locally (review S3), so a green `22.18` leg is what closes that question, and
+  it must not be dropped from the matrix for speed.
+* `npm run test:gate` appears in both `build-test` and `oracle-hermes-dec`: in
+  the first, the hermes-dec oracle tests skip (not installed) and the hermesc
+  ones run; in the second, the reverse. Together they cover both.
 * `gen:tables:check` regenerates the tables into a temp dir and fails if the
-  committed files differ (spec 01 §5.4). This is what makes "generated from a
+  committed files differ (spec 01 §5.4). That is what makes "generated from a
   pinned MIT commit" verifiable rather than a claim.
+* **Licence-guard false-positive hazard (review S5).** The guard greps for
+  `_fun[0-9]+_ip`, which is hermes-dec's dispatch-variable shape (`_fun5_ip`) —
+  and also the most natural name for the `for(;;) switch(ip)` debug escape hatch
+  D6/D7 retain. That collision would make the guard fire on legitimately
+  original code, and the fix must never be to weaken the guard. **The M4
+  fallback emitter must name its dispatch variable `__dispatchPc` (not
+  `_funN_ip`, `_ip`, or anything of that shape).** Recorded here because this
+  spec defines the gate; restate it in the M4 emitter spec.
 * A `fixtures-reproducible` step (`tests/fixtures/build.sh && git diff --exit-code
   tests/fixtures`) is desirable but **is not added by this spec** — that path
-  belongs to another agent right now. Propose it to the overseer later (O-4).
-
----
+  belongs to another agent right now (O-4).
 
 ## 9. Cross-platform rules
 
@@ -571,56 +697,86 @@ An implementation agent can self-verify all of these.
 
 - [ ] `npm ci` succeeds on macOS and Linux with exactly the two devDependencies
       in §3; `node_modules` contains no runtime dependency of `hbc2js` itself.
-- [ ] `npm run typecheck` passes with zero errors and zero `any` in `src/`
-      (`grep -rn ": any\b\|as any" src/` returns nothing).
-- [ ] `npm run build` emits `dist/cli.js` with a shebang, `dist/index.js`,
-      and `.d.ts` files; `node dist/cli.js --help` prints usage and exits 0.
+- [ ] `npm run typecheck` passes with zero errors and no `any` in `src/`
+      (`git grep -nE '\bas any\b|: *any\b' -- src/` returns nothing; use
+      `git grep` so the check is word-aware and respects `.gitignore` — a plain
+      `grep -rn` also matches the word inside comments and strings, review N2).
+- [ ] `npm run build` emits `dist/cli.js` with a shebang **and mode 0755**
+      (`test -x dist/cli.js`), plus `dist/index.js` and `.d.ts` files;
+      `node dist/cli.js --help` prints usage and exits 0.
 - [ ] `node src/cli.ts --help` (no build step) prints the same usage — proving
       the type-stripping path works.
-- [ ] `npm test` runs and passes with **zero** tests silently skipped when
-      `HBC2JS_REQUIRE_ORACLES=1` and all binaries are present.
+- [ ] `npm test` (gate tier) runs and passes with **zero** silently skipped tests
+      when `HBC2JS_REQUIRE_ORACLES=1` and all binaries are present; every skip
+      that remains prints its reason and is classified INCONCLUSIVE, never PASS.
+- [ ] `npm run test:sweep` runs, and skips cleanly (INCONCLUSIVE, with reasons)
+      when `bundles/**` or `local-corpus/**` inputs are absent.
 - [ ] `src/errors.ts` exports every code in §6.1; a unit test asserts
       `Hbc2jsError` instances serialise their `code`, `message` and `context`.
-- [ ] `tests/support/fixtures.ts` discovers ≥ 52 fixture directories and
-      ≥ 138 `.hbc` binaries, is deterministic across two runs, and writes
-      nothing (verify with `git status --porcelain tests/fixtures` after a run).
-- [ ] `tests/support/hermesc.ts` returns `null` (not a throw) when a binary is
-      absent, and `requireHermesc` fails rather than skips under
-      `HBC2JS_REQUIRE_ORACLES=1`.
+- [ ] `tests/support/fixtures.ts` discovers **54** fixture directories
+      (53 `constructs/` + 1 `hermes-dec-sample/`) and **201** `.hbc` binaries
+      (196 + 5), is deterministic across two runs, excludes `bundles/**` from
+      `listFixtures()`, and writes nothing (`git status --porcelain
+      tests/fixtures` is empty afterwards). **Re-derive these two counts from the
+      tree before hardcoding them** — the corpus is being extended concurrently.
+- [ ] `tests/support/hermesc.ts` handles versions 84/94/**98**/99, returns `null`
+      (not a throw) when a binary is absent, and `requireHermesc` fails rather
+      than skips under `HBC2JS_REQUIRE_ORACLES=1`.
+- [ ] `tests/support/tiers.ts` gates sweep tests: with `HBC2JS_TIER` unset, no
+      file under `tests/sweep/` executes a body.
 - [ ] Exit codes in §6.3 are exercised by at least one CLI test each for 0, 2, 3.
-- [ ] `.github/workflows/ci.yml` exists with the three jobs of §8 and the
-      licence-guard job fails when a test file containing `CatchBlockStart` is
+- [ ] `docs/LOWERING-CATALOGUE.md` exists with its column headers and a one-
+      paragraph preamble pointing at D12; it is empty of rows at M1/M2.
+- [ ] `src/passes/{registry.ts,types.ts}` exist with the D12 `Pass` /
+      `Match` / `PassContext` interfaces and an **empty** ordered registry; no
+      pass directories yet.
+- [ ] `.github/workflows/ci.yml` and `sweep.yml` exist as in §8; the
+      licence-guard job fails when a file containing `CatchBlockStart` is
       temporarily added under `src/` (verify locally, then remove).
-- [ ] No file under `tests/fixtures/**` or `tools/equiv/**` is modified by this
-      commit (`git status --porcelain` shows only the intended paths).
+- [ ] Nothing under `tests/fixtures/**`, `tools/**` (including `tools/equiv/`),
+      or any other agent's paths is modified by this commit.
 
 ---
 
 ## 11. Estimated complexity
 
-**Sonnet, comfortably.** ~600 lines of scaffolding, no algorithms. The only
-places to slow down are (a) getting `erasableSyntaxOnly` +
-`rewriteRelativeImportExtensions` right in both the `tsc` and the strip-types
-paths, and (b) the CI YAML matrix. Budget one session. No Opus review needed
-unless O-1 is answered in a way that changes the runtime baseline.
+**Sonnet, comfortably.** ~700 lines of scaffolding, no algorithms. Slow down in
+three places: (a) `erasableSyntaxOnly` + `rewriteRelativeImportExtensions` must
+work in both the `tsc` and the strip-types paths; (b) the two CI workflows;
+(c) fixture discovery, which must stay deterministic and must not accidentally
+pull `bundles/**` into the gate tier. Budget one session.
 
 ---
 
 ## 12. Open questions for the overseer
 
 * **O-1 — Node floor.** `>=22.18` lets tests run `.ts` with no flags but rules
-  out Node 20 (still LTS-supported until 2026-04). Confirm 22.18 is acceptable,
-  or we add a `tsc`-before-test step and drop to `>=20.11`.
-* **O-2 — `private: true`.** The skeleton marks the package private (nothing is
-  published yet). If hbc2js is meant to be `npm publish`-able at M5, say so and
-  the `files`/`exports`/`repository` fields get filled in now instead.
+  out Node 20 (LTS-supported until 2026-04). The claim was verified only on the
+  Node in this sandbox (v25.9.0); the CI `22.18` leg is what will actually
+  confirm it (review S3). Confirm 22.18 is acceptable, or we add a
+  `tsc`-before-test step and drop to `>=20.11`.
+* **O-2 — `private: true`.** The skeleton marks the package private. If hbc2js
+  is meant to be `npm publish`-able at M5, say so and the
+  `files`/`exports`/`repository` fields get filled in now instead.
 * **O-3 — JS parser dependency at M4.** R3's mitigation ("assert every emitted
   identifier is bound") needs a real JS parser. Pre-approve `acorn` (MIT) as a
-  **devDependency** for the M4 verifier, or decide the check happens by
-  executing under `node:vm` only?
-* **O-4 — fixture reproducibility gate in CI.** Adding a
-  `tests/fixtures/build.sh && git diff --exit-code` step would catch fixture rot,
-  but touches a path another agent owns. Want it, and if so, who adds it?
+  **devDependency** for the M4 verifier, or decide the check happens only by
+  executing under `node:vm`?
+* **O-4 — fixture reproducibility gate in CI.** A
+  `tests/fixtures/build.sh && git diff --exit-code` step would catch fixture rot
+  but touches a path another agent owns. Want it, and who adds it?
 * **O-5 — coverage.** `node --test --experimental-test-coverage` is available.
   Do we want a coverage floor in CI (e.g. 85 % lines in `src/parse`), or is the
   golden/oracle suite the real gate?
+
+---
+
+## 13. Review responses (`docs/specs/REVIEW-01-02.md`)
+
+| Item | Verdict | Where |
+|---|---|---|
+| **S2** `tsc` does not set the executable bit on `dist/cli.js` | **Fixed** | §3 `build` script now chmods 0755 via `node -e`; §3.1 note; §10 asserts `test -x` |
+| **S3** Node `>=22.18` floor unverified | **Fixed (as far as it can be)** | §8 notes the `22.18` matrix leg is the only thing that closes it and must not be dropped; O-1 kept open until that leg is green |
+| **S5** licence-guard `_fun[0-9]*_ip` false positive vs D6/D7's `switch(ip)` fallback | **Fixed** | §8 note: the guard is kept as-is (tightened to `_fun[0-9]+_ip`) and the M4 fallback is required to name its dispatch variable `__dispatchPc`. Weakening the guard was rejected — the guard is the cheap defence for R6, the naming constraint costs nothing |
+| **N2** `grep -rn ": any\|as any"` has no comment/string exclusion | **Fixed** | §10 now uses `git grep -nE '\bas any\b\|: *any\b' -- src/`. A full AST check was rejected as disproportionate: it would need the M4 parser dependency (O-3) to exist first |
+| B1, B2, B3, S1, S4, S6, N1, N3, N4, N5 | Not this spec's | Addressed in specs 01 and 02; N1 relayed to the fixtures agent via §7.1's "re-derive the counts" instruction |
