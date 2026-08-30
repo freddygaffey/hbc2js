@@ -67,5 +67,8 @@ Supersedes the tier list in D13 with an explicit taxonomy; each category has its
 
 C5 rules: never commit the bundles or anything derived from them; `tools/extract-apk-bundle.sh <apk>` extracts `assets/index.android.bundle`, records sha256 + Hermes version into `local-corpus/MANIFEST.json` (which *is* committed, hashes only). Only APKs the user has legitimately obtained; analysis is local. C4 is produced by `tests/fixtures/build.sh --variants` with the D13 obfuscator config.
 
+## D13a — Hardened-tier caveat (2026-08-30)
+T3 found `hermesc` (even `-O0`) collapses javascript-obfuscator's `while(true){switch(ip)}` dispatcher back to linear code when the state index is compile-time derivable, so control-flow flattening is partly undone before we see it. The obfuscated tier still stresses string-array decoding, dead-code, and split strings; genuinely irreducible-CFG stress must come from hand-built fixtures or from computed-state obfuscation (`ip` derived from runtime values). Track under T-hardened on the task board.
+
 ## D17 — npm package recognition via bytecode signatures (planned, post-baseline) (2026-08-30)
 Metro preserves module boundaries (`__d(fn, id, deps)`) and `hermesc` is deterministic, so known npm packages can be recognised by fingerprinting normalised function bytecode (FLIRT/Function-ID style) built offline by bundling curated package versions with matching Metro + hermesc. A high-confidence whole-module match is emitted as `require("<pkg>")` plus a dependency entry; partial matches are annotated, never silently replaced. Implemented as a D12 pass with a checker that re-bundles the replacement and confirms bytecode equality. Depends on M1–M2 and the D3 normaliser; scheduled after the M4 baseline.

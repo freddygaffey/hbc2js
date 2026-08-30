@@ -12,6 +12,7 @@ Claim a task by editing this file: put your handle and date in the **Claimed** c
 | T6 | Repo `README.md` for humans: what/why/status/how to run selftest, linking docs. | writing | |
 | T7 | Property-based fuzz inputs for `tools/equiv` exports: extend the fuzzer's value generators (typed arrays, sparse arrays, Symbols, Proxies) and measure mutation-kill-rate change. | JS testing | |
 | T8 | Feasibility study for D17 (npm package recognition): bundle react@18.2 + lodash via Metro, compile with hermesc v94, and measure how many functions match byte-for-byte (after normalisation) against the same package inside `tests/fixtures/bundles/rn-template-0.72`. Report in docs/PACKAGE-SIGNATURES.md. No decompiler code needed — use `hermesc -dump-bytecode` + a script. | scripting, analysis | |
+| T9 | Irreducible-CFG stress fixtures (D13a): hand-written JS whose CFG is genuinely irreducible after hermesc (runtime-derived state machines, cross-jumping loops), plus fixtures for `StringSwitchImm` (v98+) and logical assignment, which the catalogue lacks. Verify with `-dump-bytecode`. | JS, bytecode | |
 | — | Parser / disassembler implementation (specs 01, 02) | *in-flight (overseer)* | |
 | — | Fixture variants, real-app bundles, Hermes VM build | *in-flight (overseer)* | |
 
