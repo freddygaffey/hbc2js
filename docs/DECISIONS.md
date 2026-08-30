@@ -131,3 +131,6 @@ Hermes bundles are React Native, i.e. React compiled to JS — there is no Vue/S
 
 ## D21 — Release benchmark page (planned) (2026-08-30)
 At release, a script-generated comparison: the same bundles through hermes-dec, hermes-decomp, droidsaw-hermes and hbc2js, measured on runs/`node --check`, equivalence-gate result, structures recovered (loops/try/generators), % of modules stripped as recognised dependencies, time per MB. Claims in the README come only from that script's output.
+
+## D12a — Passes are self-contained modules; implementers read one page + one spec (2026-08-30)
+Each pass is `src/passes/<name>/{index.ts,match.ts,rewrite.ts,check.ts,<name>.test.ts}` plus `docs/specs/passes/NN-<name>.md` and one catalogue row. The framework contract (tree-IR node types a pass may touch, the `Pass` interface, the registry, per-site abandonment, how to run one pass on one fixture) is a one-page `src/passes/README.md`. A pass may import only `src/passes/framework` and `src/structure`'s public IR/verifier types — never `src/emit`, `src/cfg`, or another pass. Consequence: a pass can be implemented by a cheap model that has read exactly two documents, and reviewed in isolation. Enforced by an import-boundary test.
