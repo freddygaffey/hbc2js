@@ -3,6 +3,7 @@
 // any) follows the loop — inside the labeled block when the guard lived there.
 import { seq } from "../../structure/ir.ts";
 import type { Stmt } from "../../structure/ir.ts";
+import { items } from "../tree.ts";
 import type { LoopMatch } from "./match.ts";
 
 export function rewrite(m: LoopMatch): Stmt {
@@ -15,7 +16,7 @@ export function rewrite(m: LoopMatch): Stmt {
   const hoist = exit.k === "break" && exit.label === L ? null : exit;
 
   if (shape === "tail") {
-    const body = loop.body.k === "seq" ? loop.body.body : [loop.body];
+    const body = items(loop.body);
     const inner: Stmt = { k: "seq", body: [...body.slice(0, -1), guardOut] };
     const out: Stmt = { ...loop, body: inner, form: { kind, cond, at: "tail", negate } };
     return hoist === null ? out : seq([out, hoist]);
@@ -23,11 +24,11 @@ export function rewrite(m: LoopMatch): Stmt {
 
   // tail-labeled: M: { A2…; guard } ; T…   ->   M: { loop { A…; A2…; guard' }; E } ; T…
   const M = labeled!;
-  const body = loop.body.k === "seq" ? loop.body.body : [loop.body];
+  const body = items(loop.body);
   const mi = body.indexOf(M);
   const before = body.slice(0, mi);
   const trailing = body.slice(mi + 1);
-  const mBody = M.body.k === "seq" ? M.body.body : [M.body];
+  const mBody = items(M.body);
   const inner: Stmt = { k: "seq", body: [...before, ...mBody.slice(0, -1), guardOut] };
   const out: Stmt = { ...loop, body: inner, form: { kind, cond, at: "tail", negate } };
   const inM: Stmt[] = [out];

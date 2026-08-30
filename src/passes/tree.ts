@@ -10,6 +10,7 @@ import { conditionFor } from "../emit/conds.ts";
 import type { Expr } from "../emit/ast.ts";
 import type { Instruction } from "../disasm/decode.ts";
 import type { BlockId } from "../cfg/types.ts";
+import type { ModuleAnalysis } from "../cfg/types.ts";
 import { writtenRegisters } from "../cfg/reg-effects.ts";
 import { children } from "../structure/ir.ts";
 import type { LabelId, Stmt, StructuredFunction } from "../structure/ir.ts";
@@ -18,6 +19,65 @@ import { postOrder } from "./driver.ts";
 export type { BlockId } from "../cfg/types.ts";
 export type { Instruction } from "../disasm/decode.ts";
 export { writtenRegisters } from "../cfg/reg-effects.ts";
+
+/**
+ * F6 (spec `docs/specs/passes/01-framework-fixes.md`): a read-only,
+ * whole-module view built once per module by `src/passes/index.ts` and handed
+ * to every pass as `ctx.module`. Framework, so it may reach into `src/cfg`
+ * (`ModuleAnalysis`) even though a pass itself never may — by convention only
+ * the naming rungs and `jsx-recover` read it; nothing in batch 1 does.
+ */
+export interface ModuleView {
+  readonly functionCount: number;
+  /** `""` when the function is anonymous. */
+  functionName(index: number): string;
+  isGlobalFunction(index: number): boolean;
+  envSlotAccesses(env: number, slot: number): readonly { readonly functionIndex: number; readonly offset: number }[];
+  /**
+   * `src/deps`' confirmed-package verdict for this module, when the caller
+   * computed one (it is a separate, opt-in analysis — `hbc2js deps`, not the
+   * decompile pipeline this ladder runs under); `null` otherwise, which is
+   * what every `ctx.module` is in batch 1.
+   */
+  depsVerdict(): readonly { readonly module: number; readonly package: string; readonly confidence: number }[] | null;
+}
+
+/** Builds `ctx.module` from the same `ModuleAnalysis` the pass pipeline already has in hand. */
+export function buildModuleView(analysis: ModuleAnalysis): ModuleView {
+  const mod = analysis.module;
+  return {
+    functionCount: mod.functions.length,
+    functionName(index: number): string {
+      return mod.functions[index]?.name ?? "";
+    },
+    isGlobalFunction(index: number): boolean {
+      return index === mod.header.globalCodeIndex;
+    },
+    envSlotAccesses(env: number, slot: number): readonly { readonly functionIndex: number; readonly offset: number }[] {
+      const s = analysis.envGraph.slots.find((x) => x.env === env && x.slot === slot);
+      return s === undefined ? [] : s.accesses.map((a) => ({ functionIndex: a.functionIndex, offset: a.offset }));
+    },
+    depsVerdict(): null {
+      return null;
+    },
+  };
+}
+
+/** F4: `s.k === "seq" ? s.body : [s]` — the one-or-many view of a statement
+ *  list every loop-shaped matcher/rewriter needs. Both shipped rungs
+ *  private-defined this; this is the third copy, so it moved here. */
+export function items(s: Stmt): readonly Stmt[] {
+  return s.k === "seq" ? s.body : [s];
+}
+
+/** `s` is exactly `break label` / `continue label`. Replaces the private
+ *  `isJump(s, "break"|"continue", label)` both shipped rungs had. */
+export function isBreakTo(s: Stmt, label: LabelId): boolean {
+  return s.k === "break" && s.label === label;
+}
+export function isContinueTo(s: Stmt, label: LabelId): boolean {
+  return s.k === "continue" && s.label === label;
+}
 
 export interface LabelUse {
   readonly breaks: number;

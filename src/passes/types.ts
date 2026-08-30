@@ -5,6 +5,8 @@ import type { Diagnostic } from "../errors.ts";
 import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import type { LayoutClass } from "../parse/types.ts";
 import type { StructuredFunction } from "../structure/ir.ts";
+import type { Stmt as AstStmt } from "../emit/ast.ts";
+import type { ModuleView } from "./tree.ts";
 
 /** Stage A operates on the structurer's tree IR; stage B on the JS AST. */
 export type Stage = "A" | "B";
@@ -26,6 +28,18 @@ export interface PassContext {
    */
   readonly structured?: StructuredFunction;
   readonly parentOf?: (node: unknown) => { readonly parent: unknown; readonly index: number } | null;
+  /**
+   * F6: a read-only whole-module view, built once per module. Present for
+   * both stages. By convention (not enforced) only the naming rungs and
+   * `jsx-recover` read it.
+   */
+  readonly module?: ModuleView;
+  /**
+   * F1: stage B only — the *current* whole function body, re-derived after
+   * every accepted site, so a rung can ask a whole-function question
+   * (liveness, free names) from one statement list.
+   */
+  readonly fnBody?: readonly AstStmt[];
 }
 
 export interface Match<TNode, TData = unknown> {
@@ -45,11 +59,14 @@ export interface Pass<TNode = unknown, TData = unknown> {
   readonly stage: Stage;
   readonly targets: readonly string[];
   /**
-   * PL-06: the `docs/LOWERING-CATALOGUE.md` index rows (the `#` column) whose
-   * idiom this pass recognises. tests/gate/passes/catalogue.test.ts reads the
-   * catalogue's status column and fails if any row here is ⛔ or missing.
+   * PL-06: the `docs/LOWERING-CATALOGUE.md` rows whose idiom this pass
+   * recognises — a numbered `#` index row, or (spec
+   * `docs/specs/passes/01-framework-fixes.md` F2) an `R`-prefixed readability
+   * row for a rung that recognises no Hermes idiom at all.
+   * tests/gate/passes/catalogue.test.ts reads the catalogue's status column
+   * and fails if any row here is ⛔ or missing, for either kind of key.
    */
-  readonly catalogue: readonly number[];
+  readonly catalogue: readonly (number | string)[];
   /** Pure. Recognises one Hermes lowering idiom. MUST NOT mutate. */
   match(node: TNode, ctx: PassContext): Match<TNode, TData> | null;
   /** Pure. Emits the idiomatic form for exactly the captured shape. */
@@ -58,6 +75,14 @@ export interface Pass<TNode = unknown, TData = unknown> {
   check(before: TNode, after: TNode, ctx: PassContext): CheckResult;
   readonly after?: readonly string[];
   readonly before?: readonly string[];
+  /**
+   * F7: restrict a rung to bytecode versions/layouts it has actually been
+   * measured against. Applied by `runPasses` (stage A) and `astPassHook`
+   * (stage B) when the pass list is built *for a module* (they have a
+   * version in hand; `enabledPasses` does not). A filtered-out rung is
+   * reported once per module as `W_PASS_VERSION_SKIP`.
+   */
+  readonly versions?: (hbcVersion: number, layoutClass: LayoutClass) => boolean;
 }
 
 export interface AppliedRecord {

@@ -21,7 +21,14 @@ export type Stmt =
    * transparent to verify.ts — the guarded `if`/`continue`/`break` stay in the
    * tree, so the §5 round-trip proves the annotated tree exactly as before.
    */
-  | { readonly k: "loop"; readonly label: LabelId; readonly body: Stmt; readonly form?: LoopForm }
+  /**
+   * `hideLabel` (spec `docs/specs/passes/01-framework-fixes.md` F9): set by
+   * `06-label-clean` once every `break`/`continue` under `body` that used to
+   * target this loop's `label` has itself been rewritten unlabelled — the
+   * emitter then prints `label: null` for the loop and for those jumps.
+   * Transparent to verify.ts, exactly like `form`. Nothing sets it in batch 1.
+   */
+  | { readonly k: "loop"; readonly label: LabelId; readonly body: Stmt; readonly form?: LoopForm; readonly hideLabel?: boolean }
   /** Two-way branch on the terminator of `cfgBlock`. */
   | { readonly k: "if"; readonly cfgBlock: BlockId; readonly then: Stmt; readonly else: Stmt }
   | { readonly k: "break"; readonly label: LabelId }
@@ -72,6 +79,18 @@ export interface LoopForm {
    */
   readonly init?: { readonly cfgBlock: BlockId; readonly from: number };
   readonly step?: { readonly cfgBlock: BlockId; readonly from: number };
+  /**
+   * `for-in`/`for-of` (spec `docs/specs/passes/01-framework-fixes.md` F5):
+   * `iterBlock` is the block holding the per-iteration advance-and-test
+   * (`GetNextPName`/`IteratorNext` followed by the exhaustion jump);
+   * `close` names blocks that are the compiler's iterator-protocol cleanup
+   * (`for-of`'s `break`/exception `IteratorClose`), implied by the `for...of`
+   * form and dropped rather than printed. The emitter prints `for (k in o)` /
+   * `for (v of it)` only when it finds `iterBlock` exactly where declared,
+   * else it falls back to `while`, exactly as `init`/`step` do. Nothing sets
+   * it in batch 1.
+   */
+  readonly iter?: { readonly kind: "for-in" | "for-of"; readonly iterBlock: BlockId; readonly close: readonly BlockId[] };
 }
 
 export type Scrutinee =

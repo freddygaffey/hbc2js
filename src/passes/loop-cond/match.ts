@@ -10,10 +10,10 @@
 // (either polarity of the `if`). `E` is the code the structurer nested inside
 // the loop because the loop's only normal exit leads there; the rewrite hoists
 // it after the loop, which is what makes `do … while (c)` printable.
-import type { LabelId, Stmt } from "../../structure/ir.ts";
+import type { Stmt } from "../../structure/ir.ts";
 import type { Match, PassContext } from "../types.ts";
 import type { BlockId } from "../tree.ts";
-import { completesNormally, condInputs, instructionsOf, usesOf } from "../tree.ts";
+import { completesNormally, condInputs, instructionsOf, isBreakTo, isContinueTo, items, usesOf } from "../tree.ts";
 
 export type LoopNode = Stmt & { readonly k: "loop" };
 export type IfNode = Stmt & { readonly k: "if" };
@@ -34,9 +34,6 @@ export interface LoopSite {
 
 export type LoopMatch = Match<Stmt, LoopSite>;
 
-const isJump = (s: Stmt, k: "break" | "continue", label: LabelId): boolean => s.k === k && s.label === label;
-const items = (s: Stmt): readonly Stmt[] => (s.k === "seq" ? s.body : [s]);
-
 export function match(node: Stmt, ctx: PassContext): LoopMatch | null {
   if (node.k !== "loop" || node.form !== undefined || ctx.structured === undefined) return null;
   const site = matchHead(node, ctx) ?? matchTail(node, ctx);
@@ -56,8 +53,8 @@ function matchHead(loop: LoopNode, ctx: PassContext): LoopSite | null {
   if (insns === null || insns.length !== 1 || condInputs(insns[0]!) === null) return null;
   const L = loop.label;
   let negate: boolean;
-  if (isJump(g.then, "break", L) && !isJump(g.else, "break", L)) negate = true;
-  else if (isJump(g.else, "break", L) && !isJump(g.then, "break", L)) negate = false;
+  if (isBreakTo(g.then, L) && !isBreakTo(g.else, L)) negate = true;
+  else if (isBreakTo(g.else, L) && !isBreakTo(g.then, L)) negate = false;
   else return null;
   return { loop, shape: "head", cond: b.cfgBlock, negate, guard: g, exit: negate ? g.then : g.else, labeled: null, kind: "while" };
 }
@@ -100,11 +97,11 @@ function matchTail(loop: LoopNode, ctx: PassContext): LoopSite | null {
   if (inputs === null) return null;
 
   let negate: boolean;
-  if (isJump(g.then, "continue", L) && !isJump(g.else, "continue", L)) negate = false;
-  else if (isJump(g.else, "continue", L) && !isJump(g.then, "continue", L)) negate = true;
+  if (isContinueTo(g.then, L) && !isContinueTo(g.else, L)) negate = false;
+  else if (isContinueTo(g.else, L) && !isContinueTo(g.then, L)) negate = true;
   else return null;
   const exit = negate ? g.then : g.else;
-  const exitIsBreak = isJump(exit, "break", L);
+  const exitIsBreak = isBreakTo(exit, L);
 
   // Everything before the guard: no other back edge (a JS `continue` in a
   // do-while jumps to the test, not the head). Other `break L`s are fine only
