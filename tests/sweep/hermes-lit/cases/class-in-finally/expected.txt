@@ -1,0 +1,13 @@
+42
+testStaticProperty passed
+52
+testInstanceProperty passed
+42
+52
+testComputedProperty passed
+62
+testPrivateMethod passed
+72
+testStaticPrivateMethod passed
+92
+testPrivateAccessor passed

@@ -1,0 +1,21 @@
+toSorted
+1,1,2,3,4,5,6,9
+3,1,4,1,5,9,2,6
+1,10,20,3,8,9
+0
+1 42
+5
+1 2 3 undefined undefined
+10000
+0 100 undefined undefined
+true
+100 undefined 0 prop 10000
+apple,banana,cherry
+true
+TypeError
+3,1,2
+3,1,2
+1,2,3,4,5
+0
+1
+toSorted

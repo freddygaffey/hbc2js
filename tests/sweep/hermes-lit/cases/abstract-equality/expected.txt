@@ -1,0 +1,626 @@
+Abstract Equality Test
+'undefined' (0) 'undefined' (0) true
+'undefined' (0) 'null' (1) true
+'undefined' (0) '' (2) false
+'undefined' (0) 'a string' (3) false
+'undefined' (0) 'another string' (4) false
+'undefined' (0) 'another string' (5) false
+'undefined' (0) 'another string' (6) false
+'undefined' (0) '0' (7) false
+'undefined' (0) '1' (8) false
+'undefined' (0) '0' (9) false
+'undefined' (0) '0' (10) false
+'undefined' (0) 'obj1' (11) false
+'undefined' (0) 'obj2' (12) false
+'undefined' (0) 'obj2' (13) false
+'undefined' (0) 'obj1' (14) false
+'undefined' (0) 'false' (15) false
+'undefined' (0) 'true' (16) false
+'undefined' (0) 'Symbol(Symbol1)' (17) false
+'undefined' (0) 'Symbol(Symbol2)' (18) false
+'undefined' (0) 'Symbol(Symbol1)' (19) false
+'undefined' (0) 'Symbol(Symbol1)' (20) false
+'undefined' (0) '0' (21) false
+'undefined' (0) '1' (22) false
+'undefined' (0) 'NaN' (23) false
+'undefined' (0) '-Infinity' (24) false
+'null' (1) 'undefined' (0) true
+'null' (1) 'null' (1) true
+'null' (1) '' (2) false
+'null' (1) 'a string' (3) false
+'null' (1) 'another string' (4) false
+'null' (1) 'another string' (5) false
+'null' (1) 'another string' (6) false
+'null' (1) '0' (7) false
+'null' (1) '1' (8) false
+'null' (1) '0' (9) false
+'null' (1) '0' (10) false
+'null' (1) 'obj1' (11) false
+'null' (1) 'obj2' (12) false
+'null' (1) 'obj2' (13) false
+'null' (1) 'obj1' (14) false
+'null' (1) 'false' (15) false
+'null' (1) 'true' (16) false
+'null' (1) 'Symbol(Symbol1)' (17) false
+'null' (1) 'Symbol(Symbol2)' (18) false
+'null' (1) 'Symbol(Symbol1)' (19) false
+'null' (1) 'Symbol(Symbol1)' (20) false
+'null' (1) '0' (21) false
+'null' (1) '1' (22) false
+'null' (1) 'NaN' (23) false
+'null' (1) '-Infinity' (24) false
+'' (2) 'undefined' (0) false
+'' (2) 'null' (1) false
+'' (2) '' (2) true
+'' (2) 'a string' (3) false
+'' (2) 'another string' (4) false
+'' (2) 'another string' (5) false
+'' (2) 'another string' (6) false
+'' (2) '0' (7) true
+'' (2) '1' (8) false
+'' (2) '0' (9) true
+'' (2) '0' (10) true
+'' (2) 'obj1' (11) false
+'' (2) 'obj2' (12) false
+'' (2) 'obj2' (13) false
+'' (2) 'obj1' (14) false
+'' (2) 'false' (15) true
+'' (2) 'true' (16) false
+'' (2) 'Symbol(Symbol1)' (17) false
+'' (2) 'Symbol(Symbol2)' (18) false
+'' (2) 'Symbol(Symbol1)' (19) false
+'' (2) 'Symbol(Symbol1)' (20) false
+'' (2) '0' (21) true
+'' (2) '1' (22) false
+'' (2) 'NaN' (23) false
+'' (2) '-Infinity' (24) false
+'a string' (3) 'undefined' (0) false
+'a string' (3) 'null' (1) false
+'a string' (3) '' (2) false
+'a string' (3) 'a string' (3) true
+'a string' (3) 'another string' (4) false
+'a string' (3) 'another string' (5) false
+'a string' (3) 'another string' (6) false
+'a string' (3) '0' (7) false
+'a string' (3) '1' (8) false
+'a string' (3) '0' (9) false
+'a string' (3) '0' (10) false
+'a string' (3) 'obj1' (11) false
+'a string' (3) 'obj2' (12) false
+'a string' (3) 'obj2' (13) false
+'a string' (3) 'obj1' (14) false
+'a string' (3) 'false' (15) false
+'a string' (3) 'true' (16) false
+'a string' (3) 'Symbol(Symbol1)' (17) false
+'a string' (3) 'Symbol(Symbol2)' (18) false
+'a string' (3) 'Symbol(Symbol1)' (19) false
+'a string' (3) 'Symbol(Symbol1)' (20) false
+'a string' (3) '0' (21) false
+'a string' (3) '1' (22) false
+'a string' (3) 'NaN' (23) false
+'a string' (3) '-Infinity' (24) false
+'another string' (4) 'undefined' (0) false
+'another string' (4) 'null' (1) false
+'another string' (4) '' (2) false
+'another string' (4) 'a string' (3) false
+'another string' (4) 'another string' (4) true
+'another string' (4) 'another string' (5) true
+'another string' (4) 'another string' (6) true
+'another string' (4) '0' (7) false
+'another string' (4) '1' (8) false
+'another string' (4) '0' (9) false
+'another string' (4) '0' (10) false
+'another string' (4) 'obj1' (11) false
+'another string' (4) 'obj2' (12) false
+'another string' (4) 'obj2' (13) false
+'another string' (4) 'obj1' (14) false
+'another string' (4) 'false' (15) false
+'another string' (4) 'true' (16) false
+'another string' (4) 'Symbol(Symbol1)' (17) false
+'another string' (4) 'Symbol(Symbol2)' (18) false
+'another string' (4) 'Symbol(Symbol1)' (19) false
+'another string' (4) 'Symbol(Symbol1)' (20) false
+'another string' (4) '0' (21) false
+'another string' (4) '1' (22) false
+'another string' (4) 'NaN' (23) false
+'another string' (4) '-Infinity' (24) false
+'another string' (5) 'undefined' (0) false
+'another string' (5) 'null' (1) false
+'another string' (5) '' (2) false
+'another string' (5) 'a string' (3) false
+'another string' (5) 'another string' (4) true
+'another string' (5) 'another string' (5) true
+'another string' (5) 'another string' (6) true
+'another string' (5) '0' (7) false
+'another string' (5) '1' (8) false
+'another string' (5) '0' (9) false
+'another string' (5) '0' (10) false
+'another string' (5) 'obj1' (11) false
+'another string' (5) 'obj2' (12) false
+'another string' (5) 'obj2' (13) false
+'another string' (5) 'obj1' (14) false
+'another string' (5) 'false' (15) false
+'another string' (5) 'true' (16) false
+'another string' (5) 'Symbol(Symbol1)' (17) false
+'another string' (5) 'Symbol(Symbol2)' (18) false
+'another string' (5) 'Symbol(Symbol1)' (19) false
+'another string' (5) 'Symbol(Symbol1)' (20) false
+'another string' (5) '0' (21) false
+'another string' (5) '1' (22) false
+'another string' (5) 'NaN' (23) false
+'another string' (5) '-Infinity' (24) false
+'another string' (6) 'undefined' (0) false
+'another string' (6) 'null' (1) false
+'another string' (6) '' (2) false
+'another string' (6) 'a string' (3) false
+'another string' (6) 'another string' (4) true
+'another string' (6) 'another string' (5) true
+'another string' (6) 'another string' (6) true
+'another string' (6) '0' (7) false
+'another string' (6) '1' (8) false
+'another string' (6) '0' (9) false
+'another string' (6) '0' (10) false
+'another string' (6) 'obj1' (11) false
+'another string' (6) 'obj2' (12) false
+'another string' (6) 'obj2' (13) false
+'another string' (6) 'obj1' (14) false
+'another string' (6) 'false' (15) false
+'another string' (6) 'true' (16) false
+'another string' (6) 'Symbol(Symbol1)' (17) false
+'another string' (6) 'Symbol(Symbol2)' (18) false
+'another string' (6) 'Symbol(Symbol1)' (19) false
+'another string' (6) 'Symbol(Symbol1)' (20) false
+'another string' (6) '0' (21) false
+'another string' (6) '1' (22) false
+'another string' (6) 'NaN' (23) false
+'another string' (6) '-Infinity' (24) false
+'0' (7) 'undefined' (0) false
+'0' (7) 'null' (1) false
+'0' (7) '' (2) true
+'0' (7) 'a string' (3) false
+'0' (7) 'another string' (4) false
+'0' (7) 'another string' (5) false
+'0' (7) 'another string' (6) false
+'0' (7) '0' (7) true
+'0' (7) '1' (8) false
+'0' (7) '0' (9) true
+'0' (7) '0' (10) true
+'0' (7) 'obj1' (11) false
+'0' (7) 'obj2' (12) false
+'0' (7) 'obj2' (13) false
+'0' (7) 'obj1' (14) false
+'0' (7) 'false' (15) true
+'0' (7) 'true' (16) false
+'0' (7) 'Symbol(Symbol1)' (17) false
+'0' (7) 'Symbol(Symbol2)' (18) false
+'0' (7) 'Symbol(Symbol1)' (19) false
+'0' (7) 'Symbol(Symbol1)' (20) false
+'0' (7) '0' (21) true
+'0' (7) '1' (22) false
+'0' (7) 'NaN' (23) false
+'0' (7) '-Infinity' (24) false
+'1' (8) 'undefined' (0) false
+'1' (8) 'null' (1) false
+'1' (8) '' (2) false
+'1' (8) 'a string' (3) false
+'1' (8) 'another string' (4) false
+'1' (8) 'another string' (5) false
+'1' (8) 'another string' (6) false
+'1' (8) '0' (7) false
+'1' (8) '1' (8) true
+'1' (8) '0' (9) false
+'1' (8) '0' (10) false
+'1' (8) 'obj1' (11) false
+'1' (8) 'obj2' (12) false
+'1' (8) 'obj2' (13) false
+'1' (8) 'obj1' (14) false
+'1' (8) 'false' (15) false
+'1' (8) 'true' (16) true
+'1' (8) 'Symbol(Symbol1)' (17) false
+'1' (8) 'Symbol(Symbol2)' (18) false
+'1' (8) 'Symbol(Symbol1)' (19) false
+'1' (8) 'Symbol(Symbol1)' (20) false
+'1' (8) '0' (21) false
+'1' (8) '1' (22) true
+'1' (8) 'NaN' (23) false
+'1' (8) '-Infinity' (24) false
+'0' (9) 'undefined' (0) false
+'0' (9) 'null' (1) false
+'0' (9) '' (2) true
+'0' (9) 'a string' (3) false
+'0' (9) 'another string' (4) false
+'0' (9) 'another string' (5) false
+'0' (9) 'another string' (6) false
+'0' (9) '0' (7) true
+'0' (9) '1' (8) false
+'0' (9) '0' (9) true
+'0' (9) '0' (10) true
+'0' (9) 'obj1' (11) false
+'0' (9) 'obj2' (12) false
+'0' (9) 'obj2' (13) false
+'0' (9) 'obj1' (14) false
+'0' (9) 'false' (15) true
+'0' (9) 'true' (16) false
+'0' (9) 'Symbol(Symbol1)' (17) false
+'0' (9) 'Symbol(Symbol2)' (18) false
+'0' (9) 'Symbol(Symbol1)' (19) false
+'0' (9) 'Symbol(Symbol1)' (20) false
+'0' (9) '0' (21) true
+'0' (9) '1' (22) false
+'0' (9) 'NaN' (23) false
+'0' (9) '-Infinity' (24) false
+'0' (10) 'undefined' (0) false
+'0' (10) 'null' (1) false
+'0' (10) '' (2) true
+'0' (10) 'a string' (3) false
+'0' (10) 'another string' (4) false
+'0' (10) 'another string' (5) false
+'0' (10) 'another string' (6) false
+'0' (10) '0' (7) true
+'0' (10) '1' (8) false
+'0' (10) '0' (9) true
+'0' (10) '0' (10) true
+'0' (10) 'obj1' (11) false
+'0' (10) 'obj2' (12) false
+'0' (10) 'obj2' (13) false
+'0' (10) 'obj1' (14) false
+'0' (10) 'false' (15) true
+'0' (10) 'true' (16) false
+'0' (10) 'Symbol(Symbol1)' (17) false
+'0' (10) 'Symbol(Symbol2)' (18) false
+'0' (10) 'Symbol(Symbol1)' (19) false
+'0' (10) 'Symbol(Symbol1)' (20) false
+'0' (10) '0' (21) true
+'0' (10) '1' (22) false
+'0' (10) 'NaN' (23) false
+'0' (10) '-Infinity' (24) false
+'obj1' (11) 'undefined' (0) false
+'obj1' (11) 'null' (1) false
+'obj1' (11) '' (2) false
+'obj1' (11) 'a string' (3) false
+'obj1' (11) 'another string' (4) false
+'obj1' (11) 'another string' (5) false
+'obj1' (11) 'another string' (6) false
+'obj1' (11) '0' (7) false
+'obj1' (11) '1' (8) false
+'obj1' (11) '0' (9) false
+'obj1' (11) '0' (10) false
+'obj1' (11) 'obj1' (11) true
+'obj1' (11) 'obj2' (12) false
+'obj1' (11) 'obj2' (13) false
+'obj1' (11) 'obj1' (14) true
+'obj1' (11) 'false' (15) false
+'obj1' (11) 'true' (16) false
+'obj1' (11) 'Symbol(Symbol1)' (17) false
+'obj1' (11) 'Symbol(Symbol2)' (18) false
+'obj1' (11) 'Symbol(Symbol1)' (19) false
+'obj1' (11) 'Symbol(Symbol1)' (20) false
+'obj1' (11) '0' (21) false
+'obj1' (11) '1' (22) false
+'obj1' (11) 'NaN' (23) false
+'obj1' (11) '-Infinity' (24) false
+'obj2' (12) 'undefined' (0) false
+'obj2' (12) 'null' (1) false
+'obj2' (12) '' (2) false
+'obj2' (12) 'a string' (3) false
+'obj2' (12) 'another string' (4) false
+'obj2' (12) 'another string' (5) false
+'obj2' (12) 'another string' (6) false
+'obj2' (12) '0' (7) false
+'obj2' (12) '1' (8) false
+'obj2' (12) '0' (9) false
+'obj2' (12) '0' (10) false
+'obj2' (12) 'obj1' (11) false
+'obj2' (12) 'obj2' (12) true
+'obj2' (12) 'obj2' (13) false
+'obj2' (12) 'obj1' (14) false
+'obj2' (12) 'false' (15) false
+'obj2' (12) 'true' (16) false
+'obj2' (12) 'Symbol(Symbol1)' (17) false
+'obj2' (12) 'Symbol(Symbol2)' (18) false
+'obj2' (12) 'Symbol(Symbol1)' (19) false
+'obj2' (12) 'Symbol(Symbol1)' (20) false
+'obj2' (12) '0' (21) false
+'obj2' (12) '1' (22) false
+'obj2' (12) 'NaN' (23) false
+'obj2' (12) '-Infinity' (24) false
+'obj2' (13) 'undefined' (0) false
+'obj2' (13) 'null' (1) false
+'obj2' (13) '' (2) false
+'obj2' (13) 'a string' (3) false
+'obj2' (13) 'another string' (4) false
+'obj2' (13) 'another string' (5) false
+'obj2' (13) 'another string' (6) false
+'obj2' (13) '0' (7) false
+'obj2' (13) '1' (8) false
+'obj2' (13) '0' (9) false
+'obj2' (13) '0' (10) false
+'obj2' (13) 'obj1' (11) false
+'obj2' (13) 'obj2' (12) false
+'obj2' (13) 'obj2' (13) true
+'obj2' (13) 'obj1' (14) false
+'obj2' (13) 'false' (15) false
+'obj2' (13) 'true' (16) false
+'obj2' (13) 'Symbol(Symbol1)' (17) false
+'obj2' (13) 'Symbol(Symbol2)' (18) false
+'obj2' (13) 'Symbol(Symbol1)' (19) false
+'obj2' (13) 'Symbol(Symbol1)' (20) false
+'obj2' (13) '0' (21) false
+'obj2' (13) '1' (22) false
+'obj2' (13) 'NaN' (23) false
+'obj2' (13) '-Infinity' (24) false
+'obj1' (14) 'undefined' (0) false
+'obj1' (14) 'null' (1) false
+'obj1' (14) '' (2) false
+'obj1' (14) 'a string' (3) false
+'obj1' (14) 'another string' (4) false
+'obj1' (14) 'another string' (5) false
+'obj1' (14) 'another string' (6) false
+'obj1' (14) '0' (7) false
+'obj1' (14) '1' (8) false
+'obj1' (14) '0' (9) false
+'obj1' (14) '0' (10) false
+'obj1' (14) 'obj1' (11) true
+'obj1' (14) 'obj2' (12) false
+'obj1' (14) 'obj2' (13) false
+'obj1' (14) 'obj1' (14) true
+'obj1' (14) 'false' (15) false
+'obj1' (14) 'true' (16) false
+'obj1' (14) 'Symbol(Symbol1)' (17) false
+'obj1' (14) 'Symbol(Symbol2)' (18) false
+'obj1' (14) 'Symbol(Symbol1)' (19) false
+'obj1' (14) 'Symbol(Symbol1)' (20) false
+'obj1' (14) '0' (21) false
+'obj1' (14) '1' (22) false
+'obj1' (14) 'NaN' (23) false
+'obj1' (14) '-Infinity' (24) false
+'false' (15) 'undefined' (0) false
+'false' (15) 'null' (1) false
+'false' (15) '' (2) true
+'false' (15) 'a string' (3) false
+'false' (15) 'another string' (4) false
+'false' (15) 'another string' (5) false
+'false' (15) 'another string' (6) false
+'false' (15) '0' (7) true
+'false' (15) '1' (8) false
+'false' (15) '0' (9) true
+'false' (15) '0' (10) true
+'false' (15) 'obj1' (11) false
+'false' (15) 'obj2' (12) false
+'false' (15) 'obj2' (13) false
+'false' (15) 'obj1' (14) false
+'false' (15) 'false' (15) true
+'false' (15) 'true' (16) false
+'false' (15) 'Symbol(Symbol1)' (17) false
+'false' (15) 'Symbol(Symbol2)' (18) false
+'false' (15) 'Symbol(Symbol1)' (19) false
+'false' (15) 'Symbol(Symbol1)' (20) false
+'false' (15) '0' (21) true
+'false' (15) '1' (22) false
+'false' (15) 'NaN' (23) false
+'false' (15) '-Infinity' (24) false
+'true' (16) 'undefined' (0) false
+'true' (16) 'null' (1) false
+'true' (16) '' (2) false
+'true' (16) 'a string' (3) false
+'true' (16) 'another string' (4) false
+'true' (16) 'another string' (5) false
+'true' (16) 'another string' (6) false
+'true' (16) '0' (7) false
+'true' (16) '1' (8) true
+'true' (16) '0' (9) false
+'true' (16) '0' (10) false
+'true' (16) 'obj1' (11) false
+'true' (16) 'obj2' (12) false
+'true' (16) 'obj2' (13) false
+'true' (16) 'obj1' (14) false
+'true' (16) 'false' (15) false
+'true' (16) 'true' (16) true
+'true' (16) 'Symbol(Symbol1)' (17) false
+'true' (16) 'Symbol(Symbol2)' (18) false
+'true' (16) 'Symbol(Symbol1)' (19) false
+'true' (16) 'Symbol(Symbol1)' (20) false
+'true' (16) '0' (21) false
+'true' (16) '1' (22) true
+'true' (16) 'NaN' (23) false
+'true' (16) '-Infinity' (24) false
+'Symbol(Symbol1)' (17) 'undefined' (0) false
+'Symbol(Symbol1)' (17) 'null' (1) false
+'Symbol(Symbol1)' (17) '' (2) false
+'Symbol(Symbol1)' (17) 'a string' (3) false
+'Symbol(Symbol1)' (17) 'another string' (4) false
+'Symbol(Symbol1)' (17) 'another string' (5) false
+'Symbol(Symbol1)' (17) 'another string' (6) false
+'Symbol(Symbol1)' (17) '0' (7) false
+'Symbol(Symbol1)' (17) '1' (8) false
+'Symbol(Symbol1)' (17) '0' (9) false
+'Symbol(Symbol1)' (17) '0' (10) false
+'Symbol(Symbol1)' (17) 'obj1' (11) false
+'Symbol(Symbol1)' (17) 'obj2' (12) false
+'Symbol(Symbol1)' (17) 'obj2' (13) false
+'Symbol(Symbol1)' (17) 'obj1' (14) false
+'Symbol(Symbol1)' (17) 'false' (15) false
+'Symbol(Symbol1)' (17) 'true' (16) false
+'Symbol(Symbol1)' (17) 'Symbol(Symbol1)' (17) true
+'Symbol(Symbol1)' (17) 'Symbol(Symbol2)' (18) false
+'Symbol(Symbol1)' (17) 'Symbol(Symbol1)' (19) false
+'Symbol(Symbol1)' (17) 'Symbol(Symbol1)' (20) true
+'Symbol(Symbol1)' (17) '0' (21) false
+'Symbol(Symbol1)' (17) '1' (22) false
+'Symbol(Symbol1)' (17) 'NaN' (23) false
+'Symbol(Symbol1)' (17) '-Infinity' (24) false
+'Symbol(Symbol2)' (18) 'undefined' (0) false
+'Symbol(Symbol2)' (18) 'null' (1) false
+'Symbol(Symbol2)' (18) '' (2) false
+'Symbol(Symbol2)' (18) 'a string' (3) false
+'Symbol(Symbol2)' (18) 'another string' (4) false
+'Symbol(Symbol2)' (18) 'another string' (5) false
+'Symbol(Symbol2)' (18) 'another string' (6) false
+'Symbol(Symbol2)' (18) '0' (7) false
+'Symbol(Symbol2)' (18) '1' (8) false
+'Symbol(Symbol2)' (18) '0' (9) false
+'Symbol(Symbol2)' (18) '0' (10) false
+'Symbol(Symbol2)' (18) 'obj1' (11) false
+'Symbol(Symbol2)' (18) 'obj2' (12) false
+'Symbol(Symbol2)' (18) 'obj2' (13) false
+'Symbol(Symbol2)' (18) 'obj1' (14) false
+'Symbol(Symbol2)' (18) 'false' (15) false
+'Symbol(Symbol2)' (18) 'true' (16) false
+'Symbol(Symbol2)' (18) 'Symbol(Symbol1)' (17) false
+'Symbol(Symbol2)' (18) 'Symbol(Symbol2)' (18) true
+'Symbol(Symbol2)' (18) 'Symbol(Symbol1)' (19) false
+'Symbol(Symbol2)' (18) 'Symbol(Symbol1)' (20) false
+'Symbol(Symbol2)' (18) '0' (21) false
+'Symbol(Symbol2)' (18) '1' (22) false
+'Symbol(Symbol2)' (18) 'NaN' (23) false
+'Symbol(Symbol2)' (18) '-Infinity' (24) false
+'Symbol(Symbol1)' (19) 'undefined' (0) false
+'Symbol(Symbol1)' (19) 'null' (1) false
+'Symbol(Symbol1)' (19) '' (2) false
+'Symbol(Symbol1)' (19) 'a string' (3) false
+'Symbol(Symbol1)' (19) 'another string' (4) false
+'Symbol(Symbol1)' (19) 'another string' (5) false
+'Symbol(Symbol1)' (19) 'another string' (6) false
+'Symbol(Symbol1)' (19) '0' (7) false
+'Symbol(Symbol1)' (19) '1' (8) false
+'Symbol(Symbol1)' (19) '0' (9) false
+'Symbol(Symbol1)' (19) '0' (10) false
+'Symbol(Symbol1)' (19) 'obj1' (11) false
+'Symbol(Symbol1)' (19) 'obj2' (12) false
+'Symbol(Symbol1)' (19) 'obj2' (13) false
+'Symbol(Symbol1)' (19) 'obj1' (14) false
+'Symbol(Symbol1)' (19) 'false' (15) false
+'Symbol(Symbol1)' (19) 'true' (16) false
+'Symbol(Symbol1)' (19) 'Symbol(Symbol1)' (17) false
+'Symbol(Symbol1)' (19) 'Symbol(Symbol2)' (18) false
+'Symbol(Symbol1)' (19) 'Symbol(Symbol1)' (19) true
+'Symbol(Symbol1)' (19) 'Symbol(Symbol1)' (20) false
+'Symbol(Symbol1)' (19) '0' (21) false
+'Symbol(Symbol1)' (19) '1' (22) false
+'Symbol(Symbol1)' (19) 'NaN' (23) false
+'Symbol(Symbol1)' (19) '-Infinity' (24) false
+'Symbol(Symbol1)' (20) 'undefined' (0) false
+'Symbol(Symbol1)' (20) 'null' (1) false
+'Symbol(Symbol1)' (20) '' (2) false
+'Symbol(Symbol1)' (20) 'a string' (3) false
+'Symbol(Symbol1)' (20) 'another string' (4) false
+'Symbol(Symbol1)' (20) 'another string' (5) false
+'Symbol(Symbol1)' (20) 'another string' (6) false
+'Symbol(Symbol1)' (20) '0' (7) false
+'Symbol(Symbol1)' (20) '1' (8) false
+'Symbol(Symbol1)' (20) '0' (9) false
+'Symbol(Symbol1)' (20) '0' (10) false
+'Symbol(Symbol1)' (20) 'obj1' (11) false
+'Symbol(Symbol1)' (20) 'obj2' (12) false
+'Symbol(Symbol1)' (20) 'obj2' (13) false
+'Symbol(Symbol1)' (20) 'obj1' (14) false
+'Symbol(Symbol1)' (20) 'false' (15) false
+'Symbol(Symbol1)' (20) 'true' (16) false
+'Symbol(Symbol1)' (20) 'Symbol(Symbol1)' (17) true
+'Symbol(Symbol1)' (20) 'Symbol(Symbol2)' (18) false
+'Symbol(Symbol1)' (20) 'Symbol(Symbol1)' (19) false
+'Symbol(Symbol1)' (20) 'Symbol(Symbol1)' (20) true
+'Symbol(Symbol1)' (20) '0' (21) false
+'Symbol(Symbol1)' (20) '1' (22) false
+'Symbol(Symbol1)' (20) 'NaN' (23) false
+'Symbol(Symbol1)' (20) '-Infinity' (24) false
+'0' (21) 'undefined' (0) false
+'0' (21) 'null' (1) false
+'0' (21) '' (2) true
+'0' (21) 'a string' (3) false
+'0' (21) 'another string' (4) false
+'0' (21) 'another string' (5) false
+'0' (21) 'another string' (6) false
+'0' (21) '0' (7) true
+'0' (21) '1' (8) false
+'0' (21) '0' (9) true
+'0' (21) '0' (10) true
+'0' (21) 'obj1' (11) false
+'0' (21) 'obj2' (12) false
+'0' (21) 'obj2' (13) false
+'0' (21) 'obj1' (14) false
+'0' (21) 'false' (15) true
+'0' (21) 'true' (16) false
+'0' (21) 'Symbol(Symbol1)' (17) false
+'0' (21) 'Symbol(Symbol2)' (18) false
+'0' (21) 'Symbol(Symbol1)' (19) false
+'0' (21) 'Symbol(Symbol1)' (20) false
+'0' (21) '0' (21) true
+'0' (21) '1' (22) false
+'0' (21) 'NaN' (23) false
+'0' (21) '-Infinity' (24) false
+'1' (22) 'undefined' (0) false
+'1' (22) 'null' (1) false
+'1' (22) '' (2) false
+'1' (22) 'a string' (3) false
+'1' (22) 'another string' (4) false
+'1' (22) 'another string' (5) false
+'1' (22) 'another string' (6) false
+'1' (22) '0' (7) false
+'1' (22) '1' (8) true
+'1' (22) '0' (9) false
+'1' (22) '0' (10) false
+'1' (22) 'obj1' (11) false
+'1' (22) 'obj2' (12) false
+'1' (22) 'obj2' (13) false
+'1' (22) 'obj1' (14) false
+'1' (22) 'false' (15) false
+'1' (22) 'true' (16) true
+'1' (22) 'Symbol(Symbol1)' (17) false
+'1' (22) 'Symbol(Symbol2)' (18) false
+'1' (22) 'Symbol(Symbol1)' (19) false
+'1' (22) 'Symbol(Symbol1)' (20) false
+'1' (22) '0' (21) false
+'1' (22) '1' (22) true
+'1' (22) 'NaN' (23) false
+'1' (22) '-Infinity' (24) false
+'NaN' (23) 'undefined' (0) false
+'NaN' (23) 'null' (1) false
+'NaN' (23) '' (2) false
+'NaN' (23) 'a string' (3) false
+'NaN' (23) 'another string' (4) false
+'NaN' (23) 'another string' (5) false
+'NaN' (23) 'another string' (6) false
+'NaN' (23) '0' (7) false
+'NaN' (23) '1' (8) false
+'NaN' (23) '0' (9) false
+'NaN' (23) '0' (10) false
+'NaN' (23) 'obj1' (11) false
+'NaN' (23) 'obj2' (12) false
+'NaN' (23) 'obj2' (13) false
+'NaN' (23) 'obj1' (14) false
+'NaN' (23) 'false' (15) false
+'NaN' (23) 'true' (16) false
+'NaN' (23) 'Symbol(Symbol1)' (17) false
+'NaN' (23) 'Symbol(Symbol2)' (18) false
+'NaN' (23) 'Symbol(Symbol1)' (19) false
+'NaN' (23) 'Symbol(Symbol1)' (20) false
+'NaN' (23) '0' (21) false
+'NaN' (23) '1' (22) false
+'NaN' (23) 'NaN' (23) false
+'NaN' (23) '-Infinity' (24) false
+'-Infinity' (24) 'undefined' (0) false
+'-Infinity' (24) 'null' (1) false
+'-Infinity' (24) '' (2) false
+'-Infinity' (24) 'a string' (3) false
+'-Infinity' (24) 'another string' (4) false
+'-Infinity' (24) 'another string' (5) false
+'-Infinity' (24) 'another string' (6) false
+'-Infinity' (24) '0' (7) false
+'-Infinity' (24) '1' (8) false
+'-Infinity' (24) '0' (9) false
+'-Infinity' (24) '0' (10) false
+'-Infinity' (24) 'obj1' (11) false
+'-Infinity' (24) 'obj2' (12) false
+'-Infinity' (24) 'obj2' (13) false
+'-Infinity' (24) 'obj1' (14) false
+'-Infinity' (24) 'false' (15) false
+'-Infinity' (24) 'true' (16) false
+'-Infinity' (24) 'Symbol(Symbol1)' (17) false
+'-Infinity' (24) 'Symbol(Symbol2)' (18) false
+'-Infinity' (24) 'Symbol(Symbol1)' (19) false
+'-Infinity' (24) 'Symbol(Symbol1)' (20) false
+'-Infinity' (24) '0' (21) false
+'-Infinity' (24) '1' (22) false
+'-Infinity' (24) 'NaN' (23) false
+'-Infinity' (24) '-Infinity' (24) true

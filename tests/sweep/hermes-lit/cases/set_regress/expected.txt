@@ -1,0 +1,2 @@
+testCompact
+0

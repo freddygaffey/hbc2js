@@ -1,0 +1,4 @@
+[object MyFavoriteObject]
+[object Object]
+[object asdf]
+Int8Array

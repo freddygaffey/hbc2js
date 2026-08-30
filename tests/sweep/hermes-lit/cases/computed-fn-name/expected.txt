@@ -1,0 +1,20 @@
+computed function names
+f
+[desc]
+"get g"
+"set s"
+""
+[]
+m
+[desc]
+sm
+get g
+set s
+strFunc
+strArrow
+strClass
+myFunc
+[desc]
+strStaticFunc
+[desc]
+myFunc

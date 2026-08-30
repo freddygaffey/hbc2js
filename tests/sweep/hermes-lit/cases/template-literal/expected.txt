@@ -1,0 +1,10 @@
+hello2world
+world
+worldhello
+666
+beginfirstsecondfirstendend
+333small
+first line
+second line
+positive? true
+tostr

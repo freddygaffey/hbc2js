@@ -1,0 +1,5 @@
+0
+1
+c.length called
+2
+2

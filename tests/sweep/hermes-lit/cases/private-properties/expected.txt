@@ -1,0 +1,23 @@
+private properties
+0
+false
+true
+TypeError
+Error
+10
+TypeError
+#m1 called
+#g1 called
+TypeError
+TypeError
+TypeError
+static #m1 called
+static #g1 called
+TypeError
+TypeError
+10
+42
+TypeError
+1891
+TypeError
+TypeError

@@ -1,0 +1,7 @@
+private in
+true
+false
+false
+true
+has trap called: b
+true

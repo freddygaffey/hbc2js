@@ -1,0 +1,8 @@
+promise jobs scheduled in scripts
+promise1
+promise2
+promise3
+promise4
+setTimeout1
+setTimeout2
+setTimeout3

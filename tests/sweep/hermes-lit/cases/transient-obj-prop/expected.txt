@@ -1,0 +1,9 @@
+transient-obj-props
+get object
+get object
+set object
+set object
+get string
+get string
+set string
+set string

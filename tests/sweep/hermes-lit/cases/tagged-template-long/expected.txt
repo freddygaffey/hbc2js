@@ -1,0 +1,4 @@
+arguments.length 301
+strings.length 301
+strings are good
+arguments are good

@@ -1,0 +1,292 @@
+; hbc2js disassembly of 100-irreducible-try-retry/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=18 strings=41 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=dbg  @0x00000444 size=398
+  0000  DeclareGlobalVar     s21 "STATE"
+  0005  DeclareGlobalVar     s11 "attempts"
+  000a  DeclareGlobalVar     s22 "commitWithRetry"
+  000f  DeclareGlobalVar     s28 "getCurrent"
+  0014  DeclareGlobalVar     s38 "setFlags"
+  0019  DeclareGlobalVar     s36 "pendingCallback"
+  001e  DeclareGlobalVar     s32 "getState1"
+  0023  DeclareGlobalVar     s33 "getState3"
+  0028  DeclareGlobalVar     s12 "clearPending"
+  002d  DeclareGlobalVar     s26 "prepareRetry"
+  0032  DeclareGlobalVar     s25 "finishSetup"
+  0037  DeclareGlobalVar     s20 "criticalCommit"
+  003c  DeclareGlobalVar     s14 "recoverFromError"
+  0041  DeclareGlobalVar     s24 "finalizeAfterCommit"
+  0046  DeclareGlobalVar     s29 "getNextRoot"
+  004b  DeclareGlobalVar     s16 "resetState"
+  0050  DeclareGlobalVar     s31 "getScheduled"
+  0055  DeclareGlobalVar     s17 "getPendingError"
+  005a  DeclareGlobalVar     s30 "getResult"
+  005f  CreateEnvironment    r1
+  0061  CreateClosure        r2, r1, f1 "commitWithRetry"
+  0066  GetGlobalObject      r0
+  0068  PutById              r0, r2, #c1, s22 "commitWithRetry"
+  006e  CreateClosure        r2, r1, f2 "getCurrent"
+  0073  PutById              r0, r2, #c2, s28 "getCurrent"
+  0079  CreateClosure        r2, r1, f3 "setFlags"
+  007e  PutById              r0, r2, #c3, s38 "setFlags"
+  0084  CreateClosure        r2, r1, f4 "pendingCallback"
+  0089  PutById              r0, r2, #c4, s36 "pendingCallback"
+  008f  CreateClosure        r2, r1, f5 "getState1"
+  0094  PutById              r0, r2, #c5, s32 "getState1"
+  009a  CreateClosure        r2, r1, f6 "getState3"
+  009f  PutById              r0, r2, #c6, s33 "getState3"
+  00a5  CreateClosure        r2, r1, f7 "clearPending"
+  00aa  PutById              r0, r2, #c7, s12 "clearPending"
+  00b0  CreateClosure        r2, r1, f8 "prepareRetry"
+  00b5  PutById              r0, r2, #c8, s26 "prepareRetry"
+  00bb  CreateClosure        r2, r1, f9 "finishSetup"
+  00c0  PutById              r0, r2, #c9, s25 "finishSetup"
+  00c6  CreateClosure        r2, r1, f10 "criticalCommit"
+  00cb  PutById              r0, r2, #c10, s20 "criticalCommit"
+  00d1  CreateClosure        r2, r1, f11 "recoverFromError"
+  00d6  PutById              r0, r2, #c11, s14 "recoverFromError"
+  00dc  CreateClosure        r2, r1, f12 "finalizeAfterCommit"
+  00e1  PutById              r0, r2, #c12, s24 "finalizeAfterCommit"
+  00e7  CreateClosure        r2, r1, f13 "getNextRoot"
+  00ec  PutById              r0, r2, #c13, s29 "getNextRoot"
+  00f2  CreateClosure        r2, r1, f14 "resetState"
+  00f7  PutById              r0, r2, #c14, s16 "resetState"
+  00fd  CreateClosure        r2, r1, f15 "getScheduled"
+  0102  PutById              r0, r2, #c15, s31 "getScheduled"
+  0108  CreateClosure        r2, r1, f16 "getPendingError"
+  010d  PutById              r0, r2, #c16, s17 "getPendingError"
+  0113  CreateClosure        r1, r1, f17 "getResult"
+  0118  PutById              r0, r1, #c17, s30 "getResult"
+  011e  NewObjectWithBuffer  r1, 4, 4, lit@0x0000, lit@0x0000
+  0128  PutById              r0, r1, #c18, s21 "STATE"
+  012e  LoadConstZero        r5
+  0130  PutById              r0, r5, #c19, s11 "attempts"
+  0136  TryGetById           r6, r0, #c1, s37 "print"
+  013c  GetByIdShort         r1, r0, #c2, s22 "commitWithRetry"
+  0141  LoadConstUndefined   r2
+  0143  LoadConstString      r4, s2 "root-a"
+  0147  LoadConstString      r3, s6 "ctx-1"
+  014b  Call4                r1, r1, r2, r4, r5, r3
+  0152  Call2                r1, r6, r2, r1
+  0157  TryGetById           r7, r0, #c1, s37 "print"
+  015d  GetByIdShort         r6, r0, #c3, s11 "attempts"
+  0162  LoadConstString      r1, s3 "attempts:"
+  0166  Call3                r1, r7, r2, r1, r6
+  016c  LoadConstUInt8       r1, 6
+  016f  PutById              r0, r1, #c19, s11 "attempts"
+  0175  TryGetById           r1, r0, #c1, s37 "print"
+  017b  GetByIdShort         r0, r0, #c2, s22 "commitWithRetry"
+  0180  Call4                r0, r0, r2, r4, r5, r3
+  0187  Call2                r0, r1, r2, r0
+  018c  Ret                  r0
+
+function #1 "commitWithRetry"  params=4 frame=20 env=0 flags=exc,dbg  @0x000005d2 size=252
+  .try T1..T2 -> L5 ; handler 0
+  0000  LoadParam            r5, 1
+  0003  LoadParam            r4, 3
+  0006  GetGlobalObject      r3
+  0008  LoadConstUndefined   r2
+  000a  LoadConstUndefined   r0
+  000c  LoadConstUndefined   r1
+  000e  GetByIdShort         r6, r3, #c1, s28 "getCurrent"
+  0013  Call1                r0, r6, r2
+  0017  LoadParam            r8, 2
+  001a  LoadConstUInt8       r6, 2
+  001d  BitOr                r8, r8, r6
+  0021  GetByIdShort         r6, r3, #c2, s38 "setFlags"
+  0026  Call2                r6, r6, r2, r8
+  002b  GetByIdShort         r6, r3, #c3, s36 "pendingCallback"
+  0030  Call1                r1, r6, r2
+  0034  GetByIdShort         r6, r3, #c4, s32 "getState1"
+  0039  Call1                r8, r6, r2
+  003d  LoadConstFalse       r6
+  003f  JStrictNotEqual      L1, r8, r5
+  0043  GetByIdShort         r8, r3, #c5, s33 "getState3"
+  0048  Call1                r8, r8, r2
+  004c  LoadConstFalse       r6
+  004e  JStrictNotEqual      L1, r8, r4
+  0052  LoadConstTrue        r6
+L1:
+  0054  JmpTrue              L2, r6
+  0057  GetByIdShort         r6, r3, #c6, s12 "clearPending"
+  005c  Call1                r6, r6, r2
+  0060  GetByIdShort         r6, r3, #c7, s26 "prepareRetry"
+  0065  Call3                r6, r6, r2, r5, r4
+L2:
+  006b  GetByIdShort         r6, r3, #c8, s25 "finishSetup"
+  0070  Call1                r6, r6, r2
+  0074  GetByIdShort         r6, r3, #c9, s20 "criticalCommit"
+  0079  Call1                r6, r6, r2
+  007d  GetByIdShort         r8, r3, #c10, s24 "finalizeAfterCommit"
+  0082  Mov                  r7, r0
+  0085  Mov                  r6, r1
+  0088  Call3                r6, r8, r2, r7, r6
+  008e  GetByIdShort         r6, r3, #c11, s29 "getNextRoot"
+  0093  Call1                r6, r6, r2
+  0097  LoadConstNull        r7
+  0099  JStrictNotEqual      L4, r6, r7
+  009d  GetByIdShort         r6, r3, #c12, s17 "getPendingError"
+  00a2  Call1                r6, r6, r2
+  00a6  JStrictNotEqual      L3, r6, r7
+  00aa  GetByIdShort         r6, r3, #c13, s30 "getResult"
+  00af  Call1                r6, r6, r2
+  00b3  Ret                  r6
+L3:
+  00b5  TryGetById           r8, r3, #c14, s18 "Error"
+  00bb  GetByIdShort         r6, r8, #c15, s34 "prototype"
+  00c0  CreateThis           r7, r6, r8
+  00c4  LoadConstString      r12, s5 "Cannot commit an incomplete root…"
+  00c8  Mov                  r13, r7
+  00cb  Construct            r6, r8, 2
+  00cf  SelectObject         r6, r7, r6
+  00d3  Throw                r6
+L4:
+  00d5  GetByIdShort         r6, r3, #c16, s16 "resetState"
+  00da  Call1                r6, r6, r2
+  00de  GetByIdShort         r6, r3, #c17, s31 "getScheduled"
+  00e3  Call1                r6, r6, r2
+  00e7  Ret                  r6
+L5:
+  00e9  Catch                r7
+  00eb  GetByIdShort         r6, r3, #c18, s14 "recoverFromError"
+  00f0  Call4                r6, r6, r2, r5, r4, r7
+  00f7  JmpLong              L2
+
+function #2 "getCurrent"  params=1 frame=1 env=0 flags=dbg  @0x000006ce size=14
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r0, r0, #c1, s21 "STATE"
+  0007  GetByIdShort         r0, r0, #c2, s23 "current"
+  000c  Ret                  r0
+
+function #3 "setFlags"  params=2 frame=2 env=0 flags=dbg  @0x000006dc size=20
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r1, r0, #c1, s21 "STATE"
+  0007  LoadParam            r0, 1
+  000a  PutById              r1, r0, #c1, s19 "flags"
+  0010  LoadConstUndefined   r0
+  0012  Ret                  r0
+
+function #4 "pendingCallback"  params=1 frame=1 env=0 flags=none  @0x000006f0 size=5
+  0000  LoadConstUInt8       r0, 1
+  0003  Ret                  r0
+
+function #5 "getState1"  params=1 frame=1 env=0 flags=dbg  @0x000006f5 size=14
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r0, r0, #c1, s21 "STATE"
+  0007  GetByIdShort         r0, r0, #c2, s39 "state1"
+  000c  Ret                  r0
+
+function #6 "getState3"  params=1 frame=1 env=0 flags=dbg  @0x00000703 size=14
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r0, r0, #c1, s21 "STATE"
+  0007  GetByIdShort         r0, r0, #c2, s40 "state3"
+  000c  Ret                  r0
+
+function #7 "clearPending"  params=1 frame=2 env=0 flags=dbg  @0x00000711 size=19
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r1, r0, #c1, s21 "STATE"
+  0007  LoadConstNull        r0
+  0009  PutById              r1, r0, #c1, s35 "pending"
+  000f  LoadConstUndefined   r0
+  0011  Ret                  r0
+
+function #8 "prepareRetry"  params=3 frame=3 env=0 flags=dbg  @0x00000724 size=34
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r2, r0, #c1, s21 "STATE"
+  0007  LoadParam            r1, 1
+  000a  PutById              r2, r1, #c1, s39 "state1"
+  0010  GetByIdShort         r1, r0, #c1, s21 "STATE"
+  0015  LoadParam            r0, 2
+  0018  PutById              r1, r0, #c2, s40 "state3"
+  001e  LoadConstUndefined   r0
+  0020  Ret                  r0
+
+function #9 "finishSetup"  params=1 frame=1 env=0 flags=none  @0x00000746 size=4
+  0000  LoadConstUndefined   r0
+  0002  Ret                  r0
+
+function #10 "criticalCommit"  params=1 frame=11 env=0 flags=dbg  @0x0000074a size=77
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r2, r0, #c1, s11 "attempts"
+  0007  LoadConstUInt8       r1, 1
+  000a  Add                  r1, r2, r1
+  000e  PutById              r0, r1, #c1, s11 "attempts"
+  0014  GetByIdShort         r2, r0, #c1, s11 "attempts"
+  0019  LoadConstUInt8       r1, 3
+  001c  JLess                L1, r2, r1
+  0020  LoadConstUndefined   r1
+  0022  Ret                  r1
+L1:
+  0024  TryGetById           r2, r0, #c2, s18 "Error"
+  002a  GetByIdShort         r1, r0, #c1, s11 "attempts"
+  002f  LoadConstString      r0, s10 "transient failure "
+  0033  Add                  r3, r0, r1
+  0037  GetByIdShort         r1, r2, #c3, s34 "prototype"
+  003c  CreateThis           r1, r1, r2
+  0040  Mov                  r4, r1
+  0043  Construct            r0, r2, 2
+  0047  SelectObject         r0, r1, r0
+  004b  Throw                r0
+
+function #11 "recoverFromError"  params=4 frame=2 env=0 flags=dbg  @0x00000797 size=25
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r1, r0, #c1, s21 "STATE"
+  0007  LoadParam            r0, 3
+  000a  GetByIdShort         r0, r0, #c2, s27 "message"
+  000f  PutById              r1, r0, #c1, s13 "lastError"
+  0015  LoadConstUndefined   r0
+  0017  Ret                  r0
+
+function #12 "finalizeAfterCommit"  params=3 frame=3 env=0 flags=dbg  @0x000007b0 size=35
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r1, r0, #c1, s21 "STATE"
+  0007  LoadParam            r2, 1
+  000a  LoadConstString      r0, s0 "/"
+  000e  Add                  r2, r2, r0
+  0012  LoadParam            r0, 2
+  0015  Add                  r0, r2, r0
+  0019  PutById              r1, r0, #c1, s23 "current"
+  001f  LoadConstUndefined   r0
+  0021  Ret                  r0
+
+function #13 "getNextRoot"  params=1 frame=4 env=0 flags=dbg  @0x000007d3 size=25
+  0000  LoadConstString      r1, s1 "next-root"
+  0004  GetGlobalObject      r2
+  0006  GetByIdShort         r3, r2, #c1, s11 "attempts"
+  000b  LoadConstUInt8       r2, 5
+  000e  LoadConstNull        r0
+  0010  JNotGreater          L1, r3, r2
+  0014  Mov                  r0, r1
+L1:
+  0017  Ret                  r0
+
+function #14 "resetState"  params=1 frame=2 env=0 flags=dbg  @0x000007ec size=19
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r1, r0, #c1, s21 "STATE"
+  0007  LoadConstTrue        r0
+  0009  PutById              r1, r0, #c1, s15 "reset"
+  000f  LoadConstUndefined   r0
+  0011  Ret                  r0
+
+function #15 "getScheduled"  params=1 frame=1 env=0 flags=none  @0x000007ff size=6
+  0000  LoadConstString      r0, s9 "scheduled"
+  0004  Ret                  r0
+
+function #16 "getPendingError"  params=1 frame=1 env=0 flags=none  @0x00000805 size=4
+  0000  LoadConstNull        r0
+  0002  Ret                  r0
+
+function #17 "getResult"  params=1 frame=4 env=0 flags=dbg  @0x00000809 size=57
+  0000  GetGlobalObject      r1
+  0002  GetByIdShort         r2, r1, #c1, s11 "attempts"
+  0007  LoadConstString      r0, s8 "result:"
+  000b  Add                  r0, r0, r2
+  000f  GetByIdShort         r2, r1, #c2, s21 "STATE"
+  0014  GetByIdShort         r3, r2, #c3, s23 "current"
+  0019  LoadConstString      r2, s4 ":"
+  001d  Add                  r0, r0, r2
+  0021  Add                  r0, r0, r3
+  0025  GetByIdShort         r1, r1, #c2, s21 "STATE"
+  002a  GetByIdShort         r1, r1, #c4, s13 "lastError"
+  002f  Add                  r0, r0, r2
+  0033  Add                  r0, r0, r1
+  0037  Ret                  r0

@@ -194,7 +194,15 @@ Last updated: 2026-08-30
   operand — no opcode added/removed/reordered, still 192 opcodes) — see
   `docs/TOOLCHAIN.md`'s "v96: opcode table and layout". `hermes-dec` 0.1.7
   (pip) confirmed working as the behaviour-oracle disassembler/decompiler.
-  Details: `docs/TOOLCHAIN.md`.
+  Details: `docs/TOOLCHAIN.md`. **Linux arm64 `hermesc`** (T5, 2026-08-30,
+  Claude Sonnet 5): no prebuilt binary exists upstream, so
+  `tools/build-hermesc-linux-arm64.sh` builds it from source for the same
+  three pinned commits as v94/v96/v99 above, arch-gated hard (refuses on any
+  non-arm64 host, no cross-build fallback) and validated by a `--check`
+  dry-run mode (prereqs + version-pin table, never builds) exercised in
+  CI-reachable form. **Unverified on real arm64 hardware** — see
+  `docs/TOOLCHAIN.md`'s "Linux arm64 hermesc" for the exact commands a
+  maintainer with arm64 hardware must run to confirm it.
 - **Tier 1 fixture corpus built**: 53 hand-written single-construct fixtures
   under `tests/fixtures/constructs/<NN-topic>/{source.js,expected.txt,vNN.hbc,licence.txt}`
   (01-51 per `docs/TEST-CORPUS.md` §1a; 52-53 added later — dense-integer
@@ -752,6 +760,20 @@ passes the §5 isomorphism check, and the whole module passes `node --check`:
 **First measurement of how irreducible shipped React Native bytecode is** (spec 04
 T7): ~1.7% of blocks are duplicated to resolve irreducible entries, and *no*
 function needs a dispatch variable. Max tree nesting 319, well under ST-09's 1000.
+
+**T9 part 3 (D13a, 2026-08-30, Claude Sonnet 5): two hand-written stress
+fixtures with genuinely irreducible CFGs.** `tools/irreducibility.mjs`
+(Ramsey's duplicated-block count, D7) found the trigger is measurement-driven,
+not pattern-matched by eye — see `docs/lowering/irreducible-cfg.md` §4 for the
+full method, including a plausible-looking dominance argument that predicted
+*reducible* for the real bundle function it was modeling and was wrong.
+`tests/fixtures/constructs/100-irreducible-try-retry` (handler-driven, models
+`fn#637` from `rn-template-0.72`: an `if` feeding two paths into a
+`while(true){try{…}catch(e){…;continue;}break;}` retry) measures 12
+blocks/8 duplicated at all five hermesc versions; `101-irreducible-loop-window`
+(loop-driven, no handlers, models `fn#3251`: a `while` loop whose continue
+condition is a short-circuited OR of two independently side-effecting checks)
+measures 9 blocks/6 duplicated at all five versions. Both PASS the gate 5/5.
 
 ### Local corpus (C5, report only — never committed, extracted to a scratch dir)
 
