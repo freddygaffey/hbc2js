@@ -25,7 +25,7 @@ export interface ExprRebuildSite {
 
 export type ExprRebuildMatch = Match<readonly Stmt[], ExprRebuildSite>;
 
-export type RefuseReason = "nested-capture" | "not-dead" | "impure-move" | "input-clobbered" | "use-under-control-flow" | "two-reads" | "protocol-name" | "generator-frame";
+export type RefuseReason = "nested-capture" | "not-dead" | "impure-move" | "input-clobbered" | "use-under-control-flow" | "two-reads" | "protocol-name" | "generator-frame" | "loop-variant-input";
 
 export type ClassifyResult = { readonly ok: true; readonly rule: ExprRebuildRule; readonly j: number } | { readonly ok: false; readonly reason: RefuseReason };
 
@@ -165,6 +165,32 @@ export function namesReadBy(e: Expr): readonly string[] {
     default:
       return []; // lit, this: no register reads
   }
+}
+
+/** H1 (docs/reviews/M5-pass-2-3.md): `list[j]` being a `while`/`do-while`/
+ *  `for` means the read R1a found in its `test` field is *multiply
+ *  executed* — the test re-runs once per iteration, while the store at `i`
+ *  ran exactly once. Folding `E` there is only sound if `E`'s value cannot
+ *  change across iterations, i.e. it is loop-invariant. Conservative in
+ *  both directions per the review's instruction: an impure `E` is refused
+ *  outright (repeating its side effect every iteration is unsound
+ *  regardless of what it reads — and `namesReadBy` is only meaningful for a
+ *  pure `Expr`, so it must not be asked about one), and a pure `E` is
+ *  refused unless every register it reads is written *nowhere* reachable
+ *  from the loop's body or (for `for`) its `update` — including inside a
+ *  nested `func` (`identUses`'s `nested` bucket), since a closure created
+ *  in the body could still mutate a captured register between iterations
+ *  and this rung has no way to rule that out from here. */
+function loopTestGuard(loop: Stmt, value: Expr): RefuseReason | null {
+  if (loop.k !== "while" && loop.k !== "do-while" && loop.k !== "for") return null;
+  if (!isPure(value)) return "loop-variant-input";
+  const update = loop.k === "for" ? loop.update : null;
+  for (const name of namesReadBy(value)) {
+    const u = identUses(loop.body, name);
+    if (u.writes + u.nested > 0) return "loop-variant-input";
+    if (update !== null && exprCounts(update, name).writes > 0) return "loop-variant-input";
+  }
+  return null;
 }
 
 /** Does `s` (assumed `isPureStmt`) write one of `regs`? */
@@ -367,6 +393,8 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
     // above) also read the same stale value — e.g. `if (reg) { use(reg) }`?
     const restAfterJ: Cont = () => scanFrom(list, reg, j + 1, NO_LABELS, CLEAR);
     if (branchVerdict(list[j]!, reg, NO_LABELS, restAfterJ) === "read") return { ok: false, reason: "use-under-control-flow" };
+    const loopGuard = loopTestGuard(list[j]!, value);
+    if (loopGuard !== null) return { ok: false, reason: loopGuard };
     if (isPure(value)) {
       const inputs = namesReadBy(value);
       for (let x = i + 1; x < j; x++) {

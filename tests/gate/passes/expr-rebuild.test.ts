@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { decompile } from "../../../src/decompile.ts";
 import type { Expr, Stmt } from "../../../src/emit/ast.ts";
-import { id, lit } from "../../../src/emit/ast.ts";
+import { bin, id, lit } from "../../../src/emit/ast.ts";
 import { identUses } from "../../../src/passes/ast.ts";
 import { check } from "../../../src/passes/expr-rebuild/check.ts";
 import { exprRebuild } from "../../../src/passes/expr-rebuild/index.ts";
@@ -134,6 +134,70 @@ test("protocol-name: a non-register target (__pc, an env slot, …) is never a c
 test("generator-frame: a v<=96 generator body refuses the whole function", () => {
   const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), lit("5"))), exprStmt(call(id("log"), [id("r1")]))];
   assert.equal(match(before, ctxFor(before, GENERATOR_CFG)), null);
+});
+
+// ---------------------------------------------------------------------------
+// H1 (docs/reviews/M5-pass-2-3.md): a loop `test` re-executes every
+// iteration, so folding a value into it is only sound if the value is
+// loop-invariant — no register it reads may be written by the loop's own
+// body (or, for `for`, its `update`). Review's own reproduction: `r1 = 5;
+// r0 = r1 + 0; while (r0) { r1 = r1 - 1 }` folds (`check` passes) into
+// `r1 = 5; while (r1 + 0) { r1 = r1 - 1 }`, which is an infinite loop —
+// `r0` was a one-time snapshot of `r1`, but the fold turns it into a
+// per-iteration re-read of a register the loop body keeps decrementing.
+// ---------------------------------------------------------------------------
+
+test("loop-variant-input: a pure value folded into a while-test refuses when the loop body writes an input it reads", () => {
+  // r0 = r1 + 0; while (r0) { r1 = r1 - 1 }  — r0's value is a one-time
+  // snapshot of r1, but r1 changes every iteration once folded into the test.
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), bin("+", id("r1"), lit("0")))),
+    { k: "while", label: null, test: id("r0"), body: [exprStmt(assignExpr(id("r1"), bin("-", id("r1"), lit("1"))))] },
+  ];
+  assert.equal(match(before, ctxFor(before)), null, "the whole-function match must refuse, not just classifySite in isolation");
+  const v = classifySite(before, before, 0, "r0", bin("+", id("r1"), lit("0")));
+  assert.deepEqual(v, { ok: false, reason: "loop-variant-input" });
+});
+
+test("loop-variant-input: the same shape refuses for do-while and for loops too", () => {
+  const value = bin("+", id("r1"), lit("0"));
+  const bodyDecrementsR1: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), bin("-", id("r1"), lit("1"))))];
+
+  const doWhile: readonly Stmt[] = [exprStmt(assignExpr(id("r0"), value)), { k: "do-while", label: null, test: id("r0"), body: bodyDecrementsR1 }];
+  assert.equal(match(doWhile, ctxFor(doWhile)), null);
+
+  // for (;;r1 = r1 - 1) { }  — the input is clobbered by the `update`, not the body.
+  const forUpdate: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), value)),
+    { k: "for", label: null, init: null, test: id("r0"), update: assignExpr(id("r1"), bin("-", id("r1"), lit("1"))), body: [] },
+  ];
+  assert.equal(match(forUpdate, ctxFor(forUpdate)), null);
+});
+
+test("loop-variant-input: an impure value is refused outright in a loop test, even adjacent (j === i + 1)", () => {
+  // r0 = sideEffect(); while (r0) { }  — folding would repeat the call every
+  // iteration instead of running it once; `namesReadBy` is meaningless for
+  // an impure value, so this must be refused without ever asking it.
+  const before: readonly Stmt[] = [exprStmt(assignExpr(id("r0"), call(id("sideEffect"), []))), { k: "while", label: null, test: id("r0"), body: [] }];
+  assert.equal(match(before, ctxFor(before)), null);
+  const v = classifySite(before, before, 0, "r0", call(id("sideEffect"), []));
+  assert.deepEqual(v, { ok: false, reason: "loop-variant-input" });
+});
+
+test("loop-invariant control: a value folded into a while-test still folds when the loop body leaves its inputs alone", () => {
+  // r0 = r1 + 0; while (r0) { r2 = r2 - 1 }  — r1 is never written by the
+  // loop, so r0's snapshot is safe to re-derive every iteration.
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), bin("+", id("r1"), lit("0")))),
+    { k: "while", label: null, test: id("r0"), body: [exprStmt(assignExpr(id("r2"), bin("-", id("r2"), lit("1"))))] },
+  ];
+  const ctx = ctxFor(before);
+  const m = match(before, ctx);
+  assert.ok(m !== null, "a genuinely loop-invariant value must still fold");
+  assert.equal(m.data.rule, "R1a");
+  const after = rewrite(m);
+  assert.deepEqual(after, [{ k: "while", label: null, test: bin("+", id("r1"), lit("0")), body: [exprStmt(assignExpr(id("r2"), bin("-", id("r2"), lit("1"))))] }]);
+  assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
 // ---------------------------------------------------------------------------
