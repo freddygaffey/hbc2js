@@ -190,6 +190,23 @@ test("isPure: literals/idents/this/unary/binary/logical/cond over pure; never me
   assert.ok(!isPure(assignExpr(id("x"), lit("1"))));
 });
 
+test("isPure: 'in', 'instanceof', and unary 'delete' are never pure, even over pure operands — docs/BUGS.md 02-proxy-trap-counting (D14)", () => {
+  // `in` invokes a Proxy's `has` trap on its right operand; `instanceof`
+  // reads `.prototype` off its right operand (itself a `member` get) and may
+  // delegate to `Symbol.hasInstance`; `delete` invokes a Proxy's
+  // `deleteProperty` trap. All three can run arbitrary user code, so a dead
+  // store built from one must never be dropped outright by expr-rebuild's
+  // R1b rule (rewrite.ts calls isPure to decide "delete the statement" vs
+  // "keep it for its effect") just because operand purity would otherwise
+  // suggest so.
+  assert.ok(!isPure({ k: "bin", op: "in", left: lit('"x"'), right: id("proxy") }));
+  assert.ok(!isPure({ k: "bin", op: "instanceof", left: id("x"), right: id("C") }));
+  assert.ok(!isPure({ k: "unary", op: "delete ", arg: member(id("proxy"), "x") }));
+  // Every other binary/unary operator is unaffected.
+  assert.ok(isPure({ k: "bin", op: "===", left: id("a"), right: lit("1") }));
+  assert.ok(isPure({ k: "unary", op: "!", arg: id("a") }));
+});
+
 test("isPureStmt: comment/decl, or expr assigning a pure value to an ident", () => {
   assert.ok(isPureStmt({ k: "comment", text: "x" }));
   assert.ok(isPureStmt({ k: "decl", kind: "let", names: ["r1"] }));
