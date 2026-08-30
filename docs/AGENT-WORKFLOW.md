@@ -10,3 +10,8 @@ Conventions
 - CLI entry: `hbc2js <input.hbc> [output.js]`.
 - Fixtures: `tests/fixtures/<name>/{source.js,vNN.hbc,licence.txt}` — keep source and every compiled version together.
 - Commit messages: imperative, one component per commit where possible.
+
+Orchestrator hygiene
+- The overseer never reads agent transcripts, source dumps, or long docs. Agents report in ≤300 words; anything larger goes in a file under `docs/` and the report links to it.
+- Diff review of implementation work is delegated to a reviewer agent that returns pass/fail + findings; the overseer reads the verdict only.
+- Rationale: the overseer's context is the project's scarcest resource.
