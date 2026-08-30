@@ -39,6 +39,16 @@ Last updated: 2026-08-30
   (our own format write-up, verified byte-for-byte against the v84/v94/v99/v99-public
   fixtures — header, section offsets, both function-header layouts, exception tables,
   debug offsets, opcode numbering).
+- **Equivalence-oracle design study + PoC done**: `docs/EQUIVALENCE.md` (trace
+  format, layered strategy per fixture tier, CLI shape, M3 spec checklist, risk
+  register) and `tools/equiv/**` (zero-dep Node ESM `hbc2js-equiv`: node:vm
+  sandbox with seeded PRNG / frozen clock / virtual timers, NDJSON trace,
+  three-valued verdict, function fuzzer, `hermesc -dump-bytecode` normaliser,
+  mutation generator). `node tools/equiv/selftest.mjs --hermes --fuzz` validates
+  it against the whole construct corpus in ~40 s: 53/53 determinism +
+  `expected.txt` fidelity, 273/318 mutants killed, 41/45 Hermes-VM agreement
+  (reproducing the 4 known divergences). Not wired into a build; M3 should treat
+  it as an executable spec, not shippable code.
 - Otherwise: no parser/CLI code yet.
 
 ## Known gaps
