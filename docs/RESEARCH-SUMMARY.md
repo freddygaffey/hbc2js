@@ -2,7 +2,7 @@
 
 Overseer-maintained digest of the Phase 0 research. Detailed findings live in the linked docs; this file is the place to start if you have no other context. Update it whenever a research track reports.
 
-Last updated: 2026-08-30
+Last updated: 2026-08-30 (tracks A–D complete)
 
 ## Verdict so far
 Feasible. The two early-kill risks (no compiler; no legal test corpus) are cleared. The remaining hard part is the structurer (CFG → structured JS, esp. generators/async and try/finally), which is where every prior tool stopped. Two reasons to expect success anyway: Hermes bytecode comes from one compiler with predictable lowering patterns, and D6's `for(;;) switch(ip)` fallback guarantees *correct* output in the worst case — the open question is readability, not correctness.
@@ -26,6 +26,12 @@ Feasible. The two early-kill risks (no compiler; no legal test corpus) are clear
 - **Static Hermes (v97+) removes generator/async opcodes entirely** — `StartGenerator`/`ResumeGenerator`/`SaveGenerator`/`CompleteGenerator`/`Create{Generator,Async}Closure` are gone; the compiler lowers generators to an explicit state machine and marks the function via a 2-bit `kind` field in the header flags. v94 and v99 therefore need different generator front-ends. Recommended floor for v99: emit the state machine as a plain function plus a small `__hbc_makeGenerator` runtime shim (provably correct), and defer `yield` recovery.
 - **Structuring recommendation (proposed D7):** replace SPEC's "irreducible → `for(;;) switch(ip)`" with Ramsey's ICFP'22 recursive CFG→structured translation as the *universal* core — it is total, needs no irreducibility test, and emits labelled blocks + `while(true)` + multi-level `break`. Layer readability rewrites (`while(c)`, `for`, `switch`, early-return flattening) on top as testable AST passes; DREAM-style condition-aware structuring only if needed. Exception regions are carved from the handler table *before* structuring; exception edges never enter the dominator computation.
 - **Top risks:** silent version/layout misdecode; v99 generators; environment-slot resolution failures (hermes-dec's exact bug — dangling `_closure1_slot1`); `finally` not existing in the format (duplicated blocks only); and untested format paths — literal buffers, shape table, BigInt and switch jump tables are all `0` in every current `.hbc` fixture.
+
+## Track D — Tier 1 fixture corpus (`tests/fixtures/README.md`)
+- 51 single-construct programs under `tests/fixtures/constructs/`, each with `source.js`, `expected.txt` (Node 25), `licence.txt`, and `.hbc` for v84/v94/v99 where compilable; `tests/fixtures/build.sh` regenerates all. Original hermes-dec sample moved to `tests/fixtures/hermes-dec-sample/`.
+- 138/153 fixture×version combinations compile. Gaps: **`hermesc` v84 and v94 cannot compile `class` at all** (IRGen limitation — only v99 lowers classes); BigInt literals and regex named groups fail on v84; `async function*` fails everywhere.
+- Fixtures use `print()` only: bare Hermes has no `console`.
+- **Hermes v84 VM diverges from Node** on 4/43 fixtures: per-iteration `let` in `for` loops collapses to `var` semantics; TDZ not enforced for shadowing `let`; sloppy-mode `arguments` aliasing absent. Implication for D2: "equivalent to the source under Node" and "equivalent to the bytecode under Hermes" are different oracles; the bytecode's own behaviour (run the `.hbc` under the Hermes VM) is the ground truth for the decompiler, and Node-vs-Hermes drift must be excluded from the fixture set or handled explicitly.
 
 ## Why the recompile round-trip matters
 Real RN bundles cannot run in Node. Because `hermesc` output is reproducible, we can test at app scale by decompile → recompile → disassemble both → normalised diff, with zero execution. Execution-trace tests are reserved for pure-JS fixtures.
