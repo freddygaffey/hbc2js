@@ -1,0 +1,13 @@
+Source: https://github.com/react-navigation/react-navigation
+Path in source repo: example/
+Commit: ab1319d6bbf05eae8dc25e33cbf4dc56494e0f0c (shallow clone, HEAD as of 2026-08-30)
+Licence: MIT (package.json "license" field; repo has no separate LICENSE file at
+this commit, but the root package.json's license field and every published
+@react-navigation/* package on npm carry MIT, consistent with docs/TEST-CORPUS.md
+§2 row 4 verification).
+
+This fixture is derived from the example/ app in the react-navigation monorepo,
+which vendors @react-navigation/* workspace packages under the same MIT terms.
+No native/proprietary code is included; only the Metro/Hermes JS bundle produced
+by `expo export` is referenced here (see BUILD.md — the bundle and .hbc are not
+committed to this repo per their size, see BUILD.md for regeneration and hashes).

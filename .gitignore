@@ -4,3 +4,6 @@ dist/
 *.log
 tools/hermesc/
 tools/hermes-vm/
+tests/fixtures/local-corpus/*/
+!tests/fixtures/local-corpus/README.md
+!tests/fixtures/local-corpus/MANIFEST.json

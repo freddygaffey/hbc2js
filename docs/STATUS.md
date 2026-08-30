@@ -110,6 +110,52 @@ Last updated: 2026-08-30
   not the binary. `tests/fixtures/build.sh --variants` regenerates the
   construct-level variants idempotently; default `build.sh` behaviour is
   unchanged. Full detail: `tests/fixtures/OBFUSCATION.md`.
+- **Tier 2 C3 corpus grown**: two more real-world Metro/Hermes bundles,
+  `tests/fixtures/bundles/react-navigation-example-0.85.3/` (Expo-based,
+  3.36 MB JS / 4.31 MB `-O` `.hbc`, 15,551 functions) and
+  `tests/fixtures/bundles/expensify-app-0.86.0/` (`react-native bundle`,
+  36.8 MB JS / 43.5 MB `-O` `.hbc`, 98,775 functions — the "large" slot,
+  bigger than `docs/TEST-CORPUS.md`'s ~12 MB anchor). Both landed on HBC
+  bytecode version **98** (new to this repo — `tools/get-hermesc.sh 98`
+  added, same tarball layout pattern as the existing `99` entry); neither is
+  committed (both over the 3 MB cap), each has a `BUILD.md` + `fetch.sh`.
+  Both confirm real-world `StringSwitchImm` jump tables and real
+  opcode-driven `CreateGenerator` (73/787 occurrences respectively) rather
+  than a D9-style compiler state machine at HBC 98; both show `HasAsync: 0`
+  in the header despite heavy `async`/`await` source usage (open question).
+  Expensify's build hit a `react-native-worklets` bundle-mode/Metro race
+  (`Failed to get the SHA-1 for .../.worklets/<id>.js`) deterministically
+  without `watchman` installed; fixed by installing watchman +
+  `--max-workers 1`. Full detail in each `BUILD.md`; summarized in
+  `tests/fixtures/README.md`.
+- **C4 hardened variant** (`react-navigation-example-0.85.3/hardened/`,
+  D16): `javascript-obfuscator@5.6.0` (BSD-2-Clause, via `npx`, pinned) at
+  the originally-specified heavy config (control-flow-flattening threshold
+  0.75 + dead-code injection + rc4 string array) obfuscates fine (3.36→16.9 MB)
+  but the obfuscated output **does not finish compiling** in `hermesc`
+  (killed after 6m35s with `-O`, ~2 more minutes without, no output either
+  way) — root-caused to `hermesc`'s diagnostic printer re-emitting the
+  entire (huge, single-line, control-flow-flattened) source line for each
+  of ~9,400 "undeclared variable" warnings, not a compile hang per se. A
+  reduced config (flattening threshold 0.1, no dead-code injection) obfuscates
+  in ~9s (3.36→7.61 MB) and compiles in 3.7s. Real finding for D3: round-trip
+  verification of heavily-obfuscated bundles via shelling out to `hermesc`
+  needs warning suppression or it can cost many minutes on I/O alone. Same
+  light config also produced for Expensify (`expensify-app-0.86.0/hardened/`):
+  `javascript-obfuscator` OOM'd at default Node heap on the 38.6 MB input,
+  needed `NODE_OPTIONS="--max-old-space-size=8192"` (2m31s, →84.5 MB), then
+  `hermesc -O` compiled it cleanly in 44s (131,424 functions, only 37
+  warnings) — confirms the heavy config's pathology tracks flattening+dead-code,
+  not bundle size. See `tests/fixtures/bundles/react-navigation-example-0.85.3/hardened/BUILD.md`
+  and `expensify-app-0.86.0/hardened/BUILD.md`.
+- **C5 tooling**: `tools/extract-apk-bundle.sh` (D16) extracts a bundle from
+  a local APK's `assets/` (Hermes-bytecode or plain-JS, auto-detected),
+  writes it to a gitignored `tests/fixtures/local-corpus/<sha256-prefix>/`
+  and appends a hash-only record to the tracked `MANIFEST.json`. Verified
+  against synthetic APKs built from this project's own already-MIT-licensed
+  fixtures (hbc, plain-js, Expo-style hashed `.hbc` filename, and a
+  no-bundle-found error case) — not against any real third-party APK. See
+  `tests/fixtures/local-corpus/README.md`.
 - Otherwise: no parser/CLI code yet.
 
 ## Known gaps

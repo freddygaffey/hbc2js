@@ -1,0 +1,9 @@
+Source: https://github.com/Expensify/App
+Commit: 12a92bd39f31ddabf5a425552930cbb055536555 (shallow clone, HEAD as of 2026-08-30)
+Licence: MIT (verified in-repo LICENSE.md: "MIT License / Copyright (c) 2020
+Expensify Inc.", also confirmed by package.json "license" field).
+
+Only the Metro/Hermes JS bundle produced by `react-native bundle` is
+referenced here (see BUILD.md — the bundle and .hbc are not committed to
+this repo per their size, see BUILD.md for regeneration and hashes). No
+proprietary configuration, secrets, or non-MIT assets are included.

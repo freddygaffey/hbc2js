@@ -410,3 +410,93 @@ This fixture was scaffolded and built entirely outside this repository (a
 scratch directory), per the task that produced it — only the final JS bundle
 and compiled `.hbc` files were copied in, never `node_modules/` or any
 scaffold-only build artefact.
+
+## Tier 2: `bundles/react-navigation-example-0.85.3` and `bundles/expensify-app-0.86.0`
+
+Two more real-world Metro/Hermes bundles per `docs/TEST-CORPUS.md` §2 (rows 4
+and 8) and `docs/DECISIONS.md` D13/D16 (category **C3**), both built entirely
+in a scratch directory (never inside this repo) and both over the 3 MB
+commit threshold — see each fixture's own `BUILD.md` for exact reproducible
+commands, `fetch.sh` to regenerate, and sha256/size tables; `licence.txt` for
+the MIT chain.
+
+| # | Fixture | RN version | HBC version | JS bundle | `-O` `.hbc` | Notes |
+|---|---|---|---|---|---|---|
+| 1 | `react-navigation-example-0.85.3` | 0.85.3 | 98 | 3.36 MB | 4.31 MB | Expo-based (`expo export --no-bytecode`); 15,551 functions; 73 `CreateGenerator`, 0 async-specific opcodes; 26 `UIntSwitchImm` + 10 `StringSwitchImm` |
+| 2 | `expensify-app-0.86.0` | 0.86.0 | 98 | 36.8 MB | 43.5 MB | "Large" slot — bigger than `docs/TEST-CORPUS.md`'s ~12 MB anchor; 98,775 functions; 787 `CreateGenerator`; 73 `UIntSwitchImm` + 100 `StringSwitchImm`; two independent dynamic-`eval` patterns (Metro split-bundle `fetchThenEvalAsync`, `react-native-worklets`' value-unpacker fallback chain) |
+
+**Bundling gotcha (Expensify only):** a stock one-shot `react-native bundle`
+CLI invocation hit `Failed to get the SHA-1 for: .../react-native-worklets/.worklets/<id>.js`
+deterministically (2/2 tries) — `react-native-worklets`' Metro "bundle mode"
+integration writes per-worklet extraction files to
+`node_modules/react-native-worklets/.worklets/` *during* the transform pass,
+and without a real filesystem watcher (no `watchman` installed) Metro's
+one-shot crawl doesn't reliably see a file created mid-build. Installing
+`watchman` and passing `--max-workers 1` (to remove any remaining
+cross-worker-process race on the same shared directory) made it reproducible
+every time. Not needed for react-navigation's Expo-based build, which never
+touches this codepath.
+
+**Both apps landed on HBC bytecode version 98** (`react-native` 0.85.3 and
+0.86.0 both pin a `250829098.0.x`-line `hermes-compiler`), one version newer
+than the `v99`("1000.x") line `tools/get-hermesc.sh` already had a table
+entry for — `tools/get-hermesc.sh 98` was added (same tarball-layout pattern
+as the existing `99` entry: `hermes-compiler@250829098.0.10`,
+`package/hermesc/OSDIR_TOKEN`), so both real-world apps in this pair share
+one compiler build with each other, letting their header/opcode stats
+(function counts, jump-table counts, etc.) be compared apples-to-apples
+above.
+
+Both bundles independently confirm `docs/TEST-CORPUS.md`'s Tier 1 finding
+that real Metro output does produce `StringSwitchImm` jump tables (not just
+`UIntSwitchImm`), and that `CreateGenerator` remains a real opcode at HBC 98
+rather than being lowered to a compiler state machine (contrast with D9's
+"v97+ generators/async get a runtime shim first" framing — worth revisiting
+against these two real bundles when generator recovery work starts, since
+neither app hit the D9 scenario). `HasAsync: 0` in both headers despite both
+apps making heavy use of `async`/`await` in their source is unresolved and
+flagged in each `BUILD.md` for follow-up.
+
+## Tier 2 hardened variant (C4) and local proprietary corpus (C5)
+
+Per `docs/DECISIONS.md` D16's corpus taxonomy:
+
+- **C4** (`bundles/<app>-<rn>/hardened/`): the same MIT-licensed bundle run
+  through `javascript-obfuscator@5.6.0` (BSD-2-Clause, invoked via `npx`,
+  pinned version, not a repo dependency) with control-flow flattening,
+  `stringArray` with `rc4` encoding, and (in the originally-specified
+  config) dead-code injection, `selfDefending` off, then recompiled with the
+  same `hermesc -O`. See `bundles/react-navigation-example-0.85.3/hardened/BUILD.md`
+  for the exact CLI invocations and outcomes. **The originally-specified
+  config (flattening threshold 0.75 + dead-code injection) does not finish
+  compiling** — killed after 6m35s of CPU time on the 16.9 MB obfuscated
+  output (5x expansion from the 3.36 MB original, which itself compiles in
+  2.6s), still actively emitting warnings when killed, not hung. Root cause:
+  ~9,400 "undeclared variable" warnings, each re-printing hermesc's entire
+  (huge, single-line, control-flow-flattened) source line as caret-diagnostic
+  context — a real diagnostic-printer scalability cliff, not necessarily a
+  compilation-itself problem. A reduced config (flattening threshold 0.1, no
+  dead-code injection) obfuscates and compiles in ~13s total (3.36→7.61 MB
+  JS, 7.17 MB `.hbc`) with only 38 warnings, confirming the slowdown tracks
+  warning volume/line size rather than obfuscated-bytecode compilation being
+  inherently slow. This is directly relevant to D3: a pipeline that shells
+  out to `hermesc` for round-trip verification of obfuscated targets should
+  suppress/redirect warnings or budget for pathological cases. The same
+  light config was also tried on the much larger Expensify bundle
+  (`bundles/expensify-app-0.86.0/hardened/BUILD.md`): the obfuscator itself
+  OOM'd at default Node heap limits on the 38.6 MB input and needed
+  `NODE_OPTIONS="--max-old-space-size=8192"` to succeed (2m31s, 80.6 MB
+  output), after which `hermesc -O` compiled it in 44s with only 37
+  warnings — confirming again that it's the heavy config's flattening+dead-code
+  combination that's pathological, not bundle size or obfuscation per se.
+- **C5** (`tests/fixtures/local-corpus/`): `tools/extract-apk-bundle.sh`
+  extracts a bundle from a local APK's `assets/` (Hermes-bytecode or plain
+  JS, auto-detected by magic number) into a gitignored per-hash directory
+  and appends a hash/metadata-only record to the tracked `MANIFEST.json` —
+  never the bundle content itself. See `tests/fixtures/local-corpus/README.md`
+  for the rules (only APKs legitimately obtained; nothing here is fetched or
+  targeted by this project). Verified against three synthetic APKs built
+  from this project's own already-MIT-licensed fixture bundles (Hermes
+  bytecode, plain JS, and an Expo-style hashed `.hbc` filename), plus a
+  fourth with no bundle present to confirm the error path — not against any
+  real third-party app.
