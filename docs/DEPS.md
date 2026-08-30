@@ -57,6 +57,13 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
    | Low | any exact/fuzzy hit at all, below Medium's floor |
    | None | zero hits after the `--min-instr` floor |
 
+   Per-module ownership is by exact factory hash, falling back to the
+   factory's fuzzy hash **and** full string set together (≥8 instructions
+   and ≥1 string, or ≥16 instructions; keys claimed by more than one real
+   package never attribute) — this is what survives `hermesc -g`'s
+   different register allocation (`ownerBasis` records which). Debug-only
+   instructions (`AsyncBreakCheck`, `Debugger`) are elided from every hash.
+
    Only **High**-tier, non-baseline matches are reported as `confirmedDeps`.
    `react-foundation`/`react-native-foundation` (baseline artifacts that
    exist to be *subtracted* from other packages' signatures, never real npm
@@ -77,7 +84,13 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
    | npm registry search fallback | 0.15 per hit | Network, `--offline` disables it; only tried when there's a name lead (a native-module-derived guess or a package-name-shaped string) |
 
    Guessed candidates are aggregated per package (not per module) in the
-   report; anything already in `confirmedDeps` is excluded from the guessed
+   report, and pass the precision rules from `docs/reviews/deps-v1.md`
+   before being listed: a low-tier DB score is not evidence, a medium one
+   counts only with an exact hit, anything reported needs ≥2 independent
+   evidence kinds and confidence ≥0.5, npm-search never stands alone, and a
+   package the DB scored explicitly negative (a signature at this HBC
+   version with no exact function or module hit) is vetoed. What was
+   weighed and dropped is in `suppressedGuesses` (`--json`). Anything already in `confirmedDeps` is excluded from the guessed
    list.
 
 4. **Confirm** (`src/deps/confirm.ts`, `--confirm` only): for the
@@ -205,6 +218,46 @@ network) over depth on any one candidate. Follow-up: run `hbc2js deps
 target and grow the shared DB with genuinely version-matched signatures for
 these two apps' actual (older) toolchain.
 
+## Ground truth (D17d)
+
+`tools/deps-truth.mjs <bundle.hbc> <bundle.map> --bundle-js <bundle.js>
+[--write-truth deps-truth.json] [--also-hbc <debug.hbc>]` derives per-module
+truth from Metro's source map (`--sourcemap-output`): each minified `__d(...)`
+line ends in `},<id>,[deps]);`, the map gives that line's source path, and
+`node_modules/<pkg>/package.json` gives the version. The compact
+`deps-truth.json` (module id → package@version, direct deps from the app's
+package.json, transitive edges, .hbc sha256s) is what a fixture commits;
+`tools/deps-truth.mjs <bundle.hbc> deps-truth.json` scores a report:
+precision/recall for the confirmed and guessed tiers, per-module accuracy,
+false positives and misses by name. Gate: `tests/gate/deps/truth.test.ts`
+(confirmed-tier false positives must be 0 on release *and* `-g`); sweep:
+`tests/sweep/deps/truth-react-navigation.test.ts` (skips until that
+fixture's map/truth exist locally — its fetch.sh clones the react-navigation
+monorepo and runs `pnpm install` + `expo export`, which is not cheap; add
+`--source-maps` to the export and run the truth tool on the result).
+
+Fixture: `tests/fixtures/bundles/rn-template-0.72/truth/` (a rebuild of the
+template with the map; `BUILD.md` has the recipe). Numbers, 2026-08-30:
+
+| | before (1b679a3) | after |
+|---|---|---|
+| release: confirmed | react-native@0.72.17, react@18.2.0 (precision 100%, direct recall 100%) | same |
+| release: guessed | 12 packages, **0 true** (stack, react-redux, native, async-storage, toolkit, axios, immer, lodash, moment, gesture-handler, reanimated, zustand) | 0 reported, 1 suppressed (`--json` lists it) |
+| release: per-module | 424/435 attributed | 334/432 library modules correct (77.3%), 51 attributed to the package that depends on them, 40 wrong, 7 unattributed; 0 app modules attributed |
+| `-g`: confirmed | **none**, rn=null, 3.7% attributed, npm-search junk | react-native@0.72.17, react@18.2.0, rn=0.72.17, 0 guessed |
+| `-g`: per-module | 0 | 325 correct (75.2%), 48 via dependent, 40 wrong, 19 unattributed; 0 disagreements with the release build |
+
+Recall over *all* 20 truth packages is 10% by construction: the DB
+fingerprints `react-native` with its dependencies bundled (minus the three
+baselines), so `@babel/runtime`, `invariant`, `prop-types`, `scheduler`, ...
+are reported under `react-native` (the "via dependent" column). The 40
+"wrong" modules are `@babel/runtime`/`prop-types` helpers attributed to
+`react-native` while truth says another dependent, 4 `react` modules owned by
+the `react-native` signature, and 1 RN module the `@react-navigation/stack`
+signature still contains (baseline-subtraction gap). The `-g` residue (19
+unattributed) is string-less factories under 16 instructions, where the
+fuzzy+string fallback is deliberately not trusted.
+
 ## Shared DB size
 
 `tools/pkgsig/db` is ~16 MB as of this task (40 signature files + baselines,
@@ -235,7 +288,14 @@ corpus in this seed run never contributed anything to `tools/pkgsig/db`).
 - `tests/gate/deps/guess.test.ts` — evidence-scoring unit tests, including
   the `Object.prototype`-pollution regression test.
 - `tests/gate/deps/apk.test.ts` — APK-hint mapping unit tests.
+- `tests/gate/deps/precision.test.ts` — the guess-aggregation precision rules.
+- `tests/gate/deps/robustness.test.ts` — `-g` build: AsyncBreakCheck elision,
+  same confirmed deps/RN version as release, ≥95% of its module attribution.
+- `tests/gate/deps/truth.test.ts` — D17d ground truth on the template
+  (release and `-g`): confirmed-tier false positives = 0.
 - `tests/gate/cli/deps.test.ts` — the `hbc2js deps` CLI end-to-end
   (text/`--json`/`--out`/error handling).
 - `tests/sweep/deps/corpus.test.ts` — the seed-run corpus, skipped
   (INCONCLUSIVE) when its inputs are absent.
+- `tests/sweep/deps/truth-react-navigation.test.ts` — D17d on
+  react-navigation-example, skipped until its map/truth are generated.
