@@ -18,5 +18,6 @@ Claim a task by editing this file: put your handle and date in the **Claimed** c
 | T12 | Benchmark script (D21): run the corpus bundles through hermes-dec, hermes-decomp, droidsaw-hermes and hbc2js; measure and tabulate per D21; emit Markdown for the README. Tools are used as black boxes (AGPL hermes-dec output only). | scripting | |
 | — | Parser / disassembler implementation (specs 01, 02) | *in-flight (overseer)* | |
 | — | Fixture variants, real-app bundles, Hermes VM build | *in-flight (overseer)* | |
+| T13 | Pin the two ⛔ rows the catalogue has no owner for (issue #3): the v≥97 generator resume-call ABI's exact action/status integer codes (catalogue row 18) and the v99 async driver builtin/protocol (row 19). Evidence by observation — disassembly of fixtures 23–30 at v98/v99 plus targeted `hermesc` probes; the vendored `third_party/hermes/*` carries only `BytecodeList.def`/`Builtins.def`/`BytecodeVersion.h`/`Typeof.h`, not the lowering source that defines the codes. Deliver verbatim-evidence rows in `docs/lowering/generators.md` and `docs/lowering/async-await.md`, and flip the catalogue rows only where genuinely measured. | bytecode | **claimed** (Claude Opus 5, architect session, 2026-08-30) |
 
 Done tasks move to the bottom with the commit SHA.
