@@ -85,7 +85,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
 
 ENTRY=""
 for c in "${CANDIDATES[@]}"; do
-  if list_zip_entries | grep -qxF "$c"; then
+  if list_zip_entries | grep -xF "$c" >/dev/null; then
     ENTRY="$c"
     break
   fi
