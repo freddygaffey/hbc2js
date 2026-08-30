@@ -15,6 +15,12 @@ import type { Expr, Stmt } from "../emit/ast.ts";
 import { printProgram } from "../emit/print.ts";
 import type { AbandonedRecord, AppliedRecord, CheckResult, Pass, PassContext } from "./types.ts";
 
+// F8 gap (spec `docs/specs/passes/02-expr-rebuild.md`): a stage-B rung's
+// `match`/`rewrite`/`check` signatures need to *name* `Stmt`/`Expr`, and
+// `../../emit/ast.ts` is not on D12a's allowlist — only `../ast.ts` (this
+// file) is. Without this re-export no stage-B rung could be typed at all.
+export type { Expr, Stmt } from "../emit/ast.ts";
+
 // ---------------------------------------------------------------------------
 // Visitor / rebuilding maps over Stmt / Expr.
 // ---------------------------------------------------------------------------
