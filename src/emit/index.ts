@@ -32,6 +32,14 @@ export interface EmitOptions {
    * (the M4 baseline) nothing runs.
    */
   readonly passes?: (fn: StructuredFunction, cfg: FunctionCfg) => { readonly fn: StructuredFunction; readonly diagnostics: readonly Diagnostic[] };
+  /**
+   * F1's stage-B pipeline, run on the JS AST `emitFunction` just produced —
+   * `emitOne` calls it right after `emitFunction(...)` returns and before the
+   * parent splices the result in (innermost-function-first, `cfg` in hand),
+   * and before `checkBindings` so EM-01 still double-guards every rename.
+   * `src/passes/index.ts`'s `astPassHook` builds it; absent, nothing runs.
+   */
+  readonly astPasses?: (fn: Stmt, cfg: FunctionCfg) => { readonly fn: Stmt; readonly diagnostics: readonly Diagnostic[] };
 }
 
 export interface LineMapEntry {
@@ -202,7 +210,7 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       if (inlineFunctions.has(child)) inlined.set(child, body);
       else hoisted.push(body);
     }
-    return emitFunction({
+    let out = emitFunction({
       analysis,
       envGraph,
       structured,
@@ -218,6 +226,12 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       provenanceComments,
       strictEnv,
     });
+    if (opts.astPasses !== undefined) {
+      const passed = opts.astPasses(out, cfg);
+      out = passed.fn;
+      for (const d of passed.diagnostics) diagnostics.push(d);
+    }
+    return out;
   };
 
   const globalFn = emitOne(globalIndex);

@@ -2,15 +2,24 @@
 // tree IR and before emit (spec 07 §1), for every function.
 import type { Diagnostic } from "../errors.ts";
 import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
+import type { LayoutClass } from "../parse/types.ts";
 import type { Stmt, StructuredFunction } from "../structure/ir.ts";
+import type { Stmt as AstStmt } from "../emit/ast.ts";
 import { applyPasses } from "./driver.ts";
 import type { ApplyResult } from "./driver.ts";
+import { applyAstPasses, identUses, isRegisterName } from "./ast.ts";
+import type { AstApplyResult } from "./ast.ts";
 import { enabledPasses, REGISTRY } from "./registry.ts";
 import type { EnabledPassOptions } from "./registry.ts";
+import { buildModuleView } from "./tree.ts";
+import type { ModuleView } from "./tree.ts";
 import type { Pass } from "./types.ts";
 
 export { applyPasses } from "./driver.ts";
+export { applyAstPasses } from "./ast.ts";
 export { enabledPasses, REGISTRY } from "./registry.ts";
+export { buildModuleView } from "./tree.ts";
+export type { ModuleView } from "./tree.ts";
 export type { Pass, PassContext, Match, CheckResult, AppliedRecord, AbandonedRecord } from "./types.ts";
 
 export interface PassPipelineOptions extends EnabledPassOptions {
@@ -20,26 +29,98 @@ export interface PassPipelineOptions extends EnabledPassOptions {
 
 export type PassHook = (fn: StructuredFunction, cfg: FunctionCfg) => { readonly fn: StructuredFunction; readonly diagnostics: readonly Diagnostic[] };
 
-export function runPasses(analysis: ModuleAnalysis, fn: StructuredFunction, cfg: FunctionCfg, opts: PassPipelineOptions = {}): ApplyResult {
-  const passes = opts.none === true ? [] : (enabledPasses({ ...opts, stage: "A" }) as readonly Pass<Stmt>[]);
+/** F7: drop rungs this module's (version, layout) hasn't been measured against. */
+function filterByVersion<T extends Pass>(passes: readonly T[], hbcVersion: number, layoutClass: LayoutClass, diagnostic: (d: Diagnostic) => void): readonly T[] {
+  const out: T[] = [];
+  for (const p of passes) {
+    if (p.versions !== undefined && !p.versions(hbcVersion, layoutClass)) {
+      diagnostic({ severity: "info", code: "W_PASS_VERSION_SKIP", message: `pass ${p.name} skipped(hbc${hbcVersion}/${layoutClass}): not measured for this (version, layout)`, context: {} });
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+export function runPasses(analysis: ModuleAnalysis, fn: StructuredFunction, cfg: FunctionCfg, opts: PassPipelineOptions = {}, moduleView?: ModuleView): ApplyResult {
   const mod = analysis.module;
   const diagnostics: Diagnostic[] = [];
+  const base = opts.none === true ? [] : (enabledPasses({ ...opts, stage: "A" }) as readonly Pass<Stmt>[]);
+  const passes = filterByVersion(base, mod.header.version, mod.layout.layoutClass, (d) => diagnostics.push(d));
   const result = applyPasses(fn, passes, {
     analysis,
     functionIndex: cfg.functionIndex,
     cfg,
     hbcVersion: mod.header.version,
     layoutClass: mod.layout.layoutClass,
+    module: moduleView ?? buildModuleView(analysis),
     diagnostic: (d) => diagnostics.push(d),
   });
   return { ...result, diagnostics: [...diagnostics, ...result.diagnostics] };
 }
 
-/** The hook `EmitOptions.passes` takes. */
+/** The hook `EmitOptions.passes` takes. Builds `ctx.module` (F6) once per module. */
 export function passHook(analysis: ModuleAnalysis, opts: PassPipelineOptions = {}): PassHook {
+  const moduleView = buildModuleView(analysis);
   return (fn, cfg) => {
-    const r = runPasses(analysis, fn, cfg, opts);
+    const r = runPasses(analysis, fn, cfg, opts, moduleView);
     return { fn: r.fn, diagnostics: r.diagnostics };
+  };
+}
+
+export type AstPassHook = (fn: AstStmt, cfg: FunctionCfg) => { readonly fn: AstStmt; readonly diagnostics: readonly Diagnostic[] };
+
+/**
+ * F10: after the stage-B pipeline has fired at least one site in a function,
+ * prune that function's leading `decl let r0…rN` down to the `rN` still
+ * occurring as an `ident` in its (rewritten) body — a nested `func` body
+ * declares its own frame, so a register name occurring only there does not
+ * keep this function's decl entry alive (`identUses`'s `nested` count is
+ * exactly the thing to exclude). Drop the `decl` entirely when none remain.
+ * A finaliser, not an `expr-rebuild` rule, because `global-access`/
+ * `call-shape` (batch 2) kill registers *after* `expr-rebuild` reaches its
+ * fixed point. Gated on `applied.length > 0` so `--passes=none` — and any
+ * function no stage-B rung touched — stays byte-identical.
+ */
+export function pruneRegisterDecls(body: readonly AstStmt[]): readonly AstStmt[] {
+  const idx = body.findIndex((s): s is AstStmt & { readonly k: "decl" } => s.k === "decl" && s.kind === "let" && s.names.length > 0 && s.names.every(isRegisterName));
+  if (idx < 0) return body;
+  const decl = body[idx] as AstStmt & { readonly k: "decl" };
+  const withoutDecl = [...body.slice(0, idx), ...body.slice(idx + 1)];
+  const live = decl.names.filter((n) => {
+    const u = identUses(withoutDecl, n);
+    return u.reads + u.writes > 0;
+  });
+  if (live.length === decl.names.length) return body;
+  if (live.length === 0) return withoutDecl;
+  return [...body.slice(0, idx), { ...decl, names: live }, ...body.slice(idx + 1)];
+}
+
+/**
+ * The hook `EmitOptions.astPasses` takes (F1): stage B, run by `emitOne`
+ * right after `emitFunction` returns. `fn` is always the `k:"func"` node
+ * `emitFunction` produced; every other kind passes through untouched.
+ */
+export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions = {}, onResult?: (functionIndex: number, r: AstApplyResult) => void): AstPassHook {
+  const moduleView = buildModuleView(analysis);
+  const mod = analysis.module;
+  return (fn, cfg) => {
+    if (fn.k !== "func" || opts.none === true) return { fn, diagnostics: [] };
+    const diagnostics: Diagnostic[] = [];
+    const base = enabledPasses({ ...opts, stage: "B" }) as readonly Pass<readonly AstStmt[]>[];
+    const passes = filterByVersion(base, mod.header.version, mod.layout.layoutClass, (d) => diagnostics.push(d));
+    const r: AstApplyResult = applyAstPasses(fn.body, passes, {
+      analysis,
+      functionIndex: cfg.functionIndex,
+      cfg,
+      hbcVersion: mod.header.version,
+      layoutClass: mod.layout.layoutClass,
+      module: moduleView,
+      diagnostic: (d) => diagnostics.push(d),
+    });
+    onResult?.(cfg.functionIndex, r);
+    const body = r.applied.length > 0 ? pruneRegisterDecls(r.body) : r.body;
+    return { fn: { ...fn, body }, diagnostics: [...diagnostics, ...r.diagnostics] };
   };
 }
 

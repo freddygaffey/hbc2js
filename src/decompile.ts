@@ -19,8 +19,10 @@ import type { EmitOptions } from "./emit/index.ts";
 import { parseHbc } from "./parse/module.ts";
 import type { HbcModule, OpcodeTableId } from "./parse/types.ts";
 import { printTree, structure } from "./structure/index.ts";
-import { passHook, runPasses } from "./passes/index.ts";
+import { astPassHook, passHook, runPasses } from "./passes/index.ts";
 import type { PassPipelineOptions } from "./passes/index.ts";
+import { printProgram } from "./emit/print.ts";
+import type { Stmt } from "./emit/ast.ts";
 
 export interface DecompileOptions {
   readonly moduleName?: string;
@@ -93,6 +95,7 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
     provenanceComments: false,
     strictEnv,
     passes: passHook(analysis, opts.passes),
+    astPasses: astPassHook(analysis, opts.passes),
     ...opts.emit,
     ...(opts.verify === false ? { structure: { ...opts.emit?.structure, verify: false } } : {}),
   });
@@ -112,6 +115,49 @@ export function decompileTree(bytes: Uint8Array, opts: DecompileOptions = {}): s
     const s = passed.fn;
     out.push(`; fn#${i} ${JSON.stringify(analysis.decoded(i).name)}  ${JSON.stringify(s.stats)}${passed.applied.length > 0 ? `  passes=${passed.applied.map((a) => `${a.pass}@${a.at.offset}`).join(",")}` : ""}${passed.abandoned.length > 0 ? `  abandoned=${passed.abandoned.map((a) => `${a.pass}@${a.at.offset}(${a.reason})`).join(",")}` : ""}`);
     out.push(printTree(s));
+  }
+  return out.join("\n");
+}
+
+/** F1: `--emit-ast` mirrors `--emit-tree`, one function's stage-B JS AST at a
+ *  time, each with a `passes=…`/`abandoned=…` header — but *after* emission,
+ *  since the JS AST only exists once `emitFunction` has run. Reuses the real
+ *  `emitModule` traversal (children hoisted/inlined exactly as production
+ *  does) and taps `astPasses` to capture each function's own body and report
+ *  before it is spliced into its parent. */
+export function decompileAst(bytes: Uint8Array, opts: DecompileOptions = {}): string {
+  const { module } = parseForDecompile(bytes, opts);
+  const strictEnv = opts.strictEnv ?? true;
+  const analysis = analyseModule(module, { strictEnv, ...opts.analysis });
+  const headers = new Map<number, string>();
+  const bodies = new Map<number, Stmt>();
+  const hook = astPassHook(analysis, opts.passes, (functionIndex, r) => {
+    const parts: string[] = [];
+    if (r.applied.length > 0) parts.push(`passes=${r.applied.map((a) => `${a.pass}@${a.at.offset}`).join(",")}`);
+    if (r.abandoned.length > 0) parts.push(`abandoned=${r.abandoned.map((a) => `${a.pass}@${a.at.offset}(${a.reason})`).join(",")}`);
+    headers.set(functionIndex, parts.join("  "));
+  });
+  emitModule(analysis, {
+    moduleName: opts.moduleName ?? "input.hbc",
+    provenanceComments: false,
+    strictEnv,
+    passes: passHook(analysis, opts.passes),
+    astPasses: (fn, cfg) => {
+      const out = hook(fn, cfg);
+      if (out.fn.k === "func") bodies.set(cfg.functionIndex, out.fn);
+      return out;
+    },
+    ...opts.emit,
+    ...(opts.verify === false ? { structure: { ...opts.emit?.structure, verify: false } } : {}),
+  });
+  const indices = opts.functionIndex !== undefined ? [opts.functionIndex] : [...bodies.keys()].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (const i of indices) {
+    const body = bodies.get(i);
+    if (body === undefined) continue;
+    const header = headers.get(i) ?? "";
+    out.push(`; fn#${i}${header.length > 0 ? `  ${header}` : ""}`);
+    out.push(printProgram([body]));
   }
   return out.join("\n");
 }

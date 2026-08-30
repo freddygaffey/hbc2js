@@ -19,7 +19,7 @@ import { runTier, hbc2jsDecompiler } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
-import { decompile, decompileTree, nodeCheck } from "./decompile.ts";
+import { decompile, decompileAst, decompileTree, nodeCheck } from "./decompile.ts";
 import { describePasses } from "./passes/index.ts";
 import { runDeps } from "./deps/index.ts";
 import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
@@ -43,6 +43,7 @@ Options (decompile):
   --function=N              restrict --emit-tree to function index N
   --no-verify               skip the structurer's round-trip isomorphism check
   --emit-tree               print the structurer's tree IR instead of JavaScript
+  --emit-ast                print the stage-B JS AST per function instead of JavaScript
   --no-pass <name>          disable one readability pass (repeatable; spec 07)
   --passes=none             run no passes: the M4 baseline output
   --list-passes             list the registered passes and exit
@@ -425,6 +426,7 @@ interface DecompileArgs {
   readonly functionIndex: number | undefined;
   readonly verify: boolean;
   readonly emitTree: boolean;
+  readonly emitAst: boolean;
   readonly nodeCheck: boolean;
   readonly opcodeTable: OpcodeTableId | undefined;
   readonly forceV98: boolean;
@@ -441,6 +443,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let functionIndex: number | undefined;
   let verify = true;
   let emitTree = false;
+  let emitAst = false;
   let check = true;
   let opcodeTable: OpcodeTableId | undefined;
   let forceV98 = false;
@@ -459,6 +462,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
     else if (a.startsWith("--function=")) functionIndex = Number(a.slice("--function=".length));
     else if (a === "--no-verify") verify = false;
     else if (a === "--emit-tree") emitTree = true;
+    else if (a === "--emit-ast") emitAst = true;
     else if (a === "--no-node-check") check = false;
     else if (a === "--force-v98-table") forceV98 = true;
     else if (a === "--stats") stats = true;
@@ -468,7 +472,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, nodeCheck: check, opcodeTable, forceV98, stats, lenientEnv, passes: { none: passesNone, skip: skipPasses } };
+  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, opcodeTable, forceV98, stats, lenientEnv, passes: { none: passesNone, skip: skipPasses } };
 }
 
 /**
@@ -518,6 +522,8 @@ function runDecompile(argv: readonly string[]): void {
     let text: string;
     if (args.emitTree) {
       text = decompileTree(bytes, opts);
+    } else if (args.emitAst) {
+      text = decompileAst(bytes, opts);
     } else {
       const result = decompile(bytes, opts);
       text = result.code;
@@ -526,7 +532,7 @@ function runDecompile(argv: readonly string[]): void {
         process.stderr.write(`hbc2js: --lenient-env: ${unresolved} environment access(es) could not be resolved statically and were emitted as __hbc_unresolved_env(...) markers, which THROW when reached. The output is not faithful at those sites.\n`);
       }
     }
-    if (!args.emitTree && args.nodeCheck) {
+    if (!args.emitTree && !args.emitAst && args.nodeCheck) {
       const check = nodeCheck(text);
       if (!check.ok) {
         process.stderr.write(`hbc2js: emitted JavaScript did not pass 'node --check':\n${check.message}\n`);
