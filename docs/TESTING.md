@@ -96,6 +96,16 @@ changes, all in `src/harness/**`:
    gate can still fail to terminate even though T2 itself is fast — see
    `docs/STATUS.md`'s note.
 
+   **Update (2026-08-31): both tables are gone.** The hangs were fixed with
+   label-clean's re-enablement (`KNOWN_HANGS` removed then), and consolidation
+   item 3 fixed the wrong output — expr-rebuild's dead-store scan stepped past
+   an `if` that `break`s out of the site (`src/passes/expr-rebuild/match.ts`,
+   `StepVerdict`) — and the class accessor-pair emit bug
+   (`58-class-accessor-pair-split`, `src/emit/lower.ts`), then deleted
+   `KNOWN_WRONG_OUTPUT` and its helper. `skippedByDesign` now lists
+   documented `versions.txt` compile failures only; every fixture that
+   compiles runs through the real decompiler in every tier.
+
 ## The four tiers (D13, D16)
 
 | Tier | Inputs | Oracles | Reference | Where |
