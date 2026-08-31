@@ -40,3 +40,5 @@ tools: Bash, Read, Edit, Write, Grep, Glob
 (system prompt: the token-discipline rules above)
 ```
 Briefs state the budget explicitly. Measured baseline before this change (2026-08-31/09-01, general-purpose): 130k–330k tokens and 90–170 tool calls per rung.
+
+**Caveat (2026-09-01):** custom agent types under `.claude/agents/` are loaded at session start — a definition created mid-session is not available until the next `claude` launch (`Agent type 'lean' not found`). Until then, launch `general-purpose` with the budget rules pasted into the brief; the tool-schema saving only arrives with `lean`.
