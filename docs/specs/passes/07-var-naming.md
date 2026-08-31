@@ -80,10 +80,21 @@ fn-naming already applied) are all out of scope.
 function-scoped — it can appear in any nested block of the body — so a
 per-sublist site could not see every def/use; the whole frame must be analysed
 at once. As with `fn-naming`, `match` classifies every register candidate in one
-`classifyAll` pass and returns the **first** register that earns a name (data
-`{ from:"rN", to:name }`); the driver re-runs `match` after each rewrite, so one
-register is renamed per iteration. Idempotence is structural (PL-08): a renamed
-register is no longer `isRegisterName`, so it is never a candidate again.
+`classifyAll` pass — **one frame-local walk** (`collectFacts`) gathers every
+register's def values, induction-loop defs and array-receiver/test uses at
+once, then one `freeNames`/`declaredNames` pair seeds the `taken` set — and
+returns **every** register that earns a name (data `{ renames: [{ from:"rN",
+to:name }, …] }`, in first-def order). **Batched, not one per match** (spec 05
+§4's convention, adopted for docs/PUSHBACK.md P-1, 2026-08-31): the verdicts
+depend on each other only through `taken`, which is threaded through the
+candidates in first-def order exactly as a one-rename-per-iteration driver
+loop would have done, so the batched output is the same as the per-iteration
+output at O(B) instead of O(K²·B). Idempotence is structural (PL-08): a
+renamed register is no longer `isRegisterName`, so it is never a candidate
+again; the driver's re-run of `match` after the batch finds only refused
+registers (or, rarely, a call result whose callee was itself just renamed —
+`r5 = r3(…)` with `r3 → foo` now yields `foo2` — which converges on the next
+iteration).
 
 ### 4.1 Nameable registers (the reuse gate — read §6 first)
 
@@ -211,7 +222,11 @@ additions:
 5. **frame-locality**: `defUse(before).get(from)` and `defUse(after).get(to)`
    have identical `defs`/`reads` index arrays (same positions, same
    multiplicity) — the rename touched exactly this frame's occurrences of the
-   register and no others.
+   register and no others. Implementation note (2026-08-31): `defUse` itself
+   records only `isRegisterName` names, so it can never answer the `to` side
+   (an early draft asked it anyway and refused every rename); the rung's
+   pass-local `frameOccurrences(list, names)` (`frame.ts`) is the same walk,
+   same statement indexing, for any name, and is what both sides are asked of.
 
 `checkBindings` (EM-01) over the whole program is the backstop: an undeclared
 identifier is a hard error, never degraded output.
@@ -242,6 +257,19 @@ survivors, loop counters and built-up arrays are the reliable multi-def wins,
 and heavily-reused scratch registers (correctly) stay `rN`. Report the surviving
 `rN`-token count and the abandonment-reason histogram on the RN template bundle
 in `docs/STATUS.md`.
+
+**Measured (2026-08-31, `tools/passes-metrics.mjs` `measureVarNaming` /
+`measureVarNamingBundle`): 3.1 %** over the full matrix (39,635 surviving
+register variables → 38,368), 3.4 % on the gate's v94+v99 base subset (floor
+3 % in `tests/gate/passes/var-naming-metrics.test.ts`), **4.1 %** on the RN
+template bundle (`rN` tokens 204,381 → 199,307). The estimate above was wrong
+about what a single-def survivor *is*: in the real output it is overwhelmingly
+a literal (`r9 = 10`) or a parameter/env alias (`r9 = a1`), which §4.2 #7
+refuses by design, and nearly every multi-def survivor is scratch reuse the
+§4.1 gate refuses. The rules fire exactly where the spec licenses them; more
+recall is a spec change (new heuristics), not a lower bar. The
+abandonment-reason histogram is not yet reported (follow-up: expose the
+per-register `RefuseReason` through the driver's diagnostics).
 
 **Acceptance gate.** `npm test` green with the gate staying **0-DIVERGENT** with
 passes on *and* off (PL-09), and `--passes=none` byte-identical to the M4

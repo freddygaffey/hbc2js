@@ -50,7 +50,9 @@ function fakeModule(): ModuleView {
   };
 }
 
-function ctxFor(fnBody: readonly Stmt[], module: ModuleView | undefined = fakeModule()): PassContext {
+/** `module: null` builds a context with no module view at all (the key is
+ *  absent, as under `exactOptionalPropertyTypes` it must be). */
+function ctxFor(fnBody: readonly Stmt[], module: ModuleView | null = fakeModule()): PassContext {
   return {
     analysis: null as unknown as PassContext["analysis"],
     functionIndex: 0,
@@ -60,7 +62,7 @@ function ctxFor(fnBody: readonly Stmt[], module: ModuleView | undefined = fakeMo
     applied: [],
     diagnostic: () => {},
     fnBody,
-    module,
+    ...(module === null ? {} : { module }),
   };
 }
 
@@ -210,7 +212,7 @@ test("§4.3 collision: a name already free or declared in the frame (including i
 
 test("match is null without a module view, and null for any list that is not the function body root", () => {
   const before: readonly Stmt[] = [declStmt(["r0"]), set("r0", newE(id("Array"), [])), exprStmt(call(member(id("r0"), "push"), [lit("1")]))];
-  assert.equal(match(before, { ...ctxFor(before), module: undefined }), null);
+  assert.equal(match(before, ctxFor(before, null)), null);
   assert.equal(match(before, ctxFor([...before])), null);
 });
 

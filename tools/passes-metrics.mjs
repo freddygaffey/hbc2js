@@ -502,6 +502,107 @@ export function measureFnNamingBundle(bundlePath) {
 }
 
 // ---------------------------------------------------------------------------
+// docs/specs/passes/07-var-naming.md §8's corpus metric: the share of
+// surviving register variables (distinct `rN` still declared by a function's
+// leading `let` decl after every earlier rung and the F10 pruner) that
+// receive a name, over `tests/fixtures/constructs/**` at all five HBC
+// versions × base/.min/.obf, `var-naming` off vs on.
+// `tests/gate/passes/var-naming-metrics.test.ts` imports `measureVarNaming`
+// (on a subset, for the gate's time budget); `measureVarNamingBundle` is the
+// spec's "surviving rN-token count on the RN template bundle" half.
+// ---------------------------------------------------------------------------
+
+const LET_DECL_RE = /^\s*let ((?:[\w$]+, )*[\w$]+);$/gm;
+
+/** Names declared by the emitter's `let` decls, summed over every function
+ *  in `code`, split into register variables (`r\d+`) and everything else
+ *  (env slots `_eN_M` — and, once `var-naming` has run, the names it gave
+ *  registers). `after.other - before.other` is therefore exactly the number
+ *  of registers named: counting `before.reg - after.reg` instead would also
+ *  credit the F10 pruner, which drops a dead `rN` from a decl the moment any
+ *  stage-B rung — `var-naming` included — fires in that function. */
+function declaredNames(code) {
+  let reg = 0;
+  let other = 0;
+  for (const m of code.matchAll(LET_DECL_RE)) for (const name of m[1].split(", ")) if (/^r\d+$/.test(name)) reg++; else other++;
+  return { reg, other };
+}
+
+/** Register variables declared (post-F10 pruning) — the spec's "surviving
+ *  register-variables" denominator. */
+function declaredRegisters(code) {
+  return declaredNames(code).reg;
+}
+
+const ALL_VARIANTS = ["", ".min", ".obf"];
+
+export function measureVarNaming(versions = ALL_VERSIONS, variants = ALL_VARIANTS) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  let registersBefore = 0;
+  let registersAfter = 0;
+  let namedTotal = 0;
+  const perFixture = [];
+  const skipped = [];
+  for (const dir of dirs) {
+    for (const version of versions) {
+      for (const variant of variants) {
+        const file = join(CORPUS_DIR, dir, `v${version}${variant}.hbc`);
+        if (!existsSync(file)) continue;
+        const bytes = new Uint8Array(readFileSync(file));
+        let before;
+        let after;
+        try {
+          before = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true, passes: { skip: ["var-naming"] } }).code;
+          after = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true }).code;
+        } catch (e) {
+          // A pre-existing stage-B failure independent of this rung (the
+          // `.obf` generator `E_UNBOUND_IDENT` in docs/BUGS.md, 2026-08-31,
+          // fails identically with var-naming skipped): reported, not
+          // counted, never hidden.
+          skipped.push({ fixture: dir, version, variant, error: String(e instanceof Error ? e.message : e).slice(0, 120) });
+          continue;
+        }
+        const b = declaredNames(before);
+        const a = declaredNames(after);
+        const named = a.other - b.other;
+        registersBefore += b.reg;
+        registersAfter += a.reg;
+        namedTotal += named;
+        perFixture.push({ fixture: dir, version, variant, registers: b.reg, named });
+      }
+    }
+  }
+  return {
+    registerCount: registersBefore,
+    survivingRegisters: registersAfter,
+    namedPct: registersBefore === 0 ? 0 : (namedTotal / registersBefore) * 100,
+    namedPctBefore: 0, // skipping var-naming leaves every register rN-shaped, by construction
+    perFixture,
+    skipped,
+  };
+}
+
+/** Spec §8's other half: surviving register variables and `rN` tokens on
+ *  the RN template bundle, `var-naming` off vs on. Reported in
+ *  `docs/STATUS.md`, not gated (same convention as `measureFnNamingBundle`). */
+export function measureVarNamingBundle(bundlePath) {
+  const bytes = new Uint8Array(readFileSync(bundlePath));
+  const before = decompile(bytes, { moduleName: "bundle", resolveV98Ambiguity: true, passes: { skip: ["var-naming"] } }).code;
+  const after = decompile(bytes, { moduleName: "bundle", resolveV98Ambiguity: true }).code;
+  const b = declaredNames(before);
+  const a = declaredNames(after);
+  const registerCount = b.reg;
+  const survivingRegisters = a.reg;
+  return {
+    registerCount,
+    survivingRegisters,
+    namedPct: registerCount === 0 ? 0 : ((a.other - b.other) / registerCount) * 100,
+    registerTokensBefore: registerOccurrences(before),
+    registerTokensAfter: registerOccurrences(after),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // docs/specs/passes/06-label-clean.md §7's corpus metric: the share of
 // emitted functions containing zero `L\d+:` labels, over
 // `tests/fixtures/constructs/**` at all five HBC versions, `label-clean` off
