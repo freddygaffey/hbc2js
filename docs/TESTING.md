@@ -319,3 +319,7 @@ same way the existing entries do.
 - **`tools/equiv/` is untouched**, marked deprecated (its README now points
   here) rather than deleted — per spec 06 §12's own instruction to keep it
   until the port is green and delete it in a separate, later commit.
+
+## Typecheck is part of the gate
+
+`npm test` runs `npm run typecheck` before the gate tests (since 2026-08-31, consolidation item 29): CI's build-test jobs typecheck first, and a green local gate that skipped it left `main` red for two hours. `npm run test:gate` alone is the tests without typecheck.
