@@ -159,20 +159,16 @@ function readVersionsTxt(dir: string): Map<number, string> {
  * docs/BUGS.md). Keyed on the exact (variant-qualified) fixture name, since
  * only the `.min` variant is affected.
  *
- * `58-class-accessor-pair-split` at v98/v99 (CONSOLIDATION 26, docs/BUGS.md
- * row "adversarial/21-class-private-fields"): the minimal reproducer for a
- * real `src/emit/lower.ts` bug — a class getter/setter pair is lowered by
- * Static Hermes as two `DefineOwnGetterSetterByVal` with the other half
- * `undefined`, and the emit's full `{get, set}` defineProperty clobbers the
- * half defined first (VM: `get after pair: 1`, candidate: `undefined`). The
- * fixture only compiles at v98/v99 (`versions.txt`), so those two entries
- * are the whole fixture; delete them with the fix.
+ * `58-class-accessor-pair-split` at v98/v99 used to be listed here too
+ * (CONSOLIDATION 26: Static Hermes lowers a class getter/setter pair as two
+ * `DefineOwnGetterSetterByVal` with the other half `undefined`, and the emit
+ * clobbered the first half with the second's full descriptor). Fixed in
+ * `src/emit/lower.ts` (`isLiteralUndefinedReg`); the fixture is now an
+ * ordinary gate PASS and is its own regression test.
  */
 const KNOWN_WRONG_OUTPUT: ReadonlySet<string> = new Set([
   "01-if-else-chain.min@84",
   "01-if-else-chain.min@94",
-  "58-class-accessor-pair-split@98",
-  "58-class-accessor-pair-split@99",
 ]);
 
 function isKnownWrongOutput(fixtureName: string, version: number): boolean {

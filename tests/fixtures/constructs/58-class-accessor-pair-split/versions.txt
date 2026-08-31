@@ -4,10 +4,10 @@ v84: FAILS - hermesc rejects the `class` keyword entirely ("invalid statement
      36-class-getters-setters/versions.txt for the full analysis.
 v94: FAILS - identical, same root cause.
 v96: FAILS - identical, same root cause.
-v98: OK - compiles (Static Hermes lineage); the decompiled output is KNOWN
-     WRONG at this version, see below.
-v99: OK - compiles; the decompiled output is KNOWN WRONG at this version, see
-     below.
+v98: OK - compiles (Static Hermes lineage); PASSES (the accessor-pair emit bug
+     described below is fixed).
+v99: OK - compiles; PASSES (trace-EQUIVALENT under the v99 VM after the
+     fix).
 
 This fixture is the minimal reproducer for the bug behind adversarial fixture
 21-class-private-fields (CONSOLIDATION 26 triage, docs/BUGS.md): Static
@@ -22,7 +22,9 @@ half alone. Object-literal accessor pairs are unaffected at every version
 two halves — verified v94 and v99), which is why 36-class-getters-setters'
 `temp` object passes and why this is a v98/v99 class-only bug.
 
-Until fixed, v98/v99 are excluded from the gate/hardened/sweep runs via
-`KNOWN_WRONG_OUTPUT` in src/harness/tiers.ts (the same expected-failure
-mechanism as 01-if-else-chain.min); delete those two entries once the emit fix
-lands and this fixture becomes an ordinary PASS.
+FIXED (consolidation item 3, 2026-08-31): `src/emit/lower.ts` omits the
+`get:`/`set:` key whose operand register statically holds a literal
+`undefined` (`isLiteralUndefinedReg`), so the second instruction leaves the
+first half alone. v98/v99 run as ordinary gate fixtures (the former
+`KNOWN_WRONG_OUTPUT` entries were removed); this fixture is the regression
+test.
