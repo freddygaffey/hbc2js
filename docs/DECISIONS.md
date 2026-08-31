@@ -156,7 +156,7 @@ Naming a dep (package@version) is the hard problem; CLASSIFYING a module as thir
 - **Supporting signals:** `node_modules/<...>` paths / package names in the module's strings; structural shape (many tiny functions, no app-specific routes/strings/asset refs).
 - **Output = two tiers:** (1) NAMED deps → package.json (D17f/D17g); (2) ANONYMOUS library — "third-party boilerplate, ignorable," no name. The HEADLINE metric becomes **% of bundle that is app-code vs library** (by instruction weight), which anonymous classification can push high even when naming recall is low. The analyst's real need — "show me only the app's code" — is met by tier 2 alone. This is arguably the FIRST recall win to ship.
 
-## D17h-b — Custom-vs-library classification from the app's OWN vocabulary (corpus-independent) (2026-08-31, Fred)
+## D17j — Custom-vs-library classification from the app's OWN vocabulary (corpus-independent) (formerly written D17h-b) (2026-08-31, Fred)
 What matters most is 'is this the developer's custom code?' — answerable WITHOUT naming and WITHOUT a big cross-app corpus, using signals inside the single bundle:
 - **App-vocabulary presence (primary):** learn the app's own vocabulary from the bundle itself — the most frequent app-specific string constants (route/screen names, the app's API hostnames, UI copy, the app's own scoped package name / bundle id, distinctive identifiers) and what the entry module transitively imports. A module that references the app's vocabulary → CUSTOM. A module with only generic strings → LIBRARY.
 - **node_modules path evidence:** `node_modules/<pkg>/…` (and package-name) substrings in a module's strings → library (many bundles retain some; when a Metro source map is present it's definitive).

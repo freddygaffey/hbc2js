@@ -802,7 +802,7 @@ foundation baselines cover, `docs/PACKAGE-SIGNATURES.md` §5.3's own
 `@react-navigation/stack`@HBC98 example at 1.4 MB), note why in the commit
 rather than silently letting the budget creep.
 
-## Classification (D17h/D17h-b/D17i stage 2): library vs custom code, WITHOUT naming (2026-08-31)
+## Classification (D17h/D17j/D17i stage 2): library vs custom code, WITHOUT naming (2026-08-31)
 
 Naming a dependency (package@version, everything above) is the hard, slow
 problem — real recall depends on the signature DB having this exact
@@ -814,10 +814,10 @@ code *without* naming the package at all. This is `src/deps/classify.ts`
 headline line in `formatReportText`) — it does not touch match/guess/confirm
 and can run even when the signature DB is empty.
 
-**D17h-b (2026-08-31) reframed which signals are PRIMARY.** D17h's original
+**D17j (2026-08-31) reframed which signals are PRIMARY.** D17h's original
 design leaned on cross-app recurrence against a multi-bundle "commonality
 index" — real, but useless on a brand-new app the tool has never built an
-index for, and (below) still weak even with one. D17h-b adds two signals
+index for, and (below) still weak even with one. D17j adds two signals
 that work from evidence **inside a single bundle**, no corpus required, and
 promotes them to primary; cross-app recurrence is kept as a bonus on top.
 
@@ -831,7 +831,7 @@ promotes them to primary; cross-app recurrence is kept as a bonus on top.
    majority (default ≥50%) of its own instruction weight comes from
    functions whose hash recurs in ≥2 distinct bundles. Silent (never fires)
    on an empty/absent index — the normal state for a brand-new app.
-1. **`node_modules`/bare package-path evidence (primary, D17h-b, strong).**
+1. **`node_modules`/bare package-path evidence (primary, D17j, strong).**
    A `node_modules/<pkg>/...` substring, or a bare (prefix-stripped)
    `<pkg>/lib|dist|src|.../*.js` package-relative path, in the module's own
    string constants (`libraryPathEvidence`, extracts the package name).
@@ -842,7 +842,7 @@ promotes them to primary; cross-app recurrence is kept as a bonus on top.
    require paths from optimised/release output, so this signal in practice
    fires mainly on `-g`/debug builds, source-mapped bundles, and libraries
    that self-embed a version banner (MetaMask's one big hit below).
-2. **App-vocabulary presence (primary, D17h-b, the key idea).** The app's
+2. **App-vocabulary presence (primary, D17j, the key idea).** The app's
    OWN vocabulary — derived straight from the bundle itself
    (`deriveAppVocabulary`), no cross-app corpus needed:
    - Any string independently recognisable as app-specific **by shape**,
@@ -863,7 +863,7 @@ promotes them to primary; cross-app recurrence is kept as a bonus on top.
      module of nearly every bundle because they're common surface, not
      because they say anything about one particular app.
    A module whose strings hit the vocabulary is CUSTOM.
-3. **Structural shape (D17h-b, weakest, last-checked).** ≥2 functions,
+3. **Structural shape (D17j, weakest, last-checked).** ≥2 functions,
    ≤75 avg instructions/function — only consulted once app-vocabulary has
    already been ruled out for the module, so every one of its strings is
    already known not to be app-specific/vocabulary. (An earlier version
@@ -877,7 +877,7 @@ promotes them to primary; cross-app recurrence is kept as a bonus on top.
 (no app-vocab AND generic structural shape); **CUSTOM** if app-vocab is
 present; else **UNKNOWN** — doubt is reported honestly rather than defaulted
 either way, now that app-vocabulary gives a real positive way to decide
-CUSTOM. (D17h's original design defaulted "no signal" to `app`; D17h-b
+CUSTOM. (D17h's original design defaulted "no signal" to `app`; D17j
 replaces that default with `unknown` since a real positive CUSTOM signal
 now exists.) Each classification also carries a `confidence` (0..1, string
 evidence ~0.85-0.95, app-vocabulary scaled by how many distinct tokens
@@ -899,7 +899,7 @@ distinct eligible function hashes, 3,193 recurring in ≥2 — 7.2 MB.
 
 **Measured (2026-08-31): library-vs-custom % by weight, WITHOUT any
 cross-app corpus** (`classifyInventory(inventory, EMPTY_COMMONALITY_INDEX)`
-— i.e. D17h-b's primary signals alone, exactly what a brand-new app with no
+— i.e. D17j's primary signals alone, exactly what a brand-new app with no
 commonality index gets on first run), vs. the OLD D17h recurrence-primary
 number (5-bundle corpus) and naming's own `percentVerifiedByWeight`:
 
@@ -912,7 +912,7 @@ number (5-bundle corpus) and naming's own `percentVerifiedByWeight`:
 | local-corpus Discord | 98 | 0.2% | 0.2% | **13.6%** |
 
 Every bundle moved up substantially, corpus-free — MetaMask alone (the
-D17h-b acceptance target) roughly **doubled**, 19.7% → 39.5%, with zero
+D17j acceptance target) roughly **doubled**, 19.7% → 39.5%, with zero
 cross-app corpus involved (the old 19.7% needed a 5-bundle index; the new
 39.5% needs none). `rn-template`'s jump (1.2% → 41.1%) is almost entirely
 `structural-shape` (38,008 of its ~92k total instructions) — app-vocabulary
@@ -996,7 +996,7 @@ corpus in this seed run never contributed anything to `tools/pkgsig/db`).
   stubbed `npm`/`npx` (no network): write-back + D17b layering.
 - `tests/gate/cli/deps.test.ts` — the `hbc2js deps` CLI end-to-end
   (text/`--json`/`--out`/error handling).
-- `tests/gate/deps/classify.test.ts` — D17h/D17h-b/D17i stage 2
+- `tests/gate/deps/classify.test.ts` — D17h/D17j/D17i stage 2
   classification (27 tests): each signal in isolation (recurrence
   at/above/below threshold, minInstr floor, majority-of-weight fraction
   gate, node_modules-path + package-name extraction incl. scoped packages,
@@ -1012,7 +1012,7 @@ corpus in this seed run never contributed anything to `tools/pkgsig/db`).
   `tools/pkgsig/commonality-index.json` produces a well-formed report,
   skipped gracefully if that file is ever absent from a checkout; a fully
   corpus-free run — `EMPTY_COMMONALITY_INDEX` — still derives a non-empty
-  app vocabulary and classifies every module, D17h-b's own claim).
+  app vocabulary and classifies every module, D17j's own claim).
 - `tests/sweep/deps/corpus.test.ts` — the seed-run corpus, skipped
   (INCONCLUSIVE) when its inputs are absent.
 - `tests/sweep/deps/truth-react-navigation.test.ts` — D17d on

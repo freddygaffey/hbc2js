@@ -1,4 +1,4 @@
-// docs/DECISIONS.md D17h/D17h-b/D17i stage 2 — classify each Metro module as
+// docs/DECISIONS.md D17h/D17j/D17i stage 2 — classify each Metro module as
 // library (ignorable) vs the app's OWN "custom" code WITHOUT naming the
 // package (src/deps/classify.ts). Unit tests against synthetic
 // InventoryModule shapes for the signal logic (cross-app recurrence,
@@ -67,7 +67,7 @@ test("classifyModule: recurrence below the count threshold does not trigger the 
   assert.equal(c.recurrenceCount, 1);
   // No other signal fires either ("hello world" is not app-vocabulary and
   // the module has only 1 function, below the structural-shape floor) ->
-  // honestly reported unknown, not defaulted either way (D17h-b).
+  // honestly reported unknown, not defaulted either way (D17j).
   assert.equal(c.classification, "unknown");
 });
 
@@ -95,7 +95,7 @@ test("classifyModule: recurrenceThreshold and recurrenceFraction are configurabl
   assert.equal(classifyModule(m, [sample("fn-hash", 20)], index, EMPTY_APP_VOCABULARY, { recurrenceThreshold: 3 }).signal, "cross-app-recurrence");
 });
 
-// --- D17h-b signal 1: node_modules / bare package-path evidence ---------
+// --- D17j signal 1: node_modules / bare package-path evidence ---------
 
 test("classifyModule: node_modules path string -> library, package name extracted", () => {
   const m = classifyModule(invModule({ stringConstants: ["at node_modules/lodash/index.js:12"] }), [], EMPTY_COMMONALITY_INDEX);
@@ -126,7 +126,7 @@ test("classifyModule: versioned package-name string -> library", () => {
   assert.equal(m.libraryPackageHint, "react-native-reanimated");
 });
 
-// --- D17h-b signal 2: app-vocabulary presence (the key idea) ------------
+// --- D17j signal 2: app-vocabulary presence (the key idea) ------------
 
 test("deriveAppVocabulary: a string recurring across several distinct modules qualifies", () => {
   const inventory = {
@@ -193,7 +193,7 @@ test("classifyModule: node_modules-path evidence wins over app-vocabulary (libra
   assert.equal(m.signal, "node-modules-path");
 });
 
-// --- D17h-b signal 3: structural shape, only once app-vocabulary is ruled out ---
+// --- D17j signal 3: structural shape, only once app-vocabulary is ruled out ---
 
 test("classifyModule: structural shape (many tiny functions, no strings) -> library", () => {
   const m = classifyModule(
@@ -322,7 +322,7 @@ test("classifyInventory against rn-template: with the committed commonality inde
   assert.equal(report.summary.libraryModuleCount + report.summary.customModuleCount + report.summary.unknownModuleCount, inventory.modules.length);
 });
 
-test("classifyInventory against rn-template: corpus-free (empty commonality index) still classifies via D17h-b's bundle-internal signals", () => {
+test("classifyInventory against rn-template: corpus-free (empty commonality index) still classifies via D17j's bundle-internal signals", () => {
   const bytes = readFileSync(RN_TEMPLATE);
   const { inventory } = buildInventory(bytes);
   const report = classifyInventory(inventory, EMPTY_COMMONALITY_INDEX);
