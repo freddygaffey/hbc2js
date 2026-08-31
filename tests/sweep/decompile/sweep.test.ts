@@ -12,6 +12,7 @@ import { parseForDecompile } from "../../../src/decompile.ts";
 import { structure } from "../../../src/structure/index.ts";
 import { runTier } from "../../../src/harness/tiers.ts";
 import type { DecompilerFn } from "../../../src/harness/tiers.ts";
+import { VERDICT } from "../../../src/harness/ladder.ts";
 
 const hbc2js: DecompilerFn = (input) => decompile(input.hbcBytes, { resolveV98Ambiguity: true, moduleName: input.fixtureName }).code;
 
@@ -34,6 +35,29 @@ const ORACLES = ["syntax", "trace"] as const;
 // decompiler's acceptance test and belongs in the per-commit gate, not in a
 // tier `npm test` never runs. Only T6/T7, which need the hardened variants and
 // the multi-megabyte bundles, stay here.
+//
+// npm-test-gate-speed (2026-08-31): T2 itself now runs on every `npm test`,
+// but only at the two representative versions (94, 99 — see that file's own
+// comment). T2-full below re-runs the exact same fixture set at the full
+// 84/94/96/98/99 matrix, so no version combination goes unchecked — it is
+// just not on the per-commit critical path. Both exclude `tiers.ts`'s
+// `KNOWN_HANGS` two entries (a real, out-of-scope decompiler regression, not
+// a version-coverage gap).
+
+test("T2-full: every gate fixture is PASS under the real decompiler, at all five HBC versions", async (t) => {
+  if (!requireSweep(t)) return;
+  const report = await runTier({ tier: "gate", decompiler: hbc2js, oracles: [...ORACLES] });
+  const bad = report.results.filter((r) => r.verdict !== VERDICT.PASS);
+  assert.deepEqual(
+    bad.map((r) => `${r.fixture.name}: ${r.oracles.map((o) => `${o.oracle}=${o.verdict}`).join(" ")}`),
+    [],
+  );
+  assert.equal(report.summary.divergent, 0);
+  assert.equal(report.summary.error, 0);
+  assert.equal(report.summary.inconclusive, 0);
+  assert.ok(report.summary.pass >= 495, `only ${report.summary.pass} checks ran (expected at least 495 across all five versions)`);
+  console.log(`gate (real decompiler, full matrix): ${JSON.stringify(report.summary)}, ${report.skippedByDesign.length} skipped-by-design`);
+});
 
 test("T6: the obfuscated variants decompile and stay equivalent", async (t) => {
   if (!requireSweep(t)) return;

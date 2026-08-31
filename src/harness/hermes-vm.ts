@@ -14,7 +14,7 @@
 //
 // So a VM is only ever used for its own version, and a missing VM is
 // INCONCLUSIVE, never a silent fallback to Node (HA-05).
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../util/paths.ts";
@@ -119,6 +119,42 @@ export function runHermes(vmPath: string, file: string, opts: HermesRunOptions =
     const raw = (err.stdout ?? "") + (err.stderr ?? "");
     return { ok: false, timedOut: false, lines: splitLines(raw), raw, status: err.status ?? null };
   }
+}
+
+/**
+ * Speed fix (npm-test-gate-speed, 2026-08-31): the async twin of `runHermes`,
+ * for the one call site — `ladder.ts`'s trace oracle — that runs inside
+ * `tiers.ts`'s `pool()`. `execFileSync` blocks Node's single event loop for
+ * its entire timeout window, which serialised the whole worker pool: with
+ * `pool()`'s concurrency at `cpus - 1`, only one of those N "concurrent"
+ * fixtures actually made progress at a time the instant any one of them hit
+ * this call, because every other pending `runProgram`/`execFile` in the same
+ * process stalls too while the thread is blocked in a synchronous syscall.
+ * `execFile` (async, callback-based) never blocks the loop, so the pool's
+ * concurrency is real again. Same signature/return shape as `runHermes`;
+ * `runHermes` itself is untouched (`src/cli.ts` and two `tests/gate/**`
+ * files call it directly, outside the pooled hot path, and are out of this
+ * task's owned surface).
+ */
+export function runHermesAsync(vmPath: string, file: string, opts: HermesRunOptions = {}): Promise<HermesRunResult> {
+  const timeout = opts.timeout ?? 10000;
+  const isHbc = opts.bytecode ?? file.endsWith(".hbc");
+  const args = isHbc ? ["-b", file] : [file];
+  return new Promise((resolve) => {
+    execFile(vmPath, args, { timeout, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err === null) {
+        resolve({ ok: true, timedOut: false, lines: splitLines(stdout), raw: stdout });
+        return;
+      }
+      const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | null };
+      if (e.killed === true) {
+        resolve({ ok: false, timedOut: true, lines: splitLines(stdout ?? ""), raw: stdout ?? "" });
+        return;
+      }
+      const raw = (stdout ?? "") + (stderr ?? "");
+      resolve({ ok: false, timedOut: false, lines: splitLines(raw), raw, status: typeof e.code === "number" ? e.code : null });
+    });
+  });
 }
 
 /** The `print`-channel projection of a sandbox trace — see trace.ts's

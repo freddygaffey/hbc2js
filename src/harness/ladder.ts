@@ -22,7 +22,7 @@ import type { RunOptions } from "./runner.ts";
 import { compareTraces, TRACE_VERDICT } from "./compare.ts";
 import type { TraceComparison } from "./compare.ts";
 import { printLines } from "./trace.ts";
-import { runHermes } from "./hermes-vm.ts";
+import { runHermesAsync } from "./hermes-vm.ts";
 import { syntaxOk } from "./mutate.ts";
 import { findHermesc, compileWithHermesc, roundTripFromBytes } from "./roundtrip.ts";
 import type { RoundTripReport } from "./roundtrip.ts";
@@ -173,7 +173,10 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
       try {
         const hbcPath = join(dir, "original.hbc");
         writeFileSync(hbcPath, opts.hbcBytes);
-        const hermesResult = runHermes(opts.reference.vm.path, hbcPath, { timeout: timeoutMs, bytecode: true });
+        // Async (not `runHermes`'s sync `execFileSync`): this ladder runs
+        // inside `tiers.ts`'s worker pool, and a blocking syscall here would
+        // stall every other pooled fixture too (see runHermesAsync's doc).
+        const hermesResult = await runHermesAsync(opts.reference.vm.path, hbcPath, { timeout: timeoutMs, bytecode: true });
         // The Hermes VM never fuzzes (no injectable driver, §3.2) — its trace
         // is only the top-level program's own output. Comparing it against
         // the *fuzzed* candidate trace would spuriously "diverge" on every
