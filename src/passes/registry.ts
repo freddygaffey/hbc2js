@@ -7,7 +7,7 @@ import { exprRebuild } from "./expr-rebuild/index.ts";
 import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
 import { globalAccess } from "./global-access/index.ts";
-import { labelClean } from "./label-clean/index.ts";
+// import { labelClean } from "./label-clean/index.ts"; // DISABLED — infinite loop, see BUGS.md
 import { loopCond } from "./loop-cond/index.ts";
 import type { Pass, Stage } from "./types.ts";
 
