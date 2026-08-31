@@ -59,7 +59,7 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 | `call-shape` | R3 (+ builtins table) | all | all | `Reflect.apply(f, undefined, [a])` → `f(a)`; `Reflect.apply(o.m, o, [a])` → `o.m(a)`; `Reflect.construct(C, [a])` → `new C(a)`; `functionPrototypeCall/Apply` helpers → `.call/.apply` | batch 1 |
 | `fn-naming` | R4 | all | all | `_fnN` whose bytecode name is a valid, unshadowed identifier → that name; `_fnN` assigned once to `o.key`/`var k` → `key` | batch 1 |
 | `var-naming` | R5 | all | all | surviving `rN` → `v1…` by live range; params keep `aN` unless evidence names them; env slots `_eD_S` → names when §5.4 evidence exists | batch 2, **last in stage B before `jsx-recover`** |
-| `template-literal` | 21 (single-version), 44 | 43, 44 | all | ≥2-term string `+` chain with ≥1 literal → template literal; `getTemplateObject` → tagged template | batch 3 |
+| `template-literal` | 21 | 43, 44 | all | `Reflect.apply(__hbc_HermesInternal.concat, c0, [s0, c1, …])` → template literal (never a `+` chain — row 21 corrected); `getTemplateObject` + tag call → tagged template | batch 3, **merged 2026-09-01** |
 | `default-params` | 24 (single-version) | 39, 51 | all | prologue `if (aN === undefined) aN = e` → `(aN = e)` | batch 3 |
 | `destructure` | 22 (single-version) | 37, 38, 39 | all | straight-line `IteratorBegin/Next` + `ensureObject` + `GetById` fan-out → `const [a, b] = x` / `const {a, b} = x` | batch 3, `after: [default-params]` |
 | `spread-rest` | 23 (single-version) | 40, 41, 42 | all | `arraySpread`/`copyRestArgs`/`copyDataProperties` helper calls → `[...x]`, `f(...x)`, `(...rest)`, `{...o}` | batch 3, `after: [call-shape]` |
