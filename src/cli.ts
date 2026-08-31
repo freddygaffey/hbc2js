@@ -23,6 +23,8 @@ import { decompile, decompileAst, decompileTree, nodeCheck } from "./decompile.t
 import { describePasses } from "./passes/index.ts";
 import { runDeps } from "./deps/index.ts";
 import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
+import { splitProject } from "./split/index.ts";
+import { writeSplitResult } from "./split/write.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
@@ -48,6 +50,8 @@ Options (decompile):
   --passes=none             run no passes: the M4 baseline output
   --list-passes             list the registered passes and exit
   --no-node-check           skip the built-in 'node --check' of the output
+  --split <outdir>          split into a per-module project tree instead of one
+                            file (D17i stage 1 — isolate; docs/DECISIONS.md)
   --opcode-table=<id>       force an opcode table instead of probing
   --force-v98-table         resolve E_LAYOUT_AMBIGUOUS by forcing hbc98-late
   --lenient-env             don't refuse the module when an environment access
@@ -428,6 +432,7 @@ interface DecompileArgs {
   readonly emitTree: boolean;
   readonly emitAst: boolean;
   readonly nodeCheck: boolean;
+  readonly split: string | undefined;
   readonly opcodeTable: OpcodeTableId | undefined;
   readonly forceV98: boolean;
   readonly stats: boolean;
@@ -445,6 +450,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let emitTree = false;
   let emitAst = false;
   let check = true;
+  let split: string | undefined;
   let opcodeTable: OpcodeTableId | undefined;
   let forceV98 = false;
   let stats = false;
@@ -464,6 +470,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
     else if (a === "--emit-tree") emitTree = true;
     else if (a === "--emit-ast") emitAst = true;
     else if (a === "--no-node-check") check = false;
+    else if (a === "--split") split = argv[++i];
     else if (a === "--force-v98-table") forceV98 = true;
     else if (a === "--stats") stats = true;
     else if (a === "--lenient-env") lenientEnv = true;
@@ -472,7 +479,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, opcodeTable, forceV98, stats, lenientEnv, passes: { none: passesNone, skip: skipPasses } };
+  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, split, opcodeTable, forceV98, stats, lenientEnv, passes: { none: passesNone, skip: skipPasses } };
 }
 
 /**
@@ -519,6 +526,13 @@ function runDecompile(argv: readonly string[]): void {
       ...(args.functionIndex !== undefined ? { functionIndex: args.functionIndex } : {}),
     };
     warnIfHeapTooSmall(bytes.length, basename(args.input));
+    if (args.split !== undefined) {
+      const result = splitProject(bytes, { moduleName: basename(args.input) });
+      writeSplitResult(result, args.split);
+      for (const d of result.diagnostics) process.stderr.write(`hbc2js --split: ${d}\n`);
+      process.stdout.write(`hbc2js: wrote ${result.modules.length} module file(s) + index.js + MODULES.json to ${args.split}\n`);
+      process.exit(0);
+    }
     let text: string;
     if (args.emitTree) {
       text = decompileTree(bytes, opts);
