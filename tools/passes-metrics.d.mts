@@ -123,3 +123,28 @@ export interface VarNamingBundleResult {
 }
 
 export function measureVarNamingBundle(bundlePath: string): VarNamingBundleResult;
+
+// docs/specs/passes/09-if-chain.md §7's corpus metric.
+export interface IfChainVersionMetric {
+  readonly elseOccurrences: ReductionMetric;
+  /** Median per-function maximum statement-nesting depth, all functions. */
+  readonly medianMaxDepth: { readonly before: number; readonly after: number };
+  /** The same median over only the functions that had any nesting to lose
+   *  (before-depth >= 2); the corpus median function is a flat helper, so
+   *  this is where the spec's depth floor is visible. */
+  readonly nestedMedianMaxDepth: { readonly before: number; readonly after: number };
+  /** Mean per-function maximum depth — the moved statistic: the rung's wins
+   *  concentrate in the deep tail, so both medians sit still while the mean
+   *  (and the depth>=5 population) falls. */
+  readonly meanMaxDepth: { readonly before: number; readonly after: number };
+  /** Spec §8 question 3: C3 annotations surviving to stage B, and how many
+   *  are in the printer's printable single-`if` shape. */
+  readonly elseIfAnnotated: number;
+  readonly elseIfPrintable: number;
+}
+
+export interface IfChainMetricsResult {
+  readonly perVersion: Readonly<Record<number, IfChainVersionMetric>>;
+}
+
+export function measureIfChain(versions?: readonly number[]): IfChainMetricsResult;

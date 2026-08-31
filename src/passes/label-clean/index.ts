@@ -15,7 +15,9 @@ export const labelClean: Pass<Stmt, LabelSite> = {
   stage: "A",
   targets: ["08-labeled-break-continue", "11-nested-loops-mixed", "02-while-loop"],
   catalogue: ["R8"],
-  after: ["loop-cond", "for-header"],
+  // spec 06 §7 / spec 09 §7: the adding rung's job — `if-chain` rewrites
+  // whole `[block, if]` runs, so label-clean must see its final tree.
+  after: ["loop-cond", "for-header", "if-chain"],
   match,
   rewrite,
   check,

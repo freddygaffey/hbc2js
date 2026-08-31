@@ -4,6 +4,11 @@
 // Written before the core (§10 "Sequence: write verify.ts first"), and run inline
 // for every function by default. P1 is the one that matters and it is cheap: one
 // extra tree walk.
+//
+// Transparent annotations: `loop.form`, `loop.hideLabel` and `if.elseIf`
+// (spec 07 / specs/passes/01 F9 / specs/passes/09 F11) are never read here —
+// the annotated jumps and branches stay in the tree, so the round-trip proves
+// an annotated tree exactly as it proves a bare one.
 import type { BlockId } from "../cfg/types.ts";
 import { children, edgeKey } from "./ir.ts";
 import type { AugmentedCfg, LabelId, Stmt, StructuredFunction } from "./ir.ts";

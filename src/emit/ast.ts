@@ -65,7 +65,9 @@ export type Stmt =
   | { readonly k: "expr"; readonly expr: Expr }
   | { readonly k: "decl"; readonly kind: "let" | "const" | "var"; readonly names: readonly string[] }
   | { readonly k: "init"; readonly kind: "let" | "const" | "var"; readonly name: string; readonly value: Expr }
-  | { readonly k: "if"; readonly test: Expr; readonly then: readonly Stmt[]; readonly else: readonly Stmt[] }
+  /** `elseIf` (spec 09 F11, src/passes/if-chain): the `else` arm was a chain
+   *  link; print.ts renders `} else if (…) {` only when it is exactly one `if`. */
+  | { readonly k: "if"; readonly test: Expr; readonly then: readonly Stmt[]; readonly else: readonly Stmt[]; readonly elseIf?: boolean }
   /** `label: while (test) { … }`; `test` absent is `while (true)` (the M4 baseline, spec 04 §2). */
   | { readonly k: "while"; readonly label: string | null; readonly test?: Expr; readonly body: readonly Stmt[] }
   /** `label: do { … } while (test);` — spec 07 loop-cond. */

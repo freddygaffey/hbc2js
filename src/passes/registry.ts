@@ -7,6 +7,7 @@ import { exprRebuild } from "./expr-rebuild/index.ts";
 import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
 import { globalAccess } from "./global-access/index.ts";
+import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
 import type { Pass, Stage } from "./types.ts";
@@ -25,15 +26,19 @@ import { varNaming } from "./var-naming/index.ts";
  *  no explicit ordering against `call-shape` (neither reads or writes a
  *  shape the other depends on), so it is simply appended. `label-clean`
  *  (docs/specs/passes/06-label-clean.md §7) is last in stage A, `after:
- *  ["loop-cond", "for-header"]`: every other stage-A rung removes label
- *  uses, so it must see the final tree before stage B ever runs.
+ *  ["loop-cond", "for-header", "if-chain"]`: every other stage-A rung
+ *  removes label uses, so it must see the final tree before stage B ever
+ *  runs. `if-chain` (docs/specs/passes/09-if-chain.md §7) sits between
+ *  them, `after: ["loop-cond", "for-header"]` — a guard `if` inside an
+ *  unformed loop is the loop's test, and flattening its `else` first would
+ *  hide the tail-guard shape `loop-cond` keys on.
  *  `var-naming` (docs/specs/passes/07-var-naming.md §8) runs last of all:
  *  `after: ["expr-rebuild", "call-shape", "fn-naming"]` — it names registers
  *  on the fully-cleaned tree (post `expr-rebuild` folding) with `fn-naming`'s
  *  recovered names already in its collision set, and needs `call-shape` to
  *  have turned a disguised call back into a real callee so its call-result
  *  heuristic sees one. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass, varNaming as Pass];
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];

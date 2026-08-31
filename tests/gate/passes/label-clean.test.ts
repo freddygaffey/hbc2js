@@ -199,7 +199,9 @@ test("the registered Pass object is match/rewrite/check as tested above", () => 
   assert.equal(labelClean.name, "label-clean");
   assert.equal(labelClean.stage, "A");
   assert.deepEqual(labelClean.catalogue, ["R8"]);
-  assert.deepEqual(labelClean.after, ["loop-cond", "for-header"]);
+  // spec 06 §7 / spec 09 §7: the rung that lands between them extends this
+  // list — `if-chain` did (docs/specs/passes/09-if-chain.md §7 "Ordering").
+  assert.deepEqual(labelClean.after, ["loop-cond", "for-header", "if-chain"]);
   const body = seq([block(0), block(1)]);
   const node = labeled(0, body);
   const m = labelClean.match(node, ctx);

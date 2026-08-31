@@ -413,3 +413,32 @@ test("item 4 sanity: R1a removes exactly one read and one write of the folded re
   assert.equal(bu.reads - au.reads, 1);
   assert.equal(bu.writes - au.writes, 1);
 });
+
+// ---------------------------------------------------------------------------
+// if-chain regression (M5 rung 9, 2026-09-01): found by T2 the moment
+// if-chain's C1 produced the guard shape on 51-default-params (and 21/38/39/
+// 46, base and .min, v94+v99) — `r0 = arguments[1]; if (r0 !== r1) { break
+// L0 }; r0 = fresh` folded the store into the test although the `break` path
+// runs straight into `return r0` outside the list. Fails before the
+// `classifySite` consumer-jump guard, passes after.
+// ---------------------------------------------------------------------------
+
+test("if-chain regression: a break inside the consuming statement escapes with the stale value — refuse", () => {
+  const before: Stmt[] = [
+    exprStmt(assignExpr(id("r0"), id("a2"))),
+    { k: "if", test: bin("!==", id("r0"), id("r1")), then: [{ k: "break", label: "L0" }], else: [] },
+    exprStmt(assignExpr(id("r0"), lit('"x"'))),
+  ];
+  const v = classifySite(before, before, 0, "r0", id("a2"));
+  assert.deepEqual(v, { ok: false, reason: "use-under-control-flow" });
+});
+
+test("if-chain regression companion: the same consumer without the jump still folds (R1a)", () => {
+  const before: Stmt[] = [
+    exprStmt(assignExpr(id("r0"), id("a2"))),
+    { k: "if", test: bin("!==", id("r0"), id("r1")), then: [exprStmt(assignExpr(id("r3"), lit("1")))], else: [] },
+    exprStmt(assignExpr(id("r0"), lit('"x"'))),
+  ];
+  const v = classifySite(before, before, 0, "r0", id("a2"));
+  assert.deepEqual(v, { ok: true, rule: "R1a", j: 1 });
+});

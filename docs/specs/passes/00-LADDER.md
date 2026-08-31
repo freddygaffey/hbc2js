@@ -39,7 +39,7 @@ spec states the per-version shape it has read (catalogue confidence rule).
 | `yield-recovery` | 17 | 23–26 | ≤96 | `switch(generator-state)` resume dispatcher + `__state = k; return v` → `function*` with `yield` | batch 4 |
 | `gen-lowered` | 18 (ABI ✅ measured, T13) | 23–26 | ≥97 | `CreateGenerator` wrapper + `__pc` state machine → `function*` | **hard** §5.2 |
 | `async-recovery` | 19 | 27, 28 | all | `spawnAsync(body)` around a recovered generator → `async function` + `await` | batch 4, `after: [yield-recovery, gen-lowered]` |
-| `if-chain` | 1 | 01 | all | `else { if … }` → `else if`; `if (c) return; else {…}` → early return | batch 2 |
+| `if-chain` | 1 | 01 | all | `else { if … }` → `else if`; `if (c) return; else {…}` → early return | done |
 | `switch-raise` | 6, 7 (8 is ⛔: not until a fixture exists) | 09, 10, 52, 53 | all (opcode rename at 99) | jump-table `switch` node + `JStrictEqual` compare chain on one register → `switch` with fall-through | batch 2 |
 | `for-in` | 9 (single-version: **re-read at 99 first**) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | batch 2 |
 | `for-of` | 10 (single-version: re-read at 99) | 06, 07 | all | `IteratorBegin` + `IteratorNext` loop + two `IteratorClose` sites → `for (v of it)` | batch 2 |

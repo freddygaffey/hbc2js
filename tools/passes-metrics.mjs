@@ -713,6 +713,150 @@ export function measureLabelCleanBundle(bundlePath) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// docs/specs/passes/09-if-chain.md §7's corpus metric:
+// `tests/gate/passes/if-chain.test.ts` imports `measureIfChain` and asserts
+// the spec's floors (>=40% `} else {` reduction at v94, >=30% elsewhere,
+// median per-function maximum nesting depth down >=1). Also reports, per the
+// spec's §8 open question 3, how many `elseIf` annotations survive to stage B
+// and how many are in the printer's printable single-`if` shape.
+// ---------------------------------------------------------------------------
+
+function elseBraceOccurrences(code) {
+  return (code.match(/\} else \{/g) ?? []).length;
+}
+
+function sumOf(nums) {
+  return nums.reduce((a, b) => a + b, 0);
+}
+
+/** Maximum statement-nesting depth of one function body (brace depth of the
+ *  emitted code, measured on the AST so string literals cannot skew it);
+ *  never descends into a nested `func` — that body is measured on its own. */
+function maxStmtDepth(list) {
+  let max = 0;
+  const visit = (l, d) => {
+    if (d > max) max = d;
+    for (const s of l) {
+      switch (s.k) {
+        case "if":
+          visit(s.then, d + 1);
+          visit(s.else, d + 1);
+          break;
+        case "while":
+        case "do-while":
+        case "for":
+        case "labeled":
+        case "iife":
+          visit(s.body, d + 1);
+          break;
+        case "try":
+          visit(s.block, d + 1);
+          visit(s.handler, d + 1);
+          break;
+        case "switch":
+          for (const c of s.cases) visit(c.body, d + 1);
+          break;
+        default:
+          break; // "func": a separate function, measured separately
+      }
+    }
+  };
+  visit(list, 1);
+  return max;
+}
+
+/** `elseIf` sites surviving in one post-stage-B body: [annotated, printable]. */
+function elseIfSites(list) {
+  let annotated = 0;
+  let printable = 0;
+  const visit = (l) => {
+    for (const s of l) {
+      switch (s.k) {
+        case "if":
+          if (s.elseIf === true) {
+            annotated++;
+            if (s.else.length === 1 && s.else[0].k === "if") printable++;
+          }
+          visit(s.then);
+          visit(s.else);
+          break;
+        case "while":
+        case "do-while":
+        case "for":
+        case "labeled":
+        case "iife":
+        case "func":
+          visit(s.body);
+          break;
+        case "try":
+          visit(s.block);
+          visit(s.handler);
+          break;
+        case "switch":
+          for (const c of s.cases) visit(c.body);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+  visit(list);
+  return [annotated, printable];
+}
+
+export function measureIfChain(versions = ALL_VERSIONS) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  const perVersion = {};
+  for (const version of versions) {
+    let beforeElse = 0;
+    let afterElse = 0;
+    const beforeDepths = [];
+    const afterDepths = [];
+    const nestedBeforeDepths = [];
+    const nestedAfterDepths = [];
+    let elseIfAnnotated = 0;
+    let elseIfPrintable = 0;
+    for (const dir of dirs) {
+      const file = join(CORPUS_DIR, dir, `v${version}.hbc`);
+      if (!existsSync(file)) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      const before = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true, passes: { skip: ["if-chain"] } });
+      const after = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true });
+      beforeElse += elseBraceOccurrences(before.code);
+      afterElse += elseBraceOccurrences(after.code);
+      const beforeBodies = functionBodies(bytes, dir, { skip: ["if-chain"] }, true);
+      const afterBodies = functionBodies(bytes, dir, {}, true);
+      // The two emit runs enumerate the same functions in the same order, so
+      // depths pair up index-by-index (needed for the nested subset below).
+      for (const [i, b] of beforeBodies.entries()) {
+        const db = maxStmtDepth(b);
+        const da = maxStmtDepth(afterBodies[i]);
+        beforeDepths.push(db);
+        afterDepths.push(da);
+        if (db >= 2) {
+          nestedBeforeDepths.push(db);
+          nestedAfterDepths.push(da);
+        }
+      }
+      for (const b of afterBodies) {
+        const [a, p] = elseIfSites(b);
+        elseIfAnnotated += a;
+        elseIfPrintable += p;
+      }
+    }
+    perVersion[version] = {
+      elseOccurrences: { before: beforeElse, after: afterElse, reductionPct: beforeElse === 0 ? 0 : (1 - afterElse / beforeElse) * 100 },
+      medianMaxDepth: { before: median(beforeDepths), after: median(afterDepths) },
+      nestedMedianMaxDepth: { before: median(nestedBeforeDepths), after: median(nestedAfterDepths) },
+      meanMaxDepth: { before: beforeDepths.length === 0 ? 0 : sumOf(beforeDepths) / beforeDepths.length, after: afterDepths.length === 0 ? 0 : sumOf(afterDepths) / afterDepths.length },
+      elseIfAnnotated,
+      elseIfPrintable,
+    };
+  }
+  return { perVersion };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = measure();
   const ga = measureGlobalAccess();
