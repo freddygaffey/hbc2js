@@ -36,7 +36,7 @@ import { classifyNode, collectCandidates } from "./match.ts";
 import { applyReplacement } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return a === b || JSON.stringify(a) === JSON.stringify(b); // identity first: rewrite keeps every untouched statement (P-1)
 }
 
 interface FoundSite {

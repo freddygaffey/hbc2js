@@ -8,7 +8,9 @@
 // from `before` alone (it gets no access to this match's `data`) and so unit
 // tests can assert the exact refuse reason without going through the driver.
 import type { Expr, Stmt } from "../ast.ts";
-import { identUses, isPure, isPureStmt, isRegisterName } from "../ast.ts";
+import { identUses, isPure, isPureStmt, isRegisterName, registerUses } from "../ast.ts";
+
+const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { Match, PassContext } from "../types.ts";
 
 export type ExprRebuildRule = "R1a" | "R1b" | "R1c";
@@ -84,12 +86,82 @@ interface ExprCounts {
   readonly nested: number;
 }
 
+// `exprCounts(topLevelExprOf(s), name).reads` for every `name` at once,
+// memoised on the statement's identity. The forward scan in `classifySite`
+// and `stmtVerdict` ask this of the same statements for candidate after
+// candidate, iteration after iteration (a statement keeps its identity
+// across every rewrite that does not touch it — `rewrite.ts` slices, never
+// copies), so one visit per statement replaces one per (statement,
+// candidate, iteration) — the last big term of the M5 pipeline's cost on a
+// real bundle (docs/PUSHBACK.md P-1). The read half of `exprCounts`'s visit,
+// kept in lock-step with it: a read is an `ident` reached without crossing
+// an `assign` target or a nested `func` body (`exprCounts` never credits
+// `reads` for anything inside a `func`, for any name — a nested occurrence
+// lands in `nested`), so the counts here equal `.reads` for every name.
+const topLevelReadsMemo = new WeakMap<Stmt, ReadonlyMap<string, number>>();
+
+function topLevelReads(s: Stmt): ReadonlyMap<string, number> {
+  let m = topLevelReadsMemo.get(s);
+  if (m !== undefined) return m;
+  const counts = new Map<string, number>();
+  const visit = (x: Expr): void => {
+    switch (x.k) {
+      case "ident":
+        counts.set(x.name, (counts.get(x.name) ?? 0) + 1);
+        return;
+      case "assign":
+        if (x.target.k !== "ident") visit(x.target);
+        visit(x.value);
+        return;
+      case "member":
+        visit(x.obj);
+        if (x.computed) visit(x.prop);
+        return;
+      case "call":
+      case "new":
+        visit(x.callee);
+        x.args.forEach(visit);
+        return;
+      case "bin":
+      case "logical":
+        visit(x.left);
+        visit(x.right);
+        return;
+      case "unary":
+        visit(x.arg);
+        return;
+      case "cond":
+        visit(x.test);
+        visit(x.then);
+        visit(x.else);
+        return;
+      case "array":
+        x.elements.forEach(visit);
+        return;
+      case "object":
+        x.props.forEach((p) => visit(p.value));
+        return;
+      case "seq":
+        x.exprs.forEach(visit);
+        return;
+      default:
+        return; // func (a nested body is never a top-level read), lit, this, argumentsObject
+    }
+  };
+  const tl = topLevelExprOf(s);
+  if (tl !== null) visit(tl);
+  m = counts;
+  topLevelReadsMemo.set(s, m);
+  return m;
+}
+
 /** `identUses`'s expr-visiting logic, applied to one `Expr` directly rather
  *  than a statement list — needed to isolate "reads within just this
  *  top-level field", which `identUses` (statement-list granularity) cannot
  *  distinguish from a read inside a body a few fields over. Mirrors
  *  `identUses`'s own read/write/nested split exactly, including the `func`
- *  case (delegates to `identUses` for the nested body). */
+ *  case (delegates to `identUses` for the nested body). `topLevelReads`
+ *  above is its memoised, all-names `.reads` half. */
 export function exprCounts(e: Expr, reg: string): ExprCounts {
   let reads = 0;
   let writes = 0;
@@ -324,8 +396,7 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
  *  statement that also reads `reg` observes a dangling name once some
  *  earlier store folds into this one and deletes itself. */
 function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): Verdict {
-  const tl = topLevelExprOf(s);
-  if (tl !== null && exprCounts(tl, reg).reads > 0) return "read";
+  if ((topLevelReads(s).get(reg) ?? 0) > 0) return "read";
   if (isPlainStoreTo(s, reg)) return "dead";
   return branchVerdict(s, reg, labels, rest, memo);
 }
@@ -396,7 +467,7 @@ function tryDA(list: readonly Stmt[], j: number, reg: string, memo: Memo): boole
  */
 function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, reg: string, readsAtJ: number, memo: Memo): boolean {
   if (tryDA(list, j, reg, memo)) return true;
-  const u = identUses(fnBody, reg);
+  const u = registerUses(fnBody).get(reg) ?? NO_USES; // one memoised walk per fnBody, not one per candidate (P-1)
   return u.reads === readsAtJ && u.writes === 1 && u.nested === 0;
 }
 
@@ -431,8 +502,7 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
   let blocked = false;
   for (let m = i + 1; m < list.length; m++) {
     const s = list[m]!;
-    const tlExpr = topLevelExprOf(s);
-    const tlReads = tlExpr === null ? 0 : exprCounts(tlExpr, reg).reads;
+    const tlReads = topLevelReads(s).get(reg) ?? 0;
     if (tlReads > 0) {
       readAt = m;
       readTopCount = tlReads;

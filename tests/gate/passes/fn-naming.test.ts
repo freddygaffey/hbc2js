@@ -65,7 +65,7 @@ test("positive: functionName evidence renames a top-level function, and every re
   const ctx = ctxFor(before, module);
   const m = match(before, ctx);
   assert.ok(m !== null);
-  assert.deepEqual(m.data, { stmtIndex: 0, n: 1, from: "_fn1", to: "demo" });
+  assert.deepEqual(m.data, { renames: [{ stmtIndex: 0, n: 1, from: "_fn1", to: "demo" }] });
   const after = rewrite(m);
   assert.deepEqual(after, [funcStmt("demo", [{ k: "return", arg: lit("1") }]), exprStmt(assignExpr(member(id("globalThis"), "demo"), id("demo")))]);
   assert.deepEqual(check(before, after, ctx), { ok: true });
@@ -92,7 +92,7 @@ test("positive: R4b recovers a name from a `X.key = _fnN` member write when func
   const ctx = ctxFor(before, module);
   const m = match(before, ctx);
   assert.ok(m !== null);
-  assert.equal(m.data.to, "demo");
+  assert.equal(m.data.renames[0]!.to, "demo");
   const after = rewrite(m);
   assert.deepEqual(check(before, after, ctx), { ok: true });
 });
@@ -184,8 +184,9 @@ test("match picks the first qualifying candidate when an earlier one is refused"
   const module = fakeModule({ 1: "class", 2: "demo" }); // fn1 is a reserved word, fn2 qualifies
   const m = match(before, ctxFor(before, module));
   assert.ok(m !== null);
-  assert.equal(m.data.n, 2);
-  assert.equal(m.data.to, "demo");
+  assert.equal(m.data.renames.length, 1);
+  assert.equal(m.data.renames[0]!.n, 2);
+  assert.equal(m.data.renames[0]!.to, "demo");
 });
 
 // ---------------------------------------------------------------------------

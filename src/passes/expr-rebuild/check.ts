@@ -12,12 +12,14 @@
 // independently below since it is about `after`, which classification never
 // sees.
 import type { Expr, Stmt } from "../ast.ts";
-import { expressionOnlyCheck, identUses, isPure, isRegisterName } from "../ast.ts";
+import { expressionOnlyCheck, isPure, isRegisterName, registerUses } from "../ast.ts";
+
+const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { CheckResult, PassContext } from "../types.ts";
 import { classifySite, exprCounts } from "./match.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return a === b || JSON.stringify(a) === JSON.stringify(b); // identity first: rewrite keeps every untouched statement (P-1)
 }
 
 /** First index where `before`/`after` diverge, scanning the common prefix —
@@ -61,8 +63,8 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // and got *deleted* (pure) — an impure R1b keeps `E` (and its reads) alive.
   const eSelfReads = exprCounts(value, reg).reads;
   const expectedReadDelta = verdict.rule === "R1a" ? 1 : isPure(value) ? eSelfReads : 0;
-  const bu = identUses(before, reg);
-  const au = identUses(after, reg);
+  const bu = registerUses(before).get(reg) ?? NO_USES;
+  const au = registerUses(after).get(reg) ?? NO_USES;
   if (bu.writes - au.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
   if (bu.reads - au.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
 
