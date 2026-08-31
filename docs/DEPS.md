@@ -57,6 +57,34 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
    | Low | any exact/fuzzy hit at all, below Medium's floor |
    | None | zero hits after the `--min-instr` floor |
 
+   **Cross-package hash ambiguity (2026-08-31, §6.7 below).** Every exact
+   hit counted above (`exactHits`, `moduleExactHits`) must also be
+   *unambiguous*: a hash claimed by **≥20 distinct non-baseline package
+   names** anywhere in the loaded DB is excluded from every package's own
+   count, full stop — shared evidence that broad is not proof for any one
+   claimant. Found necessary only once the 32,708-signature bulk DB (D17c)
+   was layered in: whole families of npm packages that share near-identical
+   generated boilerplate (the `ljharb` ES-shim family — `is-weakref`,
+   `is-finalizationregistry`, `hasown`, `is-data-descriptor`, ... — plus, more
+   pervasively, Babel's own runtime helpers, byte-identical across a huge
+   fraction of all Babel/TS-compiled npm packages) independently reached
+   "high" off dozens of hits that, on inspection, every sibling package
+   claimed identically — live-measured as ~750 simultaneous false
+   "confirmed" dependencies for one real corpus app. The threshold is 20, not
+   a smaller number: a real, *legitimate* multi-package dependency chain
+   (Metro has no export-level tree-shaking, so `@react-navigation/stack`'s
+   own signature genuinely still contains code shared with
+   `react-native-gesture-handler`/`react-native-reanimated`/
+   `react-native-safe-area-context`/`@react-navigation/native`, all real
+   dependencies bundled together) measured up to 7 distinct package names
+   sharing one hash even in the small curated starter DB alone — an earlier
+   cutoff of 3 was tried and destroyed that real signature entirely
+   (`moduleExactHits` 292→0, tier high→low, on a dependency
+   `react-navigation-example`'s own ground truth confirms is present). 20
+   sits clear of both measured populations: comfortably above the largest
+   legitimate chain found (7), far below the smallest measured
+   boilerplate-family collision (55, measured on the bulk DB).
+
    **Threshold rationale (2026-08-30 tightening, `src/deps/match.ts`,
    `docs/PACKAGE-SIGNATURES.md` §6.6).** The pre-fix "high" rule
    (`moduleExactHits >= 1 && moduleCoverage >= 5%`) let a package with very
@@ -97,6 +125,40 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
    package never attribute) — this is what survives `hermesc -g`'s
    different register allocation (`ownerBasis` records which). Debug-only
    instructions (`AsyncBreakCheck`, `Debugger`) are elided from every hash.
+
+   **Version-tolerant matching: the `fuzzy-only` tier (2026-08-31, issue
+   #14/F1).** The two ownership bases above both still require the module's
+   exact hash (or its fuzzy hash + full string set) to appear in the DB
+   verbatim — brittle against version drift, since a signature DB rarely
+   has the *exact* library version an app shipped (D17c's bulk DB has
+   `react-native` at 0.70.6/0.72.8/0.76.5 for HBC96, for example, never the
+   0.73.x a real HBC96 app actually ships — issue #14's own headline
+   finding: exact-hash-only matching against the nearest sampled version
+   recognised only 88/422 `react-native` modules on a real production
+   bundle). `ownerBasis` gets a third value, `"fuzzy-only"`: a module whose
+   factory has **no** exact or fuzzy+strings match falls back to its bare
+   opcode-sequence (fuzzy) hash *alone* — most of a library's functions
+   don't change source between adjacent minor/patch versions, so their
+   mnemonic sequence (every operand, including string/bigint content,
+   already stripped) is often identical even when the exact hash and string
+   set are not. Far more collision-prone than the other two bases (stripping
+   every literal throws away the strongest disambiguating signal), so it
+   carries two independent safeguards:
+   1. **Package-level trust gate** — only from a package whose own score
+      already reached medium/high confidence some other way (real exact-hash
+      evidence, or broad fuzzy coverage); an isolated fuzzy collision from a
+      package with zero other evidence never attributes a module by itself.
+   2. **Size floor** — a factory below `MIN_FUZZY_ONLY_FACTORY_INSTR` (24)
+      instructions is never trusted this way, larger than the fuzzy+strings
+      fallback's own 16-instruction floor since there is no string-set
+      corroboration to lean on.
+
+   A key claimed by more than one distinct non-baseline package is still
+   never trusted, exactly like `fuzzy+strings`. This tier is *not* headlined
+   as separately from "matched" in `attribution` (both feed
+   `matchedInstrWeight`/`matchedModules` alike — see the by-weight metric
+   below), but `attribution.matchedInstrWeightByBasis` breaks the weight out
+   by basis so a report can see how much of "matched" rests on it.
 
    Only **High**-tier, non-baseline matches are reported as `confirmedDeps`.
    `react-foundation`/`react-native-foundation` (baseline artifacts that
@@ -224,6 +286,70 @@ One JSON file format across all three layers (schema 2 —
 straight into the shared set (see "Contributing a signature upstream"
 below).
 
+### The D17c bulk DB (fetch, layering, and a real data-hygiene bug)
+
+`tools/pkgsig/fetch-db.sh` fetches the D17c bulk signature DB (built on
+`deb`, `docs/DECISIONS.md` D17c — ~2,000 packages across HBC 94/96/98/99,
+32,708 signatures as of the first `2026-08-30` build) and unpacks it into a
+local directory in the same schema-2 format as every other layer:
+
+```sh
+# From a public URL, once one exists:
+HBC2JS_SIGDB_SOURCE=https://.../sigdb-20260830-partial.tar.zst \
+  tools/pkgsig/fetch-db.sh [dest-dir]
+# Straight from the build host (scp), before anything is published:
+HBC2JS_SIGDB_SOURCE=deb:~/hbc2js-bulk/dist/sigdb-20260830-partial.tar.zst \
+  tools/pkgsig/fetch-db.sh [dest-dir]
+```
+
+`dest-dir` defaults to the user-cache layer (`~/.cache/hbc2js/sigdb`), so a
+plain `hbc2js deps <bundle>` picks it up automatically once fetched; pass an
+explicit `dest-dir` and `--sigdb <dest-dir>` (or point it at
+`<out>/.hbc2js/sigdb` before running `deps`) to layer it as project-local
+instead, ahead of the shared starter set.
+
+**Data hygiene, found measuring this task's baseline (2026-08-31, issue
+#14).** The first archive (`sigdb-20260830-partial.tar.zst`, a partial/
+interrupted build per its own filename) has 353 of its 32,708 files
+(1.1%) with baseline subtraction (`docs/PACKAGE-SIGNATURES.md` §5.2)
+silently skipped — `subtractedBaselines: []` on a non-baseline package,
+meaning its function set is still an essentially-unsubtracted copy of
+Metro's runtime plus, when the build scaffold pulled it in, all of
+react/react-native. Verified directly: `@amplitude/react-native@2.17.0`'s
+hbc94 file carries 4,244 functions, of which 4,150 exact-hash-match the
+committed `rn-template-0.72` fixture — a fixture with **no** dependency on
+`@amplitude/react-native` at all. Unfiltered, layering this archive turned a
+clean 2-confirmed-dependency report into 134 "confirmed" dependencies, 133
+of them false, entirely from a handful of contaminated files winning
+exact-hash collisions against every real bundle's own react-native code —
+exactly the failure mode `tools/pkgsig/bulk/baseline-subtract.mjs`'s own
+header describes; these particular files just never went through it.
+
+`fetch-db.sh` always runs `tools/pkgsig/filter-unsubtracted.mjs` on the
+destination directory after extracting, which quarantines any such file into
+`dest-dir/_rejected-unsubtracted/` (kept for audit, never read by
+`loadSignatures` — it only reads `<dir>/*.json` and `<dir>/_baselines/*.json`)
+before the DB is considered ready. Run it by hand against any existing sigdb
+directory with `node tools/pkgsig/filter-unsubtracted.mjs <dir>`; it's
+idempotent. This is deliberately *not* a change to `src/deps/db.ts`'s
+`loadSignatures` itself — dozens of gate tests construct minimal
+hand-written `SigDbFile` fixtures that don't bother populating
+`subtractedBaselines` (irrelevant to what they test), and a cold
+`--confirm` run with no baseline files reachable in any DB layer yet can
+legitimately produce the same empty-array shape without being contaminated
+data — so the check belongs at bulk-archive ingestion time, not as a
+blanket load-time policy.
+
+Even after quarantining those 353 files, layering all ~32,000 remaining
+ones exposed a second, distinct problem — see "Cross-package hash
+ambiguity" above (§6.7): whole families of npm packages sharing
+near-identical generated boilerplate independently reaching "high"
+confidence off the same shared evidence. Both fixes are necessary together;
+neither alone was sufficient (measured: unsubtracted-file quarantine alone
+still left 6 real false positives on `rn-template-0.72` and ~750 on a real
+corpus app; the ambiguity threshold alone, without quarantining first, would
+still be scoring against contaminated function sets).
+
 ## Evidence-weight rationale and known limitations
 
 - **Hash matching is HBC-version *and* library-version sensitive.**
@@ -252,6 +378,88 @@ below).
   `"hasOwnProperty"` or `"constructor"` would silently return an
   `Object.prototype` member instead of `undefined` (`tests/gate/deps/guess.test.ts`
   has the regression test).
+
+## `DepsReport` JSON schema (issue #14's open Q)
+
+`--json` prints `DepsReport` (`src/deps/report.ts`) verbatim. Field names a
+prior consumer got wrong by guessing (`.name` instead of `.package`,
+`.strings` instead of `.topStrings`) are exactly why this section exists —
+read this before writing a `--json` consumer rather than re-deriving the
+shape from the human table.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `input` | `string` | The path passed on the CLI. |
+| `hbcVersion` | `number` | Parsed Hermes bytecode version (never guessed from the RN version — the reverse). |
+| `totalFunctions`, `totalModules` | `number` | Whole-bundle counts from the module inventory. |
+| `reactNativeVersion` | `string \| null` | Best-guess RN version, from the highest-confidence matched `react-native`/`react-native-foundation` signature; `null` if none matched at all. |
+| `reactNativeVersionConsistentWithHbc` | `boolean \| null` | F4 (issue #14): `null` when `reactNativeVersion` is `null` (nothing to reconcile) or the parsed `hbcVersion` has no documented RN range; otherwise whether `reactNativeVersion` falls inside the range `docs/TOOLCHAIN.md`'s table documents for this `hbcVersion` (e.g. HBC96 → RN 0.73.x-0.81.x). `false` is the issue's own repro case: `react-native@0.72.17` matched against a real HBC96 bundle. |
+| `reactNativeVersionExpectedRange` | `string \| null` | Human-readable RN range for this `hbcVersion` (populated whenever one is known, not only on a mismatch), e.g. `"RN 0.73.x-0.81.x"`. |
+| `confirmedDeps` | `ConfirmedDep[]` | `{ package, version, confidence, modulesCovered, moduleTotal, source }` — `package` (not `.name`), High-tier or `--confirm`-verified. Written into `package.json`. |
+| `guessedDeps` | `GuessedDep[]` | `{ package, version, confidence, modules, evidence }` — evidence-scored leads clearing the precision rules (≥2 independent evidence kinds, confidence ≥0.5). Never written into `package.json`. |
+| `hintedDeps` | `HintedDep[]` | `{ package, version, confidence, evidenceKind, evidence }` — single-evidence-kind leads kept only when that one kind is high-specificity. Reported for visibility only. |
+| `suppressedGuesses` | `SuppressedGuess[]` | `{ package, confidence, evidence, reason }` — what the precision rules weighed and dropped, and why. |
+| `unattributedModules` | `UnattributedModule[]` | `{ localModuleId, factoryFunctionIndex, instrCount, topStrings }` — `topStrings` (not `.strings`), the module's first 8 string constants; likely first-party app code. |
+| `moduleOwnership` | `ModuleOwnership[]` | `{ localModuleId, factoryFunctionIndex, package, version }` — flat module→package map, **confirmed-tier owners only** (the M6 contract, see below). |
+| `attribution.totalModules`/`matchedModules`/`guessedModules`/`unattributedModules`/`percentAttributed` | `number` | Module-**count** attribution (pre-existing). |
+| `attribution.totalInstrWeight`/`matchedInstrWeight`/`guessedInstrWeight`/`hintedInstrWeight`/`unattributedInstrWeight` | `number` | F2 (issue #14): the same split, summed by `instrCount` instead of counted — see "By-instruction-weight metric" below. |
+| `attribution.matchedInstrWeightByBasis` | `{ exact, fuzzyStrings, fuzzyOnly }` | `matchedInstrWeight` broken out by `ModuleAttribution.ownerBasis` — how much of "matched" rests on the version-tolerant `fuzzy-only` tier. |
+| `attribution.percentAttributedByWeight` | `number` | By-weight mirror of `percentAttributed` (matched+guessed). |
+| `attribution.percentVerifiedByWeight` | `number` | **The headline number.** Matched (signature-verified, any basis) only, by weight — excludes guessed/hinted deliberately, since only a real signature match ever justifies code substitution (D17a). |
+
+Two related, but distinct, module-level shapes exist below `DepsReport`
+(reachable via `matchInventory`/`buildReport` directly, not part of
+`DepsReport` itself): `MatchReport.moduleAttributions` (`src/deps/match.ts`)
+is the *raw* per-module match-stage result (`owners`, `ownerBasis`,
+`instrCount`, ...) for every module, matched or not; `DepsReport`'s own
+`moduleOwnership` is the much narrower, M6-facing filtered view (confirmed
+packages only). Don't conflate `moduleAttributions.owners` (raw hash-match
+package@version strings, can be empty, ambiguous, or baseline-aliased) with
+`moduleOwnership` (already resolved to one package/version per module,
+confirmed-tier only).
+
+### By-instruction-weight metric (F2)
+
+Module-**count** attribution (`percentAttributed`) can look healthy while
+the bundle's actual bytecode is barely touched — a real app's modules vary
+hugely in size, and a handful of huge unmatched app modules (or a handful of
+tiny matched ones) skew a raw count arbitrarily. This is issue #14's own
+headline finding, stated in code-weight terms: "stripped only ~1.6% of code
+by instruction weight" on a real HBC96 production bundle, while module-count
+attribution alone read far better. `attribution`'s `*InstrWeight` fields
+(above) sum `ModuleAttribution.instrCount` — already computed by the match
+stage — instead of counting modules 1:1, giving the same
+matched/guessed/hinted/unattributed split weighted by how much bytecode each
+category actually represents. `percentVerifiedByWeight` is the number to
+headline: what fraction of the bundle's real bytecode is hash-verified
+library code a future M6 pass could actually strip.
+
+`tools/deps-truth.mjs`'s `scoreAgainstTruth` mirrors this at the
+*known-library-module* granularity too (`perModuleByWeight`, alongside the
+pre-existing module-count `perModule`) — recall over the instructions truth
+says belong to a real dependency, not just their count — and
+`formatScore`/the human CLI table (`formatReportText`) both print the
+headline weight line.
+
+### RN version reconciliation (F4)
+
+`detectReactNativeVersion` (`src/deps/report.ts`) picks the best-confidence
+matched `react-native`/`react-native-foundation` signature's version — but
+exact-hash matching against a *near-but-wrong* version, sampled because the
+signature DB doesn't have the app's real one, can outrank the truth on raw
+`exactCoverage` alone (issue #14's repro: `react-native@0.72.17` — an HBC94
+version — matched against a real HBC96 (RN 0.73.x) bundle). `HBC_TO_RN_RANGE`
+(`src/deps/report.ts`, from `docs/TOOLCHAIN.md`'s own version table) gives
+each HBC version's documented RN release range; `detectReactNativeVersion`
+now prefers a range-consistent candidate over an inconsistent one when both
+are tied at the same confidence tier, and `reconcileReactNativeVersion`
+always reports whether the version actually picked is consistent —
+surfaced as `reactNativeVersionConsistentWithHbc`/`reactNativeVersionExpectedRange`
+in `DepsReport` and as an inline `WARNING` line in both the human table
+(`formatReportText`) and `tools/deps-truth.mjs`'s score output when it
+isn't. This never silently fixes a wrong match — an inconsistent version can
+still be the best (or only) evidence available and is still reported, just
+flagged.
 
 ## For the M6 emitter (D19)
 
@@ -429,6 +637,61 @@ observed; only recall varies. The sweep test's own `>= 5 confirmed` floor
 is therefore itself somewhat network-luck-dependent — noted here and in
 `docs/BUGS.md`, not tightened (out of this task's scope; the fix would be
 version-selection logic in `src/deps/confirm.ts`, not this doc).
+
+### Bulk-DB (D17c) recall, before → after (2026-08-31, issue #14 F1)
+
+Honest before/after, both by module count and by instruction weight
+(`tools/deps-truth.mjs`, offline, no `--confirm`), on the two fixtures with
+committed ground truth. **Before** = shared starter DB only (`tools/pkgsig/db`,
+~40 packages); **after** = + the D17c bulk DB (32,708 signatures, 353
+unsubtracted files quarantined per "The D17c bulk DB" above) layered as
+`--sigdb`, with the version-tolerant `fuzzy-only` tier and the cross-package
+ambiguity gate (both above) also in effect — these two fixtures were
+specifically chosen because the starter DB was already built close to their
+exact toolchain, so neither shows a *dramatic* swing; the real headline case
+this whole task exists for (a wrong-version exact-hash match on a real HBC96
+production bundle) is the informational spot-check below instead.
+
+| | rn-template-0.72 (HBC94) before | after | react-navigation-example-0.85.3 (HBC98) before | after |
+|---|---|---|---|---|
+| confirmed (module count) | 2, 100% precision | 2, 100% precision | 9, 100% precision | 10, 80% precision (2 FP: `web-streams-polyfill`, `twrnc`) |
+| module-count attribution | 425/435 (97.7%) | 425/435 (97.7%) | 1033/1782 (58.0%) | ~1033/1782 (unchanged materially) |
+| **verified by instruction weight** | **91305/92576 = 98.6%** | **91310/92576 = 98.6%** | **194226/324954 = 59.8%** | **194550/324954 = 59.9%** |
+| per-library-module weight accuracy | 78001/92227 = 84.6% correct | 77951/92227 = 84.5% | 100012/292497 = 34.2% correct | 99291/292497 = 33.9% |
+
+Both fixtures were already close to saturated by the curated starter DB
+(built specifically against rn-template's and react-navigation-example's own
+toolchains), so the bulk layer adds only marginal weight-recall here and
+introduces 2 new false positives on react-navigation-example (`twrnc`,
+`web-streams-polyfill` — both real npm packages whose bulk-built signature
+happens to collide; not re-tuned further within this task's time budget,
+flagged as residual risk). **This is the expected, honest result for these
+two fixtures specifically** — they are not the scenario the bulk DB exists
+to fix.
+
+**Informational spot-check reproducing the actual headline scenario**
+(Bloomberg, local corpus, HBC96, real production RN 0.73.x bundle — counts
+only, no ground truth available, D16 C5: never fetched into this repo):
+
+| | starter DB only | + filtered bulk DB |
+|---|---|---|
+| `react-native` version detected | `0.72.17` — **flagged inconsistent** (`reactNativeVersionConsistentWithHbc: false`, expected `RN 0.73.x-0.81.x`) | same (bulk DB has no exact 0.73.x for HBC96 either — the DB gap issue #14 named, `docs/PACKAGE-SIGNATURES.md` §6.7's own note: "VERSION GAPS ... no 0.73.x") |
+| module-count attribution | 557/4995 (11.2%) | 951/4995 (19.0%) |
+| **verified by instruction weight** | **29857/1065885 = 2.8%** | **70362/1065885 = 6.6%** |
+| distinct confirmed dependency names | 12 | 80 (unverifiable precision, but recognisable real RN libraries: `react-native-reanimated`, `react-native-gesture-handler`, `@react-navigation/{stack,native}`, `react-native-safe-area-context`, `react-native-screens`, `@react-native-firebase/app`, `@sentry/react-native`, `react-native-svg`, ... — the same real packages the pre-bulk-DB seed run found via the guess stage alone) |
+
+Verified weight-recall roughly doubling (2.8%→6.6%) and confirmed-dependency
+identification going from 12 to 80 distinct names is real signal that F1
+works on the scenario it targets — but 6.6% is nowhere near the ~85% "React
+apps are mostly reusable library bloat" target from this task's brief. The
+gap is the DB's version coverage, not the matching logic: this HBC96 app's
+real react-native release (0.73.x-era, per the flagged inconsistency) simply
+isn't in the 32,708-signature archive at all (its `react-native` entries for
+HBC96 are 0.70.6/0.72.8 only) — closing that gap needs either a wider bulk
+build (more sampled versions per HBC era) or `--confirm`'s on-demand npm
+fetch against the app's *actual* detected version, not a further matching-
+algorithm change. See the top-level report for this task's full recall
+write-up.
 
 ## Shared DB size
 

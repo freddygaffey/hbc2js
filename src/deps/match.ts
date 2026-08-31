@@ -35,11 +35,17 @@ export interface ModuleAttribution {
   readonly instrCount: number;
   readonly stringConstants: readonly string[];
   readonly owners: readonly string[];
-  /** How the owner was established: an exact factory-hash hit, or a fuzzy
+  /** How the owner was established: an exact factory-hash hit, a fuzzy
    *  (mnemonic-only) factory hit corroborated by an identical string set
    *  — the latter is what survives `hermesc -g`'s different register
-   *  allocation (docs/reviews/deps-v1.md). */
-  readonly ownerBasis: "exact" | "fuzzy+strings" | null;
+   *  allocation (docs/reviews/deps-v1.md) — or a bare fuzzy (opcode-shape)
+   *  hit with no string corroboration at all: the version-tolerant tier
+   *  (docs/PACKAGE-SIGNATURES.md §6.7, 2026-08-31) that lets a module still
+   *  be attributed when the app's exact library version isn't in any layered
+   *  DB but its code hasn't changed shape since a nearby version that is —
+   *  gated on the owning package already having cleared "medium"/"high"
+   *  confidence some other way, never on an isolated hash alone. */
+  readonly ownerBasis: "exact" | "fuzzy+strings" | "fuzzy-only" | null;
 }
 
 export interface MatchReport {
@@ -95,6 +101,41 @@ const HIGH_EXACT_FUNCTION_COVERAGE = 0.9;
 const MIN_TINY_PACKAGE_EXACT_FUNCTION_HITS = 5;
 const MIN_TINY_PACKAGE_EXACT_FUNCTION_INSTR = 150;
 
+// --- version-tolerant "fuzzy-only" module attribution (docs/PACKAGE-SIGNATURES.md
+// §6.7, added 2026-08-31 for issue #14/F1: exact-hash matching is brittle
+// against a *near-but-wrong* library version — a real HBC96 (RN 0.73.x)
+// bundle matched react-native@0.72.17 at only 88/422 modules because the
+// bulk DB's nearest hbc96 react-native build (0.70.6/0.72.8) isn't the exact
+// version shipped. Most of a library's functions don't change source
+// between adjacent minor versions, so their bare opcode-sequence (fuzzy
+// hash, every operand incl. string/bigint content stripped) is often
+// byte-identical even when the exact hash (which is sensitive to any
+// literal drift) is not. `fuzzy+strings` above already exploits this but
+// additionally requires the *string set* to match too, which real version
+// drift routinely breaks (a changed error message, an added log constant,
+// even one bumped internal version string invalidates the whole set). This
+// tier drops that requirement — bare fuzzy-hash agreement only — which is
+// far more collision-prone (stripping literals throws away the strongest
+// disambiguating signal), so it carries two independent safeguards neither
+// of which alone reintroduces the tiny-package false positives fixed above:
+//   1. **Package-level trust gate**: only packages whose overall score
+//      already reached "medium" or "high" confidence some other way (a real
+//      exact-hash hit, or broad fuzzy coverage) may seed this index at all —
+//      an isolated fuzzy collision from a package with zero other evidence
+//      never attributes a module by itself.
+//   2. **Size floor**: a factory below `MIN_FUZZY_ONLY_FACTORY_INSTR`
+//      instructions is never trusted this way — larger than `fuzzy+strings`'
+//      own 16-instruction fallback floor, since there is no string-set
+//      corroboration to lean on here (FLIRT's minimum-length rationale,
+//      docs/PACKAGE-SIGNATURES.md §1.2, applied more strictly for a weaker
+//      signal).
+// A key claimed by more than one distinct non-baseline package is still
+// never trusted, same as `fuzzy+strings`. Reported with its own
+// `ownerBasis` ("fuzzy-only") so `src/deps/report.ts` can headline it
+// separately from exact/fuzzy+strings "verified" coverage rather than
+// silently blending it in.
+const MIN_FUZZY_ONLY_FACTORY_INSTR = 24;
+
 function tierRank(t: ConfidenceTier): number {
   return { high: 3, medium: 2, low: 1, none: 0 }[t];
 }
@@ -107,12 +148,59 @@ function buildIndex<K extends "exactHash" | "fuzzyHash" | "stringSetHash">(funct
 
 /** Score one package DB against the target's indices. Returns null if the
  *  package has no hbcVersion-eligible functions to score (e.g. built for a
- *  different HBC version than the target — never silently cross-compared). */
-function scorePackage(entry: LoadedSig, target: ModuleInventory, targetExact: Set<string>, targetFuzzy: Set<string>, targetStringHash: Set<string>, minInstr: number): PackageScore | null {
+ *  different HBC version than the target — never silently cross-compared).
+ *
+ *  `hashOwnerNames` (docs/PACKAGE-SIGNATURES.md §6.7 "cross-package hash
+ *  ambiguity", added 2026-08-31): a hash claimed by more than one distinct
+ *  non-baseline package name anywhere in the loaded DB set never counts as
+ *  evidence for *any* of them here. Found measuring the real D17c bulk DB
+ *  (32k packages, vs. the ~40-package starter set every prior threshold was
+ *  tuned against): whole families of npm packages that share near-identical
+ *  boilerplate by construction — e.g. the `ljharb` ES-shim family
+ *  (`is-weakref`/`is-finalizationregistry`/`is-weakset`/`hasown`/...,
+ *  dozens of small polyfills generated from the same shared internal
+ *  helpers) — each independently reached "high" tier off dozens of
+ *  module-exact hits that were, on inspection, the *same* hits every sibling
+ *  package in the family also claimed. `STRONG_MODULE_HIT_COUNT`/the
+ *  coverage-percentage path (both below) correctly reject a single
+ *  coincidental hit, but neither one previously asked "is this evidence
+ *  unique to this package" — at 40 curated packages that scenario never
+ *  came up; at 32,000 it did, live, as ~750 simultaneous false "confirmed"
+ *  dependencies for one real app (`react-redux`, `redux`, `hasown`,
+ *  `is-data-descriptor`, `pkce-challenge`, ... none of which the app
+ *  necessarily has). This is the FLIRT/Diaphora "explicit collision
+ *  handling" principle (docs §1.2) applied at package rather than function
+ *  granularity: shared evidence is not proof for any one claimant. */
+function scorePackage(entry: LoadedSig, target: ModuleInventory, targetExact: Set<string>, targetFuzzy: Set<string>, targetStringHash: Set<string>, minInstr: number, hashOwnerNames: ReadonlyMap<string, ReadonlySet<string>>): PackageScore | null {
   const pkg: SigDbFile = entry.file;
   if (pkg.hbcVersion !== target.hbcVersion) return null;
   const eligible = pkg.functions.filter((f) => f.instrCount >= minInstr);
   if (eligible.length === 0) return null;
+
+  // Calibrated, not guessed: an early cutoff of 3 was tried and measured
+  // wrong. `react-navigation-example`'s own real dependency cluster
+  // (`@react-navigation/stack` genuinely depends on, and Metro genuinely
+  // co-bundles, `react-native-gesture-handler` + `react-native-reanimated` +
+  // `react-native-safe-area-context` + `@react-navigation/native` — a real
+  // 3-5-package chain, no tree-shaking) legitimately shares hashes across up
+  // to **7** distinct package names in the curated starter DB alone
+  // (measured directly: `react-native-reanimated`'s own 3,454 functions'
+  // ambiguity-size histogram tops out at 7, with the bulk of its real
+  // signature at exactly 3) — a cutoff of 3 destroyed that package's entire
+  // signal (moduleExactHits 292->0, exactHits 1722->6, tier high->low) for
+  // a real dependency this fixture's own ground truth confirms is present.
+  // The bulk-DB false-positive family this check exists to catch (`hasown`/
+  // `is-weakref`/`is-finalizationregistry`/... — dozens of `ljharb` ES-shim
+  // siblings sharing generated boilerplate, plus the even more pervasive
+  // case of Babel's own runtime helpers, which by design are byte-identical
+  // across a huge fraction of all Babel/TS-compiled npm packages) measures
+  // 55-79+ distinct package names per hash — nowhere near a real dependency
+  // chain's size. The threshold sits well clear of both measured
+  // populations: comfortably above the largest legitimate multi-package
+  // chain found (7) and far below the smallest measured boilerplate-family
+  // collision (55).
+  const AMBIGUOUS_OWNER_THRESHOLD = 20;
+  const isUnambiguous = (hash: string): boolean => (hashOwnerNames.get(hash)?.size ?? 1) < AMBIGUOUS_OWNER_THRESHOLD;
 
   let exactHits = 0;
   let exactHitInstrSum = 0;
@@ -120,6 +208,7 @@ function scorePackage(entry: LoadedSig, target: ModuleInventory, targetExact: Se
   let stringCorroborated = 0;
   for (const fn of eligible) {
     if (targetExact.has(fn.exactHash)) {
+      if (!isUnambiguous(fn.exactHash)) continue; // shared with >=1 other distinct package — not this package's own evidence
       exactHits++;
       exactHitInstrSum += fn.instrCount;
       continue;
@@ -133,7 +222,7 @@ function scorePackage(entry: LoadedSig, target: ModuleInventory, targetExact: Se
   let moduleExactHits = 0;
   for (const m of pkg.modules) {
     if (m.factoryIsBaseline) continue;
-    if (m.factoryExactHash !== null && targetExact.has(m.factoryExactHash)) moduleExactHits++;
+    if (m.factoryExactHash !== null && targetExact.has(m.factoryExactHash) && isUnambiguous(m.factoryExactHash)) moduleExactHits++;
   }
   const moduleTotal = pkg.modules.filter((m) => !m.factoryIsBaseline && m.factoryExactHash !== null).length;
 
@@ -200,6 +289,14 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
   // set contains a given exact hash. A module can still be named even if its
   // package's overall coverage is low.
   const hashOwners = new Map<string, string[]>();
+  // Package-NAME-only view of the same evidence (2026-08-31, §6.7 above):
+  // which distinct non-baseline packages claim a given exact hash, ignoring
+  // version — the ambiguity signal `scorePackage` needs. Built in the same
+  // pass as `hashOwners` so it's complete (every eligible DB visited) before
+  // any package is scored in pass 2 below; baseline files are excluded since
+  // they legitimately overlap with everything by design (that's the whole
+  // point of a baseline) and are handled through `BASELINE_ALIAS`, not this.
+  const hashOwnerNames = new Map<string, Set<string>>();
   // Fallback index for module factories whose exact hash differs only by
   // register allocation (release vs `-g` builds of the same source): the
   // factory's mnemonic-only fuzzy hash *and* its full string set must both
@@ -210,12 +307,15 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
   // non-baseline package are ambiguous and never attribute.
   const fallbackEligible = (instrCount: number, stringCount: number): boolean => instrCount >= minInstr && (stringCount >= 1 || instrCount >= 16);
   const fuzzyStringOwners = new Map<string, string[]>();
-  const packages: PackageScore[] = [];
+  // Per-entry function-by-index, built once here and reused in pass 3 below
+  // (fuzzy-only owners) rather than rebuilt — this loop already visits every
+  // entry's full function list once, and a real bulk DB has tens of
+  // thousands of entries.
+  const fnByIndexByEntry = new Map<LoadedSig, Map<number, SigDbFile["functions"][number]>>();
   for (const entry of eligibleDbs) {
-    const score = scorePackage(entry, inventory, targetExact, targetFuzzy, targetStringHash, minInstr);
-    if (score !== null) packages.push(score);
     const owner = `${entry.file.package}@${entry.file.version}`;
     const fnByIndex = new Map(entry.file.functions.map((f) => [f.index, f]));
+    fnByIndexByEntry.set(entry, fnByIndex);
     for (const fn of entry.file.functions) {
       let owners = hashOwners.get(fn.exactHash);
       if (owners === undefined) {
@@ -223,6 +323,14 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
         hashOwners.set(fn.exactHash, owners);
       }
       owners.push(owner);
+      if (!entry.file.toolchainBaseline) {
+        let names = hashOwnerNames.get(fn.exactHash);
+        if (names === undefined) {
+          names = new Set();
+          hashOwnerNames.set(fn.exactHash, names);
+        }
+        names.add(entry.file.package);
+      }
     }
     for (const m of entry.file.modules) {
       if (m.factoryIsBaseline || m.factoryFuzzyHash === null) continue;
@@ -237,7 +345,41 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
       if (!owners.includes(owner)) owners.push(owner);
     }
   }
+
+  // Pass 2: score every package now that `hashOwnerNames` is complete —
+  // ambiguity-aware, so a package's own tier never rests on evidence another
+  // distinct package equally claims (§6.7 above).
+  const packages: PackageScore[] = [];
+  const scoreByOwner = new Map<string, PackageScore>();
+  for (const entry of eligibleDbs) {
+    const score = scorePackage(entry, inventory, targetExact, targetFuzzy, targetStringHash, minInstr, hashOwnerNames);
+    if (score === null) continue;
+    packages.push(score);
+    scoreByOwner.set(`${entry.file.package}@${entry.file.version}`, score);
+  }
   packages.sort((a, b) => tierRank(b.tier) - tierRank(a.tier) || b.exactCoverage - a.exactCoverage);
+
+  // Pass 3: version-tolerant "fuzzy-only" index (see the constant's doc
+  // comment above), populated only from packages whose own score (now known
+  // from pass 2) already cleared medium/high some other way.
+  const fuzzyOnlyOwners = new Map<string, string[]>();
+  for (const entry of eligibleDbs) {
+    const owner = `${entry.file.package}@${entry.file.version}`;
+    const score = scoreByOwner.get(owner);
+    if (score === undefined || score.isBaseline || (score.tier !== "high" && score.tier !== "medium")) continue;
+    const fnByIndex = fnByIndexByEntry.get(entry)!;
+    for (const m of entry.file.modules) {
+      if (m.factoryIsBaseline || m.factoryFuzzyHash === null) continue;
+      const factory = fnByIndex.get(m.factoryFunctionIndex);
+      if (factory === undefined || factory.instrCount < MIN_FUZZY_ONLY_FACTORY_INSTR) continue;
+      let owners = fuzzyOnlyOwners.get(m.factoryFuzzyHash);
+      if (owners === undefined) {
+        owners = [];
+        fuzzyOnlyOwners.set(m.factoryFuzzyHash, owners);
+      }
+      if (!owners.includes(owner)) owners.push(owner);
+    }
+  }
 
   const moduleAttributions: ModuleAttribution[] = inventory.modules.map((m) => {
     let owners = m.exactHash !== null ? (hashOwners.get(m.exactHash) ?? []) : [];
@@ -250,6 +392,17 @@ export function matchInventory(inventory: ModuleInventory, dbs: readonly LoadedS
         if (candidates.length > 0 && distinctPackages.size <= 1) {
           owners = candidates;
           ownerBasis = "fuzzy+strings";
+        }
+      }
+    }
+    if (owners.length === 0 && m.fuzzyHash !== null) {
+      const factoryInstr = inventory.functions[m.factoryFunctionIndex]?.instrCount ?? 0;
+      if (factoryInstr >= MIN_FUZZY_ONLY_FACTORY_INSTR) {
+        const candidates = fuzzyOnlyOwners.get(m.fuzzyHash) ?? [];
+        const distinctPackages = new Set(candidates.map((o) => o.slice(0, o.lastIndexOf("@"))).filter((p) => !BASELINE_NAME.test(p)));
+        if (candidates.length > 0 && distinctPackages.size <= 1) {
+          owners = candidates;
+          ownerBasis = "fuzzy-only";
         }
       }
     }

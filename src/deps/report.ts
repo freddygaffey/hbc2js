@@ -82,6 +82,17 @@ export interface DepsReport {
   readonly totalFunctions: number;
   readonly totalModules: number;
   readonly reactNativeVersion: string | null;
+  /** null when no react-native version was detected at all; otherwise
+   *  whether `reactNativeVersion` falls inside the RN release range the
+   *  parsed HBC bytecode version is actually known to ship (F4,
+   *  issue #14 — "reported react-native 0.72.17 for a HBC 96 bundle"). See
+   *  `reconcileReactNativeVersion` below. */
+  readonly reactNativeVersionConsistentWithHbc: boolean | null;
+  /** Human-readable RN range this bundle's HBC version is documented to ship
+   *  (`docs/TOOLCHAIN.md`'s version table), or null for an HBC version with
+   *  no known range. Populated whenever a range is known, not just on a
+   *  mismatch, so `--json` consumers can show it either way. */
+  readonly reactNativeVersionExpectedRange: string | null;
   readonly confirmedDeps: readonly ConfirmedDep[];
   readonly guessedDeps: readonly GuessedDep[];
   readonly hintedDeps: readonly HintedDep[];
@@ -95,16 +106,127 @@ export interface DepsReport {
     readonly guessedModules: number;
     readonly unattributedModules: number;
     readonly percentAttributed: number;
+    /** Sum of `instrCount` (`src/deps/match.ts`'s `ModuleAttribution.instrCount`)
+     *  over every module in the bundle — the size denominator for every
+     *  "...ByWeight" figure below (F2, issue #14: module-COUNT attribution
+     *  can look fine while the actual bytecode is nearly untouched, since
+     *  bloat is distributed very unevenly across modules — see
+     *  `docs/DEPS.md`'s worked HBC96 example). */
+    readonly totalInstrWeight: number;
+    /** Instruction weight of every module with a signature-DB owner, any
+     *  `ownerBasis` (exact, fuzzy+strings, or the version-tolerant
+     *  fuzzy-only tier) — i.e. everything counted in `matchedModules`. This
+     *  is real, hash-verified attribution (never a guess-stage evidence
+     *  clue), and is the number `percentVerifiedByWeight` headlines. */
+    readonly matchedInstrWeight: number;
+    readonly guessedInstrWeight: number;
+    readonly hintedInstrWeight: number;
+    readonly unattributedInstrWeight: number;
+    /** `matchedInstrWeight` broken out by how the owner was established —
+     *  transparency into how much of "matched" rests on the version-tolerant
+     *  fuzzy-only tier vs. the two higher-confidence bases. */
+    readonly matchedInstrWeightByBasis: {
+      readonly exact: number;
+      readonly fuzzyStrings: number;
+      readonly fuzzyOnly: number;
+    };
+    /** `(matchedInstrWeight + guessedInstrWeight) / totalInstrWeight * 100`
+     *  — the by-weight mirror of `percentAttributed` above. */
+    readonly percentAttributedByWeight: number;
+    /** THE headline number (issue #14 F2): what fraction of the bundle's
+     *  actual bytecode, by instruction count, is verified (signature-matched,
+     *  any basis) library code that a future M6 pass could strip/replace
+     *  with `require()` — as opposed to `percentAttributed`'s module-COUNT
+     *  fraction, which a handful of huge unmatched app modules (or a handful
+     *  of tiny matched ones) can make look arbitrarily better or worse than
+     *  the code actually is. Excludes guessed/hinted deliberately: those are
+     *  evidence-based leads a human should investigate, never something this
+     *  tool claims to have verified (D17a: "confidence never crosses into
+     *  code substitution" outside a real signature match). */
+    readonly percentVerifiedByWeight: number;
   };
+}
+
+// docs/TOOLCHAIN.md's "Bytecode versions" table, condensed to the RN
+// major.minor range each HBC version is documented to ship (F4, issue #14).
+// Deliberately conservative/wide (e.g. HBC96 spans RN 0.73 through 0.81 —
+// "spans several years and both distribution mechanisms" per that doc) so a
+// real, correctly-matched version is never flagged as inconsistent; the goal
+// is catching a match that's flatly *wrong* (a different HBC era's version
+// entirely — the issue's own example: react-native@0.72.17, an HBC94
+// version, reported for an HBC96 bundle), not nitpicking exact patches.
+interface RnRange {
+  readonly minMajor: number;
+  readonly minMinor: number;
+  readonly maxMajor: number;
+  readonly maxMinor: number;
+  readonly label: string;
+}
+const HBC_TO_RN_RANGE: ReadonlyMap<number, RnRange> = new Map([
+  [84, { minMajor: 0, minMinor: 64, maxMajor: 0, maxMinor: 69, label: "RN 0.64.x-0.69.x" }],
+  [85, { minMajor: 0, minMinor: 69, maxMajor: 0, maxMinor: 69, label: "RN 0.69.x" }],
+  [89, { minMajor: 0, minMinor: 70, maxMajor: 0, maxMinor: 70, label: "RN 0.70.x" }],
+  [90, { minMajor: 0, minMinor: 71, maxMajor: 0, maxMinor: 71, label: "RN 0.71.x" }],
+  [94, { minMajor: 0, minMinor: 72, maxMajor: 0, maxMinor: 72, label: "RN 0.72.x" }],
+  [96, { minMajor: 0, minMinor: 73, maxMajor: 0, maxMinor: 81, label: "RN 0.73.x-0.81.x" }],
+  [98, { minMajor: 0, minMinor: 82, maxMajor: 0, maxMinor: 87, label: "RN 0.82.x-0.87.x" }],
+  // v99 ("1000.x" line per docs/TOOLCHAIN.md) has no documented upper bound
+  // yet — Number.MAX_SAFE_INTEGER-ish ceiling so it never flags a mismatch.
+  [99, { minMajor: 0, minMinor: 88, maxMajor: 999999, maxMinor: 999999, label: "RN >=0.88 / 1000.x line" }],
+]);
+
+/** Parses a leading `<major>.<minor>` off a semver-ish string (tolerates a
+ *  pre-release/build suffix, e.g. `8.0.0-alpha.44` — only major.minor is
+ *  compared against `docs/TOOLCHAIN.md`'s per-HBC-version ranges, since
+ *  those ranges are already minor-version-grained). Returns null for
+ *  anything that doesn't start with two dot-separated integers. */
+function parseMajorMinor(version: string): { readonly major: number; readonly minor: number } | null {
+  const m = /^(\d+)\.(\d+)/.exec(version);
+  if (m === null) return null;
+  return { major: Number(m[1]), minor: Number(m[2]) };
+}
+
+function isVersionInRange(version: string, range: RnRange): boolean {
+  const parsed = parseMajorMinor(version);
+  if (parsed === null) return true; // can't parse it -> don't flag a false mismatch
+  const point = parsed.major * 1000 + parsed.minor;
+  const min = range.minMajor * 1000 + range.minMinor;
+  const max = range.maxMajor * 1000 + range.maxMinor;
+  return point >= min && point <= max;
 }
 
 /** The `react-native`/`react-native-foundation` package's own matched
  *  version is the most reliable RN-version signal available pre-`--confirm`
- *  (D17a: "detect the app's RN version ... since it pins the toolchain"). */
+ *  (D17a: "detect the app's RN version ... since it pins the toolchain").
+ *  F4 (issue #14): among candidates tied at the best confidence, prefer one
+ *  whose version is consistent with the bundle's own parsed HBC version
+ *  (`docs/TOOLCHAIN.md`'s table) over one that isn't — the exact-hash
+ *  matcher has no notion of "this is the wrong era", so without this a
+ *  bulk/starter DB's nearest available version can silently outrank the
+ *  genuinely-correct one on `exactCoverage` alone. */
 export function detectReactNativeVersion(matchReport: MatchReport): string | null {
   const candidates = matchReport.packages.filter((p) => (p.package === "react-native" || p.package === "react-native-foundation") && (p.tier === "high" || p.tier === "medium"));
-  candidates.sort((a, b) => b.exactCoverage - a.exactCoverage);
+  const range = HBC_TO_RN_RANGE.get(matchReport.hbcVersion);
+  candidates.sort((a, b) => {
+    if (range !== undefined) {
+      const aOk = isVersionInRange(a.version, range) ? 1 : 0;
+      const bOk = isVersionInRange(b.version, range) ? 1 : 0;
+      if (aOk !== bOk) return bOk - aOk;
+    }
+    return b.exactCoverage - a.exactCoverage;
+  });
   return candidates[0]?.version ?? null;
+}
+
+/** F4: does the version `detectReactNativeVersion` picked (if any) actually
+ *  fall inside the RN range this bundle's own parsed HBC version ships?
+ *  Returns `{ consistent: null, range }` when no react-native version was
+ *  detected at all (nothing to reconcile) rather than false. */
+export function reconcileReactNativeVersion(hbcVersion: number, reactNativeVersion: string | null): { readonly consistent: boolean | null; readonly expectedRange: string | null } {
+  const range = HBC_TO_RN_RANGE.get(hbcVersion) ?? null;
+  if (reactNativeVersion === null) return { consistent: null, expectedRange: range?.label ?? null };
+  if (range === null) return { consistent: null, expectedRange: null };
+  return { consistent: isVersionInRange(reactNativeVersion, range), expectedRange: range.label };
 }
 
 // Toolchain/foundation baseline files (docs/PACKAGE-SIGNATURES.md §5.2:
@@ -255,6 +377,44 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
   const trulyUnattributed = matchReport.unattributedModules.length - guessedModulesCount;
   const percentAttributed = matchReport.totalModules === 0 ? 0 : ((matchedModules + guessedModulesCount) / matchReport.totalModules) * 100;
 
+  // F2 (issue #14): the same matched/guessed/hinted/unattributed split as
+  // above, but weighted by each module's `instrCount` instead of counted —
+  // module-count attribution can look healthy while the actual bytecode
+  // (what an M6 pass would actually strip) is barely touched, since a real
+  // app's modules vary hugely in size (docs/DEPS.md's HBC96 worked example:
+  // 88/422 react-native modules matched by count sounds far better than the
+  // ~1.6% of instructions those 88 modules actually cover). One pass over
+  // every module attribution (not just the unattributed ones) covers every
+  // module in the bundle exactly once.
+  let totalInstrWeight = 0;
+  let matchedInstrWeight = 0;
+  let exactWeight = 0;
+  let fuzzyStringsWeight = 0;
+  let fuzzyOnlyWeight = 0;
+  let guessedInstrWeight = 0;
+  let hintedInstrWeight = 0;
+  let unattributedInstrWeight = 0;
+  for (const m of matchReport.moduleAttributions) {
+    totalInstrWeight += m.instrCount;
+    if (m.owners.length > 0) {
+      matchedInstrWeight += m.instrCount;
+      if (m.ownerBasis === "exact") exactWeight += m.instrCount;
+      else if (m.ownerBasis === "fuzzy+strings") fuzzyStringsWeight += m.instrCount;
+      else if (m.ownerBasis === "fuzzy-only") fuzzyOnlyWeight += m.instrCount;
+    } else if (guessedModuleIds.has(m.factoryFunctionIndex)) {
+      guessedInstrWeight += m.instrCount;
+    } else if (hintedModuleIds.has(m.factoryFunctionIndex)) {
+      hintedInstrWeight += m.instrCount;
+    } else {
+      unattributedInstrWeight += m.instrCount;
+    }
+  }
+  const percentAttributedByWeight = totalInstrWeight === 0 ? 0 : ((matchedInstrWeight + guessedInstrWeight) / totalInstrWeight) * 100;
+  const percentVerifiedByWeight = totalInstrWeight === 0 ? 0 : (matchedInstrWeight / totalInstrWeight) * 100;
+
+  const reactNativeVersion = detectReactNativeVersion(matchReport);
+  const rnReconcile = reconcileReactNativeVersion(matchReport.hbcVersion, reactNativeVersion);
+
   const confirmedVersionByPackage = new Map(confirmedDeps.map((d) => [d.package, d.version]));
   const moduleOwnership: ModuleOwnership[] = [];
   for (const m of matchReport.moduleAttributions) {
@@ -273,7 +433,9 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
     hbcVersion: matchReport.hbcVersion,
     totalFunctions: matchReport.totalFunctions,
     totalModules: matchReport.totalModules,
-    reactNativeVersion: detectReactNativeVersion(matchReport),
+    reactNativeVersion,
+    reactNativeVersionConsistentWithHbc: rnReconcile.consistent,
+    reactNativeVersionExpectedRange: rnReconcile.expectedRange,
     confirmedDeps,
     guessedDeps,
     hintedDeps,
@@ -286,6 +448,14 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
       guessedModules: guessedModulesCount,
       unattributedModules: Math.max(0, trulyUnattributed),
       percentAttributed,
+      totalInstrWeight,
+      matchedInstrWeight,
+      guessedInstrWeight,
+      hintedInstrWeight,
+      unattributedInstrWeight,
+      matchedInstrWeightByBasis: { exact: exactWeight, fuzzyStrings: fuzzyStringsWeight, fuzzyOnly: fuzzyOnlyWeight },
+      percentAttributedByWeight,
+      percentVerifiedByWeight,
     },
   };
 }
@@ -302,7 +472,17 @@ export function formatReportText(report: DepsReport): string {
   const lines: string[] = [];
   lines.push(`hbc2js deps: ${report.input}`);
   lines.push(`  hbc version: ${report.hbcVersion}, functions: ${report.totalFunctions}, modules: ${report.totalModules}`);
-  if (report.reactNativeVersion !== null) lines.push(`  react-native: ${report.reactNativeVersion} (detected from matched module signatures)`);
+  if (report.reactNativeVersion !== null) {
+    let rnLine = `  react-native: ${report.reactNativeVersion} (detected from matched module signatures)`;
+    if (report.reactNativeVersionConsistentWithHbc === false) {
+      rnLine += ` — WARNING: inconsistent with parsed HBC v${report.hbcVersion} (expected ${report.reactNativeVersionExpectedRange ?? "a different range"})`;
+    } else if (report.reactNativeVersionExpectedRange !== null) {
+      rnLine += ` [consistent with HBC v${report.hbcVersion}'s ${report.reactNativeVersionExpectedRange}]`;
+    }
+    lines.push(rnLine);
+  } else if (report.reactNativeVersionExpectedRange !== null) {
+    lines.push(`  react-native: not detected (HBC v${report.hbcVersion} is documented to ship ${report.reactNativeVersionExpectedRange})`);
+  }
   lines.push("");
   lines.push(`== confirmed dependencies (${report.confirmedDeps.length}) ==`);
   if (report.confirmedDeps.length === 0) lines.push("  (none)");
@@ -329,5 +509,11 @@ export function formatReportText(report: DepsReport): string {
   }
   lines.push("");
   lines.push(`summary: ${report.attribution.percentAttributed.toFixed(1)}% of modules attributed (${report.attribution.matchedModules} matched + ${report.attribution.guessedModules} guessed of ${report.attribution.totalModules})`);
+  // F2 (issue #14): the by-instruction-weight headline — module-count
+  // attribution alone can look far healthier than the actual bytecode
+  // coverage, since bloat is distributed very unevenly across modules.
+  const a = report.attribution;
+  lines.push(`         ${a.percentVerifiedByWeight.toFixed(1)}% of bundle INSTRUCTIONS verified by signature match (${a.matchedInstrWeight}/${a.totalInstrWeight} instr — exact ${a.matchedInstrWeightByBasis.exact}, fuzzy+strings ${a.matchedInstrWeightByBasis.fuzzyStrings}, fuzzy-only ${a.matchedInstrWeightByBasis.fuzzyOnly}) — THIS is the number that matters for how much library bloat is actually recognised`);
+  lines.push(`         ${a.percentAttributedByWeight.toFixed(1)}% of bundle instructions attributed overall (verified + guessed; guessed is a lead, not a strip-safe match)`);
   return lines.join("\n");
 }

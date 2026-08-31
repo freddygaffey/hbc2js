@@ -203,22 +203,40 @@ export async function scoreAgainstTruth(hbcPath, truth, depsOptions = { offline:
   const remaining = new Set([...truthPkgs].filter((p) => !confirmed.has(p)));
   const ratio = (n, d) => (d === 0 ? null : n / d);
 
+  // Module-COUNT accuracy (unweighted) plus, per issue #14 F2, the same
+  // breakdown weighted by `instrCount` — module count treats a 3-instruction
+  // re-export and a 2,000-instruction library core identically, so it can
+  // look far healthier than how much of the bundle's actual bytecode was
+  // recovered. `instrWeight` mirrors every counter 1:1 by summing
+  // `m.instrCount` instead of incrementing by 1.
   const perModule = { withTruth: 0, correct: 0, viaDependent: 0, wrong: 0, unattributed: 0, appModulesAttributed: 0 };
+  const instrWeight = { withTruth: 0, correct: 0, viaDependent: 0, wrong: 0, unattributed: 0, appModulesAttributed: 0 };
   const wrongModules = [];
   for (const m of result.matchReport.moduleAttributions) {
     const t = m.localModuleId === null ? undefined : truth.modules[String(m.localModuleId)];
     const owner = m.owners[0] === undefined ? null : ownerPackage(m.owners[0]);
     if (t === undefined) continue;
     if (t.package === null) {
-      if (owner !== null) perModule.appModulesAttributed++;
+      if (owner !== null) {
+        perModule.appModulesAttributed++;
+        instrWeight.appModulesAttributed += m.instrCount;
+      }
       continue;
     }
     perModule.withTruth++;
-    if (owner === null) perModule.unattributed++;
-    else if (owner === t.package) perModule.correct++;
-    else if ((truth.transitiveOf?.[t.package] ?? []).includes(owner)) perModule.viaDependent++;
-    else {
+    instrWeight.withTruth += m.instrCount;
+    if (owner === null) {
+      perModule.unattributed++;
+      instrWeight.unattributed += m.instrCount;
+    } else if (owner === t.package) {
+      perModule.correct++;
+      instrWeight.correct += m.instrCount;
+    } else if ((truth.transitiveOf?.[t.package] ?? []).includes(owner)) {
+      perModule.viaDependent++;
+      instrWeight.viaDependent += m.instrCount;
+    } else {
       perModule.wrong++;
+      instrWeight.wrong += m.instrCount;
       wrongModules.push({ id: m.localModuleId, truth: t.package, reported: owner, basis: m.ownerBasis });
     }
   }
@@ -233,7 +251,16 @@ export async function scoreAgainstTruth(hbcPath, truth, depsOptions = { offline:
     guessed: { reported: [...guessed].sort(), precision: ratio(guessedTP.length, guessed.size), recall: ratio(inter(guessed, remaining).length, remaining.size), falsePositives: [...guessed].filter((p) => !truthPkgs.has(p)), misses: [...remaining].filter((p) => !guessed.has(p)) },
     hinted: { reported: [...hinted].sort(), precision: ratio(hintedTP.length, hinted.size), falsePositives: [...hinted].filter((p) => !truthPkgs.has(p)) },
     versionMismatches: r.confirmedDeps.filter((d) => truthPkgs.has(d.package) && truth.packages[d.package] !== null && truth.packages[d.package] !== d.version).map((d) => `${d.package}: reported ${d.version}, truth ${truth.packages[d.package]}`),
+    reactNativeVersionConsistentWithHbc: r.reactNativeVersionConsistentWithHbc,
+    reactNativeVersionExpectedRange: r.reactNativeVersionExpectedRange,
     perModule: { ...perModule, accuracy: ratio(perModule.correct, perModule.withTruth), wrongModules },
+    // Instruction-weight mirror of `perModule` (issue #14 F2) — recall over
+    // the *known-library* modules' actual bytecode mass, i.e. "of all the
+    // instructions truth says belong to a real dependency, how many did this
+    // tool's own module attribution actually get right." Distinct from (and
+    // a tighter number than) `attribution.percentVerifiedByWeight`, which is
+    // over the *whole* bundle including this app's own first-party code.
+    perModuleByWeight: { ...instrWeight, accuracy: ratio(instrWeight.correct, instrWeight.withTruth) },
     attribution: r.attribution,
   };
 }
@@ -245,7 +272,12 @@ function pct(x) {
 export function formatScore(s) {
   const lines = [];
   lines.push(`deps-truth: ${s.input}${s.hbcSha256Matches ? "" : "  (WARNING: .hbc sha256 differs from the truth file's)"}`);
-  lines.push(`  truth: ${s.truthPackages.length} packages (${s.directPackages.length} direct: ${s.directPackages.join(", ")}); react-native detected: ${s.reactNativeVersion ?? "null"}`);
+  let rnLine = `  truth: ${s.truthPackages.length} packages (${s.directPackages.length} direct: ${s.directPackages.join(", ")}); react-native detected: ${s.reactNativeVersion ?? "null"}`;
+  if (s.reactNativeVersion !== null) {
+    if (s.reactNativeVersionConsistentWithHbc === false) rnLine += ` (WARNING: inconsistent with parsed HBC version, expected ${s.reactNativeVersionExpectedRange ?? "a different range"})`;
+    else if (s.reactNativeVersionExpectedRange !== null) rnLine += ` [consistent with ${s.reactNativeVersionExpectedRange}]`;
+  }
+  lines.push(rnLine);
   lines.push(`  confirmed: ${s.confirmed.reported.length} reported, precision ${pct(s.confirmed.precision)}, recall ${pct(s.confirmed.recall)} of all / ${pct(s.confirmed.directRecall)} of direct`);
   if (s.confirmed.falsePositives.length > 0) lines.push(`    FALSE POSITIVES: ${s.confirmed.falsePositives.join(", ")}`);
   if (s.confirmed.misses.length > 0) lines.push(`    misses: ${s.confirmed.misses.join(", ")}`);
@@ -258,6 +290,15 @@ export function formatScore(s) {
   const m = s.perModule;
   lines.push(`  per-module: ${m.withTruth} library modules — ${m.correct} correct (${pct(m.accuracy)}), ${m.viaDependent} attributed to the package that depends on them, ${m.wrong} wrong package, ${m.unattributed} unattributed; ${m.appModulesAttributed} app modules wrongly attributed`);
   for (const w of m.wrongModules.slice(0, 10)) lines.push(`    module ${w.id}: truth ${w.truth}, reported ${w.reported} (${w.basis})`);
+  // F2 (issue #14): recall over the known-library modules' actual bytecode
+  // mass, not just their count — the number this task's headline problem
+  // ("stripped only ~1.6% of code by instruction weight") is stated in.
+  const w = s.perModuleByWeight;
+  lines.push(`  per-module BY INSTRUCTION WEIGHT: ${w.withTruth} instr in library modules — ${w.correct} correct (${pct(w.accuracy)}), ${w.viaDependent} via dependent, ${w.wrong} wrong, ${w.unattributed} unattributed`);
+  if (s.attribution !== undefined) {
+    const a = s.attribution;
+    lines.push(`  whole-bundle by weight: ${pct(a.percentVerifiedByWeight / 100)} of ALL bundle instructions verified (signature-matched: ${a.matchedInstrWeight}/${a.totalInstrWeight}), ${pct(a.percentAttributedByWeight / 100)} attributed overall (+guessed)`);
+  }
   return lines.join("\n");
 }
 
