@@ -1,0 +1,63 @@
+# Consolidation sprint — before rung 8
+
+Source: Fred's external review list (2026-08-31), triaged by the orchestrator.
+Purpose: turn "492/492 green" into evidence that survives a fresh set of eyes,
+and fix the process debts that made the last two days expensive. Nothing on the
+ladder (rung 8+) starts until §A is done. Work runs in the standard two slots
+(1 ladder / 1 support) — during the sprint both slots are sprint items.
+
+Verdicts: **adopt** · **adopted** (already in force) · **modify** (adopted with a
+change, stated) · **defer** (after the sprint, reason stated). Cost S/M/L is
+agent time (S < 30 min, M ~1 h, L multi-agent).
+
+## A. Sprint items (in execution order)
+
+| # | Item | Verdict | Cost | Notes / owner |
+|---|------|---------|------|---------------|
+| 0 | **Pass pipeline is ~250× slower than baseline on a real bundle** (rn-template 4199 fns: 0.7 s passes-off → >180 s passes-on; PUSHBACK P-1) | adopt (added; not on the external list) | M | Profile, find the superlinear pass, fix. Blocks #2, `--split` passes, CI app-metrics. Fable. |
+| 3 | Bisect + fix `01-if-else-chain.min@84/94` wrong output; delete `KNOWN_WRONG_OUTPUT` (`src/harness/tiers.ts:162`); confirm the hang P0 is closed beyond label-clean | adopt | M | `KNOWN_HANGS` is already deleted (e239662); the remaining exclusion is a real wrong-output bug → construct fixture + fix. |
+| 1 | Held-out fixtures: 20+ new construct programs by a fresh agent that never saw the build; trace-oracle pass rate reported separately from the 59-fixture number | adopt | M | Fresh Sonnet, `tests/fixtures/heldout/` (own build.sh), report in STATUS as its own line. Fixtures are frozen after the first run; build agents never edit them. |
+| 2 | Behavioural verification on a real bundle: per-module recompile-and-diff, or `tools/device-roundtrip.sh` on react-navigation-example | adopt | M–L | Needs #0 first (passes-on decompile must finish). Device run needs the tablet attached — Fred. |
+| 26 | Triage the two v99 findings (20-symbol-keyed-properties, 21-class-private-fields) | adopt | S | Same template as the six triaged ones. |
+| 24 | Adversarial fixtures 28/29 have wrong `expected.txt` (force-parsed as ES modules) | adopt | S | Fix files + a test that expected.txt is produced in script mode. |
+| 25 | Fixture 36: `ladder.ts` compares printLines projection vs VM raw stdout+stderr → legitimately-crashing programs look divergent | adopt | S | Fix the comparison; regression test with a deliberately-throwing fixture. |
+| 4 | Mutation-test the pass checkers (Stryker over `src/passes/*/check.ts`) | adopt | M | The harness proves itself; the checkers do not yet. One agent, report survivors as BUGS rows. |
+| 5 | Stage-B framework gap: no sibling/parent-list visibility for AST passes; capping several rungs below spec | adopt | M | One framework change with its own spec section in `src/passes/README.md`; re-measure the capped rungs after. |
+| 27 | Gate layout classes A/D, the arm64 build, and the placeholder opcode behind a flag or an "unverified" marker that refuses real input | adopt | S–M | Unevidenced code must not run silently. |
+| 28 | Partial bulk sigdb must not be layered into a real DB until baseline subtraction is done — hard check in `tools/pkgsig/fetch-db.sh` | adopt | S | Currently a doc note. |
+| 6 | Soften "provably equivalent" in README (`README.md:44`) to what is evidenced until #1 and #2 pass | adopt | S | Orchestrator does this by hand now. |
+
+## B. Testing rules → `CLAUDE.md`, each enforced by a gate test
+
+| # | Rule | Verdict | Notes |
+|---|------|---------|-------|
+| 7 | No exact-output assertions on shared fixtures; a rung test asserts rung-owned properties or uses a rung-private fixture | adopt | Known design debt (every new rung broke the previous rungs' string assertions). Enforce like `tests/gate/passes/imports.test.ts`. |
+| 8 | Only the spec agent writes tests; any diff under `tests/` is flagged; CI fails if test count or coverage drops | **modify** | The spec agent writes the *acceptance* tests (they ship with the spec, before implementation). Implementers may add regression tests — the "every bug fix ships a test" rule requires it — but every `tests/` diff is listed in the landing report and reviewed. Test-count-drop CI check: adopt. |
+| 9 | Golden/snapshot regeneration needs Fred's approval, reviewed as a batch | adopt | Orchestrator queues them; never regenerated inside an implementation task. |
+| 10 | No fixture leaves the gate without an issue and an owner; exclusion tables are debt | adopt | `tiers.ts` exclusions must cite a BUGS row; test enforces. |
+
+## C. Agent workflow
+
+| # | Rule | Verdict | Notes |
+|---|------|---------|-------|
+| 11 | One worktree per agent; nothing lands red; full gate on a clean checkout of main after every merge | adopted (2026-08-31) | Worktrees under `.claude/worktrees/`; orchestrator merges, gates, pushes. |
+| 12 | "Attributable to concurrent work" is not a landing note; reproduce in isolation or fix | adopt | Goes in AGENT-BRIEF. |
+| 13 | "Not pushed" is not a state; push on landing | adopted | Orchestrator pushes every landed commit and every WIP branch. |
+| 14 | STATUS.md → one screen, fixed template (milestones, gate numbers, open bugs, blocked, decisions needed); narrative → AGENT-LOG | adopt | It is 986 lines today. One Sonnet task; the template goes in `docs/AGENT-WORKFLOW.md`. |
+| 15 | Orchestrator restarts from a handoff doc when context fills | adopted | Memory HANDOFF + this doc. |
+| 16 | Adversarial reviewers: fresh context, different model family where possible | adopt | Sonnet reviews Fable/Opus work and vice-versa. |
+| 17 | Cheap validators produce findings, not verdicts; the suite is the gate | adopt | Reviewer reports list findings; MERGE is decided by the gate + orchestrator. |
+
+## D. Ladder, after the sprint
+
+| # | Item | Verdict | Notes |
+|---|------|---------|-------|
+| 18 | Order rungs by measured construct frequency on real bundles (extend `tools/passes-metrics.mjs` to react-navigation/expensify for every rung) | adopt | Needs #0. Re-orders batches 2/3; specs already written stay valid. |
+| 19 | Keep measured-not-hoped floors; show gap-to-spec-target as a number in STATUS | adopt | Part of #14's template. |
+| 20 | Full sweep on every merge to main or nightly | adopt | `sweep.yml` exists; make it nightly + on merge. |
+
+## E. Fred's side (not agent work)
+21 review in sessions at set times, batch decisions · 22 one afternoon reading loop-cond's match/rewrite/check + ten gate tests · 23 don't run continuously yourself.
+
+## Not adopted / deferred
+- Nothing rejected outright. #2's device leg and #22 need Fred physically.
