@@ -693,6 +693,105 @@ fetch against the app's *actual* detected version, not a further matching-
 algorithm change. See the top-level report for this task's full recall
 write-up.
 
+### D17f proof (2026-08-31)
+
+D17f's claim (`docs/DECISIONS.md` D17f): if the signature DB carries an
+app's real dependencies at their **exact** npm versions, `hbc2js deps`
+recovers ~all of them. Proof-of-concept on
+`tests/fixtures/bundles/react-navigation-example-0.85.3/` — the one app
+fixture with both a real lockfile (exact versions) and D17d Metro
+source-map ground truth (`deps-truth.json`). Scripts:
+`tools/pkgsig/d17f-build-exact-db.mjs` (fingerprints candidates via
+`src/deps/confirm.ts`'s `confirmCandidates` — the same single-package
+builder `hbc2js deps --confirm` uses, reused as-is, not rewritten) and
+`tools/pkgsig/d17f-score.mjs` (before/after via `tools/deps-truth.mjs`'s
+`scoreAgainstTruth`, also reused as-is).
+
+**Exact versions**, resolved from `react-navigation/react-navigation`'s
+`pnpm-lock.yaml` at the fixture's pinned commit (non-workspace deps) and
+from `deps-truth.json` itself (the `@react-navigation/*` + 2 sibling
+packages, which resolve via the pnpm workspace straight to their own
+`package.json`s — see that fixture's BUILD.md "workspace-package caveat"):
+7 were already in the shared DB (`tools/pkgsig/db/`) at these exact
+versions from earlier work (`react-native-gesture-handler@3.0.2`,
+`-reanimated@4.5.3`, `-safe-area-context@5.7.0`, `-screens@4.26.2`,
+`@react-native-async-storage/async-storage@2.2.0`,
+`@react-navigation/{native@8.0.0-alpha.44,stack@8.0.0-alpha.53}`); 11 more
+were fingerprinted fresh into a scratch DB for this task
+(`react-native-worklets@0.11.3`, `@react-navigation/{core@8.0.0-alpha.34,
+routers@8.0.0-alpha.17, elements@3.0.0-alpha.48, drawer@8.0.0-alpha.51,
+devtools@8.0.0-alpha.35, bottom-tabs@8.0.0-alpha.50,
+native-stack@8.0.0-alpha.52, material-top-tabs@8.0.0-alpha.49}`,
+`react-native-drawer-layout@5.0.0-alpha.18`, `react-native-tab-view@5.0.0-
+alpha.15`) — 18 exact-version packages total feeding the "after" DB.
+10/11 of the fresh candidates fingerprinted and matched at medium/high tier
+against this app's own bundle (`confirmCandidates` gates a write on that);
+`@react-navigation/devtools` did not — its 0 exact-hash coverage is
+consistent with it being dev-only tooling Metro strips from a release
+build, not a pipeline failure.
+
+**Gotcha found along the way**: bare `/tmp` is sandbox-restricted in the
+agent environment this proof was built in such that `npm`/`npx react-native
+bundle` subprocesses can silently fail to see files just installed there
+(`Unable to resolve module <pkg>` immediately after a successful `npm
+install` of that exact package) — not a `confirmCandidates` bug; the
+scratch project must live under a genuinely-writable scratch directory
+(this repo's agent scratchpad convention), not `/tmp` directly. Noted here
+since it would otherwise look like flaky npm/Metro behaviour.
+
+**Before → after** (`hbc2js deps --offline`, no `--confirm`; before =
+shared starter DB only; after = + the 18-package exact-version scratch DB
+layered via `--sigdb`), scored against the app's own `deps-truth.json` (75
+total truth packages, 60 direct):
+
+| | before (shared DB only) | after (+ exact-version DB) |
+|---|---|---|
+| confirmed packages (of 75 truth) | 9, recall 12.0% (15.0% of direct) | 16, recall 21.3% (21.7% of direct) |
+| confirmed-tier false positives | 0 | 0 |
+| **of the 18 exact-version-targeted packages specifically** | 7/18 confirmed (39%) | **14/18 confirmed (78%)** |
+| per-module attribution (count) | 420/1547 correct (27.1%) | 410/1547 correct (26.5%) |
+| per-module attribution (instr. weight) | 100012/292497 correct (34.2%) | 99484/292497 correct (34.0%) |
+
+**Verdict: D17f is validated at the package-identification level, not (yet)
+at the per-module-attribution level.** Exact-version fingerprinting took
+this app's own targeted-dependency recall from 39% to 78% with zero new
+false positives — strong, clean signal that "seed the DB from this app's
+real versions" does what D17f claims for *whether a package is present*.
+It did **not** move whole-bundle module/weight attribution, and nudged both
+very slightly negative (27.1%→26.5%, 34.2%→34.0%) — inside noise, but
+worth naming honestly rather than rounding to "unchanged": adding 10 new
+`@react-navigation/*`-family signatures increases *sibling* hash collisions
+(these packages genuinely share internal generated boilerplate — the same
+cross-package-ambiguity mechanism `docs/PACKAGE-SIGNATURES.md` §6.7
+documents for the 32,708-signature bulk DB, except that gate excludes a
+hash only once ≥20 distinct packages claim it, calibrated for ecosystem-
+wide collisions and not triggered by a ~10-package sibling family), so a
+few modules that were previously (sometimes accidentally) attributed
+correctly get reassigned to a related-but-wrong sibling once more siblings
+are candidates. 4/18 targeted packages remained unconfirmed after
+fingerprinting: 1 genuinely absent from the bundle (`devtools`, above) and
+3 (`react-native-worklets`, `@react-navigation/routers`,
+`react-native-tab-view`) that matched medium/high in isolation
+(`confirmCandidates`' own single-candidate gate) but fell back below the
+confirmed threshold once scored together with the other 17 signatures plus
+the shared DB — the same sibling-collision dilution, not a fingerprinting
+failure. Also observed, unrelated to this task's own DB work and not
+investigated further (out of this task's file ownership): both before and
+after report `@react-navigation/native`'s confirmed version as
+`8.0.0-alpha.21` against a truth of `8.0.0-alpha.44` — the signature file
+itself is the correct `.44` (`tools/pkgsig/db/@react-navigation__native@
+8.0.0-alpha.44__hbc98.json`), so this looks like a version-string sourced
+from elsewhere in the match/report path, not the DB entry; flagged for
+whoever owns `src/deps/match.ts`/`report.ts` next.
+
+**Reproduce**: `tests/fixtures/bundles/react-navigation-example-0.85.3/
+fetch.sh` (regenerates the `.hbc` + `deps-truth.json`, not committed — see
+that fixture's BUILD.md), then `node tools/pkgsig/d17f-build-exact-db.mjs
+<scratchDir>` (repeat per-package with a 3rd arg if any candidate hits the
+`/tmp`-sandbox gotcha above), copy the 7 already-shared-DB files it lists
+into `<scratchDir>/sigdb/`, then `node tools/pkgsig/d17f-score.mjs
+<scratchDir>`.
+
 ## Shared DB size
 
 `tools/pkgsig/db` is ~16 MB as of this task (40 signature files + baselines,
