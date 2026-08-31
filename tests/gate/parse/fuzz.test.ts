@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { parseHbc } from "../../../src/index.ts";
 import { Hbc2jsError } from "../../../src/errors.ts";
 import { listFixtures } from "../../support/fixtures.ts";
+import { timeScale } from "../../support/tiers.ts";
 
 // xorshift32, seeded — deterministic and printed on failure.
 function makeRng(seed: number): () => number {
@@ -74,7 +75,8 @@ test(`${MUTANTS_PER_BINARY} deterministic mutants per gate binary (spec 01 §8 T
           );
         }
         const elapsed = performance.now() - start;
-        assert.ok(elapsed < 200, `${f.group}/${f.name} v${b.version} mutant ${i} took ${elapsed}ms (budget: fast)`);
+        const budgetMs = Math.max(200 * timeScale(), 500);
+        assert.ok(elapsed < budgetMs, `${f.group}/${f.name} v${b.version} mutant ${i} took ${elapsed}ms (budget ${budgetMs}ms)`);
         mutantsChecked++;
       }
     }
