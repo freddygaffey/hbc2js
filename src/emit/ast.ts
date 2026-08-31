@@ -29,6 +29,17 @@ export type Expr =
   | { readonly k: "array"; readonly elements: readonly Expr[] }
   | { readonly k: "object"; readonly props: readonly ObjectProp[] }
   | { readonly k: "seq"; readonly exprs: readonly Expr[] }
+  /**
+   * F14 (docs/specs/passes/14-template-literal.md §3): `` `q0${e0}q1…` ``.
+   * Invariant `quasis.length === exprs.length + 1`. Each `quasis[i]` is the
+   * **raw** source text of the chunk — the printer emits it verbatim between
+   * the backticks and `${`/`}` and escapes nothing, so whoever builds the
+   * node (the `template-literal` rung's writer) owns escaping of `` ` ``,
+   * `\` and `${`.
+   */
+  | { readonly k: "template"; readonly quasis: readonly string[]; readonly exprs: readonly Expr[] }
+  /** F14: `` tag`…` `` — `quasi` is always a `k:"template"` node. */
+  | { readonly k: "tagged"; readonly tag: Expr; readonly quasi: Expr }
   | { readonly k: "func"; readonly name: string | null; readonly params: readonly string[]; readonly body: readonly Stmt[] };
 
 export interface ObjectProp {

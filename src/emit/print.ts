@@ -46,10 +46,12 @@ function precedence(e: Expr): number {
     case "array":
     case "object":
     case "func":
+    case "template": // F14: a template literal is a primary expression
       return PRIMARY;
     case "member":
     case "call":
     case "new":
+    case "tagged": // F14: member/call level, so `(a + b)`x`` parenthesises its tag
       return MEMBER;
     case "unary":
       return UNARY;
@@ -240,6 +242,18 @@ function render(e: Expr): string {
       return `{${e.props.map((p) => `${p.computed ? `[${p.key}]` : p.key}: ${expr(p.value, ASSIGNMENT)}`).join(", ")}}`;
     case "seq":
       return e.exprs.map((x) => expr(x, ASSIGNMENT)).join(", ");
+    case "template": {
+      // F14: quasis are raw source text, printed verbatim — the node's
+      // builder owns escaping (docs/specs/passes/14-template-literal.md §3).
+      let out = "`";
+      for (let i = 0; i < e.quasis.length; i++) {
+        out += e.quasis[i];
+        if (i < e.exprs.length) out += "${" + expr(e.exprs[i]!, 0) + "}";
+      }
+      return out + "`";
+    }
+    case "tagged":
+      return `${expr(e.tag, MEMBER)}${render(e.quasi)}`;
     case "func": {
       const out: string[] = [];
       printBody(e.body, 1, out, { indent: "  " });
