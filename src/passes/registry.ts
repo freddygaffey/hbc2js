@@ -10,6 +10,7 @@ import { globalAccess } from "./global-access/index.ts";
 import { labelClean } from "./label-clean/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
 import type { Pass, Stage } from "./types.ts";
+import { varNaming } from "./var-naming/index.ts";
 
 /** Order is explicit data (§2.3). Stage A first; within a stage, dependency
  *  order — `expr-rebuild` is first in stage B (PL-11), enforced below by
@@ -25,8 +26,14 @@ import type { Pass, Stage } from "./types.ts";
  *  shape the other depends on), so it is simply appended. `label-clean`
  *  (docs/specs/passes/06-label-clean.md §7) is last in stage A, `after:
  *  ["loop-cond", "for-header"]`: every other stage-A rung removes label
- *  uses, so it must see the final tree before stage B ever runs. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass];
+ *  uses, so it must see the final tree before stage B ever runs.
+ *  `var-naming` (docs/specs/passes/07-var-naming.md §8) runs last of all:
+ *  `after: ["expr-rebuild", "call-shape", "fn-naming"]` — it names registers
+ *  on the fully-cleaned tree (post `expr-rebuild` folding) with `fn-naming`'s
+ *  recovered names already in its collision set, and needs `call-shape` to
+ *  have turned a disguised call back into a real callee so its call-result
+ *  heuristic sees one. */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
