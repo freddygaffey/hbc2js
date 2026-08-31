@@ -12,7 +12,6 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 6. **Fix: generator `.obf` E_UNBOUND_IDENT** (23/26 at v94.obf with passes on).
 7. **Fix: Service NSW whole-file abort** — scope-check isolation per function.
 8. **Fix: Service NSW 452 s** — profile the 43k-function superlinear term.
-9. **Fix: Service NSW `deps` >10 min** — profile.
 10. **Fix cluster: semantics (6 adversarial rows)** — verdict first, fix the real ones.
 11. **Tier-1 buckets:** make the normalised diff register/schedule-insensitive where the difference is provably allocation-only (top buckets `GetByVal(reg)`, `LoadParam(imm)`, `LoadConstUndefined/GetGlobalObject`), so IDENTICAL measures semantics not scheduling; re-baseline.
 12. **Mutation-test the checkers (4)** — Stryker over `src/passes/*/check.ts`.
@@ -26,6 +25,7 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 18. B — Segregation spec (D17i stage 3: name modules, detect screens/navigators/stores, emit `src/` + `node_modules/`).
 19. C — next rung (NOT reg-split — needs Fred's decision, PUSHBACK P-6).
 20. A — Tier 2: RN-web boot loop (from 14's plan).
+22. **Parallelise `deps`** (not a bug — Fred: brute-force hashing of 43k fns vs 32k sigs is expected to take minutes): worker pool per module chunk, cache fingerprints keyed by bundle sha256, report progress. Goal: Service NSW well under 10 min on this Mac.
 21. Held-out fixtures finish (1) from origin/worktree-agent-a95cf9a2d5716d76b.
 
 ## Parked (needs Fred)
