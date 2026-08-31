@@ -7,7 +7,8 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 2. **Cleanup b — STATUS.md to one screen (14):** scoreboard stages 1–5 (valid-JS %, round-trip-identical %, boots?, segregated %, readable %), milestones, gate numbers, open-bug count, blocked, decisions needed; narrative → AGENT-LOG.
 3. **Cleanup c — sweep on every merge (20) + workflow rules (12, 16, 17)** into `docs/AGENT-WORKFLOW.md`.
 4. **BUGS triage (d):** mark fixed rows; verdict for every open row (bug / D14-legit / duplicate); Status column open|fixed|wontfix; cluster.
-5. **Fix cluster: deps (2 rows)** — `readLiterals` version at v≥97; nearest-release-by-date.
+5. **Fix: `--split` drops nested closures** — module files reference `_fnNNNN` declared in no split file (react-navigation: 688 fns → runtime ReferenceError; tier-1 bucket `tree:unmatched-closure`). Correctness, product path. `src/split/index.ts`.
+6. **Fix cluster: deps (2 rows)** — `readLiterals` version at v≥97; nearest-release-by-date.
 6. **Fix: generator `.obf` E_UNBOUND_IDENT** (23/26 at v94.obf with passes on).
 7. **Fix: Service NSW whole-file abort** — scope-check isolation per function.
 8. **Fix: Service NSW 452 s** — profile the 43k-function superlinear term.
