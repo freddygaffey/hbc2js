@@ -9,6 +9,7 @@ import { helperPrelude } from "../runtime/helpers.ts";
 import type { Stmt } from "./ast.ts";
 import { id, lit } from "./ast.ts";
 import { emitFunction, envDeclaringFunction, ownedEnvSlots } from "./function.ts";
+import { fnName, quote } from "./names.ts";
 import { checkBindings } from "./scope-check.ts";
 import { printProgram } from "./print.ts";
 
@@ -53,6 +54,49 @@ export interface EmitResult {
   readonly helpersUsed: readonly string[];
   readonly lineMap: readonly LineMapEntry[];
   readonly diagnostics: readonly Diagnostic[];
+  /**
+   * Count of functions whose decompile/emit raised an `Hbc2jsError` and were
+   * replaced with a throwing fallback stub (`W_FUNCTION_STUBBED` in
+   * `diagnostics`) instead of aborting the whole module — see `emitOne`
+   * below. Zero on every fixture; real apps can hit unsupported constructs
+   * (docs/BUGS.md, integration/E_EMIT_UNSUPPORTED row).
+   */
+  readonly stubbedFunctions: number;
+}
+
+/**
+ * A function's decompile/emit failed with `Hbc2jsError` `err` (e.g.
+ * `E_EMIT_UNSUPPORTED` from `shapeKeyFor`; NOT `E_ENV_UNRESOLVED`, which is
+ * the strict-env policy refusal and propagates). Per-function isolation (docs/BUGS.md's
+ * integration/E_EMIT_UNSUPPORTED row): rather than let one unsupported
+ * construct anywhere in a real app abort 100% of the output, stand in a
+ * valid JS function with the same name and best-effort arity whose body
+ * throws a descriptive `Error`, plus the raw error and (when cheap) the
+ * function's own disassembly as comments. A successfully decompiled
+ * function is untouched — this only ever replaces the failure path.
+ */
+function stubFor(analysis: ModuleAnalysis, index: number, err: Hbc2jsError): Stmt {
+  const decoded = analysis.decoded(index);
+  // Best-effort arity: mirrors `emitFunction`'s `namedParams` computation
+  // for the common (non-rest-param) case without needing the builtin table
+  // lookup that distinguishes a trailing `copyRestArgs`; a stub's `.length`
+  // can therefore be off by one for a variadic function, which is harmless
+  // since the stub only ever throws.
+  const namedParams = Math.max(0, decoded.header.paramCount - 1);
+  const params: string[] = [];
+  for (let i = 1; i <= namedParams; i++) params.push(`a${i}`);
+
+  const offset = err.context.offset;
+  const message = `hbc2js: could not decompile fn#${index} — ${err.code}${offset !== undefined ? ` at offset ${offset}` : ""}`;
+  const body: Stmt[] = [{ k: "comment", text: `fn#${index} ${quote(decoded.name)} -- ISOLATED FAILURE\n${err.message}` }];
+  const MAX_DISASM_LINES = 40;
+  if (decoded.instructions.length > 0) {
+    const shown = decoded.instructions.slice(0, MAX_DISASM_LINES).map((i) => `${i.offset}: ${i.name}`);
+    if (decoded.instructions.length > MAX_DISASM_LINES) shown.push(`… ${decoded.instructions.length - MAX_DISASM_LINES} more instruction(s)`);
+    body.push({ k: "comment", text: `raw disassembly:\n${shown.join("\n")}` });
+  }
+  body.push({ k: "throw", arg: { k: "new", callee: id("Error"), args: [lit(quote(message))] } });
+  return { k: "func", name: fnName(index), params, body };
 }
 
 /** True when `block` lies on a cycle of the normal graph. */
@@ -189,49 +233,91 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
   }
 
   const emitted = new Set<number>();
+  let stubbedFunctions = 0;
   const emitOne = (index: number): Stmt => {
     if (emitted.has(index)) {
       throw new Hbc2jsError(ErrorCode.E_INTERNAL, `function ${index} emitted twice`, { functionIndex: index, section: "emit" });
     }
     emitted.add(index);
-    const cfg = analysis.cfg(index);
-    let structured = structure(cfg, opts.structure);
-    for (const d of structured.diagnostics) diagnostics.push(d);
-    if (opts.passes !== undefined) {
-      const passed = opts.passes(structured, cfg);
-      structured = passed.fn;
-      for (const d of passed.diagnostics) diagnostics.push(d);
+    let cfg: FunctionCfg | undefined;
+    // Per-function isolation (docs/BUGS.md integration/E_EMIT_UNSUPPORTED):
+    // any `Hbc2jsError` here — cfg build, structure, a pass, `emitFunction`,
+    // an AST pass — is this ONE function's problem. Catching it here, at the
+    // single point every function's decompile/emit funnels through (shared by
+    // `decompile()` and `--split`'s `emitModule` call alike), means it cannot
+    // abort the rest of the module: substitute a throwing stub and continue.
+    try {
+      cfg = analysis.cfg(index);
+      let structured = structure(cfg, opts.structure);
+      for (const d of structured.diagnostics) diagnostics.push(d);
+      if (opts.passes !== undefined) {
+        const passed = opts.passes(structured, cfg);
+        structured = passed.fn;
+        for (const d of passed.diagnostics) diagnostics.push(d);
+      }
+      const kids = childrenOf.get(index) ?? [];
+      const hoisted: Stmt[] = [];
+      const inlined = new Map<number, Stmt>();
+      for (const child of kids) {
+        const body = emitOne(child);
+        if (inlineFunctions.has(child)) inlined.set(child, body);
+        else hoisted.push(body);
+      }
+      let out = emitFunction({
+        analysis,
+        envGraph,
+        structured,
+        cfg,
+        fn: analysis.decoded(index),
+        builtins,
+        children: hoisted,
+        inlineChildren: inlined,
+        loopLocalEnvSlots: loopLocal.get(index) ?? new Map(),
+        ownedEnvSlots: ownedEnvSlots(envGraph, index, declaringFunction).filter((name) => ![...(loopLocal.get(index)?.values() ?? [])].some((names) => names.includes(name))),
+        useHelper,
+        diagnostic: (d) => diagnostics.push(d),
+        provenanceComments,
+        strictEnv,
+      });
+      if (opts.astPasses !== undefined) {
+        const passed = opts.astPasses(out, cfg);
+        out = passed.fn;
+        for (const d of passed.diagnostics) diagnostics.push(d);
+      }
+      return out;
+    } catch (e) {
+      if (!(e instanceof Hbc2jsError)) throw e;
+      // Spec 03 §6.4's strict-env refusal is a module-level POLICY with its
+      // own escape hatch (`--lenient-env`), not an unsupported construct:
+      // it must still refuse the module by default (review-M4-H2), so it is
+      // never downgraded to a stub here.
+      if (e.code === ErrorCode.E_ENV_UNRESOLVED) throw e;
+      stubbedFunctions++;
+      const stub = stubFor(analysis, index, e);
+      diagnostics.push({
+        severity: "warn",
+        code: "W_FUNCTION_STUBBED",
+        message: `fn#${index} could not be decompiled (${e.code}); emitted a throwing stub instead of aborting the module`,
+        context: { functionIndex: index, section: "emit", ...(e.context.offset !== undefined ? { offset: e.context.offset } : {}) },
+      });
+      // `cfg` may not have been assigned (the failure could be the cfg build
+      // itself). When it was, still run the caller's AST-pass hook on the
+      // stub — `--split`'s hook is how a function's body reaches its output
+      // file at all (src/split/index.ts's `decompileAllBodies`), so skipping
+      // it would silently fall back to that path's own generic "not
+      // emitted" placeholder instead of this more informative stub. Never
+      // let the hook itself take the whole run down over a stub.
+      if (opts.astPasses !== undefined && cfg !== undefined) {
+        try {
+          const passed = opts.astPasses(stub, cfg);
+          for (const d of passed.diagnostics) diagnostics.push(d);
+          return passed.fn;
+        } catch {
+          return stub;
+        }
+      }
+      return stub;
     }
-    const kids = childrenOf.get(index) ?? [];
-    const hoisted: Stmt[] = [];
-    const inlined = new Map<number, Stmt>();
-    for (const child of kids) {
-      const body = emitOne(child);
-      if (inlineFunctions.has(child)) inlined.set(child, body);
-      else hoisted.push(body);
-    }
-    let out = emitFunction({
-      analysis,
-      envGraph,
-      structured,
-      cfg,
-      fn: analysis.decoded(index),
-      builtins,
-      children: hoisted,
-      inlineChildren: inlined,
-      loopLocalEnvSlots: loopLocal.get(index) ?? new Map(),
-      ownedEnvSlots: ownedEnvSlots(envGraph, index, declaringFunction).filter((name) => ![...(loopLocal.get(index)?.values() ?? [])].some((names) => names.includes(name))),
-      useHelper,
-      diagnostic: (d) => diagnostics.push(d),
-      provenanceComments,
-      strictEnv,
-    });
-    if (opts.astPasses !== undefined) {
-      const passed = opts.astPasses(out, cfg);
-      out = passed.fn;
-      for (const d of passed.diagnostics) diagnostics.push(d);
-    }
-    return out;
   };
 
   const globalFn = emitOne(globalIndex);
@@ -270,5 +356,5 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
   checkBindings(program, prelude.names, globalIndex);
 
   const code = printProgram(program, { indent });
-  return { code, helpersUsed: prelude.names, lineMap: [], diagnostics };
+  return { code, helpersUsed: prelude.names, lineMap: [], diagnostics, stubbedFunctions };
 }

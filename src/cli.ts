@@ -545,6 +545,9 @@ function runDecompile(argv: readonly string[]): void {
       if (unresolved > 0) {
         process.stderr.write(`hbc2js: --lenient-env: ${unresolved} environment access(es) could not be resolved statically and were emitted as __hbc_unresolved_env(...) markers, which THROW when reached. The output is not faithful at those sites.\n`);
       }
+      if (result.decompileDiagnostics > 0) {
+        process.stderr.write(`hbc2js: ${result.decompileDiagnostics} of ${result.module.functions.length} functions could not be decompiled (stubbed) — each throws a descriptive Error if reached; see the W_FUNCTION_STUBBED diagnostics.\n`);
+      }
     }
     if (!args.emitTree && !args.emitAst && args.nodeCheck) {
       const check = nodeCheck(text);
