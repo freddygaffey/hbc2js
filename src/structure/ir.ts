@@ -110,6 +110,16 @@ export interface SwitchArm {
   readonly value: number;
   readonly isString: boolean;
   readonly body: Stmt;
+  /**
+   * F12 (docs/specs/passes/10-switch-raise.md §5): set by `switch-raise` on an
+   * arm whose body deliberately falls into the *next* arm (source-level
+   * `case a: … case b:` fall-through). The emitter then skips the `break;` it
+   * otherwise appends to every arm. Unlike `form`/`hideLabel`/`elseIf` this is
+   * NOT transparent to verify.ts: an arm that falls through continues into the
+   * next arm's body, and `reconstruct` models exactly that. Nothing sets it
+   * under `--passes=none`, so the baseline is byte-identical (PL-05).
+   */
+  readonly fallThrough?: boolean;
 }
 
 export interface DispatchVar {

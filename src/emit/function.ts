@@ -470,7 +470,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         const cases = node.cases.map((arm) => {
           const body: Stmt[] = [];
           lowerTree(arm.body, body);
-          body.push({ k: "break", label: null });
+          // F12 (spec 10 §5): an arm `switch-raise` marked as falling through
+          // keeps falling — no appended `break;`. Unset everywhere under
+          // `--passes=none`, so the baseline stays byte-identical (PL-05).
+          if (arm.fallThrough !== true) body.push({ k: "break", label: null });
           return { test: armTest(arm), body };
         });
         const dflt: Stmt[] = [];
