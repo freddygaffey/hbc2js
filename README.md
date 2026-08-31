@@ -41,7 +41,7 @@ Requires Node ≥ 22. Python 3 is needed only for the optional hermes-dec oracle
 
 Design principles, each recorded with its reasoning in [`docs/DECISIONS.md`](docs/DECISIONS.md):
 
-- **Correct first, readable second.** The baseline emits provably equivalent (if ugly) JS; readability comes from small, individually verified rewrite passes.
+- **Correct first, readable second.** The baseline emits (ugly) JS whose equivalence is checked by trace against the Hermes VM on the fixture corpus — not yet proven on whole real bundles, see `docs/CONSOLIDATION.md` §A; readability comes from small, individually verified rewrite passes.
 - **The bytecode is the ground truth, not the source.** Hermes deviates from spec in places (per-iteration `let`, TDZ, `arguments`); we reproduce what the bytecode does.
 - **Never trust the version field.** Layouts and opcode tables are detected by probing, because Hermes has shipped incompatible formats under the same version number.
 - **Every claim is tested against real bytes** — fixtures compiled with pinned `hermesc` builds, oracles from Meta's own tooling.
