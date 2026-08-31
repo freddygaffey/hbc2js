@@ -122,7 +122,7 @@ Computed properties, for-in, optional chaining, nullish coalescing.
 | # | Name | Pattern | Status | Notes |
 |---|---|---|---|---|
 | 33 | computed-property-sideeffect | Computed property names with side effects | PASS | v94, v96, v99 |
-| 36 | optional-chaining-sideeffect | Optional chaining ?. with side effects | PASS-vs-VM | Decompiled functionally matches the Hermes VM at v94/v96/v99 (identical values, identical crash site/type — `null.method?.()` correctly throws). Apparent divergence was a harness cross-check artifact (print-only vs raw-stdout asymmetry for a crashing program, `src/harness/ladder.ts`), not a decompiler bug — see docs/BUGS.md |
+| 36 | optional-chaining-sideeffect | Optional chaining ?. with side effects | PASS-vs-VM | Decompiled functionally matches the Hermes VM at v94/v96/v99 (identical values, identical crash site/type — `null.method?.()` correctly throws). Apparent divergence was a harness cross-check artifact (print-only vs raw-stdout asymmetry for a crashing program, `src/harness/ladder.ts`), not a decompiler bug — fixed under CONSOLIDATION 25 (both sides now project print lines + `uncaught <Name>`; regression test `tests/gate/harness/ladder-uncaught.test.ts`), now a plain PASS — see docs/BUGS.md |
 | 38 | for-in-enumeration | for-in enumeration order on object/array | PASS | v94, v96, v99 |
 | 39 | getter-callee-position | Getter in function call callee position | PASS | v94, v96, v99 |
 | 41 | nullish-coalescing-edge | Nullish coalescing ?? edge cases | PASS | v94, v96, v99 |

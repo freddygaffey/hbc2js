@@ -422,3 +422,18 @@ export function isEvidence(r: TraceRecord): boolean {
 export function printLines(records: readonly TraceRecord[]): readonly string[] {
   return records.filter((r): r is OutRecord => r.k === "out" && (r.ch === "print" || r.ch === "__trace")).map((r) => r.s);
 }
+
+/** `printLines` plus the program's terminating error, as `uncaught <Name>`
+ *  when the main phase threw — the full-trace side of the D14 Hermes-VM
+ *  cross-check, shaped exactly like `hermes-vm.ts`'s `hermesPrintProjection`
+ *  of the VM's stdout/stderr. Name only (see `uncaughtErrorName` there for
+ *  why the message is never compared across engines). A `parse`-phase error
+ *  is the syntax oracle's business and a `drain`-phase one (a throw inside a
+ *  microtask/timer the sandbox drove) has no Hermes-side counterpart, so
+ *  only `phase === "main"` counts. */
+export function printProjection(records: readonly TraceRecord[]): readonly string[] {
+  const lines = [...printLines(records)];
+  const err = records.find((r): r is ErrRecord => r.k === "err" && r.phase === "main");
+  if (err !== undefined) lines.push(`uncaught ${err.name}`);
+  return lines;
+}
