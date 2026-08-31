@@ -44,7 +44,11 @@ function oraclesReady(t: TestContext): { hermescPath: string; vmOk: true } | nul
   const vm = findHermesVm(94);
   if (hermesc === null || vm === null) {
     const msg = `hermesc v94 + Hermes VM v94 required (tools/get-hermesc.sh 94, tools/build-hermes-vm.sh 94)`;
-    if (requireOracles()) throw new Error(`${msg} (HBC2JS_REQUIRE_ORACLES=1)`);
+    // Convention (roundtrip/tiers/cli tests): only hermesc is a REQUIRED
+    // oracle. The source-built VM is optional everywhere — CI's oracle job
+    // installs hermesc but never builds a VM — so a missing VM is a skip
+    // even under HBC2JS_REQUIRE_ORACLES=1 (consolidation item 29).
+    if (hermesc === null && requireOracles()) throw new Error(`${msg} (HBC2JS_REQUIRE_ORACLES=1)`);
     t.skip(msg);
     return null;
   }
@@ -83,7 +87,7 @@ test("uncaughtErrorName / hermesPrintProjection parse Hermes's stderr crash repo
 });
 
 test("printProjection appends `uncaught <Name>` for a main-phase err record only", () => {
-  const out = { k: "out" as const, ch: "print", s: "a" };
+  const out = { k: "out" as const, ch: "print", s: "a", a: [] as readonly string[] };
   assert.deepEqual(printProjection([out, { k: "err", phase: "main", name: "TypeError", message: "whatever V8 says" }, { k: "globals", v: "{}" }]), ["a", "uncaught TypeError"]);
   assert.deepEqual(printProjection([out, { k: "err", phase: "drain", name: "Error", message: "in a microtask" }]), ["a"], "drain-phase errors have no Hermes counterpart");
   assert.deepEqual(printProjection([out, { k: "unhandled", name: "Error", message: "rejected" }]), ["a"], "unhandled rejections print nothing under the bare VM either");
