@@ -106,6 +106,40 @@ test("impure-move: an impure value may only travel to the very next statement", 
   assert.deepEqual(v, { ok: false, reason: "impure-move" });
 });
 
+// Consolidation item 3 (docs/BUGS.md, `01-if-else-chain.min` v84/v94 wrong
+// output): the shape label-clean leaves behind for a minified if/else chain
+// — the store, an `if` whose arm `break`s to a label *outside* the site
+// (`L0`, whose continuation is `return r0`), then a redefinition. The scan
+// used to treat the `if`'s inconclusive verdict as "irrelevant, keep going",
+// step on to `r0 = r1` and delete `r0 = "negative"` — the value `break L0`
+// carries to the `return`. An escape the site cannot follow is terminal.
+test("not-dead (item 3): a store is live across an `if` that `break`s to a label outside the site, even with a redefinition after the `if`", () => {
+  const site: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), lit('"negative"'))),
+    { k: "if", test: id("r6"), then: [{ k: "break", label: "L0" }], else: [] },
+    exprStmt(assignExpr(id("r0"), id("r1"))),
+    { k: "break", label: "L0" },
+  ];
+  const fnBody: readonly Stmt[] = [{ k: "labeled", label: "L0", body: site }, { k: "return", arg: id("r0") }];
+  assert.equal(match(site, ctxFor(fnBody)), null, "nothing at this site may fold: `r0 = \"negative\"` is read by the `return` behind `break L0`");
+  const v = classifySite(site, fnBody, 0, "r0", lit('"negative"'));
+  assert.deepEqual(v, { ok: false, reason: "not-dead" });
+});
+
+// The same scan must still prove a store dead through an `if` whose escape
+// is a label-less `break` out of the enclosing `switch`/loop (that `break`
+// lands on the statement's own continuation, where the redefinition is).
+test("item 3 control: a label-less `break` inside a `switch` case follows the switch's own continuation, so the store before it still folds", () => {
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), lit("1"))),
+    { k: "switch", disc: id("r6"), cases: [{ test: lit("0"), body: [exprStmt(call(id("f"), [])), { k: "break", label: null }] }] },
+    exprStmt(assignExpr(id("r0"), lit("2"))),
+    exprStmt(call(id("use"), [id("r0")])),
+  ];
+  const v = classifySite(before, before, 0, "r0", lit("1"));
+  assert.deepEqual(v, { ok: true, rule: "R1b", j: 0 });
+});
+
 // `nested-capture` (a bare `identUses(fnBody, reg).nested > 0` refusal) was
 // removed: Hermes restarts register numbering per function, so a nested
 // `func`'s own body mentioning the literal name `r1` is provably that

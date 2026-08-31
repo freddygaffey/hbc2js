@@ -115,6 +115,9 @@ export interface BlockPlan {
   readonly selectObjects: ReadonlyMap<number, number>;
   /** Index of a `Call*` -> the method-call fast path it should use. */
   readonly methodCalls: ReadonlyMap<number, { readonly objReg: number; readonly name: string }>;
+  /** The block's own instructions, so a lowering can look back within the
+   *  block (`isLiteralUndefinedReg`). */
+  readonly instructions: readonly Instruction[];
 }
 
 const CREATE_THIS = new Set(["CreateThis", "CreateThisForNew", "CreateThisForSuper"]);
@@ -238,7 +241,7 @@ export function planBlock(block: BasicBlock, functionInstructions: readonly Inst
   }
 
   void fnIndexOf;
-  return { consumed, newSites, methodCalls, selectObjects };
+  return { consumed, newSites, methodCalls, selectObjects, instructions: ins };
 }
 
 /** Registers holding the arguments of a frame-based call, `arg[0]` = `this`. */
@@ -451,7 +454,22 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
     case "PutOwnGetterSetterByVal":
     case "DefineOwnGetterSetterByVal": {
       const enumerable = V(insn, 4) !== 0;
-      out.push(defineProperty(RG(insn, 0), RG(insn, 1), [{ key: "get", value: RG(insn, 2) }, { key: "set", value: RG(insn, 3) }], enumerable));
+      // The VM (`caseDefineOwnGetterSetterByVal`) sets only the half whose
+      // operand is not `undefined` and leaves the other half of an existing
+      // accessor alone. Static Hermes (v98/v99) relies on that: a class
+      // `get v(){}` / `set v(x){}` pair is two instructions, each with the
+      // other half a literal-`undefined` register (58-class-accessor-pair-split
+      // fn#0: `LoadConstUndefined r1; … r5, r4, r3, r1; … r5, r4, r1, r3`).
+      // A full `{get, set}` descriptor each time would make the second clobber
+      // the first, so a half that is statically a literal `undefined` is left
+      // out of the descriptor — `Object.defineProperty` without that key keeps
+      // the existing half, exactly the VM's semantics (docs/BUGS.md,
+      // CONSOLIDATION 26). Object-literal pairs merge into one instruction at
+      // every version, so both halves stay defined there.
+      const entries: { key: string; value: Expr }[] = [];
+      if (!isLiteralUndefinedReg(f, plan, index, V(insn, 2))) entries.push({ key: "get", value: RG(insn, 2) });
+      if (!isLiteralUndefinedReg(f, plan, index, V(insn, 3))) entries.push({ key: "set", value: RG(insn, 3) });
+      out.push(defineProperty(RG(insn, 0), RG(insn, 1), entries, enumerable));
       return;
     }
     case "PutOwnBySlotIdx":
@@ -870,6 +888,29 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
 }
 
 /** `Object.prototype.hasOwnProperty.call(o, k)` — never `o.hasOwnProperty(k)`. */
+/**
+ * True when register `r`, read by the instruction at `index` of the block
+ * `plan` describes, statically holds a literal `undefined`: either the nearest
+ * preceding write to `r` in this block is a `LoadConstUndefined`, or (no write
+ * in the block before `index`) every write to `r` anywhere in the function is
+ * one — hermesc hoists a shared `LoadConstUndefined` into the entry block and
+ * reuses that register. Anything else answers false (the pre-fix full
+ * descriptor half is then emitted); never a guess.
+ */
+function isLiteralUndefinedReg(f: FunctionEmitter, plan: BlockPlan, index: number, r: number): boolean {
+  for (let i = index - 1; i >= 0; i--) {
+    const prev = plan.instructions[i]!;
+    if (writtenRegisters(prev).includes(r)) return prev.name === "LoadConstUndefined";
+  }
+  let writes = 0;
+  for (const ins of f.fn.instructions) {
+    if (!writtenRegisters(ins).includes(r)) continue;
+    if (ins.name !== "LoadConstUndefined") return false;
+    writes++;
+  }
+  return writes > 0;
+}
+
 function hasOwn(obj: Expr, key: Expr): Expr {
   return call(member(prop(prop(id("Object"), "prototype"), "hasOwnProperty"), lit("call"), false), [obj, key]);
 }

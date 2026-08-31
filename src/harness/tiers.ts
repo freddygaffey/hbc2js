@@ -146,43 +146,22 @@ function readVersionsTxt(dir: string): Map<number, string> {
  */
 
 /**
- * Same investigation, a different failure shape: not a hang, a genuine wrong
- * *output* — `01-if-else-chain.min` at v84 and v94 only (96/98/99, and the
- * un-minified `01-if-else-chain` at every version, all PASS) decompiles to
- * code that mis-handles the negative-number branch: the Hermes VM prints
- * `-5 -> negative`, the candidate prints `-5 -> undefined`. Reproduced
- * directly against the trace oracle (`runOracleLadder`, `oracle=trace
- * verdict=DIVERGENT`), stable across repeats (not a flake), and — like the
- * hang above was — gone entirely under `decompile(bytes, {..., passes:
- * {none: true}})`, so it is a real `src/passes/**` regression, not this
- * harness. Still unfixed (a different bug from the hang above; see
- * docs/BUGS.md). Keyed on the exact (variant-qualified) fixture name, since
- * only the `.min` variant is affected.
- *
- * `58-class-accessor-pair-split` at v98/v99 (CONSOLIDATION 26, docs/BUGS.md
- * row "adversarial/21-class-private-fields"): the minimal reproducer for a
- * real `src/emit/lower.ts` bug — a class getter/setter pair is lowered by
- * Static Hermes as two `DefineOwnGetterSetterByVal` with the other half
- * `undefined`, and the emit's full `{get, set}` defineProperty clobbers the
- * half defined first (VM: `get after pair: 1`, candidate: `undefined`). The
- * fixture only compiles at v98/v99 (`versions.txt`), so those two entries
- * are the whole fixture; delete them with the fix.
+ * Its sibling `KNOWN_WRONG_OUTPUT` (same investigation, a genuine wrong
+ * *output* rather than a hang) is gone the same way (consolidation item 3,
+ * docs/BUGS.md): `01-if-else-chain.min` at v84/v94 — expr-rebuild's dead-
+ * store scan walked past an `if` whose arm `break`s to a label outside the
+ * site and deleted the store that `break` carried to the `return`; fixed in
+ * `src/passes/expr-rebuild/match.ts` (`StepVerdict`). And
+ * `58-class-accessor-pair-split` at v98/v99 — a class getter/setter pair's
+ * second `DefineOwnGetterSetterByVal` clobbered the first's half; fixed in
+ * `src/emit/lower.ts` (`isLiteralUndefinedReg`). Both fixtures are ordinary
+ * gate PASSes now and are their own regression tests; nothing is excluded
+ * from any tier's real-decompiler run except documented `versions.txt`
+ * compile failures.
  */
-const KNOWN_WRONG_OUTPUT: ReadonlySet<string> = new Set([
-  "01-if-else-chain.min@84",
-  "01-if-else-chain.min@94",
-  "58-class-accessor-pair-split@98",
-  "58-class-accessor-pair-split@99",
-]);
-
-function isKnownWrongOutput(fixtureName: string, version: number): boolean {
-  return KNOWN_WRONG_OUTPUT.has(`${fixtureName}@${version}`);
-}
 
 /** Every (fixture, version) pair spec 06 §7 calls "skipped-by-design": a
- *  documented `versions.txt` entry, or (see `KNOWN_WRONG_OUTPUT` above) a
- *  decompiler regression this task's own investigation found and excluded
- *  — none of these is a harness INCONCLUSIVE. */
+ *  documented `versions.txt` entry — never a harness INCONCLUSIVE. */
 export function computeSkippedByDesign(): SkippedByDesign[] {
   const out: SkippedByDesign[] = [];
   const constructsDir = join(fixturesRoot(), "constructs");
@@ -196,11 +175,6 @@ export function computeSkippedByDesign(): SkippedByDesign[] {
     const dir = join(constructsDir, name);
     if (!statSync(dir).isDirectory()) continue;
     const failedVersions = readVersionsTxt(dir);
-    for (const version of FIXTURE_VERSIONS) {
-      if (isKnownWrongOutput(name, version) || isKnownWrongOutput(`${name}.min`, version)) {
-        out.push({ fixture: name, version, reason: "decompile() produces wrong output for a variant of this fixture (KNOWN_WRONG_OUTPUT, tiers.ts) — a regression outside this task's owned surface (src/passes), see docs/AGENT-LOG.md" });
-      }
-    }
     for (const [version, reason] of failedVersions) {
       out.push({ fixture: name, version, reason });
     }
@@ -460,12 +434,6 @@ export async function runTier(o: RunnerOptions): Promise<TierReport> {
   const concurrency = o.concurrency ?? Math.max(1, os.cpus().length - 1);
 
   let inputs = inputsForTier(o.tier);
-  // KNOWN_WRONG_OUTPUT (above): a real decompile() call returns wrong output
-  // for these — excluded up front so a real, unfixed `src/passes`
-  // regression doesn't fail this task's own assertions. Irrelevant to
-  // identityDecompiler (no `decompile()` call in that path at all), so its
-  // self-test keeps full coverage.
-  if (decompiler !== identityDecompiler) inputs = inputs.filter((i) => !isKnownWrongOutput(i.fixtureName, i.version));
   if (versions !== undefined) inputs = inputs.filter((i) => versions.includes(i.version));
   if (o.only !== undefined) inputs = inputs.filter((i) => o.only!.includes(i.fixtureName));
 

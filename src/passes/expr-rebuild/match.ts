@@ -278,6 +278,27 @@ function writesAnyOf(s: Stmt, regs: readonly string[]): boolean {
 }
 
 type Verdict = "dead" | "read" | "clear";
+/** A single statement's contribution to a scan (`stmtVerdict`): a terminal
+ *  `Verdict`, or `next` — "this statement neither settles nor escapes
+ *  anything for `reg`; the scan carries on with the statement after it".
+ *  The distinction matters: a statement whose sub-lists were handed the
+ *  list's own continuation (`if`/`switch`/`labeled`/`iife`, a `try`
+ *  handler) has *already* scanned the rest of the list on every
+ *  falling-through path, so a `clear` from it means some path escaped to a
+ *  place this site cannot see (a `break` to a label outside the scan, a
+ *  `continue`) — and that is terminal: carrying on would re-scan the rest
+ *  and credit a later redefinition to a path that never reaches it. That
+ *  was the `01-if-else-chain.min` v84/v94 wrong output (docs/BUGS.md,
+ *  consolidation item 3): once label-clean flattened the inner label, the
+ *  site `r0 = "negative"; … if (…) { break L0; } … r0 = r1;` sat in one
+ *  list, the `if` came back `clear` (its `break L0` leaves the site, whose
+ *  own `L0` is not in `labels`), the scan stepped on to `r0 = r1` and
+ *  deleted the store — while `break L0` runs straight into `return r0`. */
+type StepVerdict = Verdict | "next";
+/** The label key for a label-less `break`: the innermost enclosing loop or
+ *  `switch` maps it to its own continuation (the rest of the list that
+ *  statement sits in). */
+const UNLABELLED_BREAK = "";
 /** "What verdict follows if control reaches this point" — a label's own
  *  continuation (`break L` resumes there), or "the rest of the enclosing
  *  list" (`rest`), or "unknown, beyond this site" (`CLEAR`, the top-level
@@ -347,26 +368,37 @@ function mergeBranches(verdicts: readonly Verdict[]): Verdict {
  * are the only shapes with exhaustive, unconditionally-taken branches, so
  * they are the only ones `mergeBranches` can promote to `dead`.
  */
-function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): Verdict {
+function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): StepVerdict {
   switch (s.k) {
     case "break":
-      return s.label !== null ? (labels.get(s.label)?.() ?? "clear") : "clear";
+      // A label outside the scan (the site's own enclosing block, say) is an
+      // escape to a point this site cannot see: terminal `clear`, never
+      // "carry on" (see `StepVerdict`).
+      return labels.get(s.label ?? UNLABELLED_BREAK)?.() ?? "clear";
     case "continue":
       return "clear"; // next iteration/update, not modelled: never claim `dead` through it
     case "if":
       return mergeBranches([scanFrom(s.then, reg, 0, labels, rest, memo), scanFrom(s.else, reg, 0, labels, rest, memo)]);
-    case "switch":
-      return mergeBranches(s.cases.map((c) => scanFrom(c.body, reg, 0, labels, rest, memo)));
+    case "switch": {
+      if (s.cases.length === 0) return "next";
+      const withBreak = new Map(labels);
+      withBreak.set(UNLABELLED_BREAK, rest);
+      return mergeBranches(s.cases.map((c) => scanFrom(c.body, reg, 0, withBreak, rest, memo)));
+    }
     case "while":
     case "do-while":
     case "for": {
-      const body = scanFrom(s.body, reg, 0, labels, CLEAR, memo);
-      return body === "read" ? "read" : "clear";
+      const withBreak = new Map(labels);
+      withBreak.set(UNLABELLED_BREAK, rest);
+      const body = scanFrom(s.body, reg, 0, withBreak, CLEAR, memo);
+      return body === "read" ? "read" : "next";
     }
     case "try": {
       const block = scanFrom(s.block, reg, 0, labels, CLEAR, memo);
       const handler = scanFrom(s.handler, reg, 0, labels, rest, memo);
-      return block === "read" || handler === "read" ? "read" : "clear";
+      if (block === "read" || handler === "read") return "read";
+      // The handler already scanned `rest`; its `clear` is an escape.
+      return handler === "clear" ? "clear" : "next";
     }
     case "labeled": {
       const withLabel = new Map(labels);
@@ -376,7 +408,7 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
     case "iife":
       return scanFrom(s.body, reg, 0, labels, rest, memo);
     default:
-      return "clear";
+      return "next";
   }
 }
 
@@ -388,14 +420,15 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
  *  same statement also happens to be a store; or inside a sub-list,
  *  following any `break` to its target); `dead` (a plain store to `reg`
  *  whose own value does *not* read `reg` — redefined, full stop); or
- *  `clear` (irrelevant, or inconclusive — see `branchVerdict`). The read
+ *  `clear` (inconclusive: some path escapes — see `branchVerdict`); or
+ *  `next` (irrelevant here — see `StepVerdict`). The read
  *  check must run *before* the plain-store check: a self-referential store
  *  is simultaneously "reads the stale value" and "is a store", and it is
  *  the read that must win — treating it as an unconditional `dead` (module
  *  review found this exact bug) discards the read, then a later, unrelated
  *  statement that also reads `reg` observes a dangling name once some
  *  earlier store folds into this one and deletes itself. */
-function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): Verdict {
+function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): StepVerdict {
   if ((topLevelReads(s).get(reg) ?? 0) > 0) return "read";
   if (isPlainStoreTo(s, reg)) return "dead";
   return branchVerdict(s, reg, labels, rest, memo);
@@ -563,7 +596,7 @@ function nextRelevant(list: readonly Stmt[], reg: string, from: number): number 
  *  the caller has nothing further to say). Memoised per `(list, from)` — see
  *  `Memo`'s doc — so a `(list, from)` reached through more than one `break`
  *  or candidate scan is computed once. Steps between relevant statements
- *  only (`nextRelevant`): the ones in between are `clear` by construction. */
+ *  only (`nextRelevant`): the ones in between are `next` by construction. */
 function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: ReadonlyMap<string, Cont>, after: Cont, memo: Memo): Verdict {
   let cache = memo.get(list);
   if (cache === undefined) {
@@ -576,7 +609,7 @@ function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: Read
   for (let x = nextRelevant(list, reg, from); x < list.length; x = nextRelevant(list, reg, x + 1)) {
     const rest: Cont = () => scanFrom(list, reg, x + 1, labels, after, memo);
     const v = stmtVerdict(list[x]!, reg, labels, rest, memo);
-    if (v !== "clear") {
+    if (v !== "next") {
       result = v;
       cache.set(from, result);
       return result;
