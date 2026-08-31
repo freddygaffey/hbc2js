@@ -6,6 +6,7 @@ import type { ConfidenceTier, MatchReport } from "./match.ts";
 import type { Evidence, ModuleGuess } from "./guess.ts";
 import { isHintEligibleEvidence } from "./guess.ts";
 import type { ConfirmResult } from "./confirm.ts";
+import type { ClassificationReport } from "./classify.ts";
 
 export interface ConfirmedDep {
   readonly package: string;
@@ -145,6 +146,15 @@ export interface DepsReport {
      *  code substitution" outside a real signature match). */
     readonly percentVerifiedByWeight: number;
   };
+  /** D17h/D17i stage 2: library-vs-app-code classification, WITHOUT naming
+   *  a package (`src/deps/classify.ts`). Null when the caller didn't run
+   *  that stage (e.g. no commonality index available) — never computed by
+   *  this file itself, only threaded through from `buildReport`'s optional
+   *  parameter. Its own headline (`classification.summary.percentLibraryByWeight`)
+   *  is deliberately a superset of `percentVerifiedByWeight` above: it
+   *  covers unnamed library code the match/guess stages never attempted to
+   *  identify by package. */
+  readonly classification: ClassificationReport | null;
 }
 
 // docs/TOOLCHAIN.md's "Bytecode versions" table, condensed to the RN
@@ -250,7 +260,7 @@ const BASELINE_ALIAS: ReadonlyMap<string, string | null> = new Map([
   ["metro-toolchain-empty", null],
 ]);
 
-export function buildReport(input: string, matchReport: MatchReport, guesses: readonly ModuleGuess[], confirmResults: readonly ConfirmResult[] = []): DepsReport {
+export function buildReport(input: string, matchReport: MatchReport, guesses: readonly ModuleGuess[], confirmResults: readonly ConfirmResult[] = [], classification: ClassificationReport | null = null): DepsReport {
   const confirmedDeps: ConfirmedDep[] = [];
   const confirmedNamesFromRealPackages = new Set<string>();
   for (const p of matchReport.packages) {
@@ -457,6 +467,7 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
       percentAttributedByWeight,
       percentVerifiedByWeight,
     },
+    classification,
   };
 }
 
@@ -515,5 +526,12 @@ export function formatReportText(report: DepsReport): string {
   const a = report.attribution;
   lines.push(`         ${a.percentVerifiedByWeight.toFixed(1)}% of bundle INSTRUCTIONS verified by signature match (${a.matchedInstrWeight}/${a.totalInstrWeight} instr — exact ${a.matchedInstrWeightByBasis.exact}, fuzzy+strings ${a.matchedInstrWeightByBasis.fuzzyStrings}, fuzzy-only ${a.matchedInstrWeightByBasis.fuzzyOnly}) — THIS is the number that matters for how much library bloat is actually recognised`);
   lines.push(`         ${a.percentAttributedByWeight.toFixed(1)}% of bundle instructions attributed overall (verified + guessed; guessed is a lead, not a strip-safe match)`);
+  // D17h/D17i stage 2: classification (library vs app-code) never names a
+  // package, so it can cover far more of the bundle than the naming stages
+  // above — this is the "how much can I ignore" headline.
+  if (report.classification !== null) {
+    const cs = report.classification.summary;
+    lines.push(`         ${cs.percentLibraryByWeight.toFixed(1)}% of bundle instructions classified LIBRARY (anonymous, unnamed) vs ${cs.percentAppByWeight.toFixed(1)}% APP code, from a ${report.classification.commonalityIndexBundleCount}-bundle commonality index (${cs.libraryModuleCount} library / ${cs.appModuleCount} app / ${cs.unknownModuleCount} unknown modules)`);
+  }
   return lines.join("\n");
 }
