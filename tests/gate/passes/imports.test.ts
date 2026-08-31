@@ -9,6 +9,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { REGISTRY } from "../../../src/passes/registry.ts";
+// Passes intentionally unregistered (code kept) — see docs/BUGS.md.
+const DISABLED_PASSES = new Set(["label-clean"]);
 
 const passesDir = join(repoRoot(), "src", "passes");
 
@@ -62,7 +64,7 @@ function passDirs(): string[] {
 }
 
 test("D12a: every registered pass is a directory under src/passes, and vice versa", () => {
-  assert.deepEqual(passDirs(), [...REGISTRY.map((p) => p.name)].sort());
+  assert.deepEqual(passDirs().filter((d) => !DISABLED_PASSES.has(d)), [...REGISTRY.map((p) => p.name)].sort());
   for (const p of REGISTRY) {
     for (const f of ["index.ts", "match.ts", "rewrite.ts", "check.ts"]) {
       assert.ok(statSync(join(passesDir, p.name, f)).isFile(), `${p.name}/${f} is missing`);
