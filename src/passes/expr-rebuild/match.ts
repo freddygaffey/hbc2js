@@ -215,6 +215,33 @@ type Cont = () => Verdict;
 const NO_LABELS: ReadonlyMap<string, Cont> = new Map();
 const CLEAR: Cont = () => "clear";
 
+/**
+ * Memoises `scanFrom(list, from)` for one search episode (one `classifySite`
+ * call, hence one fixed `reg`). Sound because `(list, from)` — list identity
+ * plus index — names a fixed lexical position in the (unchanging, for the
+ * duration of one search) tree: every root call this rung makes anchors
+ * `labels`/`after` the same way (`NO_LABELS`/`CLEAR`), so whatever `labels`
+ * map and `after` continuation eventually reach a given `(list, from)` are
+ * themselves always the same lexically-determined value, however many
+ * different `break` sites or candidate scans lead there. Without this, a
+ * cascade of `if (cond) { … } else { …; break L }` sites all naming the same
+ * outer label — exactly what hermesc emits for a chain of guarded
+ * destructuring defaults — revisits the same `(list, from)` an amount that
+ * multiplies with every level of nesting (each level's `rest` thunk gets
+ * invoked once per `break` beneath it, and *its* computation redoes the same
+ * multiplication one level further in), which is exponential in the chain's
+ * length and was the M5 label-clean-enablement hang (see BUGS.md): label-
+ * clean's own unwrapping of unrelated labels elsewhere in the function
+ * merges previously-separate statement lists into the single larger one
+ * this cascade sits in, which is what exposes it. Scoped to one `Memo`
+ * instance per `classifySite` call (never reused across a rewrite, since the
+ * tree changes and a stale cache would be unsound), this turns the
+ * recursion from a tree (one node per path) into a DAG evaluated once per
+ * distinct `(list, from)` — linear in tree size, not exponential in nesting
+ * depth.
+ */
+type Memo = Map<readonly Stmt[], Map<number, Verdict>>;
+
 /** Merges the verdicts of a statement's alternative branches (an `if`'s two
  *  arms, a `switch`'s cases): `read` wins if any branch reads the stale
  *  value; `dead` only if *every* branch is guaranteed to redefine it first
@@ -248,34 +275,34 @@ function mergeBranches(verdicts: readonly Verdict[]): Verdict {
  * are the only shapes with exhaustive, unconditionally-taken branches, so
  * they are the only ones `mergeBranches` can promote to `dead`.
  */
-function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont): Verdict {
+function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): Verdict {
   switch (s.k) {
     case "break":
       return s.label !== null ? (labels.get(s.label)?.() ?? "clear") : "clear";
     case "continue":
       return "clear"; // next iteration/update, not modelled: never claim `dead` through it
     case "if":
-      return mergeBranches([scanFrom(s.then, reg, 0, labels, rest), scanFrom(s.else, reg, 0, labels, rest)]);
+      return mergeBranches([scanFrom(s.then, reg, 0, labels, rest, memo), scanFrom(s.else, reg, 0, labels, rest, memo)]);
     case "switch":
-      return mergeBranches(s.cases.map((c) => scanFrom(c.body, reg, 0, labels, rest)));
+      return mergeBranches(s.cases.map((c) => scanFrom(c.body, reg, 0, labels, rest, memo)));
     case "while":
     case "do-while":
     case "for": {
-      const body = scanFrom(s.body, reg, 0, labels, CLEAR);
+      const body = scanFrom(s.body, reg, 0, labels, CLEAR, memo);
       return body === "read" ? "read" : "clear";
     }
     case "try": {
-      const block = scanFrom(s.block, reg, 0, labels, CLEAR);
-      const handler = scanFrom(s.handler, reg, 0, labels, rest);
+      const block = scanFrom(s.block, reg, 0, labels, CLEAR, memo);
+      const handler = scanFrom(s.handler, reg, 0, labels, rest, memo);
       return block === "read" || handler === "read" ? "read" : "clear";
     }
     case "labeled": {
       const withLabel = new Map(labels);
       withLabel.set(s.label, rest);
-      return scanFrom(s.body, reg, 0, withLabel, rest);
+      return scanFrom(s.body, reg, 0, withLabel, rest, memo);
     }
     case "iife":
-      return scanFrom(s.body, reg, 0, labels, rest);
+      return scanFrom(s.body, reg, 0, labels, rest, memo);
     default:
       return "clear";
   }
@@ -296,24 +323,40 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
  *  review found this exact bug) discards the read, then a later, unrelated
  *  statement that also reads `reg` observes a dangling name once some
  *  earlier store folds into this one and deletes itself. */
-function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont): Verdict {
+function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): Verdict {
   const tl = topLevelExprOf(s);
   if (tl !== null && exprCounts(tl, reg).reads > 0) return "read";
   if (isPlainStoreTo(s, reg)) return "dead";
-  return branchVerdict(s, reg, labels, rest);
+  return branchVerdict(s, reg, labels, rest, memo);
 }
 
 /** Scans `list` from `from`, statement by statement, stopping at the first
  *  `dead` (redefined — nothing further in `list` matters) or `read`
  *  (unsafe); once the list is exhausted, hands off to `after` (`clear` if
- *  the caller has nothing further to say). */
-function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: ReadonlyMap<string, Cont>, after: Cont): Verdict {
-  for (let x = from; x < list.length; x++) {
-    const rest: Cont = () => scanFrom(list, reg, x + 1, labels, after);
-    const v = stmtVerdict(list[x]!, reg, labels, rest);
-    if (v !== "clear") return v;
+ *  the caller has nothing further to say). Memoised per `(list, from)` — see
+ *  `Memo`'s doc — so a `(list, from)` reached through more than one `break`
+ *  or candidate scan is computed once. */
+function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: ReadonlyMap<string, Cont>, after: Cont, memo: Memo): Verdict {
+  let cache = memo.get(list);
+  if (cache === undefined) {
+    cache = new Map();
+    memo.set(list, cache);
   }
-  return after();
+  const cached = cache.get(from);
+  if (cached !== undefined) return cached;
+  let result: Verdict = "clear";
+  for (let x = from; x < list.length; x++) {
+    const rest: Cont = () => scanFrom(list, reg, x + 1, labels, after, memo);
+    const v = stmtVerdict(list[x]!, reg, labels, rest, memo);
+    if (v !== "clear") {
+      result = v;
+      cache.set(from, result);
+      return result;
+    }
+  }
+  result = after();
+  cache.set(from, result);
+  return result;
 }
 
 /** D-a, generalised: is `reg`'s value (as of just after `j`) guaranteed to
@@ -326,8 +369,8 @@ function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: Read
  *  travel-legality clause already proved it pure/simple/mention-free (or it
  *  is empty, for an impure move) — that is a *different* question (may `E`
  *  legally move there), answered before this is ever called. */
-function tryDA(list: readonly Stmt[], j: number, reg: string): boolean {
-  return scanFrom(list, reg, j + 1, NO_LABELS, CLEAR) === "dead";
+function tryDA(list: readonly Stmt[], j: number, reg: string, memo: Memo): boolean {
+  return scanFrom(list, reg, j + 1, NO_LABELS, CLEAR, memo) === "dead";
 }
 
 /**
@@ -351,8 +394,8 @@ function tryDA(list: readonly Stmt[], j: number, reg: string): boolean {
  * because it happened to have only one read *in the whole function*, none
  * of it at `j`.
  */
-function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, reg: string, readsAtJ: number): boolean {
-  if (tryDA(list, j, reg)) return true;
+function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, reg: string, readsAtJ: number, memo: Memo): boolean {
+  if (tryDA(list, j, reg, memo)) return true;
   const u = identUses(fnBody, reg);
   return u.reads === readsAtJ && u.writes === 1 && u.nested === 0;
 }
@@ -364,6 +407,11 @@ function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, 
  *  reasons. */
 export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: number, reg: string, value: Expr): ClassifyResult {
   if (value.k === "ident" && value.name === reg) return { ok: true, rule: "R1c", j: i };
+
+  // One search episode, one register: every `scanFrom` this call makes
+  // (the forward loop below, and `isDeadAfter`/`tryDA`) shares this cache —
+  // see `Memo`'s doc for why that is sound.
+  const memo: Memo = new Map();
 
   // No `nested-capture` refusal here (removed — see docs/AGENT-LOG.md and
   // `IdentUses.nested`'s doc in `../ast.ts`): `reg` is a register name
@@ -391,8 +439,8 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
       break;
     }
     if (isPlainStoreTo(s, reg)) break; // redefined, no read ever reached it
-    const restAfterM: Cont = () => scanFrom(list, reg, m + 1, NO_LABELS, CLEAR);
-    const v = branchVerdict(s, reg, NO_LABELS, restAfterM);
+    const restAfterM: Cont = () => scanFrom(list, reg, m + 1, NO_LABELS, CLEAR, memo);
+    const v = branchVerdict(s, reg, NO_LABELS, restAfterM, memo);
     if (v === "read") {
       blocked = true;
       break;
@@ -406,8 +454,8 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
     const j = readAt;
     // Does `L[j]`'s own body (not its top-level field, already counted
     // above) also read the same stale value — e.g. `if (reg) { use(reg) }`?
-    const restAfterJ: Cont = () => scanFrom(list, reg, j + 1, NO_LABELS, CLEAR);
-    if (branchVerdict(list[j]!, reg, NO_LABELS, restAfterJ) === "read") return { ok: false, reason: "use-under-control-flow" };
+    const restAfterJ: Cont = () => scanFrom(list, reg, j + 1, NO_LABELS, CLEAR, memo);
+    if (branchVerdict(list[j]!, reg, NO_LABELS, restAfterJ, memo) === "read") return { ok: false, reason: "use-under-control-flow" };
     const loopGuard = loopTestGuard(list[j]!, value);
     if (loopGuard !== null) return { ok: false, reason: loopGuard };
     if (isPure(value)) {
@@ -429,7 +477,7 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
     // redefinition *after* `j`, never re-examining `j` itself) used to
     // treat `j`'s own read of its fresh output as an unrelated live use of
     // the value being folded away, and refuse a genuinely safe site.
-    if (!isPlainStoreTo(list[j]!, reg) && !isDeadAfter(list, fnBody, j, reg, 1)) return { ok: false, reason: "not-dead" };
+    if (!isPlainStoreTo(list[j]!, reg) && !isDeadAfter(list, fnBody, j, reg, 1, memo)) return { ok: false, reason: "not-dead" };
     return { ok: true, rule: "R1a", j };
   }
 
@@ -438,7 +486,7 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
   // R1b candidate: j = i. D-b's "one read at j" becomes "reg's own value
   // reads reg" (a self-referential store like `reg = reg + 1`) — 0 for an
   // ordinary store, which is the common case (see `isDeadAfter`'s comment).
-  if (!isDeadAfter(list, fnBody, i, reg, exprCounts(value, reg).reads)) return { ok: false, reason: "not-dead" };
+  if (!isDeadAfter(list, fnBody, i, reg, exprCounts(value, reg).reads, memo)) return { ok: false, reason: "not-dead" };
   return { ok: true, rule: "R1b", j: i };
 }
 

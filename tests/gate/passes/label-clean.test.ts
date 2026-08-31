@@ -1,9 +1,18 @@
-// label-clean DISABLED (infinite loop, BUGS.md) — tests skipped until the pass is fixed & re-registered.
 // docs/specs/passes/06-label-clean.md — unit tests on hand-built trees (§7's
 // checklist: >=1 positive per rule L1-L4, negatives for a non-tail break, a
 // continue crossing an inner loop, a label used by both a break and a
 // continue from different depths, and >=1 site the `check` refuses), plus
 // red->green on the 08/11/02 fixture corpus at all five HBC versions.
+//
+// Also covers the 2026-08-31 hang regression (BUGS.md): decompiling
+// 37-destructuring-array (all versions) and 48-optional-chaining-nullish
+// (v84/v94) with the full pass pipeline enabled used to never return. The
+// pass itself was innocent (see "37/48 hang regression" below) — the actual
+// bug was an unmemoized exponential recursion in expr-rebuild's dead-store
+// search (`src/passes/expr-rebuild/match.ts`'s `scanFrom`), only ever
+// reached with a statement list this large because label-clean's unwrapping
+// of *other*, unrelated labels merges previously-separate statement lists
+// into the one the pathological cascade sits in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -39,7 +48,7 @@ const ctx: PassContext = { analysis: null as unknown as PassContext["analysis"],
 // L1 — unused `labeled`.
 // ---------------------------------------------------------------------------
 
-test.skip("L1 positive: a labeled block nothing breaks or continues to unwraps to its body", () => {
+test("L1 positive: a labeled block nothing breaks or continues to unwraps to its body", () => {
   const body = seq([block(0), block(1)]);
   const node = labeled(0, body);
   const m = match(node, ctx);
@@ -53,7 +62,7 @@ test.skip("L1 positive: a labeled block nothing breaks or continues to unwraps t
 // L2 — tail-break `labeled`.
 // ---------------------------------------------------------------------------
 
-test.skip("L2 positive: a labeled block whose only break is in tail position unwraps, deleting the break", () => {
+test("L2 positive: a labeled block whose only break is in tail position unwraps, deleting the break", () => {
   // L0: { block b0; if b0 { break L0 } else { block b1 } }
   const node = labeled(0, seq([block(0), iff(0, brk(0), block(1))]));
   const m = match(node, ctx);
@@ -63,7 +72,7 @@ test.skip("L2 positive: a labeled block whose only break is in tail position unw
   assert.deepEqual(check(node, after, ctx), { ok: true });
 });
 
-test.skip("L2 positive: two tail breaks, nested through if/else, both deleted", () => {
+test("L2 positive: two tail breaks, nested through if/else, both deleted", () => {
   // L0: { block b0; if b0 { break L0 } else { block b1; if b1 { block b2 } else { break L0 } } }
   const inner = iff(1, block(2), brk(0));
   const node = labeled(0, seq([block(0), iff(0, brk(0), seq([block(1), inner]))]));
@@ -75,14 +84,14 @@ test.skip("L2 positive: two tail breaks, nested through if/else, both deleted", 
   assert.deepEqual(check(node, after, ctx), { ok: true });
 });
 
-test.skip("negative (break-not-in-tail): a labeled block with a non-tail break refuses", () => {
+test("negative (break-not-in-tail): a labeled block with a non-tail break refuses", () => {
   // L0: { block b0; if b0 { break L0 } else {}; block b1 } -- the break is
   // *not* in tail position: `block b1` follows it.
   const node = labeled(0, seq([block(0), iff(0, brk(0), seq([])), block(1)]));
   assert.equal(match(node, ctx), null);
 });
 
-test.skip("negative: a continue to the labeled block's own label refuses (structurer should never emit this, but label-clean must not assume L1/L2)", () => {
+test("negative: a continue to the labeled block's own label refuses (structurer should never emit this, but label-clean must not assume L1/L2)", () => {
   const node = labeled(0, seq([block(0), cont(0)]));
   assert.equal(match(node, ctx), null);
 });
@@ -91,7 +100,7 @@ test.skip("negative: a continue to the labeled block's own label refuses (struct
 // L3 — hideable loop label.
 // ---------------------------------------------------------------------------
 
-test.skip("L3 positive: a continue to the loop's own label, with nothing nested between, hides the label", () => {
+test("L3 positive: a continue to the loop's own label, with nothing nested between, hides the label", () => {
   // loop L0 { block b0; if b0 { continue L0 } else { break L0 } }
   const node = loop(0, seq([block(0), iff(0, cont(0), brk(0))]));
   const m = match(node, ctx);
@@ -101,13 +110,13 @@ test.skip("L3 positive: a continue to the loop's own label, with nothing nested 
   assert.deepEqual(check(node, after, ctx), { ok: true });
 });
 
-test.skip("L3 positive: zero uses of the loop's label also hides it", () => {
+test("L3 positive: zero uses of the loop's label also hides it", () => {
   const node = loop(0, block(0));
   const m = match(node, ctx);
   assert.ok(m !== null && m.data.rule === "L3");
 });
 
-test.skip("negative (label-still-needed): a continue that crosses an inner loop to reach the outer one refuses", () => {
+test("negative (label-still-needed): a continue that crosses an inner loop to reach the outer one refuses", () => {
   // loop L0 { loop L1 { if b0 { continue L0 } else { block b1 } } }
   const inner = loop(1, iff(0, cont(0), block(1)));
   const node = loop(0, inner);
@@ -120,21 +129,21 @@ test.skip("negative (label-still-needed): a continue that crosses an inner loop 
   assert.ok(innerMatch !== null && innerMatch.data.rule === "L3");
 });
 
-test.skip("negative (label-still-needed): one label used by both a break and a continue from different depths refuses", () => {
+test("negative (label-still-needed): one label used by both a break and a continue from different depths refuses", () => {
   // loop L0 { block b0; if b0 { break L0 } else { loop L1 { if b1 { continue L0 } else { block b2 } } } }
   const nested = loop(1, iff(1, cont(0), block(2)));
   const node = loop(0, seq([block(0), iff(0, brk(0), nested)]));
   assert.equal(match(node, ctx), null, "the break at depth 1 is fine, but the continue from inside L1 is not innermost for L0");
 });
 
-test.skip("negative (continue-to-labeled-block): a continue whose label resolves to a labeled block, not a loop, refuses", () => {
+test("negative (continue-to-labeled-block): a continue whose label resolves to a labeled block, not a loop, refuses", () => {
   // loop L0 { L1: { if b0 { continue L1 } else { block b1 } } }
   const inner = labeled(1, iff(0, cont(1), block(1)));
   const node = loop(0, inner);
   assert.equal(match(node, ctx), null);
 });
 
-test.skip("PL-08: a loop already marked hideLabel is invisible to a second run", () => {
+test("PL-08: a loop already marked hideLabel is invisible to a second run", () => {
   const base = loop(0, block(0)) as Stmt & { k: "loop" };
   const node: Stmt = { ...base, hideLabel: true };
   assert.equal(match(node, ctx), null);
@@ -144,7 +153,7 @@ test.skip("PL-08: a loop already marked hideLabel is invisible to a second run",
 // L4 — `seq` of one.
 // ---------------------------------------------------------------------------
 
-test.skip("L4 positive: a one-element seq unwraps to its sole statement", () => {
+test("L4 positive: a one-element seq unwraps to its sole statement", () => {
   const node = seq([block(0)]) as Stmt & { k: "seq" };
   const m = match(node, ctx);
   assert.ok(m !== null && m.data.rule === "L4");
@@ -153,7 +162,7 @@ test.skip("L4 positive: a one-element seq unwraps to its sole statement", () => 
   assert.deepEqual(check(node, after, ctx), { ok: true });
 });
 
-test.skip("negative: a two-element seq does not match L4", () => {
+test("negative: a two-element seq does not match L4", () => {
   assert.equal(match(seq([block(0), block(1)]), ctx), null);
 });
 
@@ -162,21 +171,21 @@ test.skip("negative: a two-element seq does not match L4", () => {
 // rewrite would have produced, independent of match/rewrite.
 // ---------------------------------------------------------------------------
 
-test.skip("check refuses: L2's rewrite is expected to delete the tail break, a bad `after` that keeps it fails", () => {
+test("check refuses: L2's rewrite is expected to delete the tail break, a bad `after` that keeps it fails", () => {
   const before = labeled(0, seq([block(0), iff(0, brk(0), block(1))]));
   const badAfter = seq([block(0), iff(0, brk(0), block(1))]); // break left in place
   const r = check(before, badAfter, ctx);
   assert.equal(r.ok, false);
 });
 
-test.skip("check refuses: an L3 rewrite that does not set hideLabel", () => {
+test("check refuses: an L3 rewrite that does not set hideLabel", () => {
   const before = loop(0, seq([block(0), iff(0, cont(0), brk(0))]));
   const badAfter = before; // hideLabel never set
   const r = check(before, badAfter, ctx);
   assert.equal(r.ok, false);
 });
 
-test.skip("check refuses: an L4 unwrap to the wrong node", () => {
+test("check refuses: an L4 unwrap to the wrong node", () => {
   const before = seq([block(0)]);
   const r = check(before, block(1), ctx);
   assert.equal(r.ok, false);
@@ -186,7 +195,7 @@ test.skip("check refuses: an L4 unwrap to the wrong node", () => {
 // Registration sanity: the exported Pass object wires the same functions.
 // ---------------------------------------------------------------------------
 
-test.skip("the registered Pass object is match/rewrite/check as tested above", () => {
+test("the registered Pass object is match/rewrite/check as tested above", () => {
   assert.equal(labelClean.name, "label-clean");
   assert.equal(labelClean.stage, "A");
   assert.deepEqual(labelClean.catalogue, ["R8"]);
@@ -206,7 +215,7 @@ test.skip("the registered Pass object is match/rewrite/check as tested above", (
 const fixture = (name: string, file: string): Uint8Array => new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", name, file)));
 const VERSIONS = [84, 94, 96, 98, 99];
 
-test.skip("08-labeled-break-continue: every version keeps at least one genuine label (100% removal would be wrong) but drops the redundant ones", () => {
+test("08-labeled-break-continue: every version keeps at least one genuine label (100% removal would be wrong) but drops the redundant ones", () => {
   for (const v of VERSIONS) {
     const code = decompile(fixture("08-labeled-break-continue", `v${v}.hbc`), { resolveV98Ambiguity: true, moduleName: "08" }).code;
     const labels = code.match(/\bL\d+:/g) ?? [];
@@ -215,7 +224,7 @@ test.skip("08-labeled-break-continue: every version keeps at least one genuine l
   }
 });
 
-test.skip("11-nested-loops-mixed and 02-while-loop: label-clean fires without changing behaviour (checked via the harness below) and does not increase label count", () => {
+test("11-nested-loops-mixed and 02-while-loop: label-clean fires without changing behaviour (checked via the harness below) and does not increase label count", () => {
   for (const name of ["11-nested-loops-mixed", "02-while-loop"]) {
     for (const v of VERSIONS) {
       const on = decompile(fixture(name, `v${v}.hbc`), { resolveV98Ambiguity: true, moduleName: name }).code;
@@ -227,10 +236,45 @@ test.skip("11-nested-loops-mixed and 02-while-loop: label-clean fires without ch
   }
 });
 
-test.skip("the .obf variants of 08/11/02 stay PASS with passes on", async () => {
+test("the .obf variants of 08/11/02 stay PASS with passes on", async () => {
   const only = ["08-labeled-break-continue.obf", "11-nested-loops-mixed.obf", "02-while-loop.obf"];
   const report = await runTier({ tier: "hardened", decompiler: hbc2jsDecompiler, only });
   const bad = report.results.filter((r) => r.verdict !== VERDICT.PASS).map((r) => `${r.fixture.name}: ${r.verdict}`);
   assert.deepEqual(bad, []);
   assert.ok(report.summary.pass >= 12, `only ${report.summary.pass} .obf checks ran`);
+});
+
+// ---------------------------------------------------------------------------
+// 37/48 hang regression (see file header, BUGS.md, docs/AGENT-LOG.md): with
+// the full pipeline (label-clean included) enabled, `decompile()` used to
+// never return for these two fixtures. Root cause was `expr-rebuild`'s
+// unmemoized dead-store search, not label-clean itself, but label-clean's
+// unwrapping is what merged the statement lists that exposed it — so the
+// regression belongs on this gate as much as expr-rebuild's own.
+// ---------------------------------------------------------------------------
+
+test("37-destructuring-array and 48-optional-chaining-nullish (v84/v94) decompile without hanging", () => {
+  const HANG_TIMEOUT_MS = 5_000;
+  const cases: { readonly name: string; readonly versions: readonly number[] }[] = [
+    { name: "37-destructuring-array", versions: VERSIONS },
+    { name: "48-optional-chaining-nullish", versions: [84, 94] },
+  ];
+  for (const { name, versions } of cases) {
+    for (const v of versions) {
+      for (const variant of ["", ".min", ".obf"] as const) {
+        const t0 = Date.now();
+        decompile(fixture(name, `v${v}${variant}.hbc`), { resolveV98Ambiguity: true, moduleName: name });
+        const elapsed = Date.now() - t0;
+        assert.ok(elapsed < HANG_TIMEOUT_MS, `${name}${variant} v${v}: decompile() took ${elapsed}ms (expected well under ${HANG_TIMEOUT_MS}ms) — possible regression of the exponential-recursion hang in expr-rebuild's scanFrom`);
+      }
+    }
+  }
+});
+
+test("37-destructuring-array and 48-optional-chaining-nullish (v84/v94): PASS against the trace oracle with the full pipeline on", async () => {
+  const only = ["37-destructuring-array", "37-destructuring-array.min", "48-optional-chaining-nullish", "48-optional-chaining-nullish.min"];
+  const report = await runTier({ tier: "gate", decompiler: hbc2jsDecompiler, only });
+  const bad = report.results.filter((r) => r.verdict !== VERDICT.PASS).map((r) => r.fixture.name);
+  assert.deepEqual(bad, []);
+  assert.ok(report.summary.pass >= 18, `only ${report.summary.pass} checks ran`);
 });
