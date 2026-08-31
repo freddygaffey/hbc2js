@@ -25,6 +25,7 @@ agent time (S < 30 min, M ~1 h, L multi-agent).
 | 5 | Stage-B framework gap: no sibling/parent-list visibility for AST passes; capping several rungs below spec | adopt | M | One framework change with its own spec section in `src/passes/README.md`; re-measure the capped rungs after. |
 | 27 | Gate layout classes A/D, the arm64 build, and the placeholder opcode behind a flag or an "unverified" marker that refuses real input | adopt | S–M | Unevidenced code must not run silently. |
 | 28 | Partial bulk sigdb must not be layered into a real DB until baseline subtraction is done — hard check in `tools/pkgsig/fetch-db.sh` | adopt | S | Currently a doc note. |
+| 29 | **CI red on `main` since `8f38749` (2026-08-31 ~19:00)**: `npm run typecheck` fails on all build-test matrix jobs and `oracle-hermes-dec` fails at `test:gate`; last green `c6b5f41`. Local gate (`npm test`) does not run `typecheck`, so agents' "gate green" was blind to it | adopt (Fred: fix later, not now) | S–M | (1) fix the type errors + oracle-job failure; (2) make `npm test` run `typecheck` first so local green == CI green; (3) orchestrator checks CI conclusion on each merge via the public runs API before declaring landed. |
 | 6 | Soften "provably equivalent" in README (`README.md:44`) to what is evidenced until #1 and #2 pass | adopt | S | Orchestrator does this by hand now. |
 
 ## B. Testing rules → `CLAUDE.md`, each enforced by a gate test
