@@ -2,6 +2,10 @@ name: sweep
 on:
   schedule: [{ cron: "0 3 * * *" }]
   workflow_dispatch:
+  push: { branches: [main] }
+concurrency:
+  group: sweep-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   sweep:
     runs-on: ubuntu-latest
@@ -17,8 +21,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "24", cache: npm }
-      - uses: actions/cache@v4
-        with: { path: tools/hermesc, key: "hermesc-Linux-${{ hashFiles('tools/get-hermesc.sh') }}" }
       - run: npm ci
+      - uses: actions/cache@v4             # hermesc binaries, keyed on the fetch script (see ci.yml)
+        with:
+          path: tools/hermesc
+          key: hermesc-${{ runner.os }}-${{ hashFiles('tools/get-hermesc.sh') }}
       - run: tools/get-hermesc.sh all
       - run: npm run test:sweep            # bundles/**, round-trip, obfuscated variants
