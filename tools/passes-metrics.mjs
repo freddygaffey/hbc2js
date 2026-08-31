@@ -501,13 +501,125 @@ export function measureFnNamingBundle(bundlePath) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// docs/specs/passes/06-label-clean.md §7's corpus metric: the share of
+// emitted functions containing zero `L\d+:` labels, over
+// `tests/fixtures/constructs/**` at all five HBC versions, `label-clean` off
+// vs on. `tests/gate/passes/label-clean-metrics.test.ts` imports
+// `measureLabelClean`; `measureLabelCleanBundle` (sweep tier only) is the
+// spec's "surviving labels per function on the RN template bundle" half.
+// ---------------------------------------------------------------------------
+
+/** Does `stmts` contain a surviving label anywhere (including nested
+ *  statement lists and nested `func` bodies, mirroring `containsInGuard`'s
+ *  and `containsReflectCall`'s convention above)? A loop's `label` is `null`
+ *  once `label-clean`'s L3 rule hides it; a `labeled` node's `label` is
+ *  never null by construction, so its mere presence always counts. */
+function containsLabel(stmts) {
+  const visitStmts = (list) => {
+    for (const s of list) {
+      switch (s.k) {
+        case "if":
+          if (visitStmts(s.then) || visitStmts(s.else)) return true;
+          break;
+        case "while":
+        case "do-while":
+        case "for":
+          if (s.label !== null || visitStmts(s.body)) return true;
+          break;
+        case "labeled":
+          return true;
+        case "iife":
+          if (visitStmts(s.body)) return true;
+          break;
+        case "try":
+          if (visitStmts(s.block) || visitStmts(s.handler)) return true;
+          break;
+        case "switch":
+          if (s.cases.some((c) => visitStmts(c.body))) return true;
+          break;
+        case "func":
+          if (visitStmts(s.body)) return true;
+          break;
+        default:
+          break;
+      }
+    }
+    return false;
+  };
+  return visitStmts(stmts);
+}
+
+function labelOccurrences(code) {
+  return (code.match(/\bL\d+:/g) ?? []).length;
+}
+
+export function measureLabelClean(versions = ALL_VERSIONS) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  let beforeFns = 0;
+  let afterFns = 0;
+  let beforeLabelFreeFns = 0;
+  let afterLabelFreeFns = 0;
+  let beforeLabels = 0;
+  let afterLabels = 0;
+  const perFixture = [];
+  for (const dir of dirs) {
+    for (const version of versions) {
+      const file = join(CORPUS_DIR, dir, `v${version}.hbc`);
+      if (!existsSync(file)) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      const before = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true, passes: { skip: ["label-clean"] } });
+      const after = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true });
+      beforeLabels += labelOccurrences(before.code);
+      afterLabels += labelOccurrences(after.code);
+      const beforeBodies = functionBodies(bytes, dir, { skip: ["label-clean"] }, true);
+      const afterBodies = functionBodies(bytes, dir, {}, true);
+      beforeFns += beforeBodies.length;
+      afterFns += afterBodies.length;
+      const freeBefore = beforeBodies.filter((b) => !containsLabel(b)).length;
+      const freeAfter = afterBodies.filter((b) => !containsLabel(b)).length;
+      beforeLabelFreeFns += freeBefore;
+      afterLabelFreeFns += freeAfter;
+      perFixture.push({ fixture: dir, version, functions: afterBodies.length, labelFreeBefore: freeBefore, labelFreeAfter: freeAfter });
+    }
+  }
+  const labelFreeFunctionPctBefore = beforeFns === 0 ? 0 : (beforeLabelFreeFns / beforeFns) * 100;
+  const labelFreeFunctionPctAfter = afterFns === 0 ? 0 : (afterLabelFreeFns / afterFns) * 100;
+  const labelReductionPct = beforeLabels === 0 ? 0 : (1 - afterLabels / beforeLabels) * 100;
+  return {
+    functionCount: afterFns,
+    labelFreeFunctionPct: labelFreeFunctionPctAfter,
+    labelFreeFunctionPctBefore,
+    labelOccurrences: { before: beforeLabels, after: afterLabels, reductionPct: labelReductionPct },
+    perFixture,
+  };
+}
+
+/** Spec §7's "surviving labels per function on the RN template bundle" half
+ *  — a single, large `.hbc` file rather than the small per-construct corpus,
+ *  kept as a standalone entry point the sweep tier calls directly, mirroring
+ *  `measureCallShapeBundle`. */
+export function measureLabelCleanBundle(bundlePath) {
+  const bytes = new Uint8Array(readFileSync(bundlePath));
+  const beforeBodies = functionBodies(bytes, "bundle", { skip: ["label-clean"] }, true);
+  const afterBodies = functionBodies(bytes, "bundle", {}, true);
+  const freeBefore = beforeBodies.filter((b) => !containsLabel(b)).length;
+  const freeAfter = afterBodies.filter((b) => !containsLabel(b)).length;
+  return {
+    functionCount: afterBodies.length,
+    labelFreeFunctionPct: afterBodies.length === 0 ? 0 : (freeAfter / afterBodies.length) * 100,
+    labelFreeFunctionPctBefore: beforeBodies.length === 0 ? 0 : (freeBefore / beforeBodies.length) * 100,
+  };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = measure();
   const ga = measureGlobalAccess();
   const cs = measureCallShape();
   const fn = measureFnNaming();
+  const lc = measureLabelClean();
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify({ exprRebuild: result, globalAccess: ga, callShape: cs, fnNaming: fn }, null, 2));
+    console.log(JSON.stringify({ exprRebuild: result, globalAccess: ga, callShape: cs, fnNaming: fn, labelClean: lc }, null, 2));
   } else {
     console.log(`fixtures: ${result.fixtureCount}`);
     console.log(`register occurrences: ${result.registerOccurrences.before} -> ${result.registerOccurrences.after} (${result.registerOccurrences.reductionPct.toFixed(1)}% reduction)`);
@@ -516,5 +628,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`globalThis. occurrences: ${ga.globalThisOccurrences.before} -> ${ga.globalThisOccurrences.after} (${ga.globalThisOccurrences.reductionPct.toFixed(1)}% reduction)`);
     console.log(`call-shape: ${cs.cleanFunctionPctBefore.toFixed(1)}% -> ${cs.cleanFunctionPct.toFixed(1)}% of ${cs.functionCount} functions free of Reflect.apply/Reflect.construct`);
     console.log(`fn-naming: ${fn.namedPctBefore.toFixed(1)}% -> ${fn.namedPct.toFixed(1)}% of ${fn.functionCount} non-global functions named (v94)`);
+    console.log(`label-clean: ${lc.labelFreeFunctionPctBefore.toFixed(1)}% -> ${lc.labelFreeFunctionPct.toFixed(1)}% of ${lc.functionCount} functions free of a label`);
   }
 }

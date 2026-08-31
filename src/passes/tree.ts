@@ -105,6 +105,19 @@ export function blocksOf(node: Stmt): BlockId[] {
 }
 
 /**
+ * `blocksOf` as a multiset (ladder §4.1): the CF-preserving `check` class
+ * (`label-clean` and, later, `finally-dedup`/`switch-raise`/`if-chain`/
+ * `try-shape`) asserts `blocksMultiset(before)` equals `blocksMultiset(after)`
+ * — no `block`/`if`/`return`/`throw`/`switch`/`try` leaf is added, removed or
+ * duplicated by a rewrite that only deletes label wrappers and jumps.
+ */
+export function blocksMultiset(node: Stmt): Map<BlockId, number> {
+  const out = new Map<BlockId, number>();
+  for (const b of blocksOf(node)) out.set(b, (out.get(b) ?? 0) + 1);
+  return out;
+}
+
+/**
  * Conservative "can control fall off the end of this statement". `true` is the
  * safe answer; a pass that needs `false` gets it only for shapes that plainly
  * cannot complete normally (a jump, or a seq/if/labeled/loop built from them).
