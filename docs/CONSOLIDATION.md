@@ -34,10 +34,10 @@ agent time (S < 30 min, M ~1 h, L multi-agent).
 
 | # | Rule | Verdict | Notes |
 |---|------|---------|-------|
-| 7 | No exact-output assertions on shared fixtures; a rung test asserts rung-owned properties or uses a rung-private fixture | adopt | Known design debt (every new rung broke the previous rungs' string assertions). Enforce like `tests/gate/passes/imports.test.ts`. |
-| 8 | Only the spec agent writes tests; any diff under `tests/` is flagged; CI fails if test count or coverage drops | **modify** | The spec agent writes the *acceptance* tests (they ship with the spec, before implementation). Implementers may add regression tests — the "every bug fix ships a test" rule requires it — but every `tests/` diff is listed in the landing report and reviewed. Test-count-drop CI check: adopt. |
-| 9 | Golden/snapshot regeneration needs Fred's approval, reviewed as a batch | adopt | Orchestrator queues them; never regenerated inside an implementation task. |
-| 10 | No fixture leaves the gate without an issue and an owner; exclusion tables are debt | adopt | `tiers.ts` exclusions must cite a BUGS row; test enforces. |
+| 7 | No exact-output assertions on shared fixtures; a rung test asserts rung-owned properties or uses a rung-private fixture | adopted (2026-09-01) | Known design debt (every new rung broke the previous rungs' string assertions). Enforced like `tests/gate/passes/imports.test.ts`, in CLAUDE.md + `tests/gate/docs/testing-rules.test.ts`. |
+| 8 | Only the spec agent writes tests; any diff under `tests/` is flagged; CI fails if test count or coverage drops | **modified — adopted (2026-09-01)** | The spec agent writes the *acceptance* tests (they ship with the spec, before implementation). Implementers may add regression tests — the "every bug fix ships a test" rule requires it — but every `tests/` diff is listed in the landing report and reviewed. Test-count-drop CI check: `tests/gate/docs/test-count.test.ts` + `docs/test-count-baseline.json` (coverage not measured by this repo's gate). |
+| 9 | Golden/snapshot regeneration needs Fred's approval, reviewed as a batch | adopted (2026-09-01) | In CLAUDE.md. Orchestrator queues them; never regenerated inside an implementation task. |
+| 10 | No fixture leaves the gate without an issue and an owner; exclusion tables are debt | adopted (2026-09-01) | `tiers.ts` exclusions must cite a BUGS row; enforced in `tests/gate/docs/testing-rules.test.ts` (currently a vacuous pass — no exclusion table exists in `tiers.ts` today). |
 
 ## C. Agent workflow
 
