@@ -1,0 +1,47 @@
+; hbc2js disassembly of 58-class-accessor-pair-split/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=0 flags=dbg,overflowed  @0x00000120 size=109
+  0000  LoadConstUndefined   r1
+  0002  CreateBaseClass      r2, r3, r1, 1
+  0008  Mov                  r5, r3
+  000b  LoadConstString      r4, s5 "v"
+  000f  CreateClosure        r3, r1, f2 "v"
+  0014  DefineOwnGetterSetterByVal r5, r4, r3, r1, 0
+  001a  CreateClosure        r3, r1, f3 "v"
+  001f  DefineOwnGetterSetterByVal r5, r4, r1, r3, 0
+  0025  GetByIdShort         r2, r2, #c0, s7 "prototype"
+  002a  NewObjectWithParent  r2, r2
+  002d  LoadConstUInt8       r0, 1
+  0030  PutByIdStrict        r2, r0, #c0, s4 "_v"
+  0036  GetGlobalObject      r3
+  0038  TryGetById           r6, r3, #c1, s6 "print"
+  003e  GetByIdShort         r5, r2, #c2, s5 "v"
+  0043  LoadConstString      r4, s1 "get after pair:"
+  0047  Call3                r4, r6, r1, r4, r5
+  004d  LoadConstUInt8       r0, 7
+  0050  PutByIdLoose         r2, r0, #c1, s5 "v"
+  0056  TryGetById           r4, r3, #c1, s6 "print"
+  005c  GetByIdShort         r3, r2, #c2, s5 "v"
+  0061  LoadConstString      r2, s2 "get after set:"
+  0065  Call3                r2, r4, r1, r2, r3
+  006b  Ret                  r2
+
+function #1 "Box"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x0000018d size=21
+  0000  GetNewTarget         r1
+  0002  GetByIdShort         r1, r1, #c0, s7 "prototype"
+  0007  NewObjectWithParent  r1, r1
+  000a  LoadConstUInt8       r0, 1
+  000d  PutByIdStrict        r1, r0, #c0, s4 "_v"
+  0013  Ret                  r1
+
+function #2 "v"  params=1 frame=1 env=0 flags=strict,dbg,overflowed,nc  @0x000001a2 size=10
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r0, r0, #c0, s4 "_v"
+  0008  Ret                  r0
+
+function #3 "v"  params=2 frame=3 env=0 flags=strict,dbg,overflowed,nc  @0x000001ac size=16
+  0000  LoadParam            r2, 1
+  0003  LoadParam            r1, 0
+  0006  PutByIdStrict        r1, r2, #c0, s4 "_v"
+  000c  LoadConstUndefined   r0
+  000e  Ret                  r0
