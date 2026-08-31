@@ -156,6 +156,13 @@ Naming a dep (package@version) is the hard problem; CLASSIFYING a module as thir
 - **Supporting signals:** `node_modules/<...>` paths / package names in the module's strings; structural shape (many tiny functions, no app-specific routes/strings/asset refs).
 - **Output = two tiers:** (1) NAMED deps → package.json (D17f/D17g); (2) ANONYMOUS library — "third-party boilerplate, ignorable," no name. The HEADLINE metric becomes **% of bundle that is app-code vs library** (by instruction weight), which anonymous classification can push high even when naming recall is low. The analyst's real need — "show me only the app's code" — is met by tier 2 alone. This is arguably the FIRST recall win to ship.
 
+## D17h-b — Custom-vs-library classification from the app's OWN vocabulary (corpus-independent) (2026-08-31, Fred)
+What matters most is 'is this the developer's custom code?' — answerable WITHOUT naming and WITHOUT a big cross-app corpus, using signals inside the single bundle:
+- **App-vocabulary presence (primary):** learn the app's own vocabulary from the bundle itself — the most frequent app-specific string constants (route/screen names, the app's API hostnames, UI copy, the app's own scoped package name / bundle id, distinctive identifiers) and what the entry module transitively imports. A module that references the app's vocabulary → CUSTOM. A module with only generic strings → LIBRARY.
+- **node_modules path evidence:** `node_modules/<pkg>/…` (and package-name) substrings in a module's strings → library (many bundles retain some; when a Metro source map is present it's definitive).
+- **Structural shape:** many small pure utility functions, polyfill patterns, no app-domain strings → library; app-specific strings / JSX screen trees → custom.
+These are the PRIMARY classify signals (work on a brand-new app out of the box); cross-app recurrence (D17h) is a bonus that improves with corpus size. Headline metric stays 'app-code vs library by instruction weight'. Getting custom-vs-not right is more valuable than naming the library.
+
 ## D17i — Dependency workflow is staged: isolate → classify → name (2026-08-31, Fred)
 The canonical deps pipeline, in stages so each ships value independently and a failed later stage never blocks an earlier win:
 1. **Isolate** — split every Metro module (`__d(fn,id,deps)`) into its own file with `require()` edges restored (= M6/D19 module splitting). Output: files, unnamed.
