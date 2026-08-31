@@ -42,7 +42,7 @@ finding (loop-invariant hoisting, constant folding, cross-function inlining).
 
 | # | Idiom | Construct(s) | Versions read | Evidence file | Confidence | Notes |
 |---|---|---|---|---|---|---|
-| 1 | If/else compare chain | `if`/`else if`/`else` (01) | 84,94,98,99 | [if-else-chain.md](lowering/if-else-chain.md) | ✅ verified | Plain conditional-jump tree; no idiom to "raise", already close to source shape |
+| 1 | If/else compare chain | `if`/`else if`/`else` (01) | 84,94,98,99 | [if-else-chain.md](lowering/if-else-chain.md) | ✅ verified | Plain conditional-jump tree; no idiom to "raise", already close to source shape. **Pass `if-chain` (stage A), M5 — recovered** |
 | 2 | Pre-test + post-test loop rotation | `while` (02) | 94,99 (O0); 94 (O) | [while-loop.md](lowering/while-loop.md) | ✅ verified | Condition is evaluated **twice**: once as a guard before the loop, once as the back-edge test. **Pass `loop-cond` (stage A), M5 — recovered** |
 | 3 | Body + single trailing test | `do...while` (03) | 94,99 (O0) | [do-while-loop.md](lowering/do-while-loop.md) | ✅ verified | No pre-test at all; dead `while(false)` condition is *not* eliminated, even at default `-O`. **Pass `loop-cond` (stage A), M5 — recovered** |
 | 4 | `for` = `while` + hoisted init, update folded into body tail | `for` (04) | 94,99 (O0) | [for-loop.md](lowering/for-loop.md) | ✅ verified | Comma-operator init/update confirmed as ordinary sequential instructions, not a special form. Cross-checked at v99 for M5 (§4 of the evidence file). **Pass `for-header` (stage A), M5 — recovered** |

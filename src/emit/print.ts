@@ -96,15 +96,29 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
     case "init":
       out.push(`${p}${s.kind} ${s.name} = ${expr(s.value, ASSIGNMENT)};`);
       return;
-    case "if":
+    case "if": {
       out.push(`${p}if (${expr(s.test, 0)}) {`);
       printBody(s.then, depth + 1, out, opts);
-      if (s.else.length > 0) {
+      // spec 09 F11 (src/passes/if-chain C3): `elseIf` marks an `else` arm
+      // that was a chain link. Print `} else if (…) {` only when that arm is
+      // exactly one `if` (stage B folded the condition block away); anything
+      // else falls back to `} else {`, exactly as LoopForm.init/.step fall
+      // back to `while`.
+      let cur: Stmt & { k: "if" } = s;
+      for (;;) {
+        const link: Stmt | undefined = cur.elseIf === true && cur.else.length === 1 ? cur.else[0] : undefined;
+        if (link === undefined || link.k !== "if") break;
+        out.push(`${p}} else if (${expr(link.test, 0)}) {`);
+        printBody(link.then, depth + 1, out, opts);
+        cur = link;
+      }
+      if (cur.else.length > 0) {
         out.push(`${p}} else {`);
-        printBody(s.else, depth + 1, out, opts);
+        printBody(cur.else, depth + 1, out, opts);
       }
       out.push(`${p}}`);
       return;
+    }
     case "while":
       out.push(`${p}${s.label === null ? "" : `${s.label}: `}while (${s.test === undefined ? "true" : expr(s.test, 0)}) {`);
       printBody(s.body, depth + 1, out, opts);

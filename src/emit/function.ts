@@ -438,7 +438,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         const els: Stmt[] = [];
         lowerTree(node.then, then);
         lowerTree(node.else, els);
-        out.push({ k: "if", test: conditionOf(node.cfgBlock), then, else: els });
+        // spec 09 F11: carry if-chain's `elseIf` annotation through to the AST
+        // (only when set, so the `--passes=none` AST is byte-identical).
+        out.push({ k: "if", test: conditionOf(node.cfgBlock), then, else: els, ...(node.elseIf === true ? { elseIf: true } : {}) });
         return;
       }
       case "break":

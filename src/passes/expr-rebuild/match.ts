@@ -728,7 +728,29 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
     // Does `L[j]`'s own body (not its top-level field, already counted
     // above) also read the same stale value — e.g. `if (reg) { use(reg) }`?
     const restAfterJ: Cont = () => scanFrom(list, reg, j + 1, NO_LABELS, CLEAR, memo);
-    if (branchVerdict(list[j]!, reg, NO_LABELS, restAfterJ, memo) === "read") return { ok: false, reason: "use-under-control-flow" };
+    const consumerVerdict = branchVerdict(list[j]!, reg, NO_LABELS, restAfterJ, memo);
+    if (consumerVerdict === "read") return { ok: false, reason: "use-under-control-flow" };
+    // if-chain regression (M5 rung 9, 2026-09-01; found by T2 on 51-default-
+    // params/38/39/21/46 the moment if-chain produced the guard shape): a
+    // jump *inside the consuming statement itself* escapes this site with
+    // the stale value still bound — `rX = E; if (rX !== u) { break L };
+    // rX = fresh` runs the `break` path straight into a read of `rX` outside
+    // the list (`return rX`), which `branchVerdict` reports as the same
+    // `clear` an irrelevant fall-through produces. The read-check above
+    // therefore lets it through, and `isDeadAfter` then credits the *local*
+    // redefinition. With any `break`/`continue` in the consumer's own frame,
+    // only a proven `dead` (every internal path redefines `rX` before any
+    // read) may pass; `clear` is an escape and must refuse — unless D-b's
+    // whole-function count proves the escape harmless: with exactly one
+    // read (the one at `j`), one write (the store at `i`) and no nested
+    // mention in the entire function, there is no statement anywhere the
+    // escape could reach that reads the stale value. Consumers without
+    // jumps are unaffected: their every path falls through to `j + 1`,
+    // which `isDeadAfter` already answers.
+    if (stmtInterest(list[j]!).jump && consumerVerdict !== "dead") {
+      const u = registerUses(fnBody).get(reg) ?? NO_USES;
+      if (!(u.reads === 1 && u.writes === 1 && u.nested === 0)) return { ok: false, reason: "use-under-control-flow" };
+    }
     const loopGuard = loopTestGuard(list[j]!, value);
     if (loopGuard !== null) return { ok: false, reason: loopGuard };
     if (isPure(value)) {
