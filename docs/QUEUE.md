@@ -3,7 +3,6 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-1. **Cleanup a — testing rules (CONSOLIDATION 7–10):** rules into `CLAUDE.md`; gate test enforcing "no exact-output assertions on shared fixtures" (pattern `tests/gate/passes/imports.test.ts`); test-count-never-drops check.
 2. **Cleanup b — STATUS.md to one screen (14):** scoreboard stages 1–5 (valid-JS %, round-trip-identical %, boots?, segregated %, readable %), milestones, gate numbers, open-bug count, blocked, decisions needed; narrative → AGENT-LOG.
 3. **Cleanup c — sweep on every merge (20) + workflow rules (12, 16, 17)** into `docs/AGENT-WORKFLOW.md`.
 4. **BUGS triage (d):** mark fixed rows; verdict for every open row (bug / D14-legit / duplicate); Status column open|fixed|wontfix; cluster.
