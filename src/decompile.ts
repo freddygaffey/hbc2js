@@ -63,6 +63,14 @@ export interface DecompileResult {
   readonly helpersUsed: readonly string[];
   readonly diagnostics: readonly Diagnostic[];
   readonly forcedOpcodeTable: boolean;
+  /**
+   * Count of functions that could not be decompiled and were replaced with a
+   * throwing fallback stub instead of aborting the whole module (per-function
+   * isolation — `W_FUNCTION_STUBBED` in `diagnostics`, see `src/emit/index.ts`
+   * `emitOne`). Zero for every fixture; nonzero only on real apps hitting an
+   * unsupported construct (docs/BUGS.md integration/E_EMIT_UNSUPPORTED row).
+   */
+  readonly decompileDiagnostics: number;
 }
 
 export function parseForDecompile(bytes: Uint8Array, opts: DecompileOptions = {}): { readonly module: HbcModule; readonly forced: boolean } {
@@ -99,7 +107,14 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
     ...opts.emit,
     ...(opts.verify === false ? { structure: { ...opts.emit?.structure, verify: false } } : {}),
   });
-  return { code: result.code, module, helpersUsed: result.helpersUsed, diagnostics: [...diagnostics, ...result.diagnostics], forcedOpcodeTable: forced };
+  return {
+    code: result.code,
+    module,
+    helpersUsed: result.helpersUsed,
+    diagnostics: [...diagnostics, ...result.diagnostics],
+    forcedOpcodeTable: forced,
+    decompileDiagnostics: result.stubbedFunctions,
+  };
 }
 
 /** `--emit-tree`: the structurer's tree IR for one function (or all of them). */

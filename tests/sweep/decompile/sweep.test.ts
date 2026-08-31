@@ -40,9 +40,9 @@ const ORACLES = ["syntax", "trace"] as const;
 // but only at the two representative versions (94, 99 — see that file's own
 // comment). T2-full below re-runs the exact same fixture set at the full
 // 84/94/96/98/99 matrix, so no version combination goes unchecked — it is
-// just not on the per-commit critical path. Both exclude `tiers.ts`'s
-// `KNOWN_HANGS` two entries (a real, out-of-scope decompiler regression, not
-// a version-coverage gap).
+// just not on the per-commit critical path. (`tiers.ts`'s now-removed
+// `KNOWN_HANGS` used to exclude two fixtures here — see its own comment for
+// the fix.)
 
 test("T2-full: every gate fixture is PASS under the real decompiler, at all five HBC versions", async (t) => {
   if (!requireSweep(t)) return;

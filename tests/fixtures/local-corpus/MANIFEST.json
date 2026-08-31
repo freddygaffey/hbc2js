@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "sha256": "eff5216df05b956c5a9c015e77266ab02f9d056b5a5a8a84f0550c330b9c0761",
+    "size": 53284164,
+    "hbcVersion": 98,
+    "sourceApkName": "com.discord.apk",
+    "entryPath": "assets/index.android.bundle",
+    "date": "2026-08-30T11:10:43Z"
+  },
+  {
+    "sha256": "2fccd2c7b7585e41dc5ee8f030e214c299148d3ed1166920d0287277eb49a593",
+    "size": 74206136,
+    "hbcVersion": 96,
+    "sourceApkName": "io.metamask.apk",
+    "entryPath": "assets/index.android.bundle",
+    "date": "2026-08-31T04:00:01Z"
+  },
+  {
+    "sha256": "c445df51d04d077822985081beb6e1d54db6a95f9b5c25eef474221da5beb6f1",
+    "size": 26820456,
+    "hbcVersion": 98,
+    "sourceApkName": "com.brex.mobile.apk",
+    "entryPath": "assets/index.android.bundle",
+    "date": "2026-08-31T04:00:02Z"
+  }
+]
