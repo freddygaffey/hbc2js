@@ -857,6 +857,68 @@ export function measureIfChain(versions = ALL_VERSIONS) {
   return { perVersion };
 }
 
+/** The text of every `switch (…) { … }` statement in `code`, by brace matching. */
+function switchBlockTexts(code) {
+  const out = [];
+  const re = /switch \(/g;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    const open = code.indexOf("{", m.index);
+    if (open === -1) continue;
+    let depth = 0;
+    let i = open;
+    for (; i < code.length; i++) {
+      if (code[i] === "{") depth++;
+      else if (code[i] === "}") {
+        depth--;
+        if (depth === 0) break;
+      }
+    }
+    out.push(code.slice(open, i + 1));
+    re.lastIndex = open;
+  }
+  return out;
+}
+
+function blockLabelDecls(code) {
+  return (code.match(/L\d+: \{/g) ?? []).length;
+}
+
+// `tests/gate/passes/switch-raise.test.ts` imports `measureSwitchRaise` and
+// asserts docs/specs/passes/10-switch-raise.md §7's corpus floors: per raised
+// switch, `break L\d+;` inside the switch and `break;` doubled after another
+// break both fall to 0, and total `L\d+: {` label declarations across the
+// corpus fall ≥15% at v94.
+export function measureSwitchRaise(versions = [94]) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  const perVersion = {};
+  for (const version of versions) {
+    let beforeLabels = 0;
+    let afterLabels = 0;
+    const perFixture = {};
+    for (const dir of dirs) {
+      const file = join(CORPUS_DIR, dir, `v${version}.hbc`);
+      if (!existsSync(file)) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      const before = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true, passes: { skip: ["switch-raise"] } });
+      const after = decompile(bytes, { moduleName: dir, resolveV98Ambiguity: true });
+      beforeLabels += blockLabelDecls(before.code);
+      afterLabels += blockLabelDecls(after.code);
+      const blocks = switchBlockTexts(after.code);
+      perFixture[dir] = {
+        switchCount: blocks.length,
+        labelledBreaksInSwitch: blocks.reduce((a, b) => a + (b.match(/break L\d+;/g) ?? []).length, 0),
+        doubledBreaks: blocks.reduce((a, b) => a + (b.match(/break(?: L\d+)?;\n\s*break;/g) ?? []).length, 0),
+      };
+    }
+    perVersion[version] = {
+      labelDecls: { before: beforeLabels, after: afterLabels, reductionPct: beforeLabels === 0 ? 0 : (1 - afterLabels / beforeLabels) * 100 },
+      perFixture,
+    };
+  }
+  return { perVersion };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = measure();
   const ga = measureGlobalAccess();

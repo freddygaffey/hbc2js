@@ -8,7 +8,10 @@
 // Transparent annotations: `loop.form`, `loop.hideLabel` and `if.elseIf`
 // (spec 07 / specs/passes/01 F9 / specs/passes/09 F11) are never read here —
 // the annotated jumps and branches stay in the tree, so the round-trip proves
-// an annotated tree exactly as it proves a bare one.
+// an annotated tree exactly as it proves a bare one. `SwitchArm.fallThrough`
+// (specs/passes/10 F12) is the exception: it changes where control goes when
+// an arm's body ends (into the next arm, not out of the switch), so
+// `reconstruct` models it — see the `switch` case below.
 import type { BlockId } from "../cfg/types.ts";
 import { children, edgeKey } from "./ir.ts";
 import type { AugmentedCfg, LabelId, Stmt, StructuredFunction } from "./ir.ts";
@@ -125,8 +128,20 @@ export function reconstruct(fn: StructuredFunction): ReconstructedCfg {
         return memo(() => union(t(), e()));
       }
       case "switch": {
-        const arms = stmt.cases.map((c) => walk(c.body, after, ctx));
+        // F12 (docs/specs/passes/10-switch-raise.md §5): an arm marked
+        // `fallThrough` continues into the *next* arm — the emitter omits its
+        // `break;` — and the last arm would continue into `default`, which the
+        // emitter always prints after the cases. Walked right-to-left so each
+        // arm's continuation thunk exists before the arm that falls into it.
+        // With no `fallThrough` set (`--passes=none`) every continuation is
+        // `after`, exactly the old model.
         const d = walk(stmt.default, after, ctx);
+        const arms: (() => ReadonlySet<BlockId>)[] = new Array<() => ReadonlySet<BlockId>>(stmt.cases.length);
+        for (let i = stmt.cases.length - 1; i >= 0; i--) {
+          const c = stmt.cases[i]!;
+          const cont = c.fallThrough === true ? (i + 1 < stmt.cases.length ? arms[i + 1]! : d) : after;
+          arms[i] = walk(c.body, cont, ctx);
+        }
         return memo(() => union(...arms.map((a) => a()), d()));
       }
       case "try": {

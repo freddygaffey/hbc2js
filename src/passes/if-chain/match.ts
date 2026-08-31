@@ -29,8 +29,10 @@
 //    (same rule as spec 06 §7).
 //  * `switch-arm-spine` ships disabled-by-default behind the presence of a
 //    `switch-raise` registration (spec §7/§8 question 2). `switch-raise` is
-//    not registered yet, so it is deliberately not implemented; when its S2
-//    (compare-chain) rule lands, add its §4 S2a predicate as a refusal here.
+//    now registered (before this rung), but only its S1 (jump-table) rule —
+//    S2 (compare-chain) is blocked on F13 and matches nothing (spec 10 §4),
+//    so there is still no S2a chain predicate to key this refusal on; it
+//    stays deliberately unimplemented until S2 lands.
 import type { Stmt } from "../../structure/ir.ts";
 import type { Match, PassContext } from "../types.ts";
 import { completesNormally, items } from "../tree.ts";

@@ -10,6 +10,7 @@ import { globalAccess } from "./global-access/index.ts";
 import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
+import { switchRaise } from "./switch-raise/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
 
@@ -31,14 +32,19 @@ import { varNaming } from "./var-naming/index.ts";
  *  runs. `if-chain` (docs/specs/passes/09-if-chain.md §7) sits between
  *  them, `after: ["loop-cond", "for-header"]` — a guard `if` inside an
  *  unformed loop is the loop's test, and flattening its `else` first would
- *  hide the tail-guard shape `loop-cond` keys on.
+ *  hide the tail-guard shape `loop-cond` keys on. `switch-raise`
+ *  (docs/specs/passes/10-switch-raise.md §7) shares that `after` (a compare
+ *  chain inside an unformed loop looks like a dispatcher) and registers
+ *  **before** `if-chain`, so its S2 (compare-chain) rule, when F13 lands,
+ *  sees the else-spine before `if-chain` flattens it; `label-clean`'s
+ *  `after` gains it for the same reason as `if-chain`.
  *  `var-naming` (docs/specs/passes/07-var-naming.md §8) runs last of all:
  *  `after: ["expr-rebuild", "call-shape", "fn-naming"]` — it names registers
  *  on the fully-cleaned tree (post `expr-rebuild` folding) with `fn-naming`'s
  *  recovered names already in its collision set, and needs `call-shape` to
  *  have turned a disguised call back into a real callee so its call-result
  *  heuristic sees one. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass, varNaming as Pass];
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
