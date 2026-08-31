@@ -83,9 +83,17 @@ export interface HermesRunOptions {
 export interface HermesRunResult {
   readonly ok: boolean;
   readonly timedOut: boolean;
+  /** Combined stdout+stderr as lines (stdout only when the run succeeded or
+   *  timed out). Kept for `src/cli.ts`'s VM-vs-VM `equiv` compare, where
+   *  both sides are the same engine and the crash text is comparable. */
   readonly lines: readonly string[];
   readonly raw: string;
   readonly status?: number | null;
+  /** The two channels kept apart — `print()` goes to stdout, an uncaught
+   *  error's `Uncaught <Name>: <message>` report to stderr. A cross-engine
+   *  comparison (`ladder.ts`) needs them apart: see `hermesPrintProjection`. */
+  readonly stdout: string;
+  readonly stderr: string;
 }
 
 function splitLines(s: string): string[] {
@@ -112,12 +120,12 @@ export function runHermes(vmPath: string, file: string, opts: HermesRunOptions =
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 64 * 1024 * 1024,
     });
-    return { ok: true, timedOut: false, lines: splitLines(out), raw: out };
+    return { ok: true, timedOut: false, lines: splitLines(out), raw: out, stdout: out, stderr: "" };
   } catch (e) {
     const err = e as { killed?: boolean; stdout?: string; stderr?: string; status?: number | null };
-    if (err.killed === true) return { ok: false, timedOut: true, lines: splitLines(err.stdout ?? ""), raw: err.stdout ?? "" };
+    if (err.killed === true) return { ok: false, timedOut: true, lines: splitLines(err.stdout ?? ""), raw: err.stdout ?? "", stdout: err.stdout ?? "", stderr: err.stderr ?? "" };
     const raw = (err.stdout ?? "") + (err.stderr ?? "");
-    return { ok: false, timedOut: false, lines: splitLines(raw), raw, status: err.status ?? null };
+    return { ok: false, timedOut: false, lines: splitLines(raw), raw, status: err.status ?? null, stdout: err.stdout ?? "", stderr: err.stderr ?? "" };
   }
 }
 
@@ -143,18 +151,58 @@ export function runHermesAsync(vmPath: string, file: string, opts: HermesRunOpti
   return new Promise((resolve) => {
     execFile(vmPath, args, { timeout, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err === null) {
-        resolve({ ok: true, timedOut: false, lines: splitLines(stdout), raw: stdout });
+        resolve({ ok: true, timedOut: false, lines: splitLines(stdout), raw: stdout, stdout, stderr: stderr ?? "" });
         return;
       }
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | null };
       if (e.killed === true) {
-        resolve({ ok: false, timedOut: true, lines: splitLines(stdout ?? ""), raw: stdout ?? "" });
+        resolve({ ok: false, timedOut: true, lines: splitLines(stdout ?? ""), raw: stdout ?? "", stdout: stdout ?? "", stderr: stderr ?? "" });
         return;
       }
       const raw = (stdout ?? "") + (stderr ?? "");
-      resolve({ ok: false, timedOut: false, lines: splitLines(raw), raw, status: typeof e.code === "number" ? e.code : null });
+      resolve({ ok: false, timedOut: false, lines: splitLines(raw), raw, status: typeof e.code === "number" ? e.code : null, stdout: stdout ?? "", stderr: stderr ?? "" });
     });
   });
+}
+
+/**
+ * The *name* of the uncaught error a Hermes run died with, or `null` when it
+ * didn't die that way. Hermes reports an uncaught throw on stderr as
+ * `Uncaught <Error.prototype.toString()>` followed by its own stack frames —
+ * `Uncaught TypeError: Cannot read property 'x' of null` — and a thrown
+ * non-Error as `Uncaught <String(value)>` (`Uncaught 42`,
+ * `Uncaught [object Object]`), which maps onto `trace.ts`'s `errShape`
+ * convention of `"Thrown"` for non-object throws. An unhandled promise
+ * rejection prints nothing and exits 0 under the bare VM, so it is not an
+ * uncaught error here — nor is it on the Node side, where it is a separate
+ * `unhandled` record outside the print projection.
+ *
+ * Name only, never the message: the message wording is each engine's own
+ * (V8: "Cannot read properties of null (reading 'x')"), which is exactly why
+ * docs/EQUIVALENCE.md's `--relax error-messages` exists. Comparing the two
+ * engines' wording would fail every legitimately-crashing program.
+ */
+export function uncaughtErrorName(stderr: string): string | null {
+  const first = stderr.split("\n").find((l) => l.length > 0);
+  if (first === undefined || !first.startsWith("Uncaught ")) return null;
+  const rest = first.slice("Uncaught ".length);
+  const m = /^([A-Za-z_$][\w$]*)(?::|$)/.exec(rest);
+  return m !== null ? m[1]! : "Thrown";
+}
+
+/**
+ * The print projection of a Hermes run — what a candidate's own
+ * `printProjection` (trace.ts) is compared against in the D14 cross-check.
+ * stdout lines (every `print()`), then `uncaught <Name>` when the program
+ * died of an uncaught throw. Both sides project the same way, so a program
+ * that legitimately throws (adversarial/36-optional-chaining-sideeffect —
+ * `null.method?.()` is a TypeError by spec) compares PASS when the candidate
+ * throws the same error type at the same point in its output, and DIVERGENT
+ * when it doesn't throw or throws something else (CONSOLIDATION 25).
+ */
+export function hermesPrintProjection(r: HermesRunResult): readonly string[] {
+  const name = uncaughtErrorName(r.stderr);
+  return name === null ? splitLines(r.stdout) : [...splitLines(r.stdout), `uncaught ${name}`];
 }
 
 /** The `print`-channel projection of a sandbox trace — see trace.ts's

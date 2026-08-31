@@ -170,7 +170,19 @@ Comparing a print-only trace against a full one always compares the **print
 projection of both, joined then re-split** — never record-by-record, because
 one multi-line `print()` call is one record on the Node side and several
 lines of raw Hermes stdout (HA-07; regression-tested against the exact shape
-`43-template-literals` would break with a naive per-record compare).
+`43-template-literals` would break with a naive per-record compare). The
+projection on both sides is the print lines **plus `uncaught <Name>` when the
+program died of an uncaught throw** — `printProjection` (`trace.ts`, from the
+main-phase `err` record) and `hermesPrintProjection` (`hermes-vm.ts`, from the
+`Uncaught <Name>: …` report Hermes writes to stderr, kept apart from stdout).
+Name only: the two engines word the same error differently (V8 "Cannot read
+properties of null (reading 'x')", Hermes "Cannot read property 'x' of
+null"), which is the same unsoundness `--relax error-messages` exists for. A
+legitimately-throwing program is therefore PASS when the candidate throws the
+same type at the same point, DIVERGENT when it doesn't throw or throws another
+type (`tests/gate/harness/ladder-uncaught.test.ts`; CONSOLIDATION 25 — before
+this, the candidate's print-only projection was compared against the VM's raw
+stdout+stderr, so every such program looked DIVERGENT).
 
 **Value encoding** (`makeEncoder`, `src/harness/trace.ts`) is deterministic,
 side-effect-free, and never invokes a getter or reads `.stack`: `-0 !== 0`,

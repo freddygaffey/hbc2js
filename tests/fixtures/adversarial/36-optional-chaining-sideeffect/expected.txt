@@ -2,20 +2,18 @@ r1: 20
 r2: undefined
 r3: 40
 trace: 10||20
-file:///Users/fred/hbc2js/tests/fixtures/adversarial/36-optional-chaining-sideeffect/source.js:30
+[eval]:30
 const r5 = null.method?.();  // Should not error
                 ^
 
 TypeError: Cannot read properties of null (reading 'method')
-    at file:///Users/fred/hbc2js/tests/fixtures/adversarial/36-optional-chaining-sideeffect/source.js:30:17
-    at ModuleJobSync.runSync (node:internal/modules/esm/module_job:541:37)
-    at ModuleLoader.importSyncForRequire (node:internal/modules/esm/loader:366:47)
-    at loadESMFromCJS (node:internal/modules/cjs/loader:1648:24)
-    at Module._compile (node:internal/modules/cjs/loader:1811:5)
-    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
-    at Module.load (node:internal/modules/cjs/loader:1552:32)
-    at Module._load (node:internal/modules/cjs/loader:1354:12)
-    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
-    at Module.require (node:internal/modules/cjs/loader:1575:12)
+    at [eval]:30:17
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:483:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:481:60)
+    at evalFunction (node:internal/process/execution:94:30)
+    at evalScript (node:internal/process/execution:106:3)
+    at node:internal/main/eval_string:71:3
 
 Node.js v25.9.0

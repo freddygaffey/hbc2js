@@ -21,8 +21,8 @@ import { runProgram } from "./runner.ts";
 import type { RunOptions } from "./runner.ts";
 import { compareTraces, TRACE_VERDICT } from "./compare.ts";
 import type { TraceComparison } from "./compare.ts";
-import { printLines } from "./trace.ts";
-import { runHermesAsync } from "./hermes-vm.ts";
+import { printProjection } from "./trace.ts";
+import { runHermesAsync, hermesPrintProjection } from "./hermes-vm.ts";
 import { syntaxOk } from "./mutate.ts";
 import { findHermesc, compileWithHermesc, roundTripFromBytes } from "./roundtrip.ts";
 import type { RoundTripReport } from "./roundtrip.ts";
@@ -186,8 +186,16 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
         // program's own run is compared.
         const globalsIdx = ta.records.findIndex((r) => r.k === "globals");
         const mainPhase = globalsIdx < 0 ? ta.records : ta.records.slice(0, globalsIdx + 1);
-        const candidatePrint = printLines(mainPhase).join("\n");
-        const hermesPrint = hermesResult.lines.join("\n");
+        // Both sides projected the same way (CONSOLIDATION 25): print lines,
+        // then `uncaught <Name>` if the program died of an uncaught throw.
+        // Comparing the candidate's print-only projection against the VM's
+        // raw stdout+stderr made every legitimately-throwing program look
+        // DIVERGENT (the VM side carried Hermes's crash report, the
+        // candidate side by construction never could). Joined then
+        // compared as text, never per record (HA-07: one multi-line print
+        // is one record here and several lines there).
+        const candidatePrint = printProjection(mainPhase).join("\n");
+        const hermesPrint = hermesPrintProjection(hermesResult).join("\n");
         if (candidatePrint !== hermesPrint) {
           if (opts.reference.knownDivergences.length > 0) {
             caveats.push(`${opts.fixture.name}: candidate diverges from Hermes VM v${opts.reference.vm.hbcVersion}'s own trace, but this is a documented known-divergence construct (${opts.reference.knownDivergences.join(", ")}) — PASS-with-caveat`);
