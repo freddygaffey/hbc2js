@@ -5,17 +5,26 @@
 // Module boundaries come from `src/deps/inventory.ts` (structural, via
 // `dscan.ts`'s bytecode-level `__d()` scan — never by decompiling
 // everything, D17a). Each module's *body* comes from one full-module
-// decompile with passes and the structurer's isomorphism verifier both
-// switched off: readability passes make this ~150x slower on a real app
-// (docs/STATUS.md's M5 call-shape note — 4199-function bundles are excluded
-// from the gate's time budget with passes on) and stage 1 only needs a
-// structurally faithful split, not readable output; classify/name (D17i
-// stages 2/3) and the readability ladder both operate on this tree later.
-// The consequence: every call in the emitted files is still the M4 baseline's
-// `Reflect.apply(callee, this, args)` shape *except* the specific
-// `require(dependencyMap[i])` calls src/split/rewrite.ts recognises and
-// rewrites to a real `require('./module_<id>.js')` — good enough to prove
-// the require graph, not a readability pass.
+// decompile that runs through the exact same M5 pass pipeline as the normal
+// path (`src/decompile.ts`'s `decompile()`): same `REGISTRY`, same order,
+// same `SplitOptions.passes`/`--no-pass`/`--passes=none` opt-out, wired via
+// the same `passHook`/`astPassHook` helpers (spec 07) — no separate
+// pass-wiring code lives here. The structurer's isomorphism verifier stays
+// off (`structure: { verify: false }`): that check is orthogonal to
+// readability and expensive on a real app, and it is unrelated to what this
+// module's own tests assert. Readability passes make full-bundle decompiles
+// meaningfully slower (docs/STATUS.md's M5 call-shape note — 4199-function
+// bundles are excluded from the *gate's* time budget with passes on), which
+// is why `tests/gate/split/split.test.ts`'s structural checks pass
+// `{ none: true }` explicitly and the passes-on behaviour proven by
+// `tests/gate/decompile/split-passes.test.ts` only asserts a couple of
+// modules rather than re-running the whole file's assertions with passes on.
+// The consequence of the M4 baseline (`{ none: true }`) is that every call in
+// the emitted files is still `Reflect.apply(callee, this, args)` *except* the
+// specific `require(dependencyMap[i])` calls src/split/rewrite.ts recognises
+// and rewrites to a real `require('./module_<id>.js')` — with passes on,
+// call-shape/expr-rebuild/etc. clean that up exactly as they do on the normal
+// path.
 import { analyseModule } from "../cfg/index.ts";
 import { buildInventoryFromModule } from "../deps/inventory.ts";
 import type { Stmt } from "../emit/ast.ts";
@@ -23,6 +32,8 @@ import { emitModule } from "../emit/index.ts";
 import { printProgram } from "../emit/print.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
+import { astPassHook, passHook } from "../passes/index.ts";
+import type { PassPipelineOptions } from "../passes/index.ts";
 import { resolveEntryModuleId } from "./entry.ts";
 import { rewriteFactoryBody } from "./rewrite.ts";
 
@@ -43,27 +54,39 @@ export interface SplitResult {
 
 export interface SplitOptions {
   readonly moduleName?: string;
+  /**
+   * Spec 07's pass pipeline, wired exactly as `src/decompile.ts`'s
+   * `decompile()` wires it (same `passHook`/`astPassHook` helpers, same
+   * `REGISTRY`, same order). Every registered pass runs by default;
+   * `{ none: true }` is `--passes=none`, `{ skip: [...] }` is `--no-pass`.
+   */
+  readonly passes?: PassPipelineOptions;
 }
 
 function isFuncStmt(s: Stmt | undefined): s is Extract<Stmt, { k: "func" }> {
   return s !== undefined && s.k === "func";
 }
 
-/** Decompile every function once (no passes, no isomorphism verify — see the
- *  file header) and hand back each function's own top-level JS AST, keyed by
- *  function index, exactly as `decompileAst` does internally (spec 07 F1) but
- *  without running the pass pipeline. */
-function decompileAllBodies(module: HbcModule): ReadonlyMap<number, Extract<Stmt, { k: "func" }>> {
+/** Decompile every function once (isomorphism verify off — see the file
+ *  header) and hand back each function's own top-level JS AST, keyed by
+ *  function index, exactly as `decompileAst` does internally (spec 07 F1):
+ *  `passHook`/`astPassHook` build the same stage-A/stage-B hooks
+ *  `src/decompile.ts` uses, so the split path runs through the identical
+ *  pass pipeline instead of a second, hand-rolled wiring. */
+function decompileAllBodies(module: HbcModule, passes: PassPipelineOptions = {}): ReadonlyMap<number, Extract<Stmt, { k: "func" }>> {
   const analysis = analyseModule(module, { strictEnv: false });
   const bodies = new Map<number, Extract<Stmt, { k: "func" }>>();
+  const astHook = astPassHook(analysis, passes);
   emitModule(analysis, {
     moduleName: "input.hbc",
     provenanceComments: false,
     strictEnv: false,
     structure: { verify: false },
+    passes: passHook(analysis, passes),
     astPasses: (fn, cfg) => {
-      if (fn.k === "func") bodies.set(cfg.functionIndex, fn);
-      return { fn, diagnostics: [] };
+      const passed = astHook(fn, cfg);
+      if (passed.fn.k === "func") bodies.set(cfg.functionIndex, passed.fn);
+      return passed;
     },
   });
   return bodies;
