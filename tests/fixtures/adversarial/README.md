@@ -5,8 +5,8 @@ Deliberately hard-to-decompile JavaScript code designed to stress-test and find 
 ## Test status summary
 
 - **Total fixtures**: 42
-- **PASS through decompiler**: 34 (PASS-vs-VM, per D14/D22a — see "2026-08-31 triage" below)
-- **DIVERGE (bugs found, confirmed against the Hermes VM directly)**: 3
+- **PASS through decompiler**: 40 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
+- **DIVERGE (harness verdict)**: 2, both v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`) and `20-symbol-keyed-properties` (**toolchain/harness artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM). See "CONSOLIDATION 26 triage" below.
 - **ERROR (decompiler threw)**: 0
 - **SKIP (v94/v96 compile failure, v99 ok)**: 5 (class fixtures)
 
@@ -16,10 +16,17 @@ All fixtures are deterministic (no Math.random/Date/network) and output only via
 
 A Haiku agent's first pass flagged 6 fixtures (02, 06, 28, 29, 30, 36) as DIVERGE/ERROR by comparing against **Node's** `expected.txt`. Per D14, that is the wrong reference for a fixture that runs under a real Hermes VM: the decompiler must reproduce what the *bytecode does under Hermes*, not what the source does under Node. Re-checked all 6 directly against `tools/hermes-vm/v94`, `tools/hermesc/v96/hermes`, and `tools/hermes-vm/v99`:
 
-- **1 confirmed real bug**: `02-proxy-trap-counting` — decompiled output disagrees with the Hermes VM itself (not just Node), at v94/v96.
+- **1 confirmed real bug (since resolved)**: `02-proxy-trap-counting` — decompiled output disagreed with the Hermes VM itself (not just Node), at v94/v96. **Stale as of CONSOLIDATION 26 (2026-08-31): it now PASSes at v94/v96/v99** through `runTier`, and the decompiled v94 candidate's output is byte-identical to `tools/hermes-vm/v94`'s own run (`has traps: 1`) — fixed as a side effect of an intervening commit, not bisected; see its `docs/BUGS.md` row.
 - **5 false positives**: `06`, `28`, `29`, `30`, `36` all have the decompiled candidate matching the Hermes VM's own trace exactly; the apparent divergence in each case is either a genuine, already-known-class Hermes-vs-Node/spec difference (06, 30 — see `reference-policy.ts`'s `KNOWN_DIVERGENT_FIXTURES`), a broken `expected.txt` generated under the wrong module semantics (28, 29), or a harness comparison-method artifact unrelated to the decompiler (36). Full evidence for each in `docs/BUGS.md`.
 
-Wiring the new `tests/sweep/adversarial/**` tier (running the real decompiler + the Hermes VM cross-check on all 42 fixtures, not just the 6) also surfaced two more divergences outside that original 6, **not yet triaged with the same rigor** — `20-symbol-keyed-properties` (v99, root cause undetermined) and `21-class-private-fields` (v99, looks like a real bug) — see their own `docs/BUGS.md` rows.
+Wiring the new `tests/sweep/adversarial/**` tier (running the real decompiler + the Hermes VM cross-check on all 42 fixtures, not just the 6) also surfaced two more divergences outside that original 6 — `20-symbol-keyed-properties` and `21-class-private-fields`, both v99-only — triaged below.
+
+### CONSOLIDATION 26 triage (Claude Fable 5, 2026-08-31) — the two v99 findings
+
+Both re-run through `runTier({tier:"adversarial", decompiler: hbc2jsDecompiler, only:[…]})` at v94/v96/v99 (20: PASS/PASS/DIVERGENT; 21: n/a/n/a/DIVERGENT), then localised by disassembly (`hbc2js disasm`), by the VM's own source (`tools/hermes-vm/src-99`), and by recompiling each `source.js` with the VM's *own* `hermesc` (same Hermes commit as the VM) to separate toolchain effects from decompiler effects:
+
+- **`21-class-private-fields` → (a) real decompiler bug, `src/emit` stage.** Not private fields at all: Static Hermes (v98/v99) lowers a class getter/setter *pair* as two `DefineOwnGetterSetterByVal` instructions, each with the other half `undefined` (`v99.hbc` fn#0 `0039 … r8, r7, r9, r1, 0` getter / `0044 … r8, r7, r1, r6, 0` setter, r1 = `LoadConstUndefined`); the VM's `caseDefineOwnGetterSetterByVal` only sets the non-undefined half, but `src/emit/lower.ts` emits both halves as a full `Object.defineProperty(o, k, {get, set})`, so the setter's definition clobbers the getter with `undefined` — every later `c.value` read is `undefined` while the `#value` storage (read directly by `inc()`) is right. The VM's own hermesc emits the identical shape and the VM prints the right values, so this is the decompiler. Object-literal accessor pairs merge into one instruction at every version (probed v94/v99), so it is class-only, v98/v99-only. Minimal reproducer: `tests/fixtures/constructs/58-class-accessor-pair-split` (v98/v99, failing-by-design via `KNOWN_WRONG_OUTPUT` in `src/harness/tiers.ts`). Fix not in this task; `docs/BUGS.md`.
+- **`20-symbol-keyed-properties` → (b) oracle/harness artefact, not a decompiler bug against the available ground truth.** The fixture's `v99.hbc` comes from `tools/hermesc/v99/hermesc` (`hermes-compiler@260318099`, ≈2026-03-18) but `tools/hermes-vm/v99` is built from Hermes `913d31a` (2026-03-05); in between, Hermes added `HermesBuiltin.setFunctionName` at builtin index 55, emitted for every computed-key method (`{ [Symbol.iterator]() {} }`). The VM (and the decompiler's `HBC99_MAR2026` table, generated from the same `913d31a`) read index 55 as `functionPrototypeApply`, so **the VM itself crashes on the original bytecode** (`Can't apply() to non-callable` at `source.js:18:18`, the method definition — not the `for-of`) and the decompiler faithfully emits the same wrong call (`r1.apply(r2, 0)`), dying at the same site with the same error name. Recompiling `source.js` with the VM's own hermesc drops the `CallBuiltin` entirely and both `hermes source.js` and the resulting `.hbc` print `custom iterator: 1,2,3`. The harness still says DIVERGENT only because `ladder.ts`'s D14 cross-check never lets VM==candidate overrule a Node-vs-candidate divergence (Node prints `1,2,3`) unless the fixture is in `KNOWN_DIVERGENT_FIXTURES`. Wider consequence, documented in `docs/BUGS.md`: the same index shift moves every private builtin after 55 (`spawnAsync` etc.) by one under the npm v99 compiler, which is the real root cause of `reference-policy.ts`'s whole `VM_LIMITATIONS` table, and means any production RN "1000.x" bundle with a computed-key method decompiles to a throwing `.apply(...)`. Follow-ups (a post-03-18 v99 builtin table + `setFunctionName` emit, a matching VM rebuild, and the `ladder.ts` D14 override) are not in this task.
 
 ## By category
 
@@ -30,7 +37,7 @@ Getters, Proxies, argument and operator evaluation order with side effects.
 | # | Name | Pattern | Status | Notes |
 |---|---|---|---|---|
 | 01 | getter-receiver-double-eval | Getter as receiver in a.b.c(x) — test no double-eval | PASS | v94, v96, v99 |
-| 02 | proxy-trap-counting | Proxy get/set/has trap invocation counts | **DIVERGE** | `'x' in proxy` (has-trap statement) dropped entirely at v94/v96 — confirmed against the Hermes VM directly, not just Node; v99 is correct. Real bug, docs/BUGS.md |
+| 02 | proxy-trap-counting | Proxy get/set/has trap invocation counts | PASS | v94, v96, v99. Was a confirmed real bug (`'x' in proxy` has-trap statement dropped at v94/v96, confirmed against the VM); re-verified under CONSOLIDATION 26 (2026-08-31): `runTier` PASS at all three versions and the decompiled v94 output is byte-identical to the v94 VM's (`has traps: 1`). Fixed by an intervening commit, not bisected — docs/BUGS.md row updated |
 | 03 | argument-eval-order | Function arguments evaluated left-to-right | PASS | v94, v96, v99 |
 | 04 | comma-operator-sideeffect | Comma operator in condition and expression | PASS | v94, v96, v99 |
 | 05 | shortcircuit-sideeffect | &&, \|\|, ?? short-circuit with side effects | PASS | v94, v96, v99 |
@@ -79,7 +86,7 @@ BigInt, -0 vs 0, NaN, Symbol-keyed properties.
 | 17 | bigint-mixed-arithmetic | BigInt + Number operations | PASS | v94, v96, v99 |
 | 18 | negative-zero-identity | -0 vs 0 (Object.is, 1/x) | PASS | v94, v96, v99 |
 | 19 | nan-comparison-identity | NaN comparisons and Object.is | PASS | v94, v96, v99 |
-| 20 | symbol-keyed-properties | Symbol-keyed properties and Symbol.iterator | PASS (v94, v96); **DIVERGE** (v99) | v99: VM and decompiled candidate both crash at the same custom-`Symbol.iterator` `for-of` call site with matching preceding output but different native error text — root cause undetermined (surfaced by the new adversarial sweep tier, not part of the 2026-08-31 6-fixture triage), see docs/BUGS.md |
+| 20 | symbol-keyed-properties | Symbol-keyed properties and Symbol.iterator | PASS (v94, v96); **DIVERGE-artefact** (v99) | v99: **toolchain/harness artefact, not a decompiler bug** (CONSOLIDATION 26). `v99.hbc` (npm `hermes-compiler@260318099`) emits `CallBuiltin b55 "HermesBuiltin.setFunctionName"` for the computed `[Symbol.iterator]() {}` method; the source-built VM (`913d31a`, 2026-03-05, predates that builtin) and the decompiler's table both read b55 as `functionPrototypeApply`, so the VM crashes on the original bytecode (`Can't apply() to non-callable` at `source.js:18:18`) and the candidate crashes at the same site with the same error name (`r1.apply(r2, 0)`). Recompiled with the VM's own hermesc, VM and candidate both print `custom iterator: 1,2,3`. Stays DIVERGENT only because `ladder.ts` never lets VM==candidate overrule Node. Exposes a real builtin-table gap for post-03-18 v99 compilers (follow-ups in docs/BUGS.md) |
 
 ### OOP (4 fixtures)
 
@@ -87,7 +94,7 @@ Private fields/methods, static blocks, inheritance, super, instanceof.
 
 | # | Name | Pattern | Status | Notes |
 |---|---|---|---|---|
-| 21 | class-private-fields | Class private #fields and #methods | **DIVERGE** (v99 only) | v94, v96: FAILS (class syntax unsupported). v99: VM prints `initial: 0`/`after set: 100`, decompiled prints `undefined`/`undefined` for the same reads (final value matches, so storage is right but a read path is wrong) — likely a real bug, surfaced by the new adversarial sweep tier, not part of the 2026-08-31 6-fixture triage; see docs/BUGS.md |
+| 21 | class-private-fields | Class private #fields and #methods | **DIVERGE** (v99 only) | v94, v96: FAILS (class syntax unsupported). v99: **confirmed real bug, `src/emit/lower.ts`** (CONSOLIDATION 26) — not private fields: the class `get value`/`set value` pair is lowered as two `DefineOwnGetterSetterByVal` with the other half `undefined` (`0039`/`0044` in fn#0); the VM only sets the defined half (`caseDefineOwnGetterSetterByVal`), the emit's full `{get, set}` defineProperty clobbers the getter with `undefined`, so `c.value` reads `undefined` (VM `initial: 0`/`after set: 100`) while `#value` storage is right (`after inc: 1 2`/`final: 101` match). Same shape from the VM's own hermesc, so not toolchain. Minimal reproducer `constructs/58-class-accessor-pair-split` (v98/v99, `KNOWN_WRONG_OUTPUT`); fix not in this task; docs/BUGS.md |
 | 22 | class-static-block | Class static initializer blocks | PASS (v99 only) | v94, v96: FAILS; v99: OK |
 | 23 | class-inheritance-super | Class inheritance with super | PASS (v99 only) | v94, v96: FAILS; v99: OK |
 | 24 | class-expression-instanceof | Class expressions, instanceof chain | PASS (v99 only) | v94, v96: FAILS; v99: OK |
@@ -132,9 +139,9 @@ Computed properties, for-in, optional chaining, nullish coalescing.
 
 Each fixture whose decompiled output genuinely diverges from the Hermes VM (D14/D22a) is a regression test for a bug documented in docs/BUGS.md. As of the 2026-08-31 triage:
 
-- **02** → real bug: Proxy `has` trap statement dropped entirely (v94/v96; v99 correct)
-- **20** → open, root cause undetermined (v99; found while wiring the sweep tier, not part of the 6-fixture triage)
-- **21** → likely real bug: private-field read returns `undefined` instead of the stored value (v99; found while wiring the sweep tier)
+- **21** → confirmed real bug (CONSOLIDATION 26): class getter/setter pair — the second half-`undefined` `DefineOwnGetterSetterByVal` clobbers the first in `src/emit/lower.ts` (v98/v99 class lowering only). Minimal reproducer with a failing-by-design gate entry: `tests/fixtures/constructs/58-class-accessor-pair-split` (`KNOWN_WRONG_OUTPUT`, `src/harness/tiers.ts`)
+- **20** → toolchain/harness artefact (CONSOLIDATION 26): npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch (`HermesBuiltin.setFunctionName` at index 55); the VM itself crashes on the original bytecode and the decompiler matches it. Stays DIVERGENT at v99 until either the toolchain pair is realigned or `ladder.ts` lets VM==candidate overrule Node; the underlying v99 builtin-table gap has its own docs/BUGS.md follow-ups
+- **02** → was a real bug (Proxy `has` trap statement dropped at v94/v96); no longer reproduces as of CONSOLIDATION 26 (PASS at v94/v96/v99, byte-identical to the v94 VM), fixed by an intervening commit, not bisected. Remains as a regression test
 
 **06, 28, 29, 30, 36** were reclassified as false positives (D14 known-divergence or a fixture/harness artifact unrelated to the decompiler — see docs/BUGS.md and each fixture's own table row above) and are no longer bug regression tests; they still run every time as ordinary PASS-vs-VM checks under `tests/sweep/adversarial/report.test.ts`.
 
