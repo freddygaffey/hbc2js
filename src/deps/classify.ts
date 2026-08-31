@@ -1,46 +1,65 @@
-// src/deps/classify.ts — D17i stage 2 / D17h: classify each Metro module as
-// third-party LIBRARY (ignorable) vs the app's OWN CODE, without naming the
-// package. Naming (D17a/D17f/D17g, `match.ts`/`guess.ts`) is the hard,
-// slow-to-improve problem; classification is the easier one and delivers
-// the headline goal on its own ("show me only the app's code").
+// src/deps/classify.ts — D17i stage 2 / D17h / D17h-b: classify each Metro
+// module as third-party LIBRARY (ignorable) vs the app's OWN "custom" code,
+// without naming the package. Naming (D17a/D17f/D17g, `match.ts`/`guess.ts`)
+// is the hard, slow-to-improve problem; classification is the easier one
+// and delivers the headline goal on its own ("show me only the app's
+// code") — and, per D17h-b, delivers it on a BRAND-NEW app with NO
+// cross-app corpus at all, since the primary signals below work from
+// evidence inside the single bundle.
 //
-// Signals, in priority order (D17h):
-//   1. Cross-app recurrence (primary) — measured per FUNCTION, not per whole
-//      module: each function's normalised exact-bytecode hash
-//      (`sig-normalise.ts`'s `normaliseFunctionForSignature`, masking the
-//      Metro dependency-map index, same hash `match.ts`'s signature DB
-//      already uses) is looked up in a commonality index of hash ->
-//      distinct-bundle-count. Whole-MODULE hashing was tried first and
-//      measured far too strict: a library module's factory + every nested
-//      closure must be byte-identical across builds for the module hash to
-//      recur at all, which real apps rarely share (different RN/toolchain
-//      versions perturb at least one nested closure almost everywhere).
-//      Per-function hashing finds the same shared library CODE (a helper
-//      like `invariant`/`_extends`/a React internal) even when the module
-//      wrapping it differs build to build. A module is classified library
-//      when the majority of its own instruction weight comes from functions
-//      whose hash recurs in >= N distinct bundles (small/trivial functions
-//      below `minInstr` are excluded from eligibility — same FLIRT-style
-//      floor `match.ts`/`docs/PACKAGE-SIGNATURES.md` §2.4 uses, since tiny
-//      functions collide across unrelated code by chance). An app's own
-//      logic is not, by construction, also present byte-for-byte in
-//      unrelated apps; a function whose exact bytecode recurs across
-//      distinct apps is shared library code by definition. The recurrence
-//      corpus is a committable "commonality index" of hash ->
-//      distinct-bundle-count (never bundle content) built by
-//      `buildCommonalityIndex` below and persisted at
-//      `tools/pkgsig/commonality-index.json`
-//      (`build-commonality-index.mjs` regenerates it; see docs/DEPS.md).
-//   2. `node_modules/...` paths or `pkg@x.y.z`-shaped strings baked into a
-//      module's string constants.
-//   3. Structural shape — many small functions, no app-specific-looking
-//      strings (routes, screens, asset paths) — a coarse, low-confidence
-//      fallback signal.
+// Signals, in priority order:
+//   0. Cross-app recurrence (D17h, kept as a BONUS on top of D17h-b's
+//      corpus-free signals below, not required for them to work) — measured
+//      per FUNCTION, not per whole module: each function's normalised
+//      exact-bytecode hash (`sig-normalise.ts`'s
+//      `normaliseFunctionForSignature`, masking the Metro dependency-map
+//      index, same hash `match.ts`'s signature DB already uses) is looked
+//      up in a commonality index of hash -> distinct-bundle-count.
+//      Whole-MODULE hashing was tried first and measured far too strict: a
+//      library module's factory + every nested closure must be
+//      byte-identical across builds for the module hash to recur at all,
+//      which real apps rarely share. Per-function hashing finds the same
+//      shared library CODE even when the module wrapping it differs build
+//      to build. A module is classified library when the majority of its
+//      own instruction weight comes from functions whose hash recurs in >=
+//      N distinct bundles (small/trivial functions below `minInstr` are
+//      excluded — same FLIRT-style floor `match.ts` uses). Needs a
+//      multi-bundle commonality index to ever fire; on a single brand-new
+//      app with an empty/absent index this signal is simply silent and the
+//      D17h-b signals below carry the whole result.
+//   1. **node_modules path evidence (D17h-b, primary, strong).** A
+//      `node_modules/<pkg>/...` substring, or a bare (prefix-stripped)
+//      `<pkg>/lib|dist|src|.../*.js` package-relative path, in the module's
+//      own string constants — package name extracted when present
+//      (`libraryPathEvidence`). In practice this signal is silent on a
+//      release/production bundle (Metro strips `node_modules/`-shaped
+//      require paths from optimised output) and fires mainly on `-g`/debug
+//      builds and source-mapped bundles — see the measured numbers in
+//      docs/DEPS.md.
+//   2. **App-vocabulary presence (D17h-b, primary, the key idea).** The
+//      app's OWN vocabulary — its bundle id / reverse-DNS or scoped package
+//      name, distinctive PascalCase Screen/Navigator/Component-shaped
+//      identifiers, route paths, its own API hostnames, and other
+//      string tokens that recur across several of ITS OWN modules but are
+//      not generic JS/library boilerplate — is derived straight from the
+//      bundle itself (`deriveAppVocabulary`, no cross-app corpus needed). A
+//      module whose strings reference that vocabulary is classified
+//      CUSTOM. This is what makes classification work out of the box on a
+//      brand-new app the tool has never seen, and it is the signal that
+//      carries almost the entire result on a release bundle where signal 1
+//      is silent.
+//   3. **Structural shape (D17h-b, weakest, last-checked).** Many small
+//      functions, no strings, none of them app-specific/app-vocabulary —
+//      library-leaning, but only once app-vocabulary has already been ruled
+//      out for this module (a module with real app-domain strings never
+//      falls through to this signal).
 //
-// A module that clears none of these is left "app" (the default: false
-// negatives here only mean some library code still shows up as app code,
-// which is the safe direction to be wrong in) unless it is trivially empty,
-// in which case it is "unknown".
+// Combination rule (D17h-b): a module is LIBRARY if node_modules-evidence
+// OR (no app-vocab AND generic structural shape); CUSTOM if app-vocab is
+// present; else UNKNOWN — doubt is reported honestly as "unknown" rather
+// than defaulted either way, now that a real positive signal (app
+// vocabulary) is available to decide CUSTOM instead of relying on absence
+// of evidence.
 
 import { readFileSync } from "node:fs";
 import type { InventoryModule, ModuleInventory } from "./inventory.ts";
@@ -130,10 +149,31 @@ export const DEFAULT_COMMONALITY_INDEX_PATH = "tools/pkgsig/commonality-index.js
 // Supporting signals
 // ---------------------------------------------------------------------------
 
-const NODE_MODULES_PATH_RE = /\bnode_modules\//;
+// `node_modules/<pkg>/...` — captures the (possibly scoped) package name so
+// callers get more than a boolean out of this, the strongest single signal.
+const NODE_MODULES_PATH_RE = /\bnode_modules\/(@[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*|[a-z0-9][\w.-]*)/i;
 
-function hasNodeModulesPathString(m: InventoryModule): boolean {
-  return m.stringConstants.some((s) => NODE_MODULES_PATH_RE.test(s));
+// A bundler that stripped the `node_modules/` segment but left a bare
+// `<pkg>/lib|dist|src|build|es|cjs|umd/....js` package-relative path —
+// gated on a real subpath under a common library-output directory name AND
+// a JS/JSON extension so an app's own route-ish path string
+// (`"settings/profile"`) can't false-positive.
+const BARE_PACKAGE_PATH_RE = /^(@[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*|[a-z0-9][\w.-]*)\/(?:lib|dist|src|build|es|cjs|umd)\/[\w./-]*\.(?:js|json)$/i;
+
+/** `node_modules/...` path evidence (D17h-b #1, strong/primary): returns the
+ *  extracted package name when a module's string constants contain a
+ *  `node_modules/<pkg>/...` path or a bare package-relative path shaped
+ *  like a library's own output tree; `null` if neither is present. */
+export function libraryPathEvidence(m: InventoryModule): string | null {
+  for (const s of m.stringConstants) {
+    const nm = NODE_MODULES_PATH_RE.exec(s);
+    if (nm) return nm[1]!;
+  }
+  for (const s of m.stringConstants) {
+    const bare = BARE_PACKAGE_PATH_RE.exec(s);
+    if (bare) return bare[1]!;
+  }
+  return null;
 }
 
 // A bare or scoped npm package name immediately followed by a semver-ish
@@ -141,29 +181,40 @@ function hasNodeModulesPathString(m: InventoryModule): boolean {
 // string takes (distinct from `guess.ts`'s curated evidence tables, which
 // this file deliberately does not import — classification stays
 // self-contained per this task's ownership split).
-const PACKAGE_NAME_VERSION_RE = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*[@ ]v?\d+\.\d+\.\d+/i;
+const PACKAGE_NAME_VERSION_RE = /^(@[a-z0-9][\w.-]*\/)?([a-z0-9][\w.-]*)[@ ]v?\d+\.\d+\.\d+/i;
 
-function hasPackageNameVersionString(m: InventoryModule): boolean {
-  return m.stringConstants.some((s) => PACKAGE_NAME_VERSION_RE.test(s));
+function packageNameVersionMatch(m: InventoryModule): string | null {
+  for (const s of m.stringConstants) {
+    const match = PACKAGE_NAME_VERSION_RE.exec(s);
+    if (match) return (match[1] ?? "") + match[2]!;
+  }
+  return null;
 }
 
-// Coarse "this string looks app-specific" filter used only to *veto* the
-// structural-shape signal below — an asset path, a route/screen-ish
-// identifier, or a URL naming this app's own backend all say "this module
-// knows something about one particular app", which library glue does not.
+// Coarse "this string looks app-specific" filter — an asset path, a
+// route/screen-ish identifier, or a reverse-DNS/URL naming this app's own
+// backend all say "this module knows something about one particular app",
+// which library glue does not. Used both to veto the structural-shape
+// signal below and (D17h-b) as one input into app-vocabulary derivation.
 const APP_SPECIFIC_STRING_RE = /\.(png|jpe?g|gif|svg|webp|ttf|otf|woff2?)$/i;
 const SCREEN_OR_ROUTE_RE = /(Screen|Route|Navigator)$/;
+const REVERSE_DNS_RE = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){2,}$/i; // e.g. com.example.myapp
+const HOSTNAME_IN_URL_RE = /^https?:\/\/([a-z0-9.-]+\.[a-z]{2,})/i;
 
 function looksAppSpecific(s: string): boolean {
-  return APP_SPECIFIC_STRING_RE.test(s) || SCREEN_OR_ROUTE_RE.test(s);
+  return APP_SPECIFIC_STRING_RE.test(s) || SCREEN_OR_ROUTE_RE.test(s) || REVERSE_DNS_RE.test(s);
 }
 
-/** Structural-shape fallback (D17h): many small functions and few/no
+/** Structural-shape fallback (D17h-b #3): many small functions and few/no
  *  strings, none of them app-specific-looking. Deliberately the
  *  lowest-confidence, last-checked signal — library modules with a single
  *  large function or with genuinely no strings at all are common enough
  *  that this alone is coarse; it only fires when the module also cleared
- *  a minimum function count so a single tiny helper module doesn't trip it. */
+ *  a minimum function count so a single tiny helper module doesn't trip it.
+ *  Callers only consult this once app-vocabulary has already been ruled
+ *  out for the module (the combination rule's "no app-vocab AND generic
+ *  shape"), so the `looksAppSpecific` veto here is a fast, module-local
+ *  early-out on top of that. */
 const STRUCTURAL_MIN_FUNCTIONS = 3;
 const STRUCTURAL_MAX_AVG_INSTR = 40;
 const STRUCTURAL_MAX_STRINGS = 2;
@@ -178,24 +229,171 @@ function hasStructuralLibraryShape(m: InventoryModule): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// App vocabulary (D17h-b #2, the primary/key signal): derived from the
+// bundle itself, no cross-app corpus required.
+// ---------------------------------------------------------------------------
+
+/** The app's own derived vocabulary — a set of string tokens (bundle id,
+ *  hostnames, screen/route/component names, other cross-module app-specific
+ *  strings) that, when found in a module's own string constants, mark that
+ *  module CUSTOM. Opaque outside this file; build via `deriveAppVocabulary`. */
+export type AppVocabulary = ReadonlySet<string>;
+export const EMPTY_APP_VOCABULARY: AppVocabulary = new Set();
+
+export interface AppVocabularyOptions {
+  /** A candidate string must appear in the string constants of at least
+   *  this many DISTINCT modules to qualify purely on frequency (default 3
+   *  — "referenced from more than a couple of places in this app"; strings
+   *  independently recognisable as app-specific by shape are included
+   *  regardless of this floor, see below). */
+  readonly minModuleFrequency?: number;
+  /** A candidate present in more than this FRACTION of all modules is
+   *  excluded — near-ubiquitous strings are far more likely to be shared
+   *  runtime/polyfill glue than something distinctive to this one app
+   *  (default 0.15 — deliberately tight: a large bundle has thousands of
+   *  modules, and even a moderate absolute recurrence count can still be a
+   *  tiny, meaningless fraction of them; the false-positive risk runs the
+   *  other way here — too loose and library glue gets mislabelled custom,
+   *  see docs/DEPS.md). */
+  readonly maxModuleFraction?: number;
+  /** Cap on how many frequency-derived tokens are kept (default 300) — a
+   *  sanity bound, not expected to bind on most real bundles once the
+   *  frequency window above is tight. */
+  readonly maxVocabularySize?: number;
+}
+
+const DEFAULT_VOCAB_MIN_MODULE_FREQUENCY = 3;
+const DEFAULT_VOCAB_MAX_MODULE_FRACTION = 0.15;
+const DEFAULT_VOCAB_MAX_SIZE = 300;
+
+// "This looks like generic JS/library boilerplate, not something this app's
+// own developers wrote" — excludes candidates from the derived vocabulary.
+// Deliberately over-inclusive: a string that slips past this filter and
+// lands in the vocabulary by mistake only makes the CUSTOM signal a little
+// less precise (false-positive risk discussed in docs/DEPS.md), it never
+// hides real app code (the combination rule only ever uses vocabulary
+// presence to say CUSTOM, never to say LIBRARY).
+const GENERIC_BOILERPLATE_RE =
+  /^(?:true|false|null|undefined|NaN|Infinity|function|object|string|number|boolean|symbol|bigint|constructor|prototype|toString|valueOf|hasOwnProperty|isPrototypeOf|propertyIsEnumerable|length|arguments|callee|caller|this|super|default|require|module|exports|__esModule|main|index)$/i;
+const GENERIC_MESSAGE_RE =
+  /^(?:Invariant Violation|Warning:|Minified React error|[A-Z][a-zA-Z]*Error:|is not a function|is not defined|Cannot read propert(?:y|ies) of (?:null|undefined)|\[object [A-Za-z]*\]|Symbol\(.*\)|use strict)/;
+const NODE_MODULES_OR_PATHLIKE_RE = /node_modules\/|^\.{1,2}\//;
+
+function isGenericBoilerplate(s: string): boolean {
+  if (s.length < 4) return true;
+  if (GENERIC_BOILERPLATE_RE.test(s)) return true;
+  if (GENERIC_MESSAGE_RE.test(s)) return true;
+  if (NODE_MODULES_OR_PATHLIKE_RE.test(s)) return true;
+  if (!/[a-zA-Z]/.test(s)) return true; // pure punctuation/numeric
+  return false;
+}
+
+/** True when a string is independently recognisable as app-specific by
+ *  shape alone — included in the vocabulary regardless of frequency. */
+function isDistinctiveByShape(s: string): boolean {
+  if (looksAppSpecific(s)) return true;
+  if (HOSTNAME_IN_URL_RE.test(s)) return true;
+  return false;
+}
+
+function hostnameOf(s: string): string | null {
+  const m = HOSTNAME_IN_URL_RE.exec(s);
+  return m ? m[1]! : null;
+}
+
+/** Derives the app's own vocabulary from its bundle (D17h-b #2) — no
+ *  cross-app corpus, works on a brand-new app the first time it's seen.
+ *  Two contributions: (a) any string independently recognisable as
+ *  app-specific by shape (bundle id, `Screen`/`Navigator`-suffixed
+ *  identifiers, asset paths, URL hostnames — the hostname itself is added,
+ *  not just the full URL string, so a module referencing the same host via
+ *  a different concrete URL still matches), regardless of how many modules
+ *  it appears in; (b) any other non-boilerplate string that recurs across
+ *  several distinct modules (>= `minModuleFrequency`) without being
+ *  near-ubiquitous (<= `maxModuleFraction` of all modules) — the shape a
+ *  shared route name, UI-copy constant, or the app's own API path prefix
+ *  takes. */
+export function deriveAppVocabulary(inventory: ModuleInventory, opts: AppVocabularyOptions = {}): AppVocabulary {
+  const minFreq = opts.minModuleFrequency ?? DEFAULT_VOCAB_MIN_MODULE_FREQUENCY;
+  const maxFraction = opts.maxModuleFraction ?? DEFAULT_VOCAB_MAX_MODULE_FRACTION;
+  const maxSize = opts.maxVocabularySize ?? DEFAULT_VOCAB_MAX_SIZE;
+  const totalModules = inventory.modules.length;
+  const maxCount = Math.max(minFreq, Math.floor(totalModules * maxFraction));
+
+  const vocab = new Set<string>();
+  const moduleCounts = new Map<string, number>();
+
+  for (const m of inventory.modules) {
+    for (const s of m.stringConstants) {
+      if (isDistinctiveByShape(s)) {
+        vocab.add(s);
+        const host = hostnameOf(s);
+        if (host !== null) vocab.add(host);
+        continue;
+      }
+      if (isGenericBoilerplate(s)) continue;
+      moduleCounts.set(s, (moduleCounts.get(s) ?? 0) + 1);
+    }
+  }
+
+  const ranked = [...moduleCounts.entries()]
+    .filter(([, count]) => count >= minFreq && count <= maxCount)
+    .sort((a, b) => b[1] - a[1]);
+  for (const [s] of ranked.slice(0, maxSize)) vocab.add(s);
+
+  return vocab;
+}
+
+/** Matching string constants for the app-vocabulary signal — either direct
+ *  membership in the derived vocabulary, or (independent of any derived
+ *  vocabulary, and useful even with `EMPTY_APP_VOCABULARY`) a string that
+ *  is itself recognisable as app-specific by shape within this one module. */
+function appVocabularyHits(m: InventoryModule, vocab: AppVocabulary): readonly string[] {
+  const hits: string[] = [];
+  for (const s of m.stringConstants) {
+    if (vocab.has(s) || isDistinctiveByShape(s)) hits.push(s);
+  }
+  return hits;
+}
+
+// ---------------------------------------------------------------------------
 // Classification
 // ---------------------------------------------------------------------------
 
-export type ModuleClassKind = "library" | "app" | "unknown";
+export type ModuleClassKind = "library" | "custom" | "unknown";
 
-export type ClassificationSignal = "cross-app-recurrence" | "node-modules-path" | "package-name-version-string" | "structural-shape" | "none";
+/** Signals that can decide a module LIBRARY. `app-vocabulary` is deliberately
+ *  excluded — it only ever decides CUSTOM (see `ClassificationSignal`). */
+export type LibrarySignal = "cross-app-recurrence" | "node-modules-path" | "package-name-version-string" | "structural-shape";
+export type ClassificationSignal = LibrarySignal | "app-vocabulary" | "none";
 
 export interface ModuleClassification {
   readonly localModuleId: number | null;
   readonly factoryFunctionIndex: number;
   readonly instrCount: number;
   readonly classification: ModuleClassKind;
+  /** The signal that decided this classification. */
   readonly signal: ClassificationSignal;
+  /** How confident this particular signal is, 0..1 (not a probability —
+   *  a coarse ranking so a report can be sorted/filtered by trust: strong
+   *  string evidence (node_modules path, package-name banner) near 1,
+   *  app-vocabulary scaled by how many distinct vocabulary tokens matched,
+   *  bare structural shape (the D17h-b "weakest, last-checked" signal)
+   *  low, "none"/unknown 0. */
+  readonly confidence: number;
   /** How many distinct bundles in the commonality index this module's
-   *  content hash was seen in (0 if the index has never seen it). Populated
-   *  regardless of which signal ultimately decided the classification, so a
-   *  near-miss (recurrence 1 below the threshold) is visible. */
+   *  content hash was seen in (0 if the index has never seen it, or if no
+   *  index/an empty one was supplied — expected on a brand-new app with no
+   *  cross-app corpus, D17h-b). Populated regardless of which signal
+   *  ultimately decided the classification, so a near-miss (recurrence 1
+   *  below the threshold) is visible. */
   readonly recurrenceCount: number;
+  /** The package name extracted from node_modules-path or package-name-
+   *  version-string evidence, when that's the deciding (or even just
+   *  present) signal; `null` otherwise. A hint only — D17h-b classifies
+   *  without naming; this is not run through `guess.ts`/`match.ts` naming
+   *  logic and carries no confirmation. */
+  readonly libraryPackageHint: string | null;
 }
 
 export interface ClassifyOptions {
@@ -217,6 +415,10 @@ export interface ClassifyOptions {
    *  small shared helper alongside a lot of its own logic should not be
    *  swept in. */
   readonly recurrenceFraction?: number;
+  /** Options forwarded to `deriveAppVocabulary` when `classifyInventory`
+   *  derives the vocabulary itself (ignored by `classifyModule`, which
+   *  always takes a pre-built `AppVocabulary`). */
+  readonly appVocabulary?: AppVocabularyOptions;
 }
 
 const DEFAULT_RECURRENCE_THRESHOLD = 2;
@@ -231,7 +433,21 @@ export interface ModuleFunctionSample {
   readonly instrCount: number;
 }
 
-export function classifyModule(m: InventoryModule, functions: readonly ModuleFunctionSample[], index: CommonalityIndex, opts: ClassifyOptions = {}): ModuleClassification {
+/** Classifies one module. `appVocabulary` defaults to
+ *  `EMPTY_APP_VOCABULARY` — the frequency-derived half of the app-vocabulary
+ *  signal then contributes nothing, but per-module shape-based app-specific
+ *  strings (`isDistinctiveByShape`, e.g. a `FooScreen`/asset-path/hostname
+ *  string sitting right in this one module) still do, so the signal is
+ *  never fully inert even for a lone module classified in isolation (as
+ *  most of this file's own unit tests do). `classifyInventory` below is the
+ *  normal caller and always supplies a real, bundle-derived vocabulary. */
+export function classifyModule(
+  m: InventoryModule,
+  functions: readonly ModuleFunctionSample[],
+  index: CommonalityIndex,
+  appVocabulary: AppVocabulary = EMPTY_APP_VOCABULARY,
+  opts: ClassifyOptions = {},
+): ModuleClassification {
   const threshold = opts.recurrenceThreshold ?? DEFAULT_RECURRENCE_THRESHOLD;
   const minInstr = opts.minInstr ?? DEFAULT_MIN_INSTR;
   const fractionNeeded = opts.recurrenceFraction ?? DEFAULT_RECURRENCE_FRACTION;
@@ -245,49 +461,81 @@ export function classifyModule(m: InventoryModule, functions: readonly ModuleFun
     if (count >= threshold) recurringWeight += f.instrCount;
   }
   const fraction = m.instrCount === 0 ? 0 : recurringWeight / m.instrCount;
-  const base = { localModuleId: m.localModuleId, factoryFunctionIndex: m.factoryFunctionIndex, instrCount: m.instrCount, recurrenceCount: maxRecurrenceCount };
+  const base = {
+    localModuleId: m.localModuleId,
+    factoryFunctionIndex: m.factoryFunctionIndex,
+    instrCount: m.instrCount,
+    recurrenceCount: maxRecurrenceCount,
+  };
 
-  if (fraction >= fractionNeeded && recurringWeight > 0) return { ...base, classification: "library", signal: "cross-app-recurrence" };
-  if (hasNodeModulesPathString(m)) return { ...base, classification: "library", signal: "node-modules-path" };
-  if (hasPackageNameVersionString(m)) return { ...base, classification: "library", signal: "package-name-version-string" };
-  if (hasStructuralLibraryShape(m)) return { ...base, classification: "library", signal: "structural-shape" };
+  // Signal 0: cross-app recurrence — bonus, corpus-dependent; silent (never
+  // fires) on an empty/absent commonality index, which is the normal state
+  // for a brand-new app with no corpus (D17h-b).
+  if (fraction >= fractionNeeded && recurringWeight > 0) {
+    return { ...base, classification: "library", signal: "cross-app-recurrence", confidence: Math.max(0.6, Math.min(1, fraction)), libraryPackageHint: null };
+  }
 
-  // No library signal. A module with real content (instructions or its own
-  // strings) is presumed the app's own code — the safe default direction
-  // (D17h's goal is never hiding real app code); one with neither is too
-  // small to say anything about either way.
-  if (m.instrCount > 0 || m.stringConstants.length > 0) return { ...base, classification: "app", signal: "none" };
-  return { ...base, classification: "unknown", signal: "none" };
+  // Signal 1 (D17h-b, primary/strong): node_modules path evidence.
+  const pathPackage = libraryPathEvidence(m);
+  if (pathPackage !== null) {
+    return { ...base, classification: "library", signal: "node-modules-path", confidence: 0.95, libraryPackageHint: pathPackage };
+  }
+  const versionedPackage = packageNameVersionMatch(m);
+  if (versionedPackage !== null) {
+    return { ...base, classification: "library", signal: "package-name-version-string", confidence: 0.85, libraryPackageHint: versionedPackage };
+  }
+
+  // Signal 2 (D17h-b, primary/key idea): app-vocabulary presence -> CUSTOM.
+  const vocabHits = appVocabularyHits(m, appVocabulary);
+  if (vocabHits.length > 0) {
+    const confidence = Math.min(1, 0.55 + 0.15 * Math.min(vocabHits.length, 3));
+    return { ...base, classification: "custom", signal: "app-vocabulary", confidence, libraryPackageHint: null };
+  }
+
+  // Signal 3 (D17h-b, weakest, only reached once app-vocabulary was already
+  // ruled out for this module): generic structural shape -> LIBRARY-leaning.
+  if (hasStructuralLibraryShape(m)) {
+    return { ...base, classification: "library", signal: "structural-shape", confidence: 0.35, libraryPackageHint: null };
+  }
+
+  // No signal fired either way. Reported honestly as unknown rather than
+  // defaulted to custom or library — D17h-b's app-vocabulary signal gives a
+  // real positive way to decide CUSTOM, so "no evidence at all" no longer
+  // needs to hide behind an assumed default.
+  return { ...base, classification: "unknown", signal: "none", confidence: 0, libraryPackageHint: null };
 }
 
 export interface ClassificationSummary {
   readonly totalInstrWeight: number;
   readonly libraryInstrWeight: number;
-  readonly appInstrWeight: number;
+  readonly customInstrWeight: number;
   readonly unknownInstrWeight: number;
-  /** THE headline metric (D17h/brief): how much of the bundle, by
+  /** THE headline metric (D17h/D17h-b): how much of the bundle, by
    *  instruction weight, is anonymous-or-named library code an analyst can
-   *  ignore — computed without naming a single package. */
+   *  ignore — computed without naming a single package, and (D17h-b)
+   *  without requiring any cross-app corpus. */
   readonly percentLibraryByWeight: number;
-  readonly percentAppByWeight: number;
+  /** The mirror headline (D17h-b): how much of the bundle, by instruction
+   *  weight, is classified as the developer's OWN custom code. */
+  readonly percentCustomByWeight: number;
   /** `libraryInstrWeight` broken out by which signal decided it, so it's
-   *  visible how much rests on the strong primary signal vs. the weaker
-   *  supporting ones. */
-  readonly libraryInstrWeightBySignal: Readonly<Record<Exclude<ClassificationSignal, "none">, number>>;
+   *  visible how much rests on the strong node_modules-path/recurrence
+   *  signals vs. the weaker structural-shape fallback. */
+  readonly libraryInstrWeightBySignal: Readonly<Record<LibrarySignal, number>>;
   readonly libraryModuleCount: number;
-  readonly appModuleCount: number;
+  readonly customModuleCount: number;
   readonly unknownModuleCount: number;
 }
 
 export function summarizeClassifications(classifications: readonly ModuleClassification[]): ClassificationSummary {
   let totalInstrWeight = 0;
   let libraryInstrWeight = 0;
-  let appInstrWeight = 0;
+  let customInstrWeight = 0;
   let unknownInstrWeight = 0;
   let libraryModuleCount = 0;
-  let appModuleCount = 0;
+  let customModuleCount = 0;
   let unknownModuleCount = 0;
-  const bySignal: Record<Exclude<ClassificationSignal, "none">, number> = {
+  const bySignal: Record<LibrarySignal, number> = {
     "cross-app-recurrence": 0,
     "node-modules-path": 0,
     "package-name-version-string": 0,
@@ -298,10 +546,10 @@ export function summarizeClassifications(classifications: readonly ModuleClassif
     if (c.classification === "library") {
       libraryInstrWeight += c.instrCount;
       libraryModuleCount++;
-      if (c.signal !== "none") bySignal[c.signal] += c.instrCount;
-    } else if (c.classification === "app") {
-      appInstrWeight += c.instrCount;
-      appModuleCount++;
+      if (c.signal !== "none" && c.signal !== "app-vocabulary") bySignal[c.signal] += c.instrCount;
+    } else if (c.classification === "custom") {
+      customInstrWeight += c.instrCount;
+      customModuleCount++;
     } else {
       unknownInstrWeight += c.instrCount;
       unknownModuleCount++;
@@ -310,13 +558,13 @@ export function summarizeClassifications(classifications: readonly ModuleClassif
   return {
     totalInstrWeight,
     libraryInstrWeight,
-    appInstrWeight,
+    customInstrWeight,
     unknownInstrWeight,
     percentLibraryByWeight: totalInstrWeight === 0 ? 0 : (libraryInstrWeight / totalInstrWeight) * 100,
-    percentAppByWeight: totalInstrWeight === 0 ? 0 : (appInstrWeight / totalInstrWeight) * 100,
+    percentCustomByWeight: totalInstrWeight === 0 ? 0 : (customInstrWeight / totalInstrWeight) * 100,
     libraryInstrWeightBySignal: bySignal,
     libraryModuleCount,
-    appModuleCount,
+    customModuleCount,
     unknownModuleCount,
   };
 }
@@ -326,23 +574,33 @@ export interface ClassificationReport {
   readonly summary: ClassificationSummary;
   /** How many distinct bundles the commonality index used was built from —
    *  context for how much to trust `cross-app-recurrence` hits (a
-   *  bundleCount of 1 means that signal can never fire at the default
-   *  threshold). */
+   *  bundleCount of 0 or 1 means that bonus signal can never fire at the
+   *  default threshold; D17h-b's primary signals below don't need it). */
   readonly commonalityIndexBundleCount: number;
+  /** How many string tokens the app-vocabulary signal derived from this
+   *  bundle (D17h-b) — 0 on a bundle with no recurring/distinctive strings
+   *  at all (unusual for a real app), context for how much the CUSTOM
+   *  classification below actually rests on. */
+  readonly appVocabularySize: number;
 }
 
-/** Classifies every module in a bundle's inventory (D17i stage 2). Pure
- *  function of the inventory + a pre-loaded/pre-built commonality index —
- *  callers (`src/deps/index.ts`) decide where that index comes from
- *  (`loadCommonalityIndex(DEFAULT_COMMONALITY_INDEX_PATH)`, typically). */
+/** Classifies every module in a bundle's inventory (D17i stage 2 / D17h-b).
+ *  Pure function of the inventory + a pre-loaded/pre-built commonality
+ *  index — callers (`src/deps/index.ts`) decide where that index comes from
+ *  (`loadCommonalityIndex(DEFAULT_COMMONALITY_INDEX_PATH)`, typically; an
+ *  empty/absent index is fine — D17h-b's primary signals don't need one).
+ *  The app vocabulary (D17h-b) is always derived fresh from this same
+ *  inventory (`deriveAppVocabulary`, `opts.appVocabulary` tunes it) — no
+ *  cross-app corpus, works the first time on a brand-new app. */
 export function classifyInventory(inventory: ModuleInventory, index: CommonalityIndex, opts: ClassifyOptions = {}): ClassificationReport {
   const functionsByIndex = new Map(inventory.functions.map((f) => [f.index, f]));
+  const vocabulary = deriveAppVocabulary(inventory, opts.appVocabulary);
   const modules = inventory.modules.map((m) => {
     const samples: ModuleFunctionSample[] = m.functionIndices.map((i) => {
       const f = functionsByIndex.get(i);
       return { exactHash: f?.exactHash ?? null, instrCount: f?.instrCount ?? 0 };
     });
-    return classifyModule(m, samples, index, opts);
+    return classifyModule(m, samples, index, vocabulary, opts);
   });
-  return { modules, summary: summarizeClassifications(modules), commonalityIndexBundleCount: index.bundleCount };
+  return { modules, summary: summarizeClassifications(modules), commonalityIndexBundleCount: index.bundleCount, appVocabularySize: vocabulary.size };
 }

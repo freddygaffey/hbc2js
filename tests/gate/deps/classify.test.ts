@@ -1,8 +1,10 @@
-// docs/DECISIONS.md D17h/D17i stage 2 — classify each Metro module as
-// library (ignorable) vs app-code WITHOUT naming the package
-// (src/deps/classify.ts). Unit tests against synthetic InventoryModule
-// shapes for the signal logic, plus an integration check against the
-// committed rn-template-0.72 fixture for the commonality-index plumbing.
+// docs/DECISIONS.md D17h/D17h-b/D17i stage 2 — classify each Metro module as
+// library (ignorable) vs the app's OWN "custom" code WITHOUT naming the
+// package (src/deps/classify.ts). Unit tests against synthetic
+// InventoryModule shapes for the signal logic (cross-app recurrence,
+// node_modules-path/bare-package-path extraction, app-vocabulary
+// derivation and matching, structural shape, the combination rule), plus
+// integration checks against the committed rn-template-0.72 fixture.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,9 +20,12 @@ import {
   functionHashesForCommonality,
   summarizeClassifications,
   loadCommonalityIndex,
+  libraryPathEvidence,
+  deriveAppVocabulary,
   EMPTY_COMMONALITY_INDEX,
+  EMPTY_APP_VOCABULARY,
 } from "../../../src/deps/classify.ts";
-import type { CommonalityIndex, ModuleClassification, ModuleFunctionSample } from "../../../src/deps/classify.ts";
+import type { CommonalityIndex, ModuleClassification, ModuleFunctionSample, AppVocabulary } from "../../../src/deps/classify.ts";
 
 function invModule(overrides: Partial<InventoryModule>): InventoryModule {
   return {
@@ -54,14 +59,16 @@ test("classifyModule: a function whose hash recurs at/above threshold, covering 
   assert.equal(c.recurrenceCount, 2);
 });
 
-test("classifyModule: recurrence below the count threshold does not trigger the primary signal", () => {
+test("classifyModule: recurrence below the count threshold does not trigger the bonus signal", () => {
   const index: CommonalityIndex = { version: 2, bundleCount: 3, hashes: { "fn-hash": 1 } };
   const m = invModule({ instrCount: 50, stringConstants: ["hello world"] });
   const c = classifyModule(m, [sample("fn-hash", 50)], index);
   assert.notEqual(c.signal, "cross-app-recurrence");
   assert.equal(c.recurrenceCount, 1);
-  // No other signal fires either -> falls through to the "app" default.
-  assert.equal(c.classification, "app");
+  // No other signal fires either ("hello world" is not app-vocabulary and
+  // the module has only 1 function, below the structural-shape floor) ->
+  // honestly reported unknown, not defaulted either way (D17h-b).
+  assert.equal(c.classification, "unknown");
 });
 
 test("classifyModule: a recurring function covering only a MINORITY of the module's weight does not sweep the whole module in", () => {
@@ -77,28 +84,116 @@ test("classifyModule: a recurring function covering only a MINORITY of the modul
 test("classifyModule: functions below minInstr are not eligible for the recurrence signal", () => {
   const index: CommonalityIndex = { version: 2, bundleCount: 3, hashes: { "tiny-hash": 10 } };
   const m = invModule({ instrCount: 5 });
-  const c = classifyModule(m, [sample("tiny-hash", 5)], index, { minInstr: 8 });
+  const c = classifyModule(m, [sample("tiny-hash", 5)], index, EMPTY_APP_VOCABULARY, { minInstr: 8 });
   assert.notEqual(c.signal, "cross-app-recurrence");
 });
 
 test("classifyModule: recurrenceThreshold and recurrenceFraction are configurable", () => {
   const index: CommonalityIndex = { version: 2, bundleCount: 5, hashes: { "fn-hash": 3 } };
   const m = invModule({ instrCount: 20 });
-  assert.notEqual(classifyModule(m, [sample("fn-hash", 20)], index, { recurrenceThreshold: 4 }).signal, "cross-app-recurrence");
-  assert.equal(classifyModule(m, [sample("fn-hash", 20)], index, { recurrenceThreshold: 3 }).signal, "cross-app-recurrence");
+  assert.notEqual(classifyModule(m, [sample("fn-hash", 20)], index, EMPTY_APP_VOCABULARY, { recurrenceThreshold: 4 }).signal, "cross-app-recurrence");
+  assert.equal(classifyModule(m, [sample("fn-hash", 20)], index, EMPTY_APP_VOCABULARY, { recurrenceThreshold: 3 }).signal, "cross-app-recurrence");
 });
 
-test("classifyModule: node_modules path string -> library", () => {
+// --- D17h-b signal 1: node_modules / bare package-path evidence ---------
+
+test("classifyModule: node_modules path string -> library, package name extracted", () => {
   const m = classifyModule(invModule({ stringConstants: ["at node_modules/lodash/index.js:12"] }), [], EMPTY_COMMONALITY_INDEX);
   assert.equal(m.classification, "library");
   assert.equal(m.signal, "node-modules-path");
+  assert.equal(m.libraryPackageHint, "lodash");
+});
+
+test("classifyModule: scoped node_modules path string -> library, scoped package name extracted", () => {
+  const m = classifyModule(invModule({ stringConstants: ["node_modules/@react-navigation/native/lib/index.js"] }), [], EMPTY_COMMONALITY_INDEX);
+  assert.equal(m.classification, "library");
+  assert.equal(m.libraryPackageHint, "@react-navigation/native");
+});
+
+test("libraryPathEvidence: bare (node_modules-stripped) package-relative path is still recognised", () => {
+  const hit = libraryPathEvidence(invModule({ stringConstants: ["react-native-reanimated/lib/module/index.js"] }));
+  assert.equal(hit, "react-native-reanimated");
+});
+
+test("libraryPathEvidence: an app's own route-shaped path string does not false-positive", () => {
+  assert.equal(libraryPathEvidence(invModule({ stringConstants: ["settings/profile"] })), null);
 });
 
 test("classifyModule: versioned package-name string -> library", () => {
   const m = classifyModule(invModule({ stringConstants: ["react-native-reanimated@3.15.0"] }), [], EMPTY_COMMONALITY_INDEX);
   assert.equal(m.classification, "library");
   assert.equal(m.signal, "package-name-version-string");
+  assert.equal(m.libraryPackageHint, "react-native-reanimated");
 });
+
+// --- D17h-b signal 2: app-vocabulary presence (the key idea) ------------
+
+test("deriveAppVocabulary: a string recurring across several distinct modules qualifies", () => {
+  const inventory = {
+    hbcVersion: 94,
+    totalFunctions: 0,
+    moduledFunctionCount: 0,
+    modules: [
+      invModule({ stringConstants: ["/api/v1/checkout"] }),
+      invModule({ stringConstants: ["/api/v1/checkout"] }),
+      invModule({ stringConstants: ["/api/v1/checkout"] }),
+      invModule({ stringConstants: ["one-off string A"] }),
+      invModule({ stringConstants: ["one-off string B"] }),
+    ],
+    functions: [],
+  };
+  const vocab = deriveAppVocabulary(inventory);
+  assert.ok(vocab.has("/api/v1/checkout"), "recurs in 3 of 5 modules (>= min frequency) -> qualifies");
+  assert.ok(!vocab.has("one-off string A"), "appears in only 1 module -> below the min-frequency floor");
+});
+
+test("deriveAppVocabulary: shape-distinctive strings (Screen suffix, hostnames, reverse-DNS bundle id) qualify at frequency 1", () => {
+  const inventory = {
+    hbcVersion: 94,
+    totalFunctions: 0,
+    moduledFunctionCount: 0,
+    modules: [invModule({ stringConstants: ["ProfileScreen", "https://api.myapp.example.com/v1/x", "com.example.myapp"] })],
+    functions: [],
+  };
+  const vocab = deriveAppVocabulary(inventory);
+  assert.ok(vocab.has("ProfileScreen"));
+  assert.ok(vocab.has("api.myapp.example.com"), "the hostname itself is added, not just the full URL");
+  assert.ok(vocab.has("com.example.myapp"));
+});
+
+test("deriveAppVocabulary: generic JS/library boilerplate strings are excluded even if they recur everywhere", () => {
+  const inventory = {
+    hbcVersion: 94,
+    totalFunctions: 0,
+    moduledFunctionCount: 0,
+    modules: Array.from({ length: 5 }, () => invModule({ stringConstants: ["prototype", "Invariant Violation: bad state", "node_modules/foo/bar.js"] })),
+    functions: [],
+  };
+  const vocab = deriveAppVocabulary(inventory);
+  assert.equal(vocab.size, 0);
+});
+
+test("classifyModule: app-vocabulary presence -> custom, even when the module also has generic structural shape", () => {
+  const vocab: AppVocabulary = new Set(["/api/v1/checkout"]);
+  const m = classifyModule(
+    invModule({ functionIndices: [0, 1, 2, 3, 4], instrCount: 5 * 15, stringConstants: ["/api/v1/checkout"] }),
+    [],
+    EMPTY_COMMONALITY_INDEX,
+    vocab,
+  );
+  assert.equal(m.classification, "custom");
+  assert.equal(m.signal, "app-vocabulary");
+  assert.ok(m.confidence > 0);
+});
+
+test("classifyModule: node_modules-path evidence wins over app-vocabulary (library evidence is never overridden by a vocabulary coincidence)", () => {
+  const vocab: AppVocabulary = new Set(["lodash"]);
+  const m = classifyModule(invModule({ stringConstants: ["node_modules/lodash/index.js", "lodash"] }), [], EMPTY_COMMONALITY_INDEX, vocab);
+  assert.equal(m.classification, "library");
+  assert.equal(m.signal, "node-modules-path");
+});
+
+// --- D17h-b signal 3: structural shape, only once app-vocabulary is ruled out ---
 
 test("classifyModule: structural shape (many tiny functions, no strings) -> library", () => {
   const m = classifyModule(
@@ -110,18 +205,23 @@ test("classifyModule: structural shape (many tiny functions, no strings) -> libr
   assert.equal(m.signal, "structural-shape");
 });
 
-test("classifyModule: structural shape is vetoed by an app-specific-looking string", () => {
+test("classifyModule: structural shape is preempted by an app-specific-looking string (-> custom, not library)", () => {
   const m = classifyModule(
     invModule({ functionIndices: [0, 1, 2, 3, 4], instrCount: 5 * 15, stringConstants: ["ProfileScreen"] }),
     [],
     EMPTY_COMMONALITY_INDEX,
   );
+  assert.equal(m.classification, "custom");
   assert.notEqual(m.signal, "structural-shape");
 });
 
-test("classifyModule: real content with no library signal -> app (the safe default)", () => {
-  const m = classifyModule(invModule({ instrCount: 200, stringConstants: ["Welcome to MyApp", "/api/v1/checkout"] }), [], EMPTY_COMMONALITY_INDEX);
-  assert.equal(m.classification, "app");
+test("classifyModule: real content with no library/vocabulary/shape signal at all -> unknown (honest, not defaulted)", () => {
+  // Neither string is bundle-vocabulary-frequent (each module classified in
+  // isolation here, EMPTY_APP_VOCABULARY) nor independently shape-distinctive
+  // (no Screen/Route/Navigator suffix, no URL, no reverse-DNS id), and the
+  // module has only 1 function -> below the structural-shape floor too.
+  const m = classifyModule(invModule({ instrCount: 200, stringConstants: ["Welcome to MyApp", "checkout flow started"] }), [], EMPTY_COMMONALITY_INDEX);
+  assert.equal(m.classification, "unknown");
 });
 
 test("classifyModule: no content at all -> unknown", () => {
@@ -159,13 +259,13 @@ test("loadCommonalityIndex returns EMPTY_COMMONALITY_INDEX for a missing file", 
 
 test("summarizeClassifications: percentLibraryByWeight is instruction-weighted, not module-count-weighted", () => {
   const classifications: ModuleClassification[] = [
-    { localModuleId: 0, factoryFunctionIndex: 0, instrCount: 900, classification: "library", signal: "cross-app-recurrence", recurrenceCount: 5 },
-    { localModuleId: 1, factoryFunctionIndex: 1, instrCount: 100, classification: "app", signal: "none", recurrenceCount: 0 },
+    { localModuleId: 0, factoryFunctionIndex: 0, instrCount: 900, classification: "library", signal: "cross-app-recurrence", confidence: 0.9, recurrenceCount: 5, libraryPackageHint: null },
+    { localModuleId: 1, factoryFunctionIndex: 1, instrCount: 100, classification: "custom", signal: "app-vocabulary", confidence: 0.7, recurrenceCount: 0, libraryPackageHint: null },
   ];
   const summary = summarizeClassifications(classifications);
   assert.equal(summary.totalInstrWeight, 1000);
   assert.equal(summary.percentLibraryByWeight, 90);
-  assert.equal(summary.percentAppByWeight, 10);
+  assert.equal(summary.percentCustomByWeight, 10);
   assert.equal(summary.libraryInstrWeightBySignal["cross-app-recurrence"], 900);
 });
 
@@ -201,7 +301,7 @@ test("classifyInventory against rn-template: a self-built commonality index reco
   // must recur.
   const index = buildCommonalityIndex([hashes, hashes]);
   const report = classifyInventory(inventory, index, { recurrenceThreshold: 2 });
-  assert.equal(report.summary.libraryModuleCount + report.summary.appModuleCount + report.summary.unknownModuleCount, inventory.modules.length);
+  assert.equal(report.summary.libraryModuleCount + report.summary.customModuleCount + report.summary.unknownModuleCount, inventory.modules.length);
   assert.ok(report.summary.percentLibraryByWeight > 90, `expected almost all instruction weight to self-recur, got ${report.summary.percentLibraryByWeight}%`);
 });
 
@@ -219,5 +319,14 @@ test("classifyInventory against rn-template: with the committed commonality inde
   const report = classifyInventory(inventory, index);
   assert.ok(report.summary.percentLibraryByWeight >= 0);
   // Every module is accounted for exactly once.
-  assert.equal(report.summary.libraryModuleCount + report.summary.appModuleCount + report.summary.unknownModuleCount, inventory.modules.length);
+  assert.equal(report.summary.libraryModuleCount + report.summary.customModuleCount + report.summary.unknownModuleCount, inventory.modules.length);
+});
+
+test("classifyInventory against rn-template: corpus-free (empty commonality index) still classifies via D17h-b's bundle-internal signals", () => {
+  const bytes = readFileSync(RN_TEMPLATE);
+  const { inventory } = buildInventory(bytes);
+  const report = classifyInventory(inventory, EMPTY_COMMONALITY_INDEX);
+  assert.equal(report.commonalityIndexBundleCount, 0);
+  assert.ok(report.appVocabularySize > 0, "a real app bundle derives a non-empty vocabulary from its own strings alone");
+  assert.equal(report.summary.libraryModuleCount + report.summary.customModuleCount + report.summary.unknownModuleCount, inventory.modules.length);
 });

@@ -531,7 +531,7 @@ export function formatReportText(report: DepsReport): string {
   // above — this is the "how much can I ignore" headline.
   if (report.classification !== null) {
     const cs = report.classification.summary;
-    lines.push(`         ${cs.percentLibraryByWeight.toFixed(1)}% of bundle instructions classified LIBRARY (anonymous, unnamed) vs ${cs.percentAppByWeight.toFixed(1)}% APP code, from a ${report.classification.commonalityIndexBundleCount}-bundle commonality index (${cs.libraryModuleCount} library / ${cs.appModuleCount} app / ${cs.unknownModuleCount} unknown modules)`);
+    lines.push(`         ${cs.percentLibraryByWeight.toFixed(1)}% of bundle instructions classified LIBRARY (anonymous, unnamed) vs ${cs.percentCustomByWeight.toFixed(1)}% CUSTOM (app) code, from a ${report.classification.appVocabularySize}-token app vocabulary + ${report.classification.commonalityIndexBundleCount}-bundle commonality index (${cs.libraryModuleCount} library / ${cs.customModuleCount} custom / ${cs.unknownModuleCount} unknown modules)`);
   }
   return lines.join("\n");
 }
