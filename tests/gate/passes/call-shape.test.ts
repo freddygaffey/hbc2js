@@ -387,7 +387,10 @@ test("v98 shape: 32-class-basic — a bare identifier call folds through call-sh
 });
 
 test("v99 shape: 33-class-inheritance-super — an ordinary two-argument Reflect.construct becomes new, an explicit new-target triple does not", () => {
-  const code = decompile(new Uint8Array(readFileSync(fixturePath("33-class-inheritance-super", 99, ""))), { moduleName: "x" }).code;
+  // `var-naming` (spec 07) runs after this rung and renames single-def
+  // registers such as the `new` result below; this test asserts call-shape's
+  // own property against register names, so that rung is skipped here.
+  const code = decompile(new Uint8Array(readFileSync(fixturePath("33-class-inheritance-super", 99, ""))), { moduleName: "x", passes: { skip: ["var-naming"] } }).code;
   assert.match(code, /new r7\(r12, r11\)/);
   assert.match(code, /Reflect\.construct\(r2, \[r4\], r3\)/, "super() forwards a distinct new.target — must not become `new r2(r4)`");
 });

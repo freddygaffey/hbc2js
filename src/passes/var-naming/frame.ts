@@ -149,3 +149,148 @@ export function readsName(e: Expr, name: string): boolean {
   });
   return found;
 }
+
+/** Every name assigned at the top level of `e` (an `assign`, or a `seq` of
+ *  them — the shape `for.init`/`for.update` take). */
+export function assignedNames(e: Expr): string[] {
+  if (e.k === "assign") return e.target.k === "ident" ? [e.target.name] : [];
+  if (e.k === "seq") return e.exprs.flatMap(assignedNames);
+  return [];
+}
+
+export interface FrameOccurrences {
+  readonly defs: number[];
+  readonly reads: number[];
+}
+
+/** `../ast.ts`'s `defUse` shape — def/read positions by pre-order statement
+ *  index, frame-local — but for *any* name, not only `isRegisterName` ones.
+ *  `defUse` deliberately drops every non-register name, so spec §7's
+ *  obligation 5 ("`defUse(before).get(from)` and `defUse(after).get(to)`
+ *  have identical index arrays") cannot be asked of it once `to` is a real
+ *  name: this walk answers the same question for both sides. Indexing
+ *  mirrors `defUse` exactly (every statement, at every depth, takes the next
+ *  index; a `for` head's three expressions share the `for`'s own index; a
+ *  nested `func` body is never entered). Every requested name gets an entry,
+ *  zero-filled when absent. */
+export function frameOccurrences(stmts: readonly Stmt[], names: ReadonlySet<string>): Map<string, FrameOccurrences> {
+  const out = new Map<string, FrameOccurrences>();
+  for (const n of names) out.set(n, { defs: [], reads: [] });
+  const rec = (name: string, kind: keyof FrameOccurrences, at: number): void => {
+    out.get(name)?.[kind].push(at);
+  };
+  let index = 0;
+  const visitExpr = (e: Expr, at: number): void => {
+    if (e.k === "assign" && e.target.k === "ident") {
+      rec(e.target.name, "defs", at);
+      visitExpr(e.value, at);
+      return;
+    }
+    if (e.k === "ident") {
+      rec(e.name, "reads", at);
+      return;
+    }
+    visitChildren(e, at);
+  };
+  const visitChildren = (e: Expr, at: number): void => {
+    switch (e.k) {
+      case "member":
+        visitExpr(e.obj, at);
+        if (e.computed) visitExpr(e.prop, at);
+        return;
+      case "call":
+      case "new":
+        visitExpr(e.callee, at);
+        e.args.forEach((a) => visitExpr(a, at));
+        return;
+      case "bin":
+      case "logical":
+        visitExpr(e.left, at);
+        visitExpr(e.right, at);
+        return;
+      case "unary":
+        visitExpr(e.arg, at);
+        return;
+      case "assign":
+        visitExpr(e.target, at);
+        visitExpr(e.value, at);
+        return;
+      case "cond":
+        visitExpr(e.test, at);
+        visitExpr(e.then, at);
+        visitExpr(e.else, at);
+        return;
+      case "array":
+        e.elements.forEach((x) => visitExpr(x, at));
+        return;
+      case "object":
+        e.props.forEach((p) => visitExpr(p.value, at));
+        return;
+      case "seq":
+        e.exprs.forEach((x) => visitExpr(x, at));
+        return;
+      default:
+        return; // lit, this, argumentsObject, func (separate frame)
+    }
+  };
+  const visitStmts = (list: readonly Stmt[]): void => {
+    for (const s of list) {
+      const at = index++;
+      switch (s.k) {
+        case "expr":
+          visitExpr(s.expr, at);
+          break;
+        case "init":
+          rec(s.name, "defs", at);
+          visitExpr(s.value, at);
+          break;
+        case "if":
+          visitExpr(s.test, at);
+          visitStmts(s.then);
+          visitStmts(s.else);
+          break;
+        case "while":
+          if (s.test !== undefined) visitExpr(s.test, at);
+          visitStmts(s.body);
+          break;
+        case "do-while":
+          visitExpr(s.test, at);
+          visitStmts(s.body);
+          break;
+        case "for":
+          if (s.init !== null) visitExpr(s.init, at);
+          visitExpr(s.test, at);
+          if (s.update !== null) visitExpr(s.update, at);
+          visitStmts(s.body);
+          break;
+        case "labeled":
+          visitStmts(s.body);
+          break;
+        case "return":
+          if (s.arg !== null) visitExpr(s.arg, at);
+          break;
+        case "throw":
+          visitExpr(s.arg, at);
+          break;
+        case "try":
+          visitStmts(s.block);
+          visitStmts(s.handler);
+          break;
+        case "switch":
+          visitExpr(s.disc, at);
+          for (const c of s.cases) {
+            if (c.test !== null) visitExpr(c.test, at);
+            visitStmts(c.body);
+          }
+          break;
+        case "iife":
+          visitStmts(s.body);
+          break;
+        default:
+          break; // decl, break, continue, func, directive, comment, raw
+      }
+    }
+  };
+  visitStmts(stmts);
+  return out;
+}
