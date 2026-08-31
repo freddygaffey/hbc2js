@@ -22,6 +22,10 @@ export interface InventoryModule {
   readonly stringConstants: readonly string[];
   readonly exactHash: string | null;
   readonly fuzzyHash: string | null;
+  /** The factory function's own `regMaskedHash` (D17h-c register-insensitive
+   *  tier, `docs/DEPS.md` "Confidence tiers") — `null` if the factory
+   *  couldn't be resolved. */
+  readonly factoryRegMaskedHash: string | null;
   readonly stringSetHash: string;
   /** The factory function's own string-set hash (not the module-wide
    *  `stringSetHash`, which is over exact hashes) — corroborates a
@@ -70,6 +74,7 @@ export function buildInventoryFromModule(mod: HbcModule): ModuleInventory {
       stringConstants: [...strings].sort(),
       exactHash: m.factoryExactHash,
       fuzzyHash: m.factoryFuzzyHash,
+      factoryRegMaskedHash: m.factoryRegMaskedHash ?? null,
       stringSetHash: m.functionSetHash,
       factoryStringSetHash: byIndex.get(m.factoryFunctionIndex)?.stringSetHash ?? null,
       factoryStringCount: byIndex.get(m.factoryFunctionIndex)?.stringCount ?? 0,

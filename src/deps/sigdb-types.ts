@@ -13,6 +13,14 @@ export interface SigFunction {
   readonly fuzzyHash: string;
   readonly stringSetHash: string;
   readonly stringCount: number;
+  /** D17h-c register-insensitive tier (docs/DEPS.md "Confidence tiers"):
+   *  same as `exactHash` but every register operand is masked to one opaque
+   *  token instead of renamed by first-use order, so it also survives a
+   *  different register-*reuse* pattern between two builds, not just a
+   *  number permutation. Optional: absent on any schema-2 file written
+   *  before this tier existed (the published `sigdb-20260830` release
+   *  included), which this tier's readers must treat as "no match". */
+  readonly regMaskedHash?: string;
 }
 
 export interface SigModule {
@@ -22,6 +30,9 @@ export interface SigModule {
   readonly depIds: readonly number[] | null;
   readonly factoryExactHash: string | null;
   readonly factoryFuzzyHash: string | null;
+  /** The factory function's `regMaskedHash` (D17h-c) — `undefined` on a
+   *  schema-2 file written before this tier existed. */
+  readonly factoryRegMaskedHash?: string | null;
   readonly nestedFunctionCount: number;
   /** Not persisted to disk (recomputed at fingerprint time); present on the
    *  in-memory result from `fingerprintModule` for callers (e.g. `guess.ts`)
@@ -42,7 +53,11 @@ export interface SigProvenance {
 }
 
 export interface SigDbFile {
-  readonly schema: 2;
+  /** 2: pre-D17h-c (`sigdb-20260830` and earlier), no `regMaskedHash`.
+   *  3: D17h-c — `regMaskedHash`/`factoryRegMaskedHash` present. Readers
+   *  never gate on this number (`db.ts` doesn't check it); it exists purely
+   *  as provenance for which fields a given file can be expected to carry. */
+  readonly schema: 2 | 3;
   readonly package: string;
   readonly version: string;
   readonly hbcVersion: number;

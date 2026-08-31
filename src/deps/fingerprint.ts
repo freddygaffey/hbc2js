@@ -9,7 +9,7 @@
 // per recovered `__d()` registration (`dscan.ts`).
 
 import { createHash } from "node:crypto";
-import { normaliseFunctionForSignature, signatureInstructions } from "./sig-normalise.ts";
+import { normaliseFunctionForSignature, regMaskedFunctionSignature, signatureInstructions } from "./sig-normalise.ts";
 import { scanModuleRegistrations } from "./dscan.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { DecodedFunction, Instruction } from "../disasm/decode.ts";
@@ -66,6 +66,7 @@ export function fingerprintModule(mod: HbcModule, decodeFunction: (mod: HbcModul
   for (let i = 0; i < mod.functions.length; i++) {
     const fn = decodeFunction(mod, i);
     const exactHash = sha256(normaliseFunctionForSignature(mod, fn));
+    const regMaskedHash = sha256(regMaskedFunctionSignature(mod, fn));
     const fuzzyHash = sha256(fuzzyText(fn));
     const ss = stringSetHash(mod, fn);
     functions.push({
@@ -77,6 +78,7 @@ export function fingerprintModule(mod: HbcModule, decodeFunction: (mod: HbcModul
       fuzzyHash,
       stringSetHash: ss.hash,
       stringCount: ss.count,
+      regMaskedHash,
     });
   }
 
@@ -114,6 +116,7 @@ export function fingerprintModule(mod: HbcModule, decodeFunction: (mod: HbcModul
         depIds: reg.depIds,
         factoryExactHash: factory?.exactHash ?? null,
         factoryFuzzyHash: factory?.fuzzyHash ?? null,
+        factoryRegMaskedHash: factory?.regMaskedHash ?? null,
         nestedFunctionCount: nestedIdx.length,
         nestedFunctionIndices: nestedIdx,
         functionSetHash: sha256(allHashes.join("\n")),

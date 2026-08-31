@@ -175,15 +175,13 @@ function normaliseSwitch(mod: HbcModule, insn: Instruction, fn: DecodedFunction)
   return `.switch ${insn.name} default=${defaultLabel} ${cases}`;
 }
 
-/**
- * Signature-tier drop-in replacement for `normaliseFunction`: byte-identical
- * output for every function that does *not* contain a require-call-site
- * dependency-map index, and masks the dependency-index immediate for the
- * ones that do.
- */
-export function normaliseFunctionForSignature(mod: HbcModule, fn: DecodedFunction): string {
+/** `%N` in first-use order (the exact tier — permutation-invariant, but still
+ *  sensitive to a *different register-reuse pattern* between two builds,
+ *  since the same canonical name persists for a physical register's whole
+ *  lifetime: see `regMaskedFunctionSignature` below). */
+function firstUseRegNamer(): (n: number) => string {
   const regs = new Map<number, string>();
-  const regName = (n: number): string => {
+  return (n: number): string => {
     let r = regs.get(n);
     if (r === undefined) {
       r = `%${regs.size}`;
@@ -191,7 +189,15 @@ export function normaliseFunctionForSignature(mod: HbcModule, fn: DecodedFunctio
     }
     return r;
   };
+}
 
+/** Every register operand collapses to the same opaque token, regardless of
+ *  number or reuse pattern (the register-insensitive tier below). */
+function maskedRegNamer(): (n: number) => string {
+  return () => "%_";
+}
+
+function buildNormalisedLines(mod: HbcModule, fn: DecodedFunction, regName: (n: number) => string): string[] {
   const maskedOffsets = findDependencyIndexOperands(fn);
   const lines = [`fn(${fn.header.paramCount}) ${maskedFunctionName(fn.name)}`];
 
@@ -218,5 +224,42 @@ export function normaliseFunctionForSignature(mod: HbcModule, fn: DecodedFunctio
     lines.push(`.try ${start}..${end} -> ${target}`);
   }
 
-  return lines.join("\n");
+  return lines;
+}
+
+/**
+ * Signature-tier drop-in replacement for `normaliseFunction`: byte-identical
+ * output for every function that does *not* contain a require()-call-site
+ * dependency-map index, and masks the dependency-index immediate for the
+ * ones that do. Registers are renamed `%N` in first-use order, which makes
+ * this exact tier invariant to a pure register-number *permutation* between
+ * two builds but not to a different register-*reuse* pattern (a physical
+ * register recycled for a second, unrelated live range at a different point
+ * than the other build recycles a — possibly different — register): see
+ * `regMaskedFunctionSignature`, the D17h-c register-insensitive tier, for
+ * that case.
+ */
+export function normaliseFunctionForSignature(mod: HbcModule, fn: DecodedFunction): string {
+  return buildNormalisedLines(mod, fn, firstUseRegNamer()).join("\n");
+}
+
+/**
+ * Register-insensitive signature tier (D17h-c, `docs/DEPS.md` "Confidence
+ * tiers"). Same as `normaliseFunctionForSignature` except every register
+ * operand collapses to one opaque token instead of being renamed by
+ * first-use order — so, unlike the exact tier, this is invariant not just to
+ * a register-number permutation but to *any* difference in the allocator's
+ * register-reuse pattern (which register-allocation optimisation levels and
+ * hermesc revisions are both free to vary, `hermesc -g`'s extra
+ * `AsyncBreakCheck`/`Debugger` insertions among them — docs/DEPS.md §6.7).
+ * Strictly weaker than the exact tier at telling two *different* register
+ * operands of the *same* instruction apart (`Add %_, %_, %_` no longer
+ * distinguishes `x = x + y` from `x = y + y`), but far stronger than the
+ * bare mnemonic-only `fuzzy` tier: every non-register operand — string,
+ * immediate, bigint, branch target, switch case — stays exact and in
+ * position, so this only recognises a function whose *only* difference from
+ * another build is which physical registers it happened to use.
+ */
+export function regMaskedFunctionSignature(mod: HbcModule, fn: DecodedFunction): string {
+  return buildNormalisedLines(mod, fn, maskedRegNamer()).join("\n");
 }

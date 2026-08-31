@@ -212,7 +212,7 @@ async function main() {
     const { functions, modules } = subtractBaseline(rawFunctions, rawModules, baselineHashes);
 
     const db = {
-      schema: 2,
+      schema: 3,
       package: pkg,
       version,
       hbcVersion: mod.header.version,

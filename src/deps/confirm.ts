@@ -468,7 +468,7 @@ export async function confirmCandidates(candidates: readonly ConfirmCandidate[],
       const { functions, modules } = subtractBaseline(rawFunctions, rawModules, baseline.hashes);
 
       const db: SigDbFile = {
-        schema: 2,
+        schema: 3,
         package: candidate.package,
         version: candidate.version,
         hbcVersion: mod.header.version,
