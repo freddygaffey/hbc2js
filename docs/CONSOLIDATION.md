@@ -46,7 +46,7 @@ agent time (S < 30 min, M ~1 h, L multi-agent).
 | 11 | One worktree per agent; nothing lands red; full gate on a clean checkout of main after every merge | adopted (2026-08-31) | Worktrees under `.claude/worktrees/`; orchestrator merges, gates, pushes. |
 | 12 | "Attributable to concurrent work" is not a landing note; reproduce in isolation or fix | adopt | Goes in AGENT-BRIEF. |
 | 13 | "Not pushed" is not a state; push on landing | adopted | Orchestrator pushes every landed commit and every WIP branch. |
-| 14 | STATUS.md → one screen, fixed template (milestones, gate numbers, open bugs, blocked, decisions needed); narrative → AGENT-LOG | adopt | It is 986 lines today. One Sonnet task; the template goes in `docs/AGENT-WORKFLOW.md`. |
+| 14 | STATUS.md → one screen, fixed template (milestones, gate numbers, open bugs, blocked, decisions needed); narrative → AGENT-LOG | **done (2026-09-01, Claude Sonnet 5, QUEUE item 2)** | `docs/STATUS.md` rewritten to 73 lines (fixed template: goal, scoreboard, milestones, ladder, gate, open bugs, blocked, queue); old content archived verbatim at `docs/STATUS-ARCHIVE.md`; enforced by `tests/gate/docs/status-one-screen.test.ts`. |
 | 15 | Orchestrator restarts from a handoff doc when context fills | adopted | Memory HANDOFF + this doc. |
 | 16 | Adversarial reviewers: fresh context, different model family where possible | adopt | Sonnet reviews Fable/Opus work and vice-versa. |
 | 17 | Cheap validators produce findings, not verdicts; the suite is the gate | adopt | Reviewer reports list findings; MERGE is decided by the gate + orchestrator. |
