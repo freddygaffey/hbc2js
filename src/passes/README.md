@@ -105,7 +105,7 @@ mirrors `--emit-tree`.
 
 `src/passes/ast.ts` is stage B's `tree.ts`: `walk`/`mapExpr`/`mapStmts` (a
 read-only visitor and two rebuilding maps), `stmtLists`/`spliceList` (site
-enumeration and splice), `freeNames`/`parses`, `identUses`, `defUse` (`rN`
+enumeration and splice), `freeNames`/`parses`, `identUses`/`identUsesMany`/`registerUses` (one name; many names in one walk; every register, memoised per list — P-1), `defUse` (`rN`
 def/use by pre-order statement index), `isPure`/`isPureStmt`,
 `isHelperCall`, `isSafeIdentifier`, and `effectSequence`/
 `expressionOnlyCheck` — §4.3's ordered-effects comparison, the whole guard an

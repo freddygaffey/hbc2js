@@ -57,8 +57,19 @@ link back to the function table.
 `node === ctx.fnBody`. `_fnN` is declared by a `func` statement in that list and
 its scope is the whole body, so a per-sublist site could not see every use.
 
-Walk the root list for `func` statements named `/^_fn(\d+)$/`. For the first one
-that qualifies, capture `{ index: N, from: "_fnN", to: name }`. Qualification —
+Walk the root list for `func` statements named `/^_fn(\d+)$/`. For **every** one
+that qualifies, capture `{ index: N, from: "_fnN", to: name }`; the match's data
+is the whole batch, in statement order (`renames`), and `at.offset` is the
+first one's statement index. **Batched, not one per match** (P-1, 2026-08-31):
+the verdicts are independent of each other — a rename only ever introduces a
+`to` that no other candidate could have claimed (two candidates wanting the
+same `raw` are both `duplicate-name`, condition 6), so renaming one per driver
+iteration produced exactly the same output at O(K²·B) cost (K candidates
+re-classified, each with whole-body walks, after every one of K splices; a
+React Native bundle's global function has K≈440 over a multi-megabyte body —
+hours). The batched match computes conditions 4–5's body-wide sets once per
+classification and R4b's read counts in one walk (`identUsesMany`), O(B).
+Qualification —
 all required:
 
 1. `!ctx.module.isGlobalFunction(N)` (never rename `_fn0`; `emitModule`
@@ -88,8 +99,9 @@ conditions 2–6. Refuse when there is more than one such site
 
 ## 5. Writer
 
-Rebuild the root list with `mapStmts`/`mapExpr`: the `func` statement's `name`
-becomes `to`, and every `{k:"ident", name: from}` in the body — including inside
+Rebuild the root list with `mapStmts`/`mapExpr`, once for the whole batch
+(`renameIdents(list, mapping)`): each renamed `func` statement's `name` becomes
+its `to`, and every `{k:"ident", name: from}` in the body — including inside
 nested `func` bodies, which is where a recursive self-reference lives — becomes
 `{k:"ident", name: to}`. Nothing else changes; no statement is added, removed or
 reordered.
@@ -97,7 +109,9 @@ reordered.
 ## 6. Checker
 
 Class: **alpha-renaming** (ladder §4.3). All four obligations, on the whole
-root list:
+root list, for every `(from, to)` pair at once — the pairs are recovered by
+diffing `before`/`after` (each `func` statement whose `name` changed), and each
+whole-body walk below is done once for the batch, not once per pair:
 
 1. `freeNames(after)` equals `freeNames(before)` with `from` replaced by `to`
    — and `to` was not already in `freeNames(before)`;
