@@ -26,7 +26,8 @@ import type { Pass, Stage } from "./types.ts";
  *  (docs/specs/passes/06-label-clean.md §7) is last in stage A, `after:
  *  ["loop-cond", "for-header"]`: every other stage-A rung removes label
  *  uses, so it must see the final tree before stage B ever runs. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass];
+// label-clean DISABLED 2026-08-31: infinite-loops on destructuring (37-destructuring-array all versions, 48-optional-chaining-nullish v84/94). Re-enable once the hang in src/passes/label-clean is fixed. See docs/BUGS.md.
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
