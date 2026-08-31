@@ -6,7 +6,7 @@
 // `dscan.ts`'s bytecode-level `__d()` scan — never by decompiling
 // everything, D17a). Each module's *body* comes from one full-module
 // decompile with passes and the structurer's isomorphism verifier both
-// switched off: readability passes make this ~150x slower on a real app
+// switched off: readability passes used to make this ~150x slower on a real app (fixed 2026-08-31, PUSHBACK P-1: now ≈7x — the default here can be revisited)
 // (docs/STATUS.md's M5 call-shape note — 4199-function bundles are excluded
 // from the gate's time budget with passes on) and stage 1 only needs a
 // structurally faithful split, not readable output; classify/name (D17i

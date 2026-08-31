@@ -484,21 +484,83 @@ export interface IdentUses {
  *  see `IdentUses.nested` for the function-scope boundary this resolves
  *  register names against. */
 export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
-  let reads = 0;
-  let writes = 0;
-  let nested = 0;
-  const bump = (inNested: boolean, isWrite: boolean): void => {
-    if (inNested) nested++;
-    else if (isWrite) writes++;
-    else reads++;
+  return identUsesMany(stmts, [name]).get(name) ?? { reads: 0, writes: 0, nested: 0 };
+}
+
+/**
+ * `identUses` for many names in **one** traversal — the same counts, the same
+ * function-scope boundary per name (a register name is never followed into a
+ * nested `func`; any other name is, and counts there as `nested`). The
+ * result has an entry for every name in `names`, zero-filled when absent.
+ *
+ * Exists because a rung that needs a count for every `_fnN` in a function
+ * body (`fn-naming`) would otherwise walk the whole body once per name —
+ * on a real bundle's global function that is hundreds of full walks of a
+ * multi-megabyte tree per match, which is what made the M5 pipeline ~250x
+ * slower than the baseline (docs/PUSHBACK.md P-1). `identUses` itself is
+ * the single-name wrapper, so the two can never disagree.
+ */
+export function identUsesMany(stmts: readonly Stmt[], names: Iterable<string>): Map<string, IdentUses> {
+  const wanted = new Set(names);
+  // Nested `func` bodies are only worth entering when some wanted name is
+  // followed in there (see `IdentUses.nested`): registers are a separate
+  // frame, every other name is the same binding.
+  let followNested = false;
+  for (const n of wanted) if (!isRegisterName(n)) followNested = true;
+  const counts = countUses(stmts, (n) => wanted.has(n), followNested);
+  for (const n of wanted) if (!counts.has(n)) counts.set(n, { reads: 0, writes: 0, nested: 0 });
+  return counts;
+}
+
+const registerUsesMemo = new WeakMap<readonly Stmt[], ReadonlyMap<string, IdentUses>>();
+
+/**
+ * `identUses` for **every** register name in `stmts` at once (`nested` is
+ * always `0`: a register is never followed into a nested `func`), memoised
+ * on the list's identity. A register absent from the map has no uses.
+ *
+ * Sound to memoise because stage-B lists are immutable: a rewrite builds a
+ * new list (`spliceList`, every rung's `rewrite`) and never mutates one in
+ * place, so a list object's counts can never go stale. This is what lets a
+ * rung ask a whole-function question ("is `rX` written exactly once and
+ * read exactly here?" — `expr-rebuild`'s D-b) once per driver iteration
+ * instead of once per candidate: the driver hands every `match`/`check`
+ * call of one iteration the same `ctx.fnBody` object, so all of them share
+ * one walk (docs/PUSHBACK.md P-1).
+ */
+export function registerUses(stmts: readonly Stmt[]): ReadonlyMap<string, IdentUses> {
+  let m = registerUsesMemo.get(stmts);
+  if (m === undefined) {
+    m = countUses(stmts, isRegisterName, false);
+    registerUsesMemo.set(stmts, m);
+  }
+  return m;
+}
+
+/** The one traversal behind `identUses`/`identUsesMany`/`registerUses`:
+ *  counts every name `wanted` accepts; enters nested `func` bodies only when
+ *  `followNested`, and even then never credits a register name there. */
+function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, followNested: boolean): Map<string, IdentUses> {
+  const counts = new Map<string, { reads: number; writes: number; nested: number }>();
+  const bump = (name: string, inNested: boolean, isWrite: boolean): void => {
+    if (!wanted(name)) return;
+    let c = counts.get(name);
+    if (c === undefined) {
+      c = { reads: 0, writes: 0, nested: 0 };
+      counts.set(name, c);
+    }
+    if (inNested) {
+      if (!isRegisterName(name)) c.nested++;
+    } else if (isWrite) c.writes++;
+    else c.reads++;
   };
   const visitExpr = (e: Expr, inNested: boolean): void => {
     switch (e.k) {
       case "ident":
-        if (e.name === name) bump(inNested, false);
+        bump(e.name, inNested, false);
         return;
       case "assign":
-        if (e.target.k === "ident" && e.target.name === name) bump(inNested, true);
+        if (e.target.k === "ident") bump(e.target.name, inNested, true);
         else visitExpr(e.target, inNested);
         visitExpr(e.value, inNested);
         return;
@@ -538,7 +600,7 @@ export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
         // name can never be the same binding in there, so skip it entirely
         // rather than let a coincidentally-same-numbered local count as a
         // "nested" use of this frame's `name`.
-        if (!isRegisterName(name)) visitStmts(e.body, true);
+        if (followNested) visitStmts(e.body, true);
         return;
       default:
         return; // lit, this, argumentsObject
@@ -551,7 +613,7 @@ export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
           visitExpr(s.expr, inNested);
           break;
         case "init":
-          if (s.name === name) bump(inNested, true);
+          bump(s.name, inNested, true);
           visitExpr(s.value, inNested);
           break;
         case "if":
@@ -595,7 +657,7 @@ export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
           break;
         case "func":
           // Same boundary as the `Expr` "func" case above.
-          if (!isRegisterName(name)) visitStmts(s.body, true);
+          if (followNested) visitStmts(s.body, true);
           break;
         case "iife":
           visitStmts(s.body, inNested);
@@ -606,7 +668,7 @@ export function identUses(stmts: readonly Stmt[], name: string): IdentUses {
     }
   };
   visitStmts(stmts, false);
-  return { reads, writes, nested };
+  return counts;
 }
 
 // ---------------------------------------------------------------------------

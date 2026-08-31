@@ -8,7 +8,9 @@
 // from `before` alone (it gets no access to this match's `data`) and so unit
 // tests can assert the exact refuse reason without going through the driver.
 import type { Expr, Stmt } from "../ast.ts";
-import { identUses, isPure, isPureStmt, isRegisterName } from "../ast.ts";
+import { identUses, isPure, isPureStmt, isRegisterName, registerUses } from "../ast.ts";
+
+const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { Match, PassContext } from "../types.ts";
 
 export type ExprRebuildRule = "R1a" | "R1b" | "R1c";
@@ -84,12 +86,82 @@ interface ExprCounts {
   readonly nested: number;
 }
 
+// `exprCounts(topLevelExprOf(s), name).reads` for every `name` at once,
+// memoised on the statement's identity. The forward scan in `classifySite`
+// and `stmtVerdict` ask this of the same statements for candidate after
+// candidate, iteration after iteration (a statement keeps its identity
+// across every rewrite that does not touch it — `rewrite.ts` slices, never
+// copies), so one visit per statement replaces one per (statement,
+// candidate, iteration) — the last big term of the M5 pipeline's cost on a
+// real bundle (docs/PUSHBACK.md P-1). The read half of `exprCounts`'s visit,
+// kept in lock-step with it: a read is an `ident` reached without crossing
+// an `assign` target or a nested `func` body (`exprCounts` never credits
+// `reads` for anything inside a `func`, for any name — a nested occurrence
+// lands in `nested`), so the counts here equal `.reads` for every name.
+const topLevelReadsMemo = new WeakMap<Stmt, ReadonlyMap<string, number>>();
+
+function topLevelReads(s: Stmt): ReadonlyMap<string, number> {
+  let m = topLevelReadsMemo.get(s);
+  if (m !== undefined) return m;
+  const counts = new Map<string, number>();
+  const visit = (x: Expr): void => {
+    switch (x.k) {
+      case "ident":
+        counts.set(x.name, (counts.get(x.name) ?? 0) + 1);
+        return;
+      case "assign":
+        if (x.target.k !== "ident") visit(x.target);
+        visit(x.value);
+        return;
+      case "member":
+        visit(x.obj);
+        if (x.computed) visit(x.prop);
+        return;
+      case "call":
+      case "new":
+        visit(x.callee);
+        x.args.forEach(visit);
+        return;
+      case "bin":
+      case "logical":
+        visit(x.left);
+        visit(x.right);
+        return;
+      case "unary":
+        visit(x.arg);
+        return;
+      case "cond":
+        visit(x.test);
+        visit(x.then);
+        visit(x.else);
+        return;
+      case "array":
+        x.elements.forEach(visit);
+        return;
+      case "object":
+        x.props.forEach((p) => visit(p.value));
+        return;
+      case "seq":
+        x.exprs.forEach(visit);
+        return;
+      default:
+        return; // func (a nested body is never a top-level read), lit, this, argumentsObject
+    }
+  };
+  const tl = topLevelExprOf(s);
+  if (tl !== null) visit(tl);
+  m = counts;
+  topLevelReadsMemo.set(s, m);
+  return m;
+}
+
 /** `identUses`'s expr-visiting logic, applied to one `Expr` directly rather
  *  than a statement list — needed to isolate "reads within just this
  *  top-level field", which `identUses` (statement-list granularity) cannot
  *  distinguish from a read inside a body a few fields over. Mirrors
  *  `identUses`'s own read/write/nested split exactly, including the `func`
- *  case (delegates to `identUses` for the nested body). */
+ *  case (delegates to `identUses` for the nested body). `topLevelReads`
+ *  above is its memoised, all-names `.reads` half. */
 export function exprCounts(e: Expr, reg: string): ExprCounts {
   let reads = 0;
   let writes = 0;
@@ -324,10 +396,165 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
  *  statement that also reads `reg` observes a dangling name once some
  *  earlier store folds into this one and deletes itself. */
 function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, rest: Cont, memo: Memo): Verdict {
-  const tl = topLevelExprOf(s);
-  if (tl !== null && exprCounts(tl, reg).reads > 0) return "read";
+  if ((topLevelReads(s).get(reg) ?? 0) > 0) return "read";
   if (isPlainStoreTo(s, reg)) return "dead";
   return branchVerdict(s, reg, labels, rest, memo);
+}
+
+// ---------------------------------------------------------------------------
+// P-1: which statements can change a scan's verdict at all.
+//
+// A statement that mentions `reg` nowhere in its own frame *and* contains no
+// `break`/`continue` is always `clear`-and-keep-going for `reg`: `stmtVerdict`
+// finds no top-level read and no plain store, and `branchVerdict` on its
+// sub-lists finds nothing either and falls through to the continuation of
+// the enclosing list — i.e. exactly the verdict scanning would reach by
+// stepping to the next statement (a loop/`try` block hands `CLEAR` to its
+// body, which is `clear` too). Only a jump can send the scan somewhere else
+// (a `break L` follows `L`'s own continuation, possibly past the end of this
+// list), so any statement containing one is kept as "relevant" and evaluated
+// exactly as before. Both scanning loops therefore hop between relevant
+// positions instead of touching every statement in between: on hermesc's
+// unoptimised output (hundreds of stores per list, each read far from its
+// store) the per-list cost went from cubic to ~linear in the list, and
+// rn-template's `noopt` bundle from 32 s to a few seconds (docs/PUSHBACK.md
+// P-1). Per-statement facts are memoised on the statement's identity (an
+// untouched statement survives every rewrite by identity — `rewrite.ts`
+// slices, never copies), the per-list index on the list's.
+// ---------------------------------------------------------------------------
+
+interface StmtInterest {
+  /** Register names occurring anywhere in the statement's own frame. */
+  readonly regs: ReadonlySet<string>;
+  /** A `break`/`continue` occurs anywhere in the statement's own frame. */
+  readonly jump: boolean;
+  /** `branchVerdict` on this statement hands its enclosing list's
+   *  continuation to a sub-list that can fall through into it — so, with no
+   *  mention of `reg` and no jump, its verdict *is* the rest of the list's.
+   *  `if`/`labeled`/`iife`/`try` (its handler) always; `switch` with at
+   *  least one case. Loops hand `CLEAR` to their body, never `rest`. */
+  readonly passThrough: boolean;
+}
+
+const stmtInterestMemo = new WeakMap<Stmt, StmtInterest>();
+
+function containsJump(list: readonly Stmt[]): boolean {
+  for (const s of list) {
+    switch (s.k) {
+      case "break":
+      case "continue":
+        return true;
+      case "if":
+        if (containsJump(s.then) || containsJump(s.else)) return true;
+        break;
+      case "while":
+      case "do-while":
+      case "for":
+      case "labeled":
+      case "iife":
+        if (containsJump(s.body)) return true;
+        break;
+      case "try":
+        if (containsJump(s.block) || containsJump(s.handler)) return true;
+        break;
+      case "switch":
+        for (const c of s.cases) if (containsJump(c.body)) return true;
+        break;
+      default:
+        break; // expr, init, decl, return, throw, func (a separate frame), directive, comment, raw
+    }
+  }
+  return false;
+}
+
+function stmtInterest(s: Stmt): StmtInterest {
+  let it = stmtInterestMemo.get(s);
+  if (it !== undefined) return it;
+  const regs = new Set(registerUses([s]).keys());
+  const jump = containsJump([s]);
+  const passThrough = s.k === "if" || s.k === "labeled" || s.k === "iife" || s.k === "try" || (s.k === "switch" && s.cases.length > 0);
+  it = { regs, jump, passThrough };
+  stmtInterestMemo.set(s, it);
+  return it;
+}
+
+interface ListIndex {
+  /** Positions, ascending, of statements mentioning each register. */
+  readonly byReg: ReadonlyMap<string, readonly number[]>;
+  /** Positions, ascending, of statements containing a jump. */
+  readonly jumps: readonly number[];
+  /** `byReg[reg] ∪ jumps`, built lazily per register. */
+  readonly relevant: Map<string, readonly number[]>;
+  /** `passThroughPrefix[m]` = number of pass-through statements in `list[0, m)`. */
+  readonly passThroughPrefix: readonly number[];
+}
+
+const listIndexMemo = new WeakMap<readonly Stmt[], ListIndex>();
+
+function listIndex(list: readonly Stmt[]): ListIndex {
+  let idx = listIndexMemo.get(list);
+  if (idx !== undefined) return idx;
+  const byReg = new Map<string, number[]>();
+  const jumps: number[] = [];
+  const passThroughPrefix: number[] = [0];
+  list.forEach((s, m) => {
+    const it = stmtInterest(s);
+    for (const reg of it.regs) {
+      const bucket = byReg.get(reg);
+      if (bucket === undefined) byReg.set(reg, [m]);
+      else bucket.push(m);
+    }
+    if (it.jump) jumps.push(m);
+    passThroughPrefix.push(passThroughPrefix[m]! + (it.passThrough ? 1 : 0));
+  });
+  idx = { byReg, jumps, relevant: new Map(), passThroughPrefix };
+  listIndexMemo.set(list, idx);
+  return idx;
+}
+
+function mergeSorted(a: readonly number[], b: readonly number[]): readonly number[] {
+  if (b.length === 0) return a;
+  if (a.length === 0) return b;
+  const out: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const x = i < a.length ? a[i]! : Infinity;
+    const y = j < b.length ? b[j]! : Infinity;
+    if (x < y) {
+      out.push(x);
+      i++;
+    } else if (y < x) {
+      out.push(y);
+      j++;
+    } else {
+      out.push(x);
+      i++;
+      j++;
+    }
+  }
+  return out;
+}
+
+/** The smallest index `>= from` whose statement can change a scan's verdict
+ *  for `reg` (mentions it in its own frame, or contains a jump) —
+ *  `list.length` when there is none. Every statement skipped over is
+ *  `clear`-and-keep-going for `reg` (see the section comment above). */
+function nextRelevant(list: readonly Stmt[], reg: string, from: number): number {
+  const idx = listIndex(list);
+  let positions = idx.relevant.get(reg);
+  if (positions === undefined) {
+    positions = mergeSorted(idx.byReg.get(reg) ?? [], idx.jumps);
+    idx.relevant.set(reg, positions);
+  }
+  let lo = 0;
+  let hi = positions.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (positions[mid]! < from) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo < positions.length ? positions[lo]! : list.length;
 }
 
 /** Scans `list` from `from`, statement by statement, stopping at the first
@@ -335,7 +562,8 @@ function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, re
  *  (unsafe); once the list is exhausted, hands off to `after` (`clear` if
  *  the caller has nothing further to say). Memoised per `(list, from)` — see
  *  `Memo`'s doc — so a `(list, from)` reached through more than one `break`
- *  or candidate scan is computed once. */
+ *  or candidate scan is computed once. Steps between relevant statements
+ *  only (`nextRelevant`): the ones in between are `clear` by construction. */
 function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: ReadonlyMap<string, Cont>, after: Cont, memo: Memo): Verdict {
   let cache = memo.get(list);
   if (cache === undefined) {
@@ -345,7 +573,7 @@ function scanFrom(list: readonly Stmt[], reg: string, from: number, labels: Read
   const cached = cache.get(from);
   if (cached !== undefined) return cached;
   let result: Verdict = "clear";
-  for (let x = from; x < list.length; x++) {
+  for (let x = nextRelevant(list, reg, from); x < list.length; x = nextRelevant(list, reg, x + 1)) {
     const rest: Cont = () => scanFrom(list, reg, x + 1, labels, after, memo);
     const v = stmtVerdict(list[x]!, reg, labels, rest, memo);
     if (v !== "clear") {
@@ -396,7 +624,7 @@ function tryDA(list: readonly Stmt[], j: number, reg: string, memo: Memo): boole
  */
 function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, reg: string, readsAtJ: number, memo: Memo): boolean {
   if (tryDA(list, j, reg, memo)) return true;
-  const u = identUses(fnBody, reg);
+  const u = registerUses(fnBody).get(reg) ?? NO_USES; // one memoised walk per fnBody, not one per candidate (P-1)
   return u.reads === readsAtJ && u.writes === 1 && u.nested === 0;
 }
 
@@ -429,11 +657,23 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
   let readAt: number | null = null;
   let readTopCount = 0;
   let blocked = false;
-  for (let m = i + 1; m < list.length; m++) {
+  // Relevant statements only (P-1, `nextRelevant`): a skipped statement
+  // neither reads nor stores `reg` and has no sub-list verdict of its own.
+  for (let m = nextRelevant(list, reg, i + 1); m < list.length; m = nextRelevant(list, reg, m + 1)) {
     const s = list[m]!;
-    const tlExpr = topLevelExprOf(s);
-    const tlReads = tlExpr === null ? 0 : exprCounts(tlExpr, reg).reads;
+    const tlReads = topLevelReads(s).get(reg) ?? 0;
     if (tlReads > 0) {
+      // Stepping statement by statement, a pass-through compound statement
+      // (`if`, `try`, …) sitting between the store and this read would have
+      // reported `read` first — its branches fall through to the rest of the
+      // list, which starts with this read — and refused the site as
+      // `use-under-control-flow` before the read was ever reached. Keep that
+      // verdict (and its reason) exactly.
+      const prefix = listIndex(list).passThroughPrefix;
+      if (prefix[m]! - prefix[i + 1]! > 0) {
+        blocked = true;
+        break;
+      }
       readAt = m;
       readTopCount = tlReads;
       break;

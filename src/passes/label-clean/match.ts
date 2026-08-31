@@ -192,7 +192,24 @@ export function checkInnermostTargets(loop: LoopNode): InnermostResult {
   return bad ?? { ok: true };
 }
 
+// Memoised on the root's identity: `match` is asked about every node of the
+// tree on every driver iteration, and the answer is a whole-function fact
+// that only changes when the root does (a splice builds a new root; the
+// tree is never mutated in place). Without this, one full-tree walk ran per
+// node per iteration — quadratic in the function, and a measurable share of
+// the M5 pipeline's cost on a real bundle (docs/PUSHBACK.md P-1).
+const generatorDispatchMemo = new WeakMap<Stmt, boolean>();
+
 function hasGeneratorDispatch(root: Stmt): boolean {
+  let known = generatorDispatchMemo.get(root);
+  if (known === undefined) {
+    known = walkForGeneratorDispatch(root);
+    generatorDispatchMemo.set(root, known);
+  }
+  return known;
+}
+
+function walkForGeneratorDispatch(root: Stmt): boolean {
   const stack: Stmt[] = [root];
   while (stack.length > 0) {
     const n = stack.pop()!;
