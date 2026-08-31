@@ -205,25 +205,26 @@ function looksAppSpecific(s: string): boolean {
   return APP_SPECIFIC_STRING_RE.test(s) || SCREEN_OR_ROUTE_RE.test(s) || REVERSE_DNS_RE.test(s);
 }
 
-/** Structural-shape fallback (D17h-b #3): many small functions and few/no
- *  strings, none of them app-specific-looking. Deliberately the
- *  lowest-confidence, last-checked signal — library modules with a single
- *  large function or with genuinely no strings at all are common enough
- *  that this alone is coarse; it only fires when the module also cleared
- *  a minimum function count so a single tiny helper module doesn't trip it.
- *  Callers only consult this once app-vocabulary has already been ruled
- *  out for the module (the combination rule's "no app-vocab AND generic
- *  shape"), so the `looksAppSpecific` veto here is a fast, module-local
- *  early-out on top of that. */
-const STRUCTURAL_MIN_FUNCTIONS = 3;
-const STRUCTURAL_MAX_AVG_INSTR = 40;
-const STRUCTURAL_MAX_STRINGS = 2;
+/** Structural-shape fallback (D17h-b #3): several smallish functions,
+ *  reached only once app-vocabulary has already been ruled out for the
+ *  module by the caller (the combination rule's "no app-vocab AND generic
+ *  shape") — every one of the module's own strings has therefore already
+ *  been confirmed NOT independently app-specific-looking
+ *  (`isDistinctiveByShape`, which subsumes `looksAppSpecific`) and NOT a
+ *  member of the bundle-derived vocabulary, so this signal doesn't need to
+ *  re-check string content at all, only shape. Deliberately the
+ *  lowest-confidence, last-checked signal. An earlier version additionally
+ *  capped the module's raw string COUNT (<= 2) on the theory that library
+ *  modules have few strings — measured false on real bundles (median 16
+ *  string constants per module even in pure react-native runtime code, RN
+ *  itself embeds plenty of warning/prop-name strings) and dropped: string
+ *  CONTENT (already vetted above) is the signal, not string count. */
+const STRUCTURAL_MIN_FUNCTIONS = 2;
+const STRUCTURAL_MAX_AVG_INSTR = 75;
 
 function hasStructuralLibraryShape(m: InventoryModule): boolean {
   const fnCount = m.functionIndices.length;
   if (fnCount < STRUCTURAL_MIN_FUNCTIONS) return false;
-  if (m.stringConstants.length > STRUCTURAL_MAX_STRINGS) return false;
-  if (m.stringConstants.some(looksAppSpecific)) return false;
   const avgInstr = m.instrCount / fnCount;
   return avgInstr <= STRUCTURAL_MAX_AVG_INSTR;
 }
@@ -278,12 +279,35 @@ const GENERIC_BOILERPLATE_RE =
 const GENERIC_MESSAGE_RE =
   /^(?:Invariant Violation|Warning:|Minified React error|[A-Z][a-zA-Z]*Error:|is not a function|is not defined|Cannot read propert(?:y|ies) of (?:null|undefined)|\[object [A-Za-z]*\]|Symbol\(.*\)|use strict)/;
 const NODE_MODULES_OR_PATHLIKE_RE = /node_modules\/|^\.{1,2}\//;
+// A single bare identifier-shaped token starting lowercase or `_`
+// (`render`, `forwardRef`, `componentWillUnmount`, `__detach`) — the shape
+// of a property/method/API name, not app-specific vocabulary: these recur
+// across nearly every module in ANY bundle (every module touches `Array`,
+// calls `.bind`/`.forEach`, references React lifecycle names, ...) purely
+// because they're common JS/React/Hermes surface, not because they say
+// anything about this one app. Measured directly on rn-template-0.72 (a
+// real bundle): before this exclusion the frequency-derived vocabulary was
+// dominated by exactly this shape (`render`, `assign`, `forwardRef`,
+// `isArray`, `displayName`, `componentWillUnmount`, `getEnforcing`, ...),
+// see docs/DEPS.md. Multi-word UI copy (contains a space), paths (contains
+// `/`), and PascalCase names remain eligible — those are the shapes real
+// app vocabulary (route names, screen components, API paths) actually
+// takes.
+const BARE_IDENTIFIER_STARTING_LOWER_RE = /^[a-z_][a-zA-Z0-9_]*$/;
+// Well-known JS/React/React-Native globals and lifecycle/API names that
+// happen to be PascalCase (so the bare-lowercase check above doesn't catch
+// them) but are equally generic — present in essentially every bundle
+// regardless of app.
+const KNOWN_JS_RN_GLOBAL_RE =
+  /^(?:Array|Object|Error|TypeError|RangeError|SyntaxError|ReferenceError|EvalError|URIError|AggregateError|Math|JSON|Promise|Symbol|Map|Set|WeakMap|WeakSet|Proxy|Reflect|Function|RegExp|Date|Number|String|Boolean|ArrayBuffer|DataView|Int8Array|Uint8Array|Uint8ClampedArray|Int16Array|Uint16Array|Int32Array|Uint32Array|Float32Array|Float64Array|BigInt64Array|BigUint64Array|BigInt|HermesInternal|Component|PureComponent|Fragment|StrictMode|Suspense|Children|Commands)$/;
 
 function isGenericBoilerplate(s: string): boolean {
   if (s.length < 4) return true;
   if (GENERIC_BOILERPLATE_RE.test(s)) return true;
   if (GENERIC_MESSAGE_RE.test(s)) return true;
   if (NODE_MODULES_OR_PATHLIKE_RE.test(s)) return true;
+  if (BARE_IDENTIFIER_STARTING_LOWER_RE.test(s)) return true;
+  if (KNOWN_JS_RN_GLOBAL_RE.test(s)) return true;
   if (!/[a-zA-Z]/.test(s)) return true; // pure punctuation/numeric
   return false;
 }

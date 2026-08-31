@@ -955,6 +955,53 @@ DB-layering spec and the seed-run numbers: `docs/DEPS.md`.
   finally-shared-range` failures a concurrent M4-review-lane commit fixed
   mid-task (not this task's own fix).
 
+### Classification: library vs custom code, without naming (2026-08-31, D17h/D17h-b/D17i stage 2)
+
+`src/deps/classify.ts` (`classifyInventory`/`classifyModule`) classifies
+each Metro module `library`/`custom`/`unknown` without naming a package —
+additive `classification` field on `DepsReport`/`DepsRunResult`, printed as
+a headline line in `formatReportText`, never touches match/guess/confirm.
+**D17h-b (this task)** reframed the signal priority: two signals that read
+straight off a single bundle's own strings — `node_modules`/bare
+package-path evidence (extracts the package name) and **app-vocabulary
+presence** (`deriveAppVocabulary`: the bundle's own reverse-DNS/scoped id,
+`Screen`/`Route`/`Navigator`/asset/hostname-shaped strings regardless of
+frequency, plus any other string recurring across several of the app's own
+modules after excluding generic JS/library-boilerplate and bare-identifier
+noise) — are now PRIMARY, so classification works on a brand-new app with
+**no cross-app corpus at all**; D17h's original per-function cross-app
+exact-hash recurrence (against `tools/pkgsig/commonality-index.json`) is
+kept as a bonus signal on top. Combination: LIBRARY if node_modules-evidence
+OR (no app-vocab AND generic structural shape); CUSTOM if app-vocab
+present; else UNKNOWN (no longer defaulted to `app`/`custom`, now that
+app-vocabulary gives a real positive signal to decide it). Each module also
+gets a `confidence` (0..1) and a `libraryPackageHint`.
+
+**Measured, corpus-free** (`EMPTY_COMMONALITY_INDEX` — exactly what a
+brand-new app gets with zero setup), vs. the OLD D17h recurrence-primary
+number (a 5-bundle corpus) — full table and false-positive-risk discussion
+in `docs/DEPS.md`'s "Classification" section: `rn-template-0.72` 1.2% →
+**41.1%**, `react-navigation-example-0.85.3` 1.7% → **26.5%**, local-corpus
+MetaMask 19.7% → **39.5%** (roughly doubled, the D17h-b acceptance target,
+zero corpus involved), Brex 0.5% → **25.1%**, Discord 0.2% → **13.6%**.
+**One real false-positive finding from measuring on a real bundle** (not
+hypothetical): an early version of app-vocabulary derivation classified
+90%+ of `rn-template` as CUSTOM — its frequency-based half was dominated by
+bare JS/React-internal identifiers (`render`, `forwardRef`,
+`componentWillUnmount`, `Reflect`, `HermesInternal`, ...) that recur across
+nearly every module of nearly every bundle, not because they say anything
+about one particular app; fixed by excluding bare-identifier-shaped tokens
+and known JS/React/RN globals from the frequency path (shape-distinctive
+strings — Screen/Route/hostname/bundle-id — are unaffected). A known
+residual risk, not chased further under this task's time box:
+`Screen`/`Route`/`Navigator`-suffixed identifiers are real for an app's own
+screens but collide with react-navigation's *own* internal type names, so a
+navigation-heavy bundle's corpus-free "% library" undercounts — still the
+safe-direction error (library code shown as custom, never the reverse).
+`tests/gate/deps/classify.test.ts` (27 tests, all green); did not touch
+`src/passes/**`, `src/decompile.ts`, `src/split/**`, `src/emit/**`, or
+`src/deps/{match,guess}.ts`.
+
 ## Known gaps
 - ~~**HBC 96 has no compiler/fixture yet**~~ **Closed.** Three of the five
   pulled production apps (Xbox, Bloomberg, Teams) ship v96; Discord and

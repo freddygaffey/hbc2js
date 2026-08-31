@@ -802,43 +802,88 @@ foundation baselines cover, `docs/PACKAGE-SIGNATURES.md` §5.3's own
 `@react-navigation/stack`@HBC98 example at 1.4 MB), note why in the commit
 rather than silently letting the budget creep.
 
-## Classification (D17h/D17i stage 2): library vs app-code, WITHOUT naming (2026-08-31)
+## Classification (D17h/D17h-b/D17i stage 2): library vs custom code, WITHOUT naming (2026-08-31)
 
 Naming a dependency (package@version, everything above) is the hard, slow
 problem — real recall depends on the signature DB having this exact
 toolchain's builds. D17h ships a separate, easier capability: classify each
-Metro module as third-party LIBRARY (ignorable) vs the app's OWN CODE
-*without* naming the package at all. This is `src/deps/classify.ts`
+Metro module as third-party LIBRARY (ignorable) vs the app's OWN "custom"
+code *without* naming the package at all. This is `src/deps/classify.ts`
 (`classifyInventory`/`classifyModule`), wired additively into `runDeps`
 (`DepsRunResult.classification`, `DepsReport.classification`, printed as a
 headline line in `formatReportText`) — it does not touch match/guess/confirm
 and can run even when the signature DB is empty.
 
+**D17h-b (2026-08-31) reframed which signals are PRIMARY.** D17h's original
+design leaned on cross-app recurrence against a multi-bundle "commonality
+index" — real, but useless on a brand-new app the tool has never built an
+index for, and (below) still weak even with one. D17h-b adds two signals
+that work from evidence **inside a single bundle**, no corpus required, and
+promotes them to primary; cross-app recurrence is kept as a bonus on top.
+
 **Signals, in priority order:**
 
-1. **Cross-app recurrence (primary).** Per-*function* exact bytecode hash
-   (the same hash `match.ts`'s signature DB uses, masking the Metro
+0. **Cross-app recurrence (bonus, D17h).** Per-*function* exact bytecode
+   hash (the same hash `match.ts`'s signature DB uses, masking the Metro
    dependency-map index per `sig-normalise.ts`) looked up in a "commonality
    index" of hash -> count of DISTINCT contributing bundles, gated by a
-   FLIRT-style `minInstr` floor (default 8) so tiny functions can't collide
-   their way to a false hit. A module is classified library when a majority
-   (default ≥50%) of its own instruction weight comes from functions whose
-   hash recurs in ≥2 distinct bundles. **Whole-module hashing was tried
-   first and measured far too strict** (a library's factory + every nested
-   closure must be byte-identical across builds — different RN/toolchain
-   versions perturb at least one nested closure almost everywhere); per-
-   function hashing finds the same shared code even when the module
-   wrapper around it differs build to build.
-2. `node_modules/...` path strings or `pkg@x.y.z`/`pkg vN.N.N`-shaped
-   version-banner strings in the module's own string constants.
-3. Structural shape (≥3 functions, ≤40 avg instructions/function, ≤2
-   strings, none of them route/screen/asset-shaped) — the weakest,
-   last-checked fallback.
+   FLIRT-style `minInstr` floor (default 8). A module is library when a
+   majority (default ≥50%) of its own instruction weight comes from
+   functions whose hash recurs in ≥2 distinct bundles. Silent (never fires)
+   on an empty/absent index — the normal state for a brand-new app.
+1. **`node_modules`/bare package-path evidence (primary, D17h-b, strong).**
+   A `node_modules/<pkg>/...` substring, or a bare (prefix-stripped)
+   `<pkg>/lib|dist|src|.../*.js` package-relative path, in the module's own
+   string constants (`libraryPathEvidence`, extracts the package name).
+   `pkg@x.y.z`/`pkg vN.N.N`-shaped version-banner strings score the same
+   tier (`package-name-version-string`). **Measured silent on both
+   committed release fixtures** (`rn-template-0.72`,
+   `react-navigation-example-0.85.3`) — Metro strips `node_modules/`-shaped
+   require paths from optimised/release output, so this signal in practice
+   fires mainly on `-g`/debug builds, source-mapped bundles, and libraries
+   that self-embed a version banner (MetaMask's one big hit below).
+2. **App-vocabulary presence (primary, D17h-b, the key idea).** The app's
+   OWN vocabulary — derived straight from the bundle itself
+   (`deriveAppVocabulary`), no cross-app corpus needed:
+   - Any string independently recognisable as app-specific **by shape**,
+     regardless of how often it recurs: a reverse-DNS/scoped bundle id
+     (`com.example.myapp`), a `Screen`/`Route`/`Navigator`-suffixed
+     identifier, an asset path, or a URL (the hostname itself is added to
+     the vocabulary, not just the one concrete URL string, so a different
+     path on the same host still matches).
+   - Any other string that recurs across several distinct modules
+     (≥3 by default) without being near-ubiquitous (≤15% of all modules) —
+     the shape a shared route name, UI-copy constant, or API path prefix
+     takes — **after** excluding generic JS/library boilerplate: known
+     error-message shapes, and (the dominant real-world source of noise,
+     found by measuring on `rn-template-0.72`) bare identifier-shaped
+     tokens (`render`, `forwardRef`, `componentWillUnmount`, `__detach`,
+     ...) and well-known JS/React/RN globals (`Array`, `Reflect`,
+     `HermesInternal`, `Component`, ...) — these recur in nearly every
+     module of nearly every bundle because they're common surface, not
+     because they say anything about one particular app.
+   A module whose strings hit the vocabulary is CUSTOM.
+3. **Structural shape (D17h-b, weakest, last-checked).** ≥2 functions,
+   ≤75 avg instructions/function — only consulted once app-vocabulary has
+   already been ruled out for the module, so every one of its strings is
+   already known not to be app-specific/vocabulary. (An earlier version
+   also capped the module's raw string *count* at ≤2 on the theory that
+   library modules have few strings; measured false on real bundles —
+   median 16 string constants per module even in pure react-native runtime
+   code — and dropped: string *content*, already vetted above, is the
+   signal, not string count.)
 
-A module clearing none of these defaults to **app** (the safe direction to
-be wrong in: false negatives here only mean some library code still shows
-up as app code, never the reverse) unless it has no content at all
-(**unknown**).
+**Combination rule:** a module is **LIBRARY** if node_modules-evidence OR
+(no app-vocab AND generic structural shape); **CUSTOM** if app-vocab is
+present; else **UNKNOWN** — doubt is reported honestly rather than defaulted
+either way, now that app-vocabulary gives a real positive way to decide
+CUSTOM. (D17h's original design defaulted "no signal" to `app`; D17h-b
+replaces that default with `unknown` since a real positive CUSTOM signal
+now exists.) Each classification also carries a `confidence` (0..1, string
+evidence ~0.85-0.95, app-vocabulary scaled by how many distinct tokens
+matched, structural-shape ~0.35) and a `libraryPackageHint` (the package
+name extracted from node_modules/version-banner evidence, when present —
+a hint only, not run through `guess.ts`/`match.ts` naming/confirmation).
 
 **Commonality index** (`tools/pkgsig/commonality-index.json`, regenerated by
 `tools/pkgsig/build-commonality-index.mjs`): hash + distinct-bundle-count
@@ -852,42 +897,61 @@ via `tools/extract-apk-bundle.sh`). Current committed index: **5 bundles**
 (2 open-source + MetaMask/Brex/Discord, HBC 94/96/98/98/98),  248,283
 distinct eligible function hashes, 3,193 recurring in ≥2 — 7.2 MB.
 
-**Measured: library-vs-app % by weight, vs. the naming stage's own
-`percentVerifiedByWeight`** (both offline, default starter DB only, no
-`--confirm`, no bulk D17c DB layered):
+**Measured (2026-08-31): library-vs-custom % by weight, WITHOUT any
+cross-app corpus** (`classifyInventory(inventory, EMPTY_COMMONALITY_INDEX)`
+— i.e. D17h-b's primary signals alone, exactly what a brand-new app with no
+commonality index gets on first run), vs. the OLD D17h recurrence-primary
+number (5-bundle corpus) and naming's own `percentVerifiedByWeight`:
 
-| Bundle | HBC | naming verified-by-weight | classify library-by-weight |
-|---|---|---|---|
-| `rn-template-0.72` | 94 | 98.6% | 1.2% |
-| `react-navigation-example-0.85.3` | 98 | 59.8% | 1.7% |
-| local-corpus MetaMask | 96 | 0.5% | **19.7%** |
-| local-corpus Brex | 98 | 0.3% | 0.5% |
-| local-corpus Discord | 98 | 0.2% | 0.2% |
+| Bundle | HBC | naming verified-by-weight | OLD classify (5-bundle corpus) | **NEW classify, corpus-free** |
+|---|---|---|---|---|
+| `rn-template-0.72` | 94 | 98.6% | 1.2% | **41.1%** |
+| `react-navigation-example-0.85.3` | 98 | 59.8% | 1.7% | **26.5%** |
+| local-corpus MetaMask | 96 | 0.5% | 19.7% | **39.5%** |
+| local-corpus Brex | 98 | 0.3% | 0.5% | **25.1%** |
+| local-corpus Discord | 98 | 0.2% | 0.2% | **13.6%** |
 
-Honest read: on the two fixtures the starter signature DB was specifically
-built for, naming already dominates (98.6%/59.8%) and classification adds
-little on top — expected, not a classification failure. On the three real
-proprietary bundles — the case D17h actually targets, where the exact
-library versions aren't in any signature DB — naming with the (default,
-non-bulk) starter DB is near-zero (0.2-0.5%) and classification matches or
-(MetaMask, ~40x) substantially beats it, entirely without a signature DB
-match or a package name: MetaMask's win is almost all one signal
-(`package-name-version-string`, a `@lottiefiles/toolkit-js 0.63.0`
-self-identifying banner string covering ~1M instructions — a real,
-inspectable hit, not noise). `cross-app-recurrence` itself, at this 5-bundle
-corpus size, is still small (0.2-0.4 percentage points per bundle) — it
-needs a much larger commonality index (more distinct apps, ideally at
-matching HBC/toolchain versions, since exact-hash matching doesn't tolerate
-a different `hermesc` build even for identical source) to become the
-dominant signal D17h envisions; growing `tests/fixtures/local-corpus` and
-re-running `build-commonality-index.mjs` is the direct lever. **Stage 3**
-(naming the classified-library modules, D17i point 3) can now scope its
-work to exactly the modules this stage marks `library` — the `guess`/
-`confirm` machinery already exists (`src/deps/guess.ts`/`confirm.ts`); what
-it needs next is to be pointed at `classification.modules.filter(m =>
-m.classification === "library")` instead of match's `unattributedModules`,
-and a much larger commonality index (above) to make the primary signal earn
-its "primary" billing at real-world scale.
+Every bundle moved up substantially, corpus-free — MetaMask alone (the
+D17h-b acceptance target) roughly **doubled**, 19.7% → 39.5%, with zero
+cross-app corpus involved (the old 19.7% needed a 5-bundle index; the new
+39.5% needs none). `rn-template`'s jump (1.2% → 41.1%) is almost entirely
+`structural-shape` (38,008 of its ~92k total instructions) — app-vocabulary
+correctly stayed silent on library modules once the bare-identifier/known-
+global exclusions above were added (before that fix, an earlier iteration
+of app-vocabulary measured 90%+ **custom** on this bundle, i.e. it was
+calling most of react-native's own runtime "custom" — a real false-positive
+finding from measuring on a real bundle, not a hypothetical, fixed by
+tightening `isGenericBoilerplate` rather than by loosening the signal's
+reach).
+
+**Honest false-positive-risk read.** `rn-template` is ~98.6%-library by
+naming ground truth, so its measured 41.1%-library / ~53%-custom split
+means roughly half the bundle is still library code labelled CUSTOM by this
+signal set — the residual, known cause is `SCREEN_OR_ROUTE_RE`
+(`Screen`/`Route`/`Navigator`-suffixed identifiers): real for an app's own
+screen components, but react-navigation's *own internal* type/prop names
+use the identical shape (`StackNavigator`, `NavigationRoute`, ...), so a
+navigation-heavy bundle's own library code gets mistaken for app vocabulary
+by the very heuristic meant to find it. This is the direction D17h always
+considered safe to be wrong in (library code showing up as "custom" only
+means an analyst reviews a bit more code, never that real app code goes
+missing) — the reverse (real app code called LIBRARY) risks silently
+hiding something real, and neither node_modules-path nor structural-shape
+can ever fire on a module app-vocabulary already claimed, by construction
+of the combination rule — but it does mean the corpus-free "% library"
+number above should be read as a **floor**, not a ceiling: real
+library-vs-custom precision needs either the bonus cross-app-recurrence
+signal (which subsumes this case correctly since react-navigation's own
+code, being byte-identical across the apps that ship it, recurs) or a
+tighter app-vocabulary/screen-name heuristic — noted here rather than
+chased further under this task's time box.
+
+**Stage 3** (naming the classified-library modules, D17i point 3) can now
+scope its work to exactly the modules this stage marks `library` — the
+`guess`/`confirm` machinery already exists (`src/deps/guess.ts`/
+`confirm.ts`); what it needs next is to be pointed at
+`classification.modules.filter(m => m.classification === "library")`
+instead of match's `unattributedModules`.
 
 ## Contributing a signature upstream
 
@@ -932,16 +996,23 @@ corpus in this seed run never contributed anything to `tools/pkgsig/db`).
   stubbed `npm`/`npx` (no network): write-back + D17b layering.
 - `tests/gate/cli/deps.test.ts` — the `hbc2js deps` CLI end-to-end
   (text/`--json`/`--out`/error handling).
-- `tests/gate/deps/classify.test.ts` — D17h/D17i stage 2 classification (18
-  tests): each signal in isolation (recurrence at/above/below threshold,
-  minInstr floor, majority-of-weight fraction gate, node_modules-path,
-  package-name-version-string, structural-shape + its app-specific-string
-  veto, the app/unknown defaults), `buildCommonalityIndex`/
-  `mergeCommonalityIndexes`'s distinct-bundle counting, and two integration
-  checks against the real `rn-template-0.72` fixture (a self-built index
-  recovers its own eligible functions; the real committed
+- `tests/gate/deps/classify.test.ts` — D17h/D17h-b/D17i stage 2
+  classification (27 tests): each signal in isolation (recurrence
+  at/above/below threshold, minInstr floor, majority-of-weight fraction
+  gate, node_modules-path + package-name extraction incl. scoped packages,
+  bare package-relative path incl. its own route-path false-positive
+  guard, package-name-version-string, `deriveAppVocabulary`'s
+  frequency-window and shape-distinctive inclusion and generic-boilerplate
+  exclusion, structural-shape + app-vocabulary preempting it, node_modules
+  evidence winning over a vocabulary coincidence, the custom/unknown
+  defaults), `buildCommonalityIndex`/`mergeCommonalityIndexes`'s
+  distinct-bundle counting, and three integration checks against the real
+  `rn-template-0.72` fixture (a self-built commonality index recovers its
+  own eligible functions; the real committed
   `tools/pkgsig/commonality-index.json` produces a well-formed report,
-  skipped gracefully if that file is ever absent from a checkout).
+  skipped gracefully if that file is ever absent from a checkout; a fully
+  corpus-free run — `EMPTY_COMMONALITY_INDEX` — still derives a non-empty
+  app vocabulary and classifies every module, D17h-b's own claim).
 - `tests/sweep/deps/corpus.test.ts` — the seed-run corpus, skipped
   (INCONCLUSIVE) when its inputs are absent.
 - `tests/sweep/deps/truth-react-navigation.test.ts` — D17d on
