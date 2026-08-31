@@ -81,9 +81,17 @@ export type AstPassHook = (fn: AstStmt, cfg: FunctionCfg) => { readonly fn: AstS
  * `call-shape` (batch 2) kill registers *after* `expr-rebuild` reaches its
  * fixed point. Gated on `applied.length > 0` so `--passes=none` — and any
  * function no stage-B rung touched — stays byte-identical.
+ *
+ * The register decl is recognised as the `let` decl that still declares
+ * *some* `rN` — not *every*: `var-naming` (spec 07) renames entries of this
+ * very decl in place, so after it runs the decl is mixed (`let r0, arr, r16`)
+ * and an `every` test would leave every dead `rN` behind. `some` loses
+ * nothing: a name `var-naming` produced always has a write (it was live), so
+ * anything this finaliser could prune is still an `rN`, and a decl holding
+ * one is found.
  */
 export function pruneRegisterDecls(body: readonly AstStmt[]): readonly AstStmt[] {
-  const idx = body.findIndex((s): s is AstStmt & { readonly k: "decl" } => s.k === "decl" && s.kind === "let" && s.names.length > 0 && s.names.every(isRegisterName));
+  const idx = body.findIndex((s): s is AstStmt & { readonly k: "decl" } => s.k === "decl" && s.kind === "let" && s.names.length > 0 && s.names.some(isRegisterName));
   if (idx < 0) return body;
   const decl = body[idx] as AstStmt & { readonly k: "decl" };
   const withoutDecl = [...body.slice(0, idx), ...body.slice(idx + 1)];

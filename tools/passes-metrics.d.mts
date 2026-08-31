@@ -91,3 +91,35 @@ export interface FnNamingBundleResult {
 }
 
 export function measureFnNamingBundle(bundlePath: string): FnNamingBundleResult;
+
+// docs/specs/passes/07-var-naming.md §8's corpus metric.
+export interface VarNamingPerFixtureMetric {
+  readonly fixture: string;
+  readonly version: number;
+  readonly variant: string;
+  readonly registers: number;
+  readonly named: number;
+}
+
+export interface VarNamingMetricsResult {
+  readonly registerCount: number;
+  readonly survivingRegisters: number;
+  readonly namedPct: number;
+  readonly namedPctBefore: number;
+  readonly perFixture: readonly VarNamingPerFixtureMetric[];
+  /** (fixture, version, variant) triples whose decompile threw with var-naming
+   *  skipped as well as on — pre-existing, ledgered failures, reported not counted. */
+  readonly skipped: readonly { readonly fixture: string; readonly version: number; readonly variant: string; readonly error: string }[];
+}
+
+export function measureVarNaming(versions?: readonly number[], variants?: readonly string[]): VarNamingMetricsResult;
+
+export interface VarNamingBundleResult {
+  readonly registerCount: number;
+  readonly survivingRegisters: number;
+  readonly namedPct: number;
+  readonly registerTokensBefore: number;
+  readonly registerTokensAfter: number;
+}
+
+export function measureVarNamingBundle(bundlePath: string): VarNamingBundleResult;
