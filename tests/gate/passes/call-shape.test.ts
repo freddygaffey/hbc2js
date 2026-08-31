@@ -394,3 +394,18 @@ test("v99 shape: 33-class-inheritance-super — an ordinary two-argument Reflect
   assert.match(code, /new r7\(r12, r11\)/);
   assert.match(code, /Reflect\.construct\(r2, \[r4\], r3\)/, "super() forwards a distinct new.target — must not become `new r2(r4)`");
 });
+
+// docs/specs/passes/14-template-literal.md §7: `call-shape` and
+// `template-literal` are order-independent because every call-shape rule
+// refuses a `HermesInternal.concat` site — R3a needs a proven-`undefined`
+// `this` (it is the first string chunk), R3b needs the receiver to be the
+// callee's own object (it is not). Asserted here rather than by an `after:`
+// edge; the mirror-image negative lives in template-literal.test.ts.
+test("order independence: a template literal's concat site is not a call-shape site", () => {
+  const concatMember = member(id("__hbc_HermesInternal"), "concat");
+  const site = reflectApply(concatMember, lit('"Hello, "'), [id("r3"), lit('"!"')]);
+  const body: readonly Stmt[] = [exprStmt(assignExpr(id("r5"), site))];
+  const v = classifyNode(site, body);
+  assert.equal(v.ok, false);
+  assert.equal(match(body, ctxFor(body)), null);
+});

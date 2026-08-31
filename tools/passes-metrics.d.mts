@@ -169,3 +169,33 @@ export interface SwitchRaiseMetricsResult {
 }
 
 export function measureSwitchRaise(versions?: readonly number[]): SwitchRaiseMetricsResult;
+
+// docs/specs/passes/14-template-literal.md §7's corpus metric.
+export interface TemplateLiteralPerFixtureMetric {
+  readonly fixture: string;
+  readonly version: number;
+  readonly variant: string;
+  readonly functions: number;
+  readonly cleanFunctionsBefore: number;
+  readonly cleanFunctionsAfter: number;
+}
+
+export interface TemplateLiteralMetricsResult {
+  readonly functionCount: number;
+  readonly cleanFunctionPct: number;
+  readonly cleanFunctionPctBefore: number;
+  /** Residual sites by §7 refusal reason (the docs/STATUS.md histogram). */
+  readonly refusals: Readonly<Record<string, number>>;
+  readonly perFixture: readonly TemplateLiteralPerFixtureMetric[];
+}
+
+export function measureTemplateLiteral(versions?: readonly number[], variants?: readonly string[]): TemplateLiteralMetricsResult;
+
+export interface TemplateLiteralBundleResult {
+  readonly functionCount: number;
+  readonly cleanFunctionPct: number;
+  readonly cleanFunctionPctBefore: number;
+  readonly refusals: Readonly<Record<string, number>>;
+}
+
+export function measureTemplateLiteralBundle(bundlePath: string): TemplateLiteralBundleResult;

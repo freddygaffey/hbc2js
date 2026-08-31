@@ -20,6 +20,8 @@ import { analyseModule } from "../src/cfg/index.ts";
 import { decompile, parseForDecompile } from "../src/decompile.ts";
 import { emitModule } from "../src/emit/index.ts";
 import { astPassHook, passHook } from "../src/passes/index.ts";
+import { stmtLists } from "../src/passes/ast.ts";
+import { deriveSites as deriveTemplateSites, hasTemplateSites } from "../src/passes/template-literal/match.ts";
 
 const ROOT = new URL("../", import.meta.url).pathname;
 const CORPUS_DIR = join(ROOT, "tests", "fixtures", "constructs");
@@ -917,6 +919,90 @@ export function measureSwitchRaise(versions = [94]) {
     };
   }
   return { perVersion };
+}
+
+// ---------------------------------------------------------------------------
+// docs/specs/passes/14-template-literal.md §7's corpus metric: the share of
+// emitted functions containing zero `__hbc_HermesInternal.concat` and zero
+// `__hbc_b_getTemplateObject`, with `template-literal` off vs on, over
+// `tests/fixtures/constructs/**` (any versions × variants) and, separately,
+// over one real bundle. Every residual site's refusal reason is recorded
+// (`refusals`, by §7 reason string) so docs/STATUS.md's histogram is a
+// measurement, not a guess.
+// ---------------------------------------------------------------------------
+
+/** Does `stmts` still hold a concat / template-object *site* anywhere
+ *  (nested lists and nested `func` bodies included — a surviving site
+ *  anywhere in a function counts against it, as for call-shape)? A dead
+ *  callee spill (`r5 = __hbc_HermesInternal.concat;` with no reader left)
+ *  is not a site — see `hasTemplateSites`. */
+function containsTemplateResidual(stmts) {
+  return hasTemplateSites(stmts);
+}
+
+/** Refusal reasons for every residual site in `body`, per list. */
+function templateRefusals(body, into) {
+  for (const list of stmtLists(body)) {
+    for (const r of deriveTemplateSites(list, body).refusals) into[r.reason] = (into[r.reason] ?? 0) + 1;
+  }
+}
+
+export function measureTemplateLiteral(versions = ALL_VERSIONS, variants = ALL_VARIANTS) {
+  const dirs = readdirSync(CORPUS_DIR).sort();
+  let beforeFns = 0;
+  let afterFns = 0;
+  let beforeCleanFns = 0;
+  let afterCleanFns = 0;
+  const refusals = {};
+  const perFixture = [];
+  for (const dir of dirs) {
+    for (const version of versions) {
+      for (const variant of variants) {
+        const file = join(CORPUS_DIR, dir, `v${version}${variant}.hbc`);
+        if (!existsSync(file)) continue;
+        const bytes = new Uint8Array(readFileSync(file));
+        let beforeBodies;
+        let afterBodies;
+        try {
+          beforeBodies = functionBodies(bytes, dir, { skip: ["template-literal"] }, true);
+          afterBodies = functionBodies(bytes, dir, {}, true);
+        } catch {
+          continue; // pre-existing, ledgered decompile failure (see measureVarNaming's `skipped`)
+        }
+        beforeFns += beforeBodies.length;
+        afterFns += afterBodies.length;
+        const cleanBefore = beforeBodies.filter((b) => !containsTemplateResidual(b)).length;
+        const cleanAfter = afterBodies.filter((b) => !containsTemplateResidual(b)).length;
+        beforeCleanFns += cleanBefore;
+        afterCleanFns += cleanAfter;
+        for (const b of afterBodies) if (containsTemplateResidual(b)) templateRefusals(b, refusals);
+        perFixture.push({ fixture: dir, version, variant, functions: afterBodies.length, cleanFunctionsBefore: cleanBefore, cleanFunctionsAfter: cleanAfter });
+      }
+    }
+  }
+  return {
+    functionCount: afterFns,
+    cleanFunctionPct: afterFns === 0 ? 0 : (afterCleanFns / afterFns) * 100,
+    cleanFunctionPctBefore: beforeFns === 0 ? 0 : (beforeCleanFns / beforeFns) * 100,
+    refusals,
+    perFixture,
+  };
+}
+
+export function measureTemplateLiteralBundle(bundlePath) {
+  const bytes = new Uint8Array(readFileSync(bundlePath));
+  const beforeBodies = functionBodies(bytes, "bundle", { skip: ["template-literal"] }, true);
+  const afterBodies = functionBodies(bytes, "bundle", {}, true);
+  const cleanBefore = beforeBodies.filter((b) => !containsTemplateResidual(b)).length;
+  const cleanAfter = afterBodies.filter((b) => !containsTemplateResidual(b)).length;
+  const refusals = {};
+  for (const b of afterBodies) if (containsTemplateResidual(b)) templateRefusals(b, refusals);
+  return {
+    functionCount: afterBodies.length,
+    cleanFunctionPct: afterBodies.length === 0 ? 0 : (cleanAfter / afterBodies.length) * 100,
+    cleanFunctionPctBefore: beforeBodies.length === 0 ? 0 : (cleanBefore / beforeBodies.length) * 100,
+    refusals,
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

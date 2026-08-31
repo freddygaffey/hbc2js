@@ -336,9 +336,15 @@ test("red->green: 22-nested-closures-counters v94 — the closure's `.push` rece
   assert.doesNotThrow(() => new Function(code));
 });
 
+// `template-literal` (registered after this test was written) turns every
+// `Reflect.apply(__hbc_HermesInternal.concat, …)` in this fixture into a
+// template literal, so with it on the fixture no longer has a single-def
+// *call-result* register for var-naming's heuristic to name. It is skipped
+// on both sides here so the assertion keeps testing exactly what its title
+// says — the same way call-shape's v99 shape test skips var-naming.
 test("red->green: 43-template-literals v94 — at least one single-def call-result register is named", () => {
   const bytes = loadFixture("43-template-literals", 94, "");
-  const without = decompile(bytes, { moduleName: "x", passes: { skip: ["var-naming"] } }).code;
-  const withRung = decompile(bytes, { moduleName: "x" }).code;
+  const without = decompile(bytes, { moduleName: "x", passes: { skip: ["var-naming", "template-literal"] } }).code;
+  const withRung = decompile(bytes, { moduleName: "x", passes: { skip: ["template-literal"] } }).code;
   assert.ok(declaredRegisters(withRung) < declaredRegisters(without), "expected fewer rN variables with var-naming on");
 });

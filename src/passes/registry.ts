@@ -11,6 +11,7 @@ import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
 import { switchRaise } from "./switch-raise/index.ts";
+import { templateLiteral } from "./template-literal/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
 
@@ -43,8 +44,14 @@ import { varNaming } from "./var-naming/index.ts";
  *  on the fully-cleaned tree (post `expr-rebuild` folding) with `fn-naming`'s
  *  recovered names already in its collision set, and needs `call-shape` to
  *  have turned a disguised call back into a real callee so its call-result
- *  heuristic sees one. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, fnNaming as Pass, varNaming as Pass];
+ *  heuristic sees one. `template-literal` (docs/specs/passes/
+ *  14-template-literal.md §7) sits after `call-shape`: `after:
+ *  ["expr-rebuild", "global-access"]` (folded argument arrays, inlined
+ *  chunk registers) and `before: ["var-naming"]` (it deletes the template-
+ *  object register, which must never have been named); it is
+ *  order-independent of `call-shape`, whose rules all refuse a concat site
+ *  (asserted by negative tests in both rungs, not by an edge). */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, templateLiteral as Pass, fnNaming as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];

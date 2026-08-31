@@ -79,6 +79,13 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
       case "seq":
         e.exprs.forEach(walkExpr);
         return;
+      case "template": // F14
+        e.exprs.forEach(walkExpr);
+        return;
+      case "tagged": // F14
+        walkExpr(e.tag);
+        walkExpr(e.quasi);
+        return;
       case "func":
         walkStmts(e.body);
         return;
@@ -211,6 +218,19 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
     case "seq": {
       const exprs = e.exprs.map((x) => mapExpr(x, fx));
       rebuilt = exprs.every((x, i) => x === e.exprs[i]) ? e : { ...e, exprs };
+      break;
+    }
+    case "template": {
+      // F14
+      const exprs = e.exprs.map((x) => mapExpr(x, fx));
+      rebuilt = exprs.every((x, i) => x === e.exprs[i]) ? e : { ...e, exprs };
+      break;
+    }
+    case "tagged": {
+      // F14
+      const tag = mapExpr(e.tag, fx);
+      const quasi = mapExpr(e.quasi, fx);
+      rebuilt = tag === e.tag && quasi === e.quasi ? e : { ...e, tag, quasi };
       break;
     }
     case "func": {
@@ -595,6 +615,13 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
       case "seq":
         e.exprs.forEach((x) => visitExpr(x, inNested));
         return;
+      case "template": // F14
+        e.exprs.forEach((x) => visitExpr(x, inNested));
+        return;
+      case "tagged": // F14
+        visitExpr(e.tag, inNested);
+        visitExpr(e.quasi, inNested);
+        return;
       case "func":
         // Separate register frame (see `IdentUses.nested`'s doc): a register
         // name can never be the same binding in there, so skip it entirely
@@ -748,6 +775,13 @@ export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
         return;
       case "seq":
         e.exprs.forEach((x) => visitExpr(x, at));
+        return;
+      case "template": // F14
+        e.exprs.forEach((x) => visitExpr(x, at));
+        return;
+      case "tagged": // F14
+        visitExpr(e.tag, at);
+        visitExpr(e.quasi, at);
         return;
       default:
         return; // lit, this, argumentsObject, func (separate frame)
@@ -1034,6 +1068,24 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
       case "seq":
         e.exprs.forEach(visitExpr);
         return;
+      case "template":
+        // F14 (docs/specs/passes/14-template-literal.md §3): a template is
+        // its substitutions, in order — ToString on each is what the
+        // `HermesInternal.concat` it replaced did too.
+        e.exprs.forEach(visitExpr);
+        return;
+      case "tagged": {
+        // F14: `tag`q0${e0}…`` is *the same call* the untagged lowering made
+        // — `tag(templateObject, e0, …)` — so it records the same `(callee
+        // shape, argc)` entry, `argc` counting the template object. Without
+        // this line a rewritten site would look like a dropped call to every
+        // later expression-only checker.
+        visitExpr(e.tag);
+        const subs = e.quasi.k === "template" ? e.quasi.exprs : [];
+        subs.forEach(visitExpr);
+        out.push({ k: "call", callee: calleeShape(e.tag), arity: subs.length + 1 });
+        return;
+      }
       default:
         return; // ident, lit, this, argumentsObject, func (its own frame)
     }
