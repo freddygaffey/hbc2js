@@ -1,0 +1,28 @@
+v84: FAILS - hermesc rejects the `class` keyword entirely ("invalid statement
+     encountered"): no IRGen lowering for classes in this lineage — same root
+     cause as 32-class-basic .. 36-class-getters-setters, see
+     36-class-getters-setters/versions.txt for the full analysis.
+v94: FAILS - identical, same root cause.
+v96: FAILS - identical, same root cause.
+v98: OK - compiles (Static Hermes lineage); the decompiled output is KNOWN
+     WRONG at this version, see below.
+v99: OK - compiles; the decompiled output is KNOWN WRONG at this version, see
+     below.
+
+This fixture is the minimal reproducer for the bug behind adversarial fixture
+21-class-private-fields (CONSOLIDATION 26 triage, docs/BUGS.md): Static
+Hermes lowers a class getter/setter PAIR as two DefineOwnGetterSetterByVal
+instructions, each with the other half `undefined`, and `src/emit/lower.ts`
+emits both halves as a full `Object.defineProperty(o, k, {get, set})`, so the
+second one clobbers the first (`get after pair: undefined`). The Hermes VM
+(`caseDefineOwnGetterSetterByVal`, Interpreter-slowpaths.cpp) only sets
+`setGetter`/`setSetter` for the non-undefined operand and leaves the other
+half alone. Object-literal accessor pairs are unaffected at every version
+(hermesc merges them into ONE instruction even when other keys sit between the
+two halves — verified v94 and v99), which is why 36-class-getters-setters'
+`temp` object passes and why this is a v98/v99 class-only bug.
+
+Until fixed, v98/v99 are excluded from the gate/hardened/sweep runs via
+`KNOWN_WRONG_OUTPUT` in src/harness/tiers.ts (the same expected-failure
+mechanism as 01-if-else-chain.min); delete those two entries once the emit fix
+lands and this fixture becomes an ordinary PASS.

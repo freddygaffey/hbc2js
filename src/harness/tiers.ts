@@ -158,8 +158,22 @@ function readVersionsTxt(dir: string): Map<number, string> {
  * harness. Still unfixed (a different bug from the hang above; see
  * docs/BUGS.md). Keyed on the exact (variant-qualified) fixture name, since
  * only the `.min` variant is affected.
+ *
+ * `58-class-accessor-pair-split` at v98/v99 (CONSOLIDATION 26, docs/BUGS.md
+ * row "adversarial/21-class-private-fields"): the minimal reproducer for a
+ * real `src/emit/lower.ts` bug — a class getter/setter pair is lowered by
+ * Static Hermes as two `DefineOwnGetterSetterByVal` with the other half
+ * `undefined`, and the emit's full `{get, set}` defineProperty clobbers the
+ * half defined first (VM: `get after pair: 1`, candidate: `undefined`). The
+ * fixture only compiles at v98/v99 (`versions.txt`), so those two entries
+ * are the whole fixture; delete them with the fix.
  */
-const KNOWN_WRONG_OUTPUT: ReadonlySet<string> = new Set(["01-if-else-chain.min@84", "01-if-else-chain.min@94"]);
+const KNOWN_WRONG_OUTPUT: ReadonlySet<string> = new Set([
+  "01-if-else-chain.min@84",
+  "01-if-else-chain.min@94",
+  "58-class-accessor-pair-split@98",
+  "58-class-accessor-pair-split@99",
+]);
 
 function isKnownWrongOutput(fixtureName: string, version: number): boolean {
   return KNOWN_WRONG_OUTPUT.has(`${fixtureName}@${version}`);
