@@ -320,6 +320,90 @@ same way the existing entries do.
   here) rather than deleted — per spec 06 §12's own instruction to keep it
   until the port is green and delete it in a separate, later commit.
 
+## E2E tier 1: corpus round-trip ratchet (2026-09-01)
+
+Real-app, end-to-end evidence at the bytecode level. `tools/e2e/roundtrip-corpus.ts`
+takes every bundle it knows (the committed `tests/fixtures/bundles/**`, the
+gitignored `tests/fixtures/local-corpus/**` via `MANIFEST.json`, plus any
+`--bundle <name>=<path.hbc>`), `--split`s it into a per-module project tree
+(`src/split`, in both modes: the default no-pass M4 shape and `passes: {}` —
+the full spec 07 ladder), recompiles **each module file** with the **same
+`hermesc` version as the bundle** (`-O -emit-binary`, one process per module,
+`os.cpus()-1` worker threads), decodes both the original bundle and the
+recompiled file with `src/disasm`, and compares them **one function at a
+time** — a module is its factory function plus every nested function,
+paired by name (`_fnNNN` is the split's name for original fn#NNN; with
+passes on, `fn-naming` restores the bytecode's own name) and then by
+position — using `src/harness/roundtrip.ts`'s `normaliseFunction`
+(registers renamed by first use; cache slots, literal offsets, generated
+names masked). One extra fold on top of that normalisation, specific to
+splitting: opcode *width* variants (`GetByIdShort`/`GetById`/`GetByIdLong`,
+`JmpLong`, `LoadConstStringLongIndex`, …) are treated as one opcode, because
+a one-module file has a tiny string table and hermesc picks the short/long
+form by string-id range — an artifact of splitting, not of decompilation.
+
+**What it proves — and what it doesn't.** An `IDENTICAL` function means the
+decompiled source compiles back to the same normalised bytecode: the
+strongest *static* equivalence this project has, and the only one available
+for real apps (no source, no trace reference — D16 C3/C5). `DIFFERENT` means
+only that it does not round-trip byte-for-byte: the readability ladder's
+shapes (`globalThis.console` for a bare `console`, `o.k = v` for an object
+literal, hoisted `function` declarations for inline closures, the `let r0,
+r1, …` prologue) all show up here as DIFFERENT while being behaviourally
+fine. This tier is **not** a behaviour oracle — the trace/fuzz ladder
+(`gate`) is. It is a ratchet: the number may only go up.
+
+Verdicts per original function reachable from a module's factory:
+
+| verdict | meaning | bucket |
+|---|---|---|
+| `IDENTICAL` | normalised texts equal | — |
+| `DIFFERENT` | texts differ | `diff:<orig op>/<recompiled op>` at the first differing line, `diff:<op>(<operand class>)` when the opcode agrees (reg / string / imm / label / fn / …), `tree:unmatched-closure(...)` when the recompiled parent creates fewer closures |
+| `RECOMPILE-ERROR` | hermesc rejected the module file | `hermesc:<error class>` (positions, names, numbers stripped) |
+| `DECOMPILE-STUB` | the split wrote `emitModule`'s throwing stub for it (`W_FUNCTION_STUBBED`) | `stub:<error code>` |
+
+Functions outside every Metro module (the global function, the Metro
+prelude) are not measured; the report states "N of M in the bundle".
+
+**Run it.**
+
+```sh
+node tools/e2e/roundtrip-corpus.ts --out /tmp/e2e            # every known bundle, both modes
+node tools/e2e/roundtrip-corpus.ts --only rn-template-0.72 --passes on --limit 50 --out /tmp/e2e
+node tools/e2e/roundtrip-corpus.ts --bundle myapp=/path/index.android.bundle --only myapp --passes off --out /tmp/e2e
+node tools/e2e/roundtrip-corpus.ts --only rn-template-0.72 --passes on --show 46:392 --out /tmp/e2e   # one module, one fn: verdicts + side-by-side normalised diff
+```
+
+Options: `--only <names>`, `--limit N` (first N modules), `--jobs N`,
+`--passes on|off|both` (default both), `--out <dir>` (default
+`$HBC2JS_E2E_OUT` or `<tmpdir>/hbc2js-e2e-corpus`), `--hermesc-flags "<flags>"`
+(default `-O`, what RN's release build and every fixture use). Output per
+bundle: `<out>/<bundle>.json` (every function's verdict, both modes),
+`<out>/<bundle>.md` (totals, % IDENTICAL, top-15 buckets with one example
+each), and the split trees under `<out>/split/<bundle>/<mode>/` for
+`--show`. **Nothing bundle-derived ever goes into the repo**: numbers and
+bucket names only, in `docs/e2e/RESULTS.md`. Runtime is dominated by the
+passes-on split (Service NSW, 43k functions: ~25 s split + ~10 s
+recompile/compare with passes off; see RESULTS.md for passes on).
+
+**Ratchet.** `docs/e2e/roundtrip-baseline.json` records `functions`,
+`identical` and `identicalPct` per `<committed bundle>|<mode>` — numbers
+only. `tests/sweep/e2e/roundtrip-ratchet.test.ts` (sweep tier,
+`npm run test:sweep`) re-measures every baselined entry whose bundle is
+present and **fails on any drop** in `identicalPct`; a rise is printed, not
+asserted. To move the ratchet up: run the tool on the committed bundles,
+copy the new `identical`/`identicalPct` into the baseline, commit both with
+the change that earned it. Bundles absent locally (`expensify-app-0.86.0`
+until its `fetch.sh` has been run) are reported as diagnostics, never as a
+pass. Local-corpus and other proprietary bundles are never baselined.
+
+**Do not "fix" the ratchet by fixing the harness.** A bucket that is an
+artifact of splitting (like the width fold above) may be folded here, with
+a gate test in `tests/gate/tools/e2e-roundtrip.test.ts`; a bucket that is
+the decompiler's own shape gets a `docs/BUGS.md` row ("found by E2E tier 1,
+N functions in <bundle>") and is fixed in `src/`, where its fixture test
+lives.
+
 ## Typecheck is part of the gate
 
 `npm test` runs `npm run typecheck` before the gate tests (since 2026-08-31, consolidation item 29): CI's build-test jobs typecheck first, and a green local gate that skipped it left `main` red for two hours. `npm run test:gate` alone is the tests without typecheck.

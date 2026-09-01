@@ -16,6 +16,12 @@
 //   node tools/e2e/roundtrip-corpus.ts [--only <name,...>] [--limit N]
 //        [--jobs N] [--passes on|off|both] [--out <dir>]
 //        [--bundle <name>=<path.hbc>]... [--hermesc-flags "<flags>"]
+//        [--show <module>:<fn>]
+//
+// Memory: the split decompiles the whole bundle in the main thread (see
+// `hbc2js --help`'s ~300x-input-size note), so bundles past ~15 MB need
+// `node --max-old-space-size=<MB> tools/e2e/roundtrip-corpus.ts ...`; each
+// worker only parses the bundle (a few hundred MB for a 75 MB app).
 //
 // Verdicts per ORIGINAL function reachable from a module's factory:
 //   IDENTICAL        normalised text equal
@@ -369,7 +375,12 @@ async function compareModule(init: WorkerInit, orig: Decoder, task: Task): Promi
 
   let rec: Decoder;
   try {
-    rec = new Decoder(parseHbc(compiled.bytes));
+    // A one-module file is too small for the layout probe to tell the two
+    // hbc98 layouts / two hbc99 opcode tables apart (E_LAYOUT_AMBIGUOUS);
+    // the recompiled file came from the same hermesc as the bundle, so it
+    // has the bundle's layout and table by construction.
+    const table = orig.mod.layout.opcodeTable;
+    rec = new Decoder(parseHbc(compiled.bytes, { layout: orig.mod.layout.layoutClass, ...(table !== undefined ? { opcodeTable: table } : {}) }));
   } catch (e) {
     return all("RECOMPILE-ERROR", `parse-recompiled:${e instanceof Error ? errorCodeOf(e) : "?"}`);
   }
@@ -546,7 +557,7 @@ export async function runBundle(spec: BundleSpec, opts: RunOptions): Promise<Mod
   await new Promise<void>((resolve, reject) => {
     let open = 0;
     for (let w = 0; w < jobs; w++) {
-      const worker = new Worker(fileURLToPath(import.meta.url), { workerData: init });
+      const worker = new Worker(fileURLToPath(import.meta.url), { workerData: init, resourceLimits: { maxOldGenerationSizeMb: 8192 } });
       open++;
       const feed = (): void => {
         if (next < selected.length) worker.postMessage(selected[next++]);
