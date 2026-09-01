@@ -254,7 +254,7 @@ function fetchRound1Index(opts) {
   if (!opts.fetchIndex) return null;
   const remote = "deb:~/hbc2js-bulk/dist/index-partial-20260830.json";
   console.error(`fetching round-1 index from ${remote} ...`);
-  const json = execSync(`ssh deb cat ~/hbc2js-bulk/dist/index-partial-20260830.json`, {
+  const json = execSync(`ssh deb 'cat ~/hbc2js-bulk/dist/index-partial-20260830.json'`, {
     maxBuffer: 1024 * 1024 * 256,
   }).toString("utf8");
   return JSON.parse(json);
