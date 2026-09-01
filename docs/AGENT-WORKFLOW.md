@@ -26,3 +26,17 @@ Brief hygiene
 
 M5 pass ladder flow
 - A one-time ladder-architecture doc (`docs/specs/passes/00-LADDER.md`, strongest model) fixes rung order, dependencies, IR-node ownership and which rungs are hard. Passes are then specced in batches of five by the architect (Opus; the strongest model only for hard rungs) (`docs/specs/passes/NN-<name>.md`: match conditions from the catalogue row, rewrite output, check obligations, fixtures, acceptance), implemented one per Sonnet agent against its spec, reviewed briefly by a stronger model before the next pass builds on it. The gate (501/501 with passes on) is the regression bar for every pass.
+
+## Lean agent type (token discipline, 2026-09-01)
+
+Every hbc2js agent launches as the `lean` custom agent type (`.claude/agents/lean.md`, gitignored — recreate from this block on a fresh machine). Rationale: an agent's whole context is re-sent on every tool call, so cost = base context × turns. `general-purpose` inherits ~70 MCP tool schemas (Figma, Chrome, Gmail…) in that base; `lean` has only `Bash, Read, Edit, Write, Grep, Glob`. Target: ≤ ~40 tool calls / ~100k tokens per agent; batch shell commands; read only named files; full gate once; stop at ~80% budget with a handoff.
+
+```
+---
+name: lean
+description: Lean hbc2js worker — minimal tool set so the per-turn context base is small.
+tools: Bash, Read, Edit, Write, Grep, Glob
+---
+(system prompt: the token-discipline rules above)
+```
+Briefs state the budget explicitly. Measured baseline before this change (2026-08-31/09-01, general-purpose): 130k–330k tokens and 90–170 tool calls per rung.
