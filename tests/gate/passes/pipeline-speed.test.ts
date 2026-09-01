@@ -26,6 +26,7 @@ import { id, lit } from "../../../src/emit/ast.ts";
 import { applyAstPasses } from "../../../src/passes/ast.ts";
 import { fnNaming } from "../../../src/passes/fn-naming/index.ts";
 import { match } from "../../../src/passes/fn-naming/match.ts";
+import { exprRebuild } from "../../../src/passes/expr-rebuild/index.ts";
 import type { ModuleView } from "../../../src/passes/tree.ts";
 import type { Pass, PassContext } from "../../../src/passes/types.ts";
 
@@ -118,6 +119,70 @@ test("P-1: fn-naming on a global-function-shaped body with 600 module factories 
   // purpose (CI runners are slow); it is the order of magnitude that matters.
   const budget = 3000 * timeScale();
   assert.ok(ms < budget, `fn-naming took ${ms.toFixed(0)} ms on 600 factories (budget ${budget} ms)`);
+});
+
+// ---------------------------------------------------------------------------
+// expr-rebuild: a module-root-shaped list of ~5,000 fold candidates at the
+// *top level* (docs/BUGS.md's "same run" superlinear-pass row — the Service
+// NSW module-root function, 4,510 factories over ~9,000 top-level
+// statements). `nextRelevant`'s old whole-list index (`listIndex`, built via
+// a `WeakMap` keyed by list identity) had to be rebuilt from scratch on
+// every applied site, since `spliceList` gives the edited list a fresh
+// array identity each time — `O(sites × list.length)` for a function this
+// shaped, however short each individual fold's own forward scan is.
+// ---------------------------------------------------------------------------
+
+/** `K` independent `rN = <pure-ish call>; use(rN);` pairs at the top level —
+ *  the shape `expr-rebuild`'s R1a rule folds (single write, single read,
+ *  immediately adjacent, `rN` dead after). Each fold's own forward scan is
+ *  O(1) (the read sits right next to the store); the only way this could
+ *  cost more than O(K) total is an eager whole-list rebuild per site.
+ *
+ *  Cycles through a small, fixed register alphabet (`REGS`) rather than a
+ *  fresh name per candidate: a real Hermes register file is small and
+ *  linear-scan-allocated, so a module-root function's thousands of
+ *  `rN = …; …; __d(rN, …)` sites reuse the same handful of register names
+ *  over and over (module N+`REGS`'s store is the next mention of the name
+ *  module N used) — every `nextRelevant` search this shape triggers is
+ *  short-distance by construction, the representative case, not the
+ *  pathological "prove the name never recurs, scan to the true end" one a
+ *  globally-unique name per site would be. */
+const REGS = 8;
+function foldCandidateRootBody(k: number): readonly Stmt[] {
+  const body: Stmt[] = [];
+  for (let n = 0; n < k; n++) {
+    const reg = `r${n % REGS}`;
+    body.push({ k: "expr", expr: { k: "assign", target: id(reg), value: { k: "call", callee: id("source"), args: [lit(String(n))] } } });
+    body.push({ k: "expr", expr: { k: "call", callee: id("use"), args: [id(reg)] } });
+  }
+  return body;
+}
+
+test("expr-rebuild on a module-root-shaped list of 5,000 fold candidates finishes within a fixed CPU budget, not O(sites^2)", () => {
+  // An on/off *ratio* does not fit this shape (`off` — no passes at all —
+  // does essentially no work regardless of list length, so the ratio is
+  // dominated by noise, not by whether `on` scales well); the meaningful
+  // guard is an absolute bound `on` cannot meet if the list-length-sized
+  // cost this row exists for regresses. Before `nextRelevant`'s eager
+  // `listIndex` rebuild (removed) and `expressionOnlyCheck`'s whole-list
+  // `effectSequence` comparison (narrowed to the changed region) this shape
+  // took minutes; a `bu = registerUses(before)` cost in `check.ts` remains
+  // — genuinely `O(list.length)` once per applied site whenever nothing
+  // earlier in this same site's proof happened to warm
+  // `registerUsesMemo` for this exact list identity (this pass run alone,
+  // with `tryDA`'s redefinition-found fast path, never does) — tracked as
+  // the next actionable term (`docs/BUGS.md`).
+  const module = fakeModule(["global"]);
+  const body = foldCandidateRootBody(5000);
+  const ctx = baseCtx(module);
+  const on = cpuMs(() => {
+    const r = applyAstPasses(body, [exprRebuild as unknown as Pass<readonly Stmt[]>], ctx);
+    assert.equal(r.abandoned.length, 0, JSON.stringify(r.abandoned.slice(0, 3)));
+    assert.equal(r.applied.length, 5000, "every independent fold site applies");
+    assert.equal(JSON.stringify(r.body).includes('"k":"assign"'), false, "no folded store survives");
+  });
+  const budget = 15_000 * timeScale();
+  assert.ok(on < budget, `expr-rebuild on 5,000 fold candidates took ${on.toFixed(0)} CPU ms (budget ${budget} ms)`);
 });
 
 // ---------------------------------------------------------------------------
