@@ -779,6 +779,68 @@ list or re-run it with a fresher `--nsw-json`, then `nohup fnm exec --using
 2>&1 &` (must be `fnm exec`-wrapped — plain `nohup ... &` uses `deb`'s
 default node 18 and fails every job with `ERR_UNKNOWN_FILE_EXTENSION`).
 
+### Round 2b (2026-09-01/02, QUEUE "Bulk sigdb round 2b")
+
+Registry-driven candidate list, replacing round 2's hand-curated lists with
+one built FROM the npm registry (`tools/pkgsig/bulk/candidates.mjs
+--registry`, run ON `deb` for network access): paginates
+`registry.npmjs.org/-/v1/search` over `text=keywords:react-native`,
+`text=keywords:expo`, and `text=react-native-` (name-prefix match), unions
+every distinct package name found, ranks by last-month downloads
+(`api.npmjs.org/downloads/point/last-month/<name>`, batched 120-at-a-time
+for unscoped names, one request per scoped `@scope/name` since the batch
+endpoint doesn't accept those), keeps the top `--top` (first slice: 500,
+proving the pipeline; widen to 3000 per the original brief once proven),
+and for each kept package fetches its full registry doc to pull every
+version published in the last 24 months from the `time` field. Concurrency
+capped at 8, 429/5xx retried with exponential backoff, and every
+search/downloads/package-doc fetch cached to
+`~/hbc2js-bulk/registry-cache.json` so a re-run (e.g. widening `--top`)
+doesn't re-fetch what it already has. Every `(name, version)` pair already
+present in any `~/hbc2js-bulk/dist/index-*.json` (round 1 + round 2's
+combined index files) is subtracted before writing
+`~/hbc2js-bulk/candidates-registry.json` — kept off this repo (thousands of
+packages, not a few-KB file; see this file's own header on not committing
+corpus/DB data).
+
+`continue-bulk.sh` is unchanged code-wise — round 2b reuses it via a new
+`HBC2JS_BULK_ROUND_TAG=round2b` env var that namespaces every round-scoped
+path (log, pid file, jobs list, incremental-assemble dist dir) so round 2b
+can run without colliding with round 2's own files; it still shares
+`$BULK_DIR/db` (signatures) and `$BULK_DIR/log/results.jsonl` with every
+prior round, and still skips whatever `build-one.mjs`'s own
+`alreadyBuilt()` finds already on disk. `tools/pkgsig/bulk/round2b-runner.sh`
+chains candidate generation into `continue-bulk.sh start`
+(`HBC2JS_BULK_ROUND2_PARALLELISM=16` — above round 2's 12, per this task's
+brief) unattended, launched detached via `ssh -f` + `setsid` (a plain
+`nohup ... &` over a non-interactive ssh command can still die when the
+ssh channel closes; both together are needed to fully detach).
+
+**Status (2026-09-02, launched, not yet measured):** the first `--top 500`
+slice is running unattended on `deb`. Per-item resume/check/widen
+commands:
+
+```sh
+# status: is candidates.mjs or continue-bulk.sh currently running?
+ssh deb "pgrep -af 'node tools/pkgsig/bulk/candidates\.mjs|continue-bulk\.sh'"
+# progress log (candidate-gen step, then continue-bulk.sh start step):
+ssh deb 'tail -20 ~/hbc2js-bulk/round2b-autostart.log ~/hbc2js-bulk/candidates-registry-gen.out ~/hbc2js-bulk/round2b.out'
+# once continue-bulk.sh has started, its own status (jobs total, sigs on disk):
+ssh deb 'cd ~/hbc2js && export PATH="$HOME/.local/share/fnm:$PATH" && \
+  HBC2JS_BULK_ROUND_TAG=round2b fnm exec --using 22 -- bash tools/pkgsig/bulk/continue-bulk.sh status'
+# resume after any interruption (both steps individually resumable/cache-backed):
+ssh -f deb 'setsid bash ~/hbc2js-bulk/round2b-runner.sh < /dev/null > /dev/null 2>&1'
+# widen the candidate list to the full top ~3000 once the 500-slice is proven out:
+ssh -f deb 'HBC2JS_ROUND2B_TOP=3000 setsid bash ~/hbc2js-bulk/round2b-runner.sh < /dev/null > /dev/null 2>&1'
+```
+
+Service NSW / rn-template attribution before→after this slice: not yet
+measured (multi-day job; measure once `~/hbc2js-bulk/dist/round2b/`'s
+incremental manifest shows the first ~500-signature-file tick, using the
+same `--no-shared-db --sigdb <dir>` comparison round 2 used above). A
+future agent/session should fill this table in once ready — do not publish
+a release per this task's rules.
+
 ### D17f proof (2026-08-31)
 
 D17f's claim (`docs/DECISIONS.md` D17f): if the signature DB carries an
