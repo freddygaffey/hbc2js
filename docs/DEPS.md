@@ -693,6 +693,84 @@ fetch against the app's *actual* detected version, not a further matching-
 algorithm change. See the top-level report for this task's full recall
 write-up.
 
+### Round 2 (2026-09-01, QUEUE item 6)
+
+`tools/pkgsig/bulk/candidates.mjs` built `tools/pkgsig/bulk/candidates.json`
+from repo truth fixtures (20 pairs), a static RN 0.73.0-0.76.x patch range
+(36 pairs), a curated ~141-package RN-ecosystem list (versions hand-pinned,
+not scraped), and a Service NSW `hbc2js deps --json` report (4 pairs from
+`hintedDeps`/`guessedDeps`; 0 unresolved node_modules-path/require()
+string names found — Metro's production bundle carries no such literals),
+minus every `(name, version)` pair already in the round-1 index: 65
+excluded, 136 pairs / 92 packages / 544 (package, version, hbcVersion) jobs
+after dedup. `tools/pkgsig/bulk/continue-bulk.sh start` ran these under
+`nohup` on `deb` (parallelism 12, reusing round 1's scaffolds/db/skip-logic
+unchanged) and finished in ~14 minutes (most of the 544 candidates were
+either already-built round-1 near-duplicates at other HBC versions, single
+version-not-found `npm install` failures, or genuinely small packages) —
+net +299 new `bulkBuildFixVersion: 1` signature files (32,355 → 32,654).
+
+Two bugs found and fixed while measuring: (1) `candidates.mjs`'s `ssh deb
+cat ~/...` command had its `~` expanded by the *local* shell before ssh
+ever ran (unquoted), always failing — fixed by single-quoting the remote
+command. (2) the first `continue-bulk.sh start` launch ran under `deb`'s
+default `node` (v18, no `.ts` loader support — `ERR_UNKNOWN_FILE_EXTENSION`
+on every job) instead of node 22 via `fnm`, per `docs/DEB-CI.md`'s own
+warning; re-launched wrapped in `fnm exec --using 22 --`. Measurement also
+found `deb`'s persistent `~/hbc2js` checkout was stale (`e49ab5b`, missing
+the F2 by-instruction-weight metric and later match-precision work) —
+updated to current `main` via `git fetch`/`git merge --ff-only` (careful:
+`git stash -u` briefly moved the *live* `tools/pkgsig/bulk/` scripts round
+2's own running jobs were reading from disk — round 2 had already finished
+by the time this was needed, but a future agent doing this on a *live* run
+should copy elsewhere first, not `stash -u` the directory in place).
+
+Both runs below use `--no-shared-db --sigdb <dir>` (the repo's small
+curated starter set disabled, isolating exactly what the bulk DB
+contributes) against **the full round-1 db/ directory** (32,355 fixed
+signature files), not the smaller `sigdb-20260830-fixed.tar.zst` archive
+`fetch-db.sh` publishes (1,331 files — an early snapshot taken partway
+through round 1's build, not its final state); this is why the "round 1"
+numbers below don't match the `--no-shared-db`-free baseline used
+elsewhere in this doc.
+
+| | Service NSW (HBC96) round 1 | round 1+2 | rn-template-0.72 (HBC94) round 1 | round 1+2 |
+|---|---|---|---|---|
+| module-count attribution | 577/4510 (14.26%) | 666/4510 (15.90%) | 8/435 (1.84%) | 8/435 (1.84%) |
+| **verified by instruction weight** | **64052/1435976 = 4.46%** | **69330/1435976 = 4.83%** | **566/92576 = 0.61%** | 566/92576 = 0.61% (unchanged) |
+| distinct confirmed dependency names | 386 | 411 | 9 | 9 (unchanged) |
+
+Service NSW moved (module count 14.26%→15.90%, +1.64pp; verified-by-weight
+4.46%→4.83%, +0.37pp; confirmed names 386→411, +25) — round 2's
+general-ecosystem candidates (redux, sha.js, events, ...) are exactly the
+kind of code a real production app like Service NSW pulls in that a
+round-1 list built mostly from `react-native`-adjacent packages missed.
+rn-template-0.72 is unchanged (expected: round 2's candidates are RN
+0.73.x-0.76.x-era and general npm packages, not RN-0.72-core-specific;
+rn-template was already close to saturated by round 1's own targeted
+build, and this table's `--no-shared-db` setting also removes the curated
+starter DB that gets rn-template to 97.7% elsewhere in this doc). Neither
+bundle is anywhere near 100% attribution yet — round 2's 92-package,
+544-job candidate list is a small fraction of a real app's true dependency
+tree (Service NSW alone has 4,510 modules); most of the remaining gap is
+DB coverage (the exact npm versions Service NSW's bundler resolved,
+unknown without `--confirm`/source maps), not a matching-algorithm limit.
+See "Resume" below for extending this — the resume command reuses the same
+`candidates.mjs`/`continue-bulk.sh` pair; a repeat run naturally makes
+`candidates.mjs`'s round-1-index exclusion also skip round 2's own
+now-built pairs, so the candidate list should be widened (more ecosystem
+packages, more truth-fixture-derived pairs, additional `--nsw-json` string
+evidence) before re-running rather than re-run unchanged against the same
+list.
+
+**Resume:** on `deb`, `cd ~/hbc2js && export PATH="$HOME/.local/share/fnm:$PATH"
+&& fnm exec --using 22 -- bash tools/pkgsig/bulk/continue-bulk.sh status`
+to check; extend `tools/pkgsig/bulk/candidates.mjs`'s `ECOSYSTEM_PACKAGES`
+list or re-run it with a fresher `--nsw-json`, then `nohup fnm exec --using
+22 -- bash tools/pkgsig/bulk/continue-bulk.sh start > ~/hbc2js-bulk/round2.out
+2>&1 &` (must be `fnm exec`-wrapped — plain `nohup ... &` uses `deb`'s
+default node 18 and fails every job with `ERR_UNKNOWN_FILE_EXTENSION`).
+
 ### D17f proof (2026-08-31)
 
 D17f's claim (`docs/DECISIONS.md` D17f): if the signature DB carries an
