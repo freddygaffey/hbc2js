@@ -1,0 +1,50 @@
+{
+  "bundle": "tests/fixtures/bundles/rn-template-0.72/index.android.hbc",
+  "bundleBytes": 1232481,
+  "decompile": {
+    "ok": true,
+    "wallMs": 3332.451875
+  },
+  "totalFunctions": 4199,
+  "stubbedFunctions": {
+    "count": 0,
+    "pct": 0
+  },
+  "unresolvedEnvMarkers": 0,
+  "outputBytes": 4752291,
+  "lineCount": 174458,
+  "nodeCheck": {
+    "ok": true
+  },
+  "readability": {
+    "registers": {
+      "count": 201661,
+      "per1kLines": 1155.9286475827992
+    },
+    "reflectApply": {
+      "count": 4353,
+      "per1kLines": 24.95156427334946
+    },
+    "anonFnNames": {
+      "count": 4714,
+      "per1kLines": 27.02083022847906
+    },
+    "hbcHelperCalls": {
+      "count": 531,
+      "per1kLines": 3.0437125267972807
+    }
+  },
+  "helpersUsed": 9,
+  "split": {
+    "ok": true,
+    "moduleCount": 435,
+    "fileCount": 437,
+    "classification": {
+      "libraryModuleCount": 308,
+      "customModuleCount": 72,
+      "unknownModuleCount": 55,
+      "percentLibraryByWeight": 41.05599723470446,
+      "percentCustomByWeight": 53.22761838921535
+    }
+  }
+}
