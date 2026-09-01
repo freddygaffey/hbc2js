@@ -1,7 +1,14 @@
 // docs/specs/05-emitter.md §2 — the in-house printer. Byte-stable output, no
 // dependency, explicit precedence so parentheses are added exactly where needed.
-import type { Expr, Stmt } from "./ast.ts";
+import type { Expr, Param, Stmt } from "./ast.ts";
 import { jsxToCall } from "./ast.ts";
+
+/** F15: `(a, b = 1, ...rest)` — a defaulted parameter's `init` is printed at
+ *  assignment precedence, so a `k:"seq"` default parenthesises itself
+ *  (`(a = (f(), 1))`) exactly as an assignment's RHS does. */
+function paramList(params: readonly Param[]): string {
+  return params.map((x) => (x.rest === true ? "..." : "") + x.name + (x.init !== undefined ? ` = ${expr(x.init, ASSIGNMENT)}` : "")).join(", ");
+}
 
 // Higher binds tighter. Matches the ECMAScript grammar's operator table.
 const PRIMARY = 21;
@@ -224,7 +231,7 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       out.push(`${p}}`);
       return;
     case "func":
-      out.push(`${p}function ${s.name}(${s.params.join(", ")}) {`);
+      out.push(`${p}function ${s.name}(${paramList(s.params)}) {`);
       printBody(s.body, depth + 1, out, opts);
       out.push(`${p}}`);
       return;
@@ -315,7 +322,7 @@ function render(e: Expr): string {
     case "func": {
       const out: string[] = [];
       printBody(e.body, 1, out, { indent: "  " });
-      return `function ${e.name ?? ""}(${e.params.join(", ")}) {\n${out.join("\n")}\n}`;
+      return `function ${e.name ?? ""}(${paramList(e.params)}) {\n${out.join("\n")}\n}`;
     }
   }
 }

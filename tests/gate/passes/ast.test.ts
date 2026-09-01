@@ -113,7 +113,7 @@ test("mapStmts: identity when nothing changes; rebuilds the spine when something
 // ---------------------------------------------------------------------------
 
 test("freeNames: names used but not declared anywhere in the list, including inside a nested func", () => {
-  const body: readonly Stmt[] = [{ k: "init", kind: "let", name: "x", value: id("y") }, exprStmt(call(id("f"), [id("x")])), { k: "func", name: "g", params: ["p"], body: [exprStmt(call(id("p"), [id("z")]))] }];
+  const body: readonly Stmt[] = [{ k: "init", kind: "let", name: "x", value: id("y") }, exprStmt(call(id("f"), [id("x")])), { k: "func", name: "g", params: [{ name: "p" }], body: [exprStmt(call(id("p"), [id("z")]))] }];
   assert.deepEqual(freeNames(body), new Set(["y", "f", "z"]));
 });
 

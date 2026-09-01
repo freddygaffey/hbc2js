@@ -177,7 +177,7 @@ function declaredNames(stmts: readonly Stmt[]): Set<string> {
     expr: (e) => {
       if (e.k === "func") {
         if (e.name !== null) bound.add(e.name);
-        for (const p of e.params) bound.add(p);
+        for (const param of e.params) bound.add(param.name);
       }
     },
     stmt: (s) => {
@@ -186,7 +186,7 @@ function declaredNames(stmts: readonly Stmt[]): Set<string> {
       else if (s.k === "try") bound.add(s.param);
       else if (s.k === "func") {
         bound.add(s.name);
-        for (const p of s.params) bound.add(p);
+        for (const param of s.params) bound.add(param.name);
       }
     },
   });

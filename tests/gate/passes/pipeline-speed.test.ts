@@ -70,7 +70,7 @@ function bundleShapedBody(k: number): { readonly body: readonly Stmt[]; readonly
     body.push({
       k: "func",
       name: `_fn${n}`,
-      params: ["g", "r"],
+      params: [{ name: "g" }, { name: "r" }],
       body: [
         { k: "decl", kind: "let", names: ["r0", "r1"] },
         { k: "expr", expr: { k: "assign", target: id("r0"), value: { k: "call", callee: id("r"), args: [lit(String(n))] } } },

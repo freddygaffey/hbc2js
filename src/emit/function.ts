@@ -9,8 +9,8 @@ import type { HbcModule } from "../parse/types.ts";
 import type { BuiltinTable, TypeOfIsTable } from "../tables/types.ts";
 import { typeOfIsTableFor } from "./typeofis.ts";
 import type { LabelId, Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
-import type { Expr, Stmt } from "./ast.ts";
-import { assign, bin, call, id, lit, num, un, UNDEF } from "./ast.ts";
+import type { Expr, Param, Stmt } from "./ast.ts";
+import { assign, bin, call, id, lit, num, p, un, UNDEF } from "./ast.ts";
 import { conditionFor } from "./conds.ts";
 import { resolveBuiltin } from "./builtins.ts";
 import { lowerInstruction, planBlock, prop } from "./lower.ts";
@@ -164,8 +164,8 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   // `params=2` at v99, and JS reports `length === 1` for both).
   const hasRestParam = version <= 96 && fn.instructions.some((i) => (i.name === "CallBuiltin" || i.name === "CallBuiltinLong") && builtins.builtins[i.operands[1]!.value]?.name === "copyRestArgs");
   const namedParams = Math.max(0, paramCount - (hasRestParam ? 2 : 1));
-  const params: string[] = [];
-  for (let i = 1; i <= namedParams; i++) params.push(`a${i}`);
+  const params: Param[] = [];
+  for (let i = 1; i <= namedParams; i++) params.push(p(`a${i}`));
 
   const thisExpr: Expr = isOpcodeGeneratorBody ? id("__this") : { k: "this" };
   const argsExpr: Expr = isOpcodeGeneratorBody ? id("__args") : { k: "argumentsObject" };
@@ -543,7 +543,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     // itself, re-entered on every resume — so it shares `prologue`'s register
     // decl rather than owning its own. `src/passes/ast.ts`'s `countUses` must
     // never treat it as a register-frame boundary.
-    return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: ["__sent", "__isReturn", "__isThrow"], body, sameFrame: true } }] };
+    return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: [p("__sent"), p("__isReturn"), p("__isThrow")], body, sameFrame: true } }] };
   }
   return { k: "func", name, params, body: [label, ...prologue, ...body] };
 }

@@ -39,8 +39,8 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
 
-`npm test` (this run, 2026-09-01): 1293 tests, 1276 pass, 0 fail, 17 skipped,
-~106 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
+`npm test` (this run, 2026-09-02): 1633 tests, 1630 pass, 0 fail, 3 skipped,
+~107 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
 `npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
 
 ## Open bugs — 19 open / 15 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4)
@@ -54,6 +54,9 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 
 - reg-split rung (real variable names) — blocked on docs/PUSHBACK.md P-6
   (spec §4.1 vs §1/§8 example contradiction).
+- `default-params` rung — blocked on docs/PUSHBACK.md P-8 (spec §4's
+  matcher shape does not match measured stage-B input: F15 [`func.params`
+  becomes `Param[]`] landed, matcher/rewrite/check not started).
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top 5 (docs/QUEUE.md)
