@@ -102,8 +102,14 @@ test("docs/e2e/roundtrip-baseline.json is well-formed and covers rn-template in 
     assert.equal(e.identicalPct, Math.round((e.identical / e.functions) * 10000) / 100, `identicalPct must equal identical/functions to 2 dp for ${mode}`);
   }
   for (const key of Object.keys(baseline)) {
+    if (key === "normalisation") continue; // meta field: src/harness/roundtrip.ts normalisation revision the numbers were measured under
     const [bundle, mode] = key.split("|");
     assert.ok(knownBundles().some((b) => b.name === bundle && b.committed), `${key}: only committed bundles belong in the baseline`);
     assert.ok(PASS_MODES.includes(mode as (typeof PASS_MODES)[number]), `${key}: unknown mode`);
   }
+});
+
+test("docs/e2e/roundtrip-baseline.json records which round-trip normalisation the numbers were measured under", () => {
+  const baseline = loadBaseline();
+  assert.equal(typeof (baseline as unknown as { normalisation?: unknown }).normalisation, "number", "docs/e2e/roundtrip-baseline.json must have a numeric \"normalisation\" field");
 });

@@ -16,7 +16,13 @@
 //   node tools/e2e/roundtrip-corpus.ts [--only <name,...>] [--limit N]
 //        [--jobs N] [--passes on|off|both] [--out <dir>]
 //        [--bundle <name>=<path.hbc>]... [--hermesc-flags "<flags>"]
-//        [--show <module>:<fn>]
+//        [--normalise legacy|strong] [--show <module>:<fn>]
+//
+// --normalise (default "strong"): src/harness/roundtrip.ts's `{ strong }`
+// option — register-reuse-safe instruction reordering + LoadConst
+// canonicalisation on top of the always-on register renaming. "legacy"
+// reproduces the pre-QUEUE(round-trip normalisation) comparison, for the
+// side-by-side numbers in docs/e2e/RESULTS.md.
 //
 // Memory: the split decompiles the whole bundle in the main thread (see
 // `hbc2js --help`'s ~300x-input-size note), so bundles past ~15 MB need
@@ -120,6 +126,10 @@ export interface ModeReport {
   readonly hbcVersion: number;
   readonly hermesc: string;
   readonly hermescFlags: readonly string[];
+  /** Whether src/harness/roundtrip.ts's `{ strong: true }` normalisation
+   *  (register-reuse-safe reordering + LoadConst canonicalisation) was used
+   *  for this report — docs/e2e/RESULTS.md reports both once. */
+  readonly strong: boolean;
   readonly modules: number;
   readonly modulesRun: number;
   /** Functions in the bundle (all of them, including the global function and
@@ -330,6 +340,12 @@ interface WorkerInit {
   readonly hermesc: string;
   readonly hermescFlags: readonly string[];
   readonly splitDir: string;
+  /** src/harness/roundtrip.ts `{ strong: true }` — register-reuse-safe
+   *  instruction reordering + LoadConst canonicalisation. Default true: the
+   *  new normalisation is the standard measure; `--normalise legacy` (or
+   *  `runBundle({ strong: false })`) keeps the old comparison available for
+   *  side-by-side reporting. */
+  readonly strong: boolean;
 }
 
 interface Task {
@@ -401,8 +417,8 @@ async function compareModule(init: WorkerInit, orig: Decoder, task: Task): Promi
     else if (od instanceof Error) push(oi, "DIFFERENT", `decode-original:${errorCodeOf(od)}`, ri);
     else if (rd instanceof Error) push(oi, "DIFFERENT", `decode-recompiled:${errorCodeOf(rd)}`, ri);
     else {
-      const a = foldWidthVariants(normaliseFunction(orig.mod, od));
-      const b = foldWidthVariants(normaliseFunction(rec.mod, rd));
+      const a = foldWidthVariants(normaliseFunction(orig.mod, od, { strong: init.strong }));
+      const b = foldWidthVariants(normaliseFunction(rec.mod, rd, { strong: init.strong }));
       if (a === b) push(oi, "IDENTICAL", "", ri);
       else push(oi, "DIFFERENT", firstDiffBucket(a, b), ri);
       if (oi === task.showFn) excerpt = `original fn#${oi} <-> recompiled fn#${ri}\n${diffExcerpt(a, b)}`;
@@ -465,7 +481,7 @@ async function compareModule(init: WorkerInit, orig: Decoder, task: Task): Promi
 /** `--show <module>:<fn>`: re-run one module of an existing split tree (from
  *  a previous run's `<out>/split/<bundle>/<mode>/`) and print the verdicts
  *  plus the normalised diff excerpt for one function. */
-export async function showPair(spec: BundleSpec, mode: PassMode, outDir: string, moduleId: number, fn: number, hermescFlags: readonly string[] = ["-O"]): Promise<string> {
+export async function showPair(spec: BundleSpec, mode: PassMode, outDir: string, moduleId: number, fn: number, hermescFlags: readonly string[] = ["-O"], strong = true): Promise<string> {
   const splitDir = join(outDir, "split", spec.name, mode);
   const modulesJson = join(splitDir, "MODULES.json");
   if (!existsSync(modulesJson)) throw new Error(`${modulesJson} not found — run the harness on ${spec.name}/${mode} first`);
@@ -475,7 +491,7 @@ export async function showPair(spec: BundleSpec, mode: PassMode, outDir: string,
   const orig = new Decoder(parseHbc(new Uint8Array(readFileSync(spec.path))));
   const hermesc = findHermesc(orig.mod.header.version);
   if (hermesc === null) throw new Error(`no hermesc for v${orig.mod.header.version}`);
-  const r = await compareModule({ bundlePath: spec.path, hermesc: hermesc.path, hermescFlags, splitDir }, orig, { module: m.id, file: m.file, factoryFunctionIndex: m.factoryFunctionIndex, showFn: fn });
+  const r = await compareModule({ bundlePath: spec.path, hermesc: hermesc.path, hermescFlags, splitDir, strong }, orig, { module: m.id, file: m.file, factoryFunctionIndex: m.factoryFunctionIndex, showFn: fn });
   const lines = r.results.map((x) => `fn#${x.fn}${x.rfn !== undefined ? ` (recompiled fn#${x.rfn})` : ""}: ${x.verdict}${x.bucket.length > 0 ? ` ${x.bucket}` : ""}`);
   return `${join(splitDir, m.file)}\n${lines.join("\n")}\n${r.excerpt ?? `(fn#${fn} was not paired in this module)`}`;
 }
@@ -514,6 +530,9 @@ export interface RunOptions {
   readonly limit?: number;
   readonly hermescFlags?: readonly string[];
   readonly log?: (line: string) => void;
+  /** src/harness/roundtrip.ts `{ strong: true }` normalisation (register-
+   *  reuse-safe reordering + LoadConst canonicalisation). Default true. */
+  readonly strong?: boolean;
 }
 
 function summariseBuckets(results: readonly FnResult[]): BucketSummary[] {
@@ -548,7 +567,8 @@ export async function runBundle(spec: BundleSpec, opts: RunOptions): Promise<Mod
   const tasks: Task[] = split.modules.map((m) => ({ module: m.id, file: m.file, factoryFunctionIndex: m.factoryFunctionIndex }));
   const selected = opts.limit !== undefined ? tasks.slice(0, opts.limit) : tasks;
   const jobs = Math.max(1, Math.min(opts.jobs ?? Math.max(1, cpus().length - 1), selected.length));
-  const init: WorkerInit = { bundlePath: spec.path, hermesc: hermesc.path, hermescFlags, splitDir };
+  const strong = opts.strong ?? true;
+  const init: WorkerInit = { bundlePath: spec.path, hermesc: hermesc.path, hermescFlags, splitDir, strong };
 
   const tc = performance.now();
   const results: FnResult[] = [];
@@ -587,6 +607,7 @@ export async function runBundle(spec: BundleSpec, opts: RunOptions): Promise<Mod
     hbcVersion: version,
     hermesc: hermesc.path,
     hermescFlags,
+    strong,
     modules: split.modules.length,
     modulesRun: selected.length,
     bundleFunctions: mod.functions.length,
@@ -608,7 +629,7 @@ export async function runBundle(spec: BundleSpec, opts: RunOptions): Promise<Mod
 
 export function markdownSummary(bundle: string, r: ModeReport, top = 15): string {
   const lines: string[] = [];
-  lines.push(`## ${bundle} — ${r.mode} (HBC v${r.hbcVersion}, hermesc ${r.hermescFlags.join(" ")})`);
+  lines.push(`## ${bundle} — ${r.mode} (HBC v${r.hbcVersion}, hermesc ${r.hermescFlags.join(" ")}, normalise=${r.strong ? "strong" : "legacy"})`);
   lines.push("");
   lines.push(`- modules: ${r.modulesRun}/${r.modules}; functions measured: ${r.functions} of ${r.bundleFunctions} in the bundle`);
   lines.push(`- IDENTICAL ${r.identical} (**${r.identicalPct.toFixed(2)}%**), DIFFERENT ${r.different}, RECOMPILE-ERROR ${r.recompileError}, DECOMPILE-STUB ${r.decompileStub}`);
@@ -637,6 +658,9 @@ interface CliArgs {
   readonly extra: readonly BundleSpec[];
   readonly hermescFlags: readonly string[] | undefined;
   readonly show: { readonly module: number; readonly fn: number } | undefined;
+  /** `--normalise legacy|strong` (default strong) — src/harness/roundtrip.ts's
+   *  `{ strong }` option; "legacy" reproduces the pre-QUEUE comparison. */
+  readonly strong: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -647,6 +671,7 @@ function parseArgs(argv: readonly string[]): CliArgs {
   let outDir = process.env["HBC2JS_E2E_OUT"] ?? join(tmpdir(), "hbc2js-e2e-corpus");
   let hermescFlags: string[] | undefined;
   let show: { module: number; fn: number } | undefined;
+  let strong = true;
   const extra: BundleSpec[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -656,6 +681,11 @@ function parseArgs(argv: readonly string[]): CliArgs {
     else if (a === "--passes") passes = String(argv[++i]) as "on" | "off" | "both";
     else if (a === "--out") outDir = String(argv[++i]);
     else if (a === "--hermesc-flags") hermescFlags = String(argv[++i]).split(/\s+/).filter((s) => s.length > 0);
+    else if (a === "--normalise") {
+      const v = String(argv[++i]);
+      if (v !== "legacy" && v !== "strong") throw new Error("--normalise expects legacy|strong");
+      strong = v === "strong";
+    }
     else if (a === "--show") {
       const [m, f] = String(argv[++i]).split(":").map(Number);
       if (m === undefined || f === undefined || !Number.isInteger(m) || !Number.isInteger(f)) throw new Error("--show expects <module>:<fn>");
@@ -667,7 +697,7 @@ function parseArgs(argv: readonly string[]): CliArgs {
       extra.push({ name, path, committed: false });
     } else throw new Error(`unknown argument ${a}`);
   }
-  return { only, limit, jobs, passes, outDir, extra, hermescFlags, show };
+  return { only, limit, jobs, passes, outDir, extra, hermescFlags, show, strong };
 }
 
 async function main(argv: readonly string[]): Promise<void> {
@@ -681,7 +711,7 @@ async function main(argv: readonly string[]): Promise<void> {
   if (args.show !== undefined) {
     const b = selected[0];
     if (b === undefined || selected.length !== 1 || modes.length !== 1) throw new Error("--show needs exactly one --only <bundle> and --passes on|off");
-    process.stdout.write(`${await showPair(b, modes[0]!, args.outDir, args.show.module, args.show.fn, args.hermescFlags ?? ["-O"])}\n`);
+    process.stdout.write(`${await showPair(b, modes[0]!, args.outDir, args.show.module, args.show.fn, args.hermescFlags ?? ["-O"], args.strong)}\n`);
     return;
   }
   const rows: string[] = [];
@@ -691,7 +721,7 @@ async function main(argv: readonly string[]): Promise<void> {
     const modeReports: Partial<Record<PassMode, ModeReport>> = { ...(existing?.modes ?? {}) };
     let version = existing?.hbcVersion ?? 0;
     for (const mode of modes) {
-      const r = await runBundle(b, { mode, outDir: args.outDir, ...(args.jobs !== undefined ? { jobs: args.jobs } : {}), ...(args.limit !== undefined ? { limit: args.limit } : {}), ...(args.hermescFlags !== undefined ? { hermescFlags: args.hermescFlags } : {}) });
+      const r = await runBundle(b, { mode, outDir: args.outDir, strong: args.strong, ...(args.jobs !== undefined ? { jobs: args.jobs } : {}), ...(args.limit !== undefined ? { limit: args.limit } : {}), ...(args.hermescFlags !== undefined ? { hermescFlags: args.hermescFlags } : {}) });
       modeReports[mode] = r;
       version = r.hbcVersion;
       process.stdout.write(markdownSummary(b.name, r) + "\n");

@@ -1,6 +1,7 @@
 {
-  "rn-template-0.72|passes-off": { "functions": 4125, "identical": 849, "identicalPct": 20.58 },
-  "rn-template-0.72|passes-on": { "functions": 4125, "identical": 1538, "identicalPct": 37.28 },
+  "normalisation": 2,
+  "rn-template-0.72|passes-off": { "functions": 4125, "identical": 854, "identicalPct": 20.7 },
+  "rn-template-0.72|passes-on": { "functions": 4125, "identical": 1547, "identicalPct": 37.5 },
   "react-navigation-example-0.85.3|passes-off": { "functions": 14437, "identical": 4147, "identicalPct": 28.72 },
   "react-navigation-example-0.85.3|passes-on": { "functions": 14437, "identical": 4747, "identicalPct": 32.88 }
 }

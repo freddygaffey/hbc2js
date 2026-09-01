@@ -11,6 +11,59 @@ only — nothing from any proprietary bundle is recorded here (D16 C5).
 The committed bundles' numbers are the ratchet (`docs/e2e/roundtrip-baseline.json`,
 `tests/sweep/e2e/roundtrip-ratchet.test.ts`). Everything else is evidence.
 
+## 2026-09-01 — QUEUE (e2e round-trip register/scheduling insensitivity): "strong" normalisation
+
+`src/harness/roundtrip.ts` grew an opt-in `{ strong: true }` normalisation
+(`tools/e2e/roundtrip-corpus.ts --normalise strong`, now the default) on top
+of the always-on per-function register renaming: (b) maximal adjacent runs
+of `LoadConst*`/`LoadParam`/`GetGlobalObject` (the only opcodes that write a
+register and read none) reorder into a content-derived canonical order —
+never across a jump-target label, never when two instructions in the run
+share a destination register; (c) `LoadConstZero`/`LoadConstUInt8 0`/
+`LoadConstInt 0`/etc. that encode the same value render identically. Both
+are provably dataflow-preserving (D3): a run is only ever permuted among
+itself. `--normalise legacy` reproduces the pre-QUEUE comparison for
+side-by-side numbers.
+
+**Legacy vs strong, % IDENTICAL** (macOS arm64, same measurement as below):
+
+| bundle | mode | legacy | strong | delta |
+|---|---|---|---|---|
+| rn-template-0.72 | passes-off | 20.58% (849/4125) | 20.70% (854/4125) | +5 fns |
+| rn-template-0.72 | passes-on | 37.28% (1538/4125) | 37.50% (1547/4125) | +9 fns |
+| react-navigation-example-0.85.3 | passes-off | 28.72% (4147/14437) | 28.72% (4147/14437) | 0 |
+| react-navigation-example-0.85.3 | passes-on | 32.88% (4747/14437) | 32.88% (4747/14437) | 0 |
+
+The improvement is real but modest, and bundle-dependent: rn-template's
+adjacent-run/LoadConst patterns are common enough at its scale to move the
+needle; react-navigation shows none, because its residual DIFFERENTs are
+already dominated by buckets this normalisation does not address (below).
+`docs/BUGS.md`'s "known limit" row (2026-09-01, QUEUE e2e round-trip
+register/scheduling insensitivity) explains why the biggest remaining
+bucket family — `diff:GetByVal(reg)`/`diff:GetById(reg)`/
+`diff:TryGetById(reg)`/`diff:LoadFromEnvironment(reg)` — is *not* fixed by
+this change: it needs a per-DEFINITION register rename (a fresh canonical
+name every time a register is written, not just at its first appearance),
+which needs a def/use classification per opcode operand the decoder does
+not expose yet; scoped out this round rather than risk a false IDENTICAL by
+guessing at the "operand 0 is dest" convention's exceptions (stores,
+conditional-jump operands). `docs/e2e/roundtrip-baseline.json` is bumped to
+the strong numbers (`"normalisation": 2`); the ratchet only went up.
+
+**New top-5 buckets under strong normalisation, passes-on** (each has a
+`docs/BUGS.md` row, dated either 2026-09-01 "E2E tier 1" — pre-existing, the
+bucket name is unchanged or only cosmetically renamed by (c)'s LoadConst
+canonicalisation — or 2026-09-01 "QUEUE (e2e round-trip register/scheduling
+insensitivity)" for the new register-reuse row):
+
+| # | rn-template | react-navigation | note |
+|---|---|---|---|
+| 1 | `diff:LoadConst(operand)` 364 | `diff:TryGetById(string)` 1423 | rn-template's is (c)'s canonicalisation folding the old `CreateEnvironment/LoadConst*` register-prologue bucket (BUGS row 2026-09-01) into one name; still the same root cause |
+| 2 | `diff:TryGetById(string)` 287 | `diff:LoadFromEnvironment(imm)` 1413 | both pre-existing BUGS rows (dead `globalThis` load; captured-variable slot order) |
+| 3 | `diff:GetById/LoadConst` 169 | `diff:CreateFunctionEnvironment(imm)` 677 | rn-template's is the `LoadThisNS`-coercion BUGS row, renamed by (c) | 
+| 4 | `diff:PutNewOwnById/PutById` 155 | `tree:unmatched-closure(orig 1 vs recompiled 0)` 630 | both pre-existing BUGS rows (object-literal shape; env-graph orphan placement) |
+| 5 | `diff:CreateEnvironment/LoadConst` 121 | `diff:GetById(reg)` 316 | react-navigation's is the **new** register-reuse bucket family (BUGS row above) — the real residual gap this normalisation does not close |
+
 ## 2026-09-01 (commit: see git log for this file) — macOS arm64, 10 cores, hermesc from `tools/hermesc/vNN`
 
 | bundle | HBC | mode | modules | functions measured / in bundle | IDENTICAL | DIFFERENT | RECOMPILE-ERROR | DECOMPILE-STUB | wall |
