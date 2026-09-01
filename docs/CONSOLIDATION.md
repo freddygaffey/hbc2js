@@ -44,12 +44,12 @@ agent time (S < 30 min, M ~1 h, L multi-agent).
 | # | Rule | Verdict | Notes |
 |---|------|---------|-------|
 | 11 | One worktree per agent; nothing lands red; full gate on a clean checkout of main after every merge | adopted (2026-08-31) | Worktrees under `.claude/worktrees/`; orchestrator merges, gates, pushes. |
-| 12 | "Attributable to concurrent work" is not a landing note; reproduce in isolation or fix | adopt | Goes in AGENT-BRIEF. |
+| 12 | "Attributable to concurrent work" is not a landing note; reproduce in isolation or fix | **done (2026-09-01, Claude Sonnet 5, QUEUE item 3)** | `docs/AGENT-WORKFLOW.md` "Landing rules" section. |
 | 13 | "Not pushed" is not a state; push on landing | adopted | Orchestrator pushes every landed commit and every WIP branch. |
 | 14 | STATUS.md → one screen, fixed template (milestones, gate numbers, open bugs, blocked, decisions needed); narrative → AGENT-LOG | **done (2026-09-01, Claude Sonnet 5, QUEUE item 2)** | `docs/STATUS.md` rewritten to 73 lines (fixed template: goal, scoreboard, milestones, ladder, gate, open bugs, blocked, queue); old content archived verbatim at `docs/STATUS-ARCHIVE.md`; enforced by `tests/gate/docs/status-one-screen.test.ts`. |
 | 15 | Orchestrator restarts from a handoff doc when context fills | adopted | Memory HANDOFF + this doc. |
-| 16 | Adversarial reviewers: fresh context, different model family where possible | adopt | Sonnet reviews Fable/Opus work and vice-versa. |
-| 17 | Cheap validators produce findings, not verdicts; the suite is the gate | adopt | Reviewer reports list findings; MERGE is decided by the gate + orchestrator. |
+| 16 | Adversarial reviewers: fresh context, different model family where possible | **done (2026-09-01, Claude Sonnet 5, QUEUE item 3)** | Sonnet reviews Fable/Opus work and vice-versa; rule text in `docs/AGENT-WORKFLOW.md` "Landing rules". |
+| 17 | Cheap validators produce findings, not verdicts; the suite is the gate | **done (2026-09-01, Claude Sonnet 5, QUEUE item 3)** | Reviewer reports list findings; MERGE is decided by the gate + orchestrator; rule text in `docs/AGENT-WORKFLOW.md` "Landing rules". |
 
 ## D. Ladder, after the sprint
 
@@ -57,7 +57,7 @@ agent time (S < 30 min, M ~1 h, L multi-agent).
 |---|------|---------|-------|
 | 18 | Order rungs by measured construct frequency on real bundles (extend `tools/passes-metrics.mjs` to react-navigation/expensify for every rung) | adopt | Needs #0. Re-orders batches 2/3; specs already written stay valid. |
 | 19 | Keep measured-not-hoped floors; show gap-to-spec-target as a number in STATUS | adopt | Part of #14's template. |
-| 20 | Full sweep on every merge to main or nightly | adopt | `sweep.yml` exists; make it nightly + on merge. |
+| 20 | Full sweep on every merge to main or nightly | **done (2026-09-01, Claude Sonnet 5, QUEUE item 3)** | `sweep.yml` triggers on `push: main` (concurrency-guarded) in addition to nightly schedule + `workflow_dispatch`. |
 
 ## E. Fred's side (not agent work)
 21 review in sessions at set times, batch decisions · 22 one afternoon reading loop-cond's match/rewrite/check + ten gate tests · 23 don't run continuously yourself.
