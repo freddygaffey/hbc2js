@@ -270,3 +270,42 @@ in module 0, before a single native access is recorded.
 
 Not attempted in this spike (explicitly out of scope per the brief):
 react-native-web, jsdom/DOM globals, device path.
+
+## (g) Spike hardened into a real harness (E2E lane, 2026-09-01)
+
+`tools/e2e/boot-split.mjs` replaces the unshipped `boot.mjs` script from §(f)
+with a real tool (reuses `tests/gate/split/loadable.test.ts`'s already-landed
+`__d`/`__r` loader via `index.js` and the same recording-Proxy native stub
+shape) plus two additions that got past §(f)'s stopping point on the first
+try, no jsdom needed:
+
+- **`window`/`self`/`document`/`navigator` as plain object shims**
+  (`global.window = global`, a `document` with no-op `createElement`/
+  `addEventListener`, a `navigator` object — the latter needs
+  `Object.defineProperty` since modern Node already defines `global.navigator`
+  as a getter-only accessor). No DOM semantics, just enough for `typeof
+  window`/property-existence checks like module 154's to stop throwing.
+- **`AppRegistry.registerComponent` recording via an `Object.defineProperty`
+  interception**, not a hand-wired reference to a specific module id:
+  react-native's own entry module (`module_1.js`) exposes `AppRegistry` as a
+  lazy getter (`Object.defineProperty(r2, "AppRegistry", {get: fn109, ...})`,
+  confirmed by reading the split output), so wrapping every `get`-descriptor
+  passed to `Object.defineProperty` and patching `.registerComponent` onto
+  whatever object the getter first produces (if it has one) catches the call
+  with no `src/` changes and no assumption about which module number defines
+  it.
+
+Result on rn-template-0.72's `index.android.hbc` (pinned:
+`tools/e2e/boot-expected/rn-template-0.72.json`): **87/435 modules
+executed, `AppRegistry.registerComponent` observed (component
+`"HelloHermes072"`), no unrecovered throw**, 32 distinct native/global
+accesses recorded (`nativeModuleProxy.DeviceInfo.*`, `.UIManager.*`,
+`.HeadlessJsTaskSupport`, `.BugReporting`, `.DeviceEventManager`,
+`.NativePerformanceCxx`, `.NativePerformanceObserverCxx`,
+`.PlatformConstants`, `.RedBox`, `performance.now`). One shim round was
+enough to clear the recommended first milestone (§e); no jsdom was needed —
+plain object shims for `window`/`self`/`document`/`navigator` were
+sufficient, so no dependency addition or `docs/PUSHBACK.md` row was
+required. `tests/sweep/e2e/boot-split.test.ts` pins this as a floor (module
+count and `registerComponent` firing), reports (never fails on)
+native-access-list growth.
