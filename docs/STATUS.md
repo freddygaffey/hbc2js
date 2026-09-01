@@ -11,7 +11,7 @@ stores) split into real files. (docs/LANES.md)
 | stage | metric | rn-template | react-navigation | Service NSW | source |
 |---|---|---|---|---|---|
 | 1 valid JS | % `node --check` clean / stubbed | 100% (436/436), 0 stubs | 100%, 0 stubs | 100% (4510/4510), 0 stubs | docs/e2e/RESULTS.md 2026-09-01 table; STATUS-ARCHIVE.md D17i stage 1 |
-| 2 equivalent | % functions IDENTICAL round-trip, passes-on | 37.3% | 29.5% | 29.1% | docs/e2e/RESULTS.md 2026-09-01 table |
+| 2 equivalent | % functions IDENTICAL round-trip, passes-on (strong normalisation) | 37.5% | 32.9% | 29.1% (legacy, not remeasured) | docs/e2e/RESULTS.md 2026-09-01 "strong normalisation" table |
 | 3 boots | RN-web / device boot | no — not attempted | no — not attempted | no — not attempted | docs/CONSOLIDATION.md item 31 (queued, not started) |
 | 4 segregated | % instructions classified LIBRARY vs CUSTOM | 41.1% library | 26.5% library | not measured (`deps` >10 min, item 30) | STATUS-ARCHIVE.md "Classification: library vs custom" 2026-08-31; footnote local-corpus MetaMask 39.5%, Brex 25.1%, Discord 13.6% (same section) |
 | 5 readable | var-naming: registers named | 4.1% (bundle) / 3.1% (57-fixture matrix) | – | – | STATUS-ARCHIVE.md `var-naming` R5, 2026-08-31 |
