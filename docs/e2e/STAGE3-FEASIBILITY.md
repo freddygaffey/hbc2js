@@ -4,6 +4,35 @@ CONSOLIDATION item 31 (Fred, 2026-09-01). Design-only doc plus a time-boxed
 spike (`docs/e2e/STAGE3-FEASIBILITY.md`'s own scratch script, not shipped —
 see §(f)). Scope: rn-template-0.72's `index.android.hbc`, 435 modules.
 
+**Status update (2026-09-01, QUEUE "make `--split` loadable"): both gaps
+below are FIXED**, per the recommendation in §(a)/§(e) — option 1, a
+`__d`/`__r` Node-module-loader-level shim, built into `--split` itself
+(`src/split/index.ts`'s `buildLoaderIndexJs`, emitted as `index.js`) rather
+than kept as an external, unshipped script. Gap A (loadable modules):
+`module_<id>.js` now ends in `__d(factory, id, deps)` instead of
+`module.exports = factory`; `index.js` defines `__d`/`__r`/`importDefault`/
+`importAll`, registers every module (a plain `require()` loop, before the
+loader patches `Module._load`), then lazily runs factories through `__r`,
+caching the module object before invoking the factory (circular-dep
+tolerant) — the pre-existing `require('./module_N.js')` literal rewrite
+(src/split/rewrite.ts) is kept exactly as this doc recommended and is now
+the `Module._load` interception target. Gap B (runtime helper prelude):
+`index.js` installs `src/runtime/helpers.ts`'s `helperPrelude()` for
+whatever `__hbc_*` names `emitModule`'s own `helpersUsed` reports for the
+whole bundle, as `globalThis` properties, before any module is registered.
+Regression test: `tests/gate/split/loadable.test.ts` (spawns a child
+process, requires the split tree's `index.js` under the §(f) shim's
+recording-proxy native stub, asserts no `ReferenceError` for any helper or
+factory and that at least 76 modules' factories run — the same floor §(f)
+found). Confirmed unchanged: the tier-1 round-trip harness
+(`tools/e2e/roundtrip-corpus.ts --only rn-template-0.72 --passes on`,
+150/435 modules) — 38.36% IDENTICAL, 956 DIFFERENT, 0 RECOMPILE-ERROR,
+before and after; the loader only changes each module file's top-level
+epilogue line, never a function body, so per-function disasm comparison
+does not move. Not fixed here, still open per §(e)'s table: the native
+surface floor (rnweb/jsdom/device path) — this queue item was scoped to
+"loadable", not "boots to a rendered screen".
+
 ## (a) What the split tree is today, and what a Metro-loadable project needs
 
 `src/split/index.ts` (D17i stage 1) writes one file per Metro module:
@@ -86,7 +115,8 @@ global. `decompile()`'s single-file output presumably prepends
 `helperPrelude()`; `--split` needs its own copy of that logic (one
 `__hbc_runtime.js` file + a `require` in every module that uses a helper,
 or a global the loader installs) before a split tree can run standalone.
-Filed as a follow-up, not fixed here (docs-only task).
+Filed as a follow-up at the time this doc was written (docs-only task);
+fixed 2026-09-01, see the status update at the top of this file.
 
 ## (b) Native surface inventory (rn-template-0.72, `--split` tree)
 
