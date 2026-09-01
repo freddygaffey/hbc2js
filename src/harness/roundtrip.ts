@@ -138,6 +138,150 @@ function operandToken(mod: HbcModule, op: Operand, insn: Instruction, fn: Decode
   }
 }
 
+// ---------------------------------------------------------------------------
+// "strong" normalisation (docs D3: erase register NUMBERS and instruction
+// ORDER only where the dataflow is provably identical). Two additions on top
+// of the always-on register renaming above:
+//
+//   (b) canonical ordering of maximal runs of ADJACENT instructions that are
+//       provably commutative: no register operand is shared between any two
+//       of them (each only WRITES its own destination register — the whole
+//       whitelist below reads nothing), and none has a side effect. Sorting
+//       such a run into a content-derived canonical order (never touching
+//       register numbers) makes two builds that scheduled the same loads in
+//       a different order compare equal, without ever merging two functions
+//       whose dataflow actually differs (a run is only reordered among
+//       itself; nothing moves across a non-poolable instruction, a jump
+//       target, or a duplicate destination register).
+//   (c) LoadConst* opcodes that encode the same value a different way
+//       (`LoadConstZero` vs `LoadConstUInt8 0` vs `LoadConstInt 0`, etc.)
+//       render to the same canonical text.
+//
+// Deliberately NOT attempted here: renaming a physical register per-DEFINITION
+// instead of per-first-appearance (which would additionally erase "build A
+// reuses r3 for two non-overlapping values, build B doesn't" — the
+// `diff:GetByVal(reg)` / `diff:GetById(reg)` bucket in docs/e2e/RESULTS.md).
+// That needs a def/use classification per opcode operand that the decoder
+// does not currently expose (Hermes's "operand 0 is dest" convention has
+// exceptions — stores, comparisons used as conditional-jump operands — and
+// getting it wrong would silently turn a semantic DIFFERENT into a false
+// IDENTICAL). Left as a known limit, not attempted; see the E2E tier 1
+// report for this change.
+// ---------------------------------------------------------------------------
+
+const POOL_LOADCONST = "loadconst" as const;
+const POOL_LOADPARAM = "loadparam" as const;
+const POOL_GETGLOBALOBJECT = "getglobalobject" as const;
+type PoolCategory = typeof POOL_LOADCONST | typeof POOL_LOADPARAM | typeof POOL_GETGLOBALOBJECT;
+
+function poolCategory(insn: Instruction): PoolCategory | null {
+  if (insn.kind !== "normal") return null;
+  if (insn.name.startsWith("LoadConst")) return POOL_LOADCONST;
+  if (insn.name === "LoadParam" || insn.name === "LoadParamLong") return POOL_LOADPARAM;
+  if (insn.name === "GetGlobalObject") return POOL_GETGLOBALOBJECT;
+  return null;
+}
+
+/** (c): the value a `LoadConst*` instruction loads, independent of which of
+ *  the several opcodes that can encode it was chosen. `mod.strings`/`mod.bigInts`
+ *  lookups mirror `operandToken`'s string/bigint tokens exactly so this stays
+ *  in sync with them. */
+function canonicalConstValue(mod: HbcModule, insn: Instruction): string {
+  switch (insn.name) {
+    case "LoadConstZero":
+      return "0";
+    case "LoadConstUndefined":
+      return "undefined";
+    case "LoadConstNull":
+      return "null";
+    case "LoadConstTrue":
+      return "true";
+    case "LoadConstFalse":
+      return "false";
+    case "LoadConstEmpty":
+      return "empty";
+    case "LoadConstUInt8":
+    case "LoadConstInt":
+    case "LoadConstDouble": {
+      const op = insn.operands[1];
+      return op !== undefined ? String(op.value) : "?";
+    }
+    case "LoadConstString":
+    case "LoadConstStringLongIndex": {
+      const op = insn.operands[1];
+      return op !== undefined ? `s#"${mod.strings.get(op.value)}"` : "?";
+    }
+    case "LoadConstBigInt":
+    case "LoadConstBigIntLongIndex": {
+      const op = insn.operands[1];
+      const entry = op !== undefined ? mod.bigInts[op.value] : undefined;
+      return entry !== undefined ? `bi#${entry.value().toString()}n` : "?";
+    }
+    default:
+      return "?";
+  }
+}
+
+/** Sort key for one instruction inside a poolable run — content only, never
+ *  a register number, so it is identical across two builds that assigned
+ *  different physical registers to the same values. */
+function poolSortKey(mod: HbcModule, insn: Instruction, category: PoolCategory): string {
+  switch (category) {
+    case POOL_LOADCONST:
+      return `0:${canonicalConstValue(mod, insn)}`;
+    case POOL_LOADPARAM: {
+      const op = insn.operands[1];
+      return `1:${op !== undefined ? String(op.value) : "?"}`;
+    }
+    case POOL_GETGLOBALOBJECT:
+      return "2:";
+  }
+}
+
+/** (b): reorder maximal runs of adjacent, label-free, distinct-destination
+ *  `poolCategory` instructions into a canonical, content-derived order.
+ *  Everything else (order, presence, any non-poolable instruction) is left
+ *  exactly as decoded — this only ever permutes instructions *within* a run
+ *  that is already proven independent, never moves one across a boundary. */
+function reorderPoolableRuns(mod: HbcModule, fn: DecodedFunction): readonly Instruction[] {
+  const insns = fn.instructions;
+  const out: Instruction[] = [];
+  let i = 0;
+  while (i < insns.length) {
+    if (poolCategory(insns[i]!) === null || fn.labels.has(insns[i]!.offset)) {
+      out.push(insns[i]!);
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < insns.length && poolCategory(insns[i]!) !== null && !fn.labels.has(insns[i]!.offset)) i++;
+    const run = insns.slice(start, i);
+    if (run.length === 1) {
+      out.push(run[0]!);
+      continue;
+    }
+    // "no shared registers": these categories never READ a register (all
+    // three only write their own dest), so the one hazard to guard is two
+    // instructions in the run writing the SAME destination (a dead store
+    // shadowed by the next — reordering would change which value survives).
+    const destRegs = new Set<number>();
+    let dupDest = false;
+    for (const r of run) {
+      const dest = r.operands[0]?.value;
+      if (dest === undefined || destRegs.has(dest)) dupDest = true;
+      else destRegs.add(dest);
+    }
+    if (dupDest) {
+      out.push(...run);
+      continue;
+    }
+    const keyed = run.map((r, idx) => ({ r, key: poolSortKey(mod, r, poolCategory(r)!), idx }));
+    keyed.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.idx - b.idx));
+    for (const k of keyed) out.push(k.r);
+  }
+  return out;
+}
+
 function normaliseSwitch(mod: HbcModule, insn: Instruction, fn: DecodedFunction): string {
   const st = insn.switchTable;
   if (st === undefined) return "";
@@ -152,11 +296,19 @@ function normaliseSwitch(mod: HbcModule, insn: Instruction, fn: DecodedFunction)
   return `.switch ${insn.name} default=${defaultLabel} ${cases}`;
 }
 
+export interface NormaliseOptions {
+  /** Apply the (b)/(c) additions above, on top of the always-on register
+   *  renaming. Default `false` preserves every existing caller's exact
+   *  output (the gate's fixture-level assertions rely on that). */
+  readonly strong?: boolean;
+}
+
 /** Normalised text for one function: a canonical form that is identical for
  *  two functions compiled from source that differs only in incidental ways
  *  (register allocator numbering, cache-slot allocation, generated names) —
  *  see the module doc comment for exactly what is dropped and why. */
-export function normaliseFunction(mod: HbcModule, fn: DecodedFunction): string {
+export function normaliseFunction(mod: HbcModule, fn: DecodedFunction, opts?: NormaliseOptions): string {
+  const strong = opts?.strong ?? false;
   const regs = new Map<number, string>();
   const regName = (n: number): string => {
     let r = regs.get(n);
@@ -168,12 +320,18 @@ export function normaliseFunction(mod: HbcModule, fn: DecodedFunction): string {
   };
 
   const lines: string[] = [`fn(${fn.header.paramCount}) ${maskedFunctionName(fn.name)}`];
+  const instructions = strong ? reorderPoolableRuns(mod, fn) : fn.instructions;
 
-  for (const insn of fn.instructions) {
+  for (const insn of instructions) {
     const label = fn.labels.get(insn.offset);
     const prefix = label !== undefined ? `${label}: ` : "";
     if (insn.kind === "switch") {
       lines.push(prefix + normaliseSwitch(mod, insn, fn));
+      continue;
+    }
+    if (strong && poolCategory(insn) === POOL_LOADCONST) {
+      const dest = insn.operands[0];
+      lines.push(`${prefix}LoadConst ${dest !== undefined ? regName(dest.value) : "?"}, val#${canonicalConstValue(mod, insn)}`);
       continue;
     }
     const ops = insn.operands
@@ -192,10 +350,10 @@ export function normaliseFunction(mod: HbcModule, fn: DecodedFunction): string {
   return lines.join("\n");
 }
 
-export function normaliseModule(mod: HbcModule): readonly string[] {
+export function normaliseModule(mod: HbcModule, opts?: NormaliseOptions): readonly string[] {
   const out: string[] = [];
   for (let i = 0; i < mod.functions.length; i++) {
-    out.push(normaliseFunction(mod, decodeFunction(mod, i)));
+    out.push(normaliseFunction(mod, decodeFunction(mod, i), opts));
   }
   return out;
 }
@@ -245,9 +403,9 @@ export function compareNormalisedModules(a: readonly string[], b: readonly strin
 
 /** End-to-end: parse both `.hbc` byte buffers and produce the ratchet report
  *  plus per-function exactness (for a committed baseline / CLI diff). */
-export function roundTripFromBytes(originalBytes: Uint8Array, recompiledBytes: Uint8Array, baseline?: readonly boolean[]): RoundTripReport & { readonly exactness: readonly boolean[] } {
-  const a = normaliseModule(parseHbc(originalBytes));
-  const b = normaliseModule(parseHbc(recompiledBytes));
+export function roundTripFromBytes(originalBytes: Uint8Array, recompiledBytes: Uint8Array, baseline?: readonly boolean[], opts?: NormaliseOptions): RoundTripReport & { readonly exactness: readonly boolean[] } {
+  const a = normaliseModule(parseHbc(originalBytes), opts);
+  const b = normaliseModule(parseHbc(recompiledBytes), opts);
   const report = compareNormalisedModules(a, b, baseline);
   const n = Math.min(a.length, b.length);
   const exactness: boolean[] = [];
