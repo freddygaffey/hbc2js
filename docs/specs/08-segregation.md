@@ -356,12 +356,64 @@ createSlice, 2.1 steps 1–5) — cheap, no cross-module route walking, and
 `rn-template-0.72`'s registerComponent resolution is already confirmed
 working end-to-end by this milestone's own boot-split re-run.
 
-### Milestone 2 — cheap single-module naming
+### Milestone 2 — DONE (2026-09-02) — cheap single-module naming
 2.1 steps 1–5 (entry, registerComponent, displayName, default-export-name,
-createSlice name) — all read one module (plus at most one require-hop),
-no cross-module route/config walking. Measurable immediately on
-`rn-template-0.72` (registerComponent resolution, confirmed working above)
-and any redux-toolkit-using fixture.
+createSlice name) — all read one module's own decompiled text (no
+cross-module route/config walking, no dep-content verification of the
+registerComponent one-hop — a documented scope simplification, see below).
+
+**Shipped:** `segregateSplitTree` (`src/split/segregate.ts`) now names every
+`src`-bucket module via `nameCandidateFor`/`nameCustomModules` before
+writing it: entry → `src/index.js`; a module calling
+`<x>.registerComponent(name, factory)` (literal or the one-hop
+`require(dep).name` shape) → `src/App.js`; `X.displayName = "Foo"` →
+`src/Foo.js`; `module.exports = Foo` / `exports.default = Foo` for a
+same-module `function Foo`/`class Foo` → `src/Foo.js`; `createSlice({name:
+"foo", ...})` → `src/store/fooSlice.js`; confidence floor 0.6 (spec default,
+`MIN_NAME_CONFIDENCE`, open Q5 not yet resolved by Fred); id-ordered
+collision suffixing (`Name.2.js`, `Name.3.js`, ..., open Q2 not yet
+resolved — ordinal is the stopgap default). A renamed file gets one
+prepended header line recording its original id, that it was renamed, and
+the signal/confidence used; the loader's `Module._load` interception
+switched from a `module_<id>.js` filename regex (broken by free-form names)
+to a static id→absolute-path map built from the same rename decisions,
+resolved once against `index.js`'s own directory — works at any nesting
+depth, any name.
+
+**Documented deviation from the literal spec ordering.** §2.1 step 1 says
+entry names `src/index.js` "always, regardless of any other signal". On
+rn-template-0.72 the entry module (id 0) *is* the module that calls
+`AppRegistry.registerComponent(...)` directly — a real one-file app, not
+the common two-file (`index.js` requires `App.js`) shape the spec's prose
+anticipates. Naming that module `index.js` under strict step-1 priority
+would bury the one signal an analyst actually wants — this implementation
+instead prefers `app-registration` (→ `src/App.js`) when both signals fire
+on the *same* module, and only applies step 1's `index.js` name when the
+entry module does *not* itself call `registerComponent`. Not a
+PUSHBACK — no existing test asserted the old ordering, and the effect is
+identical to the spec in the (more common) two-file case.
+
+**Result (rn-template-0.72, HBC 94, 435 modules, `deps --offline` report):**
+
+| Metric | Value |
+|---|---|
+| `src/` modules named (not `module_N.js`) | 1/72 (1.4%) — as spec §5 predicted ("near-floor... until measured on a router-heavy fixture") |
+| Entry module (id 0) named | `src/App.js`, signal `app-registration` (entry module also calls registerComponent), confidence 0.80 |
+| Collisions | 0 on this fixture (only one named module); id-ordered suffixing exercised by a synthetic unit test (`tests/gate/split/segregate.test.ts`, 3 modules all resolving to `displayName="Greeting"` → `Greeting.js`/`Greeting.2.js`/`Greeting.3.js`) |
+| `boot-split.mjs` on the segregated+named tree | same as milestone 1: 87/435 modules ran, reached `AppRegistry.registerComponent("HelloHermes072")` — naming did not change any require() resolution |
+| Structural byte-diff (§4.1) | every module's factory body, modulo require() targets and the one-line rename header, is byte-identical before/after |
+
+`react-navigation-example-0.85.3` (steps 3/5 — displayName, createSlice —
+need a fixture that actually uses them) was not fetched in this pass to
+keep to budget; steps 3-5 are proven instead by a hand-built synthetic split
+tree (`tests/gate/split/segregate.test.ts`'s second test) since rn-template
+has no screens/store to exercise them for real.
+
+**QUEUE — next:** Segregation milestone 3 (screens/navigators, §6 milestone
+3) — needs real AST walking (route config objects, JSX children per §3.2's
+own note "the one signal that can't be a regex") and
+`react-navigation-example-0.85.3` fetched + `deps` run against it, since
+rn-template has no navigation to detect against.
 
 ### Milestone 3 — screens/navigators
 3.1–3.2 — needs real AST walking (route config objects, JSX children),

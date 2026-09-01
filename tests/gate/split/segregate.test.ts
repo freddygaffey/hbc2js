@@ -14,6 +14,7 @@ import { repoRoot } from "../../support/paths.ts";
 import { splitProject } from "../../../src/split/index.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "../../../src/split/segregate.ts";
 import { runDeps } from "../../../src/deps/index.ts";
+import type { DepsReport } from "../../../src/deps/report.ts";
 import { writeSplitResult } from "../../../src/split/write.ts";
 
 const RN_TEMPLATE = join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc");
@@ -25,11 +26,13 @@ const RN_TEMPLATE = join(repoRoot(), "tests", "fixtures", "bundles", "rn-templat
 const MIN_MODULES_RUN = 76;
 
 /** Strips only what segregation is allowed to change (§4): a
- *  `require('./module_<id>.js')` call's string-literal argument. Everything
- *  else in a module file — including its header comment — must come out
- *  byte-identical. */
+ *  `require('./module_<id>.js')` call's string-literal argument, and (§6
+ *  milestone 2) a renamed module's prepended `// hbc2js segregate --`
+ *  header line. Everything else in a module file — including the original
+ *  `// hbc2js --split --` header — must come out byte-identical. */
 function normaliseRequireTargets(text: string): string {
-  return text.replace(/require\((['"])[^'"]*module_(\d+)\.js\1\)/g, "require(<module_$2>)");
+  const withoutSegregateHeader = text.startsWith("// hbc2js segregate -- ") ? text.slice(text.indexOf("\n") + 1) : text;
+  return withoutSegregateHeader.replace(/require\((['"])[^'"]*module_(\d+)\.js\1\)/g, "require(<module_$2>)");
 }
 
 void test("segregate: moves rn-template-0.72's split tree into node_modules/ vs src/, no factory body changes, boot still reaches registerComponent", async () => {
@@ -55,6 +58,26 @@ void test("segregate: moves rn-template-0.72's split tree into node_modules/ vs 
   const nodeModulesCount = seg.modules.filter((m) => m.bucket === "node_modules").length;
   assert.ok(srcCount > 0, "expected at least one custom module in src/");
   assert.ok(nodeModulesCount > 0, "expected at least one library module in node_modules/");
+
+  // Milestone 2 (§2.1 steps 1-5): rn-template-0.72's module 0 is both the
+  // split tree's entry (MODULES.json.entry === 0) and the module that calls
+  // `AppRegistry.registerComponent(...)` directly -- accept either name this
+  // spec-documented collision could produce (see segregate.ts
+  // `nameCandidateFor`'s header comment for which one this implementation
+  // picks and why), but require it be *one* of the two, not the untouched
+  // `module_0.js` fallback.
+  const entryModule = seg.modules.find((m) => m.id === 0)!;
+  assert.ok(entryModule.newPath === "src/index.js" || entryModule.newPath === "src/App.js", `entry module (id 0) should name to src/index.js or src/App.js, got ${entryModule.newPath}`);
+  // Whichever way the collision above resolves, *some* module must end up
+  // named src/App.js -- the registerComponent-bearing module (here, the
+  // same module 0) is never left as a numeric fallback name.
+  assert.ok(seg.modules.some((m) => m.newPath === "src/App.js"), "no module named src/App.js (registerComponent signal not resolved)");
+  assert.equal(entryModule.nameSignal !== null, true, "entry module has no recorded naming signal");
+
+  // No two modules collide on the same final path.
+  const pathCounts = new Map<string, number>();
+  for (const m of seg.modules) pathCounts.set(m.newPath, (pathCounts.get(m.newPath) ?? 0) + 1);
+  for (const [path, count] of pathCounts) assert.equal(count, 1, `${count} modules collided on ${path}`);
 
   // (b) structural proof: every module's file, modulo require() target
   // strings, is byte-identical before and after segregation.
@@ -84,4 +107,64 @@ void test("segregate: moves rn-template-0.72's split tree into node_modules/ vs 
     rmSync(splitDir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
+});
+
+/** rn-template-0.72 ships no screens/store (docs/specs/08-segregation.md §5:
+ *  "the template ships no screens/store"), so §2.1 steps 3-5 (displayName,
+ *  default-export identifier, createSlice) and collision suffixing are
+ *  exercised here against a hand-built split tree instead of a fetched
+ *  fixture, matching this milestone's single-module, no-hermesc-needed
+ *  scope. `deps` is `null` here (no classify.ts run), so every custom
+ *  module is fed to naming directly via a fabricated `DepsReport`-shaped
+ *  classification -- `segregateSplitTree` never re-derives classification
+ *  itself, so a minimal stand-in is enough. */
+void test("segregate: names displayName/default-export/createSlice modules and suffixes name collisions deterministically by id", () => {
+  const modulesJson = {
+    hbcVersion: 96,
+    moduleCount: 5,
+    entry: null,
+    modules: [
+      { id: 1, file: "module_1.js", factoryFunctionIndex: 1, deps: [] },
+      { id: 2, file: "module_2.js", factoryFunctionIndex: 2, deps: [] },
+      { id: 3, file: "module_3.js", factoryFunctionIndex: 3, deps: [] },
+      { id: 5, file: "module_5.js", factoryFunctionIndex: 5, deps: [] },
+      { id: 9, file: "module_9.js", factoryFunctionIndex: 9, deps: [] },
+    ],
+  };
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify(modulesJson)],
+    ["index.js", `require('./module_1.js');\nrequire('./module_2.js');\nrequire('./module_3.js');\nrequire('./module_5.js');\nrequire('./module_9.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`],
+    // Step 3: displayName assignment.
+    ["module_1.js", `// hbc2js --split -- Metro module 1 (source fn#1, x)\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  r0.displayName = "Greeting";\n}\n\n__d(factory, 1, []);\n`],
+    // Step 4: default-export identifier (function Foo() {...}; module.exports = Foo;).
+    ["module_2.js", `// hbc2js --split -- Metro module 2 (source fn#2, x)\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  function Widget(a) { return a; }\n  r0 = a5;\n  r0.exports = Widget;\n}\n\n__d(factory, 2, []);\n`],
+    // Step 5: createSlice.
+    ["module_3.js", `// hbc2js --split -- Metro module 3 (source fn#3, x)\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  r0 = createSlice({name: "counter", initialState: 0});\n}\n\n__d(factory, 3, []);\n`],
+    // Two more modules that both resolve to displayName "Greeting" -- collision.
+    ["module_5.js", `// hbc2js --split -- Metro module 5 (source fn#5, x)\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  r0.displayName = "Greeting";\n}\n\n__d(factory, 5, []);\n`],
+    ["module_9.js", `// hbc2js --split -- Metro module 9 (source fn#9, x)\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  r0.displayName = "Greeting";\n}\n\n__d(factory, 9, []);\n`],
+  ]);
+  const deps = {
+    matches: [],
+    guesses: [],
+    confirmed: [],
+    moduleOwnership: [],
+    classification: {
+      modules: [1, 2, 3, 5, 9].map((id) => ({ localModuleId: id, factoryFunctionIndex: id, instrCount: 1, classification: "custom", signal: "app-vocabulary", confidence: 0.9, libraryPackageHint: null })),
+    },
+  } as unknown as DepsReport;
+
+  const seg = segregateSplitTree(files, deps);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(1)!.newPath, "src/Greeting.js");
+  assert.equal(byId.get(2)!.newPath, "src/Widget.js");
+  assert.equal(byId.get(3)!.newPath, "src/store/counterSlice.js");
+  // Collision: modules 1, 5, 9 all resolve to "Greeting" -- id-ordered
+  // suffixing (spec §2.1 "Collisions"), lowest id keeps the bare name.
+  assert.equal(byId.get(5)!.newPath, "src/Greeting.2.js");
+  assert.equal(byId.get(9)!.newPath, "src/Greeting.3.js");
+
+  const pathCounts = new Map<string, number>();
+  for (const m of seg.modules) pathCounts.set(m.newPath, (pathCounts.get(m.newPath) ?? 0) + 1);
+  for (const [path, count] of pathCounts) assert.equal(count, 1, `${count} modules collided on ${path}`);
 });
