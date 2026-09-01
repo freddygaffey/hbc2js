@@ -86,7 +86,7 @@ const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 // writer folded in at the read site.
 // ---------------------------------------------------------------------------
 
-test("HOLE: expr-rebuild/check accepts R1a folding in the wrong constant (docs/BUGS.md, 2026-09-01 checker-mutation row)", { todo: "real checker hole — see docs/BUGS.md" }, () => {
+test("expr-rebuild/check rejects R1a folding in the wrong constant (docs/BUGS.md, 2026-09-01 checker-mutation row)", () => {
   // R1a: `r1 = 5; log(r1);` folds to `log(5);` — a store with a single
   // top-level read.
   const before: readonly Stmt[] = [set("r1", lit("5")), printCall(id("r1"))];
@@ -98,7 +98,31 @@ test("HOLE: expr-rebuild/check accepts R1a folding in the wrong constant (docs/B
   // instruction) — same statement-count shape, same read/write delta on
   // `r1`, semantically wrong.
   const mutated: readonly Stmt[] = [printCall(lit("6"))];
-  assert.deepEqual(exprRebuildCheck(before, mutated, ctx), { ok: true }, "documents the hole: the checker does not catch this");
+  assert.deepEqual(exprRebuildCheck(before, mutated, ctx), { ok: false, reason: "the rewrite did not fold in the expected value" });
+});
+
+test("expr-rebuild/check rejects R1a folding the right operand with the wrong operator", () => {
+  // R1a: `r1 = 2 + 3; log(r1);` folds to `log(2 + 3);` — a wrong writer that
+  // keeps both operands but flips `+` to `*` (same shape, same
+  // read/write delta on `r1`, wrong value).
+  const before: readonly Stmt[] = [set("r1", bin("+", lit("2"), lit("3"))), printCall(id("r1"))];
+  const ctx = ctxFor(before);
+  const m = exprRebuildMatch(before, ctx);
+  assert.ok(m !== null, "expected R1a to match");
+  const mutated: readonly Stmt[] = [printCall(bin("*", lit("2"), lit("3")))];
+  assert.deepEqual(exprRebuildCheck(before, mutated, ctx), { ok: false, reason: "the rewrite did not fold in the expected value" });
+});
+
+test("expr-rebuild/check rejects R1a folding in the wrong operand register", () => {
+  // R1a: `r1 = r2; log(r1);` folds to `log(r2);` — a wrong writer that
+  // instead folds in an unrelated register `r3` (same shape, same
+  // read/write delta on `r1`, wrong value).
+  const before: readonly Stmt[] = [set("r1", id("r2")), printCall(id("r1"))];
+  const ctx = ctxFor(before, { fnBody: [set("r1", id("r2")), printCall(id("r1"))] });
+  const m = exprRebuildMatch(before, ctx);
+  assert.ok(m !== null, "expected R1a to match");
+  const mutated: readonly Stmt[] = [printCall(id("r3"))];
+  assert.deepEqual(exprRebuildCheck(before, mutated, ctx), { ok: false, reason: "the rewrite did not fold in the expected value" });
 });
 
 // ---------------------------------------------------------------------------

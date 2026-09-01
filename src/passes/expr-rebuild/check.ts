@@ -16,7 +16,9 @@ import { expressionOnlyCheck, isPure, isRegisterName, registerUses } from "../as
 
 const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { CheckResult, PassContext } from "../types.ts";
+import type { ExprRebuildMatch, ExprRebuildSite } from "./match.ts";
 import { classifySite, exprCounts } from "./match.ts";
+import { rewrite } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b); // identity first: rewrite keeps every untouched statement (P-1)
@@ -108,6 +110,27 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   const delta = registerUseDelta(before, after, reg);
   if (delta.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
   if (delta.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
+
+  // Item: the exact substituted *value*. Classification and the read/write
+  // count delta above both prove the rewrite has the right *shape* (which
+  // rule, which statement dropped, how many reads/writes moved) but neither
+  // looks at what got folded in — a mutated writer that substitutes a wrong
+  // constant (or any other same-arity expression) at the read site passes
+  // both unchanged (docs/BUGS.md, 2026-09-01 checker-mutation row). Re-derive
+  // the expected `after` the same way `rewrite.ts` would build it from the
+  // re-classified site (`{ rule, i, j, reg, value }`, all already re-proven
+  // above from `before` alone — never trusted from the writer's own call),
+  // and compare structurally, byte-for-byte, against the actual `after`.
+  // `rewrite` is a pure function of `(root, data)` — same code path the real
+  // writer used — so this is exact, not an approximation: any legitimate
+  // transform the writer performs (including folding into a nested
+  // expression at `j`) is reproduced identically here, because it is
+  // reproduced by calling the very same builder.
+  const site: ExprRebuildSite = { rule: verdict.rule, i, j: verdict.j, reg, value };
+  const expected = rewrite({ root: before, data: site } as unknown as ExprRebuildMatch);
+  if (expected.length !== after.length || !expected.every((s, idx) => sameStmt(s, after[idx]!))) {
+    return { ok: false, reason: "the rewrite did not fold in the expected value" };
+  }
 
   return { ok: true };
 }
