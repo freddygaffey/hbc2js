@@ -21,7 +21,7 @@ The committed bundles' numbers are the ratchet (`docs/e2e/roundtrip-baseline.jso
 | react-navigation-example-0.85.3 (committed, fetch.sh) | v98 | passes-on | 1782/1782 | 14437 / 15551 | **29.52%** (4262) | 10175 | 0 | 0 | 92 s |
 | expensify-app-0.86.0 (committed, fetch.sh) | v98 | — | not present locally (fetch.sh needs a full Expensify clone + build) | | | | | | |
 | Service NSW (local, proprietary) | v96 | passes-off | 4510/4510 | 43302 / 43384 | **15.56%** (6738) | 36564 | 0 | 0 | 36 s |
-| Service NSW (local, proprietary) | v96 | passes-on | not finished at report time: the passes-on *split* alone was still running after 10 min at 4 GB RSS (the same superlinear term as the whole-file 452 s, BUGS row 2026-09-01) — rerun: `node --max-old-space-size=16000 tools/e2e/roundtrip-corpus.ts --bundle nsw=<scratch>/nsw/index.android.bundle --only nsw --passes on --out <scratch>` | | | | | | |
+| Service NSW (local, proprietary) | v96 | passes-on | 4510/4510 | 43302 / 43384 | **29.05%** (12580) | 30722 | 0 | 0 | 722 s (715 s is the passes-on split — the superlinear term of BUGS row 2026-09-01) |
 | Discord / MetaMask / Brex (local corpus, 190k / 109k / 120k fns) | v98 / v96 / v98 | passes-off | not measured yet: the first attempt OOMed in the main thread's split at Node's default 4 GB heap — rerun: `node --max-old-space-size=24000 tools/e2e/roundtrip-corpus.ts --only local-com.discord,local-io.metamask,local-com.brex.mobile --passes off --jobs 3 --out <scratch>` (one bundle at a time is safer) | | | | | | |
 
 "functions measured" = every function reachable from a Metro module's
@@ -37,10 +37,10 @@ probe, `E_LAYOUT_AMBIGUOUS`). `DECOMPILE-STUB 0`: no function hit
 
 | bucket | rn-template | react-navigation | Service NSW (off) | what it is |
 |---|---|---|---|---|
-| `diff:TryGetById(string)` | 284 | 1309 | 1882 | dead `rN = globalThis` residue after global-access |
+| `diff:TryGetById(string)` | 284 | 1309 | 1882 (2529 on) | dead `rN = globalThis` residue after global-access |
 | `tree:unmatched-closure(orig 1 vs recompiled 0)` | 38 | 688 | — | nested function declared in no split file (react-navigation) / closure stored to a never-read register, dropped by `-O` (rn-template) |
 | `diff:LoadFromEnvironment(imm)` + `diff:CreateFunctionEnvironment(imm)` | — | 586 + 568 | — | captured variables declared in a different slot order (v98) |
-| `diff:PutNewOwnById/PutById`, `diff:PutOwnBySlotIdx/PutByIdStrict` | 153 | 248 | 1114 | object literal emitted as `{}` + assignments |
+| `diff:PutNewOwnById/PutById`, `diff:PutOwnBySlotIdx/PutByIdStrict` | 153 | 248 | 1114 (2377 on) | object literal emitted as `{}` + assignments |
 | `diff:GetById/LoadConstNull`, `diff:GetEnvironment/LoadConstNull` | 170 + 41 | — | 1511 + 975 | `LoadThisNS` printed as the explicit `this` coercion in sloppy functions |
 | `diff:CreateEnvironment/LoadConstUndefined`, `…/LoadParam` | 78 + 103 | — | 856 | `let r0, r1, …` prologue survives `-O` as N × `LoadConstUndefined` |
 | `diff:LoadParam(imm)` | 116 | — | 2681 | factories: the split's `require(dependencyMap[i])` → `require('./module_N.js')` rewrite changes which parameters are read first — **by design of the split**, not a decompiler bug |
@@ -61,4 +61,6 @@ probe, `E_LAYOUT_AMBIGUOUS`). `DECOMPILE-STUB 0`: no function hit
   never-declared nested functions (BUGS row: `src/split`).
 - The passes-on split of react-navigation costs 88 s against 3 s with
   passes off (P-1's ≈7× is ≈30× here); Service NSW's passes-on split is
-  the same superlinear term as the whole-file 452 s (BUGS row 2026-09-01).
+  the same superlinear term as the whole-file 452 s (BUGS row 2026-09-01):
+  715 s for 43k functions, then 6.7 s to recompile and compare all 4,510
+  modules. Passes on lifts NSW from 15.56% to 29.05%.
