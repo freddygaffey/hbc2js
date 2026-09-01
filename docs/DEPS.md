@@ -345,6 +345,9 @@ legitimately produce the same empty-array shape without being contaminated
 data — so the check belongs at bulk-archive ingestion time, not as a
 blanket load-time policy.
 
+(CONSOLIDATION 28: this quarantine is a hard, unconditional check — `fetch-db.sh`
+has no flag to skip it — covered directly by `tests/gate/tools/filter-unsubtracted.test.ts`.)
+
 Even after quarantining those 353 files, layering all ~32,000 remaining
 ones exposed a second, distinct problem — see "Cross-package hash
 ambiguity" above (§6.7): whole families of npm packages sharing

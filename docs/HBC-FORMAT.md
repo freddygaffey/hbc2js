@@ -78,6 +78,18 @@ selected variant in the parse result so the disassembler and emitter agree.
 The file header is always **128 bytes** in every class — the padding array absorbs the
 difference. That is a useful sanity check.
 
+**Which classes are evidenced.** Gate fixtures only cover versions 84, 94, 96, 98,
+99 — classes B, C, D/E (98's ambiguity window) and E. Class A (51–83) and the
+84–86 slice of class B other than 84 itself have no fixture and no opcode table
+generated for them (`candidatesForVersion` in `src/parse/layout.ts` returns
+`opcodeTables: []`); `requireOpcodeTable` in `src/disasm/decode.ts` refuses with
+`E_UNSUPPORTED_VERSION` before decoding a single instruction if a real file ever
+resolves to one of them. This is not a soft default — there is no
+`--allow-unverified` bypass, because there is no verified opcode table to hand it
+even if there were one; the only working override is the existing
+`--opcode-table=<id>` force flag, which supplies a real table instead of disabling
+the check (CONSOLIDATION 27; `tests/gate/parse/unverified-paths.test.ts`).
+
 ---
 
 ## 1. Top-level file layout
