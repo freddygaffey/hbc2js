@@ -43,7 +43,7 @@ spec states the per-version shape it has read (catalogue confidence rule).
 | `switch-raise` | 6, 7 (8 is ⛔: not until a fixture exists) | 09, 10, 52, 53 | all (opcode rename at 99) | jump-table `switch` node + `JStrictEqual` compare chain on one register → `switch` with fall-through | **done (S1, jump-table)**; S2 blocked on F13 |
 | `for-in` | 9 (single-version: **re-read at 99 first**) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | batch 2 |
 | `for-of` | 10 (single-version: re-read at 99) | 06, 07 | all | `IteratorBegin` + `IteratorNext` loop + two `IteratorClose` sites → `for (v of it)` | batch 2 |
-| `label-clean` | 5 (single-version; the rung is IR hygiene, row is evidence only) | 08, 11 | all | unused labels; `labeled{…; break L}` whose only use is the final break; `seq` of one | batch 1, **last in stage A** |
+| `label-clean` | 5 (single-version; the rung is IR hygiene, row is evidence only) | 08, 11 | all | unused labels; `labeled{…; break L}` whose only use is the final break; `seq` of one | done (rung 7, re-enabled 2026-08-31 after infinite-loop fix) |
 | `try-shape` | 11 | 14, 15 | all | `try` whose handler never reads `catchRegister` → `catch {}`; `__pc` range guard that covers the whole region → plain `catch` | batch 4, `after: [finally-dedup]` |
 
 Row 27 (obfuscated control-flow flattening) needs **no rung**: Hermes's own
@@ -54,11 +54,11 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 
 | Rung | Catalogue row(s) | Fixtures | Versions | Recognises → emits | Status |
 |---|---|---|---|---|---|
-| `expr-rebuild` | R1 (§7.2) | all | all | single-def/single-use register in one statement list → inlined expression; `let` only for values live across a boundary; `rX = rX` dropped | batch 1, **first in stage B** |
-| `global-access` | R2 | 19, all | all | `r = globalThis; if (!("x" in r)) throw ReferenceError; r.x` → `x`; `hasOwnProperty(globalThis,"d") ‖ globalThis.d = undefined` → `var d` | batch 1 |
-| `call-shape` | R3 (+ builtins table) | all | all | `Reflect.apply(f, undefined, [a])` → `f(a)`; `Reflect.apply(o.m, o, [a])` → `o.m(a)`; `Reflect.construct(C, [a])` → `new C(a)`; `functionPrototypeCall/Apply` helpers → `.call/.apply` | batch 1 |
-| `fn-naming` | R4 | all | all | `_fnN` whose bytecode name is a valid, unshadowed identifier → that name; `_fnN` assigned once to `o.key`/`var k` → `key` | batch 1 |
-| `var-naming` | R5 | all | all | surviving `rN` → `v1…` by live range; params keep `aN` unless evidence names them; env slots `_eD_S` → names when §5.4 evidence exists | batch 2, **last in stage B before `jsx-recover`** |
+| `expr-rebuild` | R1 (§7.2) | all | all | single-def/single-use register in one statement list → inlined expression; `let` only for values live across a boundary; `rX = rX` dropped | done |
+| `global-access` | R2 | 19, all | all | `r = globalThis; if (!("x" in r)) throw ReferenceError; r.x` → `x`; `hasOwnProperty(globalThis,"d") ‖ globalThis.d = undefined` → `var d` | done |
+| `call-shape` | R3 (+ builtins table) | all | all | `Reflect.apply(f, undefined, [a])` → `f(a)`; `Reflect.apply(o.m, o, [a])` → `o.m(a)`; `Reflect.construct(C, [a])` → `new C(a)`; `functionPrototypeCall/Apply` helpers → `.call/.apply` | done |
+| `fn-naming` | R4 | all | all | `_fnN` whose bytecode name is a valid, unshadowed identifier → that name; `_fnN` assigned once to `o.key`/`var k` → `key` | done |
+| `var-naming` | R5 | all | all | surviving `rN` → `v1…` by live range; params keep `aN` unless evidence names them; env slots `_eD_S` → names when §5.4 evidence exists | done (2026-08-31; 3.1% named — see PUSHBACK P-6 / reg-split) |
 | `template-literal` | 21 | 43, 44 | all | `Reflect.apply(__hbc_HermesInternal.concat, c0, [s0, c1, …])` → template literal (never a `+` chain — row 21 corrected); `getTemplateObject` + tag call → tagged template | batch 3, **merged 2026-09-01** |
 | `default-params` | 24 (single-version) | 39, 51 | all | prologue `if (aN === undefined) aN = e` → `(aN = e)` | batch 3 |
 | `destructure` | 22 (single-version) | 37, 38, 39 | all | straight-line `IteratorBegin/Next` + `ensureObject` + `GetById` fan-out → `const [a, b] = x` / `const {a, b} = x` | batch 3, `after: [default-params]` |
