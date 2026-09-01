@@ -24,6 +24,7 @@ import {
   detectRnVersionFromBaselineFilenames,
   hasCompleteBaselineSet,
   nearestVersionByDate,
+  nearestVersionByDateDetailed,
   subtractBaseline,
 } from "../../../src/deps/confirm.ts";
 import type { ConfirmCandidate, ConfirmSuccess } from "../../../src/deps/confirm.ts";
@@ -59,6 +60,46 @@ test("nearestVersionByDate: picks the closest publish date, ignoring created/mod
   assert.equal(nearestVersionByDate(times, "2022-07-01T00:00:00.000Z"), "2.0.0");
   assert.equal(nearestVersionByDate(times, "2019-01-01T00:00:00.000Z"), "1.0.0");
   assert.equal(nearestVersionByDate({ created: "2000-01-01T00:00:00.000Z" }, "2022-01-01T00:00:00.000Z"), null, "only created/modified present — nothing to resolve to");
+});
+
+// docs/BUGS.md: "nearestVersionByDate can resolve a fast-moving package to
+// an unbundleable nightly build" — a fast-moving RN package publishes
+// nightlies continuously, so the release nearest a given date by raw time
+// distance is very often a nightly/prerelease, not the stable release that
+// actually shipped in the target bundle.
+test("nearestVersionByDate/nearestVersionByDateDetailed: prefers the nearest STABLE release over a closer nightly/prerelease", () => {
+  const times = {
+    created: "2000-01-01T00:00:00.000Z",
+    modified: "2024-06-01T00:00:00.000Z",
+    "0.74.0": "2024-01-15T00:00:00.000Z",
+    "0.74.0-nightly-20240201-abc123": "2024-02-01T00:00:00.000Z", // closest by raw date...
+    "0.75.0-rc.1": "2024-02-10T00:00:00.000Z",
+    "0.75.0": "2024-03-01T00:00:00.000Z",
+  };
+  const referenceIso = "2024-02-01T00:00:00.000Z"; // dead center of the nightly's publish date
+
+  // ...but a stable release must still win over it.
+  assert.equal(nearestVersionByDate(times, referenceIso), "0.74.0", "must not resolve to the unbundleable nightly even though it is nearest by raw date");
+
+  const detailed = nearestVersionByDateDetailed(times, referenceIso);
+  assert.equal(detailed.version, "0.74.0");
+  assert.equal(detailed.usedPrerelease, false, "a stable release existed, so no prerelease fallback was needed");
+});
+
+test("nearestVersionByDate/nearestVersionByDateDetailed: falls back to the nearest prerelease, flagged, when a package has shipped no stable release at all", () => {
+  const times = {
+    created: "2000-01-01T00:00:00.000Z",
+    "0.0.0-20240101-aaa111": "2024-01-01T00:00:00.000Z",
+    "0.0.0-20240202-bbb222": "2024-02-02T00:00:00.000Z",
+    "0.0.0-20240303-ccc333": "2024-03-03T00:00:00.000Z",
+  };
+  const referenceIso = "2024-02-01T00:00:00.000Z";
+
+  assert.equal(nearestVersionByDate(times, referenceIso), "0.0.0-20240202-bbb222", "documented fallback: nearest prerelease when no stable release exists");
+
+  const detailed = nearestVersionByDateDetailed(times, referenceIso);
+  assert.equal(detailed.version, "0.0.0-20240202-bbb222");
+  assert.equal(detailed.usedPrerelease, true, "must be flagged so callers (e.g. --confirm's report) can surface the risk");
 });
 
 test("hasCompleteBaselineSet: true only once all three baseline kinds are represented", () => {
