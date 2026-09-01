@@ -172,7 +172,7 @@ export function decompileAst(bytes: Uint8Array, opts: DecompileOptions = {}): st
     if (body === undefined) continue;
     const header = headers.get(i) ?? "";
     out.push(`; fn#${i}${header.length > 0 ? `  ${header}` : ""}`);
-    out.push(printProgram([body]));
+    out.push(printProgram([body], { indent: "  ", jsx: opts.emit?.jsx === true }));
   }
   return out.join("\n");
 }

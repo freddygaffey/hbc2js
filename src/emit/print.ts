@@ -1,6 +1,7 @@
 // docs/specs/05-emitter.md §2 — the in-house printer. Byte-stable output, no
 // dependency, explicit precedence so parentheses are added exactly where needed.
 import type { Expr, Stmt } from "./ast.ts";
+import { jsxToCall } from "./ast.ts";
 
 // Higher binds tighter. Matches the ECMAScript grammar's operator table.
 const PRIMARY = 21;
@@ -47,6 +48,7 @@ function precedence(e: Expr): number {
     case "object":
     case "func":
     case "template": // F14: a template literal is a primary expression
+    case "jsx": // D20: a JSX element is a primary expression (and so is the call it lowers to, at MEMBER — PRIMARY is the safe lower bound for both renderings)
       return PRIMARY;
     case "member":
     case "call":
@@ -69,12 +71,62 @@ function precedence(e: Expr): number {
 
 export interface PrintOptions {
   readonly indent: string;
+  /** D20 (`--jsx`): render a `jsx` node as JSX. Default `false`: lower it
+   *  back to its element-creation call (`jsxToCall`) — runnable JS. */
+  readonly jsx?: boolean;
 }
+
+/** `PrintOptions.jsx` for the `printProgram` call in flight — expressions
+ *  render through module-level `expr`/`render`, which take no options. */
+let jsxOutput = false;
 
 export function printProgram(body: readonly Stmt[], opts: PrintOptions = { indent: "  " }): string {
   const out: string[] = [];
-  for (const s of body) printStmt(s, 0, out, opts);
+  const saved = jsxOutput;
+  jsxOutput = opts.jsx === true;
+  try {
+    for (const s of body) printStmt(s, 0, out, opts);
+  } finally {
+    jsxOutput = saved;
+  }
   return out.join("\n") + "\n";
+}
+
+/** JSX text/attribute-string safety: printed bare, the text must read back
+ *  as exactly the literal — no braces/angles (children), no quote/entity
+ *  (`&` starts one), no newline (JSX trims lines), no edge whitespace. */
+function jsxSafeText(lit: Expr, where: "child" | "attr"): string | null {
+  if (lit.k !== "lit" || !lit.text.startsWith('"')) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(lit.text);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "string" || value.length === 0) return null;
+  if (/[\n\r\t"&\\]|[^\x20-\x7e]/.test(value)) return null;
+  if (where === "child" && (/[{}<>]/.test(value) || value !== value.trim())) return null;
+  return value;
+}
+
+function renderJsx(e: Extract<Expr, { k: "jsx" }>): string {
+  const tag = e.tag.k === "lit" ? (jsxSafeText(e.tag, "attr") ?? e.tag.text) : expr(e.tag, MEMBER);
+  const attrs = e.attrs.map((a) => {
+    if ("spread" in a) return ` {...${expr(a.spread, 0)}}`;
+    if (a.value === null) return ` ${a.name}`;
+    const text = jsxSafeText(a.value, "attr");
+    return text !== null ? ` ${a.name}="${text}"` : ` ${a.name}={${expr(a.value, 0)}}`;
+  });
+  if (e.selfClosing && e.children.length === 0) return `<${tag}${attrs.join("")} />`;
+  const children = e.children.map((c) => {
+    if (c.k === "text") {
+      const text = jsxSafeText(c.lit, "child");
+      if (text !== null) return text;
+      return `{${expr(c.lit, 0)}}`;
+    }
+    return `{${expr(c.expr, 0)}}`;
+  });
+  return `<${tag}${attrs.join("")}>${children.join("")}</${tag}>`;
 }
 
 function pad(depth: number, opts: PrintOptions): string {
@@ -254,6 +306,9 @@ function render(e: Expr): string {
     }
     case "tagged":
       return `${expr(e.tag, MEMBER)}${render(e.quasi)}`;
+    case "jsx":
+      // D20: JSX only under `--jsx`; otherwise the exact call it stands for.
+      return jsxOutput ? renderJsx(e) : render(jsxToCall(e));
     case "func": {
       const out: string[] = [];
       printBody(e.body, 1, out, { indent: "  " });

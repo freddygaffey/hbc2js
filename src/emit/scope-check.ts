@@ -13,6 +13,7 @@
 // in question; the point of this check is to make that unrepresentable.
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { Expr, Stmt } from "./ast.ts";
+import { jsxToCall } from "./ast.ts";
 
 /**
  * Globals the emitter itself names. Everything the *program* touches goes
@@ -134,6 +135,10 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         return;
       case "seq":
         for (const x of e.exprs) walkExpr(x, scopes, where);
+        return;
+      case "jsx":
+        // D20: a JSX element binds nothing; check exactly the call it stands for.
+        walkExpr(jsxToCall(e), scopes, where);
         return;
       case "func": {
         const inner = new Set<string>(e.params);

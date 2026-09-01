@@ -40,7 +40,71 @@ export type Expr =
   | { readonly k: "template"; readonly quasis: readonly string[]; readonly exprs: readonly Expr[] }
   /** F14: `` tag`…` `` — `quasi` is always a `k:"template"` node. */
   | { readonly k: "tagged"; readonly tag: Expr; readonly quasi: Expr }
+  /**
+   * D20 / docs/specs/passes/08-jsx-recovery.md §3: one React element,
+   * `<tag attrs…>children…</tag>`. Exists only when the opt-in `jsx-recover`
+   * rung ran (`--jsx`). `factory` records the exact element-creation call
+   * the node stands for, so `jsxToCall` below is a bijection: the printer
+   * lowers the node back to that call unless `PrintOptions.jsx` is set —
+   * which is what keeps `parses`, `node --check` and every effect walker
+   * honest about a tree that happens to hold JSX.
+   */
+  | { readonly k: "jsx"; readonly tag: Expr; readonly attrs: readonly JsxAttr[]; readonly children: readonly JsxChild[]; readonly selfClosing: boolean; readonly factory: JsxFactory }
   | { readonly k: "func"; readonly name: string | null; readonly params: readonly string[]; readonly body: readonly Stmt[] };
+
+/** `name={value}` (a string `lit` value prints bare, `name="text"`, when it
+ *  is JSX-safe), or `{...spread}`. `value: null` is the bare `name` (`true`)
+ *  shorthand — the inverse maps it to `name: true`; the rung never emits it. */
+export type JsxAttr = { readonly name: string; readonly value: Expr | null } | { readonly spread: Expr };
+
+/** `{expr}`, or a string `lit` child the printer shows as bare text when it
+ *  is JSX-safe — `lit` is the very literal node the call carried. */
+export type JsxChild = { readonly k: "expr"; readonly expr: Expr } | { readonly k: "text"; readonly lit: Expr };
+
+/**
+ * How the element was created — enough to rebuild the call exactly.
+ * `automatic` (`react/jsx-runtime`): `callee(type, config[, key, ...rest])`;
+ * the config's props are `attrs` with the `children` field re-inserted at
+ * index `childrenAt` (`null`: the config had no `children`), as the single
+ * child (`childrenShape: "single"`, `jsx`) or an array of them (`"array"`,
+ * `jsxs`); `rest` is `jsxDEV`'s trailing `isStaticChildren, source, self`.
+ * `classic` (`createElement`): `callee(type, props, ...children)` — `key`/
+ * `ref` stay ordinary attrs; `nullProps` is the literal `null`/`undefined`
+ * node when the call passed no props object at all.
+ */
+export type JsxFactory =
+  | { readonly runtime: "automatic"; readonly callee: Expr; readonly key: Expr | null; readonly childrenAt: number | null; readonly childrenShape: "single" | "array"; readonly rest: readonly Expr[] }
+  | { readonly runtime: "classic"; readonly callee: Expr; readonly nullProps: Expr | null };
+
+/**
+ * The exact element-creation call a `jsx` node stands for (spec 08 §6's
+ * inverse). Pure; every sub-expression is reused by reference, so a node
+ * built from a call and lowered again is structurally identical to it.
+ */
+export function jsxToCall(e: Extract<Expr, { k: "jsx" }>): Extract<Expr, { k: "call" }> {
+  const f = e.factory;
+  const attrProps: ObjectProp[] = [];
+  const spreads: Expr[] = [];
+  for (const a of e.attrs) {
+    if ("spread" in a) spreads.push(a.spread);
+    else attrProps.push({ key: a.name, computed: false, value: a.value ?? { k: "lit", text: "true" } });
+  }
+  const childExprs = e.children.map((c) => (c.k === "expr" ? c.expr : c.lit));
+  if (f.runtime === "automatic") {
+    const props = [...attrProps];
+    if (f.childrenAt !== null) {
+      const children: Expr = f.childrenShape === "single" && childExprs.length === 1 ? childExprs[0]! : { k: "array", elements: childExprs };
+      props.splice(f.childrenAt, 0, { key: "children", computed: false, value: children });
+    }
+    const config: Expr = spreads.length === 1 && props.length === 0 ? spreads[0]! : { k: "object", props };
+    const args: Expr[] = [e.tag, config];
+    if (f.key !== null || f.rest.length > 0) args.push(f.key ?? { k: "lit", text: "undefined" });
+    args.push(...f.rest);
+    return { k: "call", callee: f.callee, args };
+  }
+  const props: Expr = f.nullProps !== null ? f.nullProps : spreads.length === 1 && attrProps.length === 0 ? spreads[0]! : { k: "object", props: attrProps };
+  return { k: "call", callee: f.callee, args: [e.tag, props, ...childExprs] };
+}
 
 export interface ObjectProp {
   readonly key: string; // identifier text, or a rendered literal when `computed`

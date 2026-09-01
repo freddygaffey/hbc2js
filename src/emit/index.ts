@@ -25,6 +25,9 @@ export interface EmitOptions {
   /** Spec 03 §6.4's R3 rule. Default true; false is `--lenient-env`. */
   readonly strictEnv?: boolean;
   readonly indent?: string;
+  /** D20 `--jsx`: print `jsx` nodes as JSX instead of lowering them back to
+   *  their element-creation call (`src/emit/print.ts` `PrintOptions.jsx`). */
+  readonly jsx?: boolean;
   readonly moduleName?: string;
   readonly structure?: StructureOptions;
   /**
@@ -355,6 +358,6 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
 
   checkBindings(program, prelude.names, globalIndex);
 
-  const code = printProgram(program, { indent });
+  const code = printProgram(program, { indent, jsx: opts.jsx === true });
   return { code, helpersUsed: prelude.names, lineMap: [], diagnostics, stubbedFunctions };
 }
