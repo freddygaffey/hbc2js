@@ -25,6 +25,8 @@ import { runDeps } from "./deps/index.ts";
 import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
 import { splitProject } from "./split/index.ts";
 import { writeSplitResult } from "./split/write.ts";
+import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
+import type { DepsReport } from "./deps/report.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
@@ -110,6 +112,16 @@ Options (deps):
   --no-shared-db            don't consult tools/pkgsig/db (this repo's starter set)
   --min-instr <n>           minimum-instruction floor before a hash is trusted (default 8)
   --json                    machine-readable DepsReport on stdout
+
+hbc2js segregate <split-dir> [outDir]   (docs/specs/08-segregation.md, milestone 1)
+  Places a --split tree's modules into node_modules/<pkg>/ (library,
+  classify.ts verdict) vs src/ (custom) vs _unclassified/ (no verdict) —
+  no naming heuristics, every module keeps module_<id>.js. outDir defaults
+  to "<split-dir>-segregated".
+  --deps-report <file>      a 'hbc2js deps --json' report (classification +
+                            moduleOwnership); omit to segregate everything
+                            into _unclassified/ (no silent library/src guess)
+  --json                    machine-readable summary on stdout
 `;
 
 interface ParsedArgs {
@@ -666,8 +678,77 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// `hbc2js segregate` — docs/specs/08-segregation.md, milestone 1 (§6). CLI
+// shape chosen per that spec's open question 1 (recommendation): a separate
+// stage from `--split`/`deps`, so re-running segregation (e.g. after a
+// future naming-heuristic milestone) never re-decompiles.
+// ---------------------------------------------------------------------------
+
+interface SegregateArgs {
+  readonly help: boolean;
+  readonly splitDir: string | undefined;
+  readonly out: string | undefined;
+  readonly depsReport: string | undefined;
+  readonly json: boolean;
+}
+
+function parseSegregateArgs(argv: readonly string[]): SegregateArgs {
+  let help = false;
+  let splitDir: string | undefined;
+  let out: string | undefined;
+  let depsReport: string | undefined;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--help" || a === "-h") help = true;
+    else if (a === "--deps-report") depsReport = argv[++i];
+    else if (a === "--json") json = true;
+    else if (!a.startsWith("-") && splitDir === undefined) splitDir = a;
+    else if (!a.startsWith("-") && out === undefined) out = a;
+  }
+  return { help, splitDir, out, depsReport, json };
+}
+
+function runSegregateCmd(argv: readonly string[]): number {
+  const args = parseSegregateArgs(argv);
+  if (args.help || args.splitDir === undefined) {
+    process.stdout.write(USAGE);
+    return args.help ? 0 : 2;
+  }
+  const outDir = args.out ?? `${args.splitDir.replace(/\/+$/, "")}-segregated`;
+  try {
+    const splitFiles = readSplitDir(args.splitDir);
+    const deps: DepsReport | null = args.depsReport !== undefined ? (JSON.parse(readFileSync(args.depsReport, "utf8")) as DepsReport) : null;
+    const result = segregateSplitTree(splitFiles, deps);
+    writeSegregateResult(result, outDir);
+    const counts = { src: 0, node_modules: 0, unclassified: 0 };
+    for (const m of result.modules) counts[m.bucket]++;
+    if (args.json) {
+      process.stdout.write(JSON.stringify({ outDir, moduleCount: result.modules.length, counts }, null, 2) + "\n");
+    } else {
+      process.stdout.write(
+        `hbc2js segregate: ${result.modules.length} module(s) -> ${outDir} (src=${counts.src}, node_modules=${counts.node_modules}, unclassified=${counts.unclassified})\n`,
+      );
+      if (args.depsReport === undefined) {
+        process.stderr.write(`hbc2js segregate: no --deps-report given; every module landed in _unclassified/ (no library/src guess without classify.ts's verdict)\n`);
+      }
+    }
+    return 0;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (args.json) process.stdout.write(JSON.stringify({ error: message }) + "\n");
+    else process.stderr.write(`hbc2js segregate: ${message}\n`);
+    return 3;
+  }
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
+  if (argv[0] === "segregate") {
+    process.exitCode = runSegregateCmd(argv.slice(1));
+    return;
+  }
   if (argv[0] === "disasm") {
     runDisasm(argv.slice(1));
     return;

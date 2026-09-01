@@ -301,7 +301,7 @@ keep to budget, but named here as the acceptance fixture for milestone 3
 
 ## 6. Staging + open questions
 
-### Milestone 1 (cheap, first QUEUE item, see below)
+### Milestone 1 — DONE (2026-09-02)
 **node_modules/ vs src/ split only** — `classify.ts`'s verdict +
 `moduleOwnership` decide the bucket; every custom module keeps
 `module_<id>.js` (no naming heuristics at all). Delivers D17i/D17h's
@@ -310,6 +310,51 @@ directory tree instead of a report/percentage. Fully implementable and
 measurable **today** on `rn-template-0.72` and (once fetched)
 `react-navigation-example-0.85.3` with zero new heuristics — `classify.ts`
 and `DepsReport.moduleOwnership` already exist and are wired.
+
+**Shipped:** `hbc2js segregate <split-dir> [outDir] [--deps-report <file>]`
+(`src/cli.ts`) + `src/split/segregate.ts` (`segregateSplitTree`,
+`readSplitDir`, `writeSegregateResult`). CLI shape resolved per open
+question 6.1: a separate subcommand (this spec's own recommendation), not
+folded into `--split`/`deps`. No `--deps-report` given → every module lands
+in `_unclassified/` rather than guessed (§4 "no silent loss" extended to
+"no classify.ts run at all"). Anonymous-library bucketing uses the flat
+`node_modules/_vendor/module_<id>.js` option from open question 6.4
+(per-hash subdirectories deferred — provisional pending Fred). Correctness:
+`tests/gate/split/segregate.test.ts` — structural byte-diff (§4.1, every
+module's text is identical modulo `require()` target strings) + a
+`tools/e2e/boot-split.mjs` re-run on the segregated tree (§4.2), both on
+`rn-template-0.72`.
+
+**Result (rn-template-0.72, HBC 94, 435 modules, `deps --offline` report):**
+
+| Metric | Value |
+|---|---|
+| → `node_modules/` (by module count) | 308/435 (70.8%) |
+| → `node_modules/<pkg>/` named (`moduleOwnership` hit) | 303/308 (all `react-native`) |
+| → `node_modules/_vendor/` anonymous library | 5/308 |
+| → `src/` (custom) | 72/435 (16.6%) |
+| → `_unclassified/` (no classify.ts verdict) | 55/435 (12.6%) |
+| Distinct named packages | 1 (`react-native`) |
+| `boot-split.mjs` on segregated tree | 87/435 modules ran, reached `AppRegistry.registerComponent("HelloHermes072")`, no unrecovered throw — same outcome as the un-segregated tree |
+
+Note the module-count split (70.8% library) reads higher than DEPS.md's
+by-*weight* figure for this fixture (41.1%, this section's own row above) —
+expected: `classify.ts`'s "custom" verdict for a real fixture is
+concentrated in a few large, high-instruction app modules (the entry chain,
+`react-native`'s own JS setup that scores "custom" via app-vocabulary
+overlap, etc.), while the corpus of small library modules is numerous but
+individually light. Milestone 1 buckets by *count*; the weight-based number
+is the one to trust for "how much of this bundle is my code" until
+milestone 2's naming pass narrows `_unclassified/` and `src/` down further.
+`react-navigation-example-0.85.3` (real `@react-navigation/*` usage) was not
+re-measured in this pass — named in §5 as the milestone-3 acceptance
+fixture; queued.
+
+**QUEUE — next:** Segregation milestone 2 (single-module naming, §6
+milestone 2: entry/registerComponent/displayName/default-export/
+createSlice, 2.1 steps 1–5) — cheap, no cross-module route walking, and
+`rn-template-0.72`'s registerComponent resolution is already confirmed
+working end-to-end by this milestone's own boot-split re-run.
 
 ### Milestone 2 — cheap single-module naming
 2.1 steps 1–5 (entry, registerComponent, displayName, default-export-name,
