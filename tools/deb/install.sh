@@ -8,7 +8,7 @@
 set -euo pipefail
 
 HOST="${1:-deb}"
-REMOTE_DIR='$HOME/hbc2js-ci-bin'
+REMOTE_DIR='~/hbc2js-ci-bin'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ssh "$HOST" "mkdir -p $REMOTE_DIR ~/.config/systemd/user"
