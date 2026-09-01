@@ -143,7 +143,12 @@ async function runJob(m) {
     let installed = false;
     if (fs.existsSync(lockFile)) {
       const hash = crypto.createHash("sha256").update(fs.readFileSync(lockFile)).digest("hex").slice(0, 16);
-      const cacheDir = path.join(NM_CACHE, hash);
+      // The cache dir MUST itself be named `node_modules`: TypeScript (and
+      // Node) resolve through the symlink to the real path and then walk up
+      // looking for an ancestor `node_modules/<pkg>`. A cache laid out as
+      // nm-cache/<hash>/<pkg> made `@types/node`'s `undici-types` import fail
+      // silently on Linux only (macOS has no symlink) → `Response.ok` errors.
+      const cacheDir = path.join(NM_CACHE, hash, "node_modules");
       const nodeModules = path.join(jobDir, "node_modules");
       if (fs.existsSync(cacheDir)) {
         log.write(`[deb-ci] node_modules cache hit ${hash}\n`);
@@ -165,6 +170,7 @@ async function runJob(m) {
           p.on("error", reject);
         });
         if (fs.existsSync(nodeModules)) {
+          fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
           fs.renameSync(nodeModules, cacheDir);
           fs.symlinkSync(cacheDir, nodeModules);
         }
