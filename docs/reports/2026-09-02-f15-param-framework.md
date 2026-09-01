@@ -1,0 +1,4 @@
+# 2026-09-02 — F15 Param[] framework (default-params prerequisite) — Sonnet, lean
+Tokens 147k · tool calls 101 · green (F15 only; rung deferred via P-8).
+
+Shipped F15: `func.params: string[]` → `Param[] {name, init?, rest?}` threaded through emit (ast/print/function/index/scope-check) + passes/ast.ts walkers + var-naming/global-access/fn-naming free-name walks. The default-params RUNG was not built: measured via --emit-tree that the spec's assumed `if (rX !== U) {} else {default}` shape does not exist at any version — the real shape is `L0: { if (rX !== U) break L0; ...default...; break L0; }` (label-clean L2 refuses to collapse it since the guard if isn't last). Filed P-8; overseer resolved it (spec shape correction) and requeued the rung with the real idiom. Correct pushback: prevented a permanently-red matcher.
