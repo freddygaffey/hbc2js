@@ -69,6 +69,33 @@ jobs:
       - run: tools/get-hermesc.sh all      # v84, v94, v96, v98, v99 — needed for 7.A diff + round-trip oracle
       - run: npm run test:gate
 
+  app-metrics:
+    # QUEUE lane A "CI app decompile metrics": scores a whole real RN app
+    # decompile every run, so a readability/correctness regression on a real
+    # bundle (not just the synthetic construct corpus) is visible per commit.
+    # Report-only — see tools/app-metrics.mjs's SCOPE GUARD: exits nonzero
+    # only if the *tool* crashes, never on a metric value (a stubbed
+    # function, a node --check failure etc. are reported, not thrown).
+    # No hermesc/VM needed: decompile() is pure parse->cfg->structure->emit,
+    # so this job doesn't need build-test's hermesc cache. Whole-file with
+    # all M5 passes on takes ~3-5 s on rn-template (PUSHBACK P-1's ~250x
+    # pass-pipeline slowdown was fixed — docs/PUSHBACK.md), well inside the
+    # timeout below; if a future bundle/regression makes whole-file too slow
+    # for CI, switch this job to `--split` (per-module) timing instead.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm }
+      - run: npm ci
+      - run: node tools/app-metrics.mjs --split --json > app-metrics.json
+      - run: node tools/app-metrics.mjs --split >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-metrics
+          path: app-metrics.json
+
   licence-guard:
     runs-on: ubuntu-latest
     steps:

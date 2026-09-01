@@ -407,3 +407,49 @@ lives.
 ## Typecheck is part of the gate
 
 `npm test` runs `npm run typecheck` before the gate tests (since 2026-08-31, consolidation item 29): CI's build-test jobs typecheck first, and a green local gate that skipped it left `main` red for two hours. `npm run test:gate` alone is the tests without typecheck.
+
+## App metrics (CI app decompile metrics, 2026-09-02)
+
+`tools/app-metrics.mjs` decompiles a whole real RN app bundle end to end —
+default `tests/fixtures/bundles/rn-template-0.72/index.android.hbc`, any
+other path as an argument — the way a user actually invokes `hbc2js`
+(`--lenient-env`, every M5 pass on), and scores it. Unlike
+`tools/passes-metrics.mjs` (a small per-construct corpus, one pass on/off at
+a time) this runs once on one large bundle, so a regression or improvement
+in real decompile behaviour is visible per commit, not just on the
+synthetic corpus.
+
+```
+node tools/app-metrics.mjs [bundle.hbc] [--json] [--split]
+```
+
+Columns (markdown table, or the same data as JSON with `--json`):
+
+| column | meaning |
+| --- | --- |
+| decompile | OK/FAILED + wall time; a `--lenient-env` refusal or crash is a *reported* metric, not a thrown error (see the script's SCOPE GUARD) |
+| total functions | `result.module.functions.length` |
+| stubbed (isolation) | count + % of functions that fell back to a throwing stub (`decompileDiagnostics`, per-function isolation) |
+| unresolved-env markers | `W_ENV_UNRESOLVED` diagnostic count (sites `--lenient-env` couldn't resolve statically) |
+| output bytes / lines | size of the emitted JS |
+| node --check | whether the emitted JS is syntactically valid |
+| `rN` / `Reflect.apply(` / `_fnN` / `__hbc_` per 1k lines | readability signal: surviving register names, `Reflect.apply` call shape, anonymous function names, and runtime-helper call sites — lower is more readable, same textual-occurrence convention as `tools/passes-metrics.mjs` |
+| split: modules / library-custom-unknown / % by weight | with `--split`, also runs `splitProject()` + `runDeps({ offline: true })` and reports the module count and D17i classification split (best-effort: skipped, not failed, if either throws) |
+
+Round-trip/tier-1 "% IDENTICAL" data is intentionally not included here: it
+needs a matching `hermesc` recompile (`tools/get-hermesc.sh`), which is not
+cheap in this script's context — see `tools/e2e/` and the "E2E tier 1"
+section above for that ratchet instead.
+
+Baseline: `docs/metrics/app-metrics-baseline.json`, produced with
+`node tools/app-metrics.mjs --split --json`, committed for humans to diff
+against by eye — it is not gated on a floor (metric values are report-only,
+per docs/CONSOLIDATION.md §B item 7: no exact-output assertions). CI
+(`.github/workflows/ci.yml`'s `app-metrics` job, ubuntu-only) runs the same
+command on every push/PR, writes the markdown table to
+`$GITHUB_STEP_SUMMARY`, and uploads the JSON as a build artifact; the job
+fails only if the tool itself crashes, never on a metric value.
+`tests/gate/tools/app-metrics.test.ts` is the structural regression test —
+it asserts the script still runs against today's `decompile()`/
+`splitProject()`/`runDeps()` APIs and produces a well-shaped report, not
+any particular metric value.
