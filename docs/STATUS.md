@@ -43,7 +43,7 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 ~106 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
 `npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
 
-## Open bugs — 20 open / 14 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4)
+## Open bugs — 19 open / 15 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4)
 
 By cluster (open only): emit-shape 7, metrics 3, passes 3, real-app 2,
 harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
