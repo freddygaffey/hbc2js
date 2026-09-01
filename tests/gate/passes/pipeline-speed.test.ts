@@ -17,10 +17,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { timeScale } from "../../support/tiers.ts";
-import { decompile } from "../../../src/decompile.ts";
+import { decompile, decompileTree } from "../../../src/decompile.ts";
 import type { Stmt } from "../../../src/emit/ast.ts";
 import { id, lit } from "../../../src/emit/ast.ts";
 import { applyAstPasses } from "../../../src/passes/ast.ts";
@@ -166,12 +167,21 @@ test("expr-rebuild on a module-root-shaped list of 5,000 fold candidates finishe
   // cost this row exists for regresses. Before `nextRelevant`'s eager
   // `listIndex` rebuild (removed) and `expressionOnlyCheck`'s whole-list
   // `effectSequence` comparison (narrowed to the changed region) this shape
-  // took minutes; a `bu = registerUses(before)` cost in `check.ts` remains
-  // — genuinely `O(list.length)` once per applied site whenever nothing
-  // earlier in this same site's proof happened to warm
-  // `registerUsesMemo` for this exact list identity (this pass run alone,
-  // with `tryDA`'s redefinition-found fast path, never does) — tracked as
-  // the next actionable term (`docs/BUGS.md`).
+  // took minutes; `docs/BUGS.md`'s superlinear-pass row part 2 then removed
+  // `check.ts`'s `bu = registerUses(before)` (a genuinely `O(list.length)`
+  // walk once per applied site, since `spliceList` gives a top-level match's
+  // edited list a fresh array identity every time, so `registerUsesMemo` was
+  // cold for it every time) — `check.ts` now computes the register-use
+  // *delta* straight from the changed region (`registerUseDelta`), never
+  // walking `before`/`after` in full. Measured on this Mac: ~4 s CPU before
+  // that fix, ~2 s CPU after (this shape still pays a separate, smaller
+  // `O(list.length)`-per-site cost in `expressionOnlyCheck`'s `defUse(after)`
+  // order check, tracked as the next term in `docs/BUGS.md` — real bundles'
+  // functions are not dominated by thousands of independent top-level fold
+  // sites the way this adversarial synthetic root is, so the wall-clock win
+  // on a real bundle is much larger than this synthetic ratio suggests; see
+  // the NSW re-measurement in `docs/BUGS.md`). Budget has ~3x headroom over
+  // the ~2 s measured, for a slower CI runner.
   const module = fakeModule(["global"]);
   const body = foldCandidateRootBody(5000);
   const ctx = baseCtx(module);
@@ -181,7 +191,7 @@ test("expr-rebuild on a module-root-shaped list of 5,000 fold candidates finishe
     assert.equal(r.applied.length, 5000, "every independent fold site applies");
     assert.equal(JSON.stringify(r.body).includes('"k":"assign"'), false, "no folded store survives");
   });
-  const budget = 15_000 * timeScale();
+  const budget = 6_000 * timeScale();
   assert.ok(on < budget, `expr-rebuild on 5,000 fold candidates took ${on.toFixed(0)} CPU ms (budget ${budget} ms)`);
 });
 
@@ -221,4 +231,23 @@ test("P-1: on rn-template, decompiling with every pass on costs at most 12x pass
   assert.ok(ratio <= 12, `passes-on/passes-off CPU ratio ${ratio.toFixed(1)} (on ${on.toFixed(0)} ms, off ${off.toFixed(0)} ms) exceeds 12x`);
   const absolute = 30_000 * timeScale();
   assert.ok(on < absolute, `passes-on decompile took ${on.toFixed(0)} CPU ms (budget ${absolute} ms)`);
+});
+
+// `tests/fixtures/bundles/**` (not `tests/fixtures/constructs/**`, so this is
+// not the shared-fixture whole-output golden `docs/CONSOLIDATION.md` §B
+// item 7 rules out — this is one bundle's own perf regression guard, the
+// same file already decompiles it above for the ratio test) — a hash pins
+// the passes-on rn-template output byte-for-byte so a future change to the
+// `check.ts`/`expressionOnlyCheck` bounded-region math (superlinear-pass
+// row part 2) cannot silently change semantics while still passing the
+// speed budgets above. Verified by hand for this change (`docs/BUGS.md`):
+// stashing the `registerUseDelta` rewrite and re-hashing this same bundle,
+// plus three `tests/fixtures/constructs/**` fixtures (01-if-else-chain,
+// 04-for-loop-basic, 23-generator-basic, all v94, passes on) gave the exact
+// same hash before and after.
+test("P-1/part-2: rn-template passes-on output hash is unchanged by the check.ts register-delta rewrite", () => {
+  const bytes = new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc")));
+  const text = decompileTree(bytes, { passes: {}, analysis: { strictEnv: false }, verify: false, resolveV98Ambiguity: true });
+  const hash = createHash("sha256").update(text).digest("hex");
+  assert.equal(hash, "fa54d8f22ba3ccf07ab00dc07d3374a1443d45ae52d7f3027e321ce5b758d7d8");
 });
