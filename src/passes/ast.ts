@@ -673,10 +673,20 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
         jsxParts(e).forEach((x) => visitExpr(x, inNested));
         return;
       case "func":
-        // Separate register frame (see `IdentUses.nested`'s doc): a register
-        // name can never be the same binding in there, so skip it entirely
-        // rather than let a coincidentally-same-numbered local count as a
-        // "nested" use of this frame's `name`.
+        // `sameFrame` (see `Expr`'s `func` doc, `src/emit/ast.ts`): the
+        // generator/async resume closure is not a second Hermes function —
+        // it is this frame's own state machine, sharing its registers — so
+        // it is transparent to `countUses`: visited with `inNested`
+        // unchanged, register names included, exactly like any other
+        // statement in this same list.
+        if (e.sameFrame === true) {
+          visitStmts(e.body, inNested);
+          return;
+        }
+        // Otherwise a separate register frame (see `IdentUses.nested`'s
+        // doc): a register name can never be the same binding in there, so
+        // skip it entirely rather than let a coincidentally-same-numbered
+        // local count as a "nested" use of this frame's `name`.
         if (followNested) visitStmts(e.body, true);
         return;
       default:

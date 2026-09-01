@@ -62,7 +62,30 @@ export type Expr =
       readonly selfClosing: boolean;
       readonly factory: JsxFactory;
     }
-  | { readonly k: "func"; readonly name: string | null; readonly params: readonly string[]; readonly body: readonly Stmt[] };
+  | {
+      readonly k: "func";
+      readonly name: string | null;
+      readonly params: readonly string[];
+      readonly body: readonly Stmt[];
+      /** `true` only for the generator/async resume-dispatcher closure
+       *  `emit/function.ts` returns from an `isOpcodeGeneratorBody` function
+       *  (docs/BUGS.md, the `r3`/`r15` `E_UNBOUND_IDENT` family). Every other
+       *  `k:"func"` node is a genuine Hermes `CreateClosure`, so it owns a
+       *  separate, independently-numbered register file (Hermes restarts
+       *  `r0` per function) — the invariant `src/passes/ast.ts`'s
+       *  `IdentUses.nested` relies on to never follow a register name across
+       *  a `func` boundary. This one closure is the sole exception: it is
+       *  not a second Hermes function, it is the *same* frame's state
+       *  machine re-entered on every resume, so it reads and writes the
+       *  enclosing function's own registers directly (no env-slot capture).
+       *  `countUses` (`src/passes/ast.ts`) must treat it as transparent —
+       *  not a frame boundary — for every name, registers included, or a
+       *  register whose only uses are inside this closure reads as dead and
+       *  a framework step (`pruneRegisterDecls`) drops its declaration out
+       *  from under a live read.
+       */
+      readonly sameFrame?: true;
+    };
 
 /** `name={value}` (a string `lit` value prints bare, `name="text"`, when it
  *  is JSX-safe), or `{...spread}`. `value: null` is the bare `name` (`true`)
