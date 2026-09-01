@@ -62,6 +62,7 @@ async function resolveNode22() {
   const fnmDir = path.join(HOME, ".local", "share", "fnm");
   const env = { ...process.env, PATH: `${fnmDir}:${process.env.PATH}` };
   try {
+    if (/^v2[2-9]\./.test(process.version)) { NODE22_BIN_DIR = path.dirname(process.execPath); return; }
     const { stdout } = await sh("fnm", ["exec", "--using", "22", "--", "node", "-e", "console.log(process.execPath)"], { env });
     NODE22_BIN_DIR = path.dirname(stdout.trim());
   } catch {
@@ -153,7 +154,11 @@ async function runJob(m) {
         await new Promise((resolve, reject) => {
           const env = { ...process.env, ...(m.env || {}) };
           if (NODE22_BIN_DIR) env.PATH = `${NODE22_BIN_DIR}:${env.PATH}`;
-          const p = spawn("npm", ["ci"], { cwd: jobDir, env });
+          // Absolute npm from the node-22 dir: `bash -l` profiles and a PATH-only
+          // prepend both lost to fnm's default (node 18 / npm 9 → incomplete
+          // node_modules, e.g. no undici-types → `Response.ok` typecheck errors).
+          const npmBin = NODE22_BIN_DIR ? path.join(NODE22_BIN_DIR, "npm") : "npm";
+          const p = spawn(npmBin, ["ci"], { cwd: jobDir, env });
           p.stdout.pipe(log, { end: false });
           p.stderr.pipe(log, { end: false });
           p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`npm ci exit ${code}`))));
@@ -172,7 +177,10 @@ async function runJob(m) {
     exitCode = await new Promise((resolve) => {
       const env = { ...process.env, ...(m.env || {}) };
       if (NODE22_BIN_DIR) env.PATH = `${NODE22_BIN_DIR}:${env.PATH}`;
-      const child = spawn("bash", ["-lc", m.cmd], { cwd: jobDir, env, detached: true });
+      // Re-export PATH *inside* the login shell so ~/.profile / fnm hooks cannot
+      // put node 18 back in front of node 22.
+      const wrapped = NODE22_BIN_DIR ? `export PATH="${NODE22_BIN_DIR}:$PATH"; ${m.cmd}` : m.cmd;
+      const child = spawn("bash", ["-lc", wrapped], { cwd: jobDir, env, detached: true });
       const timer = setTimeout(() => {
         log.write(`\n[deb-ci] TIMEOUT after ${m.timeoutMin}min, killing\n`);
         try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
