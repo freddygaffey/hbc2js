@@ -1,4 +1,4 @@
-# 2026-09-02 — for-header/loop-cond checker hole fixes — Sonnet, lean
-Tokens 97k · tool calls 39 · green first try.
+# 2026-09-02 — for-header/loop-cond checker hole fixes — Sonnet, lean (+overseer follow-up)
+Tokens 97k · tool calls 39 · green (after overseer reworded 2 messages that false-tripped imports.test's regex).
 
-for-header/check.ts now re-runs match() and compares re-derived init/step {cfgBlock, from} against after.form; loop-cond/check.ts compares re-derived kind/negate. Rejects: wrong step block, flipped while/do-while, flipped polarity (3 un-todo'd). All fixtures still accepted. Both BUGS rows → Resolved. Campaign total: 3 checker holes found by mutation testing, all 3 now fixed.
+for-header/check.ts and loop-cond/check.ts re-run match() and compare re-derived step/kind/negate against after.form; reject wrong step block, flipped while/do-while, flipped polarity. All fixtures accepted. 3 mutation-found checker holes now all fixed. Fragile imports.test regex filed as a BUGS row.
