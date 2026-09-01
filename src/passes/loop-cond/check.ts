@@ -7,6 +7,7 @@ import type { Stmt } from "../../structure/ir.ts";
 import type { CheckResult, PassContext } from "../types.ts";
 import { blocksOf, instructionsOf } from "../tree.ts";
 import { postOrder } from "../driver.ts";
+import { match } from "./match.ts";
 
 export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult {
   const a = blocksOf(before);
@@ -23,6 +24,21 @@ export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult 
     const where = loop.form!.at === "head" ? body[1] : body[body.length - 1];
     if (where !== guard) return { ok: false, reason: `annotated test is not at the loop ${loop.form!.at}` };
     if (loop.form!.at === "head" && insns.length !== 1) return { ok: false, reason: "head test block has straight-line instructions" };
+  }
+  // Re-derive the shape (head -> while, tail(-labeled) -> do-while, `match.ts`'s
+  // deterministic mapping) and the test's polarity the matcher would find for
+  // `before` itself (recompute; never trust the writer's own annotation, same
+  // discipline as expr-rebuild/check.ts and for-header/check.ts). `match` is a
+  // pure function of `(before, ctx)` and `check` always runs with the same
+  // `ctx` `match` did, so for any genuine site this reproduces the original
+  // `LoopSite` exactly. A flipped `form.kind` or `form.negate` diverges from
+  // it here — fields `check` never inspected before (docs/BUGS.md
+  // checker-mutation-stagea row).
+  if (ctx.structured !== undefined) {
+    const m = match(before, ctx);
+    if (m === null) return { ok: false, reason: "loop-cond rewrite has no matching site to re-derive kind/negate from" };
+    if (m.data.kind !== loop.form!.kind) return { ok: false, reason: "loop-cond changed the while/do-while kind" };
+    if (m.data.negate !== loop.form!.negate) return { ok: false, reason: "loop-cond changed the test polarity" };
   }
   return { ok: true };
 }

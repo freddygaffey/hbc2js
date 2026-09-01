@@ -77,13 +77,12 @@ test("for-header/check rejects a rewrite with the init and step blocks swapped",
   assert.equal(r.fn.root, fn2.root, "a refused site leaves the tree untouched");
 });
 
-test.todo("HOLE (docs/BUGS.md, 2026-09-01 checker-mutation-stagea row): for-header/check never validates the step block", () => {
+test("for-header/check rejects a rewrite whose step points at a block/offset the matcher never derived", () => {
   // A writer bug that folds in the wrong step block (or the right block but
   // the wrong instruction offset) leaves `form.init` correct and only
-  // corrupts `form.step` — `check` only ever inspects `form.init.cfgBlock`
-  // (in the do-while->while promotion branch) and never looks at `form.step`
-  // at all, in either branch. Pinned (wrong) verdict, reproduced by hand:
-  // `forHeaderCheck(before, { ...real, form: { ...real.form, step: { cfgBlock: 99, from: 0 } } }, ctx)` -> `{ ok: true }`.
+  // corrupts `form.step`. Fixed by docs/BUGS.md's checker-mutation-stagea
+  // row: `check` now re-derives the site from `before` via the real `match`
+  // and compares `form.step` (and `form.init`) against it.
   const cfg = countingLoop();
   const fn = structure(cfg);
   const afterLoopCond = applyPasses(fn, [loopCond as Pass<Stmt>], base(cfg));
@@ -95,8 +94,7 @@ test.todo("HOLE (docs/BUGS.md, 2026-09-01 checker-mutation-stagea row): for-head
   };
   const wrapped: Pass<Stmt> = { ...(forHeader as Pass<Stmt>), rewrite: wrongStep };
   const r = applyPasses(fn2, [wrapped], base(cfg));
-  // Intended (currently failing) assertion — the hole:
-  assert.equal(r.applied.length, 0, "the real check should refuse a step pointing at a nonexistent block, but currently accepts it");
+  assert.equal(r.applied.length, 0, "the real check must refuse a step pointing at a nonexistent block");
 });
 
 // ---------------------------------------------------------------------------
@@ -133,12 +131,11 @@ test("loop-cond/check rejects a rewrite whose test position (`at`) doesn't match
   assert.equal(verdict.ok, false);
 });
 
-test.todo("HOLE (docs/BUGS.md, 2026-09-01 checker-mutation-stagea row): loop-cond/check never validates form.kind (while vs do-while)", () => {
+test("loop-cond/check rejects a rewrite that flips form.kind (while vs do-while)", () => {
   // `match.ts` documents the shape<->kind mapping as deterministic
-  // (head -> while, tail(-labeled) -> do-while) but `check` never re-derives
-  // or compares `form.kind` at all. Pinned (wrong) verdict, reproduced by
-  // hand on countingLoop's real tail-form rewrite (`kind:"do-while"`):
-  // flipping to `kind:"while"` (same cond/at/negate) -> `{ ok: true }`.
+  // (head -> while, tail(-labeled) -> do-while). Fixed by docs/BUGS.md's
+  // checker-mutation-stagea row: `check` now re-derives the site from
+  // `before` via the real `match` and compares `form.kind` against it.
   const cfg = countingLoop();
   const fn = structure(cfg);
   const before = findLoop(fn.root);
@@ -149,11 +146,13 @@ test.todo("HOLE (docs/BUGS.md, 2026-09-01 checker-mutation-stagea row): loop-con
   const patchForm = (root: Stmt, patch: object): Stmt =>
     (root.k === "loop" ? { ...root, form: { ...(root as Stmt & { k: "loop" }).form, ...patch } } : root.k === "seq" ? { ...root, body: root.body.map((s) => patchForm(s, patch)) } : root) as unknown as Stmt;
   const flippedKind = patchForm(real, { kind: "while" });
-  // Intended (currently failing) assertion — the hole:
-  assert.equal(loopCond.check(before, flippedKind, ctx).ok, false, "the real check should refuse a while/do-while kind flip, but currently accepts it");
+  assert.equal(loopCond.check(before, flippedKind, ctx).ok, false, "the real check must refuse a while/do-while kind flip");
 });
 
-test.todo("HOLE (docs/BUGS.md, 2026-09-01 checker-mutation-stagea row): loop-cond/check never validates form.negate", () => {
+test("loop-cond/check rejects a rewrite that flips form.negate", () => {
+  // Fixed by docs/BUGS.md's checker-mutation-stagea row: `check` now
+  // re-derives the site from `before` via the real `match` and compares
+  // `form.negate` against it.
   const cfg = countingLoop();
   const fn = structure(cfg);
   const before = findLoop(fn.root);
@@ -165,8 +164,7 @@ test.todo("HOLE (docs/BUGS.md, 2026-09-01 checker-mutation-stagea row): loop-con
   const patchForm = (root: Stmt, patch: object): Stmt =>
     (root.k === "loop" ? { ...root, form: { ...(root as Stmt & { k: "loop" }).form, ...patch } } : root.k === "seq" ? { ...root, body: root.body.map((s) => patchForm(s, patch)) } : root) as unknown as Stmt;
   const flippedNegate = patchForm(real, { negate: !loopNode.form!.negate });
-  // Intended (currently failing) assertion — the hole:
-  assert.equal(loopCond.check(before, flippedNegate, ctx).ok, false, "the real check should refuse a negate-polarity flip, but currently accepts it");
+  assert.equal(loopCond.check(before, flippedNegate, ctx).ok, false, "the real check must refuse a negate-polarity flip");
 });
 
 // ---------------------------------------------------------------------------
