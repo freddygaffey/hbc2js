@@ -3,7 +3,6 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-6. **Fix cluster: deps (2 rows)** — `readLiterals` version at v≥97; nearest-release-by-date.
 6. **Fix: generator `.obf` E_UNBOUND_IDENT** (23/26 at v94.obf with passes on).
 7. **Fix: Service NSW whole-file abort** — scope-check isolation per function.
 8. **Fix: Service NSW 452 s** — profile the 43k-function superlinear term.
