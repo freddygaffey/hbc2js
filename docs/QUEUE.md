@@ -3,7 +3,6 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-1. **Fix: for-header + loop-cond checker holes (correctness, HIGH)** — `src/passes/for-header/check.ts` never validates `form.step` (block or offset); `src/passes/loop-cond/check.ts` never validates `form.kind` (while/do-while) or `form.negate`. Add the missing checks (recompute-and-diff or explicit field comparison, like the expr-rebuild fix); un-`todo` the 3 pinned cases in `tests/gate/passes/checker-mutation-stagea.test.ts`. A wrong loop rewrite currently passes.
 - **Perf part 3 — `passes/ast.ts` `expressionOnlyCheck` → `defUse(after)`** full-list walk per site (order check needs a global position; needs incremental state, soundness-sensitive). NSW whole-file 563 s / split 512 s on deb today; target < 120 s.
 13. **Guards (27, 28).**
 

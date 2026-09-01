@@ -32,7 +32,7 @@ export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult 
   // missing `form.step` (or `form.init`) diverges from it here — the field
   // `check` never inspected before (docs/BUGS.md checker-mutation-stagea row).
   const m = match(before, ctx);
-  if (m === null) return { ok: false, reason: "for-header rewrite has no matching site to re-derive init/step from" };
+  if (m === null) return { ok: false, reason: "for-header rewrite has no matching site to re-derive init and step from the site" };
   if (m.data.init.cfgBlock !== after.form.init.cfgBlock || m.data.init.from !== after.form.init.from) return { ok: false, reason: "for-header attached the wrong init block" };
   if (m.data.step.cfgBlock !== after.form.step.cfgBlock || m.data.step.from !== after.form.step.from) return { ok: false, reason: "for-header attached the wrong step block" };
   return { ok: true };

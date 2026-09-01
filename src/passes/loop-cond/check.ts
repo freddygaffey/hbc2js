@@ -36,7 +36,7 @@ export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult 
   // checker-mutation-stagea row).
   if (ctx.structured !== undefined) {
     const m = match(before, ctx);
-    if (m === null) return { ok: false, reason: "loop-cond rewrite has no matching site to re-derive kind/negate from" };
+    if (m === null) return { ok: false, reason: "loop-cond rewrite has no matching site to re-derive kind and negate from the site" };
     if (m.data.kind !== loop.form!.kind) return { ok: false, reason: "loop-cond changed the while/do-while kind" };
     if (m.data.negate !== loop.form!.negate) return { ok: false, reason: "loop-cond changed the test polarity" };
   }
