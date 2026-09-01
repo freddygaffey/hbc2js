@@ -3,7 +3,6 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-1. **Fix: expr-rebuild checker value hole (correctness, HIGH)** — `src/passes/expr-rebuild/check.ts` accepts a rewrite that folds in a WRONG constant/expression (checks classification + read/write-count delta only, never compares the substituted value). Make the checker re-derive the folded expression and compare it structurally to what `after` put at the read site. Un-`todo` the pinned case in `tests/gate/passes/checker-mutation.test.ts`. This is the most-used pass; a writer bug here would silently corrupt output.
 2. **Finish checker mutation (stage-A, CONSOLIDATION 4 tail)** — mutation-test the 5 CFG checkers (for-header, loop-cond, if-chain, label-clean, switch-raise) with block-bearing fixtures; empirically mutate template-literal + jsx-recover. Any hole → BUGS row + test.todo.
 - **Perf part 3 — `passes/ast.ts` `expressionOnlyCheck` → `defUse(after)`** full-list walk per site (order check needs a global position; needs incremental state, soundness-sensitive). NSW whole-file 563 s / split 512 s on deb today; target < 120 s.
 13. **Guards (27, 28).**
