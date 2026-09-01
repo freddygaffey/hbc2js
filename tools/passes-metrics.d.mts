@@ -199,3 +199,14 @@ export interface TemplateLiteralBundleResult {
 }
 
 export function measureTemplateLiteralBundle(bundlePath: string): TemplateLiteralBundleResult;
+
+/** docs/specs/passes/08-jsx-recovery.md §8: element-creation sites turned to JSX per bundle. */
+export interface JsxRecoverBundleResult {
+  readonly functionCount: number;
+  readonly sites: number;
+  readonly recovered: number;
+  readonly residual: number;
+  readonly recoveredPct: number;
+  readonly refusals: Readonly<Record<string, number>>;
+}
+export function measureJsxRecoverBundle(bundlePath: string): JsxRecoverBundleResult;

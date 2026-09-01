@@ -1,0 +1,346 @@
+; hbc2js disassembly of 59-jsx-runtime-calls/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=7 strings=52 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=6 flags=exc,dbg  @0x000002fc size=326
+  .try T1..T2 -> L2 ; handler 0
+  .try T3..T4 -> L5 ; handler 1
+  0000  DeclareGlobalVar     s40 "render"
+  0005  DeclareGlobalVar     s50 "screen"
+  000a  DeclareGlobalVar     s37 "classic"
+  000f  CreateEnvironment    r2
+  0011  LoadConstUndefined   r4
+  0013  GetGlobalObject      r3
+  0015  LoadConstEmpty       r0
+  0017  StoreToEnvironment   r2, 0, r0
+  001b  StoreToEnvironment   r2, 1, r0
+  001f  StoreToEnvironment   r2, 2, r0
+  0023  StoreToEnvironment   r2, 3, r0
+  0027  StoreToEnvironment   r2, 4, r0
+  002b  StoreToEnvironment   r2, 5, r0
+  002f  CreateClosure        r0, r2, f1 "render"
+  0034  PutById              r3, r0, #c1, s40 "render"
+  003a  CreateClosure        r0, r2, f3 "screen"
+  003f  PutById              r3, r0, #c2, s50 "screen"
+  0045  CreateClosure        r0, r2, f5 "classic"
+  004a  PutById              r3, r0, #c3, s37 "classic"
+  0050  LoadConstUndefined   r0
+  0052  NewObject            r1
+  0054  GetByIdShort         r5, r3, #c1, s40 "render"
+  0059  PutNewOwnByIdShort   r1, r5, s27 "jsx"
+  005d  GetByIdShort         r5, r3, #c1, s40 "render"
+  0062  PutNewOwnByIdShort   r1, r5, s28 "jsxs"
+  0066  StoreToEnvironment   r2, 0, r1
+  006a  NewObject            r1
+  006c  CreateClosure        r5, r2, f6 "createElement"
+  0071  PutNewOwnByIdShort   r1, r5, s42 "createElement"
+  0075  NewObject            r5
+  0077  LoadConstString      r6, s34 "Fragment"
+  007b  PutNewOwnByIdShort   r5, r6, s43 "displayName"
+  007f  PutNewOwnByIdShort   r1, r5, s34 "Fragment"
+  0083  StoreToEnvironment   r2, 1, r1
+  0087  NewObject            r1
+  0089  LoadConstString      r5, s10 "Text"
+  008d  PutNewOwnByIdShort   r1, r5, s43 "displayName"
+  0091  StoreToEnvironment   r2, 2, r1
+  0095  NewObject            r1
+  0097  LoadConstString      r5, s12 "View"
+  009b  PutNewOwnByIdShort   r1, r5, s43 "displayName"
+  009f  StoreToEnvironment   r2, 3, r1
+  00a3  NewObject            r1
+  00a5  LoadConstString      r5, s9 "Row"
+  00a9  PutNewOwnByIdShort   r1, r5, s43 "displayName"
+  00ad  StoreToEnvironment   r2, 4, r1
+  00b1  NewObject            r1
+  00b3  NewObject            r5
+  00b5  LoadConstString      r6, s8 "Ns.Comp"
+  00b9  PutNewOwnByIdShort   r5, r6, s43 "displayName"
+  00bd  PutNewOwnByIdShort   r1, r5, s25 "Comp"
+  00c1  StoreToEnvironment   r2, 5, r1
+  00c5  GetByIdShort         r6, r3, #c2, s50 "screen"
+  00ca  LoadConstString      r5, s18 "d"
+  00ce  LoadConstString      r2, s13 "s"
+  00d2  NewArrayWithBuffer   r1, 2, 2, lit@0x0000
+  00da  Call4                r5, r6, r4, r5, r2, r1
+  00e1  Mov                  r1, r5
+  00e4  IteratorBegin        r2, r1
+L1:
+  00e7  IteratorNext         r5, r2, r1
+  00eb  Mov                  r6, r2
+  00ee  JStrictEqual         L3, r6, r4
+  00f2  TryGetById           r6, r3, #c3, s26 "print"
+  00f8  ThrowIfEmpty         r5, r5
+  00fb  Call2                r0, r6, r4, r5
+  0100  Jmp                  L1
+L2:
+  0102  Catch                r1
+  0104  IteratorClose        r2, 1
+  0107  Throw                r1
+L3:
+  0109  GetByIdShort         r5, r3, #c4, s37 "classic"
+  010e  LoadConstString      r2, s20 "i"
+  0112  LoadConstString      r1, s17 "c"
+  0116  Call3                r5, r5, r4, r2, r1
+  011c  Mov                  r1, r5
+  011f  IteratorBegin        r2, r1
+L4:
+  0122  IteratorNext         r5, r2, r1
+  0126  Mov                  r6, r2
+  0129  JStrictEqual         L6, r6, r4
+  012d  TryGetById           r6, r3, #c3, s26 "print"
+  0133  ThrowIfEmpty         r5, r5
+  0136  Call2                r0, r6, r4, r5
+  013b  Jmp                  L4
+L5:
+  013d  Catch                r1
+  013f  IteratorClose        r2, 1
+  0142  Throw                r1
+L6:
+  0144  Ret                  r0
+
+function #1 "render"  params=4 frame=17 env=0 flags=dbg  @0x00000442 size=242
+  0000  LoadParam            r0, 1
+  0003  LoadParam            r3, 2
+  0006  LoadParam            r6, 3
+  0009  LoadConstString      r1, s0 ""
+  000d  TypeOf               r5, r0
+  0010  LoadConstString      r4, s14 "string"
+  0014  Mov                  r2, r0
+  0017  JStrictEqual         L1, r5, r4
+  001b  GetByIdShort         r2, r0, #c1, s43 "displayName"
+L1:
+  0020  GetGlobalObject      r0
+  0022  TryGetById           r7, r0, #c2, s29 "Object"
+  0028  GetByIdShort         r5, r7, #c3, s49 "keys"
+  002d  Mov                  r4, r3
+  0030  JmpTrue              L2, r3
+  0033  NewObject            r4
+L2:
+  0035  Call2                r7, r5, r7, r4
+  003a  GetByIdShort         r5, r7, #c4, s44 "filter"
+  003f  CreateEnvironment    r4
+  0041  CreateClosure        r4, r4, f2 ""
+  0046  Call2                r7, r5, r7, r4
+  004b  Mov                  r4, r3
+  004e  JmpFalse             L3, r4
+  0051  GetByIdShort         r4, r3, #c5, s39 "children"
+L3:
+  0056  TryGetById           r8, r0, #c6, s33 "Array"
+  005c  GetByIdShort         r5, r8, #c7, s32 "isArray"
+  0061  ThrowIfEmpty         r3, r4
+  0064  Call2                r3, r5, r8, r3
+  0069  JmpTrue              L5, r3
+  006c  LoadConstUndefined   r5
+  006e  Mov                  r3, r1
+  0071  JStrictEqual         L4, r4, r5
+  0075  TryGetById           r0, r0, #c8, s35 "String"
+  007b  Call2                r3, r0, r5, r4
+L4:
+  0080  Jmp                  L6
+L5:
+  0082  GetByIdShort         r0, r4, #c9, s48 "join"
+  0087  Call2                r3, r0, r4, r1
+L6:
+  008c  ThrowIfEmpty         r4, r2
+  008f  LoadConstString      r0, s5 "<"
+  0093  Add                  r4, r0, r4
+  0097  LoadConstUndefined   r5
+  0099  Mov                  r0, r1
+  009c  JStrictEqual         L7, r6, r5
+  00a0  LoadConstString      r5, s2 " key="
+  00a4  Add                  r0, r5, r6
+L7:
+  00a8  ThrowIfEmpty         r5, r7
+  00ab  GetByIdShort         r5, r5, #c10, s31 "length"
+  00b0  JmpFalse             L8, r5
+  00b3  GetByIdShort         r6, r7, #c9, s48 "join"
+  00b8  LoadConstString      r5, s4 ","
+  00bc  Call2                r6, r6, r7, r5
+  00c1  LoadConstString      r5, s1 " "
+  00c5  Add                  r1, r5, r6
+L8:
+  00c9  ThrowIfEmpty         r3, r3
+  00cc  Add                  r0, r4, r0
+  00d0  Add                  r0, r0, r1
+  00d4  LoadConstString      r1, s7 ">"
+  00d8  Add                  r0, r0, r1
+  00dc  Add                  r3, r0, r3
+  00e0  LoadConstString      r0, s6 "</"
+  00e4  Add                  r0, r3, r0
+  00e8  Add                  r0, r0, r2
+  00ec  Add                  r0, r0, r1
+  00f0  Ret                  r0
+
+function #2 ""  params=2 frame=2 env=0 flags=nc  @0x00000534 size=13
+  0000  LoadParam            r1, 1
+  0003  LoadConstString      r0, s39 "children"
+  0007  StrictNeq            r0, r1, r0
+  000b  Ret                  r0
+
+function #3 "screen"  params=4 frame=26 env=1 flags=dbg  @0x00000541 size=347
+  0000  CreateEnvironment    r12
+  0002  LoadParam            r1, 1
+  0005  LoadParam            r5, 2
+  0008  LoadParam            r14, 3
+  000b  GetEnvironment       r0, 0
+  000e  LoadFromEnvironment  r2, r0, 0
+  0012  ThrowIfEmpty         r2, r2
+  0015  GetByIdShort         r10, r2, #c1, s27 "jsx"
+  001a  StoreToEnvironment   r12, 0, r10
+  001e  LoadFromEnvironment  r2, r0, 0
+  0022  GetByIdShort         r11, r2, #c2, s28 "jsxs"
+  0027  ThrowIfEmpty         r4, r10
+  002a  LoadFromEnvironment  r2, r0, 2
+  002e  ThrowIfEmpty         r3, r2
+  0031  NewObject            r2
+  0033  PutNewOwnByIdShort   r2, r5, s30 "style"
+  0037  LoadConstString      r6, s21 "hello"
+  003b  PutNewOwnByIdShort   r2, r6, s39 "children"
+  003f  LoadConstUndefined   r9
+  0041  Call3                r8, r4, r9, r3, r2
+  0047  LoadFromEnvironment  r3, r0, 2
+  004b  NewObject            r2
+  004d  PutNewOwnByIdShort   r2, r5, s30 "style"
+  0051  PutNewOwnByIdShort   r2, r1, s39 "children"
+  0055  Call3                r7, r10, r9, r3, r2
+  005b  ThrowIfEmpty         r4, r11
+  005e  LoadFromEnvironment  r2, r0, 3
+  0062  ThrowIfEmpty         r3, r2
+  0065  NewObject            r2
+  0067  PutNewOwnByIdShort   r2, r5, s30 "style"
+  006b  ThrowIfEmpty         r6, r8
+  006e  NewArray             r5, 2
+  0072  PutOwnByIndex        r5, r6, 0
+  0076  ThrowIfEmpty         r6, r7
+  0079  PutOwnByIndex        r5, r6, 1
+  007d  PutNewOwnByIdShort   r2, r5, s39 "children"
+  0081  Call3                r6, r4, r9, r3, r2
+  0087  LoadFromEnvironment  r4, r0, 2
+  008b  NewObject            r3
+  008d  PutNewOwnByIdShort   r3, r1, s39 "children"
+  0091  LoadConstString      r2, s22 "k1"
+  0095  Call4                r5, r10, r9, r4, r3, r2
+  009c  LoadFromEnvironment  r3, r0, 3
+  00a0  NewObject            r2
+  00a2  LoadFromEnvironment  r13, r0, 2
+  00a6  NewObject            r4
+  00a8  LoadConstString      r15, s16 "a"
+  00ac  PutNewOwnByIdShort   r4, r15, s39 "children"
+  00b0  Call3                r13, r10, r9, r13, r4
+  00b6  NewArray             r4, 2
+  00ba  PutOwnByIndex        r4, r13, 0
+  00be  LoadFromEnvironment  r13, r0, 5
+  00c2  ThrowIfEmpty         r13, r13
+  00c5  GetByIdShort         r15, r13, #c3, s25 "Comp"
+  00ca  NewObject            r13
+  00cc  Call3                r13, r10, r9, r15, r13
+  00d2  PutOwnByIndex        r4, r13, 1
+  00d6  PutNewOwnByIdShort   r2, r4, s39 "children"
+  00da  Call3                r4, r11, r9, r3, r2
+  00e0  LoadFromEnvironment  r3, r0, 3
+  00e4  NewObject            r2
+  00e6  GetByIdShort         r13, r14, #c4, s46 "map"
+  00eb  CreateClosure        r12, r12, f4 ""
+  00f0  Call2                r12, r13, r14, r12
+  00f5  PutNewOwnByIdShort   r2, r12, s39 "children"
+  00f9  Call3                r3, r11, r9, r3, r2
+  00ff  NewObject            r2
+  0101  LoadConstString      r11, s11 "x"
+  0105  PutNewOwnByIdShort   r2, r11, s41 "className"
+  0109  PutNewOwnByIdShort   r2, r1, s39 "children"
+  010d  LoadConstString      r1, s19 "div"
+  0111  Call3                r2, r10, r9, r1, r2
+  0117  LoadFromEnvironment  r1, r0, 3
+  011b  NewObject            r0
+  011d  Call3                r1, r10, r9, r1, r0
+  0123  NewArray             r0, 8
+  0127  PutOwnByIndex        r0, r8, 0
+  012b  PutOwnByIndex        r0, r7, 1
+  012f  ThrowIfEmpty         r6, r6
+  0132  PutOwnByIndex        r0, r6, 2
+  0136  ThrowIfEmpty         r5, r5
+  0139  PutOwnByIndex        r0, r5, 3
+  013d  ThrowIfEmpty         r4, r4
+  0140  PutOwnByIndex        r0, r4, 4
+  0144  ThrowIfEmpty         r3, r3
+  0147  PutOwnByIndex        r0, r3, 5
+  014b  ThrowIfEmpty         r2, r2
+  014e  PutOwnByIndex        r0, r2, 6
+  0152  ThrowIfEmpty         r1, r1
+  0155  PutOwnByIndex        r0, r1, 7
+  0159  Ret                  r0
+
+function #4 ""  params=2 frame=15 env=0 flags=dbg  @0x0000069c size=40
+  0000  LoadParam            r4, 1
+  0003  GetEnvironment       r0, 0
+  0006  LoadFromEnvironment  r0, r0, 0
+  000a  ThrowIfEmpty         r3, r0
+  000d  GetEnvironment       r0, 1
+  0010  LoadFromEnvironment  r0, r0, 2
+  0014  ThrowIfEmpty         r2, r0
+  0017  NewObject            r1
+  0019  PutNewOwnByIdShort   r1, r4, s39 "children"
+  001d  LoadConstUndefined   r0
+  001f  Call4                r0, r3, r0, r2, r1, r4
+  0026  Ret                  r0
+
+function #5 "classic"  params=3 frame=20 env=0 flags=dbg  @0x000006c4 size=134
+  0000  LoadParam            r6, 1
+  0003  LoadParam            r8, 2
+  0006  GetEnvironment       r0, 0
+  0009  LoadFromEnvironment  r1, r0, 1
+  000d  ThrowIfEmpty         r4, r1
+  0010  GetByIdShort         r3, r4, #c1, s42 "createElement"
+  0015  LoadFromEnvironment  r1, r0, 4
+  0019  ThrowIfEmpty         r2, r1
+  001c  NewObject            r1
+  001e  PutNewOwnByIdShort   r1, r6, s45 "item"
+  0022  Call4                r3, r3, r4, r2, r1, r8
+  0029  LoadFromEnvironment  r7, r0, 1
+  002d  GetByIdShort         r5, r7, #c1, s42 "createElement"
+  0032  LoadFromEnvironment  r1, r0, 1
+  0036  GetByIdShort         r12, r1, #c2, s34 "Fragment"
+  003b  ThrowIfEmpty         r10, r3
+  003e  LoadConstNull        r11
+  0040  Mov                  r13, r7
+  0043  Mov                  r9, r8
+  0046  Call                 r2, r5, 5
+  004a  LoadFromEnvironment  r5, r0, 1
+  004e  GetByIdShort         r4, r5, #c1, s42 "createElement"
+  0053  LoadFromEnvironment  r0, r0, 3
+  0057  ThrowIfEmpty         r1, r0
+  005a  NewObject            r0
+  005c  LoadConstString      r7, s23 "z"
+  0060  PutNewOwnByIdShort   r0, r7, s24 "key"
+  0064  PutNewOwnByIdShort   r0, r6, s30 "style"
+  0068  Call3                r1, r4, r5, r1, r0
+  006e  NewArray             r0, 3
+  0072  PutOwnByIndex        r0, r3, 0
+  0076  ThrowIfEmpty         r2, r2
+  0079  PutOwnByIndex        r0, r2, 1
+  007d  ThrowIfEmpty         r1, r1
+  0080  PutOwnByIndex        r0, r1, 2
+  0084  Ret                  r0
+
+function #6 "createElement"  params=3 frame=17 env=0 flags=dbg  @0x0000074a size=89
+  0000  LoadConstUndefined   r3
+  0002  LoadConstUndefined   r0
+  0004  GetGlobalObject      r1
+  0006  TryGetById           r2, r1, #c1, s33 "Array"
+  000c  GetByIdShort         r2, r2, #c2, s47 "prototype"
+  0011  GetByIdShort         r5, r2, #c3, s51 "slice"
+  0016  GetByIdShort         r4, r5, #c4, s38 "call"
+  001b  ReifyArguments       r0
+  001d  Mov                  r2, r0
+  0020  LoadConstUInt8       r0, 2
+  0023  Call3                r0, r4, r5, r2, r0
+  0029  GetByIdShort         r2, r1, #c5, s40 "render"
+  002e  TryGetById           r6, r1, #c6, s29 "Object"
+  0034  GetByIdShort         r5, r6, #c7, s36 "assign"
+  0039  NewObject            r4
+  003b  ThrowIfEmpty         r0, r0
+  003e  PutNewOwnByIdShort   r4, r0, s39 "children"
+  0042  NewObject            r1
+  0044  LoadParam            r0, 2
+  0047  Call4                r1, r5, r6, r1, r0, r4
+  004e  LoadParam            r0, 1
+  0051  Call3                r0, r2, r3, r0, r1
+  0057  Ret                  r0

@@ -177,3 +177,88 @@ factory call and its property name (`.jsx`/`.jsxs`/`.jsxDEV`/`.createElement`)
 survive identically at every bytecode version. No `Pass.versions?` predicate is
 needed. The only variation is `-dev` builds emitting `jsxDEV` with the extra
 `key,isStaticChildren,source,self` args — handled by A above.
+
+## 10. Implementation notes (2026-09-01, first merge — `src/passes/jsx-recover/`)
+
+What the rung actually sees differs from §2's source-level reading: by the
+time stage B reaches it the bytecode has **spilled every operand to a
+register**, and `expr-rebuild` cannot fold them back because a member read /
+`require()` call sits between each definition and the call (measured on
+rn-template `module_422`/`module_315` and fixture `59-jsx-runtime-calls`, all
+five versions):
+
+```js
+r7 = r6(r4[r9]).jsx;      // factory callee spilled (149 such spills vs 5 direct `.jsx(` calls in rn-template)
+r6 = _e997_2.Text;        // type spilled
+r4 = {};                  // config built by stores
+r4.style = r12;
+r4.children = r11;
+r6 = r7(r6, r4);          // the call
+```
+
+So §4's recognition is done **through the registers**, with the same
+"nearest preceding definition, no intervening write" resolution
+`template-literal` documents, and the rung is a multi-statement site:
+
+* **Callee**: a register whose nearest definition (in this list; in a
+  *dominating* sibling labeled block — the structurer's `L0: {…} L1: {…}`
+  shape puts `module_422`'s definitions in the block *before* the call's,
+  top-level and ahead of any `break`; or in an enclosing list, with no write
+  on any path in between) is `X.jsx`/`X.jsxs`/`X.jsxDEV`/`X.createElement`.
+  That definition is **kept** (identification only): `factory.callee` records
+  the register so `jsxToCall` reproduces `r7(…)` exactly, and the JSX hides it.
+* **Type**: a valid tag expression in place, or a register whose in-list
+  definition is one — **absorbed** (definition deleted, the tag printed). A
+  definition found only in a sibling/enclosing list is kept and shown through
+  the node's presentation-only `tagDisplay` (`<_e997_2.Text>` instead of
+  `<r6>`; the inverse still yields `r6`). A bare identifier is a tag when it
+  does **not** start with a lowercase letter (Babel's `isCompatTag`): env slots
+  `_e0_2` qualify, registers `rN` never do.
+* **Config / children**: an object literal in place, or a register defined
+  `rP = {…}` and filled by `rP.k = v` stores — absorbed into the attrs; `jsxs`
+  children likewise from `rA = new Array(n)` + in-order index stores (an array
+  literal in place also works; anything else is `jsxs-nonarray`). The
+  automatic runtime's key (3rd argument) prints as the first attribute.
+* **Guards** (all recomputed by `check`, §6): every value that moves to the
+  call is pure, or is the single impure one with only pure statements between
+  it and the call and the lowered order unchanged (`moved-impure`); nothing
+  that survives between a deleted definition and the call mentions its
+  register (`clobbered-span`) or writes a name a moved value reads
+  (`input-clobbered`); a moved value may read an absorbed register only from
+  before that register's deleted definition (`reads-absorbed`); each absorbed
+  register is dead after the call — redefined there, by the next plain store
+  with only simple statements between, or the list is the function body and
+  ends (`not-dead`); the list is not inside a `try` (`in-try`). The deleted
+  statements are register writes and fresh-object stores only, so the lowered
+  call evaluates the same observable effects in the same order.
+* **Checker** (§6) compares `jsxToCall(node)` with the call *with the absorbed
+  operands substituted* (`JsxSite.resolved`, built from the raw collected
+  props, not from the node), asserts `after` equals the fold recomputed from
+  `before`, and `parses` the lowered output. `Reflect.apply(rF, rO, [args])`
+  with a factory `rF` (`call-shape`'s residue when the member was spilled) is
+  counted as a site and refused `reflect-apply-callee`.
+* **Framework** (§7.1): `jsx` Expr node + `jsxToCall` in `src/emit/ast.ts`;
+  printer `PrintOptions.jsx` (default lowers to the call, so `parses`,
+  `node --check` and every effect walker see runnable JS); `Pass.optIn` +
+  `EnabledPassOptions.optIn` (registered last, absent by default); CLI `--jsx`
+  (skips `node --check`; with `--split` runs the full pipeline on every module
+  and prints JSX); `EmitOptions.jsx`; `SplitOptions.passes`/`jsx`.
+
+**Metric (§8), rn-template-0.72:** 154 element-creation sites (149 through a
+spilled callee + 5 direct; 3 `createElement`), **15 recovered (9.7%)**;
+refusals `bad-type` 82, `reflect-apply-callee` 25, `not-dead` 11,
+`jsxs-nonarray` 6, `clobbered-span` 3, `in-try` 1. Fixture 59: 10 of 11
+automatic sites (9 at v99, whose hoisted type register is kept and shown
+via `tagDisplay`) + the direct `createElement` site recovered (the eleventh is a
+`jsxs` whose children is a `.map(…)` call — §4 refuses it by design; the two
+`Reflect.apply` classic sites are `call-shape` residue). Floor in
+`tests/gate/passes/jsx-recover.test.ts`: 8%.
+
+**Next** (residue owners, by size): `bad-type` — types read off a
+`require(dep)` *call* (`r13(r0[r15]).ReloadInstructions`) are not a tag
+expression; naming the require result (D17 / `closure-naming`) or a
+`tagDisplay`-style kept alias for the member's base would recover them;
+`reflect-apply-callee` belongs to `call-shape` (R3b with a spilled member);
+`not-dead`/`clobbered-span` need a real liveness walk (hoist `expr-rebuild`'s
+`isDeadAfter` into the framework) and outer-element absorption across the
+`L0`/`L1` labeled blocks the dark-mode conditional produces.

@@ -83,6 +83,14 @@ export interface Pass<TNode = unknown, TData = unknown> {
    * reported once per module as `W_PASS_VERSION_SKIP`.
    */
   readonly versions?: (hbcVersion: number, layoutClass: LayoutClass) => boolean;
+  /**
+   * D20 / docs/specs/passes/08-jsx-recovery.md §7: a rung that is registered
+   * (ordered, catalogued, tested like any other) but **not** part of the
+   * default pipeline — `enabledPasses` drops it unless `optIn` names it
+   * (`--jsx`). The equivalence gate runs the default pipeline, so an opt-in
+   * rung's output is never what the trace oracle executes.
+   */
+  readonly optIn?: boolean;
 }
 
 export interface AppliedRecord {

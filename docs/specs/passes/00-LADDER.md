@@ -69,7 +69,7 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 | `arguments-form` | 16 (single-version) | 42, 49 | all | `__hbc_arguments` reads where no param slot aliases → `arguments` | batch 4 |
 | `literal-forms` | 45, 46, 47, 55 (needs rows) | 45, 46, 47, 55 | all | `new RegExp("…","g")` from a regex-table literal → `/…/g`; BigInt table → `123n`; `typeofIs` mask helper → `typeof x === "…"` chains | batch 4 |
 | `try-clean` | 11, 12 | 12–16 | all | `__pc =` stores and `__exc` copies no handler reads → removed; `__pc = -1` frame → removed | batch 4, `after: [expr-rebuild]`; stage-A `try-shape` first |
-| `jsx-recover` | D20, R6 | bundles only | all | `React.createElement(T, p, …c)` / `jsx(T, {…children})` trees → JSX | **hard** §5.3 |
+| `jsx-recover` | D20, R6 | 59, bundles | all | `React.createElement(T, p, …c)` / `jsx(T, {…children})` trees → JSX (opt-in `--jsx`; spilled callee/type/config registers resolved and absorbed per spec 08 implementation notes) | **merged 2026-09-01**, opt-in; §5.3 |
 | `string-array-decode` | R7 (needs row) | `.obf` variants | all | obfuscator string-array accessor `_0x…(i)` → the literal | **hard** §5.5 |
 | `closure-naming` | R5 cross-function part | 17, 18, 21, 22 | all | consistent env-slot names across every function touching the slot | **hard** §5.4 |
 
@@ -77,7 +77,7 @@ Not rungs: `29-promise-chaining`, `31-microtask-ordering`, `50-this-binding`
 (no idiom); `30-async-generator` (uncompilable); `21-iife-closures` (module
 wrapper `_fn0.call(globalThis)` is the emitter's, not a lowering).
 
-**Count: 30 rungs** (12 stage A, 18 stage B); 2 done, 5 hard, 1 unscheduled.
+**Count: 30 rungs** (12 stage A, 18 stage B); 12 merged (jsx-recover opt-in), 4 hard, 1 unscheduled.
 
 ---
 

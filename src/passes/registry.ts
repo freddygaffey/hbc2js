@@ -11,6 +11,7 @@ import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
 import { switchRaise } from "./switch-raise/index.ts";
+import { jsxRecover } from "./jsx-recover/index.ts";
 import { templateLiteral } from "./template-literal/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
@@ -50,13 +51,20 @@ import { varNaming } from "./var-naming/index.ts";
  *  chunk registers) and `before: ["var-naming"]` (it deletes the template-
  *  object register, which must never have been named); it is
  *  order-independent of `call-shape`, whose rules all refuse a concat site
- *  (asserted by negative tests in both rungs, not by an edge). */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, templateLiteral as Pass, fnNaming as Pass, varNaming as Pass];
+ *  (asserted by negative tests in both rungs, not by an edge). `jsx-recover`
+ *  (docs/specs/passes/08-jsx-recovery.md §7/§8) is registered **last** and
+ *  is the ladder's one `optIn` rung: `enabledPasses` leaves it out unless
+ *  `optIn: ["jsx-recover"]` (`--jsx`) names it, so the default pipeline —
+ *  the one the equivalence gate executes — never holds a `jsx` node. */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, templateLiteral as Pass, fnNaming as Pass, varNaming as Pass, jsxRecover as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
   readonly skip?: readonly string[];
   readonly stage?: Stage;
+  /** `Pass.optIn` rungs to switch on (`--jsx` → `["jsx-recover"]`); an
+   *  opt-in rung absent from here (and from `only`) is never selected. */
+  readonly optIn?: readonly string[];
 }
 
 /**
@@ -88,7 +96,12 @@ export function enabledPasses(opts: EnabledPassOptions = {}, registry: readonly 
     }
   }
 
-  let list = registry.filter((p) => (opts.stage === undefined || p.stage === opts.stage) && (opts.only === undefined || opts.only.includes(p.name)) && (opts.skip === undefined || !opts.skip.includes(p.name)));
+  for (const name of opts.optIn ?? []) {
+    if (!allNames.has(name)) throw new Hbc2jsError(ErrorCode.E_PASS_ORDER, `opt-in names unknown pass "${name}"`, { section: "passes/registry" });
+  }
+
+  const selected = (p: Pass): boolean => (p.optIn !== true || (opts.optIn?.includes(p.name) ?? false) || (opts.only?.includes(p.name) ?? false)) && (opts.stage === undefined || p.stage === opts.stage) && (opts.only === undefined || opts.only.includes(p.name)) && (opts.skip === undefined || !opts.skip.includes(p.name));
+  let list = registry.filter(selected);
 
   list = list.map((p) => (p.stage === "B" && p.name !== "expr-rebuild" && !(p.after ?? []).includes("expr-rebuild") ? { ...p, after: [...(p.after ?? []), "expr-rebuild"] } : p));
 

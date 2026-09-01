@@ -28,6 +28,33 @@ export type { Expr, Stmt } from "../emit/ast.ts";
 // above: `../../emit/print.ts` is not on the allowlist, only this file is.
 export { printProgram } from "../emit/print.ts";
 
+// D20 (docs/specs/passes/08-jsx-recovery.md §3/§6): the `jsx` node's parts
+// and its exact inverse, re-exported for the same D12a reason — the
+// `jsx-recover` rung builds the node and its `check` lowers it back.
+export type { JsxAttr, JsxChild, JsxFactory } from "../emit/ast.ts";
+export { jsxToCall } from "../emit/ast.ts";
+import type { JsxFactory } from "../emit/ast.ts";
+import { jsxToCall } from "../emit/ast.ts";
+
+/** Every sub-expression of a `jsx` node, in the order its call evaluates
+ *  them: factory callee, tag, config fields (attrs and children in their
+ *  original order), then the automatic runtime's key and trailing args. */
+export function jsxParts(e: Extract<Expr, { k: "jsx" }>): readonly Expr[] {
+  const out: Expr[] = [e.factory.callee, e.tag];
+  const attrs = e.attrs.map((a) => ("spread" in a ? a.spread : a.value)).filter((x): x is Expr => x !== null);
+  const children = e.children.map((c) => (c.k === "expr" ? c.expr : c.lit));
+  if (e.factory.runtime === "automatic") {
+    const at = e.factory.childrenAt ?? attrs.length;
+    out.push(...attrs.slice(0, at), ...children, ...attrs.slice(at));
+    if (e.factory.key !== null) out.push(e.factory.key);
+    out.push(...e.factory.rest);
+  } else {
+    if (e.factory.nullProps !== null) out.push(e.factory.nullProps);
+    out.push(...attrs, ...children);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Visitor / rebuilding maps over Stmt / Expr.
 // ---------------------------------------------------------------------------
@@ -85,6 +112,9 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
       case "tagged": // F14
         walkExpr(e.tag);
         walkExpr(e.quasi);
+        return;
+      case "jsx": // D20
+        jsxParts(e).forEach(walkExpr);
         return;
       case "func":
         walkStmts(e.body);
@@ -231,6 +261,23 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
       const tag = mapExpr(e.tag, fx);
       const quasi = mapExpr(e.quasi, fx);
       rebuilt = tag === e.tag && quasi === e.quasi ? e : { ...e, tag, quasi };
+      break;
+    }
+    case "jsx": {
+      // D20: rebuild every sub-expression (tag, attrs, children, factory).
+      let changed = false;
+      const sub = (x: Expr): Expr => {
+        const y = mapExpr(x, fx);
+        if (y !== x) changed = true;
+        return y;
+      };
+      const tag = sub(e.tag);
+      const tagDisplay = e.tagDisplay === undefined ? undefined : sub(e.tagDisplay);
+      const attrs = e.attrs.map((a) => ("spread" in a ? { spread: sub(a.spread) } : { name: a.name, value: a.value === null ? null : sub(a.value) }));
+      const children = e.children.map((c) => (c.k === "expr" ? { k: "expr" as const, expr: sub(c.expr) } : { k: "text" as const, lit: sub(c.lit) }));
+      const f = e.factory;
+      const factory: JsxFactory = f.runtime === "automatic" ? { ...f, callee: sub(f.callee), key: f.key === null ? null : sub(f.key), rest: f.rest.map(sub) } : { ...f, callee: sub(f.callee), nullProps: f.nullProps === null ? null : sub(f.nullProps) };
+      rebuilt = changed ? { ...e, tag, ...(tagDisplay === undefined ? {} : { tagDisplay }), attrs, children, factory } : e;
       break;
     }
     case "func": {
@@ -622,6 +669,9 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
         visitExpr(e.tag, inNested);
         visitExpr(e.quasi, inNested);
         return;
+      case "jsx": // D20
+        jsxParts(e).forEach((x) => visitExpr(x, inNested));
+        return;
       case "func":
         // Separate register frame (see `IdentUses.nested`'s doc): a register
         // name can never be the same binding in there, so skip it entirely
@@ -782,6 +832,9 @@ export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
       case "tagged": // F14
         visitExpr(e.tag, at);
         visitExpr(e.quasi, at);
+        return;
+      case "jsx": // D20
+        jsxParts(e).forEach((x) => visitExpr(x, at));
         return;
       default:
         return; // lit, this, argumentsObject, func (separate frame)
@@ -1086,6 +1139,11 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
         out.push({ k: "call", callee: calleeShape(e.tag), arity: subs.length + 1 });
         return;
       }
+      case "jsx":
+        // D20: a JSX element *is* its element-creation call — same effects,
+        // same order, same `(callee shape, argc)` entry.
+        visitExpr(jsxToCall(e));
+        return;
       default:
         return; // ident, lit, this, argumentsObject, func (its own frame)
     }
