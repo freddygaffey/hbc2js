@@ -33,25 +33,33 @@ function firstDivergence(before: readonly Stmt[], after: readonly Stmt[]): numbe
 }
 
 /**
- * `registerUses(after).get(reg)`, without ever walking `after` in full.
- * `registerUses` (`../ast.ts`) is a plain left-to-right accumulation over
- * `stmts` with no cross-statement state, so it is concatenative:
- * `registerUses(A ++ B ++ C) = registerUses(A) + registerUses(B) +
- * registerUses(C)` (componentwise). This rewrite only ever touches a
- * bounded region — one store, replaced or removed, plus at most one other
- * statement it folds into — so `before`/`after` share a reference-identical
- * prefix and suffix; `bu` (already computed, and a cache hit whenever
- * `before` is `ctx.fnBody` itself — the common case, and the one a real
- * bundle's module-root function makes matter) covers the whole of
- * `before`, so subtracting the small unchanged-middle's `before` count and
- * adding the small unchanged-middle's `after` count gives exactly
- * `registerUses(after).get(reg)`, for `O(changed region)` instead of
- * `O(list.length)` per applied site (`docs/BUGS.md`'s superlinear-pass
- * row: this and the module-level `listIndex` rebuild `match.ts` no longer
- * does were the two hottest frames profiled against a real bundle's
- * module-root function).
+ * `registerUses(before).get(reg)` minus `registerUses(after).get(reg)`,
+ * without ever walking either list in full. `registerUses` (`../ast.ts`) is
+ * a plain left-to-right accumulation over `stmts` with no cross-statement
+ * state, so it is concatenative: `registerUses(A ++ B ++ C) =
+ * registerUses(A) + registerUses(B) + registerUses(C)` (componentwise).
+ * This rewrite only ever touches a bounded region — one store, replaced or
+ * removed, plus at most one other statement it folds into — so
+ * `before`/`after` share a reference-identical prefix and a
+ * reference-identical suffix (found below by scanning in from both ends).
+ * Write `before = pre ++ beforeMid ++ post` and `after = pre ++ afterMid ++
+ * post` for that shared `pre`/`post`; then `registerUses(before) =
+ * registerUses(pre) + registerUses(beforeMid) + registerUses(post)` and
+ * likewise for `after`, so `registerUses(pre)`/`registerUses(post)` cancel
+ * out of the subtraction exactly, leaving `registerUses(beforeMid) -
+ * registerUses(afterMid)` — computable from the changed region alone,
+ * without ever computing (or needing) `registerUses(before)` /
+ * `registerUses(after)` over the *whole* list. That whole-list walk (once
+ * per applied site, since `spliceList` gives an edited list — and every
+ * list containing it — a fresh array identity, so `registerUsesMemo` in
+ * `../ast.ts` is cold for it every time, e.g. every time a top-level site
+ * is matched) was the last superlinear term in the 946 s Service NSW
+ * profile spent here: `docs/BUGS.md`'s superlinear-pass row, part 2 (part 1
+ * fixed the sibling `listIndex` rebuild in `match.ts` and the whole-list
+ * `expressionOnlyCheck` walk this file's `check` also does). `O(changed
+ * region)` per applied site, not `O(list.length)`.
  */
-function registerUsesAfter(before: readonly Stmt[], after: readonly Stmt[], reg: string, bu: { readonly reads: number; readonly writes: number; readonly nested: number }): { readonly reads: number; readonly writes: number; readonly nested: number } {
+function registerUseDelta(before: readonly Stmt[], after: readonly Stmt[], reg: string): { readonly reads: number; readonly writes: number } {
   const minLen = Math.min(before.length, after.length);
   let head = 0;
   while (head < minLen && before[head] === after[head]) head++;
@@ -63,11 +71,7 @@ function registerUsesAfter(before: readonly Stmt[], after: readonly Stmt[], reg:
   }
   const beforeMid = registerUses(before.slice(head, tailBefore)).get(reg) ?? NO_USES;
   const afterMid = registerUses(after.slice(head, tailAfter)).get(reg) ?? NO_USES;
-  return {
-    reads: bu.reads - beforeMid.reads + afterMid.reads,
-    writes: bu.writes - beforeMid.writes + afterMid.writes,
-    nested: bu.nested - beforeMid.nested + afterMid.nested,
-  };
+  return { reads: beforeMid.reads - afterMid.reads, writes: beforeMid.writes - afterMid.writes };
 }
 
 export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: PassContext): CheckResult {
@@ -101,10 +105,9 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // and got *deleted* (pure) — an impure R1b keeps `E` (and its reads) alive.
   const eSelfReads = exprCounts(value, reg).reads;
   const expectedReadDelta = verdict.rule === "R1a" ? 1 : isPure(value) ? eSelfReads : 0;
-  const bu = registerUses(before).get(reg) ?? NO_USES;
-  const au = registerUsesAfter(before, after, reg, bu);
-  if (bu.writes - au.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
-  if (bu.reads - au.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
+  const delta = registerUseDelta(before, after, reg);
+  if (delta.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
+  if (delta.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
 
   return { ok: true };
 }
