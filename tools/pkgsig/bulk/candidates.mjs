@@ -41,22 +41,57 @@
 // hand) instead of shelling out to `ssh deb cat ...` here. --no-fetch-index
 // skips round-1 dedup entirely (candidates.json will then contain
 // already-built pairs too — only useful for inspecting source counts).
+//
+// Round 2b adds a second mode, --registry, run ON deb (needs network) -
+// see the "registry mode" section below for what it does. Usage:
+//   node tools/pkgsig/bulk/candidates.mjs --registry [--top 3000]
+//     [--concurrency 8] [--months 24] [--cache <path>] [--index-dir <path>]
+//     [--out <path>]
+// Defaults write outside the repo checkout (~/hbc2js-bulk/), since the
+// output is thousands of packages - too big to commit (see docs/DEPS.md
+// "Round 2b" and this repo's CLAUDE.md on not committing corpus/DB data).
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 function parseArgs(argv) {
-  const out = { nswJson: null, round1Index: null, out: join(dirname(fileURLToPath(import.meta.url)), "candidates.json"), fetchIndex: true };
+  const out = {
+    nswJson: null,
+    round1Index: null,
+    out: join(dirname(fileURLToPath(import.meta.url)), "candidates.json"),
+    fetchIndex: true,
+    // --registry mode (round 2b): build the candidate list from the live
+    // npm registry instead of the static lists above.
+    registry: false,
+    top: 3000,
+    concurrency: 8,
+    months: 24,
+    cache: join(homedir(), "hbc2js-bulk", "registry-cache.json"),
+    indexDir: join(homedir(), "hbc2js-bulk", "dist"),
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--nsw-json") out.nswJson = argv[++i];
     else if (a === "--round1-index") out.round1Index = argv[++i];
     else if (a === "--out") out.out = argv[++i];
     else if (a === "--no-fetch-index") out.fetchIndex = false;
+    else if (a === "--registry") out.registry = true;
+    else if (a === "--top") out.top = Number(argv[++i]);
+    else if (a === "--concurrency") out.concurrency = Number(argv[++i]);
+    else if (a === "--months") out.months = Number(argv[++i]);
+    else if (a === "--cache") out.cache = argv[++i];
+    else if (a === "--index-dir") out.indexDir = argv[++i];
+  }
+  if (out.registry && out.out === join(dirname(fileURLToPath(import.meta.url)), "candidates.json")) {
+    // Registry-mode output is thousands of packages - default it outside
+    // the repo checkout (never committed; see this script's header) unless
+    // the caller passes --out explicitly.
+    out.out = join(homedir(), "hbc2js-bulk", "candidates-registry.json");
   }
   return out;
 }
@@ -246,6 +281,254 @@ function collectNsw(map, nswJsonPath) {
   return { count, unresolved };
 }
 
+// --- registry mode (round 2b): build candidates FROM the npm registry -----
+//
+// Run ON deb (network required). Three sources feed the same candidate
+// name set, unioned:
+//   - registry search `text=keywords:react-native`, paginated
+//   - registry search `text=keywords:expo`, paginated
+//   - registry search `text=react-native-` (name-prefix match), paginated
+// Every found name is ranked by last-month download count
+// (api.npmjs.org's batch point endpoint for unscoped names, one request
+// per scoped name since the batch endpoint doesn't accept `@scope/name`).
+// The top `--top` (default 3000) names are kept; for each, the registry
+// doc's own `time` field gives every version's publish date - versions
+// published within the last `--months` (default 24) are candidates.
+// Politeness: concurrency capped at `--concurrency` (default 8), 429/5xx
+// retried with exponential backoff + jitter, and every search page /
+// downloads batch / package doc fetched is cached to `--cache` (default
+// ~/hbc2js-bulk/registry-cache.json) so a re-run (e.g. widening --top)
+// doesn't re-fetch what it already has.
+
+function loadCache(path) {
+  if (!existsSync(path)) return { search: {}, downloads: {}, packageDocs: {} };
+  try {
+    const data = JSON.parse(readFileSync(path, "utf8"));
+    return { search: data.search || {}, downloads: data.downloads || {}, packageDocs: data.packageDocs || {} };
+  } catch {
+    return { search: {}, downloads: {}, packageDocs: {} };
+  }
+}
+
+function saveCache(path, cache) {
+  writeFileSync(path, JSON.stringify(cache));
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function httpGetJson(url, { retries = 5 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, { headers: { "user-agent": "hbc2js-bulk-sigdb/round2b" } });
+    } catch (e) {
+      if (attempt === retries) throw e;
+      await sleep(500 * 2 ** attempt + Math.random() * 300);
+      continue;
+    }
+    if (res.status === 429 || res.status >= 500) {
+      if (attempt === retries) throw new Error(`${url} -> HTTP ${res.status} (out of retries)`);
+      await sleep(800 * 2 ** attempt + Math.random() * 500);
+      continue;
+    }
+    if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+    return res.json();
+  }
+  throw new Error(`${url} -> unreachable`);
+}
+
+// Small async pool - runs `fn` over `items` with at most `concurrency`
+// in flight at once.
+async function pMap(items, concurrency, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
+async function searchRegistryQuery(text, cache, cachePath, sourceTag, names) {
+  const PAGE = 250;
+  let from = 0;
+  let total = Infinity;
+  while (from < total && from < 5000) {
+    const key = `${text}::${from}`;
+    let page = cache.search[key];
+    if (!page) {
+      const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(text)}&size=${PAGE}&from=${from}`;
+      const json = await httpGetJson(url);
+      page = { total: json.total, names: (json.objects || []).map((o) => o.package.name) };
+      cache.search[key] = page;
+      saveCache(cachePath, cache);
+    }
+    total = page.total;
+    for (const n of page.names) {
+      if (!names.has(n)) names.set(n, new Set());
+      names.get(n).add(sourceTag);
+    }
+    if (page.names.length === 0) break;
+    from += PAGE;
+  }
+}
+
+async function collectRegistryNames(cache, cachePath) {
+  const names = new Map(); // name -> Set(sourceTag)
+  await searchRegistryQuery("keywords:react-native", cache, cachePath, "search-keyword-react-native", names);
+  await searchRegistryQuery("keywords:expo", cache, cachePath, "search-keyword-expo", names);
+  await searchRegistryQuery("react-native-", cache, cachePath, "search-name-react-native-", names);
+  return names;
+}
+
+async function fetchDownloadsBatch(unscopedNames, cache, cachePath, concurrency) {
+  // api.npmjs.org's bulk endpoint accepts up to 128 comma-separated
+  // unscoped names per request.
+  const BATCH = 120;
+  const missing = unscopedNames.filter((n) => !(n in cache.downloads));
+  const batches = [];
+  for (let i = 0; i < missing.length; i += BATCH) batches.push(missing.slice(i, i + BATCH));
+  await pMap(batches, concurrency, async (batch) => {
+    const url = `https://api.npmjs.org/downloads/point/last-month/${batch.map(encodeURIComponent).join(",")}`;
+    let json;
+    try {
+      json = await httpGetJson(url);
+    } catch {
+      for (const n of batch) cache.downloads[n] = 0;
+      saveCache(cachePath, cache);
+      return;
+    }
+    // Single-name responses come back as {downloads, package}; multi-name
+    // as {name: {downloads, package}, ...} (unresolved names are absent).
+    if (typeof json.downloads === "number" && batch.length === 1) {
+      cache.downloads[batch[0]] = json.downloads;
+    } else {
+      for (const n of batch) cache.downloads[n] = json[n]?.downloads ?? 0;
+    }
+    saveCache(cachePath, cache);
+  });
+}
+
+async function fetchDownloadsScoped(scopedNames, cache, cachePath, concurrency) {
+  const missing = scopedNames.filter((n) => !(n in cache.downloads));
+  await pMap(missing, concurrency, async (n) => {
+    const url = `https://api.npmjs.org/downloads/point/last-month/${encodeURIComponent(n)}`;
+    try {
+      const json = await httpGetJson(url);
+      cache.downloads[n] = json.downloads ?? 0;
+    } catch {
+      cache.downloads[n] = 0;
+    }
+    saveCache(cachePath, cache);
+  });
+}
+
+async function rankByDownloads(names, cache, cachePath, concurrency) {
+  const all = [...names.keys()];
+  const unscoped = all.filter((n) => !n.startsWith("@"));
+  const scoped = all.filter((n) => n.startsWith("@"));
+  await fetchDownloadsBatch(unscoped, cache, cachePath, concurrency);
+  await fetchDownloadsScoped(scoped, cache, cachePath, concurrency);
+  return all.sort((a, b) => (cache.downloads[b] || 0) - (cache.downloads[a] || 0));
+}
+
+async function fetchPackageVersionsInWindow(name, cache, cachePath, months) {
+  let doc = cache.packageDocs[name];
+  if (!doc) {
+    const url = `https://registry.npmjs.org/${name.startsWith("@") ? name.replace("/", "%2F") : name}`;
+    try {
+      const json = await httpGetJson(url);
+      doc = { time: json.time || {} };
+    } catch (e) {
+      doc = { time: {}, error: String(e) };
+    }
+    cache.packageDocs[name] = doc;
+    saveCache(cachePath, cache);
+  }
+  const cutoff = Date.now() - months * 30 * 24 * 60 * 60 * 1000;
+  const out = [];
+  for (const [version, iso] of Object.entries(doc.time || {})) {
+    if (version === "created" || version === "modified") continue;
+    const t = Date.parse(iso);
+    if (!Number.isNaN(t) && t >= cutoff) out.push(version);
+  }
+  return out;
+}
+
+function loadIndexDirPairs(dir) {
+  const pairs = new Set();
+  let files = [];
+  try {
+    files = readdirSync(dir).filter((f) => f.startsWith("index-") && f.endsWith(".json"));
+  } catch {
+    return pairs;
+  }
+  for (const f of files) {
+    let index;
+    try {
+      index = JSON.parse(readFileSync(join(dir, f), "utf8"));
+    } catch {
+      continue;
+    }
+    for (const p of round1Pairs(index)) pairs.add(p);
+  }
+  return pairs;
+}
+
+async function runRegistryMode(opts) {
+  const cache = loadCache(opts.cache);
+  console.error(`registry mode: searching (cache=${opts.cache}) ...`);
+  const names = await collectRegistryNames(cache, opts.cache);
+  console.error(`registry search found ${names.size} distinct package names; ranking by last-month downloads (concurrency=${opts.concurrency}) ...`);
+  const ranked = await rankByDownloads(names, cache, opts.cache, opts.concurrency);
+  const top = ranked.slice(0, opts.top);
+  console.error(`ranked ${ranked.length}, keeping top ${top.length}; fetching per-package version history (window=${opts.months}mo) ...`);
+
+  const map = new Map();
+  let versionsBeforeDedup = 0;
+  await pMap(top, opts.concurrency, async (name) => {
+    const versions = await fetchPackageVersionsInWindow(name, cache, opts.cache, opts.months);
+    for (const v of versions) {
+      addPair(map, name, v, "registry-search");
+      versionsBeforeDedup++;
+    }
+  });
+
+  const already = loadIndexDirPairs(opts.indexDir);
+  let excluded = 0;
+  const packages = [];
+  for (const [name, entry] of [...map.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const versions = [...entry.versions].filter((v) => {
+      const hit = already.has(`${name}@${v}`);
+      if (hit) excluded++;
+      return !hit;
+    });
+    if (versions.length > 0) packages.push({ name, versions: versions.sort(), reasons: [...entry.reasons].sort() });
+  }
+  const totalAfterDedup = packages.reduce((acc, p) => acc + p.versions.length, 0);
+
+  const out = {
+    schema: 1,
+    generatedAt: new Date().toISOString(),
+    description: "D17c bulk signature build round 2b registry candidates - see tools/pkgsig/bulk/candidates.mjs header (--registry mode).",
+    sourceCounts: {
+      registryNamesFound: names.size,
+      rankedKeptTop: top.length,
+      versionsBeforeDedup,
+    },
+    excludedAlreadyInIndex: excluded,
+    packageCount: packages.length,
+    totalVersionSelections: totalAfterDedup,
+    packages,
+  };
+  writeFileSync(opts.out, JSON.stringify(out, null, 1));
+  console.log(`registry: names found=${names.size}, ranked+kept top=${top.length}, versions before dedup=${versionsBeforeDedup}, excluded already-in-index=${excluded}, after dedup=${totalAfterDedup} across ${packages.length} packages`);
+  console.log(`wrote ${opts.out}`);
+}
+
 // --- (d minus) round-1 index -----------------------------------------------
 function fetchRound1Index(opts) {
   if (opts.round1Index) {
@@ -273,6 +556,12 @@ function round1Pairs(index) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+
+  if (opts.registry) {
+    await runRegistryMode(opts);
+    return;
+  }
+
   const map = new Map();
 
   const truthCount = collectTruth(map);
