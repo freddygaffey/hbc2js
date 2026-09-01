@@ -3,7 +3,6 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-1. **B — `--split` boot fixes (stage-3 findings, correctness)**: (a) the `require('./module_N.js')` rewrite (`src/split/rewrite.ts`) returns the unexecuted factory because modules do `module.exports = factory` — make split output actually loadable (emit a `__d/__r` runtime `index.js` that registers every factory by id, OR change the module wrapper so `require` yields real exports); (b) `--split` must emit the `src/runtime/helpers.ts` prelude (8 helpers used, currently undefined globals). Regression test: the split tree's `index.js` runs under bare Node to a chosen module without a ReferenceError for a helper or a factory.
 2. **A — Stage-3 milestone: bare-Node boot harness**: harden the scratch `boot.mjs` into `tools/e2e/boot-split.mjs` — `__d/__r` + recording native stubs, `__r(entry)`, assert it reaches `AppRegistry.registerComponent`; pin expected native accesses so new ones diff. rn-template first; then Service NSW.
 - **Perf part 3 — `passes/ast.ts` `expressionOnlyCheck` → `defUse(after)`** full-list walk per site (order check needs a global position; needs incremental state, soundness-sensitive). NSW whole-file 563 s / split 512 s on deb today; target < 120 s.
 12. **Mutation-test the checkers (4)** — Stryker over `src/passes/*/check.ts`.
