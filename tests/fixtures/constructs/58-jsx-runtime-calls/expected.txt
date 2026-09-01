@@ -1,0 +1,11 @@
+<Text style>hello</Text>
+<Text style>d</Text>
+<View style><Text style>hello</Text><Text style>d</Text></View>
+<Text key=k1>d</Text>
+<View><Text>a</Text><Ns.Comp></Ns.Comp></View>
+<View><Text key=x>x</Text><Text key=y>y</Text></View>
+<div className>d</div>
+<View></View>
+<Row item>c</Row>
+<Fragment><Row item>c</Row>c</Fragment>
+<View key,style></View>
