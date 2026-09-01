@@ -3,7 +3,6 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-10. **Fix cluster: semantics (6 adversarial rows)** — verdict first, fix the real ones.
 - **Perf part 3 — `passes/ast.ts` `expressionOnlyCheck` → `defUse(after)`** full-list walk per site (order check needs a global position; needs incremental state, soundness-sensitive). NSW whole-file 563 s / split 512 s on deb today; target < 120 s.
 11. **Tier-1 buckets:** make the normalised diff register/schedule-insensitive where the difference is provably allocation-only (top buckets `GetByVal(reg)`, `LoadParam(imm)`, `LoadConstUndefined/GetGlobalObject`), so IDENTICAL measures semantics not scheduling; re-baseline.
 12. **Mutation-test the checkers (4)** — Stryker over `src/passes/*/check.ts`.
