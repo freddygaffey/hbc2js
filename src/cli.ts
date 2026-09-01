@@ -50,6 +50,10 @@ Options (decompile):
   --passes=none             run no passes: the M4 baseline output
   --list-passes             list the registered passes and exit
   --no-node-check           skip the built-in 'node --check' of the output
+  --jsx                     opt-in jsx-recover rung (D20): React element calls
+                            print as JSX; output is not runnable JS, so the
+                            node --check is skipped. With --split, runs the
+                            full pass pipeline on every module too.
   --split <outdir>          split into a per-module project tree instead of one
                             file (D17i stage 1 — isolate; docs/DECISIONS.md)
   --opcode-table=<id>       force an opcode table instead of probing
@@ -438,7 +442,9 @@ interface DecompileArgs {
   readonly stats: boolean;
   /** `--lenient-env`: markers instead of `E_ENV_UNRESOLVED` (review M4-H2). */
   readonly lenientEnv: boolean;
-  readonly passes: { readonly none: boolean; readonly skip: readonly string[] };
+  /** `--jsx` (D20): opt the `jsx-recover` rung in and print JSX. */
+  readonly jsx: boolean;
+  readonly passes: { readonly none: boolean; readonly skip: readonly string[]; readonly optIn: readonly string[] };
 }
 
 function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
@@ -455,6 +461,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let forceV98 = false;
   let stats = false;
   let lenientEnv = false;
+  let jsx = false;
   let passesNone = false;
   const skipPasses: string[] = [];
   const positional: string[] = [];
@@ -474,12 +481,13 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
     else if (a === "--force-v98-table") forceV98 = true;
     else if (a === "--stats") stats = true;
     else if (a === "--lenient-env") lenientEnv = true;
+    else if (a === "--jsx") jsx = true;
     else if (a.startsWith("--opcode-table=")) opcodeTable = a.slice("--opcode-table=".length) as OpcodeTableId;
     else if (!a.startsWith("-")) positional.push(a);
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, split, opcodeTable, forceV98, stats, lenientEnv, passes: { none: passesNone, skip: skipPasses } };
+  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, split, opcodeTable, forceV98, stats, lenientEnv, jsx, passes: { none: passesNone, skip: skipPasses, optIn: jsx ? ["jsx-recover"] : [] } };
 }
 
 /**
@@ -522,12 +530,13 @@ function runDecompile(argv: readonly string[]): void {
       resolveV98Ambiguity: args.forceV98,
       strictEnv: !args.lenientEnv,
       passes: args.passes,
+      ...(args.jsx ? { emit: { jsx: true } } : {}),
       ...(args.opcodeTable !== undefined ? { opcodeTable: args.opcodeTable } : {}),
       ...(args.functionIndex !== undefined ? { functionIndex: args.functionIndex } : {}),
     };
     warnIfHeapTooSmall(bytes.length, basename(args.input));
     if (args.split !== undefined) {
-      const result = splitProject(bytes, { moduleName: basename(args.input) });
+      const result = splitProject(bytes, { moduleName: basename(args.input), ...(args.jsx ? { passes: args.passes, jsx: true } : {}) });
       writeSplitResult(result, args.split);
       for (const d of result.diagnostics) process.stderr.write(`hbc2js --split: ${d}\n`);
       process.stdout.write(`hbc2js: wrote ${result.modules.length} module file(s) + index.js + MODULES.json to ${args.split}\n`);
@@ -549,7 +558,9 @@ function runDecompile(argv: readonly string[]): void {
         process.stderr.write(`hbc2js: ${result.decompileDiagnostics} of ${result.module.functions.length} functions could not be decompiled (stubbed) — each throws a descriptive Error if reached; see the W_FUNCTION_STUBBED diagnostics.\n`);
       }
     }
-    if (!args.emitTree && !args.emitAst && args.nodeCheck) {
+    // D20: `--jsx` output is JSX, not runnable JS — the faithfulness guard is
+    // jsx-recover's offline inverse check (spec 08 §6), not `node --check`.
+    if (!args.emitTree && !args.emitAst && args.nodeCheck && !args.jsx) {
       const check = nodeCheck(text);
       if (!check.ok) {
         process.stderr.write(`hbc2js: emitted JavaScript did not pass 'node --check':\n${check.message}\n`);

@@ -88,7 +88,9 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
 test("the pass registry lists the M5 passes in dependency order", () => {
   // Was "empty at M4"; spec 07 §2.3. The ordering/negative tests live in
   // tests/gate/passes/framework.test.ts.
-  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "template-literal", "fn-naming", "var-naming"]);
+  // D20: `jsx-recover` is registered last but is opt-in — absent from every
+  // `enabledPasses` selection below unless `optIn` names it.
+  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "template-literal", "fn-naming", "var-naming", "jsx-recover"]);
   assert.deepEqual(enabledPasses({ stage: "A" }).map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean"]);
   assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "template-literal", "fn-naming", "var-naming"]);
   assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "template-literal", "fn-naming", "var-naming"]);

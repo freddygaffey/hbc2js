@@ -272,11 +272,12 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
         return y;
       };
       const tag = sub(e.tag);
+      const tagDisplay = e.tagDisplay === undefined ? undefined : sub(e.tagDisplay);
       const attrs = e.attrs.map((a) => ("spread" in a ? { spread: sub(a.spread) } : { name: a.name, value: a.value === null ? null : sub(a.value) }));
       const children = e.children.map((c) => (c.k === "expr" ? { k: "expr" as const, expr: sub(c.expr) } : { k: "text" as const, lit: sub(c.lit) }));
       const f = e.factory;
       const factory: JsxFactory = f.runtime === "automatic" ? { ...f, callee: sub(f.callee), key: f.key === null ? null : sub(f.key), rest: f.rest.map(sub) } : { ...f, callee: sub(f.callee), nullProps: f.nullProps === null ? null : sub(f.nullProps) };
-      rebuilt = changed ? { ...e, tag, attrs, children, factory } : e;
+      rebuilt = changed ? { ...e, tag, ...(tagDisplay === undefined ? {} : { tagDisplay }), attrs, children, factory } : e;
       break;
     }
     case "func": {

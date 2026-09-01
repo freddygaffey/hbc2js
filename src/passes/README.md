@@ -50,7 +50,11 @@ sidecar field on it), so it must reach the same fixed point structurally:
 original shape.
 
 Registration is one line in `src/passes/registry.ts`. Order there is explicit
-data, not import order.
+data, not import order. A rung whose output is not runnable JS (`jsx-recover`,
+D20) sets `optIn: true`: it is registered, ordered, catalogued and tested like
+any other, but `enabledPasses` drops it unless `optIn: [name]` (the CLI's
+`--jsx`) selects it — so the default pipeline, the one the equivalence gate
+executes, never runs it.
 
 ## What the driver does for you (`src/passes/driver.ts`)
 

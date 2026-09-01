@@ -110,13 +110,16 @@ function jsxSafeText(lit: Expr, where: "child" | "attr"): string | null {
 }
 
 function renderJsx(e: Extract<Expr, { k: "jsx" }>): string {
-  const tag = e.tag.k === "lit" ? (jsxSafeText(e.tag, "attr") ?? e.tag.text) : expr(e.tag, MEMBER);
-  const attrs = e.attrs.map((a) => {
-    if ("spread" in a) return ` {...${expr(a.spread, 0)}}`;
-    if (a.value === null) return ` ${a.name}`;
-    const text = jsxSafeText(a.value, "attr");
-    return text !== null ? ` ${a.name}="${text}"` : ` ${a.name}={${expr(a.value, 0)}}`;
-  });
+  const shown = e.tagDisplay ?? e.tag;
+  const tag = shown.k === "lit" ? (jsxSafeText(shown, "attr") ?? shown.text) : expr(shown, MEMBER);
+  const attr = (name: string, value: Expr | null): string => {
+    if (value === null) return ` ${name}`;
+    const text = jsxSafeText(value, "attr");
+    return text !== null ? ` ${name}="${text}"` : ` ${name}={${expr(value, 0)}}`;
+  };
+  // The automatic runtime's key is the call's 3rd argument, shown first.
+  const key = e.factory.runtime === "automatic" && e.factory.key !== null ? [attr("key", e.factory.key)] : [];
+  const attrs = [...key, ...e.attrs.map((a) => ("spread" in a ? ` {...${expr(a.spread, 0)}}` : attr(a.name, a.value)))];
   if (e.selfClosing && e.children.length === 0) return `<${tag}${attrs.join("")} />`;
   const children = e.children.map((c) => {
     if (c.k === "text") {
@@ -124,7 +127,7 @@ function renderJsx(e: Extract<Expr, { k: "jsx" }>): string {
       if (text !== null) return text;
       return `{${expr(c.lit, 0)}}`;
     }
-    return `{${expr(c.expr, 0)}}`;
+    return c.expr.k === "jsx" ? renderJsx(c.expr) : `{${expr(c.expr, 0)}}`;
   });
   return `<${tag}${attrs.join("")}>${children.join("")}</${tag}>`;
 }

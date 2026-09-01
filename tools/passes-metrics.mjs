@@ -22,6 +22,7 @@ import { emitModule } from "../src/emit/index.ts";
 import { astPassHook, passHook } from "../src/passes/index.ts";
 import { stmtLists } from "../src/passes/ast.ts";
 import { deriveSites as deriveTemplateSites, hasTemplateSites } from "../src/passes/template-literal/match.ts";
+import { countElementSites } from "../src/passes/jsx-recover/match.ts";
 
 const ROOT = new URL("../", import.meta.url).pathname;
 const CORPUS_DIR = join(ROOT, "tests", "fixtures", "constructs");
@@ -1003,6 +1004,26 @@ export function measureTemplateLiteralBundle(bundlePath) {
     cleanFunctionPctBefore: beforeBodies.length === 0 ? 0 : (cleanBefore / beforeBodies.length) * 100,
     refusals,
   };
+}
+
+/** docs/specs/passes/08-jsx-recovery.md §8: per bundle, the element-creation
+ *  call sites (`jsx`/`jsxs`/`jsxDEV`/`createElement`, resolved through a
+ *  spilled callee register or a `Reflect.apply` residue) turned to JSX by
+ *  the opt-in `jsx-recover` rung, and the abandonment-reason histogram. */
+export function measureJsxRecoverBundle(bundlePath) {
+  const bytes = new Uint8Array(readFileSync(bundlePath));
+  const bodies = functionBodies(bytes, "bundle", { optIn: ["jsx-recover"] }, true);
+  let recovered = 0;
+  let residual = 0;
+  const refusals = {};
+  for (const b of bodies) {
+    const c = countElementSites(b.k === "func" ? b.body : b);
+    recovered += c.recovered;
+    residual += c.residual;
+    for (const [k, v] of Object.entries(c.refusals)) refusals[k] = (refusals[k] ?? 0) + v;
+  }
+  const sites = recovered + residual;
+  return { functionCount: bodies.length, sites, recovered, residual, recoveredPct: sites === 0 ? 0 : (recovered / sites) * 100, refusals };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

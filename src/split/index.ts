@@ -23,6 +23,8 @@ import { emitModule } from "../emit/index.ts";
 import { printProgram } from "../emit/print.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
+import { astPassHook, passHook } from "../passes/index.ts";
+import type { PassPipelineOptions } from "../passes/index.ts";
 import { resolveEntryModuleId } from "./entry.ts";
 import { rewriteFactoryBody } from "./rewrite.ts";
 
@@ -43,6 +45,11 @@ export interface SplitResult {
 
 export interface SplitOptions {
   readonly moduleName?: string;
+  /** D20 `--jsx`: run the pass pipeline (with these options — the CLI passes
+   *  `optIn: ["jsx-recover"]`) on every module instead of the M4 baseline. */
+  readonly passes?: PassPipelineOptions;
+  /** Print `jsx` nodes as JSX (`src/emit/print.ts` `PrintOptions.jsx`). */
+  readonly jsx?: boolean;
 }
 
 function isFuncStmt(s: Stmt | undefined): s is Extract<Stmt, { k: "func" }> {
@@ -53,17 +60,22 @@ function isFuncStmt(s: Stmt | undefined): s is Extract<Stmt, { k: "func" }> {
  *  file header) and hand back each function's own top-level JS AST, keyed by
  *  function index, exactly as `decompileAst` does internally (spec 07 F1) but
  *  without running the pass pipeline. */
-function decompileAllBodies(module: HbcModule): ReadonlyMap<number, Extract<Stmt, { k: "func" }>> {
+function decompileAllBodies(module: HbcModule, passes?: PassPipelineOptions): ReadonlyMap<number, Extract<Stmt, { k: "func" }>> {
   const analysis = analyseModule(module, { strictEnv: false });
   const bodies = new Map<number, Extract<Stmt, { k: "func" }>>();
+  // D20 `--jsx`: the readability ladder (with jsx-recover opted in) runs here
+  // too — the same hooks `decompile()` wires, tapped for each body.
+  const hook = passes === undefined ? undefined : astPassHook(analysis, passes);
   emitModule(analysis, {
     moduleName: "input.hbc",
     provenanceComments: false,
     strictEnv: false,
     structure: { verify: false },
+    ...(passes === undefined ? {} : { passes: passHook(analysis, passes) }),
     astPasses: (fn, cfg) => {
-      if (fn.k === "func") bodies.set(cfg.functionIndex, fn);
-      return { fn, diagnostics: [] };
+      const out = hook === undefined ? { fn, diagnostics: [] } : hook(fn, cfg);
+      if (out.fn.k === "func") bodies.set(cfg.functionIndex, out.fn);
+      return out;
     },
   });
   return bodies;
@@ -76,7 +88,8 @@ function fileNameFor(moduleId: number): string {
 export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitResult {
   const module = parseHbc(bytes);
   const inventory = buildInventoryFromModule(module);
-  const bodies = decompileAllBodies(module);
+  const bodies = decompileAllBodies(module, opts.passes);
+  const printOpts = { indent: "  ", jsx: opts.jsx === true };
 
   const diagnostics: string[] = [];
   const files = new Map<string, string>();
@@ -101,7 +114,7 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
       continue;
     }
     const { body, rewrites } = rewriteFactoryBody(fnStmt.body, fnStmt.params, m.depIds ?? []);
-    const funcText = printProgram([{ ...fnStmt, name: "factory", body }]);
+    const funcText = printProgram([{ ...fnStmt, name: "factory", body }], printOpts);
     const file = fileNameFor(id);
     files.set(file, `// hbc2js --split -- Metro module ${id} (source fn#${m.factoryFunctionIndex}, ${opts.moduleName ?? "input.hbc"})\n${funcText}\nmodule.exports = factory;\n`);
     modules.push({ id, file, factoryFunctionIndex: m.factoryFunctionIndex, deps: depIds, requireRewrites: rewrites });

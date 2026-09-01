@@ -49,7 +49,19 @@ export type Expr =
    * which is what keeps `parses`, `node --check` and every effect walker
    * honest about a tree that happens to hold JSX.
    */
-  | { readonly k: "jsx"; readonly tag: Expr; readonly attrs: readonly JsxAttr[]; readonly children: readonly JsxChild[]; readonly selfClosing: boolean; readonly factory: JsxFactory }
+  | {
+      readonly k: "jsx";
+      /** The type operand exactly as the call had it. */
+      readonly tag: Expr;
+      /** Presentation only: when `tag` is a register whose (kept, enclosing-
+       *  list) definition provably holds a tag expression at the call, that
+       *  expression — `<_e997_2.Text>` instead of `<r6>`. `jsxToCall` ignores it. */
+      readonly tagDisplay?: Expr;
+      readonly attrs: readonly JsxAttr[];
+      readonly children: readonly JsxChild[];
+      readonly selfClosing: boolean;
+      readonly factory: JsxFactory;
+    }
   | { readonly k: "func"; readonly name: string | null; readonly params: readonly string[]; readonly body: readonly Stmt[] };
 
 /** `name={value}` (a string `lit` value prints bare, `name="text"`, when it
