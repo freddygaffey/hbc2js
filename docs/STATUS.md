@@ -14,6 +14,7 @@ stores) split into real files. (docs/LANES.md)
 | 2 equivalent | % functions IDENTICAL round-trip, passes-on (strong normalisation) | 37.5% | 32.9% | 29.1% (legacy, not remeasured) | docs/e2e/RESULTS.md 2026-09-01 "strong normalisation" table |
 | 3 boots | RN-web / device boot | no (bare-Node harness: 87/435 modules, `registerComponent` yes, no rnweb/jsdom yet) | no — not attempted | no — not attempted | tools/e2e/boot-split.mjs + tools/e2e/boot-expected/rn-template-0.72.json 2026-09-01; docs/e2e/STAGE3-FEASIBILITY.md; docs/CONSOLIDATION.md item 31 |
 | 4 segregated | % instructions classified LIBRARY vs CUSTOM | 41.1% library | 26.5% library | not measured (`deps` >10 min, item 30) | STATUS-ARCHIVE.md "Classification: library vs custom" 2026-08-31; footnote local-corpus MetaMask 39.5%, Brex 25.1%, Discord 13.6% (same section) |
+| 4 segregated | `hbc2js segregate` (milestone 1, by module count) | 308/435 (70.8%) → `node_modules/` (303 named `react-native`, 5 `_vendor/`), 72/435 (16.6%) → `src/`, 55/435 (12.6%) → `_unclassified/` | not measured (needs `deps` run, item 30's fetch) | not measured (`deps` >10 min, item 30) | docs/specs/08-segregation.md §5 2026-09-02; `hbc2js segregate` on rn-template-0.72's `--split` tree + its own `deps --offline` report |
 | 5 readable | var-naming: registers named | 4.1% (bundle) / 3.1% (57-fixture matrix) | – | – | STATUS-ARCHIVE.md `var-naming` R5, 2026-08-31 |
 | 5 readable | jsx-recover: element sites recovered | 9.7% (15/154) | – | – | STATUS-ARCHIVE.md `jsx-recover`, 2026-09-01 |
 | 5 readable | template-literal: sites converted | 99.45% | – | – | STATUS-ARCHIVE.md `template-literal`, 2026-09-01 |
@@ -39,8 +40,8 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
 
-`npm test` (this run, 2026-09-02): 1633 tests, 1630 pass, 0 fail, 3 skipped,
-~107 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
+`npm test` (this run, 2026-09-02): 1634 tests, 1631 pass, 0 fail, 3 skipped,
+~105 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
 `npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
 
 ## Open bugs — 19 open / 15 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4)
