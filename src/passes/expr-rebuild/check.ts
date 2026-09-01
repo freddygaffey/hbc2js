@@ -32,6 +32,44 @@ function firstDivergence(before: readonly Stmt[], after: readonly Stmt[]): numbe
   return i;
 }
 
+/**
+ * `registerUses(after).get(reg)`, without ever walking `after` in full.
+ * `registerUses` (`../ast.ts`) is a plain left-to-right accumulation over
+ * `stmts` with no cross-statement state, so it is concatenative:
+ * `registerUses(A ++ B ++ C) = registerUses(A) + registerUses(B) +
+ * registerUses(C)` (componentwise). This rewrite only ever touches a
+ * bounded region — one store, replaced or removed, plus at most one other
+ * statement it folds into — so `before`/`after` share a reference-identical
+ * prefix and suffix; `bu` (already computed, and a cache hit whenever
+ * `before` is `ctx.fnBody` itself — the common case, and the one a real
+ * bundle's module-root function makes matter) covers the whole of
+ * `before`, so subtracting the small unchanged-middle's `before` count and
+ * adding the small unchanged-middle's `after` count gives exactly
+ * `registerUses(after).get(reg)`, for `O(changed region)` instead of
+ * `O(list.length)` per applied site (`docs/BUGS.md`'s superlinear-pass
+ * row: this and the module-level `listIndex` rebuild `match.ts` no longer
+ * does were the two hottest frames profiled against a real bundle's
+ * module-root function).
+ */
+function registerUsesAfter(before: readonly Stmt[], after: readonly Stmt[], reg: string, bu: { readonly reads: number; readonly writes: number; readonly nested: number }): { readonly reads: number; readonly writes: number; readonly nested: number } {
+  const minLen = Math.min(before.length, after.length);
+  let head = 0;
+  while (head < minLen && before[head] === after[head]) head++;
+  let tailBefore = before.length;
+  let tailAfter = after.length;
+  while (tailBefore > head && tailAfter > head && before[tailBefore - 1] === after[tailAfter - 1]) {
+    tailBefore--;
+    tailAfter--;
+  }
+  const beforeMid = registerUses(before.slice(head, tailBefore)).get(reg) ?? NO_USES;
+  const afterMid = registerUses(after.slice(head, tailAfter)).get(reg) ?? NO_USES;
+  return {
+    reads: bu.reads - beforeMid.reads + afterMid.reads,
+    writes: bu.writes - beforeMid.writes + afterMid.writes,
+    nested: bu.nested - beforeMid.nested + afterMid.nested,
+  };
+}
+
 export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: PassContext): CheckResult {
   const eff = expressionOnlyCheck(before, after);
   if (!eff.ok) return eff;
@@ -64,7 +102,7 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   const eSelfReads = exprCounts(value, reg).reads;
   const expectedReadDelta = verdict.rule === "R1a" ? 1 : isPure(value) ? eSelfReads : 0;
   const bu = registerUses(before).get(reg) ?? NO_USES;
-  const au = registerUses(after).get(reg) ?? NO_USES;
+  const au = registerUsesAfter(before, after, reg, bu);
   if (bu.writes - au.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
   if (bu.reads - au.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
 

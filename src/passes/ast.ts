@@ -1225,8 +1225,32 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
  *  `rN` in `after` is read before its own first def in `after` (a rewrite
  *  must not read a register earlier than the point it is actually computed). */
 export function expressionOnlyCheck(before: readonly Stmt[], after: readonly Stmt[]): CheckResult {
-  const eb = JSON.stringify(effectSequence(before));
-  const ea = JSON.stringify(effectSequence(after));
+  // `effectSequence` is concatenative (`visitStmts` is a plain left-to-right
+  // walk with no state carried between statements), so
+  // `effectSequence(before) === effects(before[0,h)) ++ effects(before[h,tb))
+  // ++ effects(before[tb,end))`, and identically for `after` with the same
+  // split points. A rewrite from this framework only ever touches a small
+  // sub-range of `before` (one pass site's own splice) and leaves every
+  // other statement the exact same object, so stripping the reference-equal
+  // (by construction, unchanged) prefix and suffix first and comparing only
+  // the differing middle is the exact same result as comparing the whole
+  // list — never a looser check — for `O(changed region)` instead of
+  // `O(list.length)` per check. A real bundle's module-root function can be
+  // thousands of statements long with a check running per applied site;
+  // before this the whole list's effect sequence (and its `JSON.stringify`)
+  // was rebuilt from scratch every time (`docs/BUGS.md`'s superlinear-pass
+  // row).
+  let head = 0;
+  const minLen = Math.min(before.length, after.length);
+  while (head < minLen && before[head] === after[head]) head++;
+  let tailBefore = before.length;
+  let tailAfter = after.length;
+  while (tailBefore > head && tailAfter > head && before[tailBefore - 1] === after[tailAfter - 1]) {
+    tailBefore--;
+    tailAfter--;
+  }
+  const eb = JSON.stringify(effectSequence(before.slice(head, tailBefore)));
+  const ea = JSON.stringify(effectSequence(after.slice(head, tailAfter)));
   if (eb !== ea) return { ok: false, reason: "the rewrite changed the observable effect sequence" };
   for (const [name, { defs, reads }] of defUse(after)) {
     if (defs.length === 0) continue; // read-only in this list: defined earlier, outside it

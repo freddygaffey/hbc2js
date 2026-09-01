@@ -511,83 +511,43 @@ function stmtInterest(s: Stmt): StmtInterest {
   return it;
 }
 
-interface ListIndex {
-  /** Positions, ascending, of statements mentioning each register. */
-  readonly byReg: ReadonlyMap<string, readonly number[]>;
-  /** Positions, ascending, of statements containing a jump. */
-  readonly jumps: readonly number[];
-  /** `byReg[reg] ∪ jumps`, built lazily per register. */
-  readonly relevant: Map<string, readonly number[]>;
-  /** `passThroughPrefix[m]` = number of pass-through statements in `list[0, m)`. */
-  readonly passThroughPrefix: readonly number[];
-}
-
-const listIndexMemo = new WeakMap<readonly Stmt[], ListIndex>();
-
-function listIndex(list: readonly Stmt[]): ListIndex {
-  let idx = listIndexMemo.get(list);
-  if (idx !== undefined) return idx;
-  const byReg = new Map<string, number[]>();
-  const jumps: number[] = [];
-  const passThroughPrefix: number[] = [0];
-  list.forEach((s, m) => {
-    const it = stmtInterest(s);
-    for (const reg of it.regs) {
-      const bucket = byReg.get(reg);
-      if (bucket === undefined) byReg.set(reg, [m]);
-      else bucket.push(m);
-    }
-    if (it.jump) jumps.push(m);
-    passThroughPrefix.push(passThroughPrefix[m]! + (it.passThrough ? 1 : 0));
-  });
-  idx = { byReg, jumps, relevant: new Map(), passThroughPrefix };
-  listIndexMemo.set(list, idx);
-  return idx;
-}
-
-function mergeSorted(a: readonly number[], b: readonly number[]): readonly number[] {
-  if (b.length === 0) return a;
-  if (a.length === 0) return b;
-  const out: number[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < a.length || j < b.length) {
-    const x = i < a.length ? a[i]! : Infinity;
-    const y = j < b.length ? b[j]! : Infinity;
-    if (x < y) {
-      out.push(x);
-      i++;
-    } else if (y < x) {
-      out.push(y);
-      j++;
-    } else {
-      out.push(x);
-      i++;
-      j++;
-    }
-  }
-  return out;
-}
-
-/** The smallest index `>= from` whose statement can change a scan's verdict
- *  for `reg` (mentions it in its own frame, or contains a jump) —
- *  `list.length` when there is none. Every statement skipped over is
- *  `clear`-and-keep-going for `reg` (see the section comment above). */
+/**
+ * The smallest index `>= from` whose statement can change a scan's verdict
+ * for `reg` (mentions it in its own frame, or contains a jump) —
+ * `list.length` when there is none. Every statement skipped over is
+ * `clear`-and-keep-going for `reg` (see the section comment above).
+ *
+ * A direct scan, not a precomputed whole-list index: `stmtInterest` is
+ * memoised per statement node (`stmtInterestMemo`, module-level and keyed
+ * by node identity, so it survives a splice), so the only work this
+ * function does is the statements between `from` and the answer — never a
+ * separate `O(list.length)` pass over the *whole* list. `list` itself gets
+ * a fresh array identity on every applied site (`spliceList` rebuilds the
+ * spine), so an index keyed by list identity (the previous approach: a
+ * `byReg`/`jumps` map built once per distinct `list` object) was rebuilt
+ * from scratch on every site — `O(sites × body)` on a function with many
+ * sites, the dominant cost profiled on a real bundle's module-root
+ * function (its own `docs/BUGS.md` row). A bounded scan does not have that
+ * problem: its own cost is exactly `O(distance to the answer)`, the same
+ * bound a caller like `classifySite`'s forward search already pays one
+ * `nextRelevant` call for, whether or not the list itself is huge. */
 function nextRelevant(list: readonly Stmt[], reg: string, from: number): number {
-  const idx = listIndex(list);
-  let positions = idx.relevant.get(reg);
-  if (positions === undefined) {
-    positions = mergeSorted(idx.byReg.get(reg) ?? [], idx.jumps);
-    idx.relevant.set(reg, positions);
+  for (let m = from; m < list.length; m++) {
+    const it = stmtInterest(list[m]!);
+    if (it.jump || it.regs.has(reg)) return m;
   }
-  let lo = 0;
-  let hi = positions.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (positions[mid]! < from) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo < positions.length ? positions[lo]! : list.length;
+  return list.length;
+}
+
+/** Number of pass-through statements (`if`/`labeled`/`iife`/`try`/non-empty
+ *  `switch` — `stmtInterest`'s `passThrough`) in `list[from, to)`. Direct
+ *  scan for the same reason `nextRelevant` is: `to` is always a position
+ *  `nextRelevant` just found a bounded distance from `from`, so this pays
+ *  no more than that same bound, never a whole-list prefix-sum rebuild. */
+function passThroughCount(list: readonly Stmt[], from: number, to: number): number {
+  let n = 0;
+  for (let m = from; m < to; m++) if (stmtInterest(list[m]!).passThrough) n++;
+  return n;
 }
 
 /** Scans `list` from `from`, statement by statement, stopping at the first
@@ -702,8 +662,7 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
       // list, which starts with this read — and refused the site as
       // `use-under-control-flow` before the read was ever reached. Keep that
       // verdict (and its reason) exactly.
-      const prefix = listIndex(list).passThroughPrefix;
-      if (prefix[m]! - prefix[i + 1]! > 0) {
+      if (passThroughCount(list, i + 1, m) > 0) {
         blocked = true;
         break;
       }
