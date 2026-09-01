@@ -113,6 +113,38 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
   const known = new Set<number>();
   for (const m of inventory.modules) if (m.localModuleId !== null) known.add(m.localModuleId);
 
+  // A module's factory Stmt (`bodies.get(factoryFunctionIndex)`) already embeds,
+  // recursively, every descendant function whose lexical parent chain
+  // (`envGraph.closureEnvOf`) stays inside the factory (`emitModule`'s
+  // `childrenOf`/`inlineFunctions`, either hoisted siblings or inline
+  // expressions — both print as `function _fnN(...)`, see `src/emit/print.ts`
+  // "func"). But `emitModule`'s per-function closure-env analysis sometimes
+  // finds no creation site for a function (an "orphan" — W_ORPHAN_FUNCTION /
+  // W_UNEMITTED_FUNCTION) even though the factory's own decompiled body still
+  // calls it by name; in the *unsplit* `decompile()` path this is harmless
+  // because every function lands in the one shared top-level scope, but a
+  // split module file only contains its factory's own subtree, so the
+  // reference resolved to nothing and threw `ReferenceError` at runtime
+  // (docs/BUGS.md "e2e split unmatched-closure", e.g. react-navigation's
+  // module_8.js calling an undeclared `_fn1953`). Fix: after printing a
+  // module's factory, scan the printed text for any `_fnN` reference not
+  // declared anywhere in it, and pull that function's own body (already
+  // decompiled into `bodies` — `decompileAllBodies`'s hook captures every
+  // function `emitModule` reaches, orphans included) into the same file as
+  // an extra declaration nested inside the factory (a real JS closure, not a
+  // file-top-level sibling — see the nesting note further down), transitively
+  // (that body may itself reference further undeclared functions). D17i is
+  // silent on a function
+  // referenced from *two different* modules (this only arises for orphans,
+  // which by definition capture no shared closure environment, so duplicating
+  // the declaration would be safe, but the design doesn't say to) — so the
+  // first module (inventory order) to claim an orphan gets the declaration;
+  // later modules record a diagnostic instead of guessing at sharing
+  // semantics (docs/PUSHBACK.md P-7).
+  const claimedBy = new Map<number, number>();
+  const declFnRe = /function _fn(\d+)\(/g;
+  const refFnRe = /_fn(\d+)/g;
+
   for (const m of inventory.modules) {
     const id = m.localModuleId;
     if (id === null) {
@@ -130,8 +162,59 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     }
     const { body, rewrites } = rewriteFactoryBody(fnStmt.body, fnStmt.params, m.depIds ?? []);
     const funcText = printProgram([{ ...fnStmt, name: "factory", body }], printOpts);
+
+    // Pull in every function transitively referenced-but-undeclared, so no
+    // reference in this file resolves to nothing (see comment above). These
+    // become extra function *declarations at the top of the factory's own
+    // body* (nested inside `factory`, not file-top-level siblings): a
+    // top-level declaration would recompile as a module-scope function
+    // (hermesc never emits a `CreateClosure` for it), tripping the E2E
+    // harness's closure-tree comparison even harder than the original bug —
+    // nesting them inside the factory keeps them "the factory plus every
+    // nested function" (`tools/e2e/roundtrip-corpus.ts`'s own framing of what
+    // one split module is), which is the closest approximation available
+    // without knowing their true original nesting depth (that is the
+    // still-open, harder half of docs/BUGS.md "e2e split unmatched-closure":
+    // envGraph could not find a closure creation site for them at all).
+    const declaredIdx = new Set<number>();
+    const extraStmts: Extract<Stmt, { k: "func" }>[] = [];
+    const queue: number[] = [];
+    const scan = (text: string): void => {
+      for (const mm of text.matchAll(declFnRe)) declaredIdx.add(Number(mm[1]));
+      for (const mm of text.matchAll(refFnRe)) {
+        const idx = Number(mm[1]);
+        if (!declaredIdx.has(idx)) queue.push(idx);
+      }
+    };
+    scan(funcText);
+    while (queue.length > 0) {
+      const idx = queue.shift()!;
+      if (declaredIdx.has(idx)) continue;
+      const owner = claimedBy.get(idx);
+      if (owner !== undefined) {
+        declaredIdx.add(idx);
+        if (owner !== id) {
+          diagnostics.push(
+            `module ${id}: fn#${idx} (_fn${idx}) is referenced but was already written into module ${owner}'s split file, not duplicated (D17i has no shared-orphan-closure rule; PUSHBACK P-7)`,
+          );
+        }
+        continue;
+      }
+      const extraFn = bodies.get(idx);
+      if (!isFuncStmt(extraFn)) {
+        declaredIdx.add(idx);
+        diagnostics.push(`module ${id}: fn#${idx} (_fn${idx}) is referenced but has no emitted body; left undeclared (runtime ReferenceError if reached)`);
+        continue;
+      }
+      claimedBy.set(idx, id);
+      extraStmts.push(extraFn);
+      scan(printProgram([extraFn], printOpts));
+    }
+
+    const finalFnStmt = extraStmts.length > 0 ? { ...fnStmt, name: "factory", body: [...extraStmts, ...body] } : { ...fnStmt, name: "factory", body };
+    const finalFuncText = extraStmts.length > 0 ? printProgram([finalFnStmt], printOpts) : funcText;
     const file = fileNameFor(id);
-    files.set(file, `// hbc2js --split -- Metro module ${id} (source fn#${m.factoryFunctionIndex}, ${opts.moduleName ?? "input.hbc"})\n${funcText}\nmodule.exports = factory;\n`);
+    files.set(file, `// hbc2js --split -- Metro module ${id} (source fn#${m.factoryFunctionIndex}, ${opts.moduleName ?? "input.hbc"})\n${finalFuncText}\nmodule.exports = factory;\n`);
     modules.push({ id, file, factoryFunctionIndex: m.factoryFunctionIndex, deps: depIds, requireRewrites: rewrites });
   }
   modules.sort((a, b) => a.id - b.id);
