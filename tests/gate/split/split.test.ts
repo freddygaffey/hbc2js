@@ -76,3 +76,22 @@ test("at least some require(depId) call sites were rewritten to a real require('
   assert.ok(totalRewrites > 0, "expected at least one require() rewrite");
   assert.ok(totalRewrites >= totalDeps * 0.5, `expected most dependency edges to be rewritten to a literal require(): ${totalRewrites}/${totalDeps}`);
 });
+
+test("splitProject({ passes: {} }) runs the readability pipeline per module (E2E tier 1 needs both modes)", () => {
+  // The default split is the M4 baseline shape (every call is
+  // `Reflect.apply(...)`); with the pipeline on, call-shape rewrites most of
+  // them, so the passes-on tree must be the same set of modules with fewer
+  // Reflect.apply sites — and still syntactically valid.
+  const withPasses = splitProject(bytes, { moduleName: "index.android.hbc", passes: {} });
+  assert.equal(withPasses.modules.length, result.modules.length);
+  assert.deepEqual([...withPasses.files.keys()].sort(), [...result.files.keys()].sort());
+  const count = (r: typeof result): number => [...r.files.values()].reduce((n, c) => n + (c.match(/Reflect\.apply\(/g) ?? []).length, 0);
+  const before = count(result);
+  const after = count(withPasses);
+  assert.ok(before > 0, "the default (no passes) split should still be the M4 baseline call shape");
+  assert.ok(after < before / 2, `passes-on split should rewrite most Reflect.apply sites: ${after} vs ${before}`);
+  for (const m of withPasses.modules.slice(0, 20)) {
+    const check = nodeCheck(withPasses.files.get(m.file) ?? "");
+    assert.ok(check.ok, `${m.file} (passes on): ${check.ok ? "" : check.message}`);
+  }
+});
