@@ -4,7 +4,6 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 
 ## Now
 - **Perf part 3 — `passes/ast.ts` `expressionOnlyCheck` → `defUse(after)`** full-list walk per site (order check needs a global position; needs incremental state, soundness-sensitive). NSW whole-file 563 s / split 512 s on deb today; target < 120 s.
-13. **Guards (27, 28).**
 
 - **Bulk sigdb round 2b — registry-driven candidates (lane B)**: deb has network. Build the candidate list FROM npm: `registry.npmjs.org/-/v1/search?text=keywords:react-native&size=250&from=N` paginated (+ `keywords:expo`, `react-native-*` name search), rank by `api.npmjs.org/downloads/point/last-month/<name>` (batch endpoint), take the top ~3,000 packages × every version published in the last 24 months (each package's registry doc `time` field), minus already-fingerprinted pairs → tens of thousands of jobs; run `continue-bulk.sh` for days on deb (12–24 parallel, disk cleanup per package, incremental assemble every 500). Re-measure Service NSW / rn-template / react-navigation attribution after each assemble; report in DEPS.md. Publish only when Fred says.
 
