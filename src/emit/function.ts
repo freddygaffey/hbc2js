@@ -538,7 +538,12 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   const label: Stmt = { k: "comment", text: `fn#${fn.index} ${quote(fn.name)}${isGlobal ? " (global)" : ""}` };
 
   if (isOpcodeGeneratorBody) {
-    return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: ["__sent", "__isReturn", "__isThrow"], body } }] };
+    // `sameFrame: true` (docs/BUGS.md `E_UNBOUND_IDENT` `r3`/`r15` family):
+    // this closure is not a separate Hermes function — it is `_fn${fn.index}`
+    // itself, re-entered on every resume — so it shares `prologue`'s register
+    // decl rather than owning its own. `src/passes/ast.ts`'s `countUses` must
+    // never treat it as a register-frame boundary.
+    return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: ["__sent", "__isReturn", "__isThrow"], body, sameFrame: true } }] };
   }
   return { k: "func", name, params, body: [label, ...prologue, ...body] };
 }
