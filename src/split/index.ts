@@ -21,6 +21,7 @@ import { buildInventoryFromModule } from "../deps/inventory.ts";
 import type { Stmt } from "../emit/ast.ts";
 import { emitModule } from "../emit/index.ts";
 import { printProgram } from "../emit/print.ts";
+import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
 import { astPassHook, passHook } from "../passes/index.ts";
@@ -45,10 +46,17 @@ export interface SplitResult {
 
 export interface SplitOptions {
   readonly moduleName?: string;
-  /** D20 `--jsx`: run the pass pipeline (with these options — the CLI passes
-   *  `optIn: ["jsx-recover"]`) on every module instead of the M4 baseline. */
+  /**
+   * Run the readability pass pipeline (spec 07) on every function before it
+   * is written, exactly as `decompile()` does. Default (undefined): no
+   * passes — the M4 baseline shape, see the file header. Added for the E2E
+   * tier-1 round-trip harness (`tools/e2e/roundtrip-corpus.ts`,
+   * docs/TESTING.md "E2E tier 1"), which needs the split tree in both
+   * modes; `{}` means "every registered pass at its default".
+   */
   readonly passes?: PassPipelineOptions;
-  /** Print `jsx` nodes as JSX (`src/emit/print.ts` `PrintOptions.jsx`). */
+  /** D20 `--jsx`: the CLI passes `optIn: ["jsx-recover"]` in `passes` and sets
+   *  this so `jsx` nodes print as JSX (`src/emit/print.ts` `PrintOptions.jsx`). */
   readonly jsx?: boolean;
 }
 
@@ -60,24 +68,31 @@ function isFuncStmt(s: Stmt | undefined): s is Extract<Stmt, { k: "func" }> {
  *  file header) and hand back each function's own top-level JS AST, keyed by
  *  function index, exactly as `decompileAst` does internally (spec 07 F1) but
  *  without running the pass pipeline. */
-function decompileAllBodies(module: HbcModule, passes?: PassPipelineOptions): ReadonlyMap<number, Extract<Stmt, { k: "func" }>> {
+function decompileAllBodies(module: HbcModule, passes: PassPipelineOptions | undefined, diagnostics: string[]): ReadonlyMap<number, Extract<Stmt, { k: "func" }>> {
   const analysis = analyseModule(module, { strictEnv: false });
   const bodies = new Map<number, Extract<Stmt, { k: "func" }>>();
-  // D20 `--jsx`: the readability ladder (with jsx-recover opted in) runs here
-  // too — the same hooks `decompile()` wires, tapped for each body.
-  const hook = passes === undefined ? undefined : astPassHook(analysis, passes);
-  emitModule(analysis, {
-    moduleName: "input.hbc",
-    provenanceComments: false,
-    strictEnv: false,
-    structure: { verify: false },
-    ...(passes === undefined ? {} : { passes: passHook(analysis, passes) }),
-    astPasses: (fn, cfg) => {
-      const out = hook === undefined ? { fn, diagnostics: [] } : hook(fn, cfg);
-      if (out.fn.k === "func") bodies.set(cfg.functionIndex, out.fn);
-      return out;
-    },
-  });
+  const hook = passes !== undefined ? astPassHook(analysis, passes) : undefined;
+  try {
+    emitModule(analysis, {
+      moduleName: "input.hbc",
+      provenanceComments: false,
+      strictEnv: false,
+      structure: { verify: false },
+      ...(passes !== undefined ? { passes: passHook(analysis, passes) } : {}),
+      astPasses: (fn, cfg) => {
+        const out = hook !== undefined ? hook(fn, cfg) : { fn, diagnostics: [] };
+        if (out.fn.k === "func") bodies.set(cfg.functionIndex, out.fn);
+        return out;
+      },
+    });
+  } catch (e) {
+    // `emitModule`'s module-level scope check (`checkBindings`) runs after
+    // every body has already reached this hook, so one function's unbound
+    // identifier (docs/BUGS.md 2026-09-01, E_UNBOUND_IDENT on Service NSW)
+    // need not take the whole split down: keep the bodies, report it.
+    if (!(e instanceof Hbc2jsError) || e.code !== ErrorCode.E_UNBOUND_IDENT) throw e;
+    diagnostics.push(`module-level scope check failed after every function was emitted (${e.code}: ${e.message}); bodies kept as emitted`);
+  }
   return bodies;
 }
 
@@ -88,10 +103,10 @@ function fileNameFor(moduleId: number): string {
 export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitResult {
   const module = parseHbc(bytes);
   const inventory = buildInventoryFromModule(module);
-  const bodies = decompileAllBodies(module, opts.passes);
+  const diagnostics: string[] = [];
+  const bodies = decompileAllBodies(module, opts.passes, diagnostics);
   const printOpts = { indent: "  ", jsx: opts.jsx === true };
 
-  const diagnostics: string[] = [];
   const files = new Map<string, string>();
   const modules: SplitModuleInfo[] = [];
 
