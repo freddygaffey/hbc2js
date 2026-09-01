@@ -1,0 +1,4 @@
+# 2026-09-02 — tier-1 allocation-insensitive diff — Sonnet, lean
+Tokens 190k · tool calls 130 · green.
+
+`src/harness/roundtrip.ts` `{strong:true}`: register rename by first use (existed), canonical reordering of adjacent register-only loads (LoadConst*/LoadParam/GetGlobalObject; skipped across labels and on dest collisions), canonical constant rendering. Not done (would risk false IDENTICAL without per-operand def/use info): fresh-register `Mov`, SSA-style rename — BUGS row. Result: rn-template 20.58→20.70% off / 37.28→37.50% on; react-navigation unchanged. Conclusion: the round-trip gap is real emit shape, not allocation. Top buckets now: `TryGetById(string)` (dead globalThis stores after global-access), `LoadFromEnvironment(imm)`/`CreateFunctionEnvironment(imm)` (env-slot shape), object literals as `{}`+assignments, `LoadThisNS` coercion, `GetById(reg)` register-reuse family (new row).
