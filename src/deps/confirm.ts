@@ -165,24 +165,62 @@ export const fetchVersionTimesFromRegistry: FetchVersionTimes = async (pkg) => {
   }
 };
 
-/** The version whose registry publish date is closest to `referenceIso` —
- *  "nearest by date" when a guess carried a package name but no version
- *  (the common case: a `NativeModules.X` hit never carries one). */
-export function nearestVersionByDate(times: Record<string, string>, referenceIso: string): string | null {
+/** A version counts as a semver *prerelease/nightly* when it carries a `-`
+ *  suffix — `0.74.0-nightly-20240101-abc`, `0.75.0-rc.1`, and the
+ *  `0.0.0-<timestamp>-<sha>` scheme some nightly-only packages use for
+ *  every single release all match. A bare `1.2.3` does not. */
+function isStablePublishedVersion(version: string): boolean {
+  return !version.includes("-");
+}
+
+export interface NearestVersionResult {
+  readonly version: string | null;
+  /** True when no stable release existed near `referenceIso` at all and the
+   *  nearest prerelease/nightly was returned instead of a stable release —
+   *  `confirmCandidates` surfaces this so `--confirm` can flag the
+   *  resolution as resolved-but-risky (docs/BUGS.md,
+   *  "nearestVersionByDate can resolve to an unbundleable nightly"). */
+  readonly usedPrerelease: boolean;
+}
+
+/** The version whose registry publish date is closest to `referenceIso`,
+ *  preferring a stable release over a prerelease/nightly — "nearest by
+ *  date" when a guess carried a package name but no version (the common
+ *  case: a `NativeModules.X` hit never carries one). Several fast-moving
+ *  RN packages (react-native-gesture-handler, -screens,
+ *  -safe-area-context, -pager-view, ...) publish nightlies continuously,
+ *  so picking the nearest release *of any kind* often lands on an
+ *  unbundleable nightly that a `--confirm` run can never install; filtering
+ *  to stable releases first (falling back to the nearest prerelease only
+ *  when a package has shipped no stable release at all) fixes that. */
+export function nearestVersionByDateDetailed(times: Record<string, string>, referenceIso: string): NearestVersionResult {
   const ref = Date.parse(referenceIso);
-  let best: string | null = null;
-  let bestDiff = Infinity;
-  for (const [version, iso] of Object.entries(times)) {
-    if (version === "created" || version === "modified") continue;
-    const t = Date.parse(iso);
-    if (Number.isNaN(t)) continue;
-    const diff = Math.abs(t - ref);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = version;
+  const nearest = (predicate: (version: string) => boolean): string | null => {
+    let best: string | null = null;
+    let bestDiff = Infinity;
+    for (const [version, iso] of Object.entries(times)) {
+      if (version === "created" || version === "modified") continue;
+      if (!predicate(version)) continue;
+      const t = Date.parse(iso);
+      if (Number.isNaN(t)) continue;
+      const diff = Math.abs(t - ref);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = version;
+      }
     }
-  }
-  return best;
+    return best;
+  };
+  const stable = nearest(isStablePublishedVersion);
+  if (stable !== null) return { version: stable, usedPrerelease: false };
+  const prerelease = nearest((v) => !isStablePublishedVersion(v));
+  return { version: prerelease, usedPrerelease: prerelease !== null };
+}
+
+/** Convenience wrapper over `nearestVersionByDateDetailed` for callers that
+ *  don't need to know whether the pick fell back to a prerelease. */
+export function nearestVersionByDate(times: Record<string, string>, referenceIso: string): string | null {
+  return nearestVersionByDateDetailed(times, referenceIso).version;
 }
 
 export interface ConfirmOptions {
@@ -246,6 +284,11 @@ export interface ConfirmSuccess {
   readonly ok: true;
   readonly score: PackageScore;
   readonly writtenTo: readonly string[];
+  /** Set only when the resolved version came from `nearestVersionByDateDetailed`
+   *  falling back to a prerelease/nightly because the package had shipped no
+   *  stable release near the reference date — surfaced so `--confirm`'s
+   *  report can flag a confirmed package as resolved-but-risky. */
+  readonly usedPrereleaseVersion?: boolean;
 }
 
 export interface ConfirmFailure {
@@ -253,6 +296,8 @@ export interface ConfirmFailure {
   readonly ok: false;
   readonly reason: string;
   readonly score?: PackageScore;
+  /** See `ConfirmSuccess.usedPrereleaseVersion`. */
+  readonly usedPrereleaseVersion?: boolean;
 }
 
 export type ConfirmResult = ConfirmSuccess | ConfirmFailure;
@@ -413,12 +458,12 @@ function bundleAndCompile(pkg: string, scratchProjectDir: string, hermescPath: s
  *  was nothing to resolve to (no version evidence *and* the registry lookup
  *  failed or came back empty) — `confirmCandidates` records that as a
  *  failure and never calls `npm pack` for it. */
-async function resolveCandidateVersion(candidate: ConfirmCandidate, referenceDate: string, opts: ConfirmOptions): Promise<string | null> {
-  if (candidate.version !== null) return candidate.version;
+async function resolveCandidateVersion(candidate: ConfirmCandidate, referenceDate: string, opts: ConfirmOptions): Promise<NearestVersionResult> {
+  if (candidate.version !== null) return { version: candidate.version, usedPrerelease: false };
   const fetchTimes = opts.fetchVersionTimes ?? fetchVersionTimesFromRegistry;
   const times = await fetchTimes(candidate.package);
-  if (times === null) return null;
-  return nearestVersionByDate(times, referenceDate);
+  if (times === null) return { version: null, usedPrerelease: false };
+  return nearestVersionByDateDetailed(times, referenceDate);
 }
 
 /** `rnVersion`'s own npm publish date — see `ConfirmOptions.referenceDate`'s
@@ -438,23 +483,25 @@ export async function confirmCandidates(candidates: readonly ConfirmCandidate[],
   const baseline = computeBaselineHashes(opts.baselineDirs ?? [], opts.hbcVersion);
 
   for (const rawCandidate of dedupeCandidatesByPackage(candidates)) {
-    const resolvedVersion = await resolveCandidateVersion(rawCandidate, referenceDate, opts);
-    if (resolvedVersion === null) {
+    const resolved = await resolveCandidateVersion(rawCandidate, referenceDate, opts);
+    if (resolved.version === null) {
       results.push({ candidate: { package: rawCandidate.package, version: null }, ok: false, reason: "no version evidenced and no npm registry release found to resolve 'nearest by date' against" });
       if (opts.rateLimitMs !== undefined && opts.rateLimitMs > 0) await sleep(opts.rateLimitMs);
       continue;
     }
-    const candidate: ResolvedCandidate = { package: rawCandidate.package, version: resolvedVersion };
+    const candidate: ResolvedCandidate = { package: rawCandidate.package, version: resolved.version };
+    const usedPrereleaseVersion = resolved.usedPrerelease;
     const startedAt = Date.now();
     const elapsed = () => `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
 
     const key = `${candidate.package}@${candidate.version}__hbc${opts.hbcVersion}`;
     const cachedFailure = failureLog[key];
     if (cachedFailure !== undefined) {
-      results.push({ candidate, ok: false, reason: `previously failed (${cachedFailure.at}): ${cachedFailure.reason}` });
+      results.push({ candidate, ok: false, reason: `previously failed (${cachedFailure.at}): ${cachedFailure.reason}`, ...(usedPrereleaseVersion ? { usedPrereleaseVersion } : {}) });
       continue;
     }
 
+    if (usedPrereleaseVersion) opts.onProgress?.(`  ! ${candidate.package} has no stable release near the reference date — resolved to prerelease/nightly ${candidate.version}`);
     opts.onProgress?.(`confirming ${candidate.package}@${candidate.version} (hbc${opts.hbcVersion})...`);
     let workDir: string | null = null;
     try {
@@ -494,18 +541,18 @@ export async function confirmCandidates(candidates: readonly ConfirmCandidate[],
 
       if (score !== undefined && (score.tier === "high" || score.tier === "medium")) {
         const written = [writeSignature(opts.projectDbDir, db), writeSignature(opts.userCacheDbDir, db)];
-        results.push({ candidate, ok: true, score, writtenTo: written });
+        results.push({ candidate, ok: true, score, writtenTo: written, ...(usedPrereleaseVersion ? { usedPrereleaseVersion } : {}) });
         opts.onProgress?.(`  -> confirmed ${candidate.package}@${candidate.version} at ${score.tier} (${elapsed()})`);
       } else {
         const reason = score === undefined ? "no eligible functions after fingerprinting" : `confidence tier ${score.tier} too low (exact ${(score.exactCoverage * 100).toFixed(1)}%)`;
         failureLog[key] = { reason, at: new Date().toISOString() };
-        results.push({ candidate, ok: false, reason, ...(score !== undefined ? { score } : {}) });
+        results.push({ candidate, ok: false, reason, ...(score !== undefined ? { score } : {}), ...(usedPrereleaseVersion ? { usedPrereleaseVersion } : {}) });
         opts.onProgress?.(`  -> not confirmed: ${reason} (${elapsed()})`);
       }
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       failureLog[key] = { reason, at: new Date().toISOString() };
-      results.push({ candidate, ok: false, reason });
+      results.push({ candidate, ok: false, reason, ...(usedPrereleaseVersion ? { usedPrereleaseVersion } : {}) });
       opts.onProgress?.(`  -> failed: ${reason.split("\n")[0]} (${elapsed()})`);
     } finally {
       if (workDir !== null) rmSync(workDir, { recursive: true, force: true });

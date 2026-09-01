@@ -263,7 +263,12 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
    and the **user cache** (`~/.cache/hbc2js/sigdb`) so it's free on the next
    run. A candidate that fails to bundle/compile/match is recorded (not
    retried) in `<scratch>/confirm-failures.json`. Downloads are rate-limited
-   (500ms between candidates by default).
+   (500ms between candidates by default). When a candidate's version has to
+   be resolved by "nearest npm release by date" (no version evidenced),
+   `nearestVersionByDateDetailed` prefers the nearest **stable** release over
+   a nightly/prerelease and only falls back to the nearest prerelease — with
+   the pick flagged (`usedPrereleaseVersion`) on the `ConfirmResult` — when a
+   package has shipped no stable release at all.
 
 5. **Report** (`src/deps/report.ts`): the human table / `--json` shape, plus
    `<out>/package.json` when confident. `DepsReport.moduleOwnership` is the
