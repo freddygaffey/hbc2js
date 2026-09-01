@@ -141,8 +141,12 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         walkExpr(jsxToCall(e), scopes, where);
         return;
       case "func": {
-        const inner = new Set<string>(e.params);
+        const inner = new Set<string>(e.params.map((x) => x.name));
         collect(e.body, inner);
+        // F15: a default's `init` is evaluated in the function's own
+        // parameter scope (it may reference an earlier parameter), not the
+        // enclosing scope the `func` node itself sits in.
+        for (const param of e.params) if (param.init !== undefined) walkExpr(param.init, [...scopes, inner], where);
         walkBody(e.body, [...scopes, inner], where);
         return;
       }
@@ -218,8 +222,9 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         }
         return;
       case "func": {
-        const inner = new Set<string>(s.params);
+        const inner = new Set<string>(s.params.map((x) => x.name));
         collect(s.body, inner);
+        for (const param of s.params) if (param.init !== undefined) walkExpr(param.init, [...scopes, inner], where);
         walkBody(s.body, [...scopes, inner], `${where} > ${s.name}`);
         return;
       }

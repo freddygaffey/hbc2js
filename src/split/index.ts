@@ -278,7 +278,11 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
       modules.push({ id, file, factoryFunctionIndex: m.factoryFunctionIndex, deps: depIds, requireRewrites: 0 });
       continue;
     }
-    const { body, rewrites } = rewriteFactoryBody(fnStmt.body, fnStmt.params, m.depIds ?? []);
+    const { body, rewrites } = rewriteFactoryBody(
+      fnStmt.body,
+      fnStmt.params.map((x) => x.name),
+      m.depIds ?? [],
+    );
     const funcText = printProgram([{ ...fnStmt, name: "factory", body }], printOpts);
 
     // Pull in every function transitively referenced-but-undeclared, so no

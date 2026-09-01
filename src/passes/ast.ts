@@ -11,7 +11,7 @@
 import vm from "node:vm";
 import type { Diagnostic } from "../errors.ts";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
-import type { Expr, Stmt } from "../emit/ast.ts";
+import type { Expr, Param, Stmt } from "../emit/ast.ts";
 import { printProgram } from "../emit/print.ts";
 import type { AbandonedRecord, AppliedRecord, CheckResult, Pass, PassContext } from "./types.ts";
 
@@ -19,7 +19,8 @@ import type { AbandonedRecord, AppliedRecord, CheckResult, Pass, PassContext } f
 // `match`/`rewrite`/`check` signatures need to *name* `Stmt`/`Expr`, and
 // `../../emit/ast.ts` is not on D12a's allowlist — only `../ast.ts` (this
 // file) is. Without this re-export no stage-B rung could be typed at all.
-export type { Expr, Stmt } from "../emit/ast.ts";
+export type { Expr, Param, Stmt } from "../emit/ast.ts";
+export { p } from "../emit/ast.ts";
 
 // docs/specs/passes/05-fn-naming.md §6 obligation 3 ("printing `before`, and
 // printing `after` with the rename undone, is byte-identical — implement
@@ -117,6 +118,7 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
         jsxParts(e).forEach(walkExpr);
         return;
       case "func":
+        for (const param of e.params) if (param.init !== undefined) walkExpr(param.init);
         walkStmts(e.body);
         return;
       default:
@@ -173,6 +175,7 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
           }
           break;
         case "func":
+          for (const param of s.params) if (param.init !== undefined) walkExpr(param.init);
           walkStmts(s.body);
           break;
         case "iife":
@@ -184,6 +187,20 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
     }
   };
   walkStmts(stmts);
+}
+
+/** F15: rebuild every `param.init` through `fx`, keeping a `Param` object
+ *  identity-stable (and the whole array's) when nothing under it changed. */
+function mapParams(params: readonly Param[], fx: (e: Expr) => Expr): readonly Param[] {
+  let changed = false;
+  const out = params.map((param) => {
+    if (param.init === undefined) return param;
+    const init = mapExpr(param.init, fx);
+    if (init === param.init) return param;
+    changed = true;
+    return { ...param, init };
+  });
+  return changed ? out : params;
 }
 
 /** Post-order rebuild of every `Expr` reachable from `e` (including nested
@@ -281,8 +298,9 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
       break;
     }
     case "func": {
+      const params = mapParams(e.params, fx);
       const body = mapStmts(e.body, (s) => s, fx);
-      rebuilt = body === e.body ? e : { ...e, body };
+      rebuilt = params === e.params && body === e.body ? e : { ...e, params, body };
       break;
     }
     default:
@@ -361,8 +379,9 @@ function mapStmtChildren(s: Stmt, fs: (s: Stmt) => Stmt, fx: (e: Expr) => Expr):
       return changed ? { ...s, disc, cases } : s;
     }
     case "func": {
+      const params = mapParams(s.params, fx);
       const body = mapStmts(s.body, fs, fx);
-      return body === s.body ? s : { ...s, body };
+      return params === s.params && body === s.body ? s : { ...s, params, body };
     }
     case "iife": {
       const body = mapStmts(s.body, fs, fx);
@@ -484,7 +503,10 @@ export function freeNames(stmts: readonly Stmt[]): Set<string> {
       if (e.k === "ident") used.add(e.name);
       else if (e.k === "func") {
         if (e.name !== null) bound.add(e.name);
-        for (const p of e.params) bound.add(p);
+        // F15: `param.init`'s idents (walked generically by `walk` below)
+        // are free of the *outer* list this func node sits in — only the
+        // param's own name is bound here.
+        for (const param of e.params) bound.add(param.name);
       }
     },
     stmt: (s) => {
@@ -493,7 +515,7 @@ export function freeNames(stmts: readonly Stmt[]): Set<string> {
       else if (s.k === "try") bound.add(s.param);
       else if (s.k === "func") {
         bound.add(s.name);
-        for (const p of s.params) bound.add(p);
+        for (const param of s.params) bound.add(param.name);
       }
     },
   });
@@ -680,14 +702,21 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
         // unchanged, register names included, exactly like any other
         // statement in this same list.
         if (e.sameFrame === true) {
+          for (const param of e.params) if (param.init !== undefined) visitExpr(param.init, inNested);
           visitStmts(e.body, inNested);
           return;
         }
         // Otherwise a separate register frame (see `IdentUses.nested`'s
         // doc): a register name can never be the same binding in there, so
         // skip it entirely rather than let a coincidentally-same-numbered
-        // local count as a "nested" use of this frame's `name`.
-        if (followNested) visitStmts(e.body, true);
+        // local count as a "nested" use of this frame's `name`. A param
+        // default runs in that same nested frame (it is per-call, not
+        // per-definition — see `effectSequence`'s `func` case), never this
+        // one's, so it follows the exact same rule as the body.
+        if (followNested) {
+          for (const param of e.params) if (param.init !== undefined) visitExpr(param.init, true);
+          visitStmts(e.body, true);
+        }
         return;
       default:
         return; // lit, this, argumentsObject
@@ -744,7 +773,10 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
           break;
         case "func":
           // Same boundary as the `Expr` "func" case above.
-          if (followNested) visitStmts(s.body, true);
+          if (followNested) {
+            for (const param of s.params) if (param.init !== undefined) visitExpr(param.init, true);
+            visitStmts(s.body, true);
+          }
           break;
         case "iife":
           visitStmts(s.body, inNested);

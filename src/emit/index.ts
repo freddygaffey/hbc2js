@@ -6,8 +6,8 @@ import { structure } from "../structure/index.ts";
 import type { StructureOptions, StructuredFunction } from "../structure/index.ts";
 import { getBuiltinTable } from "../tables/registry.ts";
 import { helperPrelude } from "../runtime/helpers.ts";
-import type { Stmt } from "./ast.ts";
-import { id, lit } from "./ast.ts";
+import type { Param, Stmt } from "./ast.ts";
+import { id, lit, p } from "./ast.ts";
 import { emitFunction, envDeclaringFunction, ownedEnvSlots } from "./function.ts";
 import { fnName, quote } from "./names.ts";
 import { checkBindings } from "./scope-check.ts";
@@ -86,8 +86,8 @@ function stubFor(analysis: ModuleAnalysis, index: number, err: Hbc2jsError): Stm
   // can therefore be off by one for a variadic function, which is harmless
   // since the stub only ever throws.
   const namedParams = Math.max(0, decoded.header.paramCount - 1);
-  const params: string[] = [];
-  for (let i = 1; i <= namedParams; i++) params.push(`a${i}`);
+  const params: Param[] = [];
+  for (let i = 1; i <= namedParams; i++) params.push(p(`a${i}`));
 
   const offset = err.context.offset;
   const message = `hbc2js: could not decompile fn#${index} — ${err.code}${offset !== undefined ? ` at offset ${offset}` : ""}`;

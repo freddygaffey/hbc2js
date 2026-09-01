@@ -25,7 +25,7 @@ import type { PassContext } from "../../../src/passes/types.ts";
 const assignExpr = (target: Expr, value: Expr): Expr => ({ k: "assign", target, value });
 const exprStmt = (e: Expr): Stmt => ({ k: "expr", expr: e });
 const member = (obj: Expr, prop: string): Expr => ({ k: "member", obj, prop: lit(prop), computed: false });
-const funcStmt = (name: string, body: readonly Stmt[], params: readonly string[] = []): Stmt => ({ k: "func", name, params, body });
+const funcStmt = (name: string, body: readonly Stmt[], params: readonly string[] = []): Stmt => ({ k: "func", name, params: params.map((n) => ({ name: n })), body });
 const initStmt = (name: string, value: Expr): Stmt => ({ k: "init", kind: "let", name, value });
 const declStmt = (names: readonly string[]): Stmt => ({ k: "decl", kind: "let", names });
 

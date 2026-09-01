@@ -36,7 +36,7 @@ const seq = (...exprs: Expr[]): Expr => ({ k: "seq", exprs });
 const forStmt = (init: Expr | null, test: Expr, update: Expr | null, body: readonly Stmt[]): Stmt => ({ k: "for", label: null, init, test, update, body });
 const ifStmt = (test: Expr, then: readonly Stmt[], els: readonly Stmt[] = []): Stmt => ({ k: "if", test, then, else: els });
 const ret = (arg: Expr | null): Stmt => ({ k: "return", arg });
-const funcStmt = (name: string, body: readonly Stmt[], params: readonly string[] = []): Stmt => ({ k: "func", name, params, body });
+const funcStmt = (name: string, body: readonly Stmt[], params: readonly string[] = []): Stmt => ({ k: "func", name, params: params.map((n) => ({ name: n })), body });
 const declStmt = (names: readonly string[]): Stmt => ({ k: "decl", kind: "let", names });
 const printCall = (...args: Expr[]): Stmt => exprStmt(call(id("print"), args));
 

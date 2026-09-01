@@ -65,7 +65,7 @@ export type Expr =
   | {
       readonly k: "func";
       readonly name: string | null;
-      readonly params: readonly string[];
+      readonly params: readonly Param[];
       readonly body: readonly Stmt[];
       /** `true` only for the generator/async resume-dispatcher closure
        *  `emit/function.ts` returns from an `isOpcodeGeneratorBody` function
@@ -141,6 +141,19 @@ export function jsxToCall(e: Extract<Expr, { k: "jsx" }>): Extract<Expr, { k: "c
   return { k: "call", callee: f.callee, args: [e.tag, props, ...childExprs] };
 }
 
+/**
+ * F15 (docs/specs/passes/15-default-params.md §3): a declared parameter.
+ * `init` is a default value (`15-default-params`'s own rewrite target);
+ * `rest` marks a rest element (`17-spread-rest`). Neither rung is required
+ * to set either field — a plain parameter is `{name}`, nothing else.
+ */
+export interface Param {
+  readonly name: string;
+  readonly init?: Expr;
+  readonly rest?: true;
+}
+export const p = (name: string): Param => ({ name });
+
 export interface ObjectProp {
   readonly key: string; // identifier text, or a rendered literal when `computed`
   readonly computed: boolean;
@@ -191,7 +204,7 @@ export type Stmt =
   | { readonly k: "throw"; readonly arg: Expr }
   | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string; readonly handler: readonly Stmt[] }
   | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[] }
-  | { readonly k: "func"; readonly name: string; readonly params: readonly string[]; readonly body: readonly Stmt[] }
+  | { readonly k: "func"; readonly name: string; readonly params: readonly Param[]; readonly body: readonly Stmt[] }
   | { readonly k: "directive"; readonly text: string }
   /**
    * `(function () { … })();` — the whole module's wrapper. Without it every
