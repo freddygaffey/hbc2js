@@ -1,0 +1,4 @@
+# 2026-09-02 — bare-Node boot harness → AppRegistry — Sonnet, lean
+Tokens 84k · tool calls 66 · green first try.
+
+MILESTONE: the decompiled rn-template `--split` tree, loaded under `tools/e2e/boot-split.mjs` (bare Node, no jsdom), runs its real entry and calls **AppRegistry.registerComponent("HelloHermes072")** — 87/435 modules executed, no unrecovered throw. Past module 154's `window` check via plain object shims (`window=global`, stub `document`/`navigator`). registerComponent recorded by wrapping `Object.defineProperty` getters (RN exposes AppRegistry lazily) — no src change. Pinned `tools/e2e/boot-expected/rn-template-0.72.json` (floor 87, reachedRegisterComponent true); sweep test `tests/sweep/e2e/boot-split.test.ts`. 32 native accesses recorded (DeviceInfo/UIManager getConstants, perf hooks) — the RN-web stub list. jsdom not needed.
