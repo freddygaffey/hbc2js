@@ -41,4 +41,11 @@ tools: Bash, Read, Edit, Write, Grep, Glob
 ```
 Briefs state the budget explicitly. Measured baseline before this change (2026-08-31/09-01, general-purpose): 130k–330k tokens and 90–170 tool calls per rung.
 
+## Landing rules (`docs/CONSOLIDATION.md` §C/D, verbatim)
+
+- **12.** "Attributable to concurrent work" is not a landing note; reproduce in isolation or fix.
+- **16.** Adversarial reviewers: fresh context, different model family where possible.
+- **17.** Cheap validators produce findings, not verdicts; the suite is the gate.
+- **20.** Full sweep on every merge to main or nightly.
+
 **Caveat (2026-09-01):** custom agent types under `.claude/agents/` are loaded at session start — a definition created mid-session is not available until the next `claude` launch (`Agent type 'lean' not found`). Until then, launch `general-purpose` with the budget rules pasted into the brief; the tool-schema saving only arrives with `lean`.
