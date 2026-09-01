@@ -3,8 +3,7 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-7. **Fix: Service NSW whole-file abort** — scope-check isolation per function.
-8. **Fix: Service NSW 452 s** — profile the 43k-function superlinear term.
+6. **Perf part 2 — `expr-rebuild/check.ts` `bu = registerUses(before)`** is a fresh O(list) walk per site when `registerUsesMemo` is cold (synthetic 5,000-site root: ~4 s CPU). Persist the per-(pass, function) proof across guard iterations or replace with a bounded scan; then re-measure NSW whole-file passes-on on deb (was 946 s there; target < 60 s) and close the BUGS row with numbers.
 10. **Fix cluster: semantics (6 adversarial rows)** — verdict first, fix the real ones.
 11. **Tier-1 buckets:** make the normalised diff register/schedule-insensitive where the difference is provably allocation-only (top buckets `GetByVal(reg)`, `LoadParam(imm)`, `LoadConstUndefined/GetGlobalObject`), so IDENTICAL measures semantics not scheduling; re-baseline.
 12. **Mutation-test the checkers (4)** — Stryker over `src/passes/*/check.ts`.
