@@ -1,0 +1,4 @@
+# 2026-09-02 — navigator naming + NSW screen blocker — Sonnet, lean
+Tokens 180k · tool calls 119 · green.
+
+Fix 2 SHIPPED: navigators named from the common prefix of their resolved routes (commonRoutePrefix) — LicenceNavigator etc; gate-tested; react-navigation-example pinned exact (4/54 deps, 6/58 no-deps). Fix 1 (NSW screen detection) NOT shipped: same-module .Navigator/.Screen heuristic over-matched (54→67 screens) — reverted; Reflect.apply resolver-hop also regressed — reverted. Hand-read NSW: route names/.component targets live in a SEPARATE sibling module walked at runtime via Object.entries — not literal per-route pairs in the JSX module's text. Genuinely needs a cross-module route-config walk (bigger than a lean regex widen). NSW: 26 navigators (generic — no own routes to name from), 0 screens. BUGS row sharpened, left open. Three agents now, each refusing to over-match — correct discipline.
