@@ -267,6 +267,74 @@ void test("segregate: detects a navigator (create<X>Navigator + @react-navigatio
   assert.equal(byIdNoDeps.get(11)!.bucket, "unclassified"); // no name signal of its own -- correctly not guessed into src/ or node_modules/
 });
 
+// 2026-09-02 (navigator-detection tightening brief, following the NSW
+// route-resolution report's "bare createXNavigator re-exports mis-detected
+// as navigators" note): a module whose entire job is to require a
+// navigator factory, call/read it, and export the result straight through
+// -- no `{name, component}` registry of its own, no `Object.entries(...)`
+// consumer walk -- is not a navigator. Module 13's shape is exactly the one
+// hand-confirmed on Service NSW (BUGS.md row, fifth revisit): a single flat
+// factory function, `.createStackNavigator` read off the required package,
+// called with a route config it never builds itself (`r1[2]`, a *separate*
+// required module, module 15 -- the "externally-sourced" half of "no route
+// config of its own"), and the call result exported straight through.
+void test("segregate: a bare create<X>Navigator re-export (require + call/read + export, no owned or consumed route config) is not counted as a navigator", () => {
+  const modulesJson = {
+    hbcVersion: 98,
+    moduleCount: 3,
+    entry: null,
+    modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] }, // @react-navigation/stack (library)
+      { id: 13, file: "module_13.js", factoryFunctionIndex: 13, deps: [11, 15] }, // bare re-export, no registry of its own
+      { id: 15, file: "module_15.js", factoryFunctionIndex: 15, deps: [] }, // externally-sourced route config
+    ],
+  };
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify(modulesJson)],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_13.js');\nrequire('./module_15.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    // Bare re-export (§3.1 tightening): reads `.createStackNavigator` off
+    // the required package, calls it with module 15's already-built config
+    // (no `{name: ...}`/`.name =`/`.component =` registry pattern anywhere
+    // in THIS module's own text), and exports the call result directly.
+    [
+      "module_13.js",
+      `// hbc2js --split -- Metro module 13\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5, r6;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createStackNavigator;\n  r4 = r1[1];\n  r3 = r2(r4).routeConfig;\n  r6 = r5(r3);\n  a3.exports = r6;\n}\n\n__d(factory, 13, [11, 15]);\n`,
+    ],
+    ["module_15.js", `// hbc2js --split -- Metro module 15\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0;\n  r0 = {};\n  a3.exports.routeConfig = r0;\n}\n\n__d(factory, 15, []);\n`],
+  ]);
+  const deps = {
+    matches: [],
+    guesses: [],
+    confirmed: [],
+    moduleOwnership: [{ localModuleId: 11, factoryFunctionIndex: 11, package: "@react-navigation/stack", version: "7.0.0" }],
+    classification: {
+      modules: [
+        { localModuleId: 11, factoryFunctionIndex: 11, instrCount: 1, classification: "library", signal: "package-name-version-string", confidence: 0.95, libraryPackageHint: "@react-navigation/stack" },
+        { localModuleId: 13, factoryFunctionIndex: 13, instrCount: 1, classification: "custom", signal: "app-vocabulary", confidence: 0.9, libraryPackageHint: null },
+        { localModuleId: 15, factoryFunctionIndex: 15, instrCount: 1, classification: "custom", signal: "app-vocabulary", confidence: 0.9, libraryPackageHint: null },
+      ],
+    },
+  } as unknown as DepsReport;
+
+  const seg = segregateSplitTree(files, deps);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  // Module 13's call-shape alone (`.createStackNavigator`) used to be
+  // enough to name it a navigator; it no longer owns or consumes a route
+  // config of its own, so it must fall through to a lower-priority signal
+  // (or none) rather than `src/navigation/...Navigator.js`.
+  assert.ok(!byId.get(13)!.nameSignal?.startsWith("navigator"), `module 13 (bare re-export) should not be name-signalled as a navigator, got ${byId.get(13)!.nameSignal}`);
+  assert.doesNotMatch(byId.get(13)!.newPath ?? "", /^src\/navigation\//, "bare re-export should not be filed under src/navigation/");
+
+  // Same result with no deps report (shape-alone path).
+  const segNoDeps = segregateSplitTree(files, null);
+  const byIdNoDeps = new Map(segNoDeps.modules.map((m) => [m.id, m]));
+  assert.ok(!byIdNoDeps.get(13)!.nameSignal?.startsWith("navigator"), `module 13 (bare re-export, no deps report) should not be name-signalled as a navigator, got ${byIdNoDeps.get(13)!.nameSignal}`);
+});
+
 // 2026-09-02 (Service NSW brief, BUGS row "segregation-without-deps... 0
 // screens"): hand-inspection of Service NSW's own decompiled text (never
 // committed, per repo policy) found the JSX-props `.name =`/`.component =`
