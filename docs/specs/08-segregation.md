@@ -646,6 +646,42 @@ navigator's route set spans too many domains to share a name prefix, so it
 keeps the generic `Navigator.js` name) in `docs/BUGS.md`'s now-**resolved**
 2026-09-02 row.
 
+**Fourth revisit (2026-09-02, "container role" fallback brief) — shipped,
+the third revisit's own remaining gap closed:** a navigator's route set can
+now resolve (third revisit, above) without `commonRoutePrefix` ever firing
+— a root/tab container merging several unrelated domains has no shared
+prefix by design, so it kept the generic `<Type>Navigator.js` name even
+after its full route set was known. `roleNameForRoutes` (`src/split/
+segregate.ts`) closes this: for a navigator with >= 4 resolved routes (a
+plain two-screen stack keeps its call-shape name — this fallback targets a
+real aggregator, not a small navigator that merely lacks a shared prefix),
+it names the navigator after whichever single "domain token" (`domainToken`
+— the leading all-caps abbreviation or camelCase word of each route name,
+e.g. `"DDL"` from `"DDLCheck"`, `"Licence"` from `"LicenceScan"`) covers at
+least half its routes (a real majority-domain navigator with one or two
+outliers still gets a domain name), falling back to a deterministic role
+name — `MainTabNavigator` when the call-shape kind names a tab factory
+(`create<X>TabNavigator`), `RootNavigator` otherwise — when no domain
+dominates a genuinely diverse route set. Three new fixtures (`tests/gate/
+split/segregate.test.ts`): diverse-domain stack → `RootNavigator`,
+diverse-domain `createBottomTabNavigator` → `MainTabNavigator`,
+dominant-domain-plus-outlier → `LicenceNavigator`; the three existing
+2-route `Home`/`Profile` `StackNavigator` fixtures are unchanged (below the
+>= 4-route floor). react-navigation-example's pinned numbers (4/54 WITH
+deps, 6/58 WITHOUT) are unchanged — none of its own navigators' route sets
+resolve on this fixture, so every one of its navigator names is unchanged
+too (this revisit is a pure addition, not a rename, on that fixture).
+**Result, Service NSW (never committed, numbers only, no `--deps-report`,
+same fast path as the third revisit):** of 26 navigators, 3 now get a
+route/role-derived name (`VenueSignInNavigator` from a resolved route-set
+prefix, two `RootNavigator`s from the new role fallback) vs 23 still on the
+generic call-shape fallback — real screens count unchanged at 36 (naming
+only, no new resolution paths). The remaining 23 generic navigators are a
+resolution gap, not a naming-rule miss: `roleNameForRoutes`/
+`commonRoutePrefix` only ever act on a route set that's already been
+resolved, and most of those 23 have none yet (the third revisit's own two
+tracked gaps). Full detail: `docs/BUGS.md` 2026-09-02 row (fourth entry).
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.
