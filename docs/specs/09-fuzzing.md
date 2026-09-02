@@ -140,11 +140,20 @@ target:
 - **(i) Metric.** Divergence rate: DIVERGENT+ERROR verdicts per 1,000 generated
   programs, per traced version (84/94/96/99), plus the count of *unique open
   divergence signatures* (found but not yet fixture-ised or fixed).
-- **(ii) Target.** First campaign ≥ **10,000 programs per traced version**;
-  exit criterion: divergence rate ≤ **5 per 1,000** on each traced version,
-  measured over the final 2,000 programs of the campaign (i.e. after fixes from
-  earlier finds), with **0 open unminimised finds** at campaign close.
-  Steady state thereafter: nightly run of ≥ 500 programs/version stays ≤ 5/1,000.
+- **(ii) Target.** First campaign ≥ **10,000 programs per traced version**.
+  Exit criterion, measured on the evaluation range (§1.5.iv, 2,000
+  programs/version, run once): **0 novel divergences** — every DIVERGENT/ERROR
+  verdict must match an already-triaged signature, i.e. one whose §1.4 landing
+  (minimised fixture + `docs/BUGS.md` row) is committed — with **0 open
+  unminimised finds** at campaign close and ≤ **5** triaged-but-unfixed
+  signatures per version. Volume tripwire: the raw divergence rate on the
+  evaluation range must also stay ≤ **5 per 1,000** per version — ledgered
+  bugs firing more often than that mean the version is not ready to claim the
+  target. *(A pure rate tolerance was considered and rejected at review: the
+  project's equivalence claim is trace-oracle 0-DIVERGENT, so a divergence may
+  survive a campaign only inside the triage ledger, never inside a tolerance.)*
+  Steady state thereafter: nightly run of ≥ 500 programs/version with **0
+  novel signatures** (ledgered signatures may re-fire until fixed).
 - **(iii) Measurement method.** The driver writes one JSON report per run to
   `reports/fuzz/construct-<UTC date>-<runid>.json` (schema §4.2): per-version
   counts of each verdict, grammarVersion, seed range, signature list. Rates are
@@ -194,10 +203,22 @@ Both the **app source** and the **build config**, from one seed:
   | obfuscation | off | minified/mangled (terser via Metro config) |
 
   The RN-release → HBC-version mapping is **derived, not assumed**: implementer
-  probes each pinned RN release's own `node_modules/react-native/sdks/hermesc`
-  output header and records the table in `docs/TOOLCHAIN.md`. v98 is reachable
-  this way even though we have no v98 VM — that is precisely why B, not A, is
-  our main v98 evidence source. v84 is legacy and out of scope for B.
+  probes each pinned RN release's own bundled `hermesc` (under
+  `node_modules/react-native/sdks/hermesc` for RN ≤ 0.82; under the
+  `hermes-compiler` dependency for RN ≥ 0.83 — see `docs/TOOLCHAIN.md`'s
+  distribution-mechanism section) and records the table in `docs/TOOLCHAIN.md`.
+  v98 is reachable this way even though we have no v98 VM — that is precisely
+  why B, not A, is our main v98 evidence source. Review-confirmed (2026-09-02):
+  `react-native@0.86.0` depends on `hermes-compiler@250829098.0.14`, and every
+  probed `250829098.0.x` build emits HBC 98 in the **98-late (class E)**
+  layout (`docs/TOOLCHAIN.md` v98 probe table), so the v98 triple target is
+  satisfiable via RN 0.86–0.87 — but B's v98 evidence covers 98-late only;
+  98-early (class D) is not publicly obtainable and stays fixture-level debt.
+  Fallback if a pinned RN 0.86/0.87 project fails to build twice: compile the
+  Metro bundle of a *buildable* generated app directly with
+  `tools/hermesc/v98/hermesc` (same compiler family, same layout) and record
+  the triple's `config.json` with `compiler: "direct-hermesc"` so the matrix
+  cell is honest about provenance. v84 is legacy and out of scope for B.
 
 ### 2.2 No Gradle: how a triple is built cheaply
 
@@ -236,7 +257,7 @@ Selection is seeded stratified sampling against the manifest:
 3. **Coverage pressure.** Among quota-passing candidates, prefer the cell with
    the lowest count in the §4 matrix (version × bundler first, then router).
 
-### 2.4 Disk and rotation on deb (deb is at 97 %, 35 GB free)
+### 2.4 Disk and rotation on deb (free space fluctuates — 35–51 GB observed; the preflight, not a snapshot, is the guard)
 
 Builds run **on deb only** (they are npm-install heavy; construct fuzzing runs
 anywhere). Hard bounds, all preflight-enforced by the driver
@@ -366,6 +387,17 @@ displayed but never *gate* anything — gates read cells.
   renders per-cell trend rows. The schema string is the contract: scoreboard
   code matches on `"fuzz-matrix/1"` and ignores files it doesn't understand,
   so the two efforts can land in either order.
+- **Committed-record rule (review, 2026-09-02).** Raw run reports stay
+  gitignored and machine-local (the implementer adds the `reports/` ignore
+  entry — it is not in `.gitignore` today). The *committed* record is the
+  scoreboard row in `docs/reports/metrics/scoreboard.md` (plus, for B, the
+  committed `manifest.json`): whichever numbers the collector extracts from a
+  `reports/fuzz/*.json` file are embedded in the committed row itself, so a
+  reader never needs a gitignored file to interpret history. Landing rule: a
+  campaign close or new-triple landing runs the collector **on the machine
+  holding the report**, in the same landed unit. No committed mirror of
+  `reports/fuzz/` — snapshots would be golden-file debt (regeneration needs
+  Fred's approval per CLAUDE.md) with no reader.
 
 ---
 
@@ -474,3 +506,94 @@ spec's author does not edit `package.json` or `tests/gate/**`).
 
 *(reviewer appends here — decision-8 gate: verify §1.5/§2.5 quadruples exist
 and the targets are sane before implementation launches)*
+
+### Review responses (2026-09-02, Fable reviewer gate)
+
+**Verdict: APPROVED** — with the four required edits already applied in-place
+by the reviewer (listed below, all target/reporting clarifications; none is
+design-changing). Implementation of the construct fuzzer (§7 steps 1–2) may
+launch.
+
+**Checklist findings.**
+
+1. *Decision-8 completeness.* Both quadruples present and labelled
+   (§1.5, §2.5), guarded by the already-shipped T1
+   (`tests/fuzz/spec-consistency.test.ts`). One internal inconsistency found
+   and fixed (edit E1): §1.5.ii measured the exit criterion "over the final
+   2,000 programs of the campaign" while §1.5.iv defined a *disjoint*
+   evaluation range `[S+900,000, S+902,000)`. The exit criterion now measures
+   on the §1.5.iv evaluation range, as the held-out discipline requires.
+2. *Sanity of the divergence bar (spec open question 1 — answered).* The
+   ≤ 5/1,000 tolerance as originally worded was **not** the right bar: the
+   project's equivalence claim is trace-oracle 0-DIVERGENT on fixtures, and a
+   rate tolerance lets up to ~10 divergences per version pass campaign close
+   without anything forcing them into the ledger. Ruling (edit E1): the bar is
+   **0 with a triaged-exclusion ledger** — 0 *novel* divergences on the
+   evaluation range; any divergence that does appear must match an
+   already-triaged signature whose minimised fixture + BUGS.md row are
+   committed (§1.4); ≤ 5 triaged-but-unfixed signatures per version at close;
+   and the raw rate ≤ 5/1,000 is retained only as a volume tripwire. This
+   reconciles ethos (no divergence survives outside the ledger) with realism
+   (a hard-to-fix bug does not block the campaign, it blocks silently ignoring
+   the bug). Nightly steady state likewise: 0 novel signatures.
+3. *v98 obtainability (spec open question 2 — answered).* Confirmed real, not
+   aspirational: `docs/TOOLCHAIN.md` records that `react-native@0.86.0`
+   depends on `hermes-compiler@250829098.0.14`, and every probed
+   `250829098.0.x` build emits HBC 98 — so RN 0.86–0.87 projects yield v98
+   triples via the §2.2 pipeline. The `tools/get-hermesc.sh` caveat means all
+   obtainable v98 output is the **98-late / class E** layout
+   (`docs/HBC-FORMAT.md` layout table); 98-early (class D) is publicly
+   unobtainable and remains fixture-level coverage only — B cannot and need
+   not fix that. Two edits applied (E2): the probe path corrected (hermesc
+   lives in the `hermes-compiler` dep for RN ≥ 0.83, not `sdks/hermesc`), and
+   a fallback specified — if a pinned RN 0.86/0.87 config is `unbuildable`
+   twice, compile a buildable generated app's Metro bundle directly with
+   `tools/hermesc/v98/hermesc`, marking `compiler: "direct-hermesc"` in the
+   triple's config so provenance stays honest.
+4. *Reports vs committed snapshots (spec open question 3 — answered).* Ruling
+   (edit E4, §4.2 "Committed-record rule"): raw `reports/fuzz/*.json` stay
+   gitignored (note: `reports/` is **not** in `.gitignore` today — the
+   implementer adds it in step 2); the committed record is the scoreboard row
+   in `docs/reports/metrics/scoreboard.md` (one row/day convention,
+   `tools/metrics/collect.mjs`) plus B's committed `manifest.json`. Rows must
+   embed the numbers they report — no committed row may require a gitignored
+   file to interpret — and campaign-close / triple-landing runs the collector
+   on the machine holding the report. No committed mirror of `reports/fuzz/`:
+   that would be golden-file debt with no reader.
+5. *Feasibility.* Seed-range held-out discipline is enforceable in the stated
+   soft form (reports record every range; scoreboard flags overlap) and the
+   hard heldout.json isolation has a real gate test (T6, grep-style like
+   `tests/gate/passes/imports.test.ts`). Diversity is concretely defined
+   (fingerprint rejection + 40 % axis quota + coverage pressure, §2.3). Disk
+   preflight (< 15 GB refuse) is consistent with observed free space (35–51 GB
+   fluctuating; §2.4 heading updated, edit E3, so the snapshot figure can't
+   read as a guarantee). v98 roundtrip-only is structurally prevented from
+   blending into traced rates: distinct `mode` in the cell schema, asserted by
+   T4, and §4.1 says aggregates never gate. Minimised finds land as ordinary
+   construct fixtures + BUGS rows (§1.4, T7) per repo hard rules.
+6. *Truth-first.* No faithfulness-for-cost trades found. INCONCLUSIVE is never
+   PASS (§4.1 headline-rate rule + T4's explicit D5 assertion); the biggest
+   cost decision (no Gradle, §2.2) produces exactly what a release build ships,
+   so it does not weaken ground truth; partial reports from the 2 h cap remain
+   valid because all metrics are per-program counts.
+
+**Edits applied by the reviewer (all in this commit).**
+
+- **E1** §1.5.ii — exit criterion re-based onto the §1.5.iv evaluation range;
+  bar changed from a rate tolerance to 0-novel-divergences with a triaged
+  ledger (≤ 5 open triaged signatures/version); rate ≤ 5/1,000 kept as volume
+  tripwire; steady state = 0 novel signatures. (T1's pinned target strings
+  `10,000 programs` and `5 per 1,000` are preserved.)
+- **E2** §2.1 — RN ≥ 0.83 probe path corrected to the `hermes-compiler`
+  dependency; v98 obtainability confirmed with the 98-late-only caveat; direct
+  `tools/hermesc/v98` fallback with `compiler: "direct-hermesc"` provenance.
+- **E3** §2.4 heading — free-disk snapshot replaced with the fluctuation range
+  and a pointer that the preflight is the guard.
+- **E4** §4.2 — committed-record rule added (gitignored raw reports,
+  self-contained committed scoreboard rows, collector runs where the report
+  lives, no committed report mirror); notes `reports/` must be added to
+  `.gitignore` by the implementer.
+
+**No REQUIRED edits remain open.** T1 passes against the edited spec by
+construction (quadruple labels, bound sections, and pinned numeric strings all
+retained).
