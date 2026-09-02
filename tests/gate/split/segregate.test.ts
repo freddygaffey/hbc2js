@@ -361,6 +361,78 @@ void test("segregate: names a navigator from its route set's common prefix (Lice
   assert.equal(byId.get(62)!.newPath, "src/screens/LicenceScannerScreen.js");
 });
 
+// 2026-09-02 (Service NSW cross-module route-config brief, docs/reports/
+// 2026-09-02-navigator-naming-nsw-blocker.md): the actual blocker three
+// prior agents each hit and correctly refused to paper over with a same-
+// module heuristic -- Service NSW's own route names and `.component`
+// targets live in a SEPARATE module from the navigator that consumes them,
+// walked at runtime via `Object.entries(routeConfig)`, never as literal
+// per-route pairs in the navigator module's own text. Hand-built here (the
+// real bundle can't be committed, AGENT-BRIEF.md "local-corpus... NEVER in
+// the repo") from the exact shape confirmed by reading Service NSW's own
+// decompiled `routeConfig` module by hand:
+//  - module 100 (the route-config *factory*, `looksLikeRouteConfigFactory`):
+//    a debug-named `routeConfig` function builds a registry object
+//    incrementally (`reg.LicenceScan = {component, ...}`), resolving one
+//    target (101) through a direct `require()` + `["default"]` interop hop
+//    and the other (102) through Service NSW's own `Reflect.apply(require,
+//    undefined, [depmapIndex])` call spelling plus a closure-captured
+//    `_eN_M` environment slot for the require/dependencyMap parameters --
+//    both needed real fixes to this scan (`reflectTarget`, `envAliasTarget`/
+//    `envAliasTarget2`, the two-pass warm-up for the slot's write-after-read
+//    text ordering), not just the registry-shape recognition itself.
+//  - module 200 (the *consumer*, `detectRouteConfigConsumer`): a navigator
+//    that never builds a route map of its own, only requires module 100 and
+//    walks `Object.entries(<its routeConfig>)` -- real cross-module
+//    dataflow: its own route set for naming purposes is borrowed from its
+//    *dependency*'s already-resolved hits, not anything in its own text.
+void test("segregate: cross-module route-config walk -- a route-config factory in one module, consumed via Object.entries() by a navigator in another (Service NSW shape)", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 4, entry: null, modules: [
+      { id: 100, file: "module_100.js", factoryFunctionIndex: 100, deps: [101, 102] },
+      { id: 101, file: "module_101.js", factoryFunctionIndex: 101, deps: [] },
+      { id: 102, file: "module_102.js", factoryFunctionIndex: 102, deps: [] },
+      { id: 200, file: "module_200.js", factoryFunctionIndex: 200, deps: [100] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_100.js');\nrequire('./module_101.js');\nrequire('./module_102.js');\nrequire('./module_200.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    // Module 100: the route-config factory, named `routeConfig` in the
+    // debug function-name table (preserved as this comment by `--split`)
+    // and exporting itself under the matching `.routeConfig` property --
+    // both signals `looksLikeRouteConfigFactory` checks for. The nested
+    // `_fn100` mirrors Service NSW's own closure-capture shape: the
+    // require/dependencyMap parameters are copied into `_e1_0`/`_e1_1`
+    // *after* `_fn100`'s own declaration in the text, even though that copy
+    // always runs first at runtime -- the write-after-read ordering the
+    // two-pass warm-up scan exists to handle.
+    [
+      "module_100.js",
+      `// hbc2js --split -- Metro module 100\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r2, r3, r5, r6;\n  let _e1_0, _e1_1, _e1_2;\n  function _fn100(a1) {\n    // fn#100 "routeConfig"\n    let r0, r3, r14, r17, r19, r20;\n    r19 = _e1_0;\n    r20 = _e1_1;\n    r17 = undefined;\n    r14 = {};\n    r0 = {};\n    r3 = _e1_2;\n    r3 = r3["default"];\n    r0.component = r3;\n    r14.LicenceScan = r0;\n    r0 = {};\n    r3 = r20[1];\n    r3 = Reflect.apply(r19, r17, [r3]);\n    r3 = r3.LicenceRenewComponent;\n    r0.component = r3;\n    r14.LicenceRenew = r0;\n    return r14;\n  }\n  r5 = a2;\n  r2 = a6;\n  r6 = a7;\n  _e1_0 = r5;\n  _e1_1 = r6;\n  r3 = require('./module_101.js');\n  _e1_2 = r3;\n  r2.routeConfig = _fn100;\n  return r2;\n}\n\n__d(factory, 100, [101, 102]);\n`,
+    ],
+    ["module_101.js", `// hbc2js --split -- Metro module 101\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 101, []);\n`],
+    ["module_102.js", `// hbc2js --split -- Metro module 102\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 102, []);\n`],
+    // Module 200: the consumer -- never builds a route map itself, only
+    // requires module 100 and walks `Object.entries(<its routeConfig>)`.
+    // No `create<X>Navigator` call in sight (`detectNavigatorKind` alone
+    // would score zero), so recognising this as a navigator at all, and
+    // naming it from a route set that is entirely absent from its own text,
+    // is the cross-module half of this walk.
+    [
+      "module_200.js",
+      `// hbc2js --split -- Metro module 200\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2;\n  r0 = require('./module_100.js');\n  r1 = r0.routeConfig;\n  r2 = globalThis.Object;\n  r2 = r2.entries(r1);\n  return r2;\n}\n\n__d(factory, 200, [100]);\n`,
+    ],
+  ]);
+
+  const seg = segregateSplitTree(files, null); // no deps report -- shape alone, same as Service NSW's own fast path
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(101)!.newPath, "src/screens/LicenceScanScreen.js", "the require()+[\"default\"]-resolved route should name its target module");
+  assert.equal(byId.get(102)!.newPath, "src/screens/LicenceRenewScreen.js", "the Reflect.apply(require, undefined, [depmapIndex])-resolved route should name its target module");
+  assert.equal(byId.get(200)!.bucket, "src");
+  assert.equal(byId.get(200)!.newPath, "src/navigation/LicenceNavigator.js", "the Object.entries(routeConfig) consumer should be named from its dependency's route set, not left generic");
+});
+
 // Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
 // milestone 3, §6.3): react-navigation-example-0.85.3, a real router-heavy
 // app -- rn-template-0.72 (used by every other test in this file) ships no

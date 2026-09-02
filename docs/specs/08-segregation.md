@@ -602,6 +602,50 @@ naming only ever ran on the `classify.ts`-confirmed `src` bucket.
   name them from, since none of NSW's navigator-calling modules hold their
   own resolved routes.
 
+**Third revisit (2026-09-02, cross-module route-config walk brief) — shipped,
+the actual blocker fixed:** the second revisit's own conclusion (a real
+cross-module walk, not a same-module regex) was implemented.
+`looksLikeRouteConfigFactory` recognises a route-config *producer* module
+from its own naming convention (debug function name `routeConfig`/`<Domain>
+NavigationRoutes`, or a matching self-export property write — confirmed
+across four independent modules in the sample bundle by hand); gated behind
+it, three new resolution primitives handle shapes only Service NSW's own
+compiled output uses: a `Reflect.apply(require, thisArg, [depmapIndex])`
+call spelling; a copy into/out of `src/split`'s own closure-captured
+`_eNNNN_M` environment slots (needed because the require/dependencyMap
+parameters are routed through one); and a two-pass scan (a nested function's
+*read* of an env slot appears in the text before the enclosing function's
+own *write* of it — a syntax-order problem, not a shape-recognition one, no
+gating alone fixes it). A third route-registry shape is recognised inside a
+factory module: `<reg>.<RouteName> = <descriptor>;` where `<descriptor>`
+resolved its own `.component =`/`.screen =` assignment (distinct from the
+pre-shaped-literal and JSX-props shapes already handled). The *consumer*
+half — `detectRouteConfigConsumer`, a navigator module with no `create<X>
+Navigator` call at all, only a `.entries(` walk over a required module's
+`routeConfig`/`*NavigationRoutes` property — feeds the existing kind-`""`
+fallback, and `nameCustomModules` borrows such a consumer's route set for
+naming purposes from its own `deps`' already-resolved hits: real cross-
+module dataflow, the names a navigator gets named from live in a different
+module's text entirely. Every one of these is gated tightly enough that
+ungating any single one regressed react-navigation-example through ordinary
+register-name reuse in an unrelated module — caught by this task's own hard
+bar (§6's pinned table below) before each gate was added, not by inspection.
+Gate-tested with a hand-built fixture reproducing the exact shape (the real
+bundle can't be committed): `tests/gate/split/segregate.test.ts`,
+"cross-module route-config walk". **Result, Service NSW (never committed,
+numbers only):** 0 → 36 screens recovered (real names: `CommonUIErrorScreen`,
+`DisasterHubScreen`, `Auth0LoginErrorScreen`, `ChangePinScreen`,
+`AnyFineDetailsScreen`, `CertificateOfRegistrationScreen`, ...), 26
+navigators (mostly still call-shape-named, since NSW's own navigator-calling
+modules still don't hold *their own* resolved routes to name themselves
+from beyond the one consumer this walk now resolves). react-navigation-
+example's pinned numbers (4/54 WITH deps, 6/58 WITHOUT) are unchanged. Full
+detail, including the two known remaining gaps (a route's depmap index
+compiled as two statements rather than one is not traced; the root
+navigator's route set spans too many domains to share a name prefix, so it
+keeps the generic `Navigator.js` name) in `docs/BUGS.md`'s now-**resolved**
+2026-09-02 row.
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.
