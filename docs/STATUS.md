@@ -29,15 +29,15 @@ stores) split into real files. (docs/LANES.md)
 - M2 Disassembler (100% match vs `hermesc -dump-bytecode`) — done
 - M3 Test harness (trace runner + recompile round-trip) — done
 - M4 Baseline (CFG + structurer + emitter) — done, 501/501 gate, 0 DIVERGENT
-- M5 Pass ladder (readability) — in progress, 12/30 rungs merged
+- M5 Pass ladder (readability) — in progress, 13/30 rungs merged
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 12/30 rungs live
+## Ladder — 13/30 rungs live
 
 `loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
-`expr-rebuild`, `global-access`, `call-shape`, `template-literal`,
-`fn-naming`, `var-naming`, `jsx-recover` (opt-in `--jsx`).
-Next 3 (batch 3): `default-params`, `destructure`, `spread-rest`.
+`expr-rebuild`, `global-access`, `call-shape`, `default-params`,
+`template-literal`, `fn-naming`, `var-naming`, `jsx-recover` (opt-in `--jsx`).
+Next 2 (batch 3): `destructure`, `spread-rest`.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
@@ -57,9 +57,6 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 
 - reg-split rung (real variable names) — blocked on docs/PUSHBACK.md P-6
   (spec §4.1 vs §1/§8 example contradiction).
-- `default-params` rung — blocked on docs/PUSHBACK.md P-8 (spec §4's
-  matcher shape does not match measured stage-B input: F15 [`func.params`
-  becomes `Param[]`] landed, matcher/rewrite/check not started).
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top 5 (docs/QUEUE.md)

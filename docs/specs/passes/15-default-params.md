@@ -3,6 +3,38 @@
 Reading list: `docs/AGENT-BRIEF.md`, `src/passes/README.md`, this file. Nothing
 else. Batch 3; runs after `expr-rebuild`, `global-access`, `call-shape`.
 
+**Correction (docs/PUSHBACK.md P-8, 2026-09-02).** §2 and §4 below describe
+the stage-B guard as an `if (rX !== U) {} else { …default… }` — that shape
+never reaches stage B. The idiom the matcher (`src/passes/default-params/
+match.ts`) actually recognises is one **labeled block per defaulted
+parameter**, each with a *tail* `break`:
+
+```js
+L0: {
+  rX = arguments[k];      // may also carry a later parameter's own load (v94)
+  if (rX !== U) {
+    break L0;             // param WAS passed — skip the default entirely
+  }
+  …default body, ending by assigning rX…
+  break L0;
+}
+```
+
+`label-clean`'s own L2 rule (`docs/specs/passes/06-label-clean.md` §4) does
+not collapse this into an if/else: L2 only credits the tail set of a
+`seq`/labeled body from its *last* element, and here the guarding `if` is
+not last (the default body and its own trailing `break` follow it) — so
+label-clean refuses and the labeled-block shape survives unchanged into
+stage B. §2's baseline-shape table and §4's scan below are the *original,
+uncorrected* text, kept for its per-version measurement notes (load/guard
+interleaving, the `U` operand) — those parts are still accurate — but read
+`src/passes/default-params/match.ts`'s own header comment and
+`docs/lowering/default-params.md` §7 for the real shape the implementation
+matches, and `docs/BUGS.md`'s default-params-prune-leak row for a framework
+gap (`pruneRegisterDecls`) the real idiom exposed: a register can now be
+live *only* inside a parameter's own default, which the body-only liveness
+scan didn't know to check.
+
 ## 0. Before you write code: row 24 is single-version
 
 `docs/LOWERING-CATALOGUE.md` row 24 is `✅ single-version` (v94 only), which
