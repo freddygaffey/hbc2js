@@ -21,13 +21,13 @@ import { astPassHook, passHook } from "../passes/index.ts";
 import type { PassPipelineOptions } from "../passes/index.ts";
 import { declaredNames } from "../passes/var-naming/match.ts";
 import { renameRegistersInFrame } from "../passes/var-naming/rewrite.ts";
-import type { BindingId } from "./id.ts";
+import type { RegisterId } from "./id.ts";
 import { regId } from "./id.ts";
 import { frameHasRegister } from "./gate.ts";
 import type { OverlayStore } from "./store.ts";
 
 export interface CollisionFlag {
-  readonly id: BindingId;
+  readonly id: RegisterId;
   readonly wanted: string;
   readonly rendered: string;
 }
