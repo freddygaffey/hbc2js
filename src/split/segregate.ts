@@ -645,6 +645,58 @@ function detectNavigatorKind(text: string): readonly string[] {
  *  verdict at all, and changing that would regress the acceptance numbers
  *  the spec's §6 milestone-3 table records for react-navigation-example
  *  (deps-confirmed run). */
+/** 2026-09-02 (navigator-detection tightening brief, following the NSW
+ *  route-resolution report's own noted imprecision: "most of NSW's remaining
+ *  18 'navigators' only re-export a bare `create<X>Navigator` factory
+ *  result (no route registry of their own at all) -- `detectNavigatorKind`'s
+ *  call-shape regex matches a factory-result property access the same way
+ *  it matches a real call site"). `detectNavigatorKind`'s regex
+ *  (`\.create([A-Za-z]+?)Navigator\b`) matches a bare property READ off a
+ *  required module (`r5 = r0.createStackNavigator;`) exactly as readily as
+ *  a module that goes on to build a route registry from it -- confirmed by
+ *  hand against this file's own fixtures (`tests/gate/split/segregate.test.ts`
+ *  "detects a navigator ..."), every one of which has that *identical*
+ *  property-read line, distinguished from a bare re-export only by what
+ *  follows it. A module owns a route registry of its own when
+ *  `traceModuleOrigins`'s `keyAssignments` is non-empty -- deliberately the
+ *  unresolved count, not `detectScreenHits`'s resolved-only one: a
+ *  navigator whose registry targets don't happen to resolve to a known
+ *  module id is still a navigator, just one that won't get named from its
+ *  routes -- resolution is a separate, downstream question from ownership
+ *  -- or consumes one via `detectRouteConfigConsumer` (the
+ *  `Object.entries(routeConfig)` shape, §3.2's cross-module walk). */
+function moduleOwnsOrConsumesRouteConfig(text: string, deps: readonly number[]): boolean {
+  if (detectRouteConfigConsumer(text)) return true;
+  const scanJsxScreenProps = detectNavigatorKind(text).length > 0;
+  const { keyAssignments } = traceModuleOrigins(text, deps, scanJsxScreenProps, looksLikeRouteConfigFactory(text));
+  return keyAssignments.length > 0;
+}
+
+/** Distinguishes the app-level "bare re-export" shape this brief targets
+ *  (a thin wrapper module whose *entire* job is `require` a navigator
+ *  factory, call/read it, and export the result -- one flat factory
+ *  function, no other content) from a whole-*package* barrel/index module
+ *  that happens to re-export a `create<X>Navigator`-named property among
+ *  many unrelated ones (`Link`, `LinkingContext`, other factories, ...) via
+ *  a lazy-getter per export -- confirmed by hand against
+ *  react-navigation-example-0.85.3's own `@react-navigation/*` barrel
+ *  modules (this fixture's hard-pinned "4 navigators", every one of them
+ *  exactly this whole-package-barrel shape, several nested nameless
+ *  `function _fnNNNN() { ... }` getters, none of them "only" re-exporting a
+ *  navigator factory): a real app screen-registry-building navigator module
+ *  is, in every fixture in this file, a single flat factory function with
+ *  no nested closures at all, so "has at least one nested function
+ *  declaration" is a safe, narrow proxy for "this is a package's own
+ *  multi-export barrel, not an app's thin navigator re-export" -- leaving
+ *  the pre-existing, out-of-scope classify.ts package-boundary gap that
+ *  buckets these barrels into `src/` at all untouched (tracked separately,
+ *  BUGS.md) rather than risk the hard-pinned react-navigation-example
+ *  count on a guess about it. */
+function looksLikeBareFactoryReexportShape(text: string): boolean {
+  const functionCount = (text.match(/\bfunction\s+[A-Za-z_$][\w$]*\s*\(/g) ?? []).length;
+  return functionCount <= 1; // just the module's own top-level `factory(...)`, no nested closures
+}
+
 function detectNavigator(
   deps: readonly number[],
   text: string,
@@ -654,6 +706,7 @@ function detectNavigator(
 ): { kind: string; confidence: number } | null {
   const kinds = detectNavigatorKind(text);
   if (kinds.length === 0) return null;
+  if (looksLikeBareFactoryReexportShape(text) && !moduleOwnsOrConsumesRouteConfig(text, deps)) return null;
   let confidence: number | null = null;
   for (const d of deps) {
     const pkg = ownershipByModule.get(d)?.package;

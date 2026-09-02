@@ -736,6 +736,43 @@ ambiguity. The third revisit's OTHER tracked gap (root navigator, no common
 route-name prefix across domains) is unaffected by this task; already
 handled by the fourth revisit's `roleNameForRoutes` fallback.
 
+**Sixth revisit (2026-09-02, navigator-detection tightening brief) —
+shipped, narrowly: the fifth revisit's own flagged imprecision partly
+closed.** §3.1's `detectNavigator` now requires a call-shape match to also
+*own* a route registry (`traceModuleOrigins`'s `keyAssignments` non-empty,
+counted whether or not the target resolves — ownership and resolution are
+separate questions) or *consume* one (`detectRouteConfigConsumer`) before
+it counts as a navigator, UNLESS the module has more than one `function`
+declaration in its own text (`looksLikeBareFactoryReexportShape`) — the
+flatness escape hatch exists only because the fuller, unrestricted gate
+regresses this spec's own pinned react-navigation-example-0.85.3 acceptance
+numbers (§6 milestone 3's hard bar): hand-inspection found all 4 of that
+fixture's currently-counted navigators are actually `@react-navigation/*`
+package barrel/index files (many nested lazy-getter re-exports, several
+unrelated properties alongside the Navigator one), 3 of which are the exact
+bare-reexport shape this revisit targets — the unrestricted gate correctly
+drops them (4→1, 6→1) but that regresses the pin, which the task brief
+that authorised this revisit explicitly forbade touching without Fred's
+review (`docs/PUSHBACK.md` P-10 has the full evidence). Shipped instead:
+the narrower flatness-gated version, which keeps the pin exactly (4/54 WITH
+deps, 6/58 WITHOUT, unchanged) and closes only the cleanest sub-case (a
+single flat factory function, no nested closures at all). New committed
+fixture (`tests/gate/split/segregate.test.ts`, "a bare create<X>Navigator
+re-export ... is not counted as a navigator") hand-builds that exact shape.
+**Result, Service NSW (never committed, numbers only, no `--deps-report`):**
+navigators 18 → **17** (one genuinely flat bare re-export dropped);
+route/role-named unchanged at 1. Hand inspection of the remaining 16 found
+most (12/17 total) actually own a `.name =`/`.component =` registry
+already (just with incidental nested closures — e.g. arrow-function
+screen-option callbacks — that the flatness gate conservatively leaves
+alone) — the fifth revisit's "most of NSW's remaining 18 ... only re-export
+a bare factory" guess was itself too broad; only a handful (5-7, the
+`StaticNavigator`/`MaterialTopTabNavigator`-named ones with no own
+registry) remain real candidates for the fuller fix. P-10 is open, tracking
+the fuller ownership-only gate pending Fred's sign-off on re-pinning
+react-navigation-example's milestone-3 hard bar (4→2 navigators, screens
+unaffected).
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.
