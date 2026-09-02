@@ -720,14 +720,25 @@ function nameCandidateFor(
     // ordinal-suffix collisions Fred flagged) and at worst unknown entirely
     // (the destructured-JSX shape above has no kind to report). Falls back
     // to `<Type>Navigator` (or a bare `Navigator` when even the kind is
-    // unknown) only when no route-set prefix resolves — §3.1's own
-    // "container role" fallback (Home/Wallet/Services -> a role name) isn't
-    // implemented here; deferred as a real gap, not silently dropped (see
-    // docs/BUGS.md).
+    // unknown) only when no route-set prefix OR role name resolves.
     const prefix = commonRoutePrefix(navigatorRouteNames);
     if (prefix !== null) {
       const baseName = /Navigator$/.test(prefix) ? prefix : `${prefix}Navigator`;
       return { baseName, dir: "src/navigation", confidence: navigator.confidence, signal: `navigator (route-set prefix "${prefix}", §3.1)` };
+    }
+    // §3.1's own "container role" fallback (2026-09-02, docs/BUGS.md's
+    // cross-module route-config walk row: "the root navigator ... has no
+    // common route-name prefix by design, so it keeps the generic
+    // Navigator.js name ... an already-documented gap"). A navigator whose
+    // routes span several domains with no shared prefix -- Service NSW's
+    // own root/tab container, merging LicenceScan/DDLCheck/AuthLogin/... --
+    // still gets a real name when one domain dominates its route set
+    // (`roleNameForRoutes`'s plurality rule), and a deterministic role name
+    // ("RootNavigator"/"MainTabNavigator") when none does, rather than
+    // falling straight to the generic call-shape name below.
+    const role = navigatorRouteNames.length > 0 ? roleNameForRoutes(navigatorRouteNames, navigator.kind) : null;
+    if (role !== null) {
+      return { baseName: role, dir: "src/navigation", confidence: navigator.confidence, signal: `navigator (route-set role "${role}", §3.1)` };
     }
     const baseName = navigator.kind === "" ? "Navigator" : /Navigator$/.test(navigator.kind) ? navigator.kind : `${navigator.kind}Navigator`;
     const signal = navigator.kind === "" ? "navigator (destructured Navigator/Screen JSX usage, §3.1)" : `navigator (create${navigator.kind}Navigator-shaped call, §3.1)`;
@@ -760,6 +771,77 @@ function commonRoutePrefix(routeNames: readonly string[]): string | null {
     if (isBoundary) return candidate.length >= 3 ? candidate : null;
   }
   return null;
+}
+
+/** The leading "domain word" of a single route name, for `roleNameForRoutes`
+ *  below: an all-caps abbreviation run immediately followed by a
+ *  capitalised word (`"DDL"` from `"DDLCheck"`, needs >= 2 letters so a
+ *  single leading capital doesn't count as its own abbreviation), or
+ *  failing that the first capitalised camelCase word (`"Licence"` from
+ *  `"LicenceScan"`, `"Home"` from `"Home"`, needs >= 3 letters — same
+ *  degenerate-short-name floor `commonRoutePrefix` already applies to its
+ *  own prefix). `null` for a route name with no usable leading word (not
+ *  expected on real react-navigation route names, always PascalCase, but
+ *  must not throw on anything unanticipated). */
+function domainToken(name: string): string | null {
+  const abbrev = /^[A-Z]+(?=[A-Z][a-z])/.exec(name);
+  if (abbrev !== null && abbrev[0].length >= 2) return abbrev[0];
+  const word = /^[A-Z][a-z0-9]*/.exec(name);
+  if (word !== null && word[0].length >= 3) return word[0];
+  return null;
+}
+
+/** §3.1's "container role" fallback (2026-09-02, Service NSW brief; the
+ *  gap `commonRoutePrefix` alone left open, recorded in docs/BUGS.md's
+ *  cross-module route-config walk row): names a navigator whose own route
+ *  set has NO common prefix -- it spans several domains, e.g. a root/tab
+ *  container merging `LicenceScan`/`DDLCheck`/`AuthLogin`/... -- from
+ *  whichever single domain token (`domainToken` above) accounts for at
+ *  least half its routes, so a navigator that's mostly one domain plus a
+ *  couple of outliers still gets a real domain name rather than a generic
+ *  one. When no domain reaches that bar (a genuinely diverse root/tab
+ *  container, the case Fred's own review flagged), returns a deterministic
+ *  role name instead: `"MainTabNavigator"` when the call-shape kind names a
+ *  tab navigator (`create<X>TabNavigator`, kind contains "Tab"),
+ *  `"RootNavigator"` otherwise — the top-level container shape. Ties for
+ *  the most-common token are broken by first-seen order (route names arrive
+ *  in a fixed, module-id/text-order sequence from `nameCustomModules`), so
+ *  this is deterministic across runs, never dependent on Map iteration
+ *  order alone. Returns `null` only when every route name is unusable for
+ *  `domainToken` (kept distinct from the "diverse, no dominant domain"
+ *  case, which still returns a role name — an empty/garbage route set
+ *  should fall through to the generic call-shape name instead). Also
+ *  returns `null` outright for fewer than `MIN_ROLE_ROUTES` routes: a plain
+ *  two-screen stack (e.g. `Home`/`Profile`, no shared prefix by design —
+ *  they're just two unrelated screens, not "several domains") must keep
+ *  its call-shape name (`StackNavigator`), not get promoted to `Home` or
+ *  `RootNavigator` off a coin-flip between two routes — the "many domains"
+ *  shape this fallback targets is a real aggregator navigator, several
+ *  routes deep, never a small navigator that simply has no prefix. */
+function roleNameForRoutes(routeNames: readonly string[], kind: string): string | null {
+  const MIN_ROLE_ROUTES = 4;
+  if (routeNames.length < MIN_ROLE_ROUTES) return null;
+  const counts = new Map<string, number>();
+  let usable = 0;
+  for (const name of routeNames) {
+    const token = domainToken(name);
+    if (token === null) continue;
+    usable++;
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  if (usable === 0) return null;
+  let bestToken: string | null = null;
+  let bestCount = 0;
+  for (const name of routeNames) {
+    const token = domainToken(name);
+    if (token === null) continue;
+    const count = counts.get(token)!;
+    if (count > bestCount) { bestCount = count; bestToken = token; }
+  }
+  if (bestToken !== null && bestCount * 2 >= routeNames.length) {
+    return /Navigator$/.test(bestToken) ? bestToken : `${bestToken}Navigator`;
+  }
+  return /tab/i.test(kind) ? "MainTabNavigator" : "RootNavigator";
 }
 
 /** Assigns §2.1 names to every `src`-bucket module: computes a candidate per

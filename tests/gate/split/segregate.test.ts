@@ -361,6 +361,117 @@ void test("segregate: names a navigator from its route set's common prefix (Lice
   assert.equal(byId.get(62)!.newPath, "src/screens/LicenceScannerScreen.js");
 });
 
+// 2026-09-02 (Service NSW brief, §3.1 "container role" fallback): the gap
+// the route-set-prefix pass above left open (docs/BUGS.md's cross-module
+// route-config walk row) -- a navigator whose own route set has NO common
+// prefix at all because it merges several unrelated domains, the real
+// shape of Service NSW's own root/tab container. Four routes across four
+// domains (Home/Wallet/Services/Support), no plurality domain (each
+// appears once) -- falls to the deterministic role name, not the generic
+// call-shape name.
+void test("segregate: names a navigator with several unrelated route domains and no plurality (root/tab container) RootNavigator, not the generic call-shape name", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 6, entry: null, modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] },
+      { id: 70, file: "module_70.js", factoryFunctionIndex: 70, deps: [11, 80, 81, 82, 83] },
+      { id: 80, file: "module_80.js", factoryFunctionIndex: 80, deps: [] },
+      { id: 81, file: "module_81.js", factoryFunctionIndex: 81, deps: [] },
+      { id: 82, file: "module_82.js", factoryFunctionIndex: 82, deps: [] },
+      { id: 83, file: "module_83.js", factoryFunctionIndex: 83, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_70.js');\nrequire('./module_80.js');\nrequire('./module_81.js');\nrequire('./module_82.js');\nrequire('./module_83.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    // Module 70: calls `.createStackNavigator`, then registers four screens
+    // across four unrelated domains -- no shared prefix, no plurality.
+    [
+      "module_70.js",
+      `// hbc2js --split -- Metro module 70\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5, r6, r7, r8;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createStackNavigator;\n  r4 = r1[1];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Home";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[2];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Wallet";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[3];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Services";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[4];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Support";\n  r0.name = r8;\n  r0.component = r3;\n}\n\n__d(factory, 70, [11, 80, 81, 82, 83]);\n`,
+    ],
+    ["module_80.js", `// hbc2js --split -- Metro module 80\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 80, []);\n`],
+    ["module_81.js", `// hbc2js --split -- Metro module 81\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 81, []);\n`],
+    ["module_82.js", `// hbc2js --split -- Metro module 82\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 82, []);\n`],
+    ["module_83.js", `// hbc2js --split -- Metro module 83\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 83, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null); // no deps report -- shape alone, same as Service NSW's own fast path
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(70)!.newPath, "src/navigation/RootNavigator.js", "a navigator spanning several unrelated domains with no plurality should get the deterministic role name, not StackNavigator");
+});
+
+// Same shape as above, but the call is `createBottomTabNavigator` (a real
+// react-navigation tab factory, §3.1's kind-detection regex) -- the role
+// name should reflect the tab container specifically, not the generic
+// "Root" fallback.
+void test("segregate: names a diverse-domain BOTTOM TAB navigator MainTabNavigator, not RootNavigator", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 6, entry: null, modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] },
+      { id: 71, file: "module_71.js", factoryFunctionIndex: 71, deps: [11, 84, 85, 86, 87] },
+      { id: 84, file: "module_84.js", factoryFunctionIndex: 84, deps: [] },
+      { id: 85, file: "module_85.js", factoryFunctionIndex: 85, deps: [] },
+      { id: 86, file: "module_86.js", factoryFunctionIndex: 86, deps: [] },
+      { id: 87, file: "module_87.js", factoryFunctionIndex: 87, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_71.js');\nrequire('./module_84.js');\nrequire('./module_85.js');\nrequire('./module_86.js');\nrequire('./module_87.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    [
+      "module_71.js",
+      `// hbc2js --split -- Metro module 71\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5, r6, r7, r8;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createBottomTabNavigator;\n  r4 = r1[1];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Home";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[2];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Wallet";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[3];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Services";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[4];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Support";\n  r0.name = r8;\n  r0.component = r3;\n}\n\n__d(factory, 71, [11, 84, 85, 86, 87]);\n`,
+    ],
+    ["module_84.js", `// hbc2js --split -- Metro module 84\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 84, []);\n`],
+    ["module_85.js", `// hbc2js --split -- Metro module 85\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 85, []);\n`],
+    ["module_86.js", `// hbc2js --split -- Metro module 86\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 86, []);\n`],
+    ["module_87.js", `// hbc2js --split -- Metro module 87\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 87, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(71)!.newPath, "src/navigation/MainTabNavigator.js", "a diverse-domain createBottomTabNavigator-shaped navigator should be named MainTabNavigator, not the generic Root fallback");
+});
+
+// A navigator whose route set has no shared prefix but IS dominated by one
+// domain (three Licence* routes plus one unrelated outlier) should still
+// get a real domain name (LicenceNavigator), not the Root/MainTab role
+// name -- the role-name fallback is for genuinely diverse route sets only.
+void test("segregate: names a navigator with a dominant route domain plus one outlier from that domain, not Root", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 6, entry: null, modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] },
+      { id: 72, file: "module_72.js", factoryFunctionIndex: 72, deps: [11, 88, 89, 90, 91] },
+      { id: 88, file: "module_88.js", factoryFunctionIndex: 88, deps: [] },
+      { id: 89, file: "module_89.js", factoryFunctionIndex: 89, deps: [] },
+      { id: 90, file: "module_90.js", factoryFunctionIndex: 90, deps: [] },
+      { id: 91, file: "module_91.js", factoryFunctionIndex: 91, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_72.js');\nrequire('./module_88.js');\nrequire('./module_89.js');\nrequire('./module_90.js');\nrequire('./module_91.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    // Module 72: three Licence* routes (LicenceScan/LicenceRenew/
+    // LicenceHistory) plus one unrelated outlier (Profile) -- no shared
+    // prefix across all four, but Licence is a clear plurality (3 of 4).
+    [
+      "module_72.js",
+      `// hbc2js --split -- Metro module 72\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5, r6, r7, r8;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createStackNavigator;\n  r4 = r1[1];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "LicenceScan";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[2];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "LicenceRenew";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[3];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "LicenceHistory";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[4];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Profile";\n  r0.name = r8;\n  r0.component = r3;\n}\n\n__d(factory, 72, [11, 88, 89, 90, 91]);\n`,
+    ],
+    ["module_88.js", `// hbc2js --split -- Metro module 88\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 88, []);\n`],
+    ["module_89.js", `// hbc2js --split -- Metro module 89\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 89, []);\n`],
+    ["module_90.js", `// hbc2js --split -- Metro module 90\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 90, []);\n`],
+    ["module_91.js", `// hbc2js --split -- Metro module 91\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 91, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(72)!.newPath, "src/navigation/LicenceNavigator.js", "a navigator dominated by one route domain should be named from that domain, not Root");
+});
+
 // 2026-09-02 (Service NSW cross-module route-config brief, docs/reports/
 // 2026-09-02-navigator-naming-nsw-blocker.md): the actual blocker three
 // prior agents each hit and correctly refused to paper over with a same-
