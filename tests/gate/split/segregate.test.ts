@@ -267,6 +267,58 @@ void test("segregate: detects a navigator (create<X>Navigator + @react-navigatio
   assert.equal(byIdNoDeps.get(11)!.bucket, "unclassified"); // no name signal of its own -- correctly not guessed into src/ or node_modules/
 });
 
+// 2026-09-02 (Service NSW brief, BUGS row "segregation-without-deps... 0
+// screens"): hand-inspection of Service NSW's own decompiled text (never
+// committed, per repo policy) found the JSX-props `.name =`/`.component =`
+// shape's *actual* blocking gap on that bundle is not the Reflect.apply hop
+// the row's root-cause guess names -- across every real `.component =`
+// assignment found there, none go through `Reflect.apply`. Two other gaps
+// do block real hits, both fixed here, narrowly: (1) `<props>.component =
+// require(<dep>).<NamedExport>;` compiled as a *single* statement (no
+// intermediate register for the require call's result before the member
+// access -- `callTarget`/`propTarget` each only matched half of this), and
+// (2) the interop-default hop spelled with bracket notation
+// (`<reg>["default"]`) rather than `.default` (already handled). Both
+// gated exactly as narrowly as the existing two-statement case: (1) fires
+// only inside a `scanJsxScreenProps`-gated module, only for the literal key
+// `component` (not any property), and only when the call resolves through
+// `paramAlias`'s `require` tracking, same guard `callTarget` already uses;
+// (2) only *forwards* an origin a register already has, so it can't
+// introduce a new false-positive resolution, only recognise an existing one
+// spelled differently.
+void test("segregate: resolves a screen's .component through a single-statement require(dep).NamedExport and a bracket-notation [\"default\"] interop hop", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 4, entry: null, modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] },
+      { id: 30, file: "module_30.js", factoryFunctionIndex: 30, deps: [11, 40, 41] },
+      { id: 40, file: "module_40.js", factoryFunctionIndex: 40, deps: [] },
+      { id: 41, file: "module_41.js", factoryFunctionIndex: 41, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_30.js');\nrequire('./module_40.js');\nrequire('./module_41.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    // Module 30: calls `.createStackNavigator` (§3.1 shape-alone gate), then
+    // builds two screens' JSX props objects -- Home via the single-statement
+    // require(dep).NamedExport compound shape, Profile via a plain register
+    // that itself was resolved through a bracket-notation ["default"] hop.
+    [
+      "module_30.js",
+      `// hbc2js --split -- Metro module 30\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5, r6, r7, r8;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createStackNavigator;\n  r0 = {};\n  r8 = "Home";\n  r0.name = r8;\n  r4 = r1[1];\n  r0.component = r2(r4).HomeComponent;\n  r6 = r1[2];\n  r3 = r2(r6);\n  r7 = r3["default"];\n  r0 = {};\n  r8 = "Profile";\n  r0.name = r8;\n  r0.component = r7;\n}\n\n__d(factory, 30, [11, 40, 41]);\n`,
+    ],
+    ["module_40.js", `// hbc2js --split -- Metro module 40\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 40, []);\n`],
+    ["module_41.js", `// hbc2js --split -- Metro module 41\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 41, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null); // no deps report -- shape alone, same as Service NSW's own fast path
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(30)!.bucket, "src");
+  assert.equal(byId.get(30)!.newPath, "src/navigation/StackNavigator.js");
+  assert.equal(byId.get(40)!.newPath, "src/screens/HomeScreen.js", "single-statement require(dep).NamedExport should resolve module 30's Home route to module 40");
+  assert.equal(byId.get(41)!.newPath, "src/screens/ProfileScreen.js", "a bracket-notation [\"default\"] interop hop should resolve module 30's Profile route to module 41");
+});
+
 // Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
 // milestone 3, §6.3): react-navigation-example-0.85.3, a real router-heavy
 // app -- rn-template-0.72 (used by every other test in this file) ships no
@@ -291,6 +343,14 @@ void test("segregate: detects real navigators/screens on react-navigation-exampl
   const navigators = seg.modules.filter((m) => m.nameSignal?.startsWith("navigator"));
   assert.ok(screens.length > 0, "expected at least one screen detected on react-navigation-example-0.85.3");
   assert.ok(navigators.length > 0, "expected at least one navigator detected on react-navigation-example-0.85.3");
+  // Hard regression bar (2026-09-02, Service NSW `Reflect.apply`-hop brief):
+  // this fixture's own §6 milestone-3 numbers, pinned exactly -- any
+  // Service-NSW-motivated change to `traceModuleOrigins`'s resolution shapes
+  // must not move these (a prior, reverted attempt did: 4->3 navigators,
+  // 54->67 screens, by over-matching unrelated call sites elsewhere in this
+  // fixture's larger modules).
+  assert.equal(navigators.length, 4, "react-navigation-example WITH deps: navigator count regressed from its pinned §6 value");
+  assert.equal(screens.length, 54, "react-navigation-example WITH deps: screen count regressed from its pinned §6 value");
   for (const s of screens) assert.match(s.newPath, /^src\/screens\//, `screen ${s.newPath} not filed under src/screens/`);
   for (const n of navigators) assert.match(n.newPath, /^src\/navigation\//, `navigator ${n.newPath} not filed under src/navigation/`);
 
@@ -334,6 +394,10 @@ void test("segregate: detects navigators/screens on react-navigation-example-0.8
   const navigators = seg.modules.filter((m) => m.nameSignal?.startsWith("navigator"));
   assert.ok(screens.length > 0, "expected at least one screen detected on react-navigation-example-0.85.3 with no deps report");
   assert.ok(navigators.length > 0, "expected at least one navigator detected on react-navigation-example-0.85.3 with no deps report");
+  // Hard regression bar, WITHOUT deps -- same pinning rationale as the
+  // WITH-deps test above (2026-09-02, Service NSW brief).
+  assert.equal(navigators.length, 6, "react-navigation-example WITHOUT deps: navigator count regressed from its pinned §6 value");
+  assert.equal(screens.length, 58, "react-navigation-example WITHOUT deps: screen count regressed from its pinned §6 value");
   for (const s of screens) assert.match(s.newPath, /^src\/screens\//, `screen ${s.newPath} not filed under src/screens/`);
   for (const n of navigators) assert.match(n.newPath, /^src\/navigation\//, `navigator ${n.newPath} not filed under src/navigation/`);
   // No deps report -> every navigator/screen candidate lands at the shape-

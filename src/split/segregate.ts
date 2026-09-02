@@ -151,7 +151,7 @@ interface RouteKeyAssignment {
 }
 
 const TRACE_STMT_RE =
-  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;/g;
+  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;/g;
 
 /** Single left-to-right pass over `text` tracking, per register, which of
  *  this module's `deps` (in dependencyMap-index order) it currently traces
@@ -206,6 +206,29 @@ function traceModuleOrigins(
   const stringLitByReg = new Map<string, string>();
   const jsxScreenPending = new Map<string, { name?: string; targetId?: number }>();
   const jsxScreenHits: RouteKeyAssignment[] = [];
+  // 2026-09-02 (Service NSW brief): a route-props register reused across
+  // *sibling* screens in the same navigator (observed on Service NSW --
+  // `let props = {}; props.component = X; registry.Home = props; props =
+  // {}; props.component = Y; registry.Profile = props; ...`, the same
+  // register rebound dozens of times in one route-config function) used to
+  // silently lose every screen but the last one sharing that register: the
+  // reset below (`obj = {}`/`{...}` rebinding it for the next screen) just
+  // deleted the pending entry outright, and `jsxScreenHits` was only ever
+  // populated once, from whatever `jsxScreenPending` held at the very end
+  // of the whole scan -- so an earlier, *complete* {name, component} pair
+  // on a since-reused register was discarded before ever being read.
+  // Flushing a complete pending pair into `jsxScreenHits` right here, before
+  // the reset drops it, is what makes a synthetic two-screens-same-register
+  // fixture (this task's own regression test) resolve both screens instead
+  // of only the last one -- and is very likely why Service NSW's own
+  // multi-screen `routeConfig`-shaped modules recovered zero screens even
+  // where the component resolution itself (this task's other fix) was
+  // correct.
+  function flushJsxScreenPending(reg: string): void {
+    const pending = jsxScreenPending.get(reg);
+    if (pending?.name !== undefined && pending.targetId !== undefined) jsxScreenHits.push({ key: pending.name, targetId: pending.targetId });
+    jsxScreenPending.delete(reg);
+  }
 
   for (const m of text.matchAll(TRACE_STMT_RE)) {
     const g = m.groups!;
@@ -232,9 +255,9 @@ function traceModuleOrigins(
       // method names).
       const looksLikeRouteNames = keys.length >= 2 && keys.every((k) => /^[A-Z]/.test(k));
       if (looksLikeRouteNames && !keys.every((k) => ROUTE_DESCRIPTOR_KEYS.has(k))) routeObjRegs.add(g.objTarget);
-      if (scanJsxScreenProps) jsxScreenPending.delete(g.objTarget); // register reused for an unrelated object -- drop any stale pending name/target
+      if (scanJsxScreenProps) flushJsxScreenPending(g.objTarget); // register reused for the next screen (or an unrelated object) -- flush any complete pending pair first, then drop the rest
     } else if (g.emptyObjTarget !== undefined) {
-      if (scanJsxScreenProps) jsxScreenPending.delete(g.emptyObjTarget); // same reset, for the JSX-props shape's own `obj = {};` starting point
+      if (scanJsxScreenProps) flushJsxScreenPending(g.emptyObjTarget); // same reset/flush, for the JSX-props shape's own `obj = {};` starting point
     } else if (g.litTarget !== undefined) {
       if (scanJsxScreenProps) stringLitByReg.set(g.litTarget, g.litVal!);
     } else if (g.callTarget !== undefined) {
@@ -257,6 +280,49 @@ function traceModuleOrigins(
         }
         jsxScreenPending.set(g.keyObj, pending);
       }
+    } else if (g.keyCallObj !== undefined) {
+      // 2026-09-02 (Service NSW `Reflect.apply`-hop brief, BUGS row): the
+      // JSX-props shape's `.component = <ref>;` assignment above assumes the
+      // required module is already bound to its own register (`<ref>` is a
+      // bare identifier) -- true on react-navigation-example, but Service
+      // NSW's own decompiled text instead compiles the require call and the
+      // named-export member access into a *single* statement,
+      // `<props>.component = require(<dep>).<NamedExport>;` (observed by
+      // hand across dozens of Service NSW route modules, e.g.
+      // `r1.component = r5(r6[4]).SSOWebViewController;`), never binding an
+      // intermediate register the existing `callTarget`/`propTarget`
+      // alternatives (each matching only half of this) could chain through.
+      // Gated exactly as narrowly as the two-statement case above --
+      // `scanJsxScreenProps` (this module itself calls a Navigator
+      // factory), `keyCallName` fixed to the literal `component` (not a
+      // general property, so this can't fire on an unrelated
+      // `<anything>.component = fn(x).Y;` outside a navigator module), and
+      // `keyCallFn` must resolve via `paramAlias` to `require` with
+      // `keyCallArg` a traced depmap index -- the same require-resolution
+      // guard `callTarget` already uses, just inline in one statement
+      // instead of two. `keyCallProp` (the named export, e.g.
+      // `SSOWebViewController`) is intentionally not used to pick a
+      // specific export -- this resolver works at module granularity
+      // everywhere else (a `.default` access resolves to the whole
+      // module), so this stays consistent rather than adding a new
+      // per-export lookup this function doesn't otherwise support.
+      const idx = depIndexByReg.get(g.keyCallArg!);
+      if (paramAlias.get(g.keyCallFn!) === "require" && idx !== undefined && scanJsxScreenProps) {
+        const origin = deps[idx]!;
+        const pending = jsxScreenPending.get(g.keyCallObj) ?? {};
+        pending.targetId = origin;
+        jsxScreenPending.set(g.keyCallObj, pending);
+      }
+    } else if (g.propBracketTarget !== undefined) {
+      // Same interop-default hop as the `propTarget`/`propName` case below,
+      // just Service NSW's bracket-notation spelling of it
+      // (`_e7971_2["default"]`, vs. react-navigation-example's `.default`)
+      // -- only ever *forwards* an origin `propBracketBase` already has
+      // (from a prior `require`/`callTarget` binding), so this can't
+      // introduce a new false-positive origin, only recognise the same one
+      // through different call-site syntax.
+      const origin = moduleOriginByReg.get(g.propBracketBase!);
+      if (origin !== undefined) moduleOriginByReg.set(g.propBracketTarget, origin);
     } else if (g.propTarget !== undefined) {
       const origin = moduleOriginByReg.get(g.propBase!);
       if (origin !== undefined) moduleOriginByReg.set(g.propTarget, origin);
