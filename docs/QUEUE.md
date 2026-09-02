@@ -3,6 +3,7 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
+- **C — spread-rest rung (spec 17, after:destructure) then optional-chain (18)**: implement per spec, sound checker, RUNG-OWNED assertions. src/passes/.
 1. **B — More route RESOLUTION (unblocks both screens AND navigator names)**: 23/26 NSW navigators stay generic and many screens stay unresolved because their route entries use shapes the walk does not yet trace — the tracked gaps (BUGS 2026-09-02): (a) a route whose depmap index is 2 statements `r=N; r=arr[r]` not one literal bracket; (b) route-config shapes other than the factory/`.entries` one already handled. Extend traceModuleOrigins / the route-config walk to these, GATED (no react-navigation-example regression: 4/54 deps, 6/58 no-deps assert.equal), with committed fixtures. Each newly-resolved route set cascades to a screen file AND a navigator name. Target: NSW route-named navigators up from 3/26, screens up from 36.
 - **Perf part 3 — `passes/ast.ts` `expressionOnlyCheck` → `defUse(after)`** full-list walk per site (order check needs a global position; needs incremental state, soundness-sensitive). NSW whole-file 563 s / split 512 s on deb today; target < 120 s.
 
