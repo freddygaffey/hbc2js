@@ -1,0 +1,4 @@
+# 2026-09-02 — NSW route resolution (two-statement depmap index) — Sonnet, lean
+Tokens 143k · tool calls 98 · green.
+
+traceModuleOrigins now tracks `<reg>=<digit>` literals (numLitByReg) + an idxRegRef alt, so `r8=1; r3=r20[r8]` (NSW's two-statement depmap-index spelling) resolves like `r20[1]`. Gated by the existing depmap check — inert until read. NSW screens 36 → **176** (~5x): PayFinesScreen, RegistrationsScreen, CertificateOfRegistrationScreen, ChangePinScreen, SSOWebViewScreen, DisasterHubScreen. Navigators 3→1 route-named — explained: nested navigators used as route targets now correctly file as screens (VenueSignInNavigator → VenueSignInScannerScreen), not a regression. react-navigation-example pinned exact (4/54, 6/58). Remaining: bare createXNavigator re-exports mis-detected as navigators (detection imprecision, not resolution — noted).
