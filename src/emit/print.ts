@@ -121,20 +121,62 @@ export interface PrintOptions {
   /** D20 (`--jsx`): render a `jsx` node as JSX. Default `false`: lower it
    *  back to its element-creation call (`jsxToCall`) — runnable JS. */
   readonly jsx?: boolean;
+  /**
+   * P2.1 §2.7 range-recording hook: called once per statement-level
+   * `k:"func"` node actually printed (module factories + hoisted `_fnN`
+   * children, at any nesting depth — the vast majority of closures,
+   * `src/split/index.ts`'s own "hoisted siblings" form), with the 1-based
+   * start/end line *within this `printProgram` call's own returned text*
+   * (the caller adds whatever header lines it prepends before the text it
+   * writes to disk, e.g. `src/split/index.ts`'s module-comment line).
+   * Deliberately NOT invoked for the rarer inline function-*expression* form
+   * (loop-local closures, `src/emit/index.ts`'s `inlineFunctions` — printed
+   * via `render()`'s own `"func"` case, a separate, un-indexed text build):
+   * that form's start line depends on how much of its enclosing expression
+   * printed before it did, which this printer does not track today. Emitting
+   * a wrong range would violate the artifact format's truth rule (docs/specs/
+   * 10-artifact-format.md §0); omitting the row for those few functions does
+   * not — `ranges.jsonl` only ever states what was actually observed.
+   */
+  readonly onFunctionRange?: (name: string, startLine: number, endLine: number) => void;
 }
 
 /** `PrintOptions.jsx` for the `printProgram` call in flight — expressions
  *  render through module-level `expr`/`render`, which take no options. */
 let jsxOutput = false;
 
+/** Statement-level `k:"func"` marks collected for the `printProgram` call in
+ *  flight, as `[startIdx, endIdxExclusive)` into that call's own `out` array
+ *  (see `printProgram`'s post-pass, which converts these to physical line
+ *  numbers in one linear scan once the array is complete — avoids an O(n^2)
+ *  rescan per function in bundles with thousands of them, e.g. rn-template). */
+let funcMarks: Array<{ readonly name: string; readonly startIdx: number; readonly endIdxExclusive: number }> | undefined;
+
+function countNewlines(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
+  return n;
+}
+
 export function printProgram(body: readonly Stmt[], opts: PrintOptions = { indent: "  " }): string {
   const out: string[] = [];
-  const saved = jsxOutput;
+  const savedJsx = jsxOutput;
+  const savedMarks = funcMarks;
   jsxOutput = opts.jsx === true;
+  funcMarks = opts.onFunctionRange !== undefined ? [] : undefined;
   try {
     for (const s of body) printStmt(s, 0, out, opts);
+    if (funcMarks !== undefined && opts.onFunctionRange !== undefined) {
+      // Prefix sum: `lineStart[i]` = 1-based physical line of `out[i]`'s
+      // first character (§2.7's line-tracking hook, see `PrintOptions` doc).
+      const lineStart: number[] = new Array(out.length + 1);
+      lineStart[0] = 1;
+      for (let i = 0; i < out.length; i++) lineStart[i + 1] = lineStart[i]! + 1 + countNewlines(out[i]!);
+      for (const m of funcMarks) opts.onFunctionRange(m.name, lineStart[m.startIdx]!, lineStart[m.endIdxExclusive - 1]!);
+    }
   } finally {
-    jsxOutput = saved;
+    jsxOutput = savedJsx;
+    funcMarks = savedMarks;
   }
   return out.join("\n") + "\n";
 }
@@ -277,11 +319,14 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       }
       out.push(`${p}}`);
       return;
-    case "func":
+    case "func": {
+      const startIdx = out.length;
       out.push(`${p}function ${s.name}(${paramList(s.params)}) {`);
       printBody(s.body, depth + 1, out, opts);
       out.push(`${p}}`);
+      if (funcMarks !== undefined) funcMarks.push({ name: s.name, startIdx, endIdxExclusive: out.length });
       return;
+    }
     case "directive":
       out.push(`${p}"${s.text}";`);
       return;

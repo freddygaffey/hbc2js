@@ -141,6 +141,13 @@ export interface SplitResult {
   readonly modules: readonly SplitModuleInfo[];
   readonly entryModuleId: number | null;
   readonly diagnostics: readonly string[];
+  /** P2.1 §2.7: fnIndex -> the `{file, lines:[start,end]}` it actually
+   *  printed at. Only covers functions this split pass rendered as a
+   *  statement-level declaration (the vast majority — see `functionRanges`'s
+   *  declaration comment above); a function with no textual home in the
+   *  split tree (unreached, or the rare inline-closure form) has no entry —
+   *  never a fabricated one. */
+  readonly functionRanges: ReadonlyMap<number, { readonly file: string; readonly lines: readonly [number, number] }>;
 }
 
 export interface SplitOptions {
@@ -220,6 +227,12 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
 
   const files = new Map<string, string>();
   const modules: SplitModuleInfo[] = [];
+  // §2.7 `ranges.jsonl` — the render-coupled presentation layer: every
+  // statement-level `k:"func"` this pass actually prints, keyed by fnIndex,
+  // with the `file:line` it was actually emitted at (never fabricated; see
+  // `src/emit/print.ts`'s `onFunctionRange` doc for what is deliberately
+  // left out and why).
+  const functionRanges = new Map<number, { readonly file: string; readonly lines: readonly [number, number] }>();
 
   const known = new Set<number>();
   for (const m of inventory.modules) if (m.localModuleId !== null) known.add(m.localModuleId);
@@ -283,7 +296,11 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
       fnStmt.params.map((x) => x.name),
       m.depIds ?? [],
     );
-    const funcText = printProgram([{ ...fnStmt, name: "factory", body }], printOpts);
+    let factoryMarks: Array<{ readonly name: string; readonly startLine: number; readonly endLine: number }> = [];
+    const funcText = printProgram([{ ...fnStmt, name: "factory", body }], {
+      ...printOpts,
+      onFunctionRange: (name, startLine, endLine) => factoryMarks.push({ name, startLine, endLine }),
+    });
 
     // Pull in every function transitively referenced-but-undeclared, so no
     // reference in this file resolves to nothing (see comment above). These
@@ -334,8 +351,26 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     }
 
     const finalFnStmt = extraStmts.length > 0 ? { ...fnStmt, name: "factory", body: [...extraStmts, ...body] } : { ...fnStmt, name: "factory", body };
-    const finalFuncText = extraStmts.length > 0 ? printProgram([finalFnStmt], printOpts) : funcText;
+    let finalFuncText: string;
+    if (extraStmts.length > 0) {
+      factoryMarks = [];
+      finalFuncText = printProgram([finalFnStmt], {
+        ...printOpts,
+        onFunctionRange: (name, startLine, endLine) => factoryMarks.push({ name, startLine, endLine }),
+      });
+    } else {
+      finalFuncText = funcText;
+    }
     const file = fileNameFor(id);
+    // §2.7 `ranges.jsonl`: the file text this module writes prepends exactly
+    // one header comment line (below) before `finalFuncText`, so every mark's
+    // 1-based line (relative to `finalFuncText` alone) shifts down by one to
+    // become the line within `file`. "factory" -> the module's own factory
+    // fnIndex; everything else already carries its real `_fn<idx>` name.
+    for (const mark of factoryMarks) {
+      const fnIdx = mark.name === "factory" ? m.factoryFunctionIndex : Number(mark.name.replace(/^_fn/, ""));
+      functionRanges.set(fnIdx, { file, lines: [mark.startLine + 1, mark.endLine + 1] });
+    }
     // `__d(factory, id, deps)` instead of `module.exports = factory` (Gap A,
     // docs/e2e/STAGE3-FEASIBILITY.md §a/§e): registers the factory with the
     // loader (`buildLoaderIndexJs`'s `index.js`) instead of handing back the
@@ -375,5 +410,5 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     ) + "\n",
   );
 
-  return { files, modules, entryModuleId: resolvedEntry, diagnostics };
+  return { files, modules, entryModuleId: resolvedEntry, diagnostics, functionRanges };
 }

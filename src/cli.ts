@@ -585,8 +585,8 @@ function runDecompile(argv: readonly string[]): void {
       });
       process.stdout.write(
         `hbc2js: wrote ${result.modules.length} module file(s) + index.js + MODULES.json to ${args.split}\n` +
-          `hbc2js: wrote artifact manifest.json + index/{functions.jsonl,modules.json} ` +
-          `(${artifact.functionCount} functions, ${artifact.moduleCount} modules) to ${args.split}\n`,
+          `hbc2js: wrote artifact manifest.json + index/{functions.jsonl,modules.json,ranges.jsonl} ` +
+          `(${artifact.functionCount} functions, ${artifact.moduleCount} modules, ${artifact.rangeCount} ranges) to ${args.split}\n`,
       );
       process.exit(0);
     }

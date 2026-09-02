@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { SplitResult } from "../split/index.ts";
-import { analyseForArtifact, buildFunctionsIndex, buildManifest, buildModulesIndex, computeFnOwnership } from "./build.ts";
-import { indexHeader, toJsonl, type Manifest } from "./schema.ts";
+import { analyseForArtifact, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
+import { indexHeader, rangesHeader, toJsonl, type Manifest } from "./schema.ts";
 
 export interface WriteArtifactOptions {
   readonly bytes: Uint8Array;
@@ -25,6 +25,7 @@ export interface WrittenArtifact {
   readonly manifest: Manifest;
   readonly functionCount: number;
   readonly moduleCount: number;
+  readonly rangeCount: number;
 }
 
 /** Builds and writes `manifest.json` + `index/functions.jsonl` +
@@ -55,6 +56,8 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     ["index/modules.json", modulesJson],
   ]);
 
+  const rangeRows = buildRangesIndex(opts.splitResult.functionRanges);
+
   const manifest = buildManifest({
     bytes: opts.bytes,
     module,
@@ -66,10 +69,13 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     ...(opts.git !== undefined ? { git: opts.git } : {}),
   });
 
+  const rangesJsonl = toJsonl(rangesHeader(manifest.render.hash), rangeRows);
+
   mkdirSync(join(opts.outDir, "index"), { recursive: true });
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
   writeFileSync(join(opts.outDir, "index", "functions.jsonl"), functionsJsonl);
   writeFileSync(join(opts.outDir, "index", "modules.json"), modulesJson);
+  writeFileSync(join(opts.outDir, "index", "ranges.jsonl"), rangesJsonl);
 
-  return { manifest, functionCount: functionRows.length, moduleCount: modulesIndex.modules.length };
+  return { manifest, functionCount: functionRows.length, moduleCount: modulesIndex.modules.length, rangeCount: rangeRows.length };
 }

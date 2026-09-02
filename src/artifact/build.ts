@@ -18,6 +18,7 @@ import {
   type Manifest,
   type ModuleEntry,
   type ModulesIndex,
+  type RangeRow,
 } from "./schema.ts";
 
 /** Immediate lexical parent of every function: the function that created the
@@ -113,6 +114,18 @@ export function buildModulesIndex(splitResult: SplitResult, ownership: ReadonlyM
     entry: splitResult.entryModuleId,
     fnOwnership,
   };
+}
+
+/** §2.7 `ranges.jsonl` rows, sorted by `fn` (§1.1 primary-key sort) — a
+ *  direct re-emission of `SplitResult.functionRanges` (`src/split/index.ts`,
+ *  populated by the renderer's own `onFunctionRange` hook, `src/emit/
+ *  print.ts`) under the index schema. No fabrication for functions the
+ *  render never printed (see that map's own doc). */
+export function buildRangesIndex(functionRanges: SplitResult["functionRanges"]): RangeRow[] {
+  const rows: RangeRow[] = [];
+  for (const [fn, r] of functionRanges) rows.push({ fn, file: r.file, lines: r.lines });
+  rows.sort((a, b) => a.fn - b.fn);
+  return rows;
 }
 
 export interface BuildManifestOptions {
