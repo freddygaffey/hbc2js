@@ -10,6 +10,7 @@ import { analyseModule } from "../cfg/index.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { SplitResult } from "../split/index.ts";
+import type { FactoryInfo } from "./semantic-walk.ts";
 import {
   ARTIFACT_SCHEMA,
   hashRenderedFiles,
@@ -174,12 +175,31 @@ export function buildManifest(opts: BuildManifestOptions): Manifest {
   };
 }
 
+/** §2.2/§2.4 `FactoryInfo` per module factory function: the `require`/
+ *  `dependencyMap` param slots (Metro's factory signature is positional —
+ *  `require` is always the 2nd declared param, `dependencyMap` the last —
+ *  the same convention `src/split/rewrite.ts`'s recogniser relies on) plus
+ *  the module's own `deps` array, so `src/artifact/semantic-walk.ts` can
+ *  recognise `require(dependencyMap[i])` -> `m:<depIds[i]>` without
+ *  reparsing the factory shape a second way. */
+export function buildFactoryInfo(module: HbcModule, splitModules: SplitResult["modules"]): ReadonlyMap<number, FactoryInfo> {
+  const byIndex = new Map<number, number>();
+  for (const fn of module.functions) byIndex.set(fn.header.index, fn.header.paramCount);
+  const out = new Map<number, FactoryInfo>();
+  for (const m of splitModules) {
+    const paramCount = byIndex.get(m.factoryFunctionIndex);
+    if (paramCount === undefined) continue;
+    out.set(m.factoryFunctionIndex, { requireSlot: 2, depMapSlot: Math.max(0, paramCount - 1), deps: m.deps });
+  }
+  return out;
+}
+
 /** Re-parses + re-analyses `bytes` (deliberately independent of the render
  *  pass, see file header) and returns everything the manifest + step-1/2
  *  index files need. */
-export function analyseForArtifact(bytes: Uint8Array): { module: HbcModule; parents: ReadonlyMap<number, number | null> } {
+export function analyseForArtifact(bytes: Uint8Array): { module: HbcModule; analysis: ReturnType<typeof analyseModule>; parents: ReadonlyMap<number, number | null> } {
   const module = parseHbc(bytes);
   const analysis = analyseModule(module, { strictEnv: false });
   const parents = computeLexicalParents(module, analysis);
-  return { module, parents };
+  return { module, analysis, parents };
 }

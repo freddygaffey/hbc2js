@@ -40,10 +40,18 @@ test.after(() => rmSync(outDir, { recursive: true, force: true }));
 test("A2 manifest hashes verify: render.hash and index.semanticHash recompute to the same values", () => {
   const recomputedRenderHash = hashRenderedFiles(splitResult.files);
   assert.equal(manifest.render.hash, recomputedRenderHash);
+  // §8 steps 1–5: the semantic layer now also includes calls/strings/globals/
+  // native (P2.1 third implementation agent); every semantic file the writer
+  // hashes into `index.semanticHash` must be recomputed here too.
   const recomputedSemanticHash = hashRenderedFiles(
     new Map([
       ["index/functions.jsonl", readFileSync(join(outDir, "index", "functions.jsonl"), "utf8")],
       ["index/modules.json", readFileSync(join(outDir, "index", "modules.json"), "utf8")],
+      ["index/calls.jsonl", readFileSync(join(outDir, "index", "calls.jsonl"), "utf8")],
+      ["index/strings.json", readFileSync(join(outDir, "index", "strings.json"), "utf8")],
+      ["index/string-uses.jsonl", readFileSync(join(outDir, "index", "string-uses.jsonl"), "utf8")],
+      ["index/globals.jsonl", readFileSync(join(outDir, "index", "globals.jsonl"), "utf8")],
+      ["index/native.jsonl", readFileSync(join(outDir, "index", "native.jsonl"), "utf8")],
     ]),
   );
   assert.equal(manifest.index.semanticHash, recomputedSemanticHash);

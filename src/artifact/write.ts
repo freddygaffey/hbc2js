@@ -4,8 +4,11 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { SplitResult } from "../split/index.ts";
-import { analyseForArtifact, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
+import { analyseForArtifact, buildFactoryInfo, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
+import { buildNativeIndex } from "./native.ts";
+import { buildCallsIndex, buildGlobalsIndex, buildStringUsesIndex } from "./semantic-walk.ts";
 import { indexHeader, rangesHeader, toJsonl, type Manifest } from "./schema.ts";
+import { buildStringsIndex } from "./strings.ts";
 
 export interface WriteArtifactOptions {
   readonly bytes: Uint8Array;
@@ -26,6 +29,14 @@ export interface WrittenArtifact {
   readonly functionCount: number;
   readonly moduleCount: number;
   readonly rangeCount: number;
+  readonly callCount: number;
+  readonly stringCount: number;
+  readonly stringUseCount: number;
+  readonly globalCount: number;
+  readonly nativeCount: number;
+  /** `?`-callee count and their `why` classes (the honesty measure, §8's
+   *  landing-report requirement). */
+  readonly unknownCallees: Readonly<Record<string, number>>;
 }
 
 /** Builds and writes `manifest.json` + `index/functions.jsonl` +
@@ -43,17 +54,34 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     );
   }
 
-  const { module, parents } = analyseForArtifact(opts.bytes);
+  const { module, analysis, parents } = analyseForArtifact(opts.bytes);
   const ownership = computeFnOwnership(module, parents, opts.splitResult.modules);
   const functionRows = buildFunctionsIndex(module, parents, ownership);
   const modulesIndex = buildModulesIndex(opts.splitResult, ownership);
+  const factoryInfo = buildFactoryInfo(module, opts.splitResult.modules);
+
+  const callRows = buildCallsIndex(module, analysis, factoryInfo);
+  const stringsIndex = buildStringsIndex(module);
+  const stringUseRows = buildStringUsesIndex(module, analysis, factoryInfo);
+  const globalRows = buildGlobalsIndex(module, analysis, factoryInfo, callRows);
+  const nativeRows = buildNativeIndex(callRows, globalRows);
 
   const functionsJsonl = toJsonl(indexHeader("functions"), functionRows);
   const modulesJson = JSON.stringify(modulesIndex, null, 2) + "\n";
+  const callsJsonl = toJsonl(indexHeader("calls"), callRows);
+  const stringsJson = JSON.stringify(stringsIndex, null, 2) + "\n";
+  const stringUsesJsonl = toJsonl(indexHeader("string-uses"), stringUseRows);
+  const globalsJsonl = toJsonl(indexHeader("globals"), globalRows);
+  const nativeJsonl = toJsonl(indexHeader("native"), nativeRows);
 
   const semanticFiles = new Map<string, string>([
     ["index/functions.jsonl", functionsJsonl],
     ["index/modules.json", modulesJson],
+    ["index/calls.jsonl", callsJsonl],
+    ["index/strings.json", stringsJson],
+    ["index/string-uses.jsonl", stringUsesJsonl],
+    ["index/globals.jsonl", globalsJsonl],
+    ["index/native.jsonl", nativeJsonl],
   ]);
 
   const rangeRows = buildRangesIndex(opts.splitResult.functionRanges);
@@ -76,6 +104,29 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
   writeFileSync(join(opts.outDir, "index", "functions.jsonl"), functionsJsonl);
   writeFileSync(join(opts.outDir, "index", "modules.json"), modulesJson);
   writeFileSync(join(opts.outDir, "index", "ranges.jsonl"), rangesJsonl);
+  writeFileSync(join(opts.outDir, "index", "calls.jsonl"), callsJsonl);
+  writeFileSync(join(opts.outDir, "index", "strings.json"), stringsJson);
+  writeFileSync(join(opts.outDir, "index", "string-uses.jsonl"), stringUsesJsonl);
+  writeFileSync(join(opts.outDir, "index", "globals.jsonl"), globalsJsonl);
+  writeFileSync(join(opts.outDir, "index", "native.jsonl"), nativeJsonl);
 
-  return { manifest, functionCount: functionRows.length, moduleCount: modulesIndex.modules.length, rangeCount: rangeRows.length };
+  const unknownCallees: Record<string, number> = {};
+  for (const c of callRows) {
+    if (c.callee !== "?") continue;
+    const why = c.why ?? "unknown";
+    unknownCallees[why] = (unknownCallees[why] ?? 0) + 1;
+  }
+
+  return {
+    manifest,
+    functionCount: functionRows.length,
+    moduleCount: modulesIndex.modules.length,
+    rangeCount: rangeRows.length,
+    callCount: callRows.length,
+    stringCount: stringsIndex.entries.length,
+    stringUseCount: stringUseRows.length,
+    globalCount: globalRows.length,
+    nativeCount: nativeRows.length,
+    unknownCallees,
+  };
 }

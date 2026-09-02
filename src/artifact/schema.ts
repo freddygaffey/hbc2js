@@ -77,6 +77,16 @@ export interface StringEntryTruncated {
 }
 export type StringRow = StringEntry | StringEntryTruncated;
 
+/** §1.1: `strings.json` is a small whole-graph plain-JSON file (not JSONL —
+ *  verified against `tests/artifact/sample-artifact/index/strings.json`,
+ *  the A1-materialised ground truth for the shape). */
+export interface StringsIndex {
+  readonly schema: typeof INDEX_SCHEMA;
+  readonly kind: "strings";
+  readonly renderIndependent: true;
+  readonly entries: readonly StringRow[];
+}
+
 export type StringUseRole = "literal" | "property-get" | "property-put" | "property-key" | "global-name" | "regexp" | "call-arg-literal";
 
 export interface StringUseRow {
