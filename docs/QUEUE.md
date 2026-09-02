@@ -8,8 +8,8 @@ Single-threaded focus (prefer 1 agent) on making the code INSIDE src/ files read
 1. reg-split IMPL (in flight) — split reused registers so they're nameable.
 2. After reg-split lands: VAR-NAMING COMPOUND agent — name the now-split registers (loop counters→i, arrays, from-usage/alias/literal heuristics per reg-split spec §9 Q4) + optionally a 2nd expr-rebuild pass after split (spec §9 Q1). Measure registers-named % jump on rn-template + a real bundle.
 3. Then remaining NON-DEOBFUSCATION body-cleanup rungs: literal-forms (regex/bigint/number literals), try-clean (dead __pc/__exc), arguments-form, for-in/for-of. Each: lean, sound checker, corpus-guard clean.
-DEFERRED (Fred 2026-09-02: "not that important, do later"): ALL DEOBFUSCATION — string-array-decode + the obfuscation rungs. Do these AFTER Phase 2.
-NEXT-STAGE TRIGGER (Fred): once the NON-DEOBFUSCATION rungs are done, MOVE TO PHASE 2 (higher importance than the deobfuscation rungs). Do not wait for deobf.
+ALL DEOBFUSCATION (string-array-decode + obfuscation rungs) → STAGE 3 (Fred 2026-09-02: after Stage-2 analysis & tagging).
+NEXT-STAGE TRIGGER (Fred): once the NON-DEOBFUSCATION Stage-1 rungs are done → STAGE 2 (analysis & tagging). Deobfuscation + dead-code = STAGE 3, after Stage 2.
 Design D naming overlay = PHASE 2 (Fred: interleave into stage 2) — let its running agent finish + merge, then NO more Phase-2 tonight. Phase-2 artifact-format/xref spec waits for morning.
 Corpus regression harness runs as the standing guard across all readability changes.
 
@@ -29,17 +29,22 @@ Corpus regression harness runs as the standing guard across all readability chan
 21. Held-out fixtures finish (1) from origin/worktree-agent-a95cf9a2d5716d76b.
 
 
-## Phase 2 — RE / bug-finding environment (Design D naming overlay belongs HERE per Fred 2026-09-02) (roadmap: docs/specs/re-tooling-roadmap-IDEAS.md, Fred 2026-09-02)
+## STAGE 2 — Analysis & tagging environment (RE / bug-finding; Design D naming overlay belongs here) (roadmap: docs/specs/re-tooling-roadmap-IDEAS.md, Fred 2026-09-02)
 INTERLEAVE WITH PHASE 1 (Fred 2026-09-02: some Phase-2 tooling > finishing the ladder — start earlier). The ONLY hard prerequisites are reg-split (readable code) + Design D overlay ({fn,reg} addressing) — both in flight. The MOMENT those two merge, run Phase-2 tooling IN PARALLEL with remaining ladder rungs (do NOT wait for rung 30). P2.1 artifact-format+xref spec is the first Phase-2 launch. In order — each is a RESEARCHED SPEC by a STRONGER agent (Opus/Fable), in the Design-doc style, NOT an implementation until specced:
 - **P2.1 ARTIFACT FORMAT + xref/call-graph index (GATES EVERYTHING — spec this FIRST, concretely)**: hbc2js's output contract becomes a structured artifact = rendered source + an index keyed to `{fn,reg}`/`fnIndex`: who-calls (call graph), string→use-site xref, global-read-where, native surface, module graph. Every analysis tool consumes THIS, never hbc2js internals. Pin the format down first (§7). Ours (touches Hermes/ids).
 - **P2.2 project store** = the Design-D overlay generalized to hold comments, tags (source/sink/reviewed/suspicious), bookmarks, findings on the same ids. Our Ghidra-project/IDA-db. (Naming overlay = one record type in it.)
 - **P2.3 string + secrets indexer** (string-table→use xref + entropy/pattern scan) — cheap, high hit rate, run first on a bundle.
 - **P2.4 REUSE validation (not build)**: Semgrep JS taint on emitted JS; OSV/GHSA match against src/deps/ output (strongest reuse → realistic CVE outcome); CodeQL licensing/fit; androguard/apktool for manifest (exported components/permissions/deep-links). Spec = hands-on validation of each per §4/§7, not new tools.
-- **P2.x DEAD-CODE ANALYSIS = ANNOTATE, NOT DELETE (Fred 2026-09-02, security-critical distinction)**: for a vuln tool, aggressively DELETING code is a LIABILITY — it risks hiding exactly what an analyst wants. "Truly dead" (no execution path can reach it: unused binding, zero-reference fn, const-false branch) may be TAGGED "provably-dead" in the project store (an analyst may want to see a REMOVED CHECK — itself a vuln lead), never silently deleted. Crucially, "reachable-but-not-from-UI" code (hidden admin routes, debug handlers, feature-flagged screens — LIVE code an attacker can reach, just not wired to a visible button) is a FINDING to SURFACE, the opposite of removal: flag orphan-but-live handlers / registered-but-UI-unreachable routes as leads. This is a Phase-2 project-store/xref feature, NOT a readability deletion pass.
 - **P2.5 version/decompile diff** keyed to binding ids (new endpoints, removed checks between app versions) — high-leverage bug finder.
 - **P2.6 Frida hook generation** (static→dynamic, keyed to fnIndex; own account/in-scope only) + **P2.7 orchestration+verify loop** (LLM bug-finding driver over all the above; decompilation-fidelity check so a "bug" is never an artifact). Last.
 - Also missing from the sketch (add when speccing): type/shape recovery, protocol/wire-format reconstruction, coverage-guided input gen, a disclosure findings/report format.
 Set aside (documented): Ghidra/IDA/BinDiff — native-address tools, wrong fit for a JS VM; revisit only if a native component enters scope.
+
+
+## STAGE 3 — Deobfuscation + dead-code (AFTER Stage 2's analysis & tagging, Fred 2026-09-02)
+Lowest priority; only after Stage 2 is standing.
+- **Deobfuscation**: string-array-decode (obfuscator string-array accessor `_0x..(i)` → literal) + the other obfuscation rungs. Hard rungs, spec-then-implement.
+- **Dead-code = ANNOTATE, NOT DELETE** (security-critical, Fred): truly-dead (no path can reach it) → TAG "provably-dead" in the project store (a removed check is a vuln lead), NEVER delete. "Reachable-but-not-from-UI" (hidden admin routes/debug/feature-flagged — LIVE, attacker-reachable) → SURFACE as a FINDING (orphan-but-live handlers, registered-but-UI-unreachable routes). Built on Stage-2's xref/project-store, hence Stage 3.
 
 ## Parked
 - **[DEPRIORITISED per Fred 2026-09-02] OSS-project name-extraction benchmark**: Fred: "we do not need testing on open source projects and seeing if you can re-extract the names." Do NOT add more OSS apps to oss-benchmark.mjs / expand name-accuracy validation. Keep the existing ratchet as a guard only; do not invest further.
