@@ -7,7 +7,10 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 Single-threaded focus (prefer 1 agent) on making the code INSIDE src/ files read like source. Order:
 1. reg-split IMPL (in flight) — split reused registers so they're nameable.
 2. After reg-split lands: VAR-NAMING COMPOUND agent — name the now-split registers (loop counters→i, arrays, from-usage/alias/literal heuristics per reg-split spec §9 Q4) + optionally a 2nd expr-rebuild pass after split (spec §9 Q1). Measure registers-named % jump on rn-template + a real bundle.
-3. Then remaining body-cleanup rungs: literal-forms (regex/bigint/number literals), try-clean (dead __pc/__exc removal), arguments-form. Each: lean, sound checker, corpus-guard clean.
+3. **DEAD-CODE / unused-binding removal pass (Fred 2026-09-02, high readability + Phase-2 value)**: after reg-split+var-naming, remove provably-unused locals/vars, dead helper spills, dead functions, dead branches. Sound checker (removing a binding must not change any observable behaviour — trace-oracle PASS). Complements the existing piecemeal DCE (expr-rebuild dead stores, pruneRegisterDecls, label-clean, global-access guards, try-clean). NOTE: Hermes already DCE'd source-level dead code at compile time — this targets DECOMPILER-ARTIFACT dead code.
+4. Then remaining NON-DEOBFUSCATION body-cleanup rungs: literal-forms (regex/bigint/number literals), try-clean (dead __pc/__exc), arguments-form, for-in/for-of. Each: lean, sound checker, corpus-guard clean.
+DEFERRED (Fred 2026-09-02: "not that important, do later"): ALL DEOBFUSCATION — string-array-decode + the obfuscation rungs. Do these AFTER Phase 2.
+NEXT-STAGE TRIGGER (Fred): once the NON-DEOBFUSCATION rungs are done, MOVE TO PHASE 2 (higher importance than the deobfuscation rungs). Do not wait for deobf.
 Design D naming overlay = PHASE 2 (Fred: interleave into stage 2) — let its running agent finish + merge, then NO more Phase-2 tonight. Phase-2 artifact-format/xref spec waits for morning.
 Corpus regression harness runs as the standing guard across all readability changes.
 
