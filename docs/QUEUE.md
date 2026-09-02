@@ -3,7 +3,7 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-- **METRICS SCOREBOARD — standing, one row per day (Fred 2026-09-02: project runs a few more days, start collecting NOW; trends > snapshots).** Append-only table (extend the STATUS scoreboard / `docs/reports/metrics/`), a small collector script + a scheduled or landing hook. Collect:
+- **[LANDED 2026-09-02, tools/metrics/collect.mjs + docs/reports/metrics/scoreboard.md + docs/METRICS.md — baseline row captured pre-reg-split-default-on; run at each landing/day] METRICS SCOREBOARD — standing, one row per day (Fred 2026-09-02: project runs a few more days, start collecting NOW; trends > snapshots).** Append-only table (extend the STATUS scoreboard / `docs/reports/metrics/`), a small collector script + a scheduled or landing hook. Collect:
   - **velocity/cost** — commits/day, and **tokens + $ per LANDED item, model mix, cost-per-test-added** (the cost-ordering feature: attribute spend to the queue item/commit in AGENT-LOG, then RANK — so "keep costs down" becomes "this item is 4x the median, look at it").
   - **volume** — LOC by category, comment %, docs:code ratio.
   - **goal proxies** — registers-named %, unresolved-env markers, `node --check` failures, rungs X/30.
