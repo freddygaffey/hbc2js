@@ -149,3 +149,77 @@ Re-running the row-1 repro (`node tools/fuzz/construct-fuzz.mjs --versions
 PASS, 0 DIVERGENT, 0 ERROR (previously 3 DIVERGENT + 2 ERROR); v99 29/30
 PASS, 1 DIVERGENT — seed 777007, the one genuine, still-open decompiler bug
 in this campaign (tracked separately in `docs/BUGS.md`).
+
+## Campaign 1 (2026-09-02) — first ≥10,000-programs-per-version run
+
+`tools/fuzz/campaign-runner.sh` is a chunked, resumable wrapper around the
+driver (§1.5.ii target). It runs on `deb` (repo checked out at `~/hbc2js`,
+node 22 via `fnm exec --using 22`, per `docs/DEB-CI.md`'s convention),
+chunks each traced version's 10,000 programs into 500-program driver
+invocations, and tracks per-version progress in
+`~/hbc2js-fuzz/campaign1/state/v<version>.count` so it can be killed and
+re-run at any time without re-running a seed or touching the evaluation
+range (work range only, per §1.5.iv — see the script's header comment for
+the exact seed-base arithmetic). v98 gets the same treatment but its cells
+report `mode: "roundtrip-only"` per §1.3; it is included in `--versions` for
+structural coverage, not blended into the traced pass rate.
+
+Per-chunk JSON reports land in `~/hbc2js-fuzz/campaign1/reports/`, logs in
+`.../logs/`, raw DIVERGENT/ERROR programs are relocated out of the repo's
+gitignored `reports/fuzz/finds/` into `~/hbc2js-fuzz/campaign1/finds/` (capped
+at 200 total, oldest evicted) after every chunk.
+
+**Launch (first run):**
+```
+ssh -f deb 'setsid bash -lc "cd ~/hbc2js && git pull -q && \
+  tools/fuzz/campaign-runner.sh --seed-base 1000000 --versions 84,94,96,98,99 \
+  --chunk-size 500 --target 10000" < /dev/null > /dev/null 2>&1'
+```
+(Adjust `--versions` down to whichever traced versions actually have a VM
+present on deb — verify with `ls tools/hermes-vm/` before launch; never
+silently substitute roundtrip-only for a missing trace VM, per this task's
+brief. 98 always runs roundtrip-only regardless of VM presence.)
+
+**Status:**
+```
+ssh deb 'for f in ~/hbc2js-fuzz/campaign1/state/v*.count; do echo "$f: $(cat "$f")"; done'
+ssh deb 'ls ~/hbc2js-fuzz/campaign1/reports | wc -l; tail -5 ~/hbc2js-fuzz/campaign1/logs/*.log 2>/dev/null | tail -20'
+```
+
+**Resume** (same command as launch — state files make it a no-op past the
+target, and pick up mid-target otherwise):
+```
+ssh -f deb 'setsid bash -lc "cd ~/hbc2js && tools/fuzz/campaign-runner.sh \
+  --seed-base 1000000 --versions 84,94,96,98,99" < /dev/null > /dev/null 2>&1'
+```
+
+**Kill:**
+```
+ssh deb 'pkill -f campaign-runner.sh'
+```
+
+**Campaign close** (not part of this task — a follow-up once all versions
+hit 10,000 work-range programs): per §1.4/§1.5, every unique divergence
+signature seen across the whole work-range run must be triaged first —
+each becomes either a new `tests/fixtures/constructs/NN-fuzz-<slug>/`
+fixture + a `docs/BUGS.md` row, or a `docs/BUGS.md` row alone for a
+toolchain issue — with zero open unminimised finds left in
+`~/hbc2js-fuzz/campaign1/finds/`. Only after that triage is complete does the
+one-shot, never-repeated evaluation-range run happen
+(`node tools/fuzz/construct-fuzz.mjs --eval --seed-base 1000000 --versions
+<traced> --count 2000`), whose exit criterion is 0 novel divergences and
+≤5 triaged-but-unfixed signatures per version (§1.5.ii).
+
+**2026-09-02 kickoff attempt:** blocked before preflight — `deb.local` did
+not resolve from this session (`ssh: Could not resolve hostname deb.local`,
+confirmed via direct `ssh`/`ping`/`dscacheutil` from this sandbox; general
+internet DNS worked, ruling out a total network outage). The runner script
+above is written, syntax-checked, and smoke-tested locally (macOS, v94,
+7 programs across 3 chunks incl. a resume-is-a-no-op check) with the
+committed driver unmodified — only the campaign-dir chunking/state logic
+was exercised, so actual preflight (hermesc/VM presence on deb, disk) and
+the first real chunk are still outstanding. Next session: retry `ssh deb`
+first; if `deb.local` still fails to resolve, that is an environment/network
+issue outside this repo (check host is awake, on the same LAN/mDNS domain,
+and that no VPN is intercepting `.local` resolution) before assuming
+anything about the campaign itself.
