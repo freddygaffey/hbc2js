@@ -61,17 +61,22 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 
 - reg-split rung — **implemented 2026-09-02**, sound (16 rung tests, all
   five §10 target fixtures 0-DIVERGENT), but landed `optIn: true` not the
-  spec's default-on: `pipeline-speed.test.ts` P-1's 12x CPU ceiling
-  (measured 13.6x) and ~10 other rungs' `r\d+`-shaped test regexes need
-  follow-up before it can default on — docs/PUSHBACK.md.
+  spec's default-on. P-11a fixed the P-1 12x CPU ceiling (7.7-10.7x); P-11b
+  widened the ~10 other rungs' `r\d+`-shaped test regexes but found the
+  actual blocker on the default-on attempt is not test-regex debt: with
+  reg-split forced default-on, `jsx-recover` (`--jsx`) stops recovering JSX
+  on `59-jsx-runtime-calls` (v94/v99) — reg-split's per-store register
+  renaming breaks jsx-recover's match pattern. `optIn` reverted to `true`;
+  see docs/BUGS.md's 2026-09-02 P-11b row and docs/PUSHBACK.md P-11.
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top of docs/QUEUE.md
 
 1. Metrics scoreboard collector (standing, FIRST — Fred 2026-09-02 night:
    baseline before the night's changes).
-2. Lane L: reg-split default-on (P-11a perf, P-11b `r\d+` test regexes),
-   then var-naming compound, then non-deobf cleanup rungs.
+2. Lane L: reg-split default-on — blocked on the jsx-recover interaction
+   (docs/BUGS.md 2026-09-02 P-11b row), then var-naming compound, then
+   non-deobf cleanup rungs.
 3. Lane T: testing-decisions spec (construct-level + app-generation
    fuzzers, held-out set) -> Fable review -> impl.
 

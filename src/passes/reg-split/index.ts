@@ -27,12 +27,26 @@ export const regSplit: Pass<readonly Stmt[], RegSplitSite> = {
   match,
   rewrite,
   check,
-  // P-11b (docs/PUSHBACK.md P-11, resolved): spec 19 §7's default-on shape
-  // landed. P-11a fixed the perf ceiling (7.7-10.7x vs the 12x P-1 limit).
-  // This task widened the ~10 downstream rungs' `r\d+\b` regexes to accept
-  // `rN_j` split names too (same class of fix as F15's
-  // `EMITTER_NAME_CLASS_RE`) — see those test files' diffs for the list.
-  // `--optin=<other pass>` / `--passes=` remain the escape hatches for
-  // isolating a single pass; there is no longer a reg-split-specific
-  // opt-out beyond the general pass-selection CLI surface.
+  // PUSHBACK P-11 (docs/PUSHBACK.md): spec 19 §7 says `optIn` is *not* set —
+  // the pass should run in the default pipeline. P-11a fixed the perf
+  // ceiling (7.7-10.7x vs the 12x P-1 limit); this task (P-11b) widened the
+  // ~10 downstream rungs' `r\d+\b` regexes to accept `rN_j` split names too
+  // (F15-class fix), then attempted the default-on flip and found a real
+  // regression it does NOT loosen a test to hide: with reg-split in the
+  // default set, `jsx-recover` (`--jsx`) stops recovering JSX on
+  // `59-jsx-runtime-calls` at both v94 and v99 — reg-split's renaming of an
+  // object-literal-build register into per-store copies (`r3`, `r3_2`,
+  // `r3_3`, ...) breaks the def-use pattern jsx-recover's matcher (and/or
+  // the object-literal-merge step it depends on) keys off, so JSX elements
+  // that recover cleanly without reg-split (`<_e0_2 style={r6}>hello</_e0_2>`)
+  // stay as plain calls/property-assignments with it on. Confirmed by
+  // running the fixture through `decompile()` with `skip: ["reg-split"]` vs
+  // without: JSX recovers in the former, not the latter, both versions.
+  // This is a genuine downstream-pass misbehaviour on split registers, not
+  // a naming-shape regex needing a widen — `optIn` stays `true` until a
+  // reviewed fix lands (either jsx-recover's matcher learns to see through
+  // reg-split's per-store register copies, or reg-split runs after
+  // jsx-recover in the pipeline order). See docs/BUGS.md's
+  // jsx-recover/reg-split row.
+  optIn: true,
 };
