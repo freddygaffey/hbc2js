@@ -817,6 +817,66 @@ before/after evidence inline; 6/58 (WITHOUT deps) is untouched. OSS-
 benchmark precision/recall (`tools/e2e/oss-benchmark.mjs`) measured
 before→after in `docs/STATUS.md`'s stage-4 cell.
 
+**Eighth revisit (2026-09-02, generalization-sweep brief) — false-positive
+screens on non-navigator apps, shipped.** A generalization sweep across
+real (proprietary, local-corpus) apps found `detectScreenHits` firing on
+apps with **no react-navigation usage at all**: Brex (71 fake "screens"),
+Uniswap (45). Root cause: the pre-jsx-recover `{ RouteName: Component }`
+registry literal shape (`routeObjRegs` in `traceModuleOrigins`, §3.2's
+first bullet) was the *one* route-registry shape in that function never
+gated on any navigator evidence — every other shape (`jsxScreenPending`,
+`scanRouteConfigFactory`'s own `.keyName =` branch) requires the module to
+already show a `create<X>Navigator` call or the NSW `routeConfig`/
+`*NavigationRoutes` naming convention. `{ Key1: null, Key2: null, ... }`
+with 2+ capitalised keys, later filled `.Key1 = <resolved-require>`, is not
+unique to route configs: Brex's own css-tree dependency has a node-type
+registry of the identical shape (`{AtrulePrelude: null, AttributeSelector:
+null, ...}`, one required module per AST node type — `AtrulePreludeScreen`,
+`AttributeSelectorScreen`, ... were the observed fake screens), and
+register reuse in a large bundled module let an unrelated *lowercase*-keyed
+assignment on the same reused register ride along too (Uniswap:
+`allowedPrivateKeyLengthsScreen`, `__closureScreen`).
+
+Fixed with two structural gates, both in `traceModuleOrigins`
+(`src/split/segregate.ts`), no denylist of specific tokens:
+1. The registry-literal shape (`routeObjRegs`) is only trusted when the
+   containing module shows navigator evidence itself (`scanJsxScreenProps`/
+   `scanRouteConfigFactory`, the same gate every other shape already uses)
+   **or** is a direct dependency of some other module that does
+   (`consumedByNavigator`, a new one-hop-only reverse-dependency check
+   computed once in `nameCustomModules` — deliberately not a transitive
+   closure over the whole graph, which would reopen the same over-match:
+   almost every module in a real app is reachable from *some* navigator
+   given enough hops). The one-hop case is real, not just a safety margin:
+   react-navigation-example-0.85.3's own top-level `SCREENS` registry
+   (module 1368) never calls `create<X>Navigator` itself and doesn't follow
+   the NSW naming convention either — it's required directly by a
+   `createDrawerNavigator`-calling module (1086) that builds the app's
+   actual navigation from it, and without the one-hop allowance this
+   fixture's own real screens would have been dropped too.
+2. At the consumption site, the assigned key must *itself* look like a
+   route name (`/^[A-Z]/`, the same convention the literal's own key check
+   already enforces) — defense against register reuse forwarding a stale
+   `routeObjRegs` membership onto an unrelated later assignment on the same
+   register name, regardless of the module-level gate (fix 1 alone did not
+   catch `allowedPrivateKeyLengthsScreen`; this did).
+
+**Result:** Brex 71→0 screens, Uniswap 45→0 (no `--deps-report`, shape
+alone — both apps have zero react-navigation usage hbc2js can detect,
+confirmed no navigators wrongly kept either). Service NSW (WITHOUT deps,
+local corpus, same split): **176→176 screens, 17→17 navigators — exactly
+unchanged**, confirming NSW's real route configs are all navigator-
+connected already (no tension to push back on here, unlike the brief's own
+anticipated risk). react-navigation-example-0.85.3 WITH deps: 3/50
+unchanged (§6 milestone-3 table). WITHOUT deps: navigators unchanged at 6;
+screens re-pinned 58→52 in `tests/gate/split/segregate.test.ts` — the 6
+dropped were themselves instances of the *same* bug, bundled inside this
+fixture's own dependency tree (module 582, an unrelated font-weight-
+constants module with no navigator anywhere in sight, shape-matched a
+route registry exactly the same way Brex's css-tree did — confirmed by
+hand, see the test's own inline comment). `docs/BUGS.md`: new row, closed
+in the same commit as opened (fix shipped immediately, not left open).
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.

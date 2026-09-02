@@ -194,6 +194,26 @@ function traceModuleOrigins(
   // which is exactly the over-match shape the three prior attempts on this
   // bug (BUGS.md) tripped on.
   scanRouteConfigFactory: boolean,
+  // 2026-09-02 (generalization-sweep brief): true when this module is a
+  // *direct* dependency of some OTHER module that itself shows navigator
+  // evidence (`detectNavigatorKind`/`detectRouteConfigConsumer`) -- the
+  // react-navigation-example fixture's own top-level route registry
+  // (module 1368, exported as `SCREENS`) is exactly this shape: it never
+  // calls `create<X>Navigator` itself (`scanJsxScreenProps` false) and
+  // doesn't follow the `routeConfig`/`*NavigationRoutes` naming convention
+  // either (`scanRouteConfigFactory` false), but it IS required directly by
+  // a confirmed `createDrawerNavigator`-calling module (id 1086) that
+  // builds the app's actual navigator from it -- a real, working route
+  // registry this scan used to accept only because the pre-shaped-literal
+  // shape below (`objTarget`/`routeObjRegs`) was ungated entirely (the
+  // Brex/Uniswap false-positive bug this brief fixes). One hop only,
+  // deliberately not a transitive closure over the whole dependency graph:
+  // a registry module directly wired into a navigator call is strong
+  // evidence; "reachable from a navigator by any number of hops" is not
+  // (almost every module in a real app is transitively reachable from
+  // *some* navigator) and would reopen the same over-match this brief
+  // exists to close.
+  consumedByNavigator: boolean,
 ): { moduleOriginByReg: Map<string, number>; keyAssignments: readonly RouteKeyAssignment[] } {
   const paramAlias = new Map<string, "require" | "depmap">([
     [REQUIRE_PARAM_NAME, "require"],
@@ -318,8 +338,30 @@ function traceModuleOrigins(
       // guard: gesture-handler/reanimated builder objects like `{get:
       // null, changeX: null, waitFor: null, ...}`, all lowercase/camelCase
       // method names).
+      // 2026-09-02 (generalization-sweep brief, Brex/Uniswap false-positive
+      // report): the all-uppercase-keys shape check above is NOT enough on
+      // its own -- css-tree's node-type registry (`{AtrulePrelude: null,
+      // AttributeSelector: null, AnPlusB: null, ...}`, later filled with
+      // `.AtrulePrelude = require('./AtrulePrelude.js')`, one file per node
+      // type) shape-matches a `createXNavigator({ Route: Comp, ... })`
+      // route registry exactly, with zero navigator anywhere in sight --
+      // confirmed by hand as the source of Brex's 71 and Uniswap's 45 fake
+      // "screens" (`AtrulePreludeScreen`, `AttributeSelectorScreen`, ...).
+      // Requiring THIS module to already show navigator evidence
+      // (`scanJsxScreenProps`: it calls a `create<X>Navigator`/
+      // `createStaticNavigation`, §3.1; or `scanRouteConfigFactory`: it
+      // names itself `routeConfig`/`<Domain>NavigationRoutes`, the NSW
+      // convention) is exactly the same self-referential gate every OTHER
+      // route-registry shape in this function already uses (`jsxScreenProps`
+      // pair below, `scanRouteConfigFactory`'s own `.keyName =` branch) --
+      // this pre-shaped-literal shape was the one exception, and the one
+      // that leaked. Confirmed this keeps every existing route-registry
+      // fixture green: each one's own module calls `.create<X>Navigator`
+      // itself (`tests/gate/split/segregate.test.ts`), so `scanJsxScreenProps`
+      // is already true there regardless of this added gate.
       const looksLikeRouteNames = keys.length >= 2 && keys.every((k) => /^[A-Z]/.test(k));
-      if (looksLikeRouteNames && !keys.every((k) => ROUTE_DESCRIPTOR_KEYS.has(k))) routeObjRegs.add(g.objTarget);
+      if (looksLikeRouteNames && !keys.every((k) => ROUTE_DESCRIPTOR_KEYS.has(k)) && (scanJsxScreenProps || scanRouteConfigFactory || consumedByNavigator))
+        routeObjRegs.add(g.objTarget);
       if (scanJsxScreenProps) flushJsxScreenPending(g.objTarget); // register reused for the next screen (or an unrelated object) -- flush any complete pending pair first, then drop the rest
     } else if (g.emptyObjTarget !== undefined) {
       if (scanJsxScreenProps) flushJsxScreenPending(g.emptyObjTarget); // same reset/flush, for the JSX-props shape's own `obj = {};` starting point
@@ -388,7 +430,18 @@ function traceModuleOrigins(
         if (origin !== undefined) moduleOriginByReg.set(target, origin);
       }
     } else if (g.keyObj !== undefined) {
-      if (routeObjRegs.has(g.keyObj)) keyAssignments.push({ key: g.keyName!, targetId: moduleOriginByReg.get(g.keyVal!) });
+      // 2026-09-02 (generalization-sweep brief): `keyName` must ALSO look
+      // like a route name (uppercase-first, same convention the literal's
+      // own `looksLikeRouteNames` guard above already enforces) -- register
+      // reuse in a large real module can rebind `g.keyObj` to something
+      // else entirely between the registry literal and this assignment (no
+      // scope/liveness tracking anywhere in this scan, documented at the top
+      // of this function), so a stale `routeObjRegs` membership alone let an
+      // unrelated *lowercase*-keyed `.someLocalVar = <resolved>;` a few
+      // statements later ride along as a fake screen (observed on Uniswap:
+      // `allowedPrivateKeyLengthsScreen`, `__closureScreen`) even under the
+      // navigator-connection gate just added above.
+      if (routeObjRegs.has(g.keyObj) && /^[A-Z]/.test(g.keyName!)) keyAssignments.push({ key: g.keyName!, targetId: moduleOriginByReg.get(g.keyVal!) });
       // 2026-09-02 (Service NSW cross-module brief): the third route-config
       // shape (see `scanRouteConfigFactory`'s own comment above) -- a
       // registry object accumulated via `<reg>.<RouteName> = <descriptor>;`
@@ -566,10 +619,10 @@ function detectRouteConfigConsumer(text: string): boolean {
  *  hit here comes from a literal object key, never a computed one, so
  *  there is no lower-confidence "dynamic" case to distinguish in this
  *  implementation). */
-function detectScreenHits(id: number, text: string, deps: readonly number[]): ScreenHit[] {
+function detectScreenHits(id: number, text: string, deps: readonly number[], consumedByNavigator: boolean): ScreenHit[] {
   const scanJsxScreenProps = detectNavigatorKind(text).length > 0;
   const scanRouteConfigFactory = looksLikeRouteConfigFactory(text);
-  const { keyAssignments } = traceModuleOrigins(text, deps, scanJsxScreenProps, scanRouteConfigFactory);
+  const { keyAssignments } = traceModuleOrigins(text, deps, scanJsxScreenProps, scanRouteConfigFactory, consumedByNavigator);
   const hits: ScreenHit[] = [];
   for (const a of keyAssignments) {
     if (a.targetId !== undefined) hits.push({ routeName: a.key, targetId: a.targetId, confidence: 0.85, sourceId: id });
@@ -668,7 +721,16 @@ function detectNavigatorKind(text: string): readonly string[] {
 function moduleOwnsOrConsumesRouteConfig(text: string, deps: readonly number[]): boolean {
   if (detectRouteConfigConsumer(text)) return true;
   const scanJsxScreenProps = detectNavigatorKind(text).length > 0;
-  const { keyAssignments } = traceModuleOrigins(text, deps, scanJsxScreenProps, looksLikeRouteConfigFactory(text));
+  // 2026-09-02 (generalization-sweep brief): `consumedByNavigator` fixed
+  // `false` here -- this function has no reverse-dependency graph to check
+  // (only `deps`, this module's own forward requires), and its job is
+  // narrower than `detectScreenHits`'s ("does THIS module's own text show
+  // ownership", used only to decide whether a bare-factory-reexport module
+  // should still count as a navigator, §3.1) -- widening it would let the
+  // one-hop consumer gate re-open exactly the shape-match-anywhere risk
+  // this brief closes, for a check that doesn't need it (every fixture this
+  // function's own tests pin already shows ownership in its OWN text).
+  const { keyAssignments } = traceModuleOrigins(text, deps, scanJsxScreenProps, looksLikeRouteConfigFactory(text), false);
   return keyAssignments.length > 0;
 }
 
@@ -937,6 +999,20 @@ function nameCustomModules(
   // is empty) -- §3.1/3.2's deps-based guards below only ever *narrow*
   // results when there is something to narrow with, never manufacture one.
   const hasClassificationData = classByModule.size > 0;
+  // 2026-09-02 (generalization-sweep brief): every module id that is a
+  // *direct* dependency of some module in `srcModules` whose own text shows
+  // navigator evidence (`detectNavigatorKind`/`detectRouteConfigConsumer`)
+  // -- `detectScreenHits`'s `consumedByNavigator` parameter, computed once
+  // here rather than per module (`traceModuleOrigins` has no reverse-
+  // dependency graph of its own to consult). One hop only, see
+  // `traceModuleOrigins`'s own comment on this parameter for why not a
+  // transitive closure.
+  const navigatorConnectedIds = new Set<number>();
+  for (const m of srcModules) {
+    if (detectNavigatorKind(m.text).length > 0 || detectRouteConfigConsumer(m.text)) {
+      for (const dep of depsByModuleId.get(m.id) ?? []) navigatorConnectedIds.add(dep);
+    }
+  }
   // Milestone 3 (§3.2): every screen hit any src-bucket module's route
   // registry produced, keyed by *target* module id — a target can in
   // principle be claimed by more than one registry (e.g. re-exported under
@@ -952,7 +1028,7 @@ function nameCustomModules(
   // same false positive either way).
   const routeNamesBySource = new Map<number, string[]>();
   for (const m of srcModules) {
-    for (const hit of detectScreenHits(m.id, m.text, depsByModuleId.get(m.id) ?? [])) {
+    for (const hit of detectScreenHits(m.id, m.text, depsByModuleId.get(m.id) ?? [], navigatorConnectedIds.has(m.id))) {
       // §3.1's own framing, restated for §3.2: a screen target is app code,
       // never a library module (a route registry that happens to also
       // re-export a library barrel entry -- observed in the fixture this

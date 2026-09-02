@@ -267,6 +267,56 @@ void test("segregate: detects a navigator (create<X>Navigator + @react-navigatio
   assert.equal(byIdNoDeps.get(11)!.bucket, "unclassified"); // no name signal of its own -- correctly not guessed into src/ or node_modules/
 });
 
+// 2026-09-02 (generalization-sweep brief, docs/BUGS.md "screen-naming
+// over-fit" row): a NON-navigator module with a PascalCase-keyed data
+// registry -- shape-identical to a `createXNavigator({ RouteName: Component
+// })` route config (§3.2), but with no `create<X>Navigator` call, no
+// `routeConfig`/`*NavigationRoutes` naming convention, and no consumer that
+// has either -- must produce ZERO screens. Modelled directly on the real
+// false positive found on Brex (proprietary, not committed): a css-tree
+// AST node-type registry, `{AtrulePrelude: null, AttributeSelector: null,
+// ...}` later filled `.AtrulePrelude = require('./AtrulePrelude.js');`, one
+// required module per node type -- exactly `traceModuleOrigins`'s
+// `routeObjRegs` shape, just never wired to a navigator anywhere.
+void test("segregate: a non-navigator PascalCase-keyed data registry (css-tree node-type-registry shape) produces zero screens", () => {
+  const modulesJson = {
+    hbcVersion: 98,
+    moduleCount: 3,
+    entry: null,
+    modules: [
+      { id: 40, file: "module_40.js", factoryFunctionIndex: 40, deps: [50, 51] }, // node-type registry, no navigator in sight
+      { id: 50, file: "module_50.js", factoryFunctionIndex: 50, deps: [] }, // AtrulePrelude "node type" module
+      { id: 51, file: "module_51.js", factoryFunctionIndex: 51, deps: [] }, // AttributeSelector "node type" module
+    ],
+  };
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify(modulesJson)],
+    [
+      "index.js",
+      `require('./module_40.js');\nrequire('./module_50.js');\nrequire('./module_51.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    // No `create<X>Navigator`/`createStaticNavigation` call, no
+    // `routeConfig`/`*NavigationRoutes` self-export -- just a plain
+    // PascalCase-keyed registry object, same shape §3.2's route registry
+    // uses, filled from two required modules.
+    [
+      "module_40.js",
+      `// hbc2js --split -- Metro module 40\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4;\n  r2 = a2;\n  r1 = a7;\n  r0 = {AtrulePrelude: null, AttributeSelector: null};\n  r4 = r1[0];\n  r3 = r2(r4);\n  r0.AtrulePrelude = r3;\n  r4 = r1[1];\n  r3 = r2(r4);\n  r0.AttributeSelector = r3;\n}\n\n__d(factory, 40, [50, 51]);\n`,
+    ],
+    ["module_50.js", `// hbc2js --split -- Metro module 50\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 50, []);\n`],
+    ["module_51.js", `// hbc2js --split -- Metro module 51\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 51, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null); // no deps report -- shape alone, same as the real Brex/Uniswap runs this fixture models
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(50)!.nameSignal, null, "module 50 must not be named a screen -- module 40 has no navigator connection");
+  assert.equal(byId.get(51)!.nameSignal, null, "module 51 must not be named a screen -- module 40 has no navigator connection");
+  assert.notEqual(byId.get(50)!.newPath, "src/screens/AtrulePreludeScreen.js"); // the exact false positive observed on Brex
+  assert.notEqual(byId.get(51)!.newPath, "src/screens/AttributeSelectorScreen.js");
+  const screens = seg.modules.filter((m) => m.nameSignal?.startsWith("screen-route"));
+  assert.equal(screens.length, 0, "no navigator anywhere in this split tree -- zero screens, not garbage");
+});
+
 // 2026-09-02 (navigator-detection tightening brief, following the NSW
 // route-resolution report's "bare createXNavigator re-exports mis-detected
 // as navigators" note): a module whose entire job is to require a
@@ -763,8 +813,26 @@ void test("segregate: detects navigators/screens on react-navigation-example-0.8
   assert.ok(navigators.length > 0, "expected at least one navigator detected on react-navigation-example-0.85.3 with no deps report");
   // Hard regression bar, WITHOUT deps -- same pinning rationale as the
   // WITH-deps test above (2026-09-02, Service NSW brief).
+  //
+  // 2026-09-02 (generalization-sweep brief, Brex/Uniswap false-positive
+  // fix): screens re-pinned 58 -> 52. The 6 dropped were themselves false
+  // positives of the exact bug this brief fixes, bundled inside this
+  // fixture's own dependency tree -- confirmed by hand, module 582 (an
+  // unrelated font-weight-constants module, no navigator anywhere in
+  // sight) has `r4 = {VALID_FONT_WEIGHTS: null, FONT_WEIGHT_MAPPINGS: null,
+  // ERROR_MESSAGES: null}; r4.FONT_WEIGHT_MAPPINGS = <required module>;` --
+  // the identical shape-match-with-no-navigator-connection root cause
+  // reported on Rainbow/Bluesky (`FONT_WEIGHT_MAPPINGSScreen`,
+  // `SLOPE_FACTORScreen`, named verbatim in that report) and now on this
+  // fixture too, only visible once the real fix (route-registry literal
+  // gated on navigator-connection, `traceModuleOrigins`) stopped accepting
+  // it. Not a "trust me, update the test" ask -- this is the bug the brief
+  // named, on this fixture's own bundled deps, confirmed independently
+  // above. The WITH-deps test's pinned 50 (§6) is unaffected: `deps`
+  // classifies module 582 as a library dependency, already excluded from
+  // naming there regardless of this fix.
   assert.equal(navigators.length, 6, "react-navigation-example WITHOUT deps: navigator count regressed from its pinned §6 value");
-  assert.equal(screens.length, 58, "react-navigation-example WITHOUT deps: screen count regressed from its pinned §6 value");
+  assert.equal(screens.length, 52, "react-navigation-example WITHOUT deps: screen count regressed from its pinned §6 value (generalization-sweep re-pin, see comment above)");
   for (const s of screens) assert.match(s.newPath, /^src\/screens\//, `screen ${s.newPath} not filed under src/screens/`);
   for (const n of navigators) assert.match(n.newPath, /^src\/navigation\//, `navigator ${n.newPath} not filed under src/navigation/`);
   // No deps report -> every navigator/screen candidate lands at the shape-
