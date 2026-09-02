@@ -22,7 +22,7 @@ If both slots are busy, WAIT — never launch a third. NO deobfuscation rungs (S
 
 **Lane T — testing decisions 1-4 of docs/orchestrator-handoff-2026-09-02.md (one agent at a time):**
 1. [SPEC LANDED 2026-09-02, docs/specs/09-fuzzing.md, 4f39240 — now in step 2 review] SPEC (Fable): construct-level fuzzer (random valid JS -> hermesc -> decompile -> trace-compare, oracle-backed) + app-generation fuzzer (generate app SOURCE + BUILD config: vary framework / bundler [Metro plain/RAM, Expo] / router / libs / Hermes+RN version / obfuscation -> build -> (bundle, map, source) ground-truth triples; rotate a SAMPLE per run, reject same-app-N-times) + blind held-out set (some generated + some existing apps, never tuned against). Spec MUST state metric + target number + measurement method + held-out check (decision 8).
-2. REVIEW gate (Fable reviewer verifies the spec carries a sane measurable target) — before any impl launches.
+2. [DONE 2026-09-02, APPROVED w/ edits E1-E4, e4da11d — 0-novel-divergence bar; v98 confirmed; reports gitignored] REVIEW gate (Fable).
 3. IMPL construct-level fuzzer (lean Sonnet). 4. IMPL app-generation fuzzer (lean Sonnet). 5. Wire held-out set + pass MATRIX per Hermes-version x bundler into the corpus harness.
 **When Lane T's fuzzers are landed and generating unique bundles, Lane T's slot joins the ladder (both slots on Lane L, still max 2 / prefer 1).**
 
