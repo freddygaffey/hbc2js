@@ -301,7 +301,10 @@ function collectFromExpr(e: Expr, stmtIndex: number, out: CandidateSite[]): void
       e.elements.forEach((x) => collectFromExpr(x, stmtIndex, out));
       return;
     case "object":
-      e.props.forEach((p) => collectFromExpr(p.value, stmtIndex, out));
+      e.props.forEach((p) => collectFromExpr("k" in p ? p.arg : p.value, stmtIndex, out));
+      return;
+    case "spread": // F17
+      collectFromExpr(e.arg, stmtIndex, out);
       return;
     case "seq":
       e.exprs.forEach((x) => collectFromExpr(x, stmtIndex, out));

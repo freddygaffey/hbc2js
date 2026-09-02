@@ -174,7 +174,7 @@ function collectCalls(e: Expr, out: Expr[]): void {
       e.elements.forEach((x) => collectCalls(x, out));
       return;
     case "object":
-      e.props.forEach((p) => collectCalls(p.value, out));
+      e.props.forEach((p) => collectCalls("k" in p ? p.arg : p.value, out));
       return;
     case "seq":
     case "template":
@@ -233,6 +233,11 @@ function replaceNode(e: Expr, target: Expr, repl: Expr): Expr {
     case "object": {
       let changed = false;
       const props = e.props.map((p) => {
+        if ("k" in p) {
+          const v = replaceNode(p.arg, target, repl);
+          if (v !== p.arg) changed = true;
+          return v === p.arg ? p : { ...p, arg: v };
+        }
         const v = replaceNode(p.value, target, repl);
         if (v !== p.value) changed = true;
         return v === p.value ? p : { ...p, value: v };
@@ -333,7 +338,7 @@ function namesRead(e: Expr, out: Set<string>): void {
       e.elements.forEach((x) => namesRead(x, out));
       return;
     case "object":
-      e.props.forEach((p) => namesRead(p.value, out));
+      e.props.forEach((p) => namesRead("k" in p ? p.arg : p.value, out));
       return;
     case "seq":
     case "template":
@@ -454,7 +459,7 @@ function fnFacts(fnBody: readonly Stmt[]): FnFacts {
         e.elements.forEach(visitExpr);
         return;
       case "object":
-        e.props.forEach((p) => visitExpr(p.value));
+        e.props.forEach((p) => visitExpr("k" in p ? p.arg : p.value));
         return;
       case "unary":
         visitExpr(e.arg);
@@ -728,7 +733,7 @@ function resolveArray(f: Fold, i: number, arg: Expr, a: Absorption): readonly Mo
 function resolveConfig(f: Fold, i: number, arg: Expr, a: Absorption, runtime: "automatic" | "classic", name: string): void {
   let props: readonly { readonly key: string; readonly computed: boolean; readonly value: Expr; readonly at: number }[];
   if (arg.k === "object") {
-    props = arg.props.map((p) => ({ ...p, at: i }));
+    props = arg.props.filter((p): p is Exclude<typeof p, { readonly k: "spreadProp" }> => !("k" in p)).map((p) => ({ ...p, at: i }));
   } else if (arg.k === "lit" && (arg.text === "null" || arg.text === "undefined")) {
     if (runtime === "automatic") throw new Refuse("null-config");
     (a as { nullProps: Expr | null }).nullProps = arg;
@@ -738,7 +743,7 @@ function resolveConfig(f: Fold, i: number, arg: Expr, a: Absorption, runtime: "a
     const d = nearestDef(f, i, arg.name);
     if (d !== null && d.absorbable && d.value.k === "object") {
       const own = new Set<number>([d.index]);
-      const collected: { key: string; computed: boolean; value: Expr; at: number }[] = d.value.props.map((p) => ({ ...p, at: d.index }));
+      const collected: { key: string; computed: boolean; value: Expr; at: number }[] = d.value.props.filter((p): p is Exclude<typeof p, { readonly k: "spreadProp" }> => !("k" in p)).map((p) => ({ ...p, at: d.index }));
       for (let j = d.index + 1; j < i; j++) {
         if (f.deleted.has(j)) continue;
         const st = store(f.cur[j]!);
@@ -995,7 +1000,7 @@ export function countElementSites(fnBody: readonly Stmt[]): { readonly recovered
           e.elements.forEach(countJsx);
           return;
         case "object":
-          e.props.forEach((p) => countJsx(p.value));
+          e.props.forEach((p) => countJsx("k" in p ? p.arg : p.value));
           return;
         case "cond":
           countJsx(e.test);

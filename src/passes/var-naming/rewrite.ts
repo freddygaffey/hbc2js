@@ -59,8 +59,8 @@ function renameExpr(e: Expr, map: Mapping): Expr {
       return elements.every((x, i) => x === e.elements[i]) ? e : { ...e, elements };
     }
     case "object": {
-      const props = e.props.map((p) => ({ ...p, value: renameExpr(p.value, map) }));
-      return props.every((p, i) => p.value === e.props[i]!.value) ? e : { ...e, props };
+      const props = e.props.map((p) => ("k" in p ? { ...p, arg: renameExpr(p.arg, map) } : { ...p, value: renameExpr(p.value, map) }));
+      return props.every((p, i) => ("k" in p ? p.arg === (e.props[i] as { arg: unknown }).arg : p.value === (e.props[i] as { value: unknown }).value)) ? e : { ...e, props };
     }
     case "seq": {
       const exprs = e.exprs.map((x) => renameExpr(x, map));

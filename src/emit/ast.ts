@@ -27,8 +27,16 @@ export type Expr =
   | { readonly k: "assign"; readonly target: Expr; readonly value: Expr }
   | { readonly k: "cond"; readonly test: Expr; readonly then: Expr; readonly else: Expr }
   | { readonly k: "array"; readonly elements: readonly Expr[] }
-  | { readonly k: "object"; readonly props: readonly ObjectProp[] }
+  | { readonly k: "object"; readonly props: readonly (ObjectProp | SpreadProp)[] }
   | { readonly k: "seq"; readonly exprs: readonly Expr[] }
+  /**
+   * F17 (docs/specs/passes/17-spread-rest.md §3): `...arg`, valid only
+   * inside an array literal's `elements`, a call/`new`'s `args`, or (as a
+   * bare `Expr` there too — array/call `Expr[]` already admit any `Expr`).
+   * Never a stand-alone statement or anywhere else; `parses` is the
+   * backstop for a `spread` node the printer would emit somewhere illegal.
+   */
+  | { readonly k: "spread"; readonly arg: Expr }
   /**
    * F14 (docs/specs/passes/14-template-literal.md §3): `` `q0${e0}q1…` ``.
    * Invariant `quasis.length === exprs.length + 1`. Each `quasis[i]` is the
@@ -184,6 +192,13 @@ export interface ObjectProp {
   readonly key: string; // identifier text, or a rendered literal when `computed`
   readonly computed: boolean;
   readonly value: Expr;
+}
+
+/** F17: `{...arg}` inside an object literal's `props` — object spread
+ *  (`docs/specs/passes/17-spread-rest.md` H4). */
+export interface SpreadProp {
+  readonly k: "spreadProp";
+  readonly arg: Expr;
 }
 
 export type BinaryOp =

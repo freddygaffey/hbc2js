@@ -131,7 +131,10 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         for (const x of e.elements) walkExpr(x, scopes, where);
         return;
       case "object":
-        for (const p of e.props) walkExpr(p.value, scopes, where);
+        for (const p of e.props) walkExpr("k" in p ? p.arg : p.value, scopes, where);
+        return;
+      case "spread": // F17
+        walkExpr(e.arg, scopes, where);
         return;
       case "seq":
         for (const x of e.exprs) walkExpr(x, scopes, where);

@@ -1,7 +1,7 @@
 # Spread (array/call) and rest parameters
 
 **Fixtures:** `40-spread-array`, `41-spread-object`, `42-rest-params`
-**Confidence:** ✅ single-version (v94, `-O0`)
+**Confidence:** ✅ verified (v94 and v99 — see §7)
 
 ## 1. Source
 
@@ -94,7 +94,30 @@ and must not be reordered for cosmetic reasons).
 
 ## 7. Version differences
 
-Not cross-checked against v99 in this pass (v94 `-O0` only). The object-
-spread builtin's *index* is expected to differ by version
-(`docs/HBC-FORMAT.md` §11.4's general warning about builtin numbering
-being version-dependent) even though its *behaviour* should not.
+Confirmed at v99 (`docs/specs/passes/17-spread-rest.md` implementation task,
+2026-09-02): decompiler output for `40`/`41`/`42` at `--no-pass var-naming
+--no-pass fn-naming` shows identical stage-B shapes to v94 — the same
+`__hbc_b_arraySpread`/`__hbc_b_apply`/`__hbc_b_copyRestArgs`/2-arg
+`__hbc_b_copyDataProperties` helper calls in the same statement
+arrangements, differing only in `expr-rebuild` residue (how many single-use
+register copies survive before this rung runs, e.g. H1b's argument-array
+build going through `r13`/`r12`/`r11` scratch copies at both versions in
+`variadicSum(...a, ...b)`). This confirms row 23's own note: the object
+builtin's *index* is version-dependent at the bytecode level, but `src/emit`
+already resolved that to the version-uniform `__hbc_b_copyDataProperties`
+name before this rung (stage B) ever sees it — so `spread-rest` itself is
+one matcher for every HBC version, with no version branch anywhere in
+`src/passes/spread-rest/`.
+
+**Known gap, not a stage-B shape difference (`docs/BUGS.md`, 2026-09-02
+row, shared with `default-params`'s v99 finding):** at v98/v99, `42`'s
+`combine`/`restOnly` are emitted as orphan top-level function statements
+("no closure creation site was found") rather than as members of `fn#0`'s
+own body list — the same `src/emit/index.ts` orphan-assembly gap that
+already blocks `default-params` from reaching those functions' `params`.
+`spread-rest`'s S3 rule needs the exact same "list containing the `func`
+statement" site `default-params` needs, so it inherits the same miss:
+`__hbc_b_copyRestArgs` survives unrewritten in those two functions at
+v98/v99 only. The trace-oracle verdict is unaffected (still valid,
+correct JS); this is a readability miss, not a correctness bug. Fixed by
+the same framework fix docs/BUGS.md asks for.

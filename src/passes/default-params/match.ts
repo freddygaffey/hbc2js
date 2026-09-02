@@ -197,7 +197,7 @@ function exprRegisterReads(e: Expr): readonly string[] {
         x.elements.forEach(visit);
         return;
       case "object":
-        x.props.forEach((p) => visit(p.value));
+        x.props.forEach((p) => visit("k" in p ? p.arg : p.value));
         return;
       case "seq":
         x.exprs.forEach(visit);
@@ -274,8 +274,8 @@ function substituteConstants(e: Expr, values: ReadonlyMap<string, Expr>): Expr {
         return elements.every((el, i) => el === x.elements[i]) ? x : { ...x, elements };
       }
       case "object": {
-        const props = x.props.map((p) => ({ ...p, value: go(p.value) }));
-        return props.every((p, i) => p.value === x.props[i]!.value) ? x : { ...x, props };
+        const props = x.props.map((p) => ("k" in p ? { ...p, arg: go(p.arg) } : { ...p, value: go(p.value) }));
+        return props.every((p, i) => ("k" in p ? p.arg === (x.props[i] as { arg: unknown }).arg : p.value === (x.props[i] as { value: unknown }).value)) ? x : { ...x, props };
       }
       case "seq": {
         const exprs = x.exprs.map(go);
