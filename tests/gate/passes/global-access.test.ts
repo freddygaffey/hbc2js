@@ -343,11 +343,14 @@ for (const version of VERSIONS) {
 
 test("v94 shape: 47-typeof-instanceof-in — a builtin read folds to a bare call/instanceof/property access", () => {
   const code = decompile(loadFixture("47-typeof-instanceof-in", 94, ""), { moduleName: "x" }).code;
-  assert.match(code, /r2\.prototype = Object\.create\(r0\.Base\.prototype\);/);
-  assert.match(code, /r17 = r2 instanceof Array;/);
+  // reg-split may give `r2` and `r17` their own `rN_j` web names — the
+  // fold under test (global-access's own job) is orthogonal to that.
+  assert.match(code, /r2(?:_\d+)?\.prototype = Object\.create\(r0\.Base\.prototype\);/);
+  assert.match(code, /r17(?:_\d+)? = r2(?:_\d+)? instanceof Array;/);
   // `Symbol` folds to a bare identifier — the point of this assertion. Accept
   // either the pre-`call-shape` `Reflect.apply(Symbol, …)` wrapper or the
   // direct `Symbol()` a landed `call-shape` produces; both prove the fold, and
-  // whether the call is unwrapped is orthogonal to global-access.
-  assert.match(code, /r0 = (Reflect\.apply\(Symbol, r11, \[\]\)|Symbol\(\));/);
+  // whether the call is unwrapped is orthogonal to global-access. reg-split
+  // may also rename the destination register/identifier.
+  assert.match(code, /\w+(?:_\d+)? = (Reflect\.apply\(Symbol, r11(?:_\d+)?, \[\]\)|Symbol\(\));/);
 });

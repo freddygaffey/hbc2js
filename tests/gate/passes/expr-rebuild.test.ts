@@ -307,7 +307,10 @@ function loadFixture(name: string, version: number, variant: string): Uint8Array
 }
 
 function registerOccurrences(code: string): number {
-  return (code.match(/\br\d+\b/g) ?? []).length;
+  // `\d+(_\d+)?` also matches reg-split's `rN_j` web names (docs/specs/
+  // passes/19-reg-split.md §Q3) — a register split into several webs still
+  // counts as occurrences of "a register", just under split names.
+  return (code.match(/\br\d+(?:_\d+)?\b/g) ?? []).length;
 }
 
 for (const target of exprRebuild.targets) {
@@ -351,11 +354,15 @@ for (const target of exprRebuild.targets) {
 // calls, not just three.
 test("v94 shape: 19-var-hoisting fn#1 'demo' — guard-`if`s between accesses do not block D-a", () => {
   const code = decompile(loadFixture("19-var-hoisting", 94, ""), { moduleName: "x" }).code;
-  assert.match(code, /let r0, r1, r2, r3, r4;/, "14 registers collapse to 5");
-  assert.match(code, /r2\("x before declaration:", r3\);/, "r2 (impure, non-adjacent) stays a name; the pure literal folds in, and call-shape now proves this-undefined and drops Reflect.apply");
+  // reg-split (docs/specs/passes/19-reg-split.md §Q3) may give each of these
+  // 5 base registers its own disjoint-web `rN_j` names on top of `rN` — the
+  // collapse-to-5-*base*-registers property under test is unaffected, so
+  // each base name below optionally admits `_\d+` children.
+  assert.match(code, /let r0(?:, r0_\d+)*, r1(?:, r1_\d+)*, r2(?:, r2_\d+)*, r3(?:, r3_\d+)*, r4(?:, r4_\d+)*;/, "14 registers collapse to 5 base registers");
+  assert.match(code, /r2(?:_\d+)?\("x before declaration:", r3(?:_\d+)?\);/, "r2 (impure, non-adjacent) stays a name; the pure literal folds in, and call-shape now proves this-undefined and drops Reflect.apply");
   assert.match(code, /print\("x after assignment:", 1\);/, "an adjacent impure read (no intervening statement) folds, and call-shape now proves this-undefined and drops Reflect.apply");
-  assert.match(code, /r4\("x reassigned in block:", r0\);/);
-  assert.match(code, /r4\("x after block:", r0\);/);
+  assert.match(code, /r4(?:_\d+)?\("x reassigned in block:", r0\);/);
+  assert.match(code, /r4(?:_\d+)?\("x after block:", r0\);/);
 });
 
 test("v94 shape: 19-var-hoisting fn#2 'hoistedFn' — R1a folds a single-use store into its return", () => {

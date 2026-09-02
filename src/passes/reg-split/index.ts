@@ -27,21 +27,12 @@ export const regSplit: Pass<readonly Stmt[], RegSplitSite> = {
   match,
   rewrite,
   check,
-  // PUSHBACK P-? (docs/PUSHBACK.md): spec 19 §7 says `optIn` is *not* set —
-  // the pass should run in the default pipeline. Landed `optIn: true`
-  // instead: sound (16/16 rung tests green, all five §10 target fixtures
-  // 0-DIVERGENT, the full construct suite crash-free with the pass on), but
-  // turning it on by default trips two gates this task's budget did not
-  // cover fixing: (1) `tests/gate/passes/pipeline-speed.test.ts` P-1's
-  // 12x CPU ceiling (measured 13.6x on rn-template after one optimisation
-  // pass — the R-catch/R-loop pre-coarsening in `match.ts` is still O(regs
-  // x tries) per function, not O(occurrences)); (2) roughly ten existing
-  // passes' own tests assert `r\d+\b`-shaped regexes against real-fixture
-  // output and now see `rN_j` names for a register reg-split legitimately
-  // split (CONSOLIDATION §B's documented "every new rung breaks the
-  // previous rungs' string assertions" debt) — each needs its regex
-  // widened the same way F15 already widened `EMITTER_NAME_CLASS_RE`, one
-  // pass file at a time, reviewed as its own change. `--passes=reg-split`
-  // (or `--optin=reg-split`) exercises it directly.
-  optIn: true,
+  // P-11b (docs/PUSHBACK.md P-11, resolved): spec 19 §7's default-on shape
+  // landed. P-11a fixed the perf ceiling (7.7-10.7x vs the 12x P-1 limit).
+  // This task widened the ~10 downstream rungs' `r\d+\b` regexes to accept
+  // `rN_j` split names too (same class of fix as F15's
+  // `EMITTER_NAME_CLASS_RE`) — see those test files' diffs for the list.
+  // `--optin=<other pass>` / `--passes=` remain the escape hatches for
+  // isolating a single pass; there is no longer a reg-split-specific
+  // opt-out beyond the general pass-selection CLI surface.
 };

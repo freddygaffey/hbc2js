@@ -390,9 +390,12 @@ test("v99 shape: 33-class-inheritance-super — an ordinary two-argument Reflect
   // `var-naming` (spec 07) runs after this rung and renames single-def
   // registers such as the `new` result below; this test asserts call-shape's
   // own property against register names, so that rung is skipped here.
+  // reg-split (still on — only var-naming is skipped) may give any of these
+  // registers their own `rN_j` web name; call-shape's own property under
+  // test is unaffected by that renaming.
   const code = decompile(new Uint8Array(readFileSync(fixturePath("33-class-inheritance-super", 99, ""))), { moduleName: "x", passes: { skip: ["var-naming"] } }).code;
-  assert.match(code, /new r7\(r12, r11\)/);
-  assert.match(code, /Reflect\.construct\(r2, \[r4\], r3\)/, "super() forwards a distinct new.target — must not become `new r2(r4)`");
+  assert.match(code, /new r7(?:_\d+)?\(r12(?:_\d+)?, r11(?:_\d+)?\)/);
+  assert.match(code, /Reflect\.construct\(r2(?:_\d+)?, \[r4(?:_\d+)?\], r3(?:_\d+)?\)/, "super() forwards a distinct new.target — must not become `new r2(r4)`");
 });
 
 // docs/specs/passes/14-template-literal.md §7: `call-shape` and
