@@ -24,4 +24,4 @@ tests/fixtures/bundles/**/*.map
 # raw fuzz-matrix reports are machine-local and gitignored; the committed
 # record is the collector's scoreboard row (docs/reports/metrics/), not a
 # snapshot of this directory.
-reports/
+/reports/

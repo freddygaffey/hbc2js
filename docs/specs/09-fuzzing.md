@@ -597,3 +597,6 @@ launch.
 **No REQUIRED edits remain open.** T1 passes against the edited spec by
 construction (quadruple labels, bound sections, and pinned numeric strings all
 retained).
+
+### P-12 ratification (orchestrator, 2026-09-02)
+PUSHBACK P-12 accepted: the §1 oracle ladder's `roundtrip` member false-positives on any construct requiring an injected runtime helper (function-count comparison vs original bytecode), confirmed on gate-passing fixture 07-for-of-iterable (3 vs 8). Ruling: traced versions run `syntax+trace+fuzz` (matches `defaultOraclesForTier` precedent in src/harness/tiers.ts); the v98 roundtrip-only lane stays as specced (already marked unreliable-by-design, never blended). Spec §1's ladder list is to be read with this amendment.
