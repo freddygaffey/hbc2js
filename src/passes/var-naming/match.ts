@@ -48,7 +48,9 @@ export type ClassifyResult = { readonly ok: true; readonly to: string } | { read
 // `fn-naming/match.ts`'s copy follows). `a\d+` is added here (not present in
 // fn-naming's copy): spec §4.3 calls it out explicitly so a heuristic can
 // never manufacture a param-shaped name.
-const EMITTER_NAME_CLASS_RE = /^(_fn\d+|_e\d+_\d+|r\d+|__.*|_exc\d+|L\d+|__state\d+|a\d+)$/;
+// F15 (docs/specs/passes/19-reg-split.md §3.1): `r\d+(_\d+)?` so a heuristic
+// name can never collide with a `reg-split` web variable either.
+const EMITTER_NAME_CLASS_RE = /^(_fn\d+|_e\d+_\d+|r\d+(_\d+)?|__.*|_exc\d+|L\d+|__state\d+|a\d+)$/;
 
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 

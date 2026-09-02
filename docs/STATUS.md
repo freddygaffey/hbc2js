@@ -34,15 +34,16 @@ stores) split into real files. (docs/LANES.md)
 - M2 Disassembler (100% match vs `hermesc -dump-bytecode`) — done
 - M3 Test harness (trace runner + recompile round-trip) — done
 - M4 Baseline (CFG + structurer + emitter) — done, 501/501 gate, 0 DIVERGENT
-- M5 Pass ladder (readability) — in progress, 15/30 rungs merged
+- M5 Pass ladder (readability) — in progress, 16/30 rungs merged (1 opt-in)
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 15/30 rungs live
+## Ladder — 16/30 rungs live (1 opt-in)
 
 `loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
 `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
-`destructure`, `spread-rest`, `template-literal`, `fn-naming`, `var-naming`,
-`jsx-recover` (opt-in `--jsx`). Next (batch 3): TBD.
+`destructure`, `spread-rest`, `template-literal`, `fn-naming`, `reg-split`
+(opt-in, PUSHBACK below), `var-naming`, `jsx-recover` (opt-in `--jsx`).
+Next (batch 3): TBD.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
@@ -58,20 +59,13 @@ harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
 verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 `## Resolved`. Gate: `tests/gate/docs/bugs-ledger.test.ts`.
 
-## Naming overlay (Design D) — v1 live
-
-`src/name-overlay/` + `hbc2js name set|get|revert|search` + `hbc2js render`
-(docs/RENAME.md). A versioned, append-only, queryable layer of names keyed to
-`{fn,reg}` binding ids, rendered at emit as a pure frame-local alpha-rename
-(behaviour-preserving; trace-oracle 0-DIVERGENT). External names pass
-var-naming's reuse gate; `--override` forces one, stamped `overridden`+`low`.
-v1 = register locals; env slots / function names deferred (spec §8).
-
 ## Blocked / needs Fred
 
-- reg-split rung (real variable names) — **specced 2026-09-02**
-  (`docs/specs/passes/19-reg-split.md`; P-6 resolved); awaiting
-  implementation (docs/QUEUE.md item 1).
+- reg-split rung — **implemented 2026-09-02**, sound (16 rung tests, all
+  five §10 target fixtures 0-DIVERGENT), but landed `optIn: true` not the
+  spec's default-on: `pipeline-speed.test.ts` P-1's 12x CPU ceiling
+  (measured 13.6x) and ~10 other rungs' `r\d+`-shaped test regexes need
+  follow-up before it can default on — docs/PUSHBACK.md.
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top 5 (docs/QUEUE.md)
