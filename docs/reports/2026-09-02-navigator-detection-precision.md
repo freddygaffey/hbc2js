@@ -1,0 +1,4 @@
+# 2026-09-02 — navigator detection precision — Sonnet, lean
+Tokens 175k · tool calls 115 · green.
+
+detectNavigator now requires a createXNavigator call-shape module to ALSO own/consume a route registry, but only excludes a bare single-flat-factory re-export (looksLikeBareFactoryReexportShape). NSW navigators 18→17. react-navigation-example pinned (4/54, 6/58). PUSHBACK P-10: the FULLER fix (no flatness gate) is technically correct but drops react-navigation-example 4→1 because its 4 "navigators" are actually @react-navigation barrel/index files MISFILED to src/ by a classify.ts package-boundary gap — the pinned hard bar was set on wrong classification. Filed P-10 with evidence rather than touch the pin. Also corrected a prior over-broad guess: 12/17 NSW navigators DO own a real registry; only 5-7 are bare re-exports.
