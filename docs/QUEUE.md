@@ -20,7 +20,7 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 
 
 ## Phase 2 — RE / bug-finding environment (roadmap: docs/specs/re-tooling-roadmap-IDEAS.md, Fred 2026-09-02)
-FOUNDATION FIRST (reg-split readability + Design D overlay + corpus generalization must be solid before Phase 2). Then, in order — each is a RESEARCHED SPEC by a STRONGER agent (Opus/Fable), in the Design-doc style, NOT an implementation until specced:
+INTERLEAVE WITH PHASE 1 (Fred 2026-09-02: some Phase-2 tooling > finishing the ladder — start earlier). The ONLY hard prerequisites are reg-split (readable code) + Design D overlay ({fn,reg} addressing) — both in flight. The MOMENT those two merge, run Phase-2 tooling IN PARALLEL with remaining ladder rungs (do NOT wait for rung 30). P2.1 artifact-format+xref spec is the first Phase-2 launch. In order — each is a RESEARCHED SPEC by a STRONGER agent (Opus/Fable), in the Design-doc style, NOT an implementation until specced:
 - **P2.1 ARTIFACT FORMAT + xref/call-graph index (GATES EVERYTHING — spec this FIRST, concretely)**: hbc2js's output contract becomes a structured artifact = rendered source + an index keyed to `{fn,reg}`/`fnIndex`: who-calls (call graph), string→use-site xref, global-read-where, native surface, module graph. Every analysis tool consumes THIS, never hbc2js internals. Pin the format down first (§7). Ours (touches Hermes/ids).
 - **P2.2 project store** = the Design-D overlay generalized to hold comments, tags (source/sink/reviewed/suspicious), bookmarks, findings on the same ids. Our Ghidra-project/IDA-db. (Naming overlay = one record type in it.)
 - **P2.3 string + secrets indexer** (string-table→use xref + entropy/pattern scan) — cheap, high hit rate, run first on a bundle.
