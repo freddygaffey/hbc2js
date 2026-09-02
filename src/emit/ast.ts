@@ -19,7 +19,24 @@ export type Expr =
   /** The current function's `arguments` object. */
   | { readonly k: "argumentsObject" }
   | { readonly k: "member"; readonly obj: Expr; readonly prop: Expr; readonly computed: boolean }
+  /**
+   * F18 (docs/specs/passes/18-optional-chain.md §3): `obj?.prop` /
+   * `obj?.[prop]` — the guarded member link of a `?.` chain. `obj`'s own
+   * effects (including any earlier `optmember`/`optcall` link) always run;
+   * `prop`'s read/access runs only when `obj` is not nullish. The printer
+   * never re-parenthesises `obj` in a way that would break this scope
+   * (`(a?.b).c` throws where `a?.b.c` does not).
+   */
+  | { readonly k: "optmember"; readonly obj: Expr; readonly prop: Expr; readonly computed: boolean }
   | { readonly k: "call"; readonly callee: Expr; readonly args: readonly Expr[] }
+  /** F18: `callee?.(args)` — the guarded call link. `thisIsBase` records
+   *  that the call's receiver (`Reflect.apply`'s second argument in the
+   *  bytecode form) was the callee's own base register, per §4 precondition
+   *  5's `?.()` receiver rule; the printer does not need it (a bare
+   *  `?.(...)` call never sets `this` from the printed source), but a
+   *  future writer/checker step that needs to tell `a.b?.()` (this = `a`)
+   *  from a detached call can use it. */
+  | { readonly k: "optcall"; readonly callee: Expr; readonly args: readonly Expr[]; readonly thisIsBase: boolean }
   | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[] }
   | { readonly k: "bin"; readonly op: BinaryOp; readonly left: Expr; readonly right: Expr }
   | { readonly k: "logical"; readonly op: "&&" | "||" | "??"; readonly left: Expr; readonly right: Expr }

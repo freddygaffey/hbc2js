@@ -21,7 +21,7 @@ stores) split into real files. (docs/LANES.md)
 | 5 readable | OSS ground-truth benchmark: naming closeness vs `.map` (monorepo-scoped truth, see caveat) | not scored (no `.map`) | mean fuzzy similarity 0.66, 8.6% ≥0.8 (199 real `/example/` basenames only — excludes react-navigation's own `/packages/*` source, corrected from the milestone-3 row's 340-basename truth set) | not measured | docs/e2e/OSS-BENCHMARK.md; `tools/e2e/oss-benchmark.mjs` 2026-09-02 |
 | 4 segregated | `hbc2js segregate` (milestone 1, by module count) | 308/435 (70.8%) → `node_modules/` (303 named `react-native`, 5 `_vendor/`), 72/435 (16.6%) → `src/`, 55/435 (12.6%) → `_unclassified/` | not measured (needs `deps` run, item 30's fetch) | not measured (`deps` >10 min, item 30) | docs/specs/08-segregation.md §5 2026-09-02; `hbc2js segregate` on rn-template-0.72's `--split` tree + its own `deps --offline` report |
 | 5 readable | `hbc2js segregate` (milestone 2, naming): % `src/` modules named (not `module_N.js`) | 1.4% (1/72, entry module → `src/App.js` via app-registration signal) | not measured (needs `deps` run, item 30's fetch) | not measured | docs/specs/08-segregation.md §6 milestone 2 result, 2026-09-02; expected near-floor per spec §5 — rn-template ships no screens/store to exercise steps 3-5 |
-| 5 readable | `hbc2js segregate` (milestone 3, screens/navigators): detected / named / fuzzy-match vs `.map` | n/a (no navigation) | WITH deps: 54 screens, 4 navigators, mean fuzzy 0.686 (unchanged). NO deps (2026-09-02, deps-optional detection): 58 screens, 6 navigators, mean fuzzy 0.654. Navigators now named from their own route set's common prefix when resolvable (`LicenceNavigator.js`), a dominant-domain/role name when the set has no shared prefix (`LicenceNavigator` off a plurality domain, else `RootNavigator`/`MainTabNavigator`, 2026-09-02 4th revisit), else `<Type>Navigator` | NO deps only (`deps` >10 min, never run): 176 screens, 17 navigators (was 18, 2026-09-02 6th revisit: `detectNavigator` now refuses a flat require+call+export module with no owned/consumed route config — see docs/BUGS.md, docs/PUSHBACK.md P-10 for the broader gate blocked by react-navigation-example's pinned hard bar). 1 of the 17 route/role-named (`RootNavigator`). react-navigation-example numbers (this column, left) unchanged | docs/specs/08-segregation.md §3/§6 milestone 3 result, 2026-09-02; `tools/e2e/name-accuracy.mjs [--no-deps]` |
+| 5 readable | `hbc2js segregate` (milestone 3, screens/navigators): detected / named / fuzzy-match vs `.map` | n/a (no navigation) | WITH deps: 54 screens, 4 navigators, mean fuzzy 0.686 (unchanged). NO deps (2026-09-02, deps-optional detection): 58 screens, 6 navigators, mean fuzzy 0.654. Navigators now named from their own route set's common prefix when resolvable (`LicenceNavigator.js`), a dominant-domain/role name when the set has no shared prefix (`LicenceNavigator` off a plurality domain, else `RootNavigator`/`MainTabNavigator`, 2026-09-02 4th revisit), else `<Type>Navigator` | NO deps only (`deps` >10 min, never run): **176 screens** (was 36, 2026-09-02 5th revisit: two-statement depmap-index routes — `r=N; r=arr[r];` — now traced), 18 navigators (was 26 — several former generic-named navigators now correctly resolve as *screens* instead, since a sibling navigator's route config now points to them by name; an expected side effect of resolving more routes, not a regression). 1 of the 18 gets a route/role-derived name (`RootNavigator`) vs 17 generic call-shape names — most of NSW's remaining "navigators" are bare `create<X>Navigator` factory re-exports with no route registry of their own, a pre-existing navigator-*detection* imprecision out of this task's scope. `docs/BUGS.md` 2026-09-02 rows moved to Resolved. react-navigation-example numbers (this column, left) unchanged | docs/specs/08-segregation.md §3/§6 milestone 3 result, 2026-09-02; `tools/e2e/name-accuracy.mjs [--no-deps]` |
 | 5 readable | var-naming: registers named | 4.1% (bundle) / 3.1% (57-fixture matrix) | – | – | STATUS-ARCHIVE.md `var-naming` R5, 2026-08-31 |
 | 5 readable | jsx-recover: element sites recovered | 9.7% (15/154) | – | – | STATUS-ARCHIVE.md `jsx-recover`, 2026-09-01 |
 | 5 readable | template-literal: sites converted | 99.45% | – | – | STATUS-ARCHIVE.md `template-literal`, 2026-09-01 |
@@ -34,15 +34,16 @@ stores) split into real files. (docs/LANES.md)
 - M2 Disassembler (100% match vs `hermesc -dump-bytecode`) — done
 - M3 Test harness (trace runner + recompile round-trip) — done
 - M4 Baseline (CFG + structurer + emitter) — done, 501/501 gate, 0 DIVERGENT
-- M5 Pass ladder (readability) — in progress, 15/30 rungs merged
+- M5 Pass ladder (readability) — in progress, 16/30 rungs merged
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 15/30 rungs live
+## Ladder — 16/30 rungs live
 
 `loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
 `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
-`destructure`, `spread-rest`, `template-literal`, `fn-naming`, `var-naming`,
-`jsx-recover` (opt-in `--jsx`). Next (batch 3): TBD.
+`destructure`, `spread-rest`, `template-literal`, `optional-chain`,
+`fn-naming`, `var-naming`, `jsx-recover` (opt-in `--jsx`). Next (batch 3):
+TBD.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
@@ -51,9 +52,9 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 ~111 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
 `npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
 
-## Open bugs — 24 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing; +1 row 2026-09-02 spread-rest landing)
+## Open bugs — 24 open / 26 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing; +1 row 2026-09-02 spread-rest landing; +1 row 2026-09-02 optional-chain landing)
 
-By cluster (open only): emit-shape 7, metrics 3, passes 4, real-app 2,
+By cluster (open only): emit-shape 7, metrics 3, passes 5, real-app 2,
 harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
 verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 `## Resolved`. Gate: `tests/gate/docs/bugs-ledger.test.ts`.

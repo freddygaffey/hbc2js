@@ -1,0 +1,359 @@
+// optional-chain matcher — docs/LOWERING-CATALOGUE.md row 25,
+// docs/specs/passes/18-optional-chain.md §4. Recognises the labeled-block
+// suffix run Hermes lowers `?.`/`?.()`/`?.[]`/`??` to: one loose `Eq`
+// against a null sentinel per `?.` link, the compare/reset order differing
+// only by version (§2.4) — never a version test in this file.
+import type { Expr, Stmt } from "../ast.ts";
+import { identUses, isRegisterName, walk } from "../ast.ts";
+import type { Match, PassContext } from "../types.ts";
+
+export type RefuseReason =
+  | "not-null-guard"
+  | "label-shared"
+  | "result-read-early"
+  | "state-escapes"
+  | "chain-broken"
+  | "optcall-this-mismatch"
+  | "mixed-guards"
+  | "interleaved-effect"
+  | "not-suffix"
+  | "unlowerable-fallback"
+  | "fallback-reads-body-state"
+  | "pc-tracked-region";
+
+export interface ChainLink {
+  readonly kind: "member" | "call";
+  readonly computed: boolean;
+  /** member/computed member's key; `null` for a call link. */
+  readonly prop: Expr | null;
+  /** call link's arguments; `null` for a member link. */
+  readonly args: readonly Expr[] | null;
+}
+
+export interface ChainSite {
+  readonly kind: "chain";
+  readonly rRes: string;
+  readonly base: Expr; // ident of B0
+  readonly links: readonly ChainLink[];
+  readonly startIndex: number;
+  readonly endIndex: number; // exclusive; list[endIndex-1] is the tail `break`
+  readonly label: string;
+  /** Every register this run's own bookkeeping (link temps, spilled
+   *  compares) must be dead outside it — reused by `check.ts`. */
+  readonly tempRegs: readonly string[];
+}
+
+export interface NullishSite {
+  readonly kind: "nullish";
+  readonly rX: string;
+  readonly left: Expr;
+  readonly fallback: Expr;
+  readonly startIndex: number;
+  readonly endIndex: number;
+  readonly label: string;
+  /** Index (in the *enclosing* list) of a folded pure literal write, or
+   *  `null` when `left` is a bare `ident rX`. */
+  readonly foldedFrom: number | null;
+}
+
+export type OptionalChainSite = ChainSite | NullishSite;
+export type OptionalChainMatch = Match<readonly Stmt[], OptionalChainSite>;
+
+// ---------------------------------------------------------------------------
+// Small shape recognisers shared by both rules.
+// ---------------------------------------------------------------------------
+
+function isUndefinedLit(e: Expr): boolean {
+  return e.k === "lit" && e.text === "undefined";
+}
+
+/** Every statement in `stmts` (recursively, including nested `func` bodies —
+ *  a sentinel register is function-scoped, same frame boundary as
+ *  `identUses`) that assigns literal `null` to `name`, vs. every other
+ *  assignment to it — precondition 1 (`not-null-guard`). */
+function nullWriteCount(stmts: readonly Stmt[], name: string): { readonly nullWrites: number; readonly otherWrites: number } {
+  let nullWrites = 0;
+  let otherWrites = 0;
+  walk(stmts, {
+    stmt: (s) => {
+      if (s.k === "expr" && s.expr.k === "assign" && s.expr.target.k === "ident" && s.expr.target.name === name) {
+        if (s.expr.value.k === "lit" && s.expr.value.text === "null") nullWrites++;
+        else otherWrites++;
+      } else if (s.k === "init" && s.name === name) {
+        if (s.value.k === "lit" && s.value.text === "null") nullWrites++;
+        else otherWrites++;
+      }
+    },
+  });
+  return { nullWrites, otherWrites };
+}
+
+/** Precondition 1: `e` is literal `null`, or a register whose only write in
+ *  `fnBody` is literal `null`. */
+function isNullSentinel(e: Expr, fnBody: readonly Stmt[]): boolean {
+  if (e.k === "lit" && e.text === "null") return true;
+  if (e.k !== "ident" || !isRegisterName(e.name)) return false;
+  const { nullWrites, otherWrites } = nullWriteCount(fnBody, e.name);
+  return nullWrites === 1 && otherWrites === 0;
+}
+
+function sameRegOrExpr(a: Expr, b: Expr): boolean {
+  return a === b || (a.k === "ident" && b.k === "ident" && a.name === b.name) || JSON.stringify(a) === JSON.stringify(b);
+}
+
+function matchReset(s: Stmt | undefined): { readonly reg: string } | null {
+  if (s === undefined || s.k !== "expr" || s.expr.k !== "assign" || s.expr.target.k !== "ident" || !isRegisterName(s.expr.target.name)) return null;
+  if (!isUndefinedLit(s.expr.value)) return null;
+  return { reg: s.expr.target.name };
+}
+
+function matchTailBreak(s: Stmt | undefined, label: string): boolean {
+  return s !== undefined && s.k === "break" && s.label === label;
+}
+
+/** `if (<test>) { break <label> }` with no `else`. */
+function matchGuardIf(s: Stmt | undefined, label: string | null): { readonly test: Expr; readonly label: string } | null {
+  if (s === undefined || s.k !== "if" || s.else.length !== 0 || s.then.length !== 1) return null;
+  const br = s.then[0]!;
+  if (br.k !== "break" || br.label === null) return null;
+  if (label !== null && br.label !== label) return null;
+  return { test: s.test, label: br.label };
+}
+
+function looseEqNull(test: Expr, op: "==" | "!="): { readonly left: Expr; readonly right: Expr } | null {
+  if (test.k !== "bin" || test.op !== op) return null;
+  return { left: test.left, right: test.right };
+}
+
+/** `rT = B.prop` / `rT = B[idx]` / `rT = Reflect.apply(callee, thisArg, args)`
+ *  where `B` is the current chain register — precondition 5 (`chain-broken`,
+ *  `optcall-this-mismatch`). `callBase` is the register `B` (the callee) was
+ *  itself loaded from, required to equal the apply's `thisArg`. */
+function matchLinkExpr(value: Expr, B: Expr, callBase: Expr | null): ChainLink | null {
+  if (value.k === "member") {
+    if (!sameRegOrExpr(value.obj, B)) return null;
+    return { kind: "member", computed: value.computed, prop: value.prop, args: null };
+  }
+  if (value.k === "call" && value.callee.k === "member" && !value.callee.computed && value.callee.obj.k === "ident" && value.callee.obj.name === "Reflect" && value.callee.prop.k === "lit" && value.callee.prop.text === "apply" && value.args.length === 3) {
+    const [callee, thisArg, argsArr] = value.args;
+    if (!sameRegOrExpr(callee!, B)) return null;
+    if (callBase === null || !sameRegOrExpr(thisArg!, callBase)) return null; // optcall-this-mismatch
+    if (argsArr!.k !== "array") return null;
+    return { kind: "call", computed: false, prop: null, args: argsArr!.elements };
+  }
+  return null;
+}
+
+/**
+ * §2.1's computed-link case: a literal index is sometimes spilled to its
+ * own register right before the read (`r13 = 10; r6 = r14[r13];`), rather
+ * than inlined. This reads the link statement at `cursor`, first trying
+ * one such prep statement immediately before it — a pure `rP = <lit>`
+ * whose only use is as this link's computed key — and substituting the
+ * literal in directly (the run stays contiguous: the prep is folded into
+ * the link, not left as a separate observable statement, so nothing about
+ * it survives for `interleaved-effect` to trip on). Falls back to reading
+ * `list[cursor]` directly as the link statement.
+ */
+function readLinkStmt(list: readonly Stmt[], cursor: number, current: Expr, currentBase: Expr | null): { readonly link: ChainLink; readonly target: string; readonly afterLink: number } | null {
+  const prep = list[cursor];
+  const real = list[cursor + 1];
+  if (prep !== undefined && prep.k === "expr" && prep.expr.k === "assign" && prep.expr.target.k === "ident" && isRegisterName(prep.expr.target.name) && prep.expr.value.k === "lit" && real !== undefined && real.k === "expr" && real.expr.k === "assign" && real.expr.target.k === "ident") {
+    const prepReg = prep.expr.target.name;
+    const value = real.expr.value;
+    if (value.k === "member" && value.computed && value.prop.k === "ident" && value.prop.name === prepReg) {
+      const substituted = { ...value, prop: prep.expr.value };
+      const link = matchLinkExpr(substituted, current, currentBase);
+      if (link !== null) return { link, target: real.expr.target.name, afterLink: cursor + 2 };
+    }
+  }
+  const linkStmt = list[cursor];
+  if (linkStmt === undefined || linkStmt.k !== "expr" || linkStmt.expr.k !== "assign" || linkStmt.expr.target.k !== "ident") return null;
+  const link = matchLinkExpr(linkStmt.expr.value, current, currentBase);
+  if (link === null) return null;
+  return { link, target: linkStmt.expr.target.name, afterLink: cursor + 1 };
+}
+
+// ---------------------------------------------------------------------------
+// C-rule (the optional chain itself).
+// ---------------------------------------------------------------------------
+
+/** Tries to parse a full run starting at `list[start]`: reset, base guard,
+ *  then alternating link/guard pairs, ending at the commit + tail `break`.
+ *  Returns `null` on any precondition failure — the caller (`match`) simply
+ *  tries the next `start`. */
+function parseChainAt(list: readonly Stmt[], start: number, fnBody: readonly Stmt[]): ChainSite | null {
+  const baseGuard = matchBaseGuard(list, start, fnBody);
+  if (baseGuard === null) return null;
+  const { rRes, B0, label } = baseGuard;
+  let cursor = start + baseGuard.consumed;
+
+  const links: ChainLink[] = [];
+  const tempRegs: string[] = [];
+  let current: Expr = B0;
+  let currentBase: Expr | null = null;
+  for (;;) {
+    const read = readLinkStmt(list, cursor, current, currentBase);
+    if (read === null) return null; // chain-broken
+    const { link, target, afterLink } = read;
+    if (target === rRes) {
+      if (!matchTailBreak(list[afterLink], label)) return null; // not-suffix
+      links.push(link);
+      const endIndex = afterLink + 1;
+      if (!labelExclusive(list, label, start, endIndex)) return null; // label-shared
+      if (identUses(list.slice(start, endIndex), rRes).reads > 0) return null; // result-read-early
+      return { kind: "chain", rRes, base: B0, links, startIndex: start, endIndex, label, tempRegs };
+    }
+    if (!isRegisterName(target)) return null;
+    const nextGuard = matchLinkGuard(list, afterLink, label, rRes, target, fnBody);
+    if (nextGuard === null) return null;
+    tempRegs.push(target);
+    links.push(link);
+    currentBase = current;
+    current = { k: "ident", name: target };
+    cursor = afterLink + nextGuard.consumed;
+  }
+}
+
+/**
+ * The run's anchor (§4 "C — optional chain"): the reset of `rRes` and the
+ * base guard on `B0`, in either version's statement order (§2.4) —
+ * v94 `reset; if (B0 == N) break L;`, v99 `rC = B0 == N; reset; if (rC)
+ * break L;`. Neither shape is known ahead of time (nothing before `start`
+ * says whether this is v94 or v99, or names `B0`/`L`), so both are tried
+ * directly against `list[start..]`.
+ */
+function matchBaseGuard(list: readonly Stmt[], start: number, fnBody: readonly Stmt[]): { readonly rRes: string; readonly B0: Expr; readonly label: string; readonly consumed: number } | null {
+  // v94: reset, then an inline `if (B0 == N) break L`.
+  const reset0 = matchReset(list[start]);
+  if (reset0 !== null) {
+    const g = matchGuardIf(list[start + 1], null);
+    if (g !== null) {
+      const eq = looseEqNull(g.test, "==");
+      if (eq !== null && isNullSentinel(eq.right, fnBody)) return { rRes: reset0.reg, B0: eq.left, label: g.label, consumed: 2 };
+    }
+  }
+  // v99: a spilled compare first, then the reset, then `if (rC) break L`.
+  const s0 = list[start];
+  if (s0 !== undefined && s0.k === "expr" && s0.expr.k === "assign" && s0.expr.target.k === "ident" && isRegisterName(s0.expr.target.name)) {
+    const eq = looseEqNull(s0.expr.value, "==");
+    if (eq !== null && isNullSentinel(eq.right, fnBody)) {
+      const rC = s0.expr.target.name;
+      const reset1 = matchReset(list[start + 1]);
+      if (reset1 !== null) {
+        const g = matchGuardIf(list[start + 2], null);
+        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { rRes: reset1.reg, B0: eq.left, label: g.label, consumed: 3 };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * An intermediate link's own guard (§4's alternating link/guard run): the
+ * link just consumed at `list[idx - 1]` produced `targetName`; this
+ * consumes its guard, requiring the reset to still target the run's own
+ * `rRes` (precondition 3 — every reset writes the *same* register). Same
+ * two version shapes as `matchBaseGuard`.
+ */
+function matchLinkGuard(list: readonly Stmt[], idx: number, label: string, rRes: string, targetName: string, fnBody: readonly Stmt[]): { readonly N: Expr; readonly label: string; readonly consumed: number } | null {
+  const target: Expr = { k: "ident", name: targetName };
+  const reset0 = matchReset(list[idx]);
+  if (reset0 !== null && reset0.reg === rRes) {
+    const g = matchGuardIf(list[idx + 1], label);
+    if (g !== null) {
+      const eq = looseEqNull(g.test, "==");
+      if (eq !== null && sameRegOrExpr(eq.left, target) && isNullSentinel(eq.right, fnBody)) return { N: eq.right, label: g.label, consumed: 2 };
+    }
+  }
+  const s0 = list[idx];
+  if (s0 !== undefined && s0.k === "expr" && s0.expr.k === "assign" && s0.expr.target.k === "ident" && isRegisterName(s0.expr.target.name)) {
+    const eq = looseEqNull(s0.expr.value, "==");
+    if (eq !== null && sameRegOrExpr(eq.left, target) && isNullSentinel(eq.right, fnBody)) {
+      const rC = s0.expr.target.name;
+      const reset1 = matchReset(list[idx + 1]);
+      if (reset1 !== null && reset1.reg === rRes) {
+        const g = matchGuardIf(list[idx + 2], label);
+        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { N: eq.right, label: g.label, consumed: 3 };
+      }
+    }
+  }
+  return null;
+}
+
+/** Precondition 2 (`label-shared`): no statement in `list` outside
+ *  `[start, end)` breaks to `label` — the run's own tail `break` is L's
+ *  *only* exit besides falling off the block, which is what guarantees a
+ *  short-circuit lands exactly where `rRes` is next read as `undefined`. */
+function labelExclusive(list: readonly Stmt[], label: string, start: number, end: number): boolean {
+  for (let k = 0; k < list.length; k++) {
+    if (k >= start && k < end) continue;
+    const s = list[k]!;
+    if (s.k === "break" && s.label === label) return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// N-rule (nullish coalescing).
+// ---------------------------------------------------------------------------
+
+/** Collapses `stmts` (everything between the `!=` guard and the tail
+ *  `break`) into one `Expr`, the same "trailing assign, pure comma-fold
+ *  lead" rule `default-params` (spec 15 §5) applies to a defaulted
+ *  parameter's body — reimplemented here (not imported: `default-params`
+ *  is a sibling pass, off limits per D12a's import boundary). */
+function collapseFallback(stmts: readonly Stmt[], rX: string): Expr | null {
+  if (stmts.length === 0) return null;
+  const last = stmts[stmts.length - 1]!;
+  if (last.k !== "expr" || last.expr.k !== "assign" || last.expr.target.k !== "ident" || last.expr.target.name !== rX) return null;
+  const lead = stmts.slice(0, -1);
+  if (!lead.every((s): s is Extract<Stmt, { k: "expr" }> => s.k === "expr")) return null;
+  if (lead.length === 0) return last.expr.value;
+  return { k: "seq", exprs: [...lead.map((s) => s.expr), last.expr.value] };
+}
+
+function parseNullishAt(list: readonly Stmt[], start: number, fnBody: readonly Stmt[]): NullishSite | null {
+  const g = matchGuardIf(list[start], null);
+  if (g === null) return null;
+  const eq = looseEqNull(g.test, "!=");
+  if (eq === null || eq.left.k !== "ident" || !isRegisterName(eq.left.name) || !isNullSentinel(eq.right, fnBody)) return null;
+  const label = g.label;
+  const rX = eq.left.name;
+
+  let end = start + 1;
+  while (end < list.length && !(list[end]!.k === "break" && (list[end] as Extract<Stmt, { k: "break" }>).label === label)) end++;
+  if (end >= list.length) return null;
+  const body = list.slice(start + 1, end);
+  const fallback = collapseFallback(body, rX);
+  if (fallback === null) return null; // unlowerable-fallback
+
+  let left: Expr = { k: "ident", name: rX };
+  let foldedFrom: number | null = null;
+  const prev = list[start - 1];
+  if (prev !== undefined && prev.k === "expr" && prev.expr.k === "assign" && prev.expr.target.k === "ident" && prev.expr.target.name === rX && prev.expr.value.k === "lit" && identUses(list, rX).writes === 2) {
+    left = prev.expr.value;
+    foldedFrom = start - 1;
+  }
+  if (!labelExclusive(list, label, start, end + 1)) return null; // label-shared
+  return { kind: "nullish", rX, left, fallback, startIndex: start, endIndex: end + 1, label, foldedFrom };
+}
+
+// ---------------------------------------------------------------------------
+// Entry point.
+// ---------------------------------------------------------------------------
+
+export function match(list: readonly Stmt[], ctx: PassContext): OptionalChainMatch | null {
+  const fnBody = ctx.fnBody ?? list;
+  for (let i = 0; i < list.length; i++) {
+    const chain = parseChainAt(list, i, fnBody);
+    if (chain !== null && chain.endIndex === list.length) {
+      return { root: list, nodes: [list], data: chain, at: { functionIndex: ctx.functionIndex, offset: chain.startIndex } };
+    }
+    const nullish = parseNullishAt(list, i, fnBody);
+    if (nullish !== null) {
+      return { root: list, nodes: [list], data: nullish, at: { functionIndex: ctx.functionIndex, offset: nullish.startIndex } };
+    }
+  }
+  return null;
+}

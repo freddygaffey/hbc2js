@@ -6,6 +6,7 @@ import { callShape } from "./call-shape/index.ts";
 import { defaultParams } from "./default-params/index.ts";
 import { destructure } from "./destructure/index.ts";
 import { spreadRest } from "./spread-rest/index.ts";
+import { optionalChain } from "./optional-chain/index.ts";
 import { exprRebuild } from "./expr-rebuild/index.ts";
 import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
@@ -59,7 +60,7 @@ import { varNaming } from "./var-naming/index.ts";
  *  is the ladder's one `optIn` rung: `enabledPasses` leaves it out unless
  *  `optIn: ["jsx-recover"]` (`--jsx`) names it, so the default pipeline —
  *  the one the equivalence gate executes — never holds a `jsx` node. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, fnNaming as Pass, varNaming as Pass, jsxRecover as Pass];
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, fnNaming as Pass, varNaming as Pass, jsxRecover as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
