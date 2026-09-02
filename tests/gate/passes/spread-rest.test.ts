@@ -160,6 +160,39 @@ test("spread-rest: S4 object spread with a seed property and a trailing folded s
   assert.equal(res.ok, true, JSON.stringify(res));
 });
 
+test("spread-rest: H1c (new Array(0), no apply) does not swallow a trailing unrelated statement (regression: 40-spread-array [...str].join('-'))", () => {
+  // `r8 = new Array(0); r12 = "abc"; r13 = r8; r11 = 0; r1 = arraySpread(r13,
+  // r12, r11); r1 = "-"; r1 = r8.join(r1);` — the real `[...str].join('-')`
+  // shape (§2 H1c). `r1 = "-"` *looks* like scratch setup (a bare `rX =
+  // <lit>`) but belongs to the unrelated `.join` call that follows, not to
+  // the array-building run: consuming it into the deleted range would lose
+  // the separator's own value. `matchCall`'s run must end *before* it (only
+  // a statement actually read by a recognised call/store may extend the
+  // consumed range — `consumedUpTo`), leaving `r1 = "-"` and the `.join`
+  // call both present, unmodified, after the rewrite.
+  const body: readonly Stmt[] = [
+    asg(id("r8"), { k: "new", callee: id("Array"), args: [lit("0")] }),
+    asg(id("r12"), lit('"abc"')),
+    asg(id("r13"), id("r8")),
+    asg(id("r11"), lit("0")),
+    asg(id("r1"), call("__hbc_b_arraySpread", [id("r13"), id("r12"), id("r11")])),
+    asg(id("r1"), lit('"-"')),
+    asg(id("r1"), { k: "call", callee: { k: "member", obj: id("r8"), prop: lit("join"), computed: false }, args: [id("r1")] }),
+    ret(id("r1")),
+  ];
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.notEqual(m, null);
+  assert.equal(m!.data.rule, "array");
+  assert.equal(m!.data.endIndex, 5); // stops right after the arraySpread call, not at 6
+  const rewritten = spreadRest.rewrite(m!, ctx);
+  const printed = printProgram(rewritten);
+  assert.match(printed, /r8 = \[\.\.\."abc"\];/);
+  assert.match(printed, /r1 = "-";/); // survives — not absorbed into the deleted run
+  assert.match(printed, /r1 = r8\.join\(r1\);/);
+  const res = check(body, rewritten, { ...ctx, fnBody: body });
+  assert.equal(res.ok, true, JSON.stringify(res));
+});
+
 // ---------------------------------------------------------------------------
 // Negatives.
 // ---------------------------------------------------------------------------

@@ -138,6 +138,14 @@ function matchArray(list: readonly Stmt[], seedIndex: number): SpreadRestSite | 
   type Expected = { readonly kind: "lit"; readonly n: number } | { readonly kind: "reg"; readonly name: string } | { readonly kind: "regPlus1"; readonly name: string };
   let expected: Expected = { kind: "lit", n: elements.length };
   let sawSpread = false;
+  // Only a statement that is genuinely *consumed by a recognised call/store*
+  // advances `consumedUpTo` -- a `subst`-absorbed "pure setup" statement
+  // (`rX = rY` / `rX = <lit>`) does not, until something real reads it. This
+  // is what stops the run from silently swallowing a later, unrelated
+  // statement that merely *looks* like scratch setup (e.g. `r1 = "-"`
+  // immediately preceding an unrelated `r1 = r8.join(r1)` -- absorbing it
+  // would delete the separator's own value along with the run).
+  let consumedUpTo = j;
   const indexMatches = (idx: Expr): boolean => {
     const r = subst.resolve(idx);
     if (expected.kind === "lit") return r.k === "lit" && r.text === String(expected.n);
@@ -163,6 +171,7 @@ function matchArray(list: readonly Stmt[], seedIndex: number): SpreadRestSite | 
       elements.push({ kind: "spread", source: subst.resolve(src) });
       expected = { kind: "reg", name: call.name };
       j += 1;
+      consumedUpTo = j;
       sawSpread = true;
       continue;
     }
@@ -175,6 +184,7 @@ function matchArray(list: readonly Stmt[], seedIndex: number): SpreadRestSite | 
       elements.push({ kind: "spread", source: subst.resolve(src) }, { kind: "lit", expr: store.value });
       sawSpread = true;
       j++;
+      consumedUpTo = j;
       break runLoop; // the call's own result register is never named — no chain past a fused store (§2's only observed use)
     }
     // Case C: a plain store consuming the slot the previous spread returned.
@@ -182,12 +192,13 @@ function matchArray(list: readonly Stmt[], seedIndex: number): SpreadRestSite | 
       elements.push({ kind: "lit", expr: store.value });
       expected = { kind: "regPlus1", name: expected.name };
       j++;
+      consumedUpTo = j;
       continue;
     }
     break runLoop;
   }
   if (!sawSpread) return null;
-  return { rule: "array", startIndex: seedIndex, endIndex: j, targetName, elements, seedCount, hadTrim, seedIsNewArray: false };
+  return { rule: "array", startIndex: seedIndex, endIndex: consumedUpTo, targetName, elements, seedCount, hadTrim, seedIsNewArray: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +213,10 @@ function matchCall(list: readonly Stmt[], seedIndex: number): SpreadRestSite | n
   const subst = new Subst();
   const args: Element[] = [];
   let j = seedIndex + 1;
+  // Same "only real progress advances the endpoint" rule as matchArray's
+  // `consumedUpTo` — H1c (no `apply` found) must not swallow a trailing
+  // absorbed-but-unused setup statement into the deleted range.
+  let consumedUpTo = j;
   while (j < list.length) {
     const s = list[j]!;
     if (subst.absorb(s)) {
@@ -228,12 +243,14 @@ function matchCall(list: readonly Stmt[], seedIndex: number): SpreadRestSite | n
       if (!subst.sameIdent(t, { k: "ident", name: targetName })) return null;
       args.push({ kind: "spread", source: subst.resolve(src) });
       j++;
+      consumedUpTo = j;
       continue;
     }
     const store = memberStore(s);
     if (store !== null && store.computed && subst.sameIdent(store.obj, { k: "ident", name: targetName }) && store.prop.k === "lit") {
       args.push({ kind: "lit", expr: store.value });
       j++;
+      consumedUpTo = j;
       continue;
     }
     break; // an unrecognised statement ends the run — H1c falls through below
@@ -243,7 +260,7 @@ function matchCall(list: readonly Stmt[], seedIndex: number): SpreadRestSite | n
   // S1 (an array literal, `seedCount: 0` since `new Array(0)` starts empty),
   // just reached from a `new Array(0)` seed instead of an array literal.
   if (args.length === 0) return null;
-  return { rule: "array", startIndex: seedIndex, endIndex: j, targetName, elements: args, seedCount: 0, hadTrim: false, seedIsNewArray: true };
+  return { rule: "array", startIndex: seedIndex, endIndex: consumedUpTo, targetName, elements: args, seedCount: 0, hadTrim: false, seedIsNewArray: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +281,10 @@ function matchObject(list: readonly Stmt[], seedIndex: number): SpreadRestSite |
   const props: PropEl[] = [];
   let j = seedIndex + 1;
   let sawSpread = false;
+  // Same "only real progress advances the endpoint" rule as matchArray's
+  // `consumedUpTo` (a trailing absorbed-but-unused setup statement must not
+  // be swallowed into the deleted range).
+  let consumedUpTo = j;
   while (j < list.length) {
     const s = list[j]!;
     if (subst.absorb(s)) {
@@ -278,6 +299,7 @@ function matchObject(list: readonly Stmt[], seedIndex: number): SpreadRestSite |
       props.push({ kind: "spread", source: subst.resolve(src) });
       sawSpread = true;
       j++;
+      consumedUpTo = j;
       continue;
     }
     const store = memberStore(s);
@@ -298,12 +320,13 @@ function matchObject(list: readonly Stmt[], seedIndex: number): SpreadRestSite |
       const key = isSafeIdentifier(raw) ? raw : JSON.stringify(raw);
       props.push({ kind: "prop", key, computed: !isSafeIdentifier(raw), value: subst.resolve(store.value) });
       j++;
+      consumedUpTo = j;
       continue;
     }
     break;
   }
   if (!sawSpread) return null;
-  return { rule: "object", startIndex: seedIndex, endIndex: j, targetName, seedProps, props };
+  return { rule: "object", startIndex: seedIndex, endIndex: consumedUpTo, targetName, seedProps, props };
 }
 
 // ---------------------------------------------------------------------------

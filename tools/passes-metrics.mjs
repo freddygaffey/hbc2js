@@ -157,7 +157,9 @@ function containsInGuard(stmts) {
       case "array":
         return e.elements.some(visitExpr);
       case "object":
-        return e.props.some((p) => visitExpr(p.value));
+        return e.props.some((p) => visitExpr("k" in p ? p.arg : p.value));
+      case "spread":
+        return visitExpr(e.arg);
       case "seq":
         return e.exprs.some(visitExpr);
       case "func":
@@ -319,7 +321,9 @@ function containsReflectCall(stmts) {
       case "array":
         return e.elements.some(visitExpr);
       case "object":
-        return e.props.some((p) => visitExpr(p.value));
+        return e.props.some((p) => visitExpr("k" in p ? p.arg : p.value));
+      case "spread":
+        return visitExpr(e.arg);
       case "seq":
         return e.exprs.some(visitExpr);
       case "func":
