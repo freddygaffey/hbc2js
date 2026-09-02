@@ -1,0 +1,9 @@
+{
+  "schema": "hbc2js-index/1",
+  "kind": "strings",
+  "renderIndependent": true,
+  "entries": [
+    { "sid": 1, "v": "hello" },
+    { "sid": 2, "v": "world" }
+  ]
+}

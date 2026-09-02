@@ -1,0 +1,10 @@
+{
+  "schema": "hbc2js-index/1",
+  "kind": "modules",
+  "renderIndependent": true,
+  "modules": [
+    { "id": 0, "file": "module_0.js", "factoryFn": 1, "deps": [], "segment": 0 }
+  ],
+  "entry": 0,
+  "fnOwnership": { "1": 0, "2": 0 }
+}

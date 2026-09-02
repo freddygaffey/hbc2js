@@ -1,0 +1,4 @@
+{"schema":"hbc2js-index/1","kind":"functions","renderIndependent":true}
+{"fn":0,"name":"global","params":0,"module":null,"parent":null,"kind":"normal","offset":0,"size":48}
+{"fn":1,"name":"factory","params":3,"module":0,"parent":0,"kind":"normal","offset":48,"size":96}
+{"fn":2,"name":"helper","params":1,"module":0,"parent":1,"kind":"normal","offset":144,"size":32}

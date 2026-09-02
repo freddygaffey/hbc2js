@@ -1,0 +1,4 @@
+{"schema":"hbc2js-index/1","kind":"ranges","renderIndependent":false,"renderHash":"sample0000000000000000000000000000000000000000000000render0001"}
+{"fn":0,"file":"index.js","lines":[1,5]}
+{"fn":1,"file":"module_0.js","lines":[1,20]}
+{"fn":2,"file":"module_0.js","lines":[22,30]}

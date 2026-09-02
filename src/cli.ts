@@ -28,6 +28,7 @@ import { runDeps } from "./deps/index.ts";
 import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
 import { splitProject } from "./split/index.ts";
 import { writeSplitResult } from "./split/write.ts";
+import { writeArtifact } from "./artifact/write.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
 
@@ -60,7 +61,12 @@ Options (decompile):
                             node --check is skipped. With --split, runs the
                             full pass pipeline on every module too.
   --split <outdir>          split into a per-module project tree instead of one
-                            file (D17i stage 1 — isolate; docs/DECISIONS.md)
+                            file (D17i stage 1 — isolate; docs/DECISIONS.md);
+                            also writes a P2.1 artifact (manifest.json +
+                            index/*, docs/specs/10-artifact-format.md) into
+                            <outdir>
+  --overwrite               with --split: allow overwriting an existing
+                            artifact directory (default: refuse, §1.3 E4)
   --opcode-table=<id>       force an opcode table instead of probing
   --force-v98-table         resolve E_LAYOUT_AMBIGUOUS by forcing hbc98-late
   --lenient-env             don't refuse the module when an environment access
@@ -460,6 +466,10 @@ interface DecompileArgs {
   readonly emitAst: boolean;
   readonly nodeCheck: boolean;
   readonly split: string | undefined;
+  /** `--overwrite`: allow `--split` to write a manifest.json artifact
+   *  (docs/specs/10-artifact-format.md §1.3/§10 E4) into a directory that
+   *  already holds one. Default: refuse. */
+  readonly overwrite: boolean;
   readonly opcodeTable: OpcodeTableId | undefined;
   readonly forceV98: boolean;
   readonly stats: boolean;
@@ -480,6 +490,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let emitAst = false;
   let check = true;
   let split: string | undefined;
+  let overwrite = false;
   let opcodeTable: OpcodeTableId | undefined;
   let forceV98 = false;
   let stats = false;
@@ -501,6 +512,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
     else if (a === "--emit-ast") emitAst = true;
     else if (a === "--no-node-check") check = false;
     else if (a === "--split") split = argv[++i];
+    else if (a === "--overwrite") overwrite = true;
     else if (a === "--force-v98-table") forceV98 = true;
     else if (a === "--stats") stats = true;
     else if (a === "--lenient-env") lenientEnv = true;
@@ -510,7 +522,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, split, opcodeTable, forceV98, stats, lenientEnv, jsx, passes: { none: passesNone, skip: skipPasses, optIn: jsx ? ["jsx-recover"] : [] } };
+  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, split, overwrite, opcodeTable, forceV98, stats, lenientEnv, jsx, passes: { none: passesNone, skip: skipPasses, optIn: jsx ? ["jsx-recover"] : [] } };
 }
 
 /**
@@ -562,7 +574,20 @@ function runDecompile(argv: readonly string[]): void {
       const result = splitProject(bytes, { moduleName: basename(args.input), ...(args.jsx ? { passes: args.passes, jsx: true } : {}) });
       writeSplitResult(result, args.split);
       for (const d of result.diagnostics) process.stderr.write(`hbc2js --split: ${d}\n`);
-      process.stdout.write(`hbc2js: wrote ${result.modules.length} module file(s) + index.js + MODULES.json to ${args.split}\n`);
+      const artifact = writeArtifact({
+        bytes,
+        splitResult: result,
+        outDir: args.split,
+        passes: args.passes,
+        strictEnv: false,
+        form: "flat",
+        overwrite: args.overwrite,
+      });
+      process.stdout.write(
+        `hbc2js: wrote ${result.modules.length} module file(s) + index.js + MODULES.json to ${args.split}\n` +
+          `hbc2js: wrote artifact manifest.json + index/{functions.jsonl,modules.json} ` +
+          `(${artifact.functionCount} functions, ${artifact.moduleCount} modules) to ${args.split}\n`,
+      );
       process.exit(0);
     }
     let text: string;

@@ -1,0 +1,5 @@
+{"schema":"hbc2js-index/1","kind":"calls","renderIndependent":true}
+{"caller":1,"site":0,"callee":2,"kind":"closure","via":"direct"}
+{"caller":1,"site":1,"callee":"?","kind":"unknown","why":"computed-callee"}
+{"caller":1,"site":2,"callee":"g:fetch","kind":"global","via":"method"}
+{"caller":2,"site":0,"callee":"m:0","kind":"require"}

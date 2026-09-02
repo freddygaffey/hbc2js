@@ -1,0 +1,3 @@
+{"schema":"hbc2js-index/1","kind":"string-uses","renderIndependent":true}
+{"sid":1,"fn":1,"role":"literal","n":1}
+{"sid":2,"fn":2,"role":"call-arg-literal","n":1}

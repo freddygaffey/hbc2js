@@ -1,0 +1,7 @@
+{
+  "schema": "hbc2js-artifact/1",
+  "bundle": { "sha256": "sample0000000000000000000000000000000000000000000000000000bundle", "bytes": 4096, "hbcVersion": 96, "functionCount": 3 },
+  "producer": { "hbc2js": "0.1.0-sample", "git": null, "passes": {}, "strictEnv": true },
+  "render": { "hash": "sample0000000000000000000000000000000000000000000000render0001", "form": "flat", "ts": "2026-09-03T00:00:00.000Z", "overlayHash": null },
+  "index": { "semanticHash": "sample0000000000000000000000000000000000000000000semantic0002", "builtFor": { "bundleSha256": "sample0000000000000000000000000000000000000000000000000000bundle", "producer": "sample-producer-config" } }
+}
