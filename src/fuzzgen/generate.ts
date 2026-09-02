@@ -131,11 +131,15 @@ function generateGrammar(seed: number): string {
 }
 
 /** `mode` is derived from the seed, never a free parameter, so `(seed,
- *  grammarVersion)` alone determines output (determinism, T2(a)). */
-export function generate(seed: number, grammarVersion: string): string {
+ *  grammarVersion)` alone determines output (determinism, T2(a)). `hbcVersion`
+ *  (optional, backward-compatible) is the target HBC version mutation mode
+ *  will compile the result at — when given, `mutateFromCorpus` never selects
+ *  a corpus fixture whose `versions.txt` excludes it (docs/BUGS.md
+ *  2026-09-02, mutation version-gating). */
+export function generate(seed: number, grammarVersion: string, hbcVersion?: number): string {
   const modeRng = mulberry32(seed ^ 0x9e3779b9);
   const useMutation = modeRng() < 0.5;
-  const src = useMutation ? mutateFromCorpus(seed) : generateGrammar(seed);
+  const src = useMutation ? mutateFromCorpus(seed, hbcVersion) : generateGrammar(seed);
   if (hasNoBannedTokens(src)) return `// hbc2js fuzzgen seed=${seed} grammarVersion=${grammarVersion} mode=${useMutation ? "mutation" : "grammar"}\n${src}`;
   // Safety net: never emit a banned token. Grammar mode cannot produce one by
   // construction; if mutation mode ever did (corpus fixtures are free text),

@@ -111,6 +111,101 @@ export interface ErrShape {
   readonly message: string;
 }
 
+// docs/BUGS.md 2026-09-02 (oracle message-text masking): a thrown Error's
+// `.message` template (V8's or Hermes's own) frequently embeds an
+// identifier or property-access chain the source program named directly
+// ("items.map is not a function", "Cannot read properties of undefined
+// (reading 'log')"). hbc2js's naming passes (fn-naming/var-naming/reg-split)
+// are a synthesised *approximation* of the original names by design — they
+// are never guaranteed, and for un-debug-info bytecode often cannot be,
+// byte-identical to the source's own identifiers. Exact-text-comparing
+// these messages reports a false DIVERGENT on every such throw even when
+// the error's constructor, thrown-vs-not-thrown, and every other observable
+// value already match. `TEMPLATE_WORDS` is the (necessarily incomplete)
+// allowlist of literal English/JS-keyword tokens Hermes's and V8's own
+// message templates use verbatim, so only tokens *outside* it — the
+// identifier-shaped substitutions — are masked. Conservative, not exact:
+// see `renderRecordMasked`'s caller (`compareTraces`) for how a masked
+// match is still surfaced, never silently treated as an exact pass.
+const TEMPLATE_WORDS: ReadonlySet<string> = new Set(
+  [
+    "is",
+    "not",
+    "a",
+    "an",
+    "the",
+    "of",
+    "in",
+    "to",
+    "for",
+    "cannot",
+    "read",
+    "properties",
+    "property",
+    "reading",
+    "writing",
+    "set",
+    "get",
+    "function",
+    "constructor",
+    "object",
+    "undefined",
+    "null",
+    "before",
+    "initialization",
+    "access",
+    "defined",
+    "assign",
+    "const",
+    "variable",
+    "invalid",
+    "or",
+    "and",
+    "this",
+    "new",
+    "target",
+    "call",
+    "apply",
+    "value",
+    "values",
+    "index",
+    "out",
+    "range",
+    "string",
+    "number",
+    "boolean",
+    "symbol",
+    "array",
+    "iterator",
+    "convert",
+    "circular",
+    "structure",
+    "expected",
+    "argument",
+    "arguments",
+    "type",
+    "typeerror",
+    "referenceerror",
+    "rangeerror",
+    "syntaxerror",
+    "evalerror",
+    "urierror",
+    "error",
+    "did",
+    "you",
+    "mean",
+  ].flatMap((w) => [w, w[0]!.toUpperCase() + w.slice(1)]),
+);
+
+const IDENT_TOKEN = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+
+/** Masks identifier-shaped tokens (anything matching a JS identifier that
+ *  isn't a known message-template word) in a thrown error's message. Used
+ *  only for `err`/`unhandled` trace records — see `renderRecordMasked`. */
+export function maskIdentifierTokens(message: string): string {
+  return message.replace(IDENT_TOKEN, (tok) => (TEMPLATE_WORDS.has(tok) ? tok : "<id>"));
+}
+
 /** Never reads `.stack`: it embeds file names, line numbers and — for a
  *  RangeError from deep recursion — an engine-specific depth. */
 export function errShape(e: unknown): ErrShape {
@@ -398,6 +493,17 @@ export function renderRecord(r: TraceRecord): string {
       return JSON.stringify(_exhaustive);
     }
   }
+}
+
+/** Same as `renderRecord`, except an `err`/`unhandled` record's `.message`
+ *  is identifier-masked (`maskIdentifierTokens`) — the constructor name
+ *  (`.name`) and thrown-vs-not-thrown shape are unmasked and still exact.
+ *  Identical to `renderRecord` for every other record kind, so it can never
+ *  turn a real divergence elsewhere in the trace into a match. */
+export function renderRecordMasked(r: TraceRecord): string {
+  if (r.k === "err") return `err ${r.phase} ${r.name}: ${maskIdentifierTokens(r.message)}`;
+  if (r.k === "unhandled") return `unhandled ${r.name}: ${maskIdentifierTokens(r.message)}`;
+  return renderRecord(r);
 }
 
 /** `meta` is informational (it names the engine, which always differs in

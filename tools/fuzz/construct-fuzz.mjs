@@ -51,7 +51,7 @@ function newCell() {
 }
 
 async function runOne(version, seed, findsDir, findsCount) {
-  const program = generate(seed, GRAMMAR_VERSION);
+  const program = generate(seed, GRAMMAR_VERSION, version);
   const hermesc = findHermesc(version);
   if (hermesc === null) return { verdict: "ERROR", detail: `no hermesc for v${version} (run tools/get-hermesc.sh ${version})` };
 

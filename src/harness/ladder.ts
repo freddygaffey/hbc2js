@@ -159,12 +159,27 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
     const t0 = Date.now();
     const [ta, tb] = await Promise.all([runProgram(opts.candidateJsPath, runOpts), runProgram(opts.sourceJsPath, runOpts)]);
     let cmp = compareTraces(ta, tb);
+    if (cmp.maskedMatches.length > 0) {
+      caveats.push(
+        `${opts.fixture.name}: ${cmp.maskedMatches.length} thrown-error record(s) matched only after identifier-shaped-token masking (a non-debug-build decompiler cannot recover the original identifier text in an engine error message) — masked-match, not an exact pass: ${cmp.maskedMatches.join("; ")}`,
+      );
+    }
 
     // D14 cross-check: when a Hermes VM exists for this version, its trace of
     // the *original bytecode* is the truth, not source.js's. A divergence
     // from source.js that the Hermes VM itself also produces is not a
-    // decompiler bug; a known-divergence construct is a documented case of
-    // exactly that (spec 06 §4 rule 3).
+    // decompiler bug. This is evidence-based (docs/BUGS.md 2026-09-02, D14
+    // override generalization): `vmAgreesEvidence` is set below iff a
+    // Hermes VM actually ran for *this* (fixture, candidate) pair and its
+    // own trace of the original bytecode matched the candidate's byte for
+    // byte — never from a curated fixture-name lookup, so a fuzz-generated
+    // program with no name in `KNOWN_DIVERGENT_FIXTURES` gets exactly the
+    // same override a hand-written fixture does. When no VM ran at all (no
+    // VM for this version, e.g. v98) or it disagreed with the candidate,
+    // `vmAgreesEvidence` stays undefined and the DIVERGENT verdict below is
+    // never downgraded on missing evidence — `KNOWN_DIVERGENT_FIXTURES`
+    // remains the *only* fallback then (rule 3, no VM to measure with).
+    let vmAgreesEvidence: string | undefined;
     if (opts.reference.engine === "hermes-vm" && opts.reference.vm !== undefined && opts.hbcBytes !== undefined) {
       const { writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
       const { tmpdir } = await import("node:os");
@@ -197,11 +212,19 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
         const candidatePrint = printProjection(mainPhase).join("\n");
         const hermesPrint = hermesPrintProjection(hermesResult).join("\n");
         if (candidatePrint !== hermesPrint) {
+          // The candidate itself disagrees with the real Hermes VM's own
+          // trace of the original bytecode: this is genuine evidence
+          // *against* the candidate, never grounds for an override — a
+          // curated known-divergence name can still excuse it (rule 3's
+          // existing behaviour, unchanged), but `vmAgreesEvidence` is not
+          // set, so the soundness rule below can never fire here.
           if (opts.reference.knownDivergences.length > 0) {
             caveats.push(`${opts.fixture.name}: candidate diverges from Hermes VM v${opts.reference.vm.hbcVersion}'s own trace, but this is a documented known-divergence construct (${opts.reference.knownDivergences.join(", ")}) — PASS-with-caveat`);
           } else {
-            cmp = { verdict: TRACE_VERDICT.DIVERGENT, why: `candidate diverges from Hermes VM v${opts.reference.vm.hbcVersion}'s own execution of the original bytecode`, evidence: cmp.evidence, records: cmp.records, divergence: { index: -1, a: hermesPrint, b: candidatePrint }, context: null };
+            cmp = { verdict: TRACE_VERDICT.DIVERGENT, why: `candidate diverges from Hermes VM v${opts.reference.vm.hbcVersion}'s own execution of the original bytecode`, evidence: cmp.evidence, records: cmp.records, divergence: { index: -1, a: hermesPrint, b: candidatePrint }, context: null, maskedMatches: cmp.maskedMatches };
           }
+        } else {
+          vmAgreesEvidence = `candidatePrint === hermesPrint (Hermes VM v${opts.reference.vm.hbcVersion}'s own trace of the original .hbc byte-for-byte): ${JSON.stringify(hermesPrint)}`;
         }
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -209,11 +232,26 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
     }
 
     let verdict = traceVerdictToLadder(cmp.verdict);
-    if (verdict === VERDICT.DIVERGENT && opts.reference.knownDivergences.length > 0) {
-      // Node-vs-Hermes divergence with no VM to confirm it directly: still a
-      // caveat, not a failure (rule 3), same reasoning as above.
-      caveats.push(`${opts.fixture.name}: ${cmp.why} — known-divergence construct (${opts.reference.knownDivergences.join(", ")}), PASS-with-caveat`);
-      verdict = VERDICT.PASS;
+    if (verdict === VERDICT.DIVERGENT) {
+      if (vmAgreesEvidence !== undefined) {
+        // Evidence-based D14 override (docs/BUGS.md 2026-09-02, generalized
+        // from the curated-name-only gate): the bytecode under the Hermes
+        // VM is the D14 ground truth, and it just confirmed the candidate
+        // matches it exactly, so the Node-vs-candidate divergence below is
+        // legitimate source-vs-bytecode semantics, not a decompiler bug —
+        // for *any* program, not only ones with a name in
+        // `KNOWN_DIVERGENT_FIXTURES`.
+        caveats.push(`${opts.fixture.name}: ${cmp.why} — but Hermes VM ground truth agrees with the candidate (vm-agrees evidence: ${vmAgreesEvidence}), so this is a legitimate source.js-vs-bytecode (D14) divergence, not a decompiler bug — PASS-with-caveat`);
+        verdict = VERDICT.PASS;
+      } else if (opts.reference.knownDivergences.length > 0) {
+        // No VM ran (or none exists for this version) to confirm the
+        // candidate directly: fall back to the curated fixture-name list —
+        // still a caveat, never a silent pass (rule 3).
+        caveats.push(`${opts.fixture.name}: ${cmp.why} — known-divergence construct (${opts.reference.knownDivergences.join(", ")}), PASS-with-caveat`);
+        verdict = VERDICT.PASS;
+      }
+      // Else: no VM evidence and no curated name — DIVERGENT stands. Never
+      // downgraded on missing evidence.
     }
 
     if (wanted.has("trace")) results.push({ oracle: "trace", verdict, detail: cmp.why, divergence: toDivergence(cmp), ms: Date.now() - t0 });

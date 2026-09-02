@@ -103,3 +103,49 @@ never exercises (`screen`/`html`/`cleanup` — TypeError message text embeds
 naming-recovery gap surfaced by fuzzing with a wider argument space than any
 hand-written fixture's own top-level calls provide — exactly what component A
 is for. Not fixed here per this task's scope; filed, not ignored.
+
+## Harness gaps blocking the first real campaign — fixed 2026-09-02
+
+The first real seed-base-777000 triage run (`docs/BUGS.md`) surfaced three
+harness gaps, not decompiler bugs, that produced false DIVERGENT/ERROR
+verdicts on fuzz-generated (nameless) programs. All three are fixed as of
+2026-09-02 — see `docs/BUGS.md`'s Resolved table for the full writeups:
+
+- **D14 VM-agrees-with-candidate override was curated-name-gated.**
+  `src/harness/ladder.ts`'s D14 cross-check only downgraded a DIVERGENT
+  Node-vs-candidate verdict to PASS-with-caveat when the fixture's *name*
+  was in `reference-policy.ts`'s hand-curated `KNOWN_DIVERGENT_FIXTURES`
+  table — a fuzz-generated program can never have a name in that table in
+  advance. The override is now evidence-based: it fires whenever a Hermes
+  VM actually ran and its own trace of the original bytecode matched the
+  candidate byte-for-byte (`vmAgreesEvidence`), for any program. The
+  curated list remains only as the fallback when no VM exists for the
+  version (e.g. v98) — the override never fires on missing evidence, so a
+  genuine candidate-vs-VM disagreement (e.g.
+  `tests/fixtures/adversarial/43-fuzz-async-guard-shared-range`, a real
+  open bug) still reports DIVERGENT.
+- **Mutation mode had no version awareness.** `src/fuzzgen/mutate.ts`
+  never consulted a corpus fixture's `versions.txt`, so a class-shaped
+  mutation could be handed to a v94 hermesc that has never supported
+  classes — a driver ERROR that was really "hermesc correctly rejected
+  code this version was never meant to compile". `corpusSources`/
+  `mutateFromCorpus` now take an optional target HBC version (mirroring
+  `src/harness/tiers.ts`'s `readVersionsTxt`) and skip any fixture whose
+  `versions.txt` marks that version FAILS.
+- **Thrown-error message text was exact-compared.** The trace comparator
+  (`src/harness/compare.ts`) used to fail a comparison solely because an
+  engine-generated error message embedded an identifier the decompiler's
+  naming passes could not — or, without debug info, could never —
+  reproduce verbatim. `err`/`unhandled` records now compare by
+  constructor name and thrown-vs-not-thrown exactly, with
+  identifier-shaped tokens in the message masked (conservative — a
+  small template-word allowlist keeps `is not a function`,
+  `undefined`/`null`, etc. literal). A masked-only match is never a
+  silent pass: it is recorded in `TraceComparison.maskedMatches` and
+  surfaced as a distinct caveat by `ladder.ts`.
+
+Re-running the row-1 repro (`node tools/fuzz/construct-fuzz.mjs --versions
+94,99 --count 30 --seed-base 777000`) after all three fixes: v94 30/30
+PASS, 0 DIVERGENT, 0 ERROR (previously 3 DIVERGENT + 2 ERROR); v99 29/30
+PASS, 1 DIVERGENT — seed 777007, the one genuine, still-open decompiler bug
+in this campaign (tracked separately in `docs/BUGS.md`).

@@ -21,22 +21,49 @@ const CORPUS_DIR = join(HERE, "..", "..", "tests", "fixtures", "constructs");
 
 let cachedCorpus: readonly string[] | undefined;
 
-/** Every construct fixture's `source.js`, sorted for determinism. Exported
- *  so tests can assert against the real corpus size without duplicating the
- *  directory scan. */
-export function corpusSources(): readonly string[] {
-  if (cachedCorpus !== undefined) return cachedCorpus;
-  if (!existsSync(CORPUS_DIR)) {
-    cachedCorpus = [];
-    return cachedCorpus;
+// docs/BUGS.md 2026-09-02 (mutation version-gating): mirrors
+// src/harness/tiers.ts's `readVersionsTxt` — a construct fixture's
+// `versions.txt` documents HBC versions its `source.js` does not compile
+// at (e.g. `v94: FAILS - hermesc rejects the class keyword entirely`).
+// Before this, `mutateFromCorpus` picked a fixture with no regard for the
+// target HBC version at all, so a class-shaped construct mutated for v94
+// was handed to a v94 hermesc that has never supported classes — a
+// driver ERROR verdict that is really "hermesc correctly rejected code
+// this version was never meant to compile", not a toolchain or generator
+// fault.
+function readVersionsTxt(dir: string): ReadonlySet<number> {
+  const failed = new Set<number>();
+  try {
+    const text = readFileSync(join(dir, "versions.txt"), "utf8");
+    for (const line of text.split("\n")) {
+      const m = /^v(\d+):\s*FAILS\b/.exec(line.trim());
+      if (m !== null) failed.add(Number(m[1]));
+    }
+  } catch {
+    // no versions.txt: every version is expected to compile.
   }
-  const out: string[] = [];
-  for (const name of readdirSync(CORPUS_DIR).sort()) {
-    const p = join(CORPUS_DIR, name, "source.js");
-    if (existsSync(p)) out.push(p);
+  return failed;
+}
+
+/** Every construct fixture's `source.js`, sorted for determinism, optionally
+ *  filtered to only fixtures whose `versions.txt` does not mark `version` as
+ *  FAILS. Exported so tests can assert against the real corpus size without
+ *  duplicating the directory scan. */
+export function corpusSources(version?: number): readonly string[] {
+  if (cachedCorpus === undefined) {
+    if (!existsSync(CORPUS_DIR)) {
+      cachedCorpus = [];
+    } else {
+      const out: string[] = [];
+      for (const name of readdirSync(CORPUS_DIR).sort()) {
+        const p = join(CORPUS_DIR, name, "source.js");
+        if (existsSync(p)) out.push(p);
+      }
+      cachedCorpus = out;
+    }
   }
-  cachedCorpus = out;
-  return out;
+  if (version === undefined) return cachedCorpus;
+  return cachedCorpus.filter((p) => !readVersionsTxt(dirname(p)).has(version));
 }
 
 // Semantic-fork literal values (subset of src/harness/fuzz.ts's CORPUS,
@@ -74,9 +101,11 @@ function checkSyntax(src: string): boolean {
 
 /** Mutation-mode program for `seed`: picks one corpus fixture and applies a
  *  deterministic sequence of safe mutations, falling back to the pristine
- *  fixture text if the mutated result fails `node --check`. */
-export function mutateFromCorpus(seed: number): string {
-  const corpus = corpusSources();
+ *  fixture text if the mutated result fails `node --check`. When `version`
+ *  is given, fixtures whose `versions.txt` marks that HBC version FAILS are
+ *  never selected. */
+export function mutateFromCorpus(seed: number, version?: number): string {
+  const corpus = corpusSources(version);
   const rng = mulberry32(seed);
   if (corpus.length === 0) return `print('no corpus fixtures found, seed ${seed}');\n`;
   const path = corpus[Math.floor(rng() * corpus.length)]!;

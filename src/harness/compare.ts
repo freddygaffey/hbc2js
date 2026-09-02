@@ -11,7 +11,7 @@
 // two truncated traces with equal prefixes compare equal. **Never allow a
 // two-valued verdict** — HA-01.
 import type { Trace, TraceRecord } from "./trace.ts";
-import { renderRecord, isComparable, isEvidence } from "./trace.ts";
+import { renderRecord, renderRecordMasked, isComparable, isEvidence } from "./trace.ts";
 
 export const TRACE_VERDICT = {
   EQUIVALENT: "EQUIVALENT",
@@ -33,6 +33,13 @@ export interface TraceComparison {
   readonly records: number;
   readonly divergence: TraceDivergence | null;
   readonly context: string | null;
+  /** Records (rendered, one string each) that only matched after
+   *  `renderRecordMasked`'s identifier-token masking — never after plain
+   *  `renderRecord`. Non-empty means this comparison is not an exact match;
+   *  a caller (`ladder.ts`) must surface it as a distinct caveat, never
+   *  fold it into a silent EQUIVALENT (docs/BUGS.md 2026-09-02, oracle
+   *  message-text masking). */
+  readonly maskedMatches: readonly string[];
 }
 
 interface ComparableTrace {
@@ -45,10 +52,30 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
   const rb = b.records.filter(isComparable);
   const la = ra.map(renderRecord);
   const lb = rb.map(renderRecord);
+  const laMasked = ra.map(renderRecordMasked);
+  const lbMasked = rb.map(renderRecordMasked);
 
+  // A record that differs only in an err/unhandled message's
+  // identifier-shaped tokens (renderRecordMasked === renderRecord for every
+  // other record kind, so this can never paper over a real divergence
+  // elsewhere) advances the scan instead of ending it, but is recorded so
+  // the caller must surface it, never silently drop it (see
+  // `maskedMatches`'s doc).
   let i = 0;
   const n = Math.min(la.length, lb.length);
-  while (i < n && la[i] === lb[i]) i++;
+  const maskedMatches: string[] = [];
+  while (i < n) {
+    if (la[i] === lb[i]) {
+      i++;
+      continue;
+    }
+    if (laMasked[i] === lbMasked[i]) {
+      maskedMatches.push(`record ${i}: "${la[i]}" vs "${lb[i]}" — identifier-masked match ("${laMasked[i]}")`);
+      i++;
+      continue;
+    }
+    break;
+  }
 
   const divergence: TraceDivergence | null =
     i < n
@@ -87,6 +114,7 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
     records: la.length,
     divergence,
     context: divergence !== null ? contextAround(la, lb, divergence.index) : null,
+    maskedMatches,
   };
 }
 
