@@ -1,0 +1,4 @@
+# 2026-09-02 — M5 rung 13 default-params — Sonnet, lean
+Tokens 373k · tool calls 226 · green (over budget: hard shape investigation).
+
+Built against P-8's real idiom `L0: { rX = arguments[k]; if (rX !== U) break L0; ...default...; break L0; }` (v94 bunches loads, v99 interleaves — one matcher handles both). Fixture 51: all 4 fns recover ES defaults (greet, withSideEffectDefault via IIFE, chainedDefaults, defaultUsesFunction); 39 gets outer defaults. Sound checker recomputes via the writer; rejects wrong init + flipped polarity. Found+fixed a real bug: pruneRegisterDecls only checked liveness in fn.body, pruned a let whose only use moved into param.init → implicit-global leak, 51 DIVERGENT — fixed by threading fn.params. Open: v99 orphan-function framework gap (3/4 fns unreachable for a params rewrite; BUGS, M5 lane). 13/30 rungs. Gate 1646/0, equivalence 216/0.
