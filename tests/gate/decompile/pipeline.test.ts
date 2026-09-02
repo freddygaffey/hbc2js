@@ -90,10 +90,10 @@ test("the pass registry lists the M5 passes in dependency order", () => {
   // tests/gate/passes/framework.test.ts.
   // D20: `jsx-recover` is registered last but is opt-in — absent from every
   // `enabledPasses` selection below unless `optIn` names it.
-  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "template-literal", "fn-naming", "var-naming", "jsx-recover"]);
+  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "template-literal", "fn-naming", "var-naming", "jsx-recover"]);
   assert.deepEqual(enabledPasses({ stage: "A" }).map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean"]);
-  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "template-literal", "fn-naming", "var-naming"]);
-  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "template-literal", "fn-naming", "var-naming"]);
+  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "template-literal", "fn-naming", "var-naming"]);
+  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "template-literal", "fn-naming", "var-naming"]);
 });
 
 test("decompileTree covers every function of a module", () => {

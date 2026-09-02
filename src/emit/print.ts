@@ -1,7 +1,43 @@
 // docs/specs/05-emitter.md §2 — the in-house printer. Byte-stable output, no
 // dependency, explicit precedence so parentheses are added exactly where needed.
-import type { Expr, Param, Stmt } from "./ast.ts";
+import type { Expr, Param, Pattern, PatternElement, Stmt } from "./ast.ts";
 import { jsxToCall } from "./ast.ts";
+
+/** F16 §3: render a pattern. `hole` prints as an empty slot (a run of them
+ *  is what gives `[a, , b]` its double comma — handled by the caller joining
+ *  on `", "` around an empty string, same as `array`'s own elision story). */
+function renderPattern(p: Pattern): string {
+  switch (p.k) {
+    case "pid":
+      return p.name;
+    case "parr":
+      return `[${p.elements.map(renderPatternElement).join(", ")}]`;
+    case "pobj":
+      return `{${p.props.map((prop) => renderProp(prop.key, prop.value)).join(", ")}}`;
+  }
+}
+
+function renderPatternElement(el: PatternElement): string {
+  switch (el.k) {
+    case "hole":
+      return "";
+    case "prest":
+      return `...${renderPattern(el.target)}`;
+    case "pel":
+      return renderPattern(el.target) + (el.init !== undefined ? ` = ${expr(el.init, ASSIGNMENT)}` : "");
+  }
+}
+
+function renderProp(key: string, value: PatternElement): string {
+  if (value.k === "prest") return renderPatternElement(value);
+  // Shorthand (`{ a }` / `{ a = 1 }`) exactly when the value is a bare `pid`
+  // with the same name as the key — the common case (a plain or defaulted
+  // property, un-renamed).
+  if (value.k === "pel" && value.target.k === "pid" && value.target.name === key) {
+    return value.init !== undefined ? `${key} = ${expr(value.init, ASSIGNMENT)}` : key;
+  }
+  return `${key}: ${renderPatternElement(value)}`;
+}
 
 /** F15: `(a, b = 1, ...rest)` — a defaulted parameter's `init` is printed at
  *  assignment precedence, so a `k:"seq"` default parenthesises itself
@@ -70,6 +106,7 @@ function precedence(e: Expr): number {
     case "cond":
       return CONDITIONAL;
     case "assign":
+    case "destructure": // F16: printed at assignment precedence, like `assign`
       return ASSIGNMENT;
     case "seq":
       return SEQUENCE;
@@ -151,6 +188,13 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
   const p = pad(depth, opts);
   switch (s.k) {
     case "expr":
+      // F16: an object-pattern destructuring assignment in statement
+      // position must be parenthesised — a bare leading `{` parses as a
+      // block statement, not an object pattern.
+      if (s.expr.k === "destructure" && s.expr.pattern.k === "pobj") {
+        out.push(`${p}(${expr(s.expr, 0)});`);
+        return;
+      }
       out.push(`${p}${expr(s.expr, 0)};`);
       return;
     case "decl":
@@ -296,6 +340,8 @@ function render(e: Expr): string {
     }
     case "assign":
       return `${expr(e.target, MEMBER)} = ${expr(e.value, ASSIGNMENT)}`;
+    case "destructure": // F16
+      return `${renderPattern(e.pattern)} = ${expr(e.source, ASSIGNMENT)}`;
     case "cond":
       return `${expr(e.test, CONDITIONAL + 1)} ? ${expr(e.then, ASSIGNMENT)} : ${expr(e.else, ASSIGNMENT)}`;
     case "array":

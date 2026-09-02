@@ -11,6 +11,7 @@
 // `assign`-target, and every `init`-name — for all of the site's renames at
 // once (one rebuild, not one per name; spec 05 §4's batched convention).
 import type { Expr, Stmt } from "../ast.ts";
+import { mapPattern } from "../ast.ts";
 import type { VarNamingMatch } from "./match.ts";
 
 type Mapping = ReadonlyMap<string, string>;
@@ -64,6 +65,15 @@ function renameExpr(e: Expr, map: Mapping): Expr {
     case "seq": {
       const exprs = e.exprs.map((x) => renameExpr(x, map));
       return exprs.every((x, i) => x === e.exprs[i]) ? e : { ...e, exprs };
+    }
+    case "destructure": {
+      // F16 §3: "the same machinery as plain idents" — `mapPattern` renames
+      // a `pid` leaf by round-tripping it through this very `renameExpr`
+      // as a synthetic `ident` node, so no pattern-specific rename logic
+      // lives here at all.
+      const source = renameExpr(e.source, map);
+      const pattern = mapPattern(e.pattern, (x) => renameExpr(x, map));
+      return source === e.source && pattern === e.pattern ? e : { ...e, source, pattern };
     }
     default:
       return e; // lit, this, argumentsObject, func (separate frame — never recurse)
