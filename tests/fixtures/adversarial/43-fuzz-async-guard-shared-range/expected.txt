@@ -1,0 +1,7 @@
+guarded ok: 0
+guarded throw: null
+seen: reportError boom
+inGuard settled at: 0
+await no-throw: async-ok
+await throw: async-caught async-boom
+final seen: reportError boom | async-finally | async-finally

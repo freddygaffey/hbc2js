@@ -4,9 +4,9 @@ Deliberately hard-to-decompile JavaScript code designed to stress-test and find 
 
 ## Test status summary
 
-- **Total fixtures**: 42
+- **Total fixtures**: 43
 - **PASS through decompiler**: 40 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
-- **DIVERGE (harness verdict)**: 2, both v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`) and `20-symbol-keyed-properties` (**toolchain/harness artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM). See "CONSOLIDATION 26 triage" below.
+- **DIVERGE (harness verdict)**: 3, all v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`), `20-symbol-keyed-properties` (**toolchain/harness artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM), and `43-fuzz-async-guard-shared-range` (**confirmed real bug, not yet root-caused**: candidate genuinely disagrees with the v99 Hermes VM's own trace — see docs/BUGS.md 2026-09-02, construct-fuzzer seed-base 777000 row). See "CONSOLIDATION 26 triage" below and the fuzz row above for `43`.
 - **ERROR (decompiler threw)**: 0
 - **SKIP (v94/v96 compile failure, v99 ok)**: 5 (class fixtures)
 
@@ -157,6 +157,19 @@ To add a new adversarial fixture:
 6. Add to `versions.txt` if any version fails
 7. Test decompiler: `node src/cli.ts vNN.hbc <out.js>` then run the output, compare to expected.txt **and, wherever a Hermes VM exists for that version, to `tools/hermes-vm/vNN/bin/hermes -b vNN.hbc` (or `tools/hermesc/vNN/hermes` for versions without a source-built VM, e.g. v96) directly** — per D14 the VM is ground truth, not Node/expected.txt; a mismatch against Node alone that agrees with the VM is not a bug, see the 2026-08-31 triage note above
 8. If the decompiled output diverges from the **Hermes VM** (not just from expected.txt), record it in docs/BUGS.md and update this README
+
+### 43-fuzz-async-guard-shared-range (added 2026-09-02, construct-fuzzer find)
+
+`async function` declared alongside an `applyWithGuard`/`ErrorUtils`-shaped
+`try`/`catch` with an identical-range handler pair (the same shape
+`constructs/54-try-catch-finally-shared-range` documents at the single-handler
+level). v99-only; v94 PASSes on the same minimised source. DIVERGE: the real
+Hermes VM (v99) dies with a synchronous, pre-`await` uncaught `TypeError`
+right after printing `inGuard settled at: 0` — merely from `guardedAwait`
+being declared, before its promise chain ever runs — while the decompiled
+candidate runs to completion under Node. Not root-caused (out of scope for
+the triage task that landed it); see docs/BUGS.md's 2026-09-02 seed-base
+777000 row for the minimisation trail (`tools/fuzz/minimise-live.mjs`).
 
 ## Compilation note
 

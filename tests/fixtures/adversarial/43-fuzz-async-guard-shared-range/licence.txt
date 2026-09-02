@@ -1,0 +1,6 @@
+Original work, written for the hbc2js project. Licensed MIT, same terms as
+the rest of hbc2js (see docs/DECISIONS.md D4 -- Tier 1 construct fixtures must
+be freely usable and are authored fresh rather than borrowed from any external
+corpus). Minimised (src/fuzzgen/minimise.ts, live reproduces callback,
+tools/fuzz/minimise-live.mjs) from a construct-fuzzer mutation-mode find,
+seed 777007, campaign seed-base 777000 (docs/BUGS.md, 2026-09-02 row).
