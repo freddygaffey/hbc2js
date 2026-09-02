@@ -59,7 +59,7 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 | `call-shape` | R3 (+ builtins table) | all | all | `Reflect.apply(f, undefined, [a])` → `f(a)`; `Reflect.apply(o.m, o, [a])` → `o.m(a)`; `Reflect.construct(C, [a])` → `new C(a)`; `functionPrototypeCall/Apply` helpers → `.call/.apply` | done |
 | `fn-naming` | R4 | all | all | `_fnN` whose bytecode name is a valid, unshadowed identifier → that name; `_fnN` assigned once to `o.key`/`var k` → `key` | done |
 | `var-naming` | R5 | all | all | surviving `rN` → `v1…` by live range; params keep `aN` unless evidence names them; env slots `_eD_S` → names when §5.4 evidence exists | done (2026-08-31; 3.1% named — see PUSHBACK P-6 / reg-split) |
-| `reg-split` | R9 | 04, 02, 11, 14, 22 | all | a register with ≥2 disjoint live ranges (webs — reaching-defs over the structured AST; loop-carried values and try→catch flows stay one web) → one variable per range (`r0`, `r0_2`, …), so var-naming can name each independently | **implemented 2026-09-02** (`docs/specs/passes/19-reg-split.md`; unparks P-6), `after: [sugar rungs]`, `before: [var-naming]` — landed `optIn: true`, see PUSHBACK |
+| `reg-split` | R9 | 04, 02, 11, 14, 22 | all | a register with ≥2 disjoint live ranges (webs — reaching-defs over the structured AST; loop-carried values and try→catch flows stay one web) → one variable per range (`r0`, `r0_2`, …), so var-naming can name each independently | **default-on 2026-09-03** (`docs/specs/passes/19-reg-split.md`; unparks P-6), `after: [sugar rungs, jsx-recover]`, `before: [var-naming]` — D23's stage boundary resolved the P-11b jsx-recover interaction, PUSHBACK P-11 closed |
 | `template-literal` | 21 | 43, 44 | all | `Reflect.apply(__hbc_HermesInternal.concat, c0, [s0, c1, …])` → template literal (never a `+` chain — row 21 corrected); `getTemplateObject` + tag call → tagged template | batch 3, **merged 2026-09-01** |
 | `default-params` | 24 | 39, 51 | 94, 99 (measured); orphan functions at v99, i.e. a top-level `function` with no `CreateClosure` site, are out of reach of the framework's stage-B driver — follow-up, not a shape gap | prologue labeled block `L: { r = arguments[k]; if (r !== U) break L; …default…; break L; }` (not the if/else spec §2 described — corrected per docs/PUSHBACK.md P-8) → `(r = e)` | **merged 2026-09-02** |
 | `destructure` | 22 (✅ verified, v94+v99) | 37, 38, 39 | all | one labeled block per array element (own `__hbc_iterBegin`/`__hbc_iterNext` + done flag; the commit may sit at the head of the *next* block) and per defaulted object property (`GetById` + `!== undefined` guard); plain properties are bare `GetById`s; object rest = **3-arg** `copyDataProperties`; array rest = inline append loop → `[rA, rB = d, , ...rR] = x` / `({ a: rA, ...rO } = x)` assignments (spec 16 §2; P-3/P-9 corrected — not straight-line, not an `Expr`) | **merged** (2026-09-02), `after: [default-params]`, `before: [var-naming]`; v1 scope: direct/staged-commit array elements + close block, object plain/defaulted/3-arg-rest properties — array per-element defaults, holes-by-shape and array rest not yet matched (refused, `docs/BUGS.md`) |
@@ -70,7 +70,7 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 | `arguments-form` | 16 (single-version) | 42, 49 | all | `__hbc_arguments` reads where no param slot aliases → `arguments` | batch 4 |
 | `literal-forms` | 45, 46, 47, 55 (needs rows) | 45, 46, 47, 55 | all | `new RegExp("…","g")` from a regex-table literal → `/…/g`; BigInt table → `123n`; `typeofIs` mask helper → `typeof x === "…"` chains | batch 4 |
 | `try-clean` | 11, 12 | 12–16 | all | `__pc =` stores and `__exc` copies no handler reads → removed; `__pc = -1` frame → removed | batch 4, `after: [expr-rebuild]`; stage-A `try-shape` first |
-| `jsx-recover` | D20, R6 | 59, bundles | all | `React.createElement(T, p, …c)` / `jsx(T, {…children})` trees → JSX (opt-in `--jsx`; spilled callee/type/config registers resolved and absorbed per spec 08 implementation notes) | **merged 2026-09-01**, opt-in; §5.3 |
+| `jsx-recover` | D20, R6 | 59, bundles | all | `React.createElement(T, p, …c)` / `jsx(T, {…children})` trees → JSX (opt-in `--jsx`; spilled callee/type/config registers resolved and absorbed per spec 08 implementation notes) | **merged 2026-09-01**, opt-in; §5.3; **reordered 2026-09-03 (D23)** to last-of-structure-recovery (was last overall), before the renaming block |
 | `string-array-decode` | R7 (needs row) | `.obf` variants | all | obfuscator string-array accessor `_0x…(i)` → the literal | **hard** §5.5 |
 | `closure-naming` | R5 cross-function part | 17, 18, 21, 22 | all | consistent env-slot names across every function touching the slot | **hard** §5.4 |
 
@@ -95,7 +95,8 @@ gen-lowered ────┼─► finally-dedup ─► loop-cond ─► for-head
                 │        └─► try-shape                            ├─► default-params ─► destructure│
                 └────────────────► async-recovery                 ├─► try-clean                    │
                             (all) ─► label-clean                  ├─► arguments-form, literal-forms│
-                                                                  └─► (all above) ─► reg-split ─► var-naming/closure-naming ─► jsx-recover
+                                                                  └─► (all above) ─► jsx-recover ──┘
+                                             D23 stage boundary: structure-recovery (above) ─► renaming: fn-naming ─► reg-split ─► var-naming/closure-naming
 ```
 
 Rationale, one line each (a spec must repeat the ones that bind its rung):
@@ -128,8 +129,18 @@ Rationale, one line each (a spec must repeat the ones that bind its rung):
   lifts var-naming past its §4.1 reuse gate (P-6); it must see the final
   register population, so it runs after every rung that folds or absorbs
   registers.
-* **`jsx-recover` last**: it wants `React.createElement`/`jsx` as calls with
-  named callees and named props, which every earlier rung supplies.
+* **D23 stage boundary — structure-recovery before renaming**
+  (`docs/DECISIONS.md` D23): every structure-recovery rung (`expr-rebuild` …
+  `optional-chain`, `jsx-recover`) is registered before every pure-renaming
+  rung (`fn-naming`, `reg-split`, `var-naming`). `jsx-recover` is therefore
+  **last of the structure-recovery block, not last overall**: it wants
+  `React.createElement`/`jsx` as calls with named callees and folded props,
+  which every earlier structure rung supplies, but it must run *before*
+  `reg-split` renames the registers its call-shape matcher keys off
+  (`docs/BUGS.md`'s 2026-09-02 P-11b row — reg-split's per-store renaming
+  broke jsx-recover's matcher when reg-split ran first). This is also why
+  `reg-split` is safe **default-on** (not opt-in): it no longer runs before
+  any structure-recovery rung.
 
 ### Batches (five rungs each; each batch is one Opus spec task)
 

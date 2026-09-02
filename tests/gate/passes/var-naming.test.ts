@@ -317,7 +317,7 @@ test("red->green: 04-for-loop-basic v94 — the single-def `new Array` register 
   assert.match(code, /\barr = new Array\(0\);/);
   assert.match(code, /\barr\.push\(/);
   assert.match(code, /\barr\.join\(/);
-  // `r\d+(_\d+)?` also matches reg-split's `rN_j` web names (D20, reg-split
+  // `r\d+(_\d+)?` also matches reg-split's `rN_j` web names (D23, reg-split
   // is default-on; docs/specs/passes/19-reg-split.md §Q3) — a register split
   // into several disjoint webs is still each web's own multi-role scratch,
   // which var-naming's reuse gate must decline to rename.

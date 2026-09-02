@@ -11,12 +11,12 @@ import { rewrite } from "./rewrite.ts";
  *  that is empty — the one property/variable it is unambiguously assigned to
  *  — docs/LOWERING-CATALOGUE.md row R4, docs/specs/passes/05-fn-naming.md.
  *  Stage B, pure alpha-renaming: no statement moves, no expression changes
- *  shape — the first rung of D20's renaming block (`registry.ts`), which
+ *  shape — the first rung of D23's renaming block (`registry.ts`), which
  *  runs after every structure-recovery rung including the opt-in
  *  `jsx-recover`.
  *
  *  `after: ["expr-rebuild", "global-access", "jsx-recover"]` (spec §7 +
- *  D20): the rename must see the free global names `global-access` exposes,
+ *  D23): the rename must see the free global names `global-access` exposes,
  *  or condition 4 ("captures-free-name") cannot protect them; `jsx-recover`
  *  is there so the stage boundary is enforced by `registry.ts`'s own
  *  validation, not just array position, even though `jsx-recover` is

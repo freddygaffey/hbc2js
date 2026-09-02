@@ -88,11 +88,11 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
 test("the pass registry lists the M5 passes in dependency order", () => {
   // Was "empty at M4"; spec 07 §2.3. The ordering/negative tests live in
   // tests/gate/passes/framework.test.ts.
-  // D20: structure-recovery rungs all precede the renaming block
+  // D23: structure-recovery rungs all precede the renaming block
   // (`fn-naming`, `reg-split`, `var-naming`); `jsx-recover` is last of the
   // structure block but is opt-in — absent from every `enabledPasses`
   // selection below unless `optIn` names it. `reg-split` is default-on
-  // (P-11b resolved by the D20 reorder), so it appears in every selection
+  // (P-11b resolved by the D23 reorder), so it appears in every selection
   // below.
   assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "jsx-recover", "fn-naming", "reg-split", "var-naming"]);
   assert.deepEqual(enabledPasses({ stage: "A" }).map((p) => p.name), ["loop-cond", "for-header", "switch-raise", "if-chain", "label-clean"]);

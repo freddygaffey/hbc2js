@@ -8,7 +8,7 @@ import { rewrite } from "./rewrite.ts";
 /** `jsx(T, {…, children})` / `jsxs` / `jsxDEV` / `createElement(T, p, …c)`
  *  → `<T …>…</T>` — docs/LOWERING-CATALOGUE.md row R6, D20,
  *  docs/specs/passes/08-jsx-recovery.md. Stage B, **last of the
- *  structure-recovery block** (D20's stage boundary, `registry.ts`: it
+ *  structure-recovery block** (D23's stage boundary, `registry.ts`: it
  *  wants plain calls, named callees, folded arrays/objects from every other
  *  structure rung, but runs *before* the renaming block — `fn-naming`,
  *  `reg-split`, `var-naming` — because it keys off a call *shape*, and

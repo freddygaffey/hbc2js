@@ -53,7 +53,7 @@ import { varNaming } from "./var-naming/index.ts";
  *  a concat site (asserted by negative tests in both rungs, not by an
  *  edge).
  *
- *  **Stage boundary (D20): structure-recovery before renaming.** Every
+ *  **Stage boundary (D23): structure-recovery before renaming.** Every
  *  stage-B rung is either a *structure-recovery* rung (rewrites shape:
  *  `expr-rebuild` … `optional-chain`, `jsx-recover`) or a *pure-renaming*
  *  rung (`fn-naming`, `reg-split`, `var-naming` — comments on all three say
@@ -63,7 +63,7 @@ import { varNaming } from "./var-naming/index.ts";
  *  assume every register still carries its original bytecode identity
  *  (renaming has not run yet). `jsx-recover` (docs/specs/passes/
  *  08-jsx-recovery.md §7/§8) is therefore registered **last of the
- *  structure-recovery block**, not last overall (D20 supersedes the old
+ *  structure-recovery block**, not last overall (D23 supersedes D20's old
  *  "last in stage B" — it moved because it recognises a call *shape*, which
  *  `reg-split`'s per-store register renaming was corrupting before the
  *  renaming rung it keys off had even seen the tree; docs/BUGS.md's

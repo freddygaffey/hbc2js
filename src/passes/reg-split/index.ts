@@ -15,7 +15,7 @@ import { rewrite } from "./rewrite.ts";
  *  every unrelated job sharing one name could not.
  *
  *  `after`: every rung that deletes, folds or absorbs registers (spec §7),
- *  plus `jsx-recover` (D20's stage boundary: the opt-in structure rung must
+ *  plus `jsx-recover` (D23's stage boundary: the opt-in structure rung must
  *  see original register identity before `reg-split` renames it, so
  *  `reg-split` must run after it) — `reg-split` must see the tree they leave
  *  behind, not waste analysis on registers about to vanish. `before:
@@ -30,7 +30,7 @@ export const regSplit: Pass<readonly Stmt[], RegSplitSite> = {
   match,
   rewrite,
   check,
-  // PUSHBACK P-11 (docs/PUSHBACK.md), resolved 2026-09-02 (D20,
+  // PUSHBACK P-11 (docs/PUSHBACK.md), resolved 2026-09-02 (D23,
   // docs/DECISIONS.md): spec 19 §7 says `optIn` is *not* set — the pass
   // should run in the default pipeline. P-11a fixed the perf ceiling
   // (7.7-10.7x vs the 12x P-1 limit); P-11b widened the ~10 downstream
@@ -39,7 +39,7 @@ export const regSplit: Pass<readonly Stmt[], RegSplitSite> = {
   // reg-split running *before* `jsx-recover`, its renaming of an
   // object-literal-build register into per-store copies (`r3`, `r3_2`,
   // `r3_3`, ...) broke the call-shape `jsx-recover`'s matcher keys off
-  // (docs/BUGS.md's 2026-09-02 P-11b row). D20 fixes the root cause instead
+  // (docs/BUGS.md's 2026-09-02 P-11b row). D23 fixes the root cause instead
   // of working around it: `jsx-recover` is a *structure-recovery* rung, so
   // it belongs in the structure-recovery block, which `registry.ts` now
   // runs entirely before the renaming block `reg-split` opens. `reg-split`

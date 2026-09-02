@@ -136,7 +136,7 @@ test("check refuses an `after` that is not the derived fold, and one whose node 
 // ---------------------------------------------------------------------------
 
 test("D20: jsx-recover is registered last of the structure-recovery block (before the renaming block), opt-in, and absent from every default selection", () => {
-  // D20 (docs/DECISIONS.md): structure-recovery rungs all precede renaming
+  // D23 (docs/DECISIONS.md): structure-recovery rungs all precede renaming
   // rungs (`fn-naming`, `reg-split`, `var-naming`) — jsx-recover is a
   // structure rung, so it is last of *that* block, not last overall.
   const names = REGISTRY.map((p) => p.name);

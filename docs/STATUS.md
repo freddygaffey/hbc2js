@@ -38,10 +38,15 @@ stores) split into real files. (docs/LANES.md)
 
 `loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
 `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
-`destructure`, `spread-rest`, `template-literal`, `fn-naming`, `reg-split`
-(opt-in, PUSHBACK below), `var-naming`, `jsx-recover` (opt-in `--jsx`).
-Next (batch 3): reg-split default-on (P-11) -> var-naming compound ->
-literal-forms / try-clean / arguments-form / for-in/for-of.
+`destructure`, `spread-rest`, `template-literal`, `jsx-recover` (opt-in
+`--jsx`), `fn-naming`, `reg-split`, `var-naming`. D23 (2026-09-03,
+docs/DECISIONS.md) reorders the registry: every structure-recovery rung
+(through `jsx-recover`) now runs before the renaming block
+(`fn-naming`/`reg-split`/`var-naming`) — `reg-split` is now **default-on**
+(P-11/P-11b resolved, docs/PUSHBACK.md P-11 closed, docs/BUGS.md P-11b
+row resolved).
+Next: var-naming compound -> literal-forms / try-clean / arguments-form /
+for-in/for-of.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
@@ -59,24 +64,29 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 
 ## Blocked / needs Fred
 
-- reg-split rung — **implemented 2026-09-02**, sound (16 rung tests, all
-  five §10 target fixtures 0-DIVERGENT), but landed `optIn: true` not the
-  spec's default-on. P-11a fixed the P-1 12x CPU ceiling (7.7-10.7x); P-11b
-  widened the ~10 other rungs' `r\d+`-shaped test regexes but found the
-  actual blocker on the default-on attempt is not test-regex debt: with
-  reg-split forced default-on, `jsx-recover` (`--jsx`) stops recovering JSX
-  on `59-jsx-runtime-calls` (v94/v99) — reg-split's per-store register
-  renaming breaks jsx-recover's match pattern. `optIn` reverted to `true`;
-  see docs/BUGS.md's 2026-09-02 P-11b row and docs/PUSHBACK.md P-11.
+- reg-split rung — **RESOLVED 2026-09-03** (D23, docs/DECISIONS.md):
+  default-on since the stage-boundary reorder. `jsx-recover` was the real
+  blocker (P-11b) — it is a structure-recovery rung that the old registry
+  order ran last overall (after `reg-split`/`var-naming`), so `reg-split`'s
+  renaming corrupted the shape `jsx-recover`'s matcher keyed off. Moved
+  `jsx-recover` to the end of the structure-recovery block instead (still
+  before the renaming block, still opt-in `--jsx`); `reg-split` no longer
+  runs before any structure rung. Verified: both existing
+  `jsx-recover.test.ts` JSX-recovery assertions on `59-jsx-runtime-calls`
+  v94/v99 pass with `reg-split` default-on; `reg-split`'s 16 rung tests and
+  its spec's five §10 target fixtures stay 0-DIVERGENT; P-1's pipeline-speed
+  ceiling holds; full `npm test` 1753/1753 pass. docs/BUGS.md's P-11b row
+  moved to Resolved; docs/PUSHBACK.md's P-11 follow-up closed.
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top of docs/QUEUE.md
 
 1. Metrics scoreboard collector (standing, FIRST — Fred 2026-09-02 night:
    baseline before the night's changes).
-2. Lane L: reg-split default-on — blocked on the jsx-recover interaction
-   (docs/BUGS.md 2026-09-02 P-11b row), then var-naming compound, then
-   non-deobf cleanup rungs.
+2. Lane L: reg-split default-on shipped 2026-09-03 (D23 stage-boundary
+   reorder resolved the jsx-recover interaction, docs/BUGS.md 2026-09-02
+   P-11b row now Resolved); next var-naming compound, then non-deobf
+   cleanup rungs.
 3. Lane T: testing-decisions spec (construct-level + app-generation
    fuzzers, held-out set) -> Fable review -> impl.
 
