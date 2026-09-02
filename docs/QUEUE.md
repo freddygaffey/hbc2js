@@ -18,6 +18,18 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 22. **Parallelise `deps`** (not a bug — Fred: brute-force hashing of 43k fns vs 32k sigs is expected to take minutes): worker pool per module chunk, cache fingerprints keyed by bundle sha256, report progress. Goal: Service NSW well under 10 min on this Mac.
 21. Held-out fixtures finish (1) from origin/worktree-agent-a95cf9a2d5716d76b.
 
+
+## Phase 2 — RE / bug-finding environment (roadmap: docs/specs/re-tooling-roadmap-IDEAS.md, Fred 2026-09-02)
+FOUNDATION FIRST (reg-split readability + Design D overlay + corpus generalization must be solid before Phase 2). Then, in order — each is a RESEARCHED SPEC by a STRONGER agent (Opus/Fable), in the Design-doc style, NOT an implementation until specced:
+- **P2.1 ARTIFACT FORMAT + xref/call-graph index (GATES EVERYTHING — spec this FIRST, concretely)**: hbc2js's output contract becomes a structured artifact = rendered source + an index keyed to `{fn,reg}`/`fnIndex`: who-calls (call graph), string→use-site xref, global-read-where, native surface, module graph. Every analysis tool consumes THIS, never hbc2js internals. Pin the format down first (§7). Ours (touches Hermes/ids).
+- **P2.2 project store** = the Design-D overlay generalized to hold comments, tags (source/sink/reviewed/suspicious), bookmarks, findings on the same ids. Our Ghidra-project/IDA-db. (Naming overlay = one record type in it.)
+- **P2.3 string + secrets indexer** (string-table→use xref + entropy/pattern scan) — cheap, high hit rate, run first on a bundle.
+- **P2.4 REUSE validation (not build)**: Semgrep JS taint on emitted JS; OSV/GHSA match against src/deps/ output (strongest reuse → realistic CVE outcome); CodeQL licensing/fit; androguard/apktool for manifest (exported components/permissions/deep-links). Spec = hands-on validation of each per §4/§7, not new tools.
+- **P2.5 version/decompile diff** keyed to binding ids (new endpoints, removed checks between app versions) — high-leverage bug finder.
+- **P2.6 Frida hook generation** (static→dynamic, keyed to fnIndex; own account/in-scope only) + **P2.7 orchestration+verify loop** (LLM bug-finding driver over all the above; decompilation-fidelity check so a "bug" is never an artifact). Last.
+- Also missing from the sketch (add when speccing): type/shape recovery, protocol/wire-format reconstruction, coverage-guided input gen, a disclosure findings/report format.
+Set aside (documented): Ghidra/IDA/BinDiff — native-address tools, wrong fit for a JS VM; revisit only if a native component enters scope.
+
 ## Parked
 - **[DEPRIORITISED per Fred 2026-09-02] OSS-project name-extraction benchmark**: Fred: "we do not need testing on open source projects and seeing if you can re-extract the names." Do NOT add more OSS apps to oss-benchmark.mjs / expand name-accuracy validation. Keep the existing ratchet as a guard only; do not invest further.
  (needs Fred)
