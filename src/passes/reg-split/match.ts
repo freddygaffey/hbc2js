@@ -812,28 +812,52 @@ export function analyzeFrame(fnBody: readonly Stmt[]): RegSplitSite | null {
   // block+handler subtree together AND with every occurrence anywhere
   // *before* the try (any idx < the try's own idx, matching the checker's
   // R-catch, which is exactly as coarse — "before the try at any depth").
-  // `occs` here is per-register and pre-sorted by idx (`occurrences` is
-  // built in tree pre-order), so both membership groups are one linear
-  // pass each rather than a fresh scan per (register, try) pair.
+  //
+  // P-11a: this used to be one `tryIdxs` walk *per register* (an outer
+  // `for (const reg of allRegs)`), so a function with many registers and
+  // many `try`s paid `O(regs x tries)` even when almost every (register,
+  // try) pair had nothing to do with each other — the measured pipeline-
+  // speed bottleneck (docs/PUSHBACK.md P-11: 13.6x, over the 12x ceiling).
+  // Replaced with one global merge-scan: `occurrences` is already in tree
+  // pre-order == ascending `stmtIdx` order (`Occurrence.id`'s doc), so a
+  // single pointer sweep interleaved with the sorted `tryIdxs` list visits
+  // every (occurrence, enclosing/preceding try) relationship exactly once,
+  // in `O(occurrences + tries + occurrence-try-membership pairs)` total —
+  // no per-register multiplier. `beforeRep` plays the role the old `before`
+  // accumulator played per register (the running "everything of this
+  // register seen so far" union-find anchor), just shared across all
+  // registers in one pass instead of rebuilt per register.
   const tryMembership = computeTryMembership(fnBody);
   const tryIdxs = [...new Set([...tryMembership.values()].flatMap((s) => [...s]))].sort((a, b) => a - b);
-  for (const reg of allRegs) {
-    const occs = occByReg.get(reg) ?? [];
-    if (tryIdxs.length === 0 || occs.length === 0) continue;
-    const within = new Map<number, number[]>();
-    for (const o of occs) {
+  if (tryIdxs.length > 0) {
+    const withinByTry = new Map<number, Map<string, number[]>>();
+    for (const o of occurrences) {
       for (const t of tryMembership.get(o.stmtIdx) ?? []) {
-        let arr = within.get(t);
-        if (arr === undefined) within.set(t, (arr = []));
+        let byReg = withinByTry.get(t);
+        if (byReg === undefined) withinByTry.set(t, (byReg = new Map()));
+        let arr = byReg.get(o.reg);
+        if (arr === undefined) byReg.set(o.reg, (arr = []));
         arr.push(o.id);
       }
     }
-    let before: number[] = [];
-    let nextOcc = 0;
+    const beforeRep = new Map<string, number>();
+    let occPtr = 0;
     for (const tIdx of tryIdxs) {
-      while (nextOcc < occs.length && occs[nextOcc]!.stmtIdx < tIdx) before.push(occs[nextOcc++]!.id);
-      const group = [...(within.get(tIdx) ?? []), ...before];
-      for (let i = 1; i < group.length; i++) uf.union(group[0]!, group[i]!);
+      while (occPtr < occurrences.length && occurrences[occPtr]!.stmtIdx < tIdx) {
+        const o = occurrences[occPtr++]!;
+        const rep = beforeRep.get(o.reg);
+        if (rep === undefined) beforeRep.set(o.reg, o.id);
+        else uf.union(rep, o.id);
+      }
+      const byReg = withinByTry.get(tIdx);
+      if (byReg !== undefined) {
+        for (const [reg, ids] of byReg) {
+          for (let i = 1; i < ids.length; i++) uf.union(ids[0]!, ids[i]!);
+          const rep = beforeRep.get(reg);
+          if (rep !== undefined) uf.union(rep, ids[0]!);
+          else beforeRep.set(reg, ids[0]!);
+        }
+      }
     }
   }
 

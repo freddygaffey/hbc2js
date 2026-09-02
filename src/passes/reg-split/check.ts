@@ -443,10 +443,18 @@ function forUpdateShielded(geo: Geometry, reg: string, uIdx: number): boolean {
   return u.body.some((s) => isStrongDefOf(s, reg));
 }
 
-function reachesSeq(geo: Geometry, fnBody: readonly Stmt[], reg: string, dIdx: number, uIdx: number): boolean {
+// P-11a: this used to call `defIdxs(fnBody, reg)` itself — a fresh
+// `defUse(fnBody)` whole-body walk (framework, uncached) — once per
+// (def, use) pair in `check`'s double loop below, i.e. `O(defs x uses x
+// body)` for every split register. The caller already has that same list
+// (`defPositions`, computed once per register); passing it in makes this
+// `O(defs)` per call, `O(defs^2 x uses)` total per register — no `body`
+// factor — which is the pipeline-speed bottleneck P-11 named (measured
+// 13.6x, over the 12x ceiling; docs/PUSHBACK.md P-11).
+function reachesSeq(geo: Geometry, defPositions: readonly number[], reg: string, dIdx: number, uIdx: number): boolean {
   if (!(dIdx < uIdx)) return false;
   if (forUpdateShielded(geo, reg, uIdx)) return false;
-  for (const kIdx of defIdxs(fnBody, reg)) {
+  for (const kIdx of defPositions) {
     if (kIdx <= dIdx || kIdx > uIdx) continue;
     if (intercepts(geo, reg, kIdx, uIdx)) return false;
   }
@@ -547,7 +555,7 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], _ctx: Pas
       const dNames = nameOfDef(dIdx);
       for (const uIdx of uses) {
         const uNames = (occIndexOfUse.get(uIdx) ?? []).map((i) => nameAt[i]!);
-        const related = sharesLoop(geo2, dIdx, uIdx) || reachesCatch(geo2, dIdx, uIdx) || reachesSeq(geo2, before, reg, dIdx, uIdx);
+        const related = sharesLoop(geo2, dIdx, uIdx) || reachesCatch(geo2, dIdx, uIdx) || reachesSeq(geo2, defPositions, reg, dIdx, uIdx);
         if (!related) continue;
         for (const dn of dNames) for (const un of uNames) if (dn !== un) return { ok: false, reason: "coarse-reach-crosses-split" };
       }
