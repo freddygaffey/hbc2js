@@ -19,8 +19,9 @@ import type { AbandonedRecord, AppliedRecord, CheckResult, Pass, PassContext } f
 // `match`/`rewrite`/`check` signatures need to *name* `Stmt`/`Expr`, and
 // `../../emit/ast.ts` is not on D12a's allowlist — only `../ast.ts` (this
 // file) is. Without this re-export no stage-B rung could be typed at all.
-export type { Expr, Param, Stmt } from "../emit/ast.ts";
+export type { Expr, Param, Pattern, PatternElement, Stmt } from "../emit/ast.ts";
 export { p } from "../emit/ast.ts";
+import type { Pattern, PatternElement } from "../emit/ast.ts";
 
 // docs/specs/passes/05-fn-naming.md §6 obligation 3 ("printing `before`, and
 // printing `after` with the rename undone, is byte-identical — implement
@@ -54,6 +55,70 @@ export function jsxParts(e: Extract<Expr, { k: "jsx" }>): readonly Expr[] {
     out.push(...attrs, ...children);
   }
   return out;
+}
+
+/** F16 (docs/specs/passes/16-destructure.md §3): read-only recursion into a
+ *  pattern's own expressions. A `pid` leaf is reported to `onExpr` as a
+ *  synthetic `{k:"ident"}` node (never a real tree node, never recursed into
+ *  further) — the trick that lets every existing `ident`-keyed consumer of
+ *  `walk`'s visitor (`freeNames`'s "count it as used", a rename callback)
+ *  see a pattern's assignment targets for free, with no second
+ *  implementation: `freeNames` counts a `pid` name as used-not-bound exactly
+ *  because it is never added to that walk's `bound` set (it is a write
+ *  target, not a binding — F16 §3). */
+export function walkPattern(p: Pattern, onExpr: (e: Expr) => void): void {
+  switch (p.k) {
+    case "pid":
+      onExpr({ k: "ident", name: p.name });
+      return;
+    case "parr":
+      for (const el of p.elements) walkPatternElement(el, onExpr);
+      return;
+    case "pobj":
+      for (const prop of p.props) walkPatternElement(prop.value, onExpr);
+      return;
+  }
+}
+
+function walkPatternElement(el: PatternElement, onExpr: (e: Expr) => void): void {
+  if (el.k === "hole") return;
+  walkPattern(el.target, onExpr);
+  if (el.k === "pel" && el.init !== undefined) onExpr(el.init);
+}
+
+/** F16: rebuild a pattern through `fx`, the same rebuilding contract
+ *  `mapExpr` uses. A `pid` name is renamed by round-tripping it through a
+ *  synthetic `{k:"ident"}` node — so a rename callback written against plain
+ *  `ident` nodes (`var-naming`'s own `renameExpr`, spec 16 §3's "one shared
+ *  walk, not a second implementation") renames pattern targets with zero
+ *  pattern-specific code of its own. */
+export function mapPattern(p: Pattern, fx: (e: Expr) => Expr): Pattern {
+  switch (p.k) {
+    case "pid": {
+      const renamed = fx({ k: "ident", name: p.name });
+      return renamed.k === "ident" && renamed.name !== p.name ? { ...p, name: renamed.name } : p;
+    }
+    case "parr": {
+      const elements = p.elements.map((el) => mapPatternElement(el, fx));
+      return elements.every((el, i) => el === p.elements[i]) ? p : { ...p, elements };
+    }
+    case "pobj": {
+      const props = p.props.map((prop) => {
+        const value = mapPatternElement(prop.value, fx);
+        return value === prop.value ? prop : { ...prop, value };
+      });
+      return props.every((pr, i) => pr === p.props[i]) ? p : { ...p, props };
+    }
+  }
+}
+
+function mapPatternElement(el: PatternElement, fx: (e: Expr) => Expr): PatternElement {
+  if (el.k === "hole") return el;
+  const target = mapPattern(el.target, fx);
+  if (el.k === "prest") return target === el.target ? el : { ...el, target };
+  const init = el.init === undefined ? undefined : mapExpr(el.init, fx);
+  if (target === el.target && init === el.init) return el;
+  return init === undefined ? { k: "pel", target } : { k: "pel", target, init };
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +181,10 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
         return;
       case "jsx": // D20
         jsxParts(e).forEach(walkExpr);
+        return;
+      case "destructure": // F16
+        walkExpr(e.source);
+        walkPattern(e.pattern, walkExpr);
         return;
       case "func":
         for (const param of e.params) if (param.init !== undefined) walkExpr(param.init);
@@ -295,6 +364,13 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
       const f = e.factory;
       const factory: JsxFactory = f.runtime === "automatic" ? { ...f, callee: sub(f.callee), key: f.key === null ? null : sub(f.key), rest: f.rest.map(sub) } : { ...f, callee: sub(f.callee), nullProps: f.nullProps === null ? null : sub(f.nullProps) };
       rebuilt = changed ? { ...e, tag, ...(tagDisplay === undefined ? {} : { tagDisplay }), attrs, children, factory } : e;
+      break;
+    }
+    case "destructure": {
+      // F16
+      const source = mapExpr(e.source, fx);
+      const pattern = mapPattern(e.pattern, fx);
+      rebuilt = source === e.source && pattern === e.pattern ? e : { ...e, source, pattern };
       break;
     }
     case "func": {
@@ -1186,6 +1262,20 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
         // same order, same `(callee shape, argc)` entry.
         visitExpr(jsxToCall(e));
         return;
+      case "destructure": {
+        // F16 §3: the `destructure` rung's own checker never uses this
+        // generic path (it recomputes an exact `expand()` and diffs that
+        // through `effectSequence` instead — the real soundness proof); this
+        // case exists so a *later* pass, diffing a range that still contains
+        // a live destructure statement, does not see it as a no-op. Source,
+        // then each pattern default's own effects in pattern order, then one
+        // opaque effect for the destructuring itself (iterator protocol /
+        // property reads / possible throws are real effects).
+        visitExpr(e.source);
+        walkPattern(e.pattern, visitExpr);
+        out.push({ k: "call", callee: "<destructure>", arity: 0 });
+        return;
+      }
       default:
         return; // ident, lit, this, argumentsObject, func (its own frame)
     }

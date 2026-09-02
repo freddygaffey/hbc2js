@@ -62,6 +62,16 @@ export type Expr =
       readonly selfClosing: boolean;
       readonly factory: JsxFactory;
     }
+  /**
+   * F16 (docs/specs/passes/16-destructure.md §3): `<pattern> = <source>`, the
+   * `destructure` rung's sole writer output. `pattern`'s `pid` leaves are
+   * assignment targets to already-declared registers (D14: never a fresh
+   * binding), so this node is printed at assignment precedence and — in
+   * statement position, when `pattern` is a `pobj` — parenthesised by the
+   * printer's `expr` statement case, exactly like an object-pattern
+   * assignment must be in real JS.
+   */
+  | { readonly k: "destructure"; readonly pattern: Pattern; readonly source: Expr }
   | {
       readonly k: "func";
       readonly name: string | null;
@@ -153,6 +163,22 @@ export interface Param {
   readonly rest?: true;
 }
 export const p = (name: string): Param => ({ name });
+
+/**
+ * F16 §3: a destructuring pattern. `pid` names a register (always already
+ * `let`-declared elsewhere in the function — this node never introduces a
+ * binding, D14). Both `parr`/`pobj` recurse through `PatternElement`, so a
+ * nested pattern (`{ nested: { deep } }`) is just a `pel.target` that is
+ * itself a `pobj`/`parr`.
+ */
+export type Pattern = { readonly k: "pid"; readonly name: string } | { readonly k: "parr"; readonly elements: readonly PatternElement[] } | { readonly k: "pobj"; readonly props: readonly { readonly key: string; readonly value: PatternElement }[] };
+
+/** One array element or object property value. `hole` is an elision
+ *  (`[a, , b]`) — array patterns only, never a `pobj` prop value. `prest` is
+ *  `...target`, at most one, always last (array rest: the destructure
+ *  rung's own inline index-append loop; object rest: its 3-arg
+ *  `copyDataProperties` — spec 16 §7's ownership table). */
+export type PatternElement = { readonly k: "pel"; readonly target: Pattern; readonly init?: Expr } | { readonly k: "hole" } | { readonly k: "prest"; readonly target: Pattern };
 
 export interface ObjectProp {
   readonly key: string; // identifier text, or a rendered literal when `computed`

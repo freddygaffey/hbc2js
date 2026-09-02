@@ -34,24 +34,24 @@ stores) split into real files. (docs/LANES.md)
 - M2 Disassembler (100% match vs `hermesc -dump-bytecode`) — done
 - M3 Test harness (trace runner + recompile round-trip) — done
 - M4 Baseline (CFG + structurer + emitter) — done, 501/501 gate, 0 DIVERGENT
-- M5 Pass ladder (readability) — in progress, 13/30 rungs merged
+- M5 Pass ladder (readability) — in progress, 14/30 rungs merged
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 13/30 rungs live
+## Ladder — 14/30 rungs live
 
 `loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
 `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
-`template-literal`, `fn-naming`, `var-naming`, `jsx-recover` (opt-in `--jsx`).
-Next 2 (batch 3): `destructure`, `spread-rest`.
+`destructure`, `template-literal`, `fn-naming`, `var-naming`, `jsx-recover`
+(opt-in `--jsx`). Next (batch 3): `spread-rest`.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
 
-`npm test` (this run, 2026-09-02): 1634 tests, 1631 pass, 0 fail, 3 skipped,
-~105 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
+`npm test` (this run, 2026-09-02): 1668 tests, 1664 pass, 0 fail, 4 skipped,
+~111 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
 `npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
 
-## Open bugs — 19 open / 15 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4)
+## Open bugs — 23 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing)
 
 By cluster (open only): emit-shape 7, metrics 3, passes 3, real-app 2,
 harness 2, deps 1, toolchain 2. Every open row has a status, cluster and

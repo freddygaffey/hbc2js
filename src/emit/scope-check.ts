@@ -12,7 +12,7 @@
 // never declared, and its output throws ReferenceError before semantics are even
 // in question; the point of this check is to make that unrepresentable.
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
-import type { Expr, Stmt } from "./ast.ts";
+import type { Expr, Pattern, Stmt } from "./ast.ts";
 import { jsxToCall } from "./ast.ts";
 
 /**
@@ -140,6 +140,28 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         // D20: a JSX element binds nothing; check exactly the call it stands for.
         walkExpr(jsxToCall(e), scopes, where);
         return;
+      case "destructure": {
+        // F16: a `pid` leaf is an assignment target to an already-declared
+        // register (D14 — this node never introduces a binding), so it must
+        // be in scope exactly like a plain `ident` read/write; checked via
+        // the same synthetic-`ident` trick `src/passes/ast.ts`'s
+        // `walkPattern`/`mapPattern` use for the same reason.
+        walkExpr(e.source, scopes, where);
+        const walkPatternScope = (p: Pattern): void => {
+          if (p.k === "pid") {
+            walkExpr({ k: "ident", name: p.name }, scopes, where);
+            return;
+          }
+          const els = p.k === "parr" ? p.elements : p.props.map((prop) => prop.value);
+          for (const el of els) {
+            if (el.k === "hole") continue;
+            walkPatternScope(el.target);
+            if (el.k === "pel" && el.init !== undefined) walkExpr(el.init, scopes, where);
+          }
+        };
+        walkPatternScope(e.pattern);
+        return;
+      }
       case "func": {
         const inner = new Set<string>(e.params.map((x) => x.name));
         collect(e.body, inner);
