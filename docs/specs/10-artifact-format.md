@@ -128,7 +128,9 @@ Rules:
   Full `ranges` regeneration is O(render) and the render is already O(render);
   no partial-update machinery in v1. Semantic layer untouched.
 - **Re-decompile** (new bundle bytes or new producer config): a NEW artifact
-  directory (or full overwrite) — the semantic layer is rebuilt from scratch.
+  directory — overwriting an existing one requires an explicit `--overwrite`;
+  the default refuses, so archived artifacts stay internally consistent
+  (§9 q4 ruling, §10). The semantic layer is rebuilt from scratch.
   No incremental semantic update in v1: correctness of a merge is exactly the
   kind of subtle wrongness Stage 2's truth rule forbids us to risk for speed.
   The version-diff tool (P2.5) diffs two whole artifacts; it never mutates one
@@ -142,13 +144,16 @@ Rules:
 
 ```json
 {"fn":42,"name":"bytecodeName or null","params":3,"module":17,
- "parent":40,"kind":"normal|generator|async","offset":123456,"size":789,
- "overlayName":"<current overlay name or null>"}
+ "parent":40,"kind":"normal|generator|async","offset":123456,"size":789}
 ```
 
 `module` is the owning module id from the split module graph (null for
 functions outside any `__d` factory, e.g. the global wrapper). `parent` is the
 lexical parent fnIndex (from the closure graph src/cfg already builds).
+**No `overlayName` on disk** (reviewer edit, §10): storing the current overlay
+name here would make `functions.jsonl` render-dependent and break A5's
+byte-identical guarantee. The query layer joins the overlay store live;
+`query fn` still reports `overlayName`.
 
 ### 2.2 `calls.jsonl` — the call graph
 
@@ -172,7 +177,10 @@ One row per call **site**:
   (CallBuiltin — see §2.5); or `"?"` with a mandatory `why`
   (`computed-callee`, `escaped-closure`, `reflect`, …). **`"?"` is a first-class
   answer.** Guessing a callee to make the graph look complete is the exact
-  failure mode this format exists to prevent.
+  failure mode this format exists to prevent. Member chains on a global
+  deeper than one level, or routed through an intermediate register the
+  extractor cannot prove untouched, are `"?"` with `why:"deep-global-member"`
+  — never a truncated `g:` guess (reviewer edit, §10).
 - `kind` ∈ `closure|method|construct|global|require|builtin|unknown`.
 - **who-calls / called-by are both derived from this one edge list** (the query
   layer inverts it; the file stores each edge once).
@@ -214,7 +222,11 @@ The RE-critical file: where does JS meet the outside world.
   `nativeLoggingHook`, `HermesInternal`, plus web-ish hosts `fetch`,
   `XMLHttpRequest`, `WebSocket`). The list ships in the spec's test fixture and
   is versioned in the schema header — extending it is additive, never a
-  re-interpretation.
+  re-interpretation. Governance (reviewer ruling, §10): the list is an in-repo
+  data file pinned by a test (A10), appended only via a reviewed commit citing
+  evidence; the builder additionally auto-surfaces any *unlisted* global with
+  read/call use in ≥ 3 functions as `surface:"host-global?"` — a marked
+  candidate, never silently promoted; promotion = editing the data file.
 - `bridge-module`: requires of modules that `src/deps` classified as the
   native-boundary packages (`react-native`, `expo-modules-core`, …) — reuses
   the deps evidence, does not re-derive it.
@@ -342,7 +354,11 @@ it was handed before trusting it.
   `render.overlayHash` (else line numbers may have drifted).
   Mismatch → `E_STALE_INDEX` / `E_STALE_RANGES`, exit non-zero, no output.
   There is no `--force`; the fix is `hbc2js render`/re-index, never "answer
-  anyway".
+  anyway". Consequence (reviewer edit, §10): a `name set` alone changes the
+  overlay hash, so the next line-bearing query is stale until `hbc2js render`
+  runs. By design — the loop's pattern is batch-set → render → query (Design D
+  batch set, QUEUE P2.1a(a)); the render is the price of true line numbers,
+  paid once per batch, never per name.
 - `?` edges are never upgraded by the query layer. `who-calls` output includes
   a trailing line `unknown-callee edges in scope: K` whenever K > 0, so an
   LLM consumer knows the caller list may be incomplete *and knows by how much*.
@@ -360,7 +376,7 @@ INCONCLUSIVE is never PASS.
 
 | # | metric | target | measured how |
 |---|---|---|---|
-| 1 | **Index truth**: checker (§4.1) agreement on N=200 sampled functions — unmarked-wrong edges (index says X, recount says Y, neither is `?`) | **0** (derived data; any disagreement is a bug). `?`-rate is *reported*, not targeted — but every `?` must carry a `why` (checker enforces 100% of `?` rows have one) | `tools/artifact/check-index.ts --sample 200 --seed 1` on the held-out bundle |
+| 1 | **Index truth**: checker (§4.1) agreement on N=200 sampled functions — unmarked-wrong edges (index says X, recount says Y, neither is `?`) | **0** (derived data; any disagreement is a bug). `?`-rate is *reported*, not targeted — but every `?` must carry a `why` (checker enforces 100% of `?` rows have one) | `tools/artifact/check-index.ts --sample 200 --seed 1` on the held-out bundle, plus one `--all` run on rn-template (small enough); both in the landing report |
 | 2 | **Query token cost**: bytes/lines per answer over the fixed query corpus (every verb × 30 sampled args) | every answer within its §3.1 cap; median `who-calls` ≤ 2 KB; median `fn` ≤ 800 bytes; `context` ≤ 40 lines always | `tools/artifact/measure.ts` runs the corpus, emits max/median per verb |
 | 3 | **Run cost**: semantic index build wall-time as fraction of decompile+render wall-time; on-disk index size vs rendered source size | build ≤ 25% of decompile time; `index/` ≤ 30% of rendered-source bytes (both on rn-template AND the held-out bundle) | same `measure.ts`, best-of-3 |
 | 4 | **Held-out check** | targets 1–3 hold unchanged on a bundle never used while building/tuning the extractor | tune on `tests/fixtures/bundles/rn-template` + construct fixtures; **measure on the react-navigation bundle (`fetch.sh`)**, plus a hash-recorded local-corpus app spot-check (numbers in the report, bundle never in the repo) |
@@ -476,6 +492,10 @@ step lands and passes after):**
   `test:all`, `HBC2JS_REQUIRE_ORACLES`-gated for the fetched bundle): runs
   `measure.ts` + checker per §5 and asserts targets 1–2; prints 3–4 for the
   landing report.
+- **A10 host-global governance** (`tests/artifact/host-globals.test.ts`):
+  the curated list used by the builder matches the in-repo data file exactly
+  (pin), and a fixture bundle with an unlisted bridge-like global used in ≥ 3
+  functions yields `host-global?` rows, never `host-global`.
 - **A9 CLI discoverability** (extend the existing CLI help test file if one
   exists, else `tests/artifact/cli-help.test.ts`): `hbc2js --help` mentions
   `query`, `name`, and `render` (P2.1a(d)).
@@ -522,4 +542,127 @@ can run as parallel lean agents once 1–2 land.
 
 ## 10. Review responses
 
-(placeholder — decision-8 gate reviewer writes here)
+### Review responses (2026-09-03, Fable reviewer gate — decision 8)
+
+**VERDICT: APPROVED.** Implementation may launch at step 0 (§8). All issues
+found were resolvable by small in-place reviewer edits (marked "reviewer
+edit/ruling, §10" in the text and enumerated below) plus the four §9 rulings.
+No CHANGES REQUIRED items remain.
+
+**Checklist findings**
+
+1. *Decision-8 quadruple*: complete and sane. Targets (0 unmarked-wrong edges;
+   per-verb caps; build ≤ 25% decompile time; index ≤ 30% source bytes;
+   held-out = react-navigation via fetch.sh, present in
+   `tests/fixtures/bundles/`) are measurable and the scripts
+   (`check-index.ts`, `measure.ts`) are named with exact invocations. On
+   sample size: 0-in-200 random functions bounds the per-fn error rate at
+   ~1.8% with 98% confidence — adequate as the *gate* metric only because the
+   checker already supports `--all` (§4.1) and A3 runs `--all` on a construct
+   fixture. Reviewer edit E3 additionally requires one `--all` run on
+   rn-template in the landing report, so at least one full-bundle exhaustive
+   check backs the truth claim.
+2. *§9 rulings*: below.
+3. *Truth audit*: one real inconsistency found and fixed — `overlayName`
+   stored in `functions.jsonl` (§2.1) made a semantic-layer file
+   render-dependent, contradicting A5's byte-identical assertion and the §0
+   layer split (edit E1: dropped from disk, joined live). Second gap: the
+   one-level-member rule for `g:` callees left deeper chains unspecified — a
+   partial `g:` record would be a silent truncation (edit E2: deeper chains
+   are `?` with `why:"deep-global-member"`). Checker independence is
+   correctly specified (§4.1 "separate, simple walker", D12 discipline);
+   note for the implementer: the checker's closure resolution in step 6 must
+   be its own def-use over the disassembly, NOT an import of the emitter's —
+   otherwise callee edges are the builder checked against itself. The shared
+   AST *production* is unavoidable (it is the object under test); only the
+   extraction must be independent.
+4. *Efficiency audit*: every §3.1 verb has a cap; `query source` is the only
+   source-emitting verb; `name list`/`name context` match QUEUE P2.1a(b)
+   exactly (exposing `gateForFrame`'s existing role/use computation —
+   verified present in `src/name-overlay/gate.ts`), and P2.1a(c) verify falls
+   out of `context`. P2.1a(a) batch `name set` is correctly OUT of this spec
+   (QUEUE marks it independent of xref; it lands on the overlay's
+   NameService) — but note edit E5: because any `name set` stales the ranges,
+   the batch-set → render → query pattern is now documented as the intended
+   loop shape, which makes (a) a prerequisite for a pleasant loop, not just a
+   quick win. `name list` is bounded by frame register count (fine).
+5. *Consistency*: binding keys defer to `src/name-overlay/id.ts`
+   `bindingKey`/`parseKey` (verified to exist); overlay store stays owned by
+   spec D, referenced not respecified; renames stay gate-routed. Schema ids
+   `hbc2js-artifact/1`/`hbc2js-index/1` are disjoint from the fuzz spec's
+   `fuzz-matrix/1`, both sides self-describe and refuse unknown schemas, and
+   the responsibilities do not overlap (fuzz matrix = run outcomes; index =
+   program facts). No collision.
+6. *Implementation plan*: steps 0–9 are lean-agent-sized (one file family +
+   its test each), the reuse column pins each step to existing code, and
+   steps 3–5 ∥ 7–8 parallelism is real. Step 0 is correctly specified: A1
+   test code ships verbatim in §7 with the materialise-unchanged instruction
+   and the landing-report attestation line, preserving CONSOLIDATION §B
+   item 8 despite the spec agent's restricted write scope.
+
+**The four §9 rulings**
+
+1. **Call-site key: AST ordinal — proposal stands.** Rationale: the semantic
+   layer is rebuilt whenever the AST could change (`index.builtFor` covers
+   producer config incl. passes), so ordinal instability across pass changes
+   never bites within one artifact; renders are alpha-renaming only, so
+   ordinals are render-stable. For P2.5, neither key survives an app-version
+   change (fnIndex itself does not, §6) — functions must be matched first
+   regardless — and ordinals produce strictly smaller line diffs than offsets
+   (an edit renumbers offsets for the whole rest of the function/bundle, but
+   ordinals only within one caller past the edit). Instruction offsets are
+   also not reliably available post-pass (rewrites merge/move instructions).
+   The checker matches by multiset per caller, as proposed, so it never
+   depends on the key. Overlay binding ids are untouched (they contain no
+   site component).
+2. **Host-global list: both curation AND auto-surfacing** (edit E6 + A10).
+   Curated list = in-repo data file, pinned exactly by test A10, appended
+   only via a reviewed commit citing evidence — that review-per-addition IS
+   enough governance once the pin makes silent drift impossible. Unlisted
+   globals with read/call use in ≥ 3 functions are auto-surfaced as
+   `surface:"host-global?"` — truth-safe because the `?` marks it a
+   candidate; promotion to `host-global` only ever happens by editing the
+   data file, never by the builder.
+3. **Lazy `?`-resolution fallback: REJECTED.** Storing `?` for edges that are
+   resolvable-but-deferred breaks the files-are-the-contract rule (a direct
+   JSONL reader sees an artificially incomplete graph), produces spurious
+   P2.5 diffs (deferred-in-A vs resolved-in-B), and violates §3.3's own rule
+   — call edges are exactly what P2.5 diffs, so they must be materialised.
+   `who-calls` also requires the full inverted edge set, so laziness buys
+   nothing there. If the 25% budget blows on held-out: optimise, or come back
+   through this gate with the measured number and renegotiate the budget
+   openly — run cost is criterion (2) and loses to truth; the budget number
+   may move, the graph's completeness may not.
+4. **No stale read access: CONFIRMED, with one edit.** The long-session case
+   (LLM holds an artifact while a re-decompile happens) is solved by
+   immutability, not by a `--force`: edit E4 makes re-decompile write a NEW
+   directory by default (`--overwrite` explicit), so an old artifact remains
+   internally self-consistent — its own manifest verifies, every query
+   against it is true *of that decompile*, and "knowingly stale" never means
+   "internally inconsistent". P2.5 archival works the same way. The only
+   in-place mutation is re-render, which bumps hashes and is exactly what
+   `E_STALE_RANGES` detects. No consumer needs to read an artifact that
+   fails its own manifest.
+
+**Reviewer edits applied in place (all marked in the text)**
+
+- E1 (§2.1): `overlayName` removed from `functions.jsonl`; served by live
+  join in `query fn`. Fixes the A5 / render-independence contradiction.
+- E2 (§2.2): deep (>1-level) global member chains → `?` with
+  `why:"deep-global-member"`, never a truncated `g:` record.
+- E3 (§5 row 1): one checker `--all` run on rn-template added to the
+  measured record.
+- E4 (§1.3): re-decompile writes a new directory by default; `--overwrite`
+  explicit (ruling 4).
+- E5 (§4.2): documented that `name set` alone stales line-bearing queries;
+  batch-set → render → query is the intended loop pattern.
+- E6 (§2.5): host-global governance — pinned data file + `host-global?`
+  auto-surfacing (ruling 2).
+- E7 (§7): new acceptance test A10 (host-global list pin + candidate
+  surfacing).
+
+**Notes to the implementer (non-blocking)**: checker closure resolution must
+not import the emitter's dataflow (finding 3); A1's `new URL(...).pathname`
+is fine for macOS/Linux (the project's supported platforms); `query check`
+output has no §3.1 cap because it is not a loop verb — on FAIL it prints the
+row-level diff, on PASS one line.
