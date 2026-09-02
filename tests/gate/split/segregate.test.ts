@@ -544,6 +544,43 @@ void test("segregate: cross-module route-config walk -- a route-config factory i
   assert.equal(byId.get(200)!.newPath, "src/navigation/LicenceNavigator.js", "the Object.entries(routeConfig) consumer should be named from its dependency's route set, not left generic");
 });
 
+// 2026-09-02 (Service NSW route-resolution follow-up, docs/BUGS.md's
+// "root, remaining gaps" row on the cross-module walk task above): the
+// tracked, not-yet-handled shape -- a route's depmap index compiled as TWO
+// statements (`r8 = 1; r3 = r20[r8];`, a numeric literal assigned to a
+// plain register then used as a *variable* bracket index) rather than one
+// (`r20[1]`, already handled by `idxTarget`'s own literal-digit bracket
+// alternative). Confirmed by hand as a real Service NSW compiled shape
+// (Hermes register allocation sometimes hoists a small integer constant
+// into its own register before indexing, rather than folding it into the
+// bracket). Otherwise identical to the existing `Reflect.apply` route-
+// config-factory fixture above (module 300 = factory named
+// `FooNavigationRoutes`, module 301 = the require()d screen target) so this
+// isolates exactly the one new resolution step (`idxRegRef`/`numLitByReg`
+// in `traceModuleOrigins`) rather than re-testing the whole cross-module
+// walk again.
+void test("segregate: resolves a route whose depmap index is built as two statements (`r = N; r = arr[r];`), not one", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 2, entry: null, modules: [
+      { id: 300, file: "module_300.js", factoryFunctionIndex: 300, deps: [301] },
+      { id: 301, file: "module_301.js", factoryFunctionIndex: 301, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_300.js');\nrequire('./module_301.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    [
+      "module_300.js",
+      `// hbc2js --split -- Metro module 300\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r2, r3, r8, r14, r17, r19, r20;\n  // fn#300 "FooNavigationRoutes"\n  r19 = a2;\n  r20 = a7;\n  r17 = undefined;\n  r14 = {};\n  r0 = {};\n  r8 = 0;\n  r3 = r20[r8];\n  r3 = Reflect.apply(r19, r17, [r3]);\n  r0.component = r3;\n  r14.LicenceRenew = r0;\n  r2 = a6;\n  r2.FooNavigationRoutes = r14;\n  return r2;\n}\n\n__d(factory, 300, [301]);\n`,
+    ],
+    ["module_301.js", `// hbc2js --split -- Metro module 301\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 301, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(301)!.newPath, "src/screens/LicenceRenewScreen.js", "a route whose Reflect.apply depmap index is built as two statements (literal into a register, then bracket-indexed by that register) should still resolve its target module");
+});
+
 // Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
 // milestone 3, §6.3): react-navigation-example-0.85.3, a real router-heavy
 // app -- rn-template-0.72 (used by every other test in this file) ships no

@@ -151,7 +151,7 @@ interface RouteKeyAssignment {
 }
 
 const TRACE_STMT_RE =
-  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<reflectTarget>[A-Za-z_$][\w$]*)\s*=\s*Reflect\.apply\(\s*(?<reflectFn>[A-Za-z_$][\w$]*)\s*,\s*[A-Za-z_$][\w$]*\s*,\s*\[\s*(?<reflectArg>[A-Za-z_$][\w$]*)\s*\]\s*\)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget>_e\d+_\d+)\s*=\s*(?<envAliasSrc>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget2>[A-Za-z_$][\w$]*)\s*=\s*(?<envAliasSrc2>_e\d+_\d+)\s*;/g;
+  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?:(?<idxNum>\d+)|(?<idxRegRef>[A-Za-z_$][\w$]*))\]\s*;|(?<numLitTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<numLitVal>\d+)\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<reflectTarget>[A-Za-z_$][\w$]*)\s*=\s*Reflect\.apply\(\s*(?<reflectFn>[A-Za-z_$][\w$]*)\s*,\s*[A-Za-z_$][\w$]*\s*,\s*\[\s*(?<reflectArg>[A-Za-z_$][\w$]*)\s*\]\s*\)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget>_e\d+_\d+)\s*=\s*(?<envAliasSrc>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget2>[A-Za-z_$][\w$]*)\s*=\s*(?<envAliasSrc2>_e\d+_\d+)\s*;/g;
 
 /** Single left-to-right pass over `text` tracking, per register, which of
  *  this module's `deps` (in dependencyMap-index order) it currently traces
@@ -201,6 +201,20 @@ function traceModuleOrigins(
   ]);
   const depIndexByReg = new Map<string, number>();
   const moduleOriginByReg = new Map<string, number>();
+  // 2026-09-02 (Service NSW route-resolution follow-up, docs/BUGS.md's
+  // "root, remaining gaps" row): Service NSW compiles some depmap-index
+  // brackets as TWO statements -- `r3 = 3; r3 = r20[r3];` (a numeric
+  // literal assigned to a plain register, then used as a *variable*
+  // bracket index) -- rather than the one-statement literal-bracket form
+  // `idxNum` above already handles (`r20[3]`). Tracks every `<reg> = <digit
+  // literal>;` seen so `idxTarget`'s new `idxRegRef` alternative can look
+  // the value back up when the bracket contents is a register, not a
+  // literal digit. Deliberately NOT gated on `scanRouteConfigFactory`: it
+  // only ever feeds the `idxBase === "depmap"` check below, which is
+  // already the narrow gate (a bare `<reg> = <number>;` is common in real
+  // bundles -- loop counters, flags -- but harmless to record here since it
+  // is never read except through that depmap-index lookup).
+  const numLitByReg = new Map<string, number>();
   const routeObjRegs = new Set<string>();
   const keyAssignments: RouteKeyAssignment[] = [];
   // 2026-09-02 (Service NSW brief): §3.2's OTHER route-config shape — post
@@ -284,9 +298,15 @@ function traceModuleOrigins(
       if (kind !== undefined) paramAlias.set(g.paramAliasTarget, kind);
     } else if (g.idxTarget !== undefined) {
       if (paramAlias.get(g.idxBase!) === "depmap") {
-        const idx = Number(g.idxNum);
-        if (idx >= 0 && idx < deps.length) depIndexByReg.set(g.idxTarget, idx);
+        // `idxNum` is the one-statement literal-bracket form (`r20[3]`);
+        // `idxRegRef` is the two-statement form above (`r3[r]` where `r`
+        // was set by a prior `r = 3;`) -- both resolve to the same depmap
+        // index, just reached through a different register history.
+        const idx = g.idxNum !== undefined ? Number(g.idxNum) : numLitByReg.get(g.idxRegRef!);
+        if (idx !== undefined && idx >= 0 && idx < deps.length) depIndexByReg.set(g.idxTarget, idx);
       }
+    } else if (g.numLitTarget !== undefined) {
+      numLitByReg.set(g.numLitTarget, Number(g.numLitVal));
     } else if (g.objTarget !== undefined) {
       const keys = Array.from(g.objBody!.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*null/g)).map((k) => k[1]!);
       // A route-name registry's keys are screen/route identifiers, which in
