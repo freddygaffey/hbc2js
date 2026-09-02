@@ -64,7 +64,9 @@ const FN_RE = /^_fn(\d+)$/;
 // never be able to collide with (copied, not imported — D12a; the same
 // convention `global-access/match.ts`'s `looksSynthetic` and
 // `src/emit/names.ts` itself already follow).
-const EMITTER_NAME_CLASS_RE = /^(_fn\d+|_e\d+_\d+|r\d+|__.*|_exc\d+|L\d+|__state\d+)$/;
+// F15 (docs/specs/passes/19-reg-split.md §3.1): `r\d+(_\d+)?` so a heuristic
+// name can never collide with a `reg-split` web variable either.
+const EMITTER_NAME_CLASS_RE = /^(_fn\d+|_e\d+_\d+|r\d+(_\d+)?|__.*|_exc\d+|L\d+|__state\d+)$/;
 
 // The syntactic half of `isSafeIdentifier` (`src/passes/ast.ts`), copied so
 // this rung can tell "not a valid identifier at all" (`unsafe-identifier`)

@@ -890,13 +890,22 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
 // def/use over `rN` registers, by pre-order statement index.
 // ---------------------------------------------------------------------------
 
-const REG_RE = /^r\d+$/;
+// F15 (docs/specs/passes/19-reg-split.md §3.1): a register name is `rN` or,
+// once `reg-split` has split a multi-web register, `rN_j` (`j` >= 2, one
+// suffix, the web's 1-based ordinal) — never a second suffix, never on `j`
+// alone. Every consumer below (`defUse`/`identUses`/`registerUses`/
+// `effectSequence`/the F10 finaliser) already keys off `isRegisterName`, so
+// widening this one regex is the pass's entire framework surface: a split
+// name is still "just a scratch slot", still frame-local, still dropped by
+// F10 when dead.
+const REG_RE = /^r\d+(?:_\d+)?$/;
 
-/** `true` for a Hermes register name (`r0`, `r17`, …) — the only names
- *  `defUse`/`effectSequence` treat as "just a scratch slot" rather than a
- *  visible binding. Exported so `src/passes/index.ts`'s F10 finaliser (which
- *  needs the same test to decide which of a function's leading `decl let
- *  r0…rN` are still live) does not duplicate it. */
+/** `true` for a Hermes register name (`r0`, `r17`, …) or a `reg-split`-made
+ *  web variable (`r0_2`, `r17_3`, …) — the only names `defUse`/
+ *  `effectSequence` treat as "just a scratch slot" rather than a visible
+ *  binding. Exported so `src/passes/index.ts`'s F10 finaliser (which needs
+ *  the same test to decide which of a function's leading `decl let r0…rN`
+ *  are still live) does not duplicate it. */
 export function isRegisterName(name: string): boolean {
   return REG_RE.test(name);
 }
