@@ -682,6 +682,60 @@ resolution gap, not a naming-rule miss: `roleNameForRoutes`/
 resolved, and most of those 23 have none yet (the third revisit's own two
 tracked gaps). Full detail: `docs/BUGS.md` 2026-09-02 row (fourth entry).
 
+**Fifth revisit (2026-09-02, "resolve more route entries" brief) — shipped,
+one of the third revisit's two tracked gaps closed:** the third revisit's
+own remaining-gaps note flagged "a route's depmap index compiled as two
+statements ... is not traced" — `traceModuleOrigins`'s `idxTarget`
+alternative only matched a literal digit inside the bracket (`r20[1]`);
+Service NSW's own compiled output sometimes hoists the index into its own
+register first (`r8 = 1; r3 = r20[r8];`) rather than folding it into the
+bracket. Closed with a new `numLitByReg` map (`<reg> = <digit literal>;`,
+tracked unconditionally — it only ever feeds the existing `idxBase ===
+"depmap"` gate, so recording it costs nothing extra to guard) and a second
+`idxTarget` bracket alternative (`idxRegRef`) that looks the bracket
+register up in it when the bracket contents isn't a literal digit. Not
+gated on `scanRouteConfigFactory` — the depmap-only reads it is folded
+into already make it narrow (a `<reg> = <number>;` statement is common
+in real bundles, loop counters and flags among them, but harmless to
+record since it is never read except through the depmap-index lookup).
+Gate-tested with a hand-built fixture (the real bundle can't be committed):
+`tests/gate/split/segregate.test.ts`, "resolves a route whose depmap index
+is built as two statements". react-navigation-example's pinned numbers
+(4/54 WITH deps, 6/58 WITHOUT) are unchanged — it never uses this call
+spelling. **Result, Service NSW (never committed, numbers only, no
+`--deps-report`):** screens 36 → **176** (a ~5x jump — most of NSW's own
+route-config factory modules used this exact two-statement spelling for
+at least one of their routes); real names now include `PayFinesScreen`,
+`RegistrationsScreen`, `CertificateOfRegistrationScreen`,
+`ChangePinScreen`, `Auth0LoginErrorScreen`, `DisasterHubScreen`. Navigators
+recognised dropped 26 → 18 and route/role-named navigators dropped 3 → 1
+(`RootNavigator`) as a side effect, not a regression in this change:
+several modules previously fell back to a generic navigator name only
+because the route pointing *to* them (from a different, sibling navigator's
+route config) hadn't resolved yet — `nameCandidateFor` already prefers a
+resolved screen-route hit over a module's own navigator-ness (existing
+precedence, unchanged by this task), so a nested navigator used as another
+navigator's route target now correctly resolves as that route's screen
+(e.g. former `src/navigation/VenueSignInNavigator.js` is now
+`src/screens/VenueSignInScannerScreen.js`, since a sibling route config
+names it `"VenueSignInScanner"`). This is filing it under the tree where
+the route table would find it, matching react-navigation's own model
+(a Stack/Tab navigator embedded as a screen component is a screen from its
+parent's perspective) — not a loss of information. Investigated but not
+shipped: most of NSW's remaining 18 "navigators" are modules that only
+re-export a bare `create<X>Navigator` factory result (`r2.Stack =
+Reflect.apply(r1, r0, [])`, no route registry of their own at all) rather
+than an actual per-domain navigator instance — `detectNavigatorKind`'s
+call-shape regex matches the factory-result property access the same way
+it matches a real call site, a pre-existing (not introduced by this task)
+shape-detection imprecision, out of this task's scope (route *resolution*,
+not navigator *detection*); no fixture attempted, no BUGS row opened since
+it produces no false-positive screen/route, only a less-specific navigator
+name, and is not confirmed as a bug rather than working-as-designed shape
+ambiguity. The third revisit's OTHER tracked gap (root navigator, no common
+route-name prefix across domains) is unaffected by this task; already
+handled by the fourth revisit's `roleNameForRoutes` fallback.
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.
