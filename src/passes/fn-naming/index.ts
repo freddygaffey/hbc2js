@@ -11,11 +11,17 @@ import { rewrite } from "./rewrite.ts";
  *  that is empty — the one property/variable it is unambiguously assigned to
  *  — docs/LOWERING-CATALOGUE.md row R4, docs/specs/passes/05-fn-naming.md.
  *  Stage B, pure alpha-renaming: no statement moves, no expression changes
- *  shape.
+ *  shape — the first rung of D20's renaming block (`registry.ts`), which
+ *  runs after every structure-recovery rung including the opt-in
+ *  `jsx-recover`.
  *
- *  `after: ["expr-rebuild", "global-access"]` (spec §7): the rename must see
- *  the free global names `global-access` exposes, or condition 4
- *  ("captures-free-name") cannot protect them.
+ *  `after: ["expr-rebuild", "global-access", "jsx-recover"]` (spec §7 +
+ *  D20): the rename must see the free global names `global-access` exposes,
+ *  or condition 4 ("captures-free-name") cannot protect them; `jsx-recover`
+ *  is there so the stage boundary is enforced by `registry.ts`'s own
+ *  validation, not just array position, even though `jsx-recover` is
+ *  opt-in and usually filtered out (a dependency on a filtered-out pass is
+ *  moot, per `enabledPasses`'s comment).
  *
  *  `before: ["class-recover"]` and "before `var-naming`" (spec §7) are
  *  deliberately **not** declared — the same reason `global-access/index.ts`
@@ -30,7 +36,7 @@ export const fnNaming: Pass<readonly Stmt[], FnNamingSite> = {
   stage: "B",
   targets: ["19-var-hoisting", "21-iife-closures", "22-nested-closures-counters", "17-closure-loop-var"],
   catalogue: ["R4"],
-  after: ["expr-rebuild", "global-access"],
+  after: ["expr-rebuild", "global-access", "jsx-recover"],
   match,
   rewrite,
   check,

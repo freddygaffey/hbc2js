@@ -135,13 +135,20 @@ test("check refuses an `after` that is not the derived fold, and one whose node 
 // Framework (D20 §7): registry, opt-in, printer.
 // ---------------------------------------------------------------------------
 
-test("D20: jsx-recover is registered last, opt-in, and absent from every default selection", () => {
-  assert.equal(REGISTRY[REGISTRY.length - 1]!.name, "jsx-recover");
+test("D20: jsx-recover is registered last of the structure-recovery block (before the renaming block), opt-in, and absent from every default selection", () => {
+  // D20 (docs/DECISIONS.md): structure-recovery rungs all precede renaming
+  // rungs (`fn-naming`, `reg-split`, `var-naming`) — jsx-recover is a
+  // structure rung, so it is last of *that* block, not last overall.
+  const names = REGISTRY.map((p) => p.name);
+  const renamingBlock = ["fn-naming", "reg-split", "var-naming"];
+  const jsxAt = names.indexOf("jsx-recover");
+  assert.ok(jsxAt >= 0 && jsxAt === names.length - 1 - renamingBlock.length, `expected jsx-recover immediately before the renaming block, got index ${jsxAt} of ${names.join(",")}`);
+  assert.deepEqual(names.slice(jsxAt + 1), renamingBlock);
   assert.equal(jsxRecover.optIn, true);
   assert.ok(!enabledPasses({}).some((p) => p.name === "jsx-recover"));
   assert.ok(!enabledPasses({ stage: "B" }).some((p) => p.name === "jsx-recover"));
   const on = enabledPasses({ optIn: ["jsx-recover"] }).map((p) => p.name);
-  assert.equal(on[on.length - 1], "jsx-recover");
+  assert.deepEqual(on.slice(on.indexOf("jsx-recover") + 1), renamingBlock);
   assert.throws(() => enabledPasses({ optIn: ["nope"] }));
 });
 

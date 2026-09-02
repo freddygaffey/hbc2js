@@ -20,9 +20,10 @@ import { rewrite } from "./rewrite.ts";
  *  must already be in the `taken` set so a register can never collide with a
  *  real function name. `global-access` is injected into every stage-B rung's
  *  `after` automatically via `expr-rebuild` (`registry.ts`), so it is not
- *  repeated here. `before: ["jsx-recover"]` is left to that rung's own
- *  `after` when it lands, same convention as `fn-naming`'s omitted forward
- *  `before`. */
+ *  repeated here. `var-naming` is last of D20's renaming block: `jsx-recover`
+ *  runs *before* it now (it moved to the end of the structure-recovery
+ *  block instead — `registry.ts`, docs/BUGS.md's 2026-09-02 P-11b row), so
+ *  no forward `before: ["jsx-recover"]` is needed here any more. */
 export const varNaming: Pass<readonly Stmt[], RegisterSite> = {
   name: "var-naming",
   stage: "B",

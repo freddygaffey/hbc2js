@@ -45,23 +45,44 @@ import { varNaming } from "./var-naming/index.ts";
  *  **before** `if-chain`, so its S2 (compare-chain) rule, when F13 lands,
  *  sees the else-spine before `if-chain` flattens it; `label-clean`'s
  *  `after` gains it for the same reason as `if-chain`.
- *  `var-naming` (docs/specs/passes/07-var-naming.md §8) runs last of all:
- *  `after: ["expr-rebuild", "call-shape", "fn-naming"]` — it names registers
- *  on the fully-cleaned tree (post `expr-rebuild` folding) with `fn-naming`'s
- *  recovered names already in its collision set, and needs `call-shape` to
- *  have turned a disguised call back into a real callee so its call-result
- *  heuristic sees one. `template-literal` (docs/specs/passes/
- *  14-template-literal.md §7) sits after `call-shape`: `after:
- *  ["expr-rebuild", "global-access"]` (folded argument arrays, inlined
- *  chunk registers) and `before: ["var-naming"]` (it deletes the template-
- *  object register, which must never have been named); it is
- *  order-independent of `call-shape`, whose rules all refuse a concat site
- *  (asserted by negative tests in both rungs, not by an edge). `jsx-recover`
- *  (docs/specs/passes/08-jsx-recovery.md §7/§8) is registered **last** and
- *  is the ladder's one `optIn` rung: `enabledPasses` leaves it out unless
- *  `optIn: ["jsx-recover"]` (`--jsx`) names it, so the default pipeline —
- *  the one the equivalence gate executes — never holds a `jsx` node. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, fnNaming as Pass, regSplit as Pass, varNaming as Pass, jsxRecover as Pass];
+ *  `template-literal` (docs/specs/passes/14-template-literal.md §7) sits
+ *  after `call-shape`: `after: ["expr-rebuild", "global-access"]` (folded
+ *  argument arrays, inlined chunk registers) and `before: ["var-naming"]`
+ *  (it deletes the template-object register, which must never have been
+ *  named); it is order-independent of `call-shape`, whose rules all refuse
+ *  a concat site (asserted by negative tests in both rungs, not by an
+ *  edge).
+ *
+ *  **Stage boundary (D20): structure-recovery before renaming.** Every
+ *  stage-B rung is either a *structure-recovery* rung (rewrites shape:
+ *  `expr-rebuild` … `optional-chain`, `jsx-recover`) or a *pure-renaming*
+ *  rung (`fn-naming`, `reg-split`, `var-naming` — comments on all three say
+ *  "no statement moves, no expression changes shape"). All structure-
+ *  recovery rungs are registered before all renaming rungs, so a renaming
+ *  rung may assume the tree's shape is final and a structure rung may
+ *  assume every register still carries its original bytecode identity
+ *  (renaming has not run yet). `jsx-recover` (docs/specs/passes/
+ *  08-jsx-recovery.md §7/§8) is therefore registered **last of the
+ *  structure-recovery block**, not last overall (D20 supersedes the old
+ *  "last in stage B" — it moved because it recognises a call *shape*, which
+ *  `reg-split`'s per-store register renaming was corrupting before the
+ *  renaming rung it keys off had even seen the tree; docs/BUGS.md's
+ *  2026-09-02 P-11b row). It is still the ladder's one `optIn` rung:
+ *  `enabledPasses` leaves it out unless `optIn: ["jsx-recover"]` (`--jsx`)
+ *  names it, so the default pipeline — the one the equivalence gate
+ *  executes — never holds a `jsx` node. `fn-naming` (docs/specs/passes/
+ *  05-fn-naming.md §7) opens the renaming block: `after: ["expr-rebuild",
+ *  "global-access", "jsx-recover"]` — it needs the free global names
+ *  `global-access` exposes (condition 4, "captures-free-name") and must
+ *  run after every structure rung including `jsx-recover`. `reg-split`
+ *  (docs/specs/passes/19-reg-split.md §7) runs next, `var-naming`
+ *  (docs/specs/passes/07-var-naming.md §8) last of all: `after:
+ *  ["expr-rebuild", "call-shape", "fn-naming"]` — it names registers on the
+ *  fully-cleaned, fully-structured tree with `fn-naming`'s recovered names
+ *  already in its collision set, and needs `call-shape` to have turned a
+ *  disguised call back into a real callee so its call-result heuristic
+ *  sees one. */
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, jsxRecover as Pass, fnNaming as Pass, regSplit as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];

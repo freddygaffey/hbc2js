@@ -312,12 +312,16 @@ for (const target of varNaming.targets) {
   }
 }
 
-test("red->green: 04-for-loop-basic v94 — the single-def `new Array` register becomes `arr` and is the `.push`/`.join` receiver; the heavily reused r0 stays r0", () => {
+test("red->green: 04-for-loop-basic v94 — the single-def `new Array` register becomes `arr` and is the `.push`/`.join` receiver; the heavily reused r0 stays an rN (reg-split default-on may still split it into rN_j webs, but var-naming's §6 reuse gate must never give any of them a semantic name)", () => {
   const code = decompile(loadFixture("04-for-loop-basic", 94, ""), { moduleName: "x" }).code;
   assert.match(code, /\barr = new Array\(0\);/);
   assert.match(code, /\barr\.push\(/);
   assert.match(code, /\barr\.join\(/);
-  assert.match(code, /\br0 = /, "the multi-role scratch register must keep its rN (§6 reuse gate)");
+  // `r\d+(_\d+)?` also matches reg-split's `rN_j` web names (D20, reg-split
+  // is default-on; docs/specs/passes/19-reg-split.md §Q3) — a register split
+  // into several disjoint webs is still each web's own multi-role scratch,
+  // which var-naming's reuse gate must decline to rename.
+  assert.match(code, /\br0(_\d+)? = /, "the multi-role scratch register must keep its rN(_j) (§6 reuse gate)");
 });
 
 test("red->green: 04-for-loop-basic v94 — F10 still prunes dead registers from a decl var-naming has renamed into", () => {
