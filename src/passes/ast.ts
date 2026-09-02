@@ -138,10 +138,12 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
     visit.expr?.(e);
     switch (e.k) {
       case "member":
+      case "optmember": // F18
         walkExpr(e.obj);
         walkExpr(e.prop);
         return;
       case "call":
+      case "optcall": // F18
       case "new":
         walkExpr(e.callee);
         e.args.forEach(walkExpr);
@@ -281,13 +283,15 @@ function mapParams(params: readonly Param[], fx: (e: Expr) => Expr): readonly Pa
 export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
   let rebuilt: Expr;
   switch (e.k) {
-    case "member": {
+    case "member":
+    case "optmember": { // F18
       const obj = mapExpr(e.obj, fx);
       const prop = mapExpr(e.prop, fx);
       rebuilt = obj === e.obj && prop === e.prop ? e : { ...e, obj, prop };
       break;
     }
     case "call":
+    case "optcall": // F18
     case "new": {
       const callee = mapExpr(e.callee, fx);
       const args = e.args.map((a) => mapExpr(a, fx));
@@ -1161,21 +1165,46 @@ export function isSafeIdentifier(name: string): boolean {
 // ---------------------------------------------------------------------------
 
 export type Effect =
-  | { readonly k: "call"; readonly callee: string; readonly arity: number }
+  | { readonly k: "call"; readonly callee: string; readonly arity: number; readonly guardDepth?: number }
   | { readonly k: "new"; readonly callee: string; readonly arity: number }
   | { readonly k: "member-write" }
-  | { readonly k: "member-read" }
+  | { readonly k: "member-read"; readonly guardDepth?: number }
   | { readonly k: "delete" }
   | { readonly k: "throw" }
   | { readonly k: "return" }
   | { readonly k: "assign"; readonly name: string };
+
+/**
+ * F18 (docs/specs/passes/18-optional-chain.md §3/§6 item 2): how many
+ * `?.` guards dominate `e`'s own read/call — the count of guarded links
+ * (`optmember`/`optcall`) from `e` back to the chain's base, inclusive of
+ * `e` itself. `0` for anything not sitting on top of an `optmember`/
+ * `optcall` chain. This is what lets `effectSequence` tell "the getter ran
+ * unconditionally" from "the getter ran behind one/two nullish checks" —
+ * two effect sequences that are otherwise identical in order and shape but
+ * differ in exactly this are *not* the same program (D14).
+ */
+function chainGuardDepth(e: Expr): number {
+  switch (e.k) {
+    case "optmember":
+      return chainGuardDepth(e.obj) + 1;
+    case "optcall":
+      return chainGuardDepth(e.callee) + 1;
+    case "member":
+      return chainGuardDepth(e.obj);
+    case "call":
+      return chainGuardDepth(e.callee);
+    default:
+      return 0;
+  }
+}
 
 /** A callee's shape for effect comparison: the property name for a member
  *  callee (the part that decides *what* gets called), the bare node kind
  *  otherwise — deliberately coarse, since a rewrite may fold `r5` into the
  *  expression that computed it without changing what is actually invoked. */
 function calleeShape(e: Expr): string {
-  return e.k === "member" ? (e.computed ? "member[computed]" : `member.${(e.prop as { readonly text: string }).text}`) : e.k;
+  return e.k === "member" || e.k === "optmember" ? (e.computed ? "member[computed]" : `member.${(e.prop as { readonly text: string }).text}`) : e.k;
 }
 
 /**
@@ -1196,12 +1225,25 @@ function calleeShape(e: Expr): string {
 export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
   const out: Effect[] = [];
   const isVisible = (name: string): boolean => !isRegisterName(name);
+  // F18: only a guarded effect (one sitting on top of an `optmember`/
+  // `optcall` chain) carries `guardDepth` at all — omitted (not `0`) for
+  // everything else, so every effect-sequence literal predating F18 (and
+  // every fixture with no `?.` in it) is untouched byte-for-byte.
+  const withDepth = <T extends { readonly k: "call" | "member-read" }>(effect: T, e: Expr): T => {
+    const d = chainGuardDepth(e);
+    return d > 0 ? { ...effect, guardDepth: d } : effect;
+  };
   const visitExpr = (e: Expr): void => {
     switch (e.k) {
       case "call":
         visitExpr(e.callee);
         e.args.forEach(visitExpr);
-        out.push({ k: "call", callee: calleeShape(e.callee), arity: e.args.length });
+        out.push(withDepth({ k: "call", callee: calleeShape(e.callee), arity: e.args.length }, e));
+        return;
+      case "optcall": // F18: the args sit *inside* the guard — never evaluated when the callee is nullish.
+        visitExpr(e.callee);
+        e.args.forEach(visitExpr);
+        out.push(withDepth({ k: "call", callee: calleeShape(e.callee), arity: e.args.length }, e));
         return;
       case "new":
         visitExpr(e.callee);
@@ -1211,7 +1253,12 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
       case "member":
         visitExpr(e.obj);
         if (e.computed) visitExpr(e.prop);
-        out.push({ k: "member-read" });
+        out.push(withDepth({ k: "member-read" }, e));
+        return;
+      case "optmember": // F18
+        visitExpr(e.obj);
+        if (e.computed) visitExpr(e.prop);
+        out.push(withDepth({ k: "member-read" }, e));
         return;
       case "unary":
         // `delete o.p` does not itself *read* `p` (unlike every other

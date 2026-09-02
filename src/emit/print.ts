@@ -95,7 +95,9 @@ function precedence(e: Expr): number {
     case "jsx": // D20: a JSX element is a primary expression (and so is the call it lowers to, at MEMBER — PRIMARY is the safe lower bound for both renderings)
       return PRIMARY;
     case "member":
+    case "optmember": // F18: same precedence as `member` — a chain never parenthesises an inner link
     case "call":
+    case "optcall": // F18: same precedence as `call`
     case "new":
     case "tagged": // F14: member/call level, so `(a + b)`x`` parenthesises its tag
       return MEMBER;
@@ -320,8 +322,16 @@ function render(e: Expr): string {
       const obj = e.obj.k === "lit" && /^-?\d/.test(e.obj.text) ? `(${e.obj.text})` : objText;
       return e.computed ? `${obj}[${expr(e.prop, 0)}]` : `${obj}.${(e.prop as { text: string }).text}`;
     }
+    case "optmember": {
+      // F18: same numeric-literal-object trap as `member`.
+      const objText = expr(e.obj, MEMBER);
+      const obj = e.obj.k === "lit" && /^-?\d/.test(e.obj.text) ? `(${e.obj.text})` : objText;
+      return e.computed ? `${obj}?.[${expr(e.prop, 0)}]` : `${obj}?.${(e.prop as { text: string }).text}`;
+    }
     case "call":
       return `${expr(e.callee, MEMBER)}(${e.args.map((a) => expr(a, ASSIGNMENT)).join(", ")})`;
+    case "optcall": // F18
+      return `${expr(e.callee, MEMBER)}?.(${e.args.map((a) => expr(a, ASSIGNMENT)).join(", ")})`;
     case "new":
       return `new ${expr(e.callee, MEMBER + 1)}(${e.args.map((a) => expr(a, ASSIGNMENT)).join(", ")})`;
     case "bin":

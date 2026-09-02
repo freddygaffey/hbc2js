@@ -1,7 +1,7 @@
 # Optional chaining (`?.`, `?.()`, `?.[]`) and nullish coalescing (`??`)
 
 **Fixture:** `48-optional-chaining-nullish`
-**Confidence:** ✅ single-version (v94, `-O0`)
+**Confidence:** ✅ verified (v94, v99, `-O0`)
 
 ## 1. Source
 
@@ -78,6 +78,29 @@ circuit targets is not `?.` and must be left as explicit `if`s).
 
 ## 7. Version differences
 
-Not cross-checked against v99 in this pass (v94 `-O0` only). No opcode-
-table change is expected — `Eq`/`JmpTrue`/`GetByIdShort` are all core-era
-opcodes present unchanged through every version this project targets.
+Cross-checked against v99 (`tools/hermesc/v99/hermesc -O0 -dump-bytecode
+-pretty-disassemble=false`, 2026-09-02, `docs/specs/passes/18-optional-chain.md`
+implementation): the same `Eq`/`JmpTrue`/`GetByIdShort` idiom, byte-for-byte
+identical shape —
+
+```
+[@ 105] Eq 7<Reg8>, 5<Reg8>, 1<Reg8>
+[@ 109] JmpTrue 24<Addr8>, 7<Reg8>
+[@ 112] GetByIdShort 7<Reg8>, 5<Reg8>, 1<UInt8>, 22<UInt8>
+```
+
+No opcode-table change — `Eq`/`JmpTrue`/`GetByIdShort` are all core-era
+opcodes present unchanged through every version this project targets, so
+the catalogue row's confidence is `✅ verified` at both v94 and v99.
+
+The **statement-level lowering the `optional-chain` rung's matcher sees**
+(spec 18 §2.4) differs by version beyond what this row's own bytecode
+evidence covers: v99's optimizer occasionally elides a chain's own base
+guard once a *sibling* chain earlier in the same function has already
+proven that register non-nullish (observed on `48`'s own `user?.profile?.
+contacts?.email` — the second chain over `user` starts directly with
+`r9 = r6.profile`, no preceding `r6 == null` guard, because the first
+chain over `user` already established it). Spec 18 §4's matcher requires
+a base guard to open every run; this optimizer-driven omission is a real,
+distinct shape spec 18 does not document, tracked as an open rung-coverage
+item (not a catalogue-confidence question) in `docs/BUGS.md`.
