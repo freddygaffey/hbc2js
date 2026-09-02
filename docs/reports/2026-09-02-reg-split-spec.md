@@ -1,0 +1,4 @@
+# 2026-09-02 — reg-split spec (spec 19) — Fable, lean
+Tokens 79k · tool calls 34 · green (design only).
+
+docs/specs/passes/19-reg-split.md: web-based live-range splitting (a def starting a new "web" = transitive closure of def-may-reach-use; loop-carried counter = ONE web, if-join value = ONE web). Reaching-defs over the structured stage-B AST (no CFG). Three-layer SOUND checker: (1) undo-rename byte-identical, (2) occurrence bijection + frame-locality, (3) an independently-implemented COARSER reach relation R ⊇ true-reach — every coarsely-reaching (def,use) must share a name (proves no use separated from a reaching def, no φ torn). Naming scheme rN_j (provenance). Metric: >=80% surviving reg-vars single-def; downstream registers-named 3.4% → target >=15% (floor 8% = a doubling; below = pushback not lowered floor). before: var-naming. P-6 resolved. Open Qs for Fred: second expr-rebuild pass after split; splittable-reuse vs no-signal histogram (impl deliverable).
