@@ -18,7 +18,9 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 22. **Parallelise `deps`** (not a bug — Fred: brute-force hashing of 43k fns vs 32k sigs is expected to take minutes): worker pool per module chunk, cache fingerprints keyed by bundle sha256, report progress. Goal: Service NSW well under 10 min on this Mac.
 21. Held-out fixtures finish (1) from origin/worktree-agent-a95cf9a2d5716d76b.
 
-## Parked (needs Fred)
+## Parked
+- **[DEPRIORITISED per Fred 2026-09-02] OSS-project name-extraction benchmark**: Fred: "we do not need testing on open source projects and seeing if you can re-extract the names." Do NOT add more OSS apps to oss-benchmark.mjs / expand name-accuracy validation. Keep the existing ratchet as a guard only; do not invest further.
+ (needs Fred)
 - reg-split rung (P-6) — unlocks real variable names.
 - Device round-trip on a real app (tablet).
 - **Add clonable OSS apps (Expo examples) to the OSS ground-truth benchmark**: `tools/e2e/oss-benchmark.mjs`'s `APPS` array today has react-navigation-example-0.85.3 (scored, has a `.map`) and rn-template-0.72 (pipeline-only, no `.map`). Adding 2-3 more (an Expo example, a small react-navigation demo) needs cloning + building each with `npx expo export`/Metro to get a fresh bundle+map pair — network/build work `deb` would normally do, and `deb` is down as of 2026-09-02. Docs: docs/e2e/OSS-BENCHMARK.md "Adding an app".
