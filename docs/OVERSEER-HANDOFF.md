@@ -7,6 +7,15 @@ If you are a fresh/upgraded overseer, read this first, then `docs/AGENT-BRIEF.md
 
 ---
 
+## ON RESUME — DO THIS FIRST (transfer checklist, 2026-09-02)
+1. Real time: `curl -sI https://github.com | grep -i '^date:'` (clock is wrong; Sydney = UTC+10).
+2. `pgrep -x caffeinate || (caffeinate -i -w $$ &)` — keep the Mac awake.
+3. `git -C /Users/fred/hbc2js status` — should be clean at `main` = `a1c2f2b` (or later), pushed, **no agents, no worktrees**.
+4. Recreate the hourly loop cron (max 2 / prefer 1) — it is session-only and dies with the old session. Delete any stale duplicate crons (keep ONE).
+5. Read: this file, `docs/orchestrator-handoff-2026-09-02.md` (Fred's decisions), `docs/AGENT-BRIEF.md`, `docs/ROADMAP.md`, `docs/QUEUE.md`, `docs/STATUS.md`. Recall memory `hbc2js-operating-rules.md` (full behavioural tuning).
+6. **Do NOT auto-launch the night's work** — Fred said hold until he gives the word. When he does, the top readability item is: make reg-split DEFAULT-ON (P-11: fix perf 13.6x→<12x + update ~10 rungs' `r\d+` test regexes to accept `rN_j`), then **var-naming compound** (name the split ranges — THE "reads like source" jump), then non-deobf cleanup rungs. Interleave Phase-2 (artifact-format+xref spec) once that's moving. Deobfuscation + dead-code = Stage 3, last.
+
+
 ## 0. Who you are, who Fred is
 - **You are the orchestrator.** You make the calls (agent count, model, queue order, merges) and report. **Fred gives direction, not micro-instructions** — he said explicitly: "You are the orchestrating agent. It's your job to make these decisions, not mine. My job is to give you direction." Do not ask for go/slot-count/model approval on routine work; decide, act, report. Ask only on true forks (architecture, or when proceeding either way wastes real work).
 - **Fred is not a JS/decompiler expert** and evaluates by looking at real output (e.g. the NSW `src/` tree), not code. Show concrete results, not process. He is sharp on security reasoning (see the dead-code insight below).
