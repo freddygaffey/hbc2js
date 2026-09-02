@@ -151,7 +151,7 @@ interface RouteKeyAssignment {
 }
 
 const TRACE_STMT_RE =
-  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;/g;
+  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<reflectTarget>[A-Za-z_$][\w$]*)\s*=\s*Reflect\.apply\(\s*(?<reflectFn>[A-Za-z_$][\w$]*)\s*,\s*[A-Za-z_$][\w$]*\s*,\s*\[\s*(?<reflectArg>[A-Za-z_$][\w$]*)\s*\]\s*\)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget>_e\d+_\d+)\s*=\s*(?<envAliasSrc>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget2>[A-Za-z_$][\w$]*)\s*=\s*(?<envAliasSrc2>_e\d+_\d+)\s*;/g;
 
 /** Single left-to-right pass over `text` tracking, per register, which of
  *  this module's `deps` (in dependencyMap-index order) it currently traces
@@ -174,6 +174,26 @@ function traceModuleOrigins(
   text: string,
   deps: readonly number[],
   scanJsxScreenProps: boolean,
+  // 2026-09-02 (Service NSW cross-module route-config brief): Service NSW's
+  // own route-registry shape is neither the pre-jsx-recover static-config
+  // literal (`objTarget` above) nor the destructured-JSX `{name, component}`
+  // props pair (`scanJsxScreenProps`) -- it is a THIRD shape, confirmed by
+  // hand on a real Service NSW module (debug function name `"routeConfig"`,
+  // also seen as `"...NavigationRoutes"` on sibling modules): a registry
+  // object built incrementally (`reg = {}; reg.HomeScreen = descriptor;`,
+  // never a pre-shaped literal) whose *values* are themselves incrementally-
+  // built descriptor objects (`descriptor = {}; descriptor.component =
+  // <resolved-require>; descriptor.options = ...;`). Gated on this flag --
+  // true only when *this* module's own text names itself a route-config
+  // factory (the debug name comment `fn#<n> "routeConfig"`/`"...
+  // NavigationRoutes"`, or the matching `<obj>.routeConfig = ...`/`<obj>.
+  // ...NavigationRoutes = ...` export-property write) -- so this can't fire
+  // on an unrelated module that merely happens to assign a capitalised
+  // property to something that traces back to a required module (e.g. a
+  // plain CommonJS barrel re-export `exports.Foo = require(...).default;`),
+  // which is exactly the over-match shape the three prior attempts on this
+  // bug (BUGS.md) tripped on.
+  scanRouteConfigFactory: boolean,
 ): { moduleOriginByReg: Map<string, number>; keyAssignments: readonly RouteKeyAssignment[] } {
   const paramAlias = new Map<string, "require" | "depmap">([
     [REQUIRE_PARAM_NAME, "require"],
@@ -230,7 +250,32 @@ function traceModuleOrigins(
     jsxScreenPending.delete(reg);
   }
 
-  for (const m of text.matchAll(TRACE_STMT_RE)) {
+  // 2026-09-02 (Service NSW cross-module route-config brief): a route-config
+  // factory module's require/dependencyMap parameters are routed through
+  // closure-captured `_eNNNN_M` slots that the OUTER function assigns near
+  // the *end* of its own body -- but, in source text, a nested function's
+  // *declaration* (and, syntactically, its body) comes before the
+  // statements that follow it in the enclosing function, so the code that
+  // *reads* an env slot (inside the nested function) appears earlier in
+  // `text` than the code that *writes* it (the outer function's own
+  // parameter-capture line) even though the write always runs first at
+  // runtime. A single left-to-right pass (this scan's own documented
+  // design) can never resolve that read, no matter how the env-alias rule
+  // above is written -- confirmed by hand on the sample bundle's own
+  // `routeConfig` module (`_e7119_0 = r5;` appears in the outer function
+  // body, textually *after* the nested `_fn24381` that reads `_e7119_0`).
+  // Run the whole scan twice for a route-config factory: the first pass's
+  // only job is to populate `paramAlias`/`depIndexByReg`/`moduleOriginByReg`
+  // (order-independent enough in practice -- every env slot this convention
+  // uses is assigned exactly once, from a stable top-level parameter alias,
+  // never reassigned), so by the second (real) pass every `_eNNNN_M` read is
+  // already resolved regardless of where it sits in the text. Gated on
+  // `scanRouteConfigFactory` -- doubling the regex scan cost of every module
+  // in a large real bundle is not worth paying where this ordering issue
+  // never arises (confirmed: react-navigation-example's own modules never
+  // hit this, so this can't itself regress the hard bar).
+  function runScan(): void {
+    for (const m of text.matchAll(TRACE_STMT_RE)) {
     const g = m.groups!;
     if (g.reqTarget !== undefined) {
       moduleOriginByReg.set(g.reqTarget, Number(g.reqId));
@@ -263,9 +308,106 @@ function traceModuleOrigins(
     } else if (g.callTarget !== undefined) {
       const idx = depIndexByReg.get(g.callArg!);
       if (paramAlias.get(g.callFn!) === "require" && idx !== undefined) moduleOriginByReg.set(g.callTarget, deps[idx]!);
+    } else if (g.reflectTarget !== undefined) {
+      // 2026-09-02 (Service NSW cross-module brief): the same require-call
+      // resolution as `callTarget` above, just spelled `Reflect.apply(fn,
+      // thisArg, [arg])` instead of a direct call `fn(arg)` -- confirmed by
+      // hand as Service NSW's own compiled shape for every `require()` call
+      // it makes (`r3 = Reflect.apply(r19, r17, [r3]);` where `r19` traces
+      // back to the require parameter and `r3` to a depmap index), never
+      // observed on react-navigation-example. Gated identically to
+      // `callTarget` (`paramAlias` must resolve `reflectFn` to `require`,
+      // `reflectArg` must be a traced depmap index) -- `Reflect.apply` is
+      // used pervasively for unrelated calls too (any function invoked
+      // without a fixed `this`), so this guard is what stops it from
+      // resolving those as if they were requires. Additionally gated on
+      // `scanRouteConfigFactory` -- confirmed necessary, not just belt-and-
+      // braces: react-navigation-example itself uses `Reflect.apply` for
+      // plenty of unrelated calls elsewhere, and letting this branch resolve
+      // module origins in every module (rather than only ones already
+      // opted in via the naming convention) fed stray, correctly-guarded-
+      // but-still-wrong resolutions into that fixture's *existing*
+      // pre-shaped route registries through ordinary register reuse in a
+      // large module -- an observed regression (a nested navigator's own
+      // module wrongly renamed as a screen) caught by this task's own hard
+      // regression bar before this gate was added.
+      const idx = depIndexByReg.get(g.reflectArg!);
+      if (scanRouteConfigFactory && paramAlias.get(g.reflectFn!) === "require" && idx !== undefined) moduleOriginByReg.set(g.reflectTarget, deps[idx]!);
+    } else if (g.envAliasTarget !== undefined || g.envAliasTarget2 !== undefined) {
+      // 2026-09-02 (Service NSW cross-module brief): a copy into or out of
+      // one of `src/split`'s own closure-captured environment-slot
+      // variables (`_eNNNN_M` — its own convention for a value read by a
+      // nested function, `src/split/rewrite.ts`), needed because Service
+      // NSW's own compiled output routes the require/dependencyMap
+      // *parameters* through exactly one such slot rather than referencing
+      // `a2`/`a7` directly from the inner function that does the actual
+      // `require()` call (`r5 = a2; ...; _e7119_0 = r5; ...; function
+      // inner(){ r19 = _e7119_0; ... }` — a plain copy on each side of the
+      // slot). Deliberately NOT a general `<reg> = <reg>;` copy rule (tried
+      // first, reverted: register names are reused across every function in
+      // a module, so a plain copy rule forwards a stale origin across
+      // unrelated functions purely by name collision — confirmed regression
+      // on react-navigation-example, 58 -> 86 screens). The `_eNNNN_M` name
+      // itself is unique per closure capture site (never reused the way
+      // `r0`/`r1` are), so restricting to copies touching one is narrow by
+      // construction. Forwards whichever of the three per-register maps
+      // already has an entry for the source — never manufactures a new
+      // origin, only carries an existing one across the slot. Gated on
+      // `scanRouteConfigFactory` for the same reason `reflectTarget` above
+      // is: even this narrow a rule, applied to every module, resolved
+      // stray origins in react-navigation-example's own unrelated modules
+      // through register-name reuse (same observed regression).
+      if (scanRouteConfigFactory) {
+        const target = g.envAliasTarget ?? g.envAliasTarget2!;
+        const src = g.envAliasSrc ?? g.envAliasSrc2!;
+        const kind = paramAlias.get(src);
+        if (kind !== undefined) paramAlias.set(target, kind);
+        const idx = depIndexByReg.get(src);
+        if (idx !== undefined) depIndexByReg.set(target, idx);
+        const origin = moduleOriginByReg.get(src);
+        if (origin !== undefined) moduleOriginByReg.set(target, origin);
+      }
     } else if (g.keyObj !== undefined) {
       if (routeObjRegs.has(g.keyObj)) keyAssignments.push({ key: g.keyName!, targetId: moduleOriginByReg.get(g.keyVal!) });
+      // 2026-09-02 (Service NSW cross-module brief): the third route-config
+      // shape (see `scanRouteConfigFactory`'s own comment above) -- a
+      // registry object accumulated via `<reg>.<RouteName> = <descriptor>;`
+      // (never a pre-shaped `{RouteName: null, ...}` literal, so it never
+      // joins `routeObjRegs` above) whose *value* is a descriptor register
+      // that itself resolved a module origin via this same scan's `.screen
+      // =`/`.component =` forwarding just below. `keyName` must look like a
+      // route name (capitalised — the same convention `objTarget`'s
+      // `looksLikeRouteNames` guard above already relies on) so this can't
+      // fire on an unrelated lowercase-keyed accumulator object; gated on
+      // `scanRouteConfigFactory` (this module names *itself* a route-config
+      // factory) so it can't fire on a plain CommonJS barrel re-export
+      // (`exports.Foo = require(...).default;`) elsewhere, which would
+      // otherwise look identical (a capitalised key assigned a register with
+      // a resolved module origin). `keyName` must also NOT itself match the
+      // `routeConfig`/`*NavigationRoutes` naming convention -- that would be
+      // this same module's own self-export write (`r2.routeConfig = ...;`/
+      // `r4.VenueSignInNavigationRoutes = ...;`, `looksLikeRouteConfigFactory`
+      // above's own signal), never a per-route registry key, and a false
+      // "screen named `<Domain>NavigationRoutes`" observed on a real bundle
+      // before this exclusion.
+      if (scanRouteConfigFactory && /^[A-Z]/.test(g.keyName!) && !ROUTE_CONFIG_FACTORY_NAME_RE.test(g.keyName!)) {
+        const origin = moduleOriginByReg.get(g.keyVal!);
+        if (origin !== undefined) keyAssignments.push({ key: g.keyName!, targetId: origin });
+      }
       if (g.keyName === "screen") {
+        const origin = moduleOriginByReg.get(g.keyVal!);
+        if (origin !== undefined) moduleOriginByReg.set(g.keyObj, origin);
+      }
+      if (scanRouteConfigFactory && g.keyName === "component") {
+        // Forwards a descriptor object's own `.component = <resolved>;`
+        // origin onto the descriptor register itself, exactly parallel to
+        // the `.screen =` case above (a `{screen: Foo}` descriptor and a
+        // `{component: Foo}` descriptor are the same shape under two
+        // different react-navigation config conventions) -- gated on
+        // `scanRouteConfigFactory` rather than shared with `.screen =`
+        // unconditionally, since `component` alone (unlike `screen`) is
+        // common enough as an unrelated prop name elsewhere that the extra
+        // gate is worth keeping.
         const origin = moduleOriginByReg.get(g.keyVal!);
         if (origin !== undefined) moduleOriginByReg.set(g.keyObj, origin);
       }
@@ -327,7 +469,17 @@ function traceModuleOrigins(
       const origin = moduleOriginByReg.get(g.propBase!);
       if (origin !== undefined) moduleOriginByReg.set(g.propTarget, origin);
     }
+    }
   }
+
+  if (scanRouteConfigFactory) runScan(); // warm-up pass, see comment above -- populates env-slot aliases regardless of text order, discarded below
+  routeObjRegs.clear();
+  keyAssignments.length = 0;
+  stringLitByReg.clear();
+  jsxScreenPending.clear();
+  jsxScreenHits.length = 0;
+  runScan(); // real pass -- paramAlias/depIndexByReg/moduleOriginByReg from the warm-up (if any) carry over; every output collection above was just reset
+
   if (scanJsxScreenProps) {
     for (const pending of jsxScreenPending.values()) {
       if (pending.name !== undefined && pending.targetId !== undefined) jsxScreenHits.push({ key: pending.name, targetId: pending.targetId });
@@ -343,6 +495,51 @@ interface ScreenHit {
   readonly sourceId: number;
 }
 
+// 2026-09-02 (Service NSW cross-module route-config brief): confirmed by
+// hand across four independent Service NSW modules (the app's own
+// `routeConfig`, plus `LicenceNavigationRoutes`/`FinesNavigationRoutes`/
+// `CheckInNavigationRoutes`/`VenueSignInNavigationRoutes`) — a route-config
+// *factory* module always both (a) names the function that builds its map
+// `routeConfig` or `<Domain>NavigationRoutes` in the debug function-name
+// table (preserved as `src/split`'s own `// fn#<n> "<name>"` comment) and
+// (b) writes the finished map onto its own module-object register under a
+// property of that exact name (`r2.LicenceNavigationRoutes = r1;`, always
+// preceded by a placeholder write of the same property — Metro's live-
+// bindings interop shim — which is why this checks for the property name at
+// all rather than the specific value assigned). Either signal alone is
+// narrow (an app-specific naming convention, not a react-navigation API
+// shape), so a module matching neither is never treated as a route-config
+// factory, no matter what its object literals look like.
+const ROUTE_CONFIG_FACTORY_NAME_RE = /routeConfig|[A-Za-z]*NavigationRoutes/;
+function looksLikeRouteConfigFactory(text: string): boolean {
+  if (new RegExp(`//\\s*fn#\\d+\\s+"(?:${ROUTE_CONFIG_FACTORY_NAME_RE.source})"`).test(text)) return true;
+  return new RegExp(`[A-Za-z_$][\\w$]*\\.(?:${ROUTE_CONFIG_FACTORY_NAME_RE.source})\\s*=`).test(text);
+}
+
+/** 2026-09-02 (Service NSW cross-module route-config brief): the *consumer*
+ *  half of the same convention — a navigator module that never builds a
+ *  route map itself but instead merges one or more required modules'
+ *  `routeConfig`/`<Domain>NavigationRoutes` exports and walks the result via
+ *  `Object.entries(...)` (confirmed by hand, module 1711 in the sample
+ *  bundle: `r4 = r4.routeConfig; r8 = Reflect.apply(r4, r3, [r8]); ... r6 =
+ *  r6.entries(r4);` — note `Object` itself is bound to a register too, so
+ *  the call reads `<reg>.entries(...)`, never the literal text
+ *  `Object.entries(`). This module's own text has no statically-traceable
+ *  `{name, component}` pairs at all — the descriptor objects only exist as
+ *  values inside the merged runtime map `.entries()` walks, invisible to a
+ *  per-module regex scan (real decompiler dataflow across a `.map()`
+ *  callback boundary, out of this milestone's scope, §3.2 pushback below) —
+ *  so this is used only to (a) recognise the module as a navigator at all
+ *  (§3.1, no `create<X>Navigator` call in sight) and (b) as the entry point
+ *  for borrowing its route-config deps' already-resolved route names for
+ *  naming purposes (`nameCustomModules`). Gated on the property-name
+ *  convention plus a bare `.entries(` call so it can't fire on an unrelated
+ *  module that merely happens to mention `routeConfig`/`*NavigationRoutes`
+ *  without also walking a map of them. */
+function detectRouteConfigConsumer(text: string): boolean {
+  return /\.entries\(/.test(text) && new RegExp(`\\.(?:${ROUTE_CONFIG_FACTORY_NAME_RE.source})\\b`).test(text);
+}
+
 /** §3.2, resolved via `traceModuleOrigins`: every route-registry key this
  *  module's text assigns whose value resolves to another module in `deps`
  *  is a screen hit — confidence 0.85 (spec's "literal route" tier; every
@@ -350,7 +547,9 @@ interface ScreenHit {
  *  there is no lower-confidence "dynamic" case to distinguish in this
  *  implementation). */
 function detectScreenHits(id: number, text: string, deps: readonly number[]): ScreenHit[] {
-  const { keyAssignments } = traceModuleOrigins(text, deps, detectNavigatorKind(text).length > 0);
+  const scanJsxScreenProps = detectNavigatorKind(text).length > 0;
+  const scanRouteConfigFactory = looksLikeRouteConfigFactory(text);
+  const { keyAssignments } = traceModuleOrigins(text, deps, scanJsxScreenProps, scanRouteConfigFactory);
   const hits: ScreenHit[] = [];
   for (const a of keyAssignments) {
     if (a.targetId !== undefined) hits.push({ routeName: a.key, targetId: a.targetId, confidence: 0.85, sourceId: id });
@@ -375,6 +574,17 @@ function detectNavigatorKind(text: string): readonly string[] {
   const kinds: string[] = [];
   for (const m of text.matchAll(/\.create([A-Za-z]+?)Navigator\b/g)) kinds.push(m[1]!);
   if (/\.createStaticNavigation\b/.test(text)) kinds.push("Static");
+  // 2026-09-02 (Service NSW cross-module route-config brief): a module that
+  // walks `Object.entries(routeConfig)` (no `create<X>Navigator` call in
+  // sight, §3.1's own JSX/dynamic case) is a navigator too — kind `""`
+  // (existing "no call-shape kind to report" fallback in `nameCandidateFor`,
+  // used since §3.1's own destructured-JSX shape). Narrower than the
+  // previously-reverted `.Navigator`/`.Screen` property-read gate (BUGS.md,
+  // comment above): that fired on any module rendering a nested navigator;
+  // this requires the app-specific `routeConfig`/`*NavigationRoutes`
+  // property-name convention plus `Object.entries(`, never observed outside
+  // an actual route-config consumer.
+  if (kinds.length === 0 && detectRouteConfigConsumer(text)) kinds.push("");
   return kinds;
 }
 // 2026-09-02 (Service NSW brief, BUGS row "segregation-without-deps...
@@ -611,6 +821,27 @@ function nameCustomModules(
   for (const [targetId, hits] of hitsByTarget) {
     hits.sort((a, b) => b.confidence - a.confidence || a.sourceId - b.sourceId || a.routeName.localeCompare(b.routeName));
     bestScreenHitByTarget.set(targetId, { routeName: hits[0]!.routeName, confidence: hits[0]!.confidence });
+  }
+
+  // 2026-09-02 (Service NSW cross-module route-config brief): a route-config
+  // *consumer* module (`detectRouteConfigConsumer`, e.g. Service NSW's own
+  // `RootStack`) never appears as a `sourceId` above -- it has no
+  // statically-traceable `{name, component}` pairs of its own, only a
+  // `Object.entries(...)` walk over a runtime value merged from its own
+  // required route-config factories. Its route set for naming purposes
+  // (§3.1's `commonRoutePrefix`) is instead every route name already
+  // resolved for its *own* `deps` (one hop across the require edge
+  // `depsByModuleId` already carries) -- real cross-module dataflow, not a
+  // same-module regex: the names come from a *different* module's resolved
+  // hits, reached only through the dependency graph.
+  for (const m of srcModules) {
+    if (!detectRouteConfigConsumer(m.text)) continue;
+    const names: string[] = routeNamesBySource.get(m.id) ?? [];
+    for (const dep of depsByModuleId.get(m.id) ?? []) {
+      const depNames = routeNamesBySource.get(dep);
+      if (depNames !== undefined) names.push(...depNames);
+    }
+    if (names.length > 0) routeNamesBySource.set(m.id, names);
   }
 
   const raw = new Map<number, NameCandidate | null>();
