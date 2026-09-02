@@ -24,7 +24,10 @@ import { splitProject } from "../../src/split/index.ts";
 import { segregateSplitTree } from "../../src/split/segregate.ts";
 import { runDeps } from "../../src/deps/index.ts";
 
-function basenameNoExt(path) {
+// Exported for reuse by tools/e2e/oss-benchmark.mjs (the OSS ground-truth
+// benchmark builds on this milestone-3 fuzzy name scorer instead of
+// reimplementing it -- one similarity metric, one place it can be wrong).
+export function basenameNoExt(path) {
   const base = path.split("/").pop() ?? path;
   return base.replace(/\.(tsx?|jsx?)$/, "");
 }
@@ -32,7 +35,7 @@ function basenameNoExt(path) {
 /** Splits a name into lowercase tokens on camelCase/PascalCase boundaries,
  *  underscores, and hyphens -- e.g. "BottomTabsPreloadFlow" ->
  *  ["bottom","tabs","preload","flow"]. */
-function tokenise(name) {
+export function tokenise(name) {
   return name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_\-.]/g, " ")
@@ -57,7 +60,7 @@ function levenshtein(a, b) {
  *  a strict rename bar (Levenshtein alone penalises reordering, e.g.
  *  "TabsScreen" vs "ScreenTabs") nor a bag-of-words-only match (which
  *  would call "Home" and "HomeScreen" identical). */
-function similarity(a, b) {
+export function similarity(a, b) {
   const ta = tokenise(a);
   const tb = tokenise(b);
   const ja = ta.join("");
@@ -134,7 +137,13 @@ async function main() {
   for (const s of result.samples) process.stdout.write(`    ${s.recovered}  ->  ${s.truth}  (${s.score.toFixed(2)}, ${s.signal})\n`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Guarded (not an unconditional top-level call) since tools/e2e/oss-
+// benchmark.mjs now imports this module's pure functions for reuse -- a
+// bare `main()` at import time would try to parse the importer's argv as
+// this script's own <bundle.hbc> <source.map> CLI args and crash.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
