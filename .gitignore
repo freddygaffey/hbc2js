@@ -19,3 +19,9 @@ tests/fixtures/bundles/expensify-*/*.hbc
 # is excluded above because it's over that and easily regenerated too.
 tests/fixtures/bundles/**/*.map
 .claude/
+
+# docs/specs/09-fuzzing.md §4.2 "Committed-record rule" (review edit E4):
+# raw fuzz-matrix reports are machine-local and gitignored; the committed
+# record is the collector's scoreboard row (docs/reports/metrics/), not a
+# snapshot of this directory.
+reports/
