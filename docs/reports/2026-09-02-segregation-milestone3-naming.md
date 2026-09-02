@@ -1,0 +1,5 @@
+# 2026-09-02 — segregation milestone 3 (screens/navigators naming) — Sonnet, lean
+Tokens 201k · tool calls 116 · green. Fred's TOP priority.
+
+Cross-module: detectNavigator (createXNavigator via deps), traceModuleOrigins + detectScreenHits (walk route configs, resolve component→module via dependencyMap), configureStore/createStore. `tools/e2e/name-accuracy.mjs` scores names by fuzzy (Levenshtein + token-set) vs the bundle .map.
+react-navigation-example (real, 1782 modules): 4 navigators + 54 screens detected, 58/726 src modules named (8%), MEAN fuzzy 0.68, 10.3% >=0.8. Pairs: ActivityModesScreen.js→ActivityModes 0.83, AuthFlowScreen.js→AuthFlow 0.83, BottomTabsScreen.js→BottomTabs 0.80. Caveat: source-map index order does NOT align to module id — name-accuracy scores each name vs best-matching real basename, documented (not a fabricated pairing). Bug caught pre-ship: route tracer resolved obj.Key=val after full scan → register-reuse corruption; fixed to resolve at assignment. 0 collisions, bodies byte-identical.
