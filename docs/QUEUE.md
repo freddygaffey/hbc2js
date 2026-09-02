@@ -11,6 +11,7 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
   - **corpus/truth** — pass MATRIX per Hermes-version & bundler, # map-bearing apps, naming/structure accuracy on the ground-truth set, held-out vs held-in delta.
   Baseline snapshot (2026-09-02): src hand-written 24,754 code / 8,090 comment (24.6%); tests 14,068 / 3,754; 482 commits; **1 source map / 895 bundles** (ground-truth is the gap — see corpus note). Lean.
 ## TONIGHT (Fred GO 2026-09-02 ~22:15 Sydney) — TWO LANES, MAX 2 AGENTS (one per lane), NEVER 3
+**METRICS FIRST (Fred ~22:30: "other metrics in place, I would do that first — then you've got better data"): the metrics scoreboard collector (## Now item) lands BEFORE any ladder change, capturing tonight's BASELINE row while reg-split is still opt-in.** Salvage candidate: origin/worktree-agent-a99810bd07c13c086 has an unmerged tools/app-metrics.mjs (written, never run).
 If both slots are busy, WAIT — never launch a third. NO deobfuscation rungs (Stage 3, after Stage 2).
 
 **Lane L — ladder (one lean Sonnet agent at a time):**
