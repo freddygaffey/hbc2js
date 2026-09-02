@@ -566,6 +566,42 @@ with no `--deps-report`: previously **every** module landed in
 `_unclassified/`, zero names, zero screens, zero navigators, because
 naming only ever ran on the `classify.ts`-confirmed `src` bucket.
 
+**Second revisit (2026-09-02, navigator detection + naming brief) — measured, not both shipped:**
+
+- *Naming, shipped:* `nameCandidateFor`'s navigator branch now names a
+  navigator from its own §3.2 route hits' common name prefix
+  (`commonRoutePrefix` — e.g. routes `Licence`/`LicenceLinking`/
+  `LicenceScanner` → `LicenceNavigator.js`), falling back to
+  `<Kind>Navigator` only when no prefix resolves (≥3 chars, trimmed to a
+  camelCase word boundary) — fixes Fred's own review flag that
+  `StackNavigator.2.js`-style ordinal-suffix names are "type + counter, not
+  the app name". Gate-tested (`tests/gate/split/segregate.test.ts`), zero
+  effect on react-navigation-example's pinned numbers or byte-diff (naming
+  only, never touches a factory body).
+- *Detection widening, measured and reverted:* the `.Navigator`/`.Screen`-
+  JSX-usage heuristic `docs/BUGS.md`'s row called for (a module reading
+  both properties off some register, without a literal `.create<X>
+  Navigator(` call) was implemented and run against react-navigation-
+  example — it reproduces the exact over-match this row already warned
+  about (screens 54→67 WITH deps, 58→79 WITHOUT; navigators 4→3, 6→5),
+  because react-navigation-example's own screen modules routinely render a
+  *nested* navigator the same way, so "reads both properties somewhere" is
+  not specific to the outer route-config module. Not shipped. Service
+  NSW's own real navigator-consuming module was hand-read as part of this:
+  its route names/`.component=` targets live in a *separate sibling*
+  module (a `require`d "routeConfig" builder, iterated at runtime via
+  `Object.entries`, not re-emitted as one `.name=`/`.component=` pair per
+  route in the JSX-consuming module's own text) — so even a heuristic that
+  didn't over-match on react-navigation-example still wouldn't reach NSW's
+  real screens; the actual fix needs a cross-module route-config walk, not
+  a same-module regex. Full detail and the standing verdict: `docs/BUGS.md`
+  2026-09-02 row (second revisit). NSW's own numbers are therefore
+  unchanged from the table above (26-27 navigators depending on exact split
+  run, 0 screens) except that its `src/navigation/` names are still
+  `<Type>Navigator[.N].js` — the naming fix above has nothing of its own to
+  name them from, since none of NSW's navigator-calling modules hold their
+  own resolved routes.
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.

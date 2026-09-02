@@ -377,6 +377,23 @@ function detectNavigatorKind(text: string): readonly string[] {
   if (/\.createStaticNavigation\b/.test(text)) kinds.push("Static");
   return kinds;
 }
+// 2026-09-02 (Service NSW brief, BUGS row "segregation-without-deps...
+// destructured {Navigator, Screen}..."): a widened gate here -- "this
+// module reads *some* register's `.Navigator` AND `.Screen` properties" --
+// was tried and measured, not shipped: on react-navigation-example-0.85.3
+// (the fixture this row's own hard regression bar is pinned against) it
+// inflates screen count 54 -> 67 (WITH deps) and 58 -> 79 (WITHOUT deps),
+// the *exact* over-match this row already recorded once for a cruder
+// version of the same idea. Root cause: react-navigation-example's own
+// screen components routinely read `<X>.Navigator`/`<X>.Screen` off a
+// locally-destructured navigator object too (nested/child navigators
+// declared inside what §2.1 would otherwise name a plain screen module),
+// so "reads both properties somewhere in this module" is not a reliable
+// signal that *this* module is the outer route-config module holding the
+// `{name, component}` pairs -- it fires on any module that merely renders
+// a nested navigator. See docs/BUGS.md for the follow-up row (kept open,
+// not filed as fixed) and docs/PUSHBACK.md is not used here since this is
+// a measured "doesn't work", not a request the brief made twice.
 
 /** 2026-09-02 (Service NSW brief): deps used to be *required* here -- with
  *  no `--deps-report` (or a report that simply hasn't classified this
@@ -461,6 +478,7 @@ function nameCandidateFor(
   isEntry: boolean,
   bestScreenHit: { routeName: string; confidence: number } | null,
   navigator: { kind: string; confidence: number } | null,
+  navigatorRouteNames: readonly string[] = [],
 ): NameCandidate | null {
   const appReg = detectAppRegistration(text);
   if (isEntry) {
@@ -482,8 +500,54 @@ function nameCandidateFor(
   const storeRoot = detectStoreRoot(text);
   if (storeRoot !== null) return { baseName: "index", dir: "src/store", confidence: storeRoot.confidence, signal: "store-root (configureStore/createStore, §3.3)" };
   if (navigator !== null) {
-    const baseName = /Navigator$/.test(navigator.kind) ? navigator.kind : `${navigator.kind}Navigator`;
-    return { baseName, dir: "src/navigation", confidence: navigator.confidence, signal: `navigator (create${navigator.kind}Navigator-shaped call, §3.1)` };
+    // 2026-09-02 (Service NSW brief, naming half): Fred's own review of a
+    // prior run's output ("`StackNavigator.2.js` are bad — type + collision
+    // counter, not the app name") — name the navigator from the ROUTE SET
+    // it holds (this module's own resolved §3.2 screen hits' common name
+    // prefix, e.g. `Licence`/`LicenceLinking`/`LicenceScanner` -> `Licence`)
+    // rather than its react-navigation call-shape kind, which is at best
+    // "Stack"/"Tab" (identical across every navigator in an app, hence the
+    // ordinal-suffix collisions Fred flagged) and at worst unknown entirely
+    // (the destructured-JSX shape above has no kind to report). Falls back
+    // to `<Type>Navigator` (or a bare `Navigator` when even the kind is
+    // unknown) only when no route-set prefix resolves — §3.1's own
+    // "container role" fallback (Home/Wallet/Services -> a role name) isn't
+    // implemented here; deferred as a real gap, not silently dropped (see
+    // docs/BUGS.md).
+    const prefix = commonRoutePrefix(navigatorRouteNames);
+    if (prefix !== null) {
+      const baseName = /Navigator$/.test(prefix) ? prefix : `${prefix}Navigator`;
+      return { baseName, dir: "src/navigation", confidence: navigator.confidence, signal: `navigator (route-set prefix "${prefix}", §3.1)` };
+    }
+    const baseName = navigator.kind === "" ? "Navigator" : /Navigator$/.test(navigator.kind) ? navigator.kind : `${navigator.kind}Navigator`;
+    const signal = navigator.kind === "" ? "navigator (destructured Navigator/Screen JSX usage, §3.1)" : `navigator (create${navigator.kind}Navigator-shaped call, §3.1)`;
+    return { baseName, dir: "src/navigation", confidence: navigator.confidence, signal };
+  }
+  return null;
+}
+
+/** §3.1 naming (Service NSW brief): the longest common prefix of a
+ *  navigator's own resolved route names, trimmed back to the last
+ *  camelCase word boundary so `Licence`/`LicenceLinking`/`LicenceScanner`
+ *  yields `"Licence"` rather than an arbitrary mid-word cut, and `null`
+ *  (meaning "no usable prefix, fall back to kind-based naming") for an
+ *  empty route set, a route set with no shared prefix at all (`Home`/
+ *  `Profile` -> `""` immediately), or a prefix too short to be a
+ *  meaningful name (`< 3` chars — guards against e.g. `Home`/`Help`
+ *  degenerating to a bare `"H"`). */
+function commonRoutePrefix(routeNames: readonly string[]): string | null {
+  if (routeNames.length === 0) return null;
+  let prefix = routeNames[0]!;
+  for (const name of routeNames.slice(1)) {
+    let i = 0;
+    while (i < prefix.length && i < name.length && prefix[i] === name[i]) i++;
+    prefix = prefix.slice(0, i);
+    if (prefix === "") return null;
+  }
+  for (let k = prefix.length; k > 0; k--) {
+    const candidate = prefix.slice(0, k);
+    const isBoundary = routeNames.every((n) => n.length === k || /[A-Z0-9]/.test(n[k] ?? ""));
+    if (isBoundary) return candidate.length >= 3 ? candidate : null;
   }
   return null;
 }
@@ -514,6 +578,14 @@ function nameCustomModules(
   // two route names); kept deterministic by highest confidence, then
   // lowest source module id, then route name, never run order.
   const hitsByTarget = new Map<number, ScreenHit[]>();
+  // §3.1 naming (Service NSW brief): every screen hit, also keyed by its
+  // *source* module id (the navigator/route-config module that produced
+  // it) — a navigator's own route set, used to name it after its routes
+  // rather than its react-navigation call-shape kind (`commonRoutePrefix`
+  // in `nameCandidateFor`). Same custom-classification guard as
+  // `hitsByTarget` below (a route resolving to a library re-export is the
+  // same false positive either way).
+  const routeNamesBySource = new Map<number, string[]>();
   for (const m of srcModules) {
     for (const hit of detectScreenHits(m.id, m.text, depsByModuleId.get(m.id) ?? [])) {
       // §3.1's own framing, restated for §3.2: a screen target is app code,
@@ -530,6 +602,9 @@ function nameCustomModules(
       const list = hitsByTarget.get(hit.targetId);
       if (list === undefined) hitsByTarget.set(hit.targetId, [hit]);
       else list.push(hit);
+      const srcList = routeNamesBySource.get(hit.sourceId);
+      if (srcList === undefined) routeNamesBySource.set(hit.sourceId, [hit.routeName]);
+      else srcList.push(hit.routeName);
     }
   }
   const bestScreenHitByTarget = new Map<number, { routeName: string; confidence: number }>();
@@ -541,7 +616,7 @@ function nameCustomModules(
   const raw = new Map<number, NameCandidate | null>();
   for (const m of srcModules) {
     const navigator = detectNavigator(depsByModuleId.get(m.id) ?? [], m.text, ownershipByModule, classByModule, hasClassificationData);
-    raw.set(m.id, nameCandidateFor(m.text, m.id === entryId, bestScreenHitByTarget.get(m.id) ?? null, navigator));
+    raw.set(m.id, nameCandidateFor(m.text, m.id === entryId, bestScreenHitByTarget.get(m.id) ?? null, navigator, routeNamesBySource.get(m.id) ?? []));
   }
 
   const byPath = new Map<string, number[]>();

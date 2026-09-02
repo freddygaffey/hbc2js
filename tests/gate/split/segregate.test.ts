@@ -319,6 +319,48 @@ void test("segregate: resolves a screen's .component through a single-statement 
   assert.equal(byId.get(41)!.newPath, "src/screens/ProfileScreen.js", "a bracket-notation [\"default\"] interop hop should resolve module 30's Profile route to module 41");
 });
 
+// 2026-09-02 (Service NSW brief, naming half): Fred's own review flagged
+// `StackNavigator.2.js` -- type + collision counter, not the app name --
+// as a bad output. Fix: name a navigator from its own route set's common
+// name prefix (Licence/LicenceLinking/LicenceScanner -> `Licence`) instead
+// of its react-navigation call-shape kind, which is identical ("Stack")
+// across every stack navigator in a real app and is exactly why they
+// collide into ordinal suffixes in the first place.
+void test("segregate: names a navigator from its route set's common prefix (Licence/LicenceLinking/LicenceScanner -> LicenceNavigator), not its call-shape kind", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 98, moduleCount: 5, entry: null, modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] },
+      { id: 50, file: "module_50.js", factoryFunctionIndex: 50, deps: [11, 60, 61, 62] },
+      { id: 60, file: "module_60.js", factoryFunctionIndex: 60, deps: [] },
+      { id: 61, file: "module_61.js", factoryFunctionIndex: 61, deps: [] },
+      { id: 62, file: "module_62.js", factoryFunctionIndex: 62, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_50.js');\nrequire('./module_60.js');\nrequire('./module_61.js');\nrequire('./module_62.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    // Module 50: calls `.createStackNavigator` (§3.1 shape-alone gate),
+    // then builds three screens' JSX props objects, all sharing the
+    // `Licence` route-name prefix.
+    [
+      "module_50.js",
+      `// hbc2js --split -- Metro module 50\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5, r6, r7, r8;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createStackNavigator;\n  r4 = r1[1];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "Licence";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[2];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "LicenceLinking";\n  r0.name = r8;\n  r0.component = r3;\n  r4 = r1[3];\n  r3 = r2(r4);\n  r0 = {};\n  r8 = "LicenceScanner";\n  r0.name = r8;\n  r0.component = r3;\n}\n\n__d(factory, 50, [11, 60, 61, 62]);\n`,
+    ],
+    ["module_60.js", `// hbc2js --split -- Metro module 60\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 60, []);\n`],
+    ["module_61.js", `// hbc2js --split -- Metro module 61\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 61, []);\n`],
+    ["module_62.js", `// hbc2js --split -- Metro module 62\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 62, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null); // no deps report -- shape alone, same as Service NSW's own fast path
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(50)!.bucket, "src");
+  assert.equal(byId.get(50)!.newPath, "src/navigation/LicenceNavigator.js", "a navigator whose own routes share the Licence prefix should be named from that prefix, not its call-shape kind (StackNavigator)");
+  assert.equal(byId.get(60)!.newPath, "src/screens/LicenceScreen.js");
+  assert.equal(byId.get(61)!.newPath, "src/screens/LicenceLinkingScreen.js");
+  assert.equal(byId.get(62)!.newPath, "src/screens/LicenceScannerScreen.js");
+});
+
 // Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
 // milestone 3, §6.3): react-navigation-example-0.85.3, a real router-heavy
 // app -- rn-template-0.72 (used by every other test in this file) ships no
