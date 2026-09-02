@@ -1,0 +1,4 @@
+# 2026-09-02 — NSW cross-module route-config walk (screens!) — Sonnet, lean
+Tokens 269k · tool calls 154 · green. THE blocker, solved (4th agent).
+
+NSW route names/.component live in a separate route-config FACTORY module walked at runtime via Object.entries. Shipped (gated tightly on the naming convention to avoid the over-match 3 prior agents hit): looksLikeRouteConfigFactory, Reflect.apply(require) resolver, closure env-slot aliasing, two-pass write-after-read scan, incremental <reg>.<Route>=<desc> registry, detectRouteConfigConsumer (borrows route set from deps). NSW: 0 → **36 screens**, 26 navigators. Real names: CommonUIErrorScreen, DisasterHubScreen, Auth0LoginErrorScreen, ChangePinScreen, AnyFineDetailsScreen, CertificateOfRegistrationScreen. react-navigation-example PINNED unchanged (4/54 deps, 6/58 no-deps, 8/8 tests). BUGS resolved. Gaps: 2-statement depmap index untraced; root multi-domain nav has no common prefix.
