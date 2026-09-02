@@ -17,14 +17,27 @@
 // name") — and nearly every multi-def survivor is Hermes scratch reuse the
 // §4.1/§6 gate refuses (`reuse-conflict`). What is named is what the spec
 // licenses: `new Array`/`.push` receivers, call results, loop counters that
-// are not reused, string accumulators and boolean guards. Raising recall
-// means new heuristics (a spec change), not a lower bar. The floor below is
-// a regression guard on what this rung actually achieves.
+// are not reused, string accumulators and boolean guards.
+//
+// Compound upgrade (docs/specs/passes/19-reg-split.md §9 Q4, 2026-09-02/03):
+// reg-split's per-store webs turned many of those "unrelated defs merged
+// into one register" multi-def survivors into single-def, single-role ones,
+// which a batch of new single-def heuristics in `match.ts` (container-
+// subscript, object/closure literal, property-read alias, generic ident
+// alias, boolean-literal flag, ordering-comparison bound, plus a widened
+// `ARRAY_METHODS` and a numeric-seed accumulator) can now name honestly.
+// Measured **13.1%** at v94+v99 base (**10.0%** over the full matrix,
+// up from 3.1%) — short of the reg-split spec's 15% target but a ~4x gain
+// with no loosening of "never lie": every added heuristic still refuses
+// (`no-heuristic`) rather than guesses when its evidence does not hold
+// (unit tests in `var-naming.test.ts` cover a refusal per heuristic).
+// Raising recall further means new heuristics again, not a lower bar. The
+// floor below is a regression guard on what this rung actually achieves.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measureVarNaming } from "../../../tools/passes-metrics.mjs";
 
-const NAMED_PCT_FLOOR = 3;
+const NAMED_PCT_FLOOR = 10;
 
 test("var-naming corpus metric: surviving register variables that receive a name stay above the measured floor at v94+v99", () => {
   const result = measureVarNaming([94, 99], [""]);

@@ -377,6 +377,29 @@ Two layers; measure with `tools/passes-metrics.mjs` (add
   repeated pass instance (`expr-rebuild#2` after reg-split), separate
   framework task. Without it, split single-use aliases stay as one-line
   assignments. Decide before or after v1 lands; v1 does not depend on it.
+  **Resolved 2026-09-02 (Q4 compound upgrade): skipped, and closed rather
+  than deferred.** D23 (`docs/DECISIONS.md`) formalised the ordering this
+  spec's own §7 already implied: every stage-B pass is either a
+  structure-recovery rung (`expr-rebuild` among them — it rewrites tree
+  *shape*) or a pure-renaming rung (`reg-split`, `var-naming`), and *all*
+  structure-recovery rungs are registered before *all* renaming rungs, on
+  the invariant that a renaming rung may assume the tree's shape is final. A
+  second `expr-rebuild` instance placed after `reg-split` — itself a
+  renaming rung ordered before `var-naming` in that same renaming block —
+  would put a structure-recovery rewrite *after* a renaming rung has already
+  run, which is exactly the ordering D23 forbids (it is the general form of
+  the `jsx-recover`/P-11b bug D23 fixes: a structure matcher keyed on shape
+  running downstream of a renaming rung sees a tree whose *identity*
+  information, not just its names, D23 says renaming may have already
+  touched). So Q1 is not merely undecided, it is precluded by the
+  now-formalised stage invariant: no framework task should schedule
+  `expr-rebuild#2` after `reg-split`. (A second `expr-rebuild` run *before*
+  `reg-split` — i.e. two passes through the whole structure-recovery block —
+  is a different, unasked question; nothing here rules it out, but it is out
+  of scope for this task.) The naming heuristics (§9 Q4, this same upgrade)
+  are therefore the whole deliverable for closing the registers-named gap;
+  see `tests/gate/passes/var-naming-metrics.test.ts`'s header for the
+  measured result.
 * **Q2 — how much of the ~96 % unnamed is splittable reuse vs no-signal?**
   Unknown until measured. The §8 histogram answers it; if `no-heuristic`
   dominates post-split, the next task is var-naming heuristics (Q4), and

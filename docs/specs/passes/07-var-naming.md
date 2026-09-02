@@ -142,6 +142,53 @@ single-def) or its role.
    chain, **and** the register is read as the `test` of an `if`/`while`/`cond`.
 7. **Otherwise** → **refuse** (`no-heuristic`), keep `rN`. Do not force a name.
 
+**§9 Q4 compound upgrade (docs/specs/passes/19-reg-split.md, 2026-09-02).**
+Reg-split's per-store webs turn many multi-role registers into single-def,
+single-role ones (§4.1's reuse gate no longer refuses them), which makes the
+following additional single-def heuristics safe. Priority, all below the
+seven above and in this order (each checked only after every stronger shape
+above it refuses to fire):
+
+8. **Container subscript** → base `list`. The register is read/written as the
+   `obj` of a *computed* member (`r6[r0]`) anywhere in the frame and rule 3
+   did not already fire (no explicit `Array`/named-method evidence) — weaker
+   than rule 3 because a dict-shaped object subscripted by a non-numeric key
+   is just as likely, hence the more neutral word.
+9. **Object / closure literal** → base `obj` for `{k:"object"}`, `fn` for
+   `{k:"func"}` (an anonymous closure assigned to a register) — as
+   unambiguous as rule 3's array literal, no program text to misread.
+10. **Property-read alias** → base = the property name. `def` is a `member`
+    that is *not* itself a `call`'s callee (rule 4 already owns that shape):
+    `a1.items` or the computed-but-literal `a1["items"]` both take `items`.
+11. **Boolean-literal flag** → base `flag`. `def` is a bare `{k:"lit",
+    text:"true"|"false"}` **and** the register is read as a test (rule 6's
+    test-position gate, reused).
+12. **Ordering-comparison bound** → base `limit`. `def` is a bare numeric
+    literal **and** the register is read as one operand of a `<`/`<=`/`>`/`>=`
+    comparison anywhere in the frame (a loop test's bound, a guard's
+    threshold) — honest about the register's *role*, never about what it
+    counts.
+13. **Alias-of-named-thing** → base = the aliased name. `def` is a bare
+    `{k:"ident"}` naming something real: not a register (`isRegisterName`)
+    and not a bare parameter (`a\d+` — aliasing a param with no other
+    evidence stays `no-heuristic`, honouring the params carve-out below
+    rather than forcing a resolvable-but-meaningless name).
+14. Rule 3's `ARRAY_METHODS` set additionally widened (still §4.1-honest —
+    every added name is `Array.prototype`-only, absent from `String.prototype`
+    and `Object.prototype`): `shift`, `unshift`, `splice`, `forEach`, `map`,
+    `filter`, `reduce`, `reduceRight`, `sort`, `reverse`, `flat`, `flatMap`,
+    `find`, `findIndex`, `fill`, `some`, `every`.
+15. Rule 5's multi-def accumulator gate widened to accept a numeric-literal
+    seed (`x = 0; x = x + n`) alongside the string-literal one — previously
+    `reuse-conflict` because the all-defs-`isStringLit`-or-`isBinPlusSelf`
+    test rejected a numeric seed outright. Base is `s` if any def is a
+    string literal (unchanged), else `sum`.
+
+Measured impact: `tests/gate/passes/var-naming-metrics.test.ts`'s header
+(v94+v99 base 3.4% → 13.1%, full matrix 3.1% → 10.0%, RN template bundle
+4.1% → 20.2%) — short of this task's 15% construct-corpus target on the gate
+subset, past it on the RN bundle.
+
 **Params (`aN`).** Out of scope by default: the emitter already gives every
 parameter a positional name `aN`, which is more honest than a guessed one, and
 renaming `a1 → arg0` is a regression. A usage-evidence param rename (e.g. a

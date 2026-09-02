@@ -56,9 +56,21 @@ const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 const INDUCTION_POOL = ["i", "j", "k", "l", "m", "n"] as const;
 
-const ARRAY_METHODS = new Set(["push", "pop", "join", "length", "indexOf"]);
+// §9 Q4 — widened from the original five: every added name is an
+// `Array.prototype` method with no same-named method on `String.prototype`
+// or `Object.prototype` (checked against MDN's method lists), so adding it
+// never turns a string/plain-object receiver into a false "arr" — the same
+// honesty bar the original five were held to. Deliberately excludes
+// `slice`/`concat`/`includes` (both `Array` and `String` have them) even
+// though they are common: ambiguous evidence must not be spent on a wider
+// net, per the brief's "never lie" rule.
+const ARRAY_METHODS = new Set(["push", "pop", "join", "length", "indexOf", "shift", "unshift", "splice", "forEach", "map", "filter", "reduce", "reduceRight", "sort", "reverse", "flat", "flatMap", "find", "findIndex", "fill", "some", "every"]);
 
 const COMPARISON_OPS = new Set(["==", "!=", "===", "!==", "<", "<=", ">", ">=", "instanceof", "in"]);
+
+// §9 Q4 — the ordering subset of `COMPARISON_OPS`: equality/`instanceof`/`in`
+// say nothing about "one side is a bound", only `<`/`<=`/`>`/`>=` do.
+const ORDERING_OPS = new Set(["<", "<=", ">", ">="]);
 
 // A handful of common-noun abbreviations that read better than a literal
 // lower-camel of the constructor name (spec §4.2 #4: "Error -> err, Foo ->
@@ -108,7 +120,21 @@ interface RegisterFacts {
   readonly defValues: Expr[];
   readonly inductionDefs: Set<Expr>;
   arrayReceiver: boolean;
+  // Compound upgrade (docs/specs/passes/19-reg-split.md §9 Q4): the register
+  // is the `obj` of a computed member read/write (`r6[r0]`) anywhere in the
+  // frame, weaker evidence than `arrayReceiver`'s named-method call — a
+  // dict-shaped object subscripted by a non-numeric key is just as likely,
+  // so this earns the more neutral base `list`, and only when nothing
+  // stronger (an explicit `Array`/method-call) already fired.
+  indexReceiver: boolean;
   usedAsTest: boolean;
+  // §9 Q4 "single-literal-init … from the literal's role where safe": the
+  // register is read as one operand of a `<`/`<=`/`>`/`>=` comparison
+  // anywhere in the frame (a loop test's bound, a guard's threshold, …).
+  // Combined with a bare numeric-literal def this is the "loop bound"
+  // shape (`r9 = 10; while (i < r9) …`) — evidence that is honest about
+  // the register's *role* (a threshold) without guessing *what* it counts.
+  comparisonOperand: boolean;
   firstDef: number;
 }
 
@@ -117,7 +143,7 @@ function collectFacts(fnBody: readonly Stmt[]): Map<string, RegisterFacts> {
   const factsFor = (name: string): RegisterFacts => {
     let f = facts.get(name);
     if (f === undefined) {
-      f = { defValues: [], inductionDefs: new Set(), arrayReceiver: false, usedAsTest: false, firstDef: Number.POSITIVE_INFINITY };
+      f = { defValues: [], inductionDefs: new Set(), arrayReceiver: false, indexReceiver: false, usedAsTest: false, comparisonOperand: false, firstDef: Number.POSITIVE_INFINITY };
       facts.set(name, f);
     }
     return f;
@@ -174,9 +200,15 @@ function collectFacts(fnBody: readonly Stmt[]): Map<string, RegisterFacts> {
           break;
         case "member":
           if (!e.computed && e.obj.k === "ident" && isRegisterName(e.obj.name) && e.prop.k === "lit" && ARRAY_METHODS.has(e.prop.text)) factsFor(e.obj.name).arrayReceiver = true;
+          if (e.computed && e.obj.k === "ident" && isRegisterName(e.obj.name)) factsFor(e.obj.name).indexReceiver = true;
           break;
         case "cond":
           testRead(e.test);
+          break;
+        case "bin":
+          if (ORDERING_OPS.has(e.op)) {
+            for (const side of [e.left, e.right]) if (side.k === "ident" && isRegisterName(side.name)) factsFor(side.name).comparisonOperand = true;
+          }
           break;
         default:
           break;
@@ -248,6 +280,73 @@ function isStringLit(value: Expr): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Compound upgrade (docs/specs/passes/19-reg-split.md §9 Q4) — the new
+// heuristics a reg-split web makes safe to add: each reads only the def's
+// own shape (never a neighbouring register's *name*, per D23's forward
+// rule), so they are as sound pre- or post-split. "Never lie" (the brief):
+// every base below is either the literal source text (an alias) or a
+// program-supplied word (a property/callee name) — never invented.
+// ---------------------------------------------------------------------------
+
+function isBooleanLit(value: Expr): boolean {
+  return value.k === "lit" && (value.text === "true" || value.text === "false");
+}
+
+/** A numeric-literal seed for the `+=`-style accumulator (`x = 0; x = x +
+ *  n`), distinguished from `isStringLit` so the multi-def accumulator role
+ *  can pick `sum` over `s`. Deliberately excludes `NaN`/`Infinity`
+ *  (identifiers, not `lit` text under this emitter) — see `emit/ast.ts`'s
+ *  `renderNumber`. */
+function isNumericLit(value: Expr): boolean {
+  return value.k === "lit" && /^-?\d/.test(value.text);
+}
+
+/** §9 Q4 "iterated-over array/object … from property evidence" — a
+ *  single-def register whose value is a non-computed member read
+ *  (`a1.items`, `this.cache`) takes the property's own name. Never fires
+ *  for a *computed* member (`a1[k]`) — the property there is a value, not a
+ *  name — nor for a member that is itself a `call`'s callee (that is
+ *  `callResultBase`'s territory: the def would be a `call` node, not a bare
+ *  `member`, so there is no overlap). */
+function propertyAliasBase(value: Expr): string | null {
+  if (value.k !== "member") return null;
+  if (!value.computed && value.prop.k === "lit") return value.prop.text;
+  // A computed access is still a plain property alias, not container
+  // evidence, when the key is a literal string (`a1["items"]` reads
+  // identically to `a1.items` — bracket notation used for a reserved word
+  // or a mangled name): strip the emitter's quotes and reuse the same base
+  // as the dot-notation case, still subject to `resolveBase`'s `IDENT_RE`
+  // check (an empty or non-identifier-shaped key is refused there, not
+  // here — the property text is program-supplied, so it may legitimately
+  // fail that check, e.g. `a1["a b"]`).
+  if (value.computed && value.prop.k === "lit" && isStringLit(value.prop)) {
+    const inner = value.prop.text.slice(1, -1);
+    return inner.length > 0 ? inner : null;
+  }
+  return null;
+}
+
+/** §9 Q4 "alias-of-named-thing … that name with a suffix" — a single-def
+ *  register that is a bare alias of another *already-meaningful* binding
+ *  (an outer-scope var, `this`-derived name is out since `this` is its own
+ *  node kind, a module global, or another register this same batched match
+ *  already resolved a real name for — `taken`/`resolveBase` handle the
+ *  suffix either way). Deliberately excludes register names (a fresher
+ *  alias of an *unnamed* register would just borrow its `rN`/`rN_j`, which
+ *  is not a name) and default parameter names (`a\d+`): aliasing a
+ *  positional param with no independent evidence is exactly the case spec
+ *  §4.2's "Params" carve-out keeps `aN` for — `resolveBase` would refuse a
+ *  literal `aN` candidate via `EMITTER_NAME_CLASS_RE` anyway, but skipping
+ *  it here keeps the refusal reason `no-heuristic` (honest: "no evidence"),
+ *  not a confusing `emitter-name-class` bounce off a heuristic that never
+ *  should have fired. */
+function identAliasBase(value: Expr): string | null {
+  if (value.k !== "ident") return null;
+  if (isRegisterName(value.name) || /^a\d+$/.test(value.name)) return null;
+  return value.name;
+}
+
+// ---------------------------------------------------------------------------
 // §4.3 — collision resolution.
 // ---------------------------------------------------------------------------
 
@@ -289,18 +388,58 @@ function classifyRegister(name: string, f: RegisterFacts, taken: ReadonlySet<str
     const value = defs[0]!;
     if (isGlobalThisAlias(value)) return { ok: false, reason: "globalthis-alias" };
     if (isArrayCtor(value) || f.arrayReceiver) return resolveBase("arr", taken);
+    // §9 Q4 — an object-literal or closure def is exactly as unambiguous as
+    // the array-literal case right above it: the shape *is* the evidence,
+    // no program text to misread.
+    if (value.k === "object") return resolveBase("obj", taken);
+    if (value.k === "func") return resolveBase("fn", taken);
+    // §9 Q4 — a weaker container signal than an explicit `Array`/method
+    // call: the register is only ever subscripted. Ranked below the strong
+    // array evidence above, above call-result (a subscript site is rarer
+    // than a call result, so it is the more specific — hence higher-value —
+    // signal when both could apply, which in practice they never do: a
+    // `call`'s def value can't simultaneously be an `indexReceiver`).
+    if (f.indexReceiver) return resolveBase("list", taken);
     const callBase = callResultBase(value);
     if (callBase !== null) return resolveBase(callBase, taken);
+    // §9 Q4 — property-read alias: `r = a1.items` takes `items`. Ranked
+    // after call-result (a `call` node never also matches `propertyAliasBase`,
+    // which only looks at bare `member` values, so this is ordering-by-
+    // specificity, not a real conflict).
+    const propBase = propertyAliasBase(value);
+    if (propBase !== null) return resolveBase(propBase, taken);
     if (isBooleanish(value) && f.usedAsTest) return resolveBase("ok", taken);
+    // §9 Q4 — a bare boolean literal used only as a test reads as a flag;
+    // never fires for a literal that isn't also read as a test (§4.2 #6's
+    // gate, reused here) so a stray `r = true` with no test use stays
+    // `no-heuristic` rather than guessing.
+    if (isBooleanLit(value) && f.usedAsTest) return resolveBase("flag", taken);
+    // §9 Q4 — a bare numeric-literal def read as one side of an ordering
+    // comparison anywhere in the frame: honest about the register's role
+    // (a threshold) without guessing what it bounds. Never fires for a
+    // literal with no comparison use — that stays `no-heuristic`.
+    if (isNumericLit(value) && f.comparisonOperand) return resolveBase("limit", taken);
+    // §9 Q4 — generic alias-of-named-thing, lowest priority: every stronger
+    // shape above (array/call/property/boolean) already claimed its def
+    // value, so by the time this runs `value` is either an `ident` naming
+    // something real (an outer var, a module global, a name another
+    // candidate in this same batch already resolved) or nothing this rung
+    // can say anything honest about.
+    const aliasBase = identAliasBase(value);
+    if (aliasBase !== null) return resolveBase(aliasBase, taken);
     return { ok: false, reason: "no-heuristic" };
   }
 
   // Multi-def: only the two whole-frame roles §4.1 recognises are licensed —
   // every def must be one loop's induction init/update (#1), or every def a
-  // `+`-chain reading the register itself / a string literal seed (#5).
+  // `+`-chain reading the register itself / a string or numeric literal
+  // seed (#5, widened §9 Q4: `x = 0; x = x + n` is exactly the "accumulator
+  // pattern" the brief asks for, and was previously `reuse-conflict` — the
+  // string-only `isStringLit` gate rejected the numeric seed's `every`).
   if (defs.every((v) => f.inductionDefs.has(v))) return resolveInductionBase(taken);
-  if (defs.every((v) => isBinPlusSelf(v, name) || isStringLit(v)) && defs.some((v) => isBinPlusSelf(v, name))) {
-    return resolveBase("s", taken);
+  if (defs.every((v) => isBinPlusSelf(v, name) || isStringLit(v) || isNumericLit(v)) && defs.some((v) => isBinPlusSelf(v, name))) {
+    const base = defs.some((v) => isStringLit(v)) ? "s" : "sum";
+    return resolveBase(base, taken);
   }
   return { ok: false, reason: "reuse-conflict" };
 }
@@ -327,7 +466,7 @@ export function classifyAll(fnBody: readonly Stmt[]): readonly CandidateResult[]
   const facts = collectFacts(fnBody);
   const candidates = decl.names
     .filter((n) => isRegisterName(n))
-    .map((name) => ({ name, facts: facts.get(name) ?? { defValues: [], inductionDefs: new Set<Expr>(), arrayReceiver: false, usedAsTest: false, firstDef: Number.POSITIVE_INFINITY } }))
+    .map((name) => ({ name, facts: facts.get(name) ?? { defValues: [], inductionDefs: new Set<Expr>(), arrayReceiver: false, indexReceiver: false, usedAsTest: false, comparisonOperand: false, firstDef: Number.POSITIVE_INFINITY } }))
     .sort((a, b) => a.facts.firstDef - b.facts.firstDef);
 
   const taken = new Set<string>([...freeNames(fnBody), ...declaredNames(fnBody)]);

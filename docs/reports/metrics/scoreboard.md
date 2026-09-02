@@ -7,4 +7,4 @@ registers-named % here is the construct-corpus figure, not the heavier rn-templa
 
 | date | commits total | commits today | rungs live/target | gate tests (baseline) | BUGS open | BUGS resolved | src code LOC | src comment % | tests LOC | registers-named % | tokens/item median (k) | trace-oracle DIVERGENT | corpus pass matrix |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-09-02 | 516 | 135 | 17/30 (1 opt-in) | 902 | 27 | 30 | 26271 | 24.5% | 18318 | 5.2% | 134.5 | n/a | n/a |
+| 2026-09-02 | 522 | 141 | 17/30 (1 opt-in) | 902 | 27 | 30 | 26710 | 24.6% | 18530 | 13.1% | 134.5 | n/a | n/a |

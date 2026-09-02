@@ -87,12 +87,14 @@ function names(list: readonly Stmt[]): readonly string[] {
 // §4.2 positives, one per heuristic.
 // ---------------------------------------------------------------------------
 
-test("#1 loop induction var: the assign target of a for's init and update, read in its test, becomes `i`", () => {
+test("#1 loop induction var: the assign target of a for's init and update, read in its test, becomes `i`; the literal bound it is compared against is named by the §9 Q4 ordering-comparison heuristic (`limit`), not #7's plain no-heuristic refusal", () => {
   const before: readonly Stmt[] = [declStmt(["r0", "r1"]), set("r1", lit("10")), forStmt(assignExpr(id("r0"), lit("0")), bin("<", id("r0"), id("r1")), assignExpr(id("r0"), bin("+", id("r0"), lit("1"))), [printCall(id("r0"))])];
   const { renames, after } = runOnce(before);
-  assert.deepEqual(renames, [{ from: "r0", to: "i" }]);
-  assert.deepEqual(names(after), ["i", "r1"]);
-  assert.deepEqual(classifySite(before, "r1"), { ok: false, reason: "no-heuristic" }); // a single-def literal has no heuristic (#7)
+  assert.deepEqual(renames, [
+    { from: "r1", to: "limit" },
+    { from: "r0", to: "i" },
+  ]);
+  assert.deepEqual(names(after), ["i", "limit"]);
 });
 
 test("#1 nested loops draw the pool in first-def order: the outer head's two counters take `i`/`j`, the inner loop's `k`; a `seq` init/update is a valid head", () => {
@@ -155,6 +157,62 @@ test("#6 boolean guard: a comparison def read as an `if` test → `ok`; the same
   const unguarded: readonly Stmt[] = [declStmt(["r0"]), set("r0", bin(">", id("a1"), lit("2"))), ret(id("r0"))];
   assert.deepEqual(classifySite(unguarded, "r0"), { ok: false, reason: "no-heuristic" });
   assert.equal(match(unguarded, ctxFor(unguarded)), null);
+});
+
+// ---------------------------------------------------------------------------
+// §9 Q4 compound upgrade (docs/specs/passes/19-reg-split.md) — one positive
+// and one refusal per new heuristic, same convention as #1–#6 above.
+// ---------------------------------------------------------------------------
+
+test("§9 Q4 container-subscript: a register only ever subscripted (`r0[r1]`) becomes `list`; a register never subscripted keeps rN", () => {
+  const before: readonly Stmt[] = [declStmt(["r0", "r1"]), set("r0", id("a1")), ret(member({ k: "member", obj: id("r0"), prop: id("r1"), computed: true }, "toString"))];
+  assert.deepEqual(classifySite(before, "r0"), { ok: true, to: "list" });
+  const bare: readonly Stmt[] = [declStmt(["r0"]), set("r0", id("a1")), ret(id("r0"))];
+  assert.deepEqual(classifySite(bare, "r0"), { ok: false, reason: "no-heuristic" });
+});
+
+test("§9 Q4 object/closure literal: a single-def object literal becomes `obj`, a function expression becomes `fn`", () => {
+  const before: readonly Stmt[] = [declStmt(["r0", "r1"]), set("r0", { k: "object", props: [] }), set("r1", { k: "func", name: null, params: [], body: [] } as unknown as Expr), ret(seq(id("r0"), id("r1")))];
+  assert.deepEqual(classifySite(before, "r0"), { ok: true, to: "obj" });
+  assert.deepEqual(classifySite(before, "r1"), { ok: true, to: "fn" });
+});
+
+test("§9 Q4 property alias: a non-computed member read (`a1.items`) takes the property's name; a computed read with a non-literal key has no heuristic", () => {
+  const dotAccess: readonly Stmt[] = [declStmt(["r0"]), set("r0", member(id("a1"), "items")), ret(id("r0"))];
+  assert.deepEqual(classifySite(dotAccess, "r0"), { ok: true, to: "items" });
+  const dynamicAccess: readonly Stmt[] = [declStmt(["r0"]), set("r0", { k: "member", obj: id("a1"), prop: id("a2"), computed: true }), ret(id("r0"))];
+  assert.deepEqual(classifySite(dynamicAccess, "r0"), { ok: false, reason: "no-heuristic" });
+});
+
+test("§9 Q4 alias-of-named-thing: a bare alias of a real (non-register, non-param) ident takes that name (suffixed here — `cache` is itself free in the body, §4.3's ordinary collision path); aliasing a bare param `aN` is refused (§4.2's params carve-out) rather than forced", () => {
+  const namedAlias: readonly Stmt[] = [declStmt(["r0"]), set("r0", id("cache")), ret(id("r0"))];
+  assert.deepEqual(classifySite(namedAlias, "r0"), { ok: true, to: "cache2" });
+  const paramAlias: readonly Stmt[] = [declStmt(["r0"]), set("r0", id("a1")), ret(id("r0"))];
+  assert.deepEqual(classifySite(paramAlias, "r0"), { ok: false, reason: "no-heuristic" });
+});
+
+test("§9 Q4 boolean-literal flag: a bare `true`/`false` def read as a test becomes `flag`; the same literal never read as a test is no-heuristic", () => {
+  const guarded: readonly Stmt[] = [declStmt(["r0"]), set("r0", lit("true")), ifStmt(id("r0"), [printCall()])];
+  assert.deepEqual(classifySite(guarded, "r0"), { ok: true, to: "flag" });
+  const unguarded: readonly Stmt[] = [declStmt(["r0"]), set("r0", lit("false")), ret(id("r0"))];
+  assert.deepEqual(classifySite(unguarded, "r0"), { ok: false, reason: "no-heuristic" });
+});
+
+test("§9 Q4 ordering-comparison bound: a bare numeric literal compared with `<` becomes `limit`; the same literal used only in a `+` (never compared) is no-heuristic", () => {
+  const bound: readonly Stmt[] = [declStmt(["r0", "r1"]), set("r1", lit("10")), ifStmt(bin("<", id("r0"), id("r1")), [printCall()])];
+  assert.deepEqual(classifySite(bound, "r1"), { ok: true, to: "limit" });
+  const unused: readonly Stmt[] = [declStmt(["r0"]), set("r0", lit("10")), ret(bin("+", id("r0"), lit("1")))];
+  assert.deepEqual(classifySite(unused, "r0"), { ok: false, reason: "no-heuristic" });
+});
+
+test("§9 Q4 numeric accumulator: a `0`-seeded `+`-chain becomes `sum` (distinct from the string accumulator's `s`)", () => {
+  const before: readonly Stmt[] = [declStmt(["r0"]), set("r0", lit("0")), set("r0", bin("+", id("r0"), id("a1"))), ret(id("r0"))];
+  assert.deepEqual(runOnce(before).renames, [{ from: "r0", to: "sum" }]);
+});
+
+test("§9 Q4 widened array evidence: a `.map`/`.filter`/`.forEach` receiver becomes `arr` just like `.push`/`.join` did before", () => {
+  const before: readonly Stmt[] = [declStmt(["r0"]), set("r0", id("a1")), exprStmt(call(member(id("r0"), "forEach"), [id("a2")])), ret(call(member(id("r0"), "map"), [id("a2")]))];
+  assert.deepEqual(classifySite(before, "r0"), { ok: true, to: "arr" });
 });
 
 // ---------------------------------------------------------------------------
