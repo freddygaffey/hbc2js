@@ -19,7 +19,10 @@ import { runTier, hbc2jsDecompiler } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
-import { decompile, decompileAst, decompileTree, nodeCheck } from "./decompile.ts";
+import { decompile, decompileAst, decompileTree, nodeCheck, parseForDecompile } from "./decompile.ts";
+import { analyseModule } from "./cfg/index.ts";
+import { NameService, OverlayStore, regId, shortForm } from "./name-overlay/index.ts";
+import type { Confidence, NameRecord, Source } from "./name-overlay/index.ts";
 import { describePasses } from "./passes/index.ts";
 import { runDeps } from "./deps/index.ts";
 import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
@@ -753,8 +756,152 @@ function runSegregateCmd(argv: readonly string[]): number {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Naming overlay (Design D) — `hbc2js name …` and `hbc2js render`.
+// docs/specs/rename-tool-DESIGN-D-overlay.md §5, §10; docs/RENAME.md.
+// ---------------------------------------------------------------------------
+
+/** Grab `--flag value`; returns undefined when absent. */
+function flagValue(argv: readonly string[], flag: string): string | undefined {
+  const i = argv.indexOf(flag);
+  return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
+}
+
+function defaultStorePath(hbc: string | undefined, store: string | undefined): string {
+  if (store !== undefined) return store;
+  if (hbc !== undefined) return `${hbc}.names.json`;
+  fail(ErrorCode.E_USAGE, "name/render: give --store <path> or --hbc <input.hbc>", 2, false);
+}
+
+function buildAnalysis(hbc: string): ReturnType<typeof analyseModule> {
+  let bytes: Uint8Array;
+  try {
+    bytes = readFileSync(hbc);
+  } catch (e) {
+    fail(ErrorCode.E_IO, `cannot read ${hbc}: ${e instanceof Error ? e.message : String(e)}`, 2, false);
+  }
+  const { module } = parseForDecompile(bytes, {});
+  return analyseModule(module, { strictEnv: true });
+}
+
+/** The token-minimal record line (spec §10): `{42,7} userInput [med llm gate:passed]`. */
+function recordLine(r: NameRecord): string {
+  const id = r.id.kind === "reg" ? shortForm(r.id) : `{fn:${r.id.fn}}`;
+  return `${id} ${r.name} [${r.confidence} ${r.source} gate:${r.gate}]`;
+}
+
+function runNameOverlay(argv: readonly string[]): void {
+  const sub = argv[0];
+  const rest = argv.slice(1);
+  const json = rest.includes("--json");
+  const hbc = flagValue(rest, "--hbc");
+  const storePath = defaultStorePath(hbc, flagValue(rest, "--store"));
+
+  if (sub === "set") {
+    const fn = Number(rest[0]);
+    const reg = Number(rest[1]);
+    const name = rest[2];
+    if (!Number.isInteger(fn) || !Number.isInteger(reg) || name === undefined || name.startsWith("-")) {
+      fail(ErrorCode.E_USAGE, "name set <fn> <reg> <newName> [--conf ...] [--evidence <s>] [--override] [--hbc <in.hbc>]", 2, json);
+    }
+    if (hbc === undefined) fail(ErrorCode.E_USAGE, "name set requires --hbc <input.hbc> to run the reuse gate", 2, json);
+    const confidence = (flagValue(rest, "--conf") ?? "med") as Confidence;
+    const evidence = flagValue(rest, "--evidence") ?? "";
+    const source = (flagValue(rest, "--source") ?? "human") as Source;
+    const override = rest.includes("--override");
+    const store = OverlayStore.load(storePath, hbc);
+    const svc = new NameService(buildAnalysis(hbc), store);
+    const outcome = svc.setName(regId(fn, reg), name, { confidence, evidence, source, override });
+    if (!outcome.ok) {
+      const hint = outcome.overridable ? " (use --override to force)" : "";
+      if (json) process.stdout.write(JSON.stringify({ ok: false, id: { fn, reg }, name, reason: outcome.reason, overridable: outcome.overridable }) + "\n");
+      else process.stderr.write(`refused ${shortForm(regId(fn, reg))} ${name} [${outcome.reason}]${hint}\n`);
+      process.exit(3);
+    }
+    store.save(storePath);
+    const r = outcome.result.record;
+    if (json) process.stdout.write(JSON.stringify(r) + "\n");
+    else process.stdout.write(`named ${shortForm(regId(fn, reg))} → ${r.name} [${r.confidence}, gate:${r.gate}]\n`);
+    process.exit(0);
+  }
+
+  if (sub === "get") {
+    const fn = Number(rest[0]);
+    const reg = Number(rest[1]);
+    if (!Number.isInteger(fn) || !Number.isInteger(reg)) fail(ErrorCode.E_USAGE, "name get <fn> <reg>", 2, json);
+    const store = OverlayStore.load(storePath, hbc);
+    const r = store.getName(regId(fn, reg));
+    if (r === null) {
+      if (json) process.stdout.write("null\n");
+      else process.stdout.write(`${shortForm(regId(fn, reg))} unnamed (r${reg})\n`);
+      process.exit(0);
+    }
+    if (json) process.stdout.write(JSON.stringify(r) + "\n");
+    else process.stdout.write(`${recordLine(r)}\n`);
+    process.exit(0);
+  }
+
+  if (sub === "revert") {
+    const fn = Number(rest[0]);
+    const reg = Number(rest[1]);
+    if (!Number.isInteger(fn) || !Number.isInteger(reg)) fail(ErrorCode.E_USAGE, "name revert <fn> <reg> [--to <ts>]", 2, json);
+    const store = OverlayStore.load(storePath, hbc);
+    const to = flagValue(rest, "--to");
+    const now = store.revert(regId(fn, reg), to);
+    store.save(storePath);
+    const target = now === null ? `r${reg}` : now.name;
+    if (json) process.stdout.write(JSON.stringify({ id: { fn, reg }, name: now?.name ?? null }) + "\n");
+    else process.stdout.write(`reverted ${shortForm(regId(fn, reg))} → ${target}\n`);
+    process.exit(0);
+  }
+
+  if (sub === "search") {
+    const store = OverlayStore.load(storePath, hbc);
+    const fnFilter = flagValue(rest, "--fn");
+    const results = store.search({
+      ...(flagValue(rest, "--conf") !== undefined ? { confidence: flagValue(rest, "--conf") as Confidence } : {}),
+      ...(flagValue(rest, "--source") !== undefined ? { source: flagValue(rest, "--source") as Source } : {}),
+      ...(flagValue(rest, "--gate") !== undefined ? { gate: flagValue(rest, "--gate") as "passed" | "overridden" } : {}),
+      ...(fnFilter !== undefined ? { fn: Number(fnFilter) } : {}),
+      ...(flagValue(rest, "--text") !== undefined ? { text: flagValue(rest, "--text")! } : {}),
+    });
+    if (json) process.stdout.write(JSON.stringify(results) + "\n");
+    else for (const r of results) process.stdout.write(`${recordLine(r)}\n`);
+    process.exit(0);
+  }
+
+  fail(ErrorCode.E_USAGE, "name <set|get|revert|search> …", 2, json);
+}
+
+function runRender(argv: readonly string[]): void {
+  const hbc = flagValue(argv, "--hbc") ?? argv.find((a) => !a.startsWith("-") && a.endsWith(".hbc"));
+  if (hbc === undefined) fail(ErrorCode.E_USAGE, "render --hbc <input.hbc> [--fn N] [--store <path>] [--out <file>]", 2, false);
+  const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
+  const store = OverlayStore.load(storePath, hbc);
+  const svc = new NameService(buildAnalysis(hbc), store);
+  const fnStr = flagValue(argv, "--fn");
+  const out = svc.render(fnStr !== undefined ? { fn: Number(fnStr) } : {});
+  for (const c of out.collisions) {
+    process.stderr.write(`hbc2js render: collision in fn ${c.id.fn}: wanted "${c.wanted}", emitted "${c.rendered}"\n`);
+    store.flagCollision(c.id, c.rendered);
+  }
+  if (out.collisions.length > 0) store.save(storePath);
+  const outPath = flagValue(argv, "--out");
+  if (outPath !== undefined) writeFileSync(outPath, out.code);
+  else process.stdout.write(out.code);
+  process.exit(0);
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
+  if (argv[0] === "name") {
+    runNameOverlay(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "render") {
+    runRender(argv.slice(1));
+    return;
+  }
   if (argv[0] === "segregate") {
     process.exitCode = runSegregateCmd(argv.slice(1));
     return;
