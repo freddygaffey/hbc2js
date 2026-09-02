@@ -32,7 +32,7 @@ P2.1 artifact-format+xref spec: AFTER the above are moving (morning). Corpus reg
 
 ## PIVOT (Fred 2026-09-03 morning): STAGE 2 TOOLING IS NOW THE PRIORITY
 Fred: remaining rungs "aren't strictly necessary — the main body of most of the code reads quite nice." After the two in-flight agents land (stage-boundary reorder + P2.1 spec):
-1. VAR-NAMING COMPOUND still runs (orchestrator judgment: the payoff of reg-split, one agent, biggest visible win). Target registers-named >=15%.
+1. [DONE 2026-09-03, a480a4c — bundle 4.1->20.2% (target passed), construct 13.1%, matrix 10.0%; Q1 closed under D23] VAR-NAMING COMPOUND. DEFAULT LADDER WORK COMPLETE — ladder now opportunistic-only per pivot.
 2. Then LADDER GOES OPPORTUNISTIC-ONLY: remaining rungs (for-in/for-of, try-clean, arguments-form, literal-forms, try-shape; hard: generators/async, class-recover, finally-dedup, closure-naming) are picked up ONLY when a Stage-2 need or fuzz finding demands one — no default ladder lane.
 3. DEFAULT LANE = STAGE 2 sequence: [P2.1 SPEC LANDED 2026-09-03, ef6b7f5, docs/specs/10-artifact-format.md] P2.1 review gate [APPROVED 2026-09-03, 89eaf24] -> P2.1 impl [steps 0-1 + functions/modules index DONE 2026-09-03; NEXT after ranges.jsonl DONE 2026-09-03 (9bae684): calls.jsonl -> strings/globals/native + host-globals A10, then query CLI + independent check-index checker + measure.ts] -> P2.2 project store -> P2.3 string/secrets indexer -> P2.4 reuse validation (Semgrep/OSV vs deps) -> P2.5 version diff -> P2.6/P2.7. Decision-8 spec+review gate for each. Stage 3 (deobf + dead-code-annotate) after Stage 2, unchanged.
 Testing lane leftovers (app-gen fuzzer impl, divergence triage, held-out wiring) slot in as the second agent when disjoint.
