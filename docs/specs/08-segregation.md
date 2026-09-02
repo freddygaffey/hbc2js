@@ -773,6 +773,50 @@ the fuller ownership-only gate pending Fred's sign-off on re-pinning
 react-navigation-example's milestone-3 hard bar (4→2 navigators, screens
 unaffected).
 
+**Seventh revisit (2026-09-02, "package barrel/index modules misfiled into
+`src/`" brief) — P-10 resolved, at the segregation layer rather than
+`detectNavigator`.** The sixth revisit's own diagnosis was right that this
+fixture's 4 counted navigators are misfiled *because of* a package-boundary
+gap, but the gap is one stage upstream of `detectNavigator`: `segregate.ts`
+bucketed every module by `classify.ts`'s heuristic `classification` alone,
+so a module classify.ts's app-vocabulary signal calls "custom" (a package
+barrel/index's re-exported names — `createStaticNavigation`,
+`createMaterialTopTabNavigator`, ... — shape-match the app's own PascalCase
+Screen/Navigator vocabulary token) gets filed to `src/` even when
+`runDeps`'s own `moduleOwnership` (hash-matched against the signature DB,
+confirmed-tier only — `src/deps/report.ts`'s own contract comment on that
+field) already resolves that exact module id to a real package. Fixed in
+`segregateSplitTree` (`src/split/segregate.ts`): a confirmed per-module
+`moduleOwnership` entry now takes precedence over classify.ts's
+classification when the two disagree — never the reverse, and never
+invented where match.ts has no confirmed evidence, so this is a stronger-
+evidence override, not a weakened verdict. Module 1122 (of the fixture's 4)
+is that exact case: `moduleOwnership` resolves it to `@react-navigation/
+native` directly; it now files to `node_modules/@react-navigation/native/`
+instead of `src/navigation/StaticNavigator.js` and drops out of the
+`src`-bucket set naming ever considers, so it stops being counted as a
+navigator without any change to `detectNavigator`, `nameCandidateFor`, or
+the sixth revisit's flatness gate. **Result, react-navigation-example-
+0.85.3: 4→3 navigators, 54→50 screens (WITH deps only — the WITHOUT-deps
+run has no `moduleOwnership` to read and is unchanged at 6/58).** This is
+narrower than the sixth revisit's "4→2" prediction: hand-checking the other
+3 previously-counted navigators against this fixture's `deps-truth.json`
+(test-only ground truth built from the example app's real npm install,
+never read by production code) found module 1641 is genuinely app code
+(`package: null`, source ending `.../MyStackNavigator.tsx`, real per-route
+logic in its decompiled text, not a barrel shape — the sixth revisit's hand
+inspection over-called it as one of the "3 bare-factory-reexport" modules)
+and module 1611 IS a `@react-navigation/material-top-tabs` barrel by that
+same ground truth but has no `moduleOwnership` entry to act on because
+`material-top-tabs` isn't in the signature DB at all — match.ts never gets
+a chance to confirm it (BUGS.md follow-up: add `@react-navigation/material-
+top-tabs` to the signature DB; once confirmed, this module moves too with
+no further segregate.ts changes). `tests/gate/split/segregate.test.ts`'s
+pinned `assert.equal`s are updated to 3/50 (WITH deps) with the full
+before/after evidence inline; 6/58 (WITHOUT deps) is untouched. OSS-
+benchmark precision/recall (`tools/e2e/oss-benchmark.mjs`) measured
+before→after in `docs/STATUS.md`'s stage-4 cell.
+
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
 components rendered) built from milestone 3's output.

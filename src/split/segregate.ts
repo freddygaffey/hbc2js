@@ -1174,18 +1174,39 @@ export function segregateSplitTree(splitFiles: ReadonlyMap<string, string>, deps
   const infos: SegregatedModuleInfo[] = [];
   for (const m of modulesJson.modules) {
     const cls = classByModule.get(m.id) ?? null;
+    const owner = ownershipByModule.get(m.id);
     let bucket: SegregationBucket;
     let newPath: string;
     let pkg: string | null = null;
-    if (cls === "library") {
+    if (owner !== undefined) {
+      // 2026-09-02 (P-10, PUSHBACK.md): a confirmed per-module owner in
+      // `moduleOwnership` (hash-matched against the signature DB by
+      // `match.ts`, then gated to `confirmedDeps`-tier packages by
+      // `report.ts` -- see that field's own contract comment) is stronger,
+      // independently-derived evidence than classify.ts's heuristic
+      // classification and takes precedence over it. A package's own
+      // barrel/index module (all it does is re-export the package's public
+      // API) can read as CUSTOM to classify.ts's app-vocabulary signal --
+      // its re-exported factory names (`createStaticNavigation`,
+      // `createMaterialTopTabNavigator`, ...) happen to shape-match the
+      // app's own PascalCase Screen/Navigator vocabulary token -- while
+      // still being confirmed, module-for-module, as this exact package's
+      // own bytecode. Measured on react-navigation-example-0.85.3: modules
+      // 1122/1611/1641 (of the fixture's 4 previously-miscounted
+      // "navigators") are confirmed `@react-navigation/native` /
+      // `@react-navigation/bottom-tabs` owners here while classify.ts calls
+      // them "custom"; docs/specs/08-segregation.md has the `.map`-verified
+      // detail. This never overrides a module classify.ts calls "library"
+      // (an `owner` there just names the existing `node_modules/` bucket,
+      // same as before) -- it only overrides "custom"/"unknown"/no-data,
+      // and only when match.ts's own confirmed-tier evidence says so, so it
+      // never invents a package boundary classify.ts had no opinion on.
       bucket = "node_modules";
-      const owner = ownershipByModule.get(m.id);
-      if (owner !== undefined) {
-        pkg = owner.package;
-        newPath = `node_modules/${packageDirName(pkg)}/module_${m.id}.js`;
-      } else {
-        newPath = `node_modules/_vendor/module_${m.id}.js`;
-      }
+      pkg = owner.package;
+      newPath = `node_modules/${packageDirName(pkg)}/module_${m.id}.js`;
+    } else if (cls === "library") {
+      bucket = "node_modules";
+      newPath = `node_modules/_vendor/module_${m.id}.js`;
     } else if (cls === "custom") {
       bucket = "src";
       newPath = `src/module_${m.id}.js`;
