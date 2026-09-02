@@ -167,7 +167,10 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
         e.elements.forEach(walkExpr);
         return;
       case "object":
-        e.props.forEach((p) => walkExpr(p.value));
+        e.props.forEach((p) => walkExpr("k" in p ? p.arg : p.value));
+        return;
+      case "spread": // F17
+        walkExpr(e.arg);
         return;
       case "seq":
         e.exprs.forEach(walkExpr);
@@ -324,11 +327,21 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
     case "object": {
       let changed = false;
       const props = e.props.map((p) => {
+        if ("k" in p) {
+          const arg = mapExpr(p.arg, fx);
+          if (arg !== p.arg) changed = true;
+          return arg === p.arg ? p : { ...p, arg };
+        }
         const value = mapExpr(p.value, fx);
         if (value !== p.value) changed = true;
         return value === p.value ? p : { ...p, value };
       });
       rebuilt = changed ? { ...e, props } : e;
+      break;
+    }
+    case "spread": { // F17
+      const arg = mapExpr(e.arg, fx);
+      rebuilt = arg === e.arg ? e : { ...e, arg };
       break;
     }
     case "seq": {
@@ -755,7 +768,10 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
         e.elements.forEach((x) => visitExpr(x, inNested));
         return;
       case "object":
-        e.props.forEach((p) => visitExpr(p.value, inNested));
+        e.props.forEach((p) => visitExpr("k" in p ? p.arg : p.value, inNested));
+        return;
+      case "spread": // F17
+        visitExpr(e.arg, inNested);
         return;
       case "seq":
         e.exprs.forEach((x) => visitExpr(x, inNested));
@@ -939,7 +955,10 @@ export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
         e.elements.forEach((x) => visitExpr(x, at));
         return;
       case "object":
-        e.props.forEach((p) => visitExpr(p.value, at));
+        e.props.forEach((p) => visitExpr("k" in p ? p.arg : p.value, at));
+        return;
+      case "spread": // F17
+        visitExpr(e.arg, at);
         return;
       case "seq":
         e.exprs.forEach((x) => visitExpr(x, at));
@@ -1234,7 +1253,21 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
         e.elements.forEach(visitExpr);
         return;
       case "object":
-        e.props.forEach((p) => visitExpr(p.value));
+        e.props.forEach((p) => {
+          if ("k" in p) {
+            visitExpr(p.arg);
+            out.push({ k: "call", callee: "<spread>", arity: 1 });
+          } else visitExpr(p.value);
+        });
+        return;
+      case "spread":
+        // F17: `...arg` iterates `arg` (Symbol.iterator/getters — real user
+        // code), the same "calls-with-iteration" treatment §6 item 1's
+        // canonical `expand()` gives the underlying helper call it stands
+        // for; a generic walker that dropped this would see a rewritten
+        // spread site as a no-op.
+        visitExpr(e.arg);
+        out.push({ k: "call", callee: "<spread>", arity: 1 });
         return;
       case "seq":
         e.exprs.forEach(visitExpr);

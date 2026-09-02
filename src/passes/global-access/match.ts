@@ -305,7 +305,7 @@ function countMatchingReads(exprs: readonly Expr[], global: Expr, name: string):
         e.elements.forEach(visit);
         return;
       case "object":
-        e.props.forEach((p) => visit(p.value));
+        e.props.forEach((p) => visit("k" in p ? p.arg : p.value));
         return;
       case "seq":
         e.exprs.forEach(visit);

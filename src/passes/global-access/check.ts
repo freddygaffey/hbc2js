@@ -52,7 +52,7 @@ function countReads(e: Expr, global: Expr, name: string): number {
     case "array":
       return e.elements.reduce((n, x) => n + countReads(x, global, name), 0);
     case "object":
-      return e.props.reduce((n, p) => n + countReads(p.value, global, name), 0);
+      return e.props.reduce((n, p) => n + countReads("k" in p ? p.arg : p.value, global, name), 0);
     case "seq":
       return e.exprs.reduce((n, x) => n + countReads(x, global, name), 0);
     default:

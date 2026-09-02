@@ -139,7 +139,7 @@ function topLevelReads(s: Stmt): ReadonlyMap<string, number> {
         x.elements.forEach(visit);
         return;
       case "object":
-        x.props.forEach((p) => visit(p.value));
+        x.props.forEach((p) => visit("k" in p ? p.arg : p.value));
         return;
       case "seq":
         x.exprs.forEach(visit);
@@ -202,7 +202,7 @@ export function exprCounts(e: Expr, reg: string): ExprCounts {
         x.elements.forEach(visit);
         return;
       case "object":
-        x.props.forEach((p) => visit(p.value));
+        x.props.forEach((p) => visit("k" in p ? p.arg : p.value));
         return;
       case "seq":
         x.exprs.forEach(visit);

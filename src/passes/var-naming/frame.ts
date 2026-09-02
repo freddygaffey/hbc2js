@@ -52,7 +52,7 @@ export function walkFrame(stmts: readonly Stmt[], visit: FrameVisitor): void {
         e.elements.forEach(walkExpr);
         return;
       case "object":
-        e.props.forEach((p) => walkExpr(p.value));
+        e.props.forEach((p) => walkExpr("k" in p ? p.arg : p.value));
         return;
       case "seq":
         e.exprs.forEach(walkExpr);
@@ -224,7 +224,7 @@ export function frameOccurrences(stmts: readonly Stmt[], names: ReadonlySet<stri
         e.elements.forEach((x) => visitExpr(x, at));
         return;
       case "object":
-        e.props.forEach((p) => visitExpr(p.value, at));
+        e.props.forEach((p) => visitExpr("k" in p ? p.arg : p.value, at));
         return;
       case "seq":
         e.exprs.forEach((x) => visitExpr(x, at));

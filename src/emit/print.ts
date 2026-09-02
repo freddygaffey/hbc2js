@@ -90,6 +90,7 @@ function precedence(e: Expr): number {
     case "array":
     case "object":
     case "func":
+    case "spread": // F17: never wrapped in parens by `expr()`; ASSIGNMENT is a safe lower bound
     case "template": // F14: a template literal is a primary expression
     case "jsx": // D20: a JSX element is a primary expression (and so is the call it lowers to, at MEMBER — PRIMARY is the safe lower bound for both renderings)
       return PRIMARY;
@@ -347,7 +348,9 @@ function render(e: Expr): string {
     case "array":
       return `[${e.elements.map((x) => expr(x, ASSIGNMENT)).join(", ")}]`;
     case "object":
-      return `{${e.props.map((p) => `${p.computed ? `[${p.key}]` : p.key}: ${expr(p.value, ASSIGNMENT)}`).join(", ")}}`;
+      return `{${e.props.map((p) => ("k" in p ? `...${expr(p.arg, ASSIGNMENT)}` : `${p.computed ? `[${p.key}]` : p.key}: ${expr(p.value, ASSIGNMENT)}`)).join(", ")}}`;
+    case "spread": // F17
+      return `...${expr(e.arg, ASSIGNMENT)}`;
     case "seq":
       return e.exprs.map((x) => expr(x, ASSIGNMENT)).join(", ");
     case "template": {

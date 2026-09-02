@@ -57,6 +57,11 @@ function replaceRead(e: Expr, global: Expr, name: string): Expr {
     case "object": {
       let changed = false;
       const props = e.props.map((p) => {
+        if ("k" in p) {
+          const v = replaceRead(p.arg, global, name);
+          if (v !== p.arg) changed = true;
+          return v === p.arg ? p : { ...p, arg: v };
+        }
         const v = replaceRead(p.value, global, name);
         if (v !== p.value) changed = true;
         return v === p.value ? p : { ...p, value: v };

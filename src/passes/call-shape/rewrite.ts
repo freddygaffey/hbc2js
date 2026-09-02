@@ -52,6 +52,11 @@ export function replaceNode(e: Expr, target: Expr, replacement: Expr): Expr {
     case "object": {
       let changed = false;
       const props = e.props.map((p) => {
+        if ("k" in p) {
+          const v = replaceNode(p.arg, target, replacement);
+          if (v !== p.arg) changed = true;
+          return v === p.arg ? p : { ...p, arg: v };
+        }
         const v = replaceNode(p.value, target, replacement);
         if (v !== p.value) changed = true;
         return v === p.value ? p : { ...p, value: v };

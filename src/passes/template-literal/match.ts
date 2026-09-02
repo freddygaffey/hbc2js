@@ -493,7 +493,7 @@ function collectCalls(e: Expr, out: Expr[]): void {
       e.elements.forEach((x) => collectCalls(x, out));
       return;
     case "object":
-      e.props.forEach((p) => collectCalls(p.value, out));
+      e.props.forEach((p) => collectCalls("k" in p ? p.arg : p.value, out));
       return;
     case "seq":
       e.exprs.forEach((x) => collectCalls(x, out));
