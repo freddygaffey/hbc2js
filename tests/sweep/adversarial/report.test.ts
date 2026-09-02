@@ -58,26 +58,59 @@ test("adversarial tier (D22a): decompile + Hermes-VM-referenced trace check, rep
   console.log(lines.join("\n"));
 });
 
-test("gate tier never discovers tests/fixtures/adversarial/** (D22a fixtures are reported-only, not gating)", () => {
-  // Structural, not convention-only: confirm the gate test tree neither
-  // contains nor is contained by the adversarial fixtures dir, and that no
-  // gate test file's source even mentions it (i.e. nothing under
-  // tests/gate/**/*.test.ts could glob onto tests/fixtures/adversarial/**
-  // no matter how the glob is spelled).
+test("gate tier never decompiles tests/fixtures/adversarial/** for pass/fail (D22a fixtures are reported-only, not gating)", () => {
+  // The real D22a invariant is narrower than "no gate file may mention the
+  // path": it is that no gate test feeds an adversarial fixture through the
+  // real hbc2js decompiler and asserts pass/fail on the result (that is
+  // exactly what this file's own first test does, deliberately, under
+  // tests/sweep/ instead). A gate file is allowed to *talk about* the
+  // fixtures dir — e.g. to explain why it is testing something else instead
+  // (tests/gate/passes/adversarial-ladder.test.ts, which stresses the M5
+  // pass ladder's own synthetic CFGs, not this corpus) or to check the
+  // fixtures' *data* without ever decompiling it (tests/gate/harness/
+  // adversarial-expected.test.ts, which re-derives expected.txt by running
+  // each fixture's source.js as a plain Node script — no hbc2js decompiler
+  // involved at all).
+  //
+  // So: flag any gate file that references the adversarial fixtures dir
+  // AND imports something capable of running the decompiler (the harness's
+  // tier runner or its decompiler entry points). Any other reference is
+  // fine by construction and is additionally allow-listed below by name,
+  // with the reason recorded above, so a new offender can't hide behind an
+  // unrelated import and a stale reviewer's shrug.
   const gateDir = join(repoRoot(), "tests", "gate");
   const adversarialFixturesDir = join(repoRoot(), "tests", "fixtures", "adversarial");
   assert.ok(statSync(gateDir).isDirectory());
   assert.ok(statSync(adversarialFixturesDir).isDirectory());
   assert.ok(!gateDir.startsWith(adversarialFixturesDir) && !adversarialFixturesDir.startsWith(gateDir));
 
+  const KNOWN_NON_GATING = new Set([
+    join(gateDir, "passes", "adversarial-ladder.test.ts"), // mentions the dir only in a comment, decompiles nothing from it
+    join(gateDir, "harness", "adversarial-expected.test.ts"), // reads fixture files, but re-derives expected.txt via `node`, never via the decompiler
+  ]);
+  const DECOMPILER_IMPORT = /from ["'][^"']*harness\/tiers(?:\.ts)?["']|from ["'][^"']*decompile[^"']*["']/;
+
   const offenders: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       const p = join(dir, entry);
       if (statSync(p).isDirectory()) walk(p);
-      else if (entry.endsWith(".test.ts") && readFileSync(p, "utf8").includes("fixtures/adversarial")) offenders.push(p);
+      else if (entry.endsWith(".test.ts")) {
+        const src = readFileSync(p, "utf8");
+        if (!src.includes("fixtures/adversarial")) continue;
+        if (KNOWN_NON_GATING.has(p)) continue;
+        if (DECOMPILER_IMPORT.test(src)) offenders.push(p);
+      }
     }
   };
   walk(gateDir);
-  assert.deepEqual(offenders, [], `gate test file(s) reference tests/fixtures/adversarial: ${offenders.join(", ")}`);
+  assert.deepEqual(offenders, [], `gate test file(s) decompile tests/fixtures/adversarial for pass/fail: ${offenders.join(", ")}`);
+
+  // Belt-and-suspenders on the allow-list itself: confirm neither known-good
+  // file actually imports the decompiler machinery, so the allow-list can
+  // never quietly start hiding a real gating use.
+  for (const p of KNOWN_NON_GATING) {
+    assert.ok(statSync(p).isFile(), `allow-listed file missing: ${p}`);
+    assert.ok(!DECOMPILER_IMPORT.test(readFileSync(p, "utf8")), `${p} is allow-listed as non-gating but imports the decompiler — narrow the allow-list or fix the file`);
+  }
 });
