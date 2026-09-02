@@ -1,0 +1,4 @@
+# 2026-09-02 — NSW screen resolution (Reflect.apply investigation) — Sonnet, lean
+Tokens 175k · tool calls 117 · green.
+
+Disproved the prior BUGS theory: NSW's `.component=` does NOT go through Reflect.apply. Fixed 3 real traceModuleOrigins gaps: (1) `props.component = require(dep).Named` one-statement shape, (2) interop `reg["default"]` bracket hop, (3) REAL BUG — a route-props register reused across sibling screens dropped all but the last (jsxScreenPending flushed on reuse now). react-navigation-example pinned EXACT (4/54 with deps, 6/58 without) via assert.equal. NSW still 0 screens — real blocker diagnosed: NSW uses the destructured `{Navigator, Screen} = createXNavigator()` API, which detectNavigatorKind's `.createXNavigator(` gate doesn't match, so screen scanning never turns on. Detection-shape gap, not resolution — BUGS row updated with precise cause, left open (needs its own fixture-backed bar).
