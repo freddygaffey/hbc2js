@@ -678,9 +678,46 @@ void test("segregate: detects real navigators/screens on react-navigation-exampl
   // Service-NSW-motivated change to `traceModuleOrigins`'s resolution shapes
   // must not move these (a prior, reverted attempt did: 4->3 navigators,
   // 54->67 screens, by over-matching unrelated call sites elsewhere in this
-  // fixture's larger modules).
-  assert.equal(navigators.length, 4, "react-navigation-example WITH deps: navigator count regressed from its pinned §6 value");
-  assert.equal(screens.length, 54, "react-navigation-example WITH deps: screen count regressed from its pinned §6 value");
+  // fixture's larger modules -- NOT the same change as the correction
+  // below, which moves modules out of `src` entirely rather than changing
+  // which calls resolve).
+  //
+  // CORRECTED 2026-09-02 (P-10, PUSHBACK.md; docs/specs/08-segregation.md
+  // §6): 4/54 -> 3/50. `segregateSplitTree` used to bucket every module by
+  // classify.ts's heuristic `classification` alone; module 1122, a pure
+  // `@react-navigation/native` barrel/index (every top-level statement is a
+  // lazy `get` accessor re-exporting one of the package's exports --
+  // `createStaticNavigation`, `Link`, `LinkingContext`, ... -- never a call,
+  // never a route registry) was misclassified CUSTOM by the app-vocabulary
+  // signal (those re-exported names shape-match the app's own PascalCase
+  // Screen/Navigator vocabulary token) and filed to `src/`, where it was
+  // then miscounted as a 4th app navigator. `runDeps --offline`'s own
+  // `moduleOwnership` (hash-matched against the signature DB, confirmed-
+  // tier only) already resolves module 1122 itself to `@react-navigation/
+  // native` directly -- stronger, independently-derived evidence than
+  // classify.ts's heuristic -- so segregation now takes that confirmed
+  // per-module ownership over classify.ts's classification when the two
+  // disagree. Ground truth (this fixture's `deps-truth.json`, built from
+  // the example app's real npm install, test-only and never read by
+  // production code) confirms module 1122 really is `@react-navigation/
+  // native`. The fixture's other 3 nameSignal-"navigator" modules were
+  // hand-checked against that same ground truth and are unaffected: 1086
+  // (`package: null`) has a real route registry (`X.App =`/`X.Home =`/...)
+  // and is genuinely app code; 1641 (`package: null`, source ending
+  // `.../MyStackNavigator.tsx`) has real per-route logic, not a barrel
+  // shape, also genuinely app code; 1611 IS a `@react-navigation/material-
+  // top-tabs` barrel by that same ground truth but stays misfiled --
+  // `material-top-tabs` isn't in the signature DB at all, so match.ts never
+  // confirms it and there is no `moduleOwnership` entry to act on (BUGS.md
+  // follow-up: extend the signature DB to `@react-navigation/material-top-
+  // tabs`, then this module moves too, without further segregate.ts
+  // changes). Screens 54->50: the 4 screens dropped are ones whose target
+  // module was module 1122 itself (`hitsByTarget`/`detectScreenHits`'s
+  // guard already requires `classByModule.get(hit.targetId) === "custom"`,
+  // and 1122 is no longer in the `src`-bucket `srcModules` set naming even
+  // considers, since bucketing now runs before naming).
+  assert.equal(navigators.length, 3, "react-navigation-example WITH deps: navigator count regressed from its pinned §6 value");
+  assert.equal(screens.length, 50, "react-navigation-example WITH deps: screen count regressed from its pinned §6 value");
   for (const s of screens) assert.match(s.newPath, /^src\/screens\//, `screen ${s.newPath} not filed under src/screens/`);
   for (const n of navigators) assert.match(n.newPath, /^src\/navigation\//, `navigator ${n.newPath} not filed under src/navigation/`);
 
