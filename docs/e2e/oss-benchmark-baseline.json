@@ -1,0 +1,63 @@
+{
+  "name": "react-navigation-example-0.85.3",
+  "ok": true,
+  "hasGroundTruth": true,
+  "moduleCount": 1782,
+  "classification": {
+    "pipelineModuleCounts": {
+      "library": 829,
+      "src": 726,
+      "unclassified": 227
+    },
+    "libraryPackagePrecision": {
+      "value": 0.5223140495867769,
+      "sampleSize": 605
+    },
+    "libraryPackageRecall": {
+      "value": 0.06060606060606061,
+      "truthPackageCount": 66,
+      "detectedPackageCount": 6
+    },
+    "aggregateRateAgreement": {
+      "pipelineLibraryFraction": 0.5331189710610933,
+      "truthLibraryFraction": 0.9580771380659586,
+      "absDelta": 0.42495816700486533
+    },
+    "caveat": "package-level precision/recall (not module-level -- no reliable module-id -> source-map alignment exists for these bundles, see the file header) plus a coarse aggregate library-fraction sanity check. libraryPackageRecall's truthPackageCount only counts packages literally under a node_modules/ path in the map -- workspace-linked monorepo packages (see appSourcePrefix) are real dependencies too but are undercounted here since their map path never contains node_modules/."
+  },
+  "naming": {
+    "srcTotal": 726,
+    "srcNamed": 58,
+    "pctSrcNamed": 0.07988980716253444,
+    "meanFuzzySimilarity": 0.6579294481532216,
+    "pctAtLeast08": 0.08620689655172414,
+    "caveat": "best-match fuzzy similarity vs the single closest real app basename (see tools/e2e/name-accuracy.mjs header) -- not an id-verified pairing."
+  },
+  "structure": {
+    "pipelineDirs": {
+      "src/screens": true,
+      "src/store": false,
+      "src/navigation": true
+    },
+    "truthDirs": {
+      "src/screens": true,
+      "src/store": false,
+      "src/navigation": false
+    }
+  },
+  "readability": {
+    "lineCount": 497722,
+    "registers": {
+      "count": 646428,
+      "per1kLines": 1298.7732107481686
+    },
+    "reflectApply": {
+      "count": 14155,
+      "per1kLines": 28.43957068403647
+    },
+    "anonFnNames": {
+      "count": 17857,
+      "per1kLines": 35.87745769726876
+    }
+  }
+}
