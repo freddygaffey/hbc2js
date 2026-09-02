@@ -1,0 +1,4 @@
+# 2026-09-02 — fix overfit screen detection (generalization) — Sonnet, lean
+Tokens 178k · tool calls 151 · green. THE local-maximum fix Fred flagged.
+
+Root cause: the pre-jsx `{RouteName: Component}` registry-literal shape (routeObjRegs) had NO navigator-evidence gate — any PascalCase-keyed data table (css-tree's AST node table in Brex) shape-matched. Structural gate (no denylist): routeObjRegs requires the module to show navigator evidence itself OR be a ONE-HOP dep of one that does (consumedByNavigator over the module graph — react-navigation-example's SCREENS registry 1368 is a direct dep of the createDrawerNavigator module 1086), AND the consumed key must look like a route name (^[A-Z]). Brex 71→0 fake screens, Uniswap 45→0; NSW 176→176 unchanged; react-navigation-example unchanged (re-pinned 58→52 no-deps — the 6 dropped were the same bug inside the fixture's deps). Generalizes.
