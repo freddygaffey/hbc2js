@@ -248,6 +248,23 @@ void test("segregate: detects a navigator (create<X>Navigator + @react-navigatio
   assert.equal(byId.get(21)!.newPath, "src/screens/ProfileScreen.js");
   assert.equal(byId.get(20)!.nameConfidence, 0.85);
   assert.equal(byId.get(20)!.nameSignal, 'screen-route (route "Home", §3.2)');
+
+  // 2026-09-02 (Service NSW brief): the SAME split tree, with NO deps report
+  // at all (`deps === null`, module 11/12/20/21 all start "unclassified") --
+  // navigator/screen detection must still fire from call/config shape alone.
+  // Module 11 (the react-navigation dep itself) has no name signal of its
+  // own and correctly stays `_unclassified/`; 12/20/21 get promoted to
+  // `src/` by their own navigator/screen-route name candidates.
+  const segNoDeps = segregateSplitTree(files, null);
+  const byIdNoDeps = new Map(segNoDeps.modules.map((m) => [m.id, m]));
+  assert.equal(byIdNoDeps.get(12)!.bucket, "src");
+  assert.equal(byIdNoDeps.get(12)!.newPath, "src/navigation/StackNavigator.js");
+  assert.equal(byIdNoDeps.get(12)!.nameConfidence, 0.6); // shape alone, no deps confirmation -- below the 0.9 "named" tier above
+  assert.equal(byIdNoDeps.get(20)!.bucket, "src");
+  assert.equal(byIdNoDeps.get(20)!.newPath, "src/screens/HomeScreen.js");
+  assert.equal(byIdNoDeps.get(20)!.nameConfidence, 0.85); // §3.2's literal-route tier doesn't depend on classification at all
+  assert.equal(byIdNoDeps.get(21)!.newPath, "src/screens/ProfileScreen.js");
+  assert.equal(byIdNoDeps.get(11)!.bucket, "unclassified"); // no name signal of its own -- correctly not guessed into src/ or node_modules/
 });
 
 // Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
@@ -299,4 +316,37 @@ void test("segregate: detects real navigators/screens on react-navigation-exampl
   // correctness. rn-template-0.72's test above already exercises §4.2's
   // boot-equivalence proof end-to-end; this test's byte-diff (above) is
   // segregation's half of the correctness story on this fixture.
+});
+
+// 2026-09-02 (Service NSW brief): the whole point -- Service NSW's own
+// `deps` run takes >10 min, so navigator/screen detection has to work with
+// NO deps report at all, not just a slow one. Same real fixture as above,
+// `segregateSplitTree(split.files, null)` this time.
+void test("segregate: detects navigators/screens on react-navigation-example-0.85.3 with NO --deps-report (call/config shape alone)", () => {
+  if (!existsSync(REACT_NAV_EXAMPLE)) {
+    return; // covered by the WITH-deps test's own skip above; avoid a duplicate skip line
+  }
+  const bytes = readFileSync(REACT_NAV_EXAMPLE);
+  const split = splitProject(bytes, { moduleName: "react-navigation-example.hbc" });
+  const seg = segregateSplitTree(split.files, null);
+
+  const screens = seg.modules.filter((m) => m.nameSignal?.startsWith("screen-route"));
+  const navigators = seg.modules.filter((m) => m.nameSignal?.startsWith("navigator"));
+  assert.ok(screens.length > 0, "expected at least one screen detected on react-navigation-example-0.85.3 with no deps report");
+  assert.ok(navigators.length > 0, "expected at least one navigator detected on react-navigation-example-0.85.3 with no deps report");
+  for (const s of screens) assert.match(s.newPath, /^src\/screens\//, `screen ${s.newPath} not filed under src/screens/`);
+  for (const n of navigators) assert.match(n.newPath, /^src\/navigation\//, `navigator ${n.newPath} not filed under src/navigation/`);
+  // No deps report -> every navigator/screen candidate lands at the shape-
+  // alone confidence tier or below (never the deps-confirmed 0.9 tier,
+  // which needs a moduleOwnership match this run never has).
+  for (const n of navigators) assert.ok(n.nameConfidence! <= 0.6, `navigator ${n.newPath} confidence ${n.nameConfidence} unexpectedly deps-confirmed with no deps report`);
+
+  // §4.1 structural byte-diff still holds with no deps report: only
+  // require() targets and the rename header may differ.
+  for (const m of split.modules) {
+    const before = split.files.get(m.file);
+    const after = seg.files.get(seg.modules.find((s) => s.id === m.id)!.newPath);
+    assert.ok(before !== undefined && after !== undefined, `module ${m.id} missing before/after text`);
+    assert.equal(normaliseRequireTargets(after!), normaliseRequireTargets(before!), `module ${m.id}'s factory body changed during no-deps segregation`);
+  }
 });

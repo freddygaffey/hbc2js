@@ -113,14 +113,22 @@ Options (deps):
   --min-instr <n>           minimum-instruction floor before a hash is trusted (default 8)
   --json                    machine-readable DepsReport on stdout
 
-hbc2js segregate <split-dir> [outDir]   (docs/specs/08-segregation.md, milestone 1)
+hbc2js segregate <split-dir> [outDir]   (docs/specs/08-segregation.md, milestones 1-3)
   Places a --split tree's modules into node_modules/<pkg>/ (library,
-  classify.ts verdict) vs src/ (custom) vs _unclassified/ (no verdict) —
-  no naming heuristics, every module keeps module_<id>.js. outDir defaults
-  to "<split-dir>-segregated".
+  classify.ts verdict) vs src/ (custom, or named from call/config shape —
+  see below) vs _unclassified/ (no verdict, no name signal either).
+  src/ modules are named from entry/app-registration/displayName/default-
+  export/createSlice/navigator/screen-route signals. Navigator (§3.1) and
+  screen (§3.2) detection fire on the create<X>Navigator(...) call shape and
+  route-config string literals ALONE — a --deps-report is a CONFIRMING
+  signal (raises confidence) but is not required, so screens/navigators are
+  still recovered when deps is slow or hasn't been run. outDir defaults to
+  "<split-dir>-segregated".
   --deps-report <file>      a 'hbc2js deps --json' report (classification +
-                            moduleOwnership); omit to segregate everything
-                            into _unclassified/ (no silent library/src guess)
+                            moduleOwnership); omit to rely on call/config
+                            shape alone (lower confidence, no library/src
+                            guess for modules with no name signal — those
+                            still land in _unclassified/)
   --json                    machine-readable summary on stdout
 `;
 
@@ -731,7 +739,9 @@ function runSegregateCmd(argv: readonly string[]): number {
         `hbc2js segregate: ${result.modules.length} module(s) -> ${outDir} (src=${counts.src}, node_modules=${counts.node_modules}, unclassified=${counts.unclassified})\n`,
       );
       if (args.depsReport === undefined) {
-        process.stderr.write(`hbc2js segregate: no --deps-report given; every module landed in _unclassified/ (no library/src guess without classify.ts's verdict)\n`);
+        process.stderr.write(
+          `hbc2js segregate: no --deps-report given; navigator/screen names came from call/config shape alone (lower confidence); modules with no name signal landed in _unclassified/ (no library/src guess without classify.ts's verdict)\n`,
+        );
       }
     }
     return 0;

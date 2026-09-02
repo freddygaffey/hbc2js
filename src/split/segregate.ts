@@ -151,7 +151,7 @@ interface RouteKeyAssignment {
 }
 
 const TRACE_STMT_RE =
-  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;/g;
+  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;/g;
 
 /** Single left-to-right pass over `text` tracking, per register, which of
  *  this module's `deps` (in dependencyMap-index order) it currently traces
@@ -170,7 +170,11 @@ const TRACE_STMT_RE =
  *  target — never a false positive in the cases checked, only missed
  *  positives (§3.2 "still flagged... unresolved" spirit, though this
  *  implementation doesn't separately surface the miss). */
-function traceModuleOrigins(text: string, deps: readonly number[]): { moduleOriginByReg: Map<string, number>; keyAssignments: readonly RouteKeyAssignment[] } {
+function traceModuleOrigins(
+  text: string,
+  deps: readonly number[],
+  scanJsxScreenProps: boolean,
+): { moduleOriginByReg: Map<string, number>; keyAssignments: readonly RouteKeyAssignment[] } {
   const paramAlias = new Map<string, "require" | "depmap">([
     [REQUIRE_PARAM_NAME, "require"],
     [DEPMAP_PARAM_NAME, "depmap"],
@@ -179,6 +183,29 @@ function traceModuleOrigins(text: string, deps: readonly number[]): { moduleOrig
   const moduleOriginByReg = new Map<string, number>();
   const routeObjRegs = new Set<string>();
   const keyAssignments: RouteKeyAssignment[] = [];
+  // 2026-09-02 (Service NSW brief): §3.2's OTHER route-config shape — post
+  // jsx-recover `<Navigator.Screen name="RouteName" component={Foo} />`,
+  // decompiled to an object built via `.name = "RouteName";`/`.component =
+  // <ref>;` property assignments (real bundles observed with the props
+  // object created empty (`obj = {};`) and filled incrementally, never the
+  // pre-shaped `{name: null, component: null}` literal the *registry* case
+  // above matches) — the only prior implementation here was the *other*
+  // shape (`createXNavigator({ RouteName: Component })`, pre-jsx-recover),
+  // which is why a real app using the JSX API scored zero screens with no
+  // registry object in sight even though its route names/components are
+  // plainly present in the decompiled text (confirmed on Service NSW,
+  // >10 min `deps` run, `docs/specs/08-segregation.md` §3 numbers). Gated
+  // on `scanJsxScreenProps` (this module itself mentions a `create<X>
+  // Navigator`/`createStaticNavigation` call, §3.1) to keep the same
+  // "given a navigator module" framing §3.2 states and avoid matching an
+  // unrelated `.name =`/`.component =` pair anywhere in a 2000+-line
+  // module (both keys are common enough alone; the pair is not, but two
+  // *specific* keys with no scope tracking is still weaker evidence than
+  // the registry shape's whole-object-literal match, hence gated rather
+  // than global).
+  const stringLitByReg = new Map<string, string>();
+  const jsxScreenPending = new Map<string, { name?: string; targetId?: number }>();
+  const jsxScreenHits: RouteKeyAssignment[] = [];
 
   for (const m of text.matchAll(TRACE_STMT_RE)) {
     const g = m.groups!;
@@ -205,6 +232,11 @@ function traceModuleOrigins(text: string, deps: readonly number[]): { moduleOrig
       // method names).
       const looksLikeRouteNames = keys.length >= 2 && keys.every((k) => /^[A-Z]/.test(k));
       if (looksLikeRouteNames && !keys.every((k) => ROUTE_DESCRIPTOR_KEYS.has(k))) routeObjRegs.add(g.objTarget);
+      if (scanJsxScreenProps) jsxScreenPending.delete(g.objTarget); // register reused for an unrelated object -- drop any stale pending name/target
+    } else if (g.emptyObjTarget !== undefined) {
+      if (scanJsxScreenProps) jsxScreenPending.delete(g.emptyObjTarget); // same reset, for the JSX-props shape's own `obj = {};` starting point
+    } else if (g.litTarget !== undefined) {
+      if (scanJsxScreenProps) stringLitByReg.set(g.litTarget, g.litVal!);
     } else if (g.callTarget !== undefined) {
       const idx = depIndexByReg.get(g.callArg!);
       if (paramAlias.get(g.callFn!) === "require" && idx !== undefined) moduleOriginByReg.set(g.callTarget, deps[idx]!);
@@ -214,12 +246,28 @@ function traceModuleOrigins(text: string, deps: readonly number[]): { moduleOrig
         const origin = moduleOriginByReg.get(g.keyVal!);
         if (origin !== undefined) moduleOriginByReg.set(g.keyObj, origin);
       }
+      if (scanJsxScreenProps && (g.keyName === "name" || g.keyName === "component")) {
+        const pending = jsxScreenPending.get(g.keyObj) ?? {};
+        if (g.keyName === "name") {
+          const lit = stringLitByReg.get(g.keyVal!);
+          if (lit !== undefined) pending.name = lit;
+        } else {
+          const origin = moduleOriginByReg.get(g.keyVal!);
+          if (origin !== undefined) pending.targetId = origin;
+        }
+        jsxScreenPending.set(g.keyObj, pending);
+      }
     } else if (g.propTarget !== undefined) {
       const origin = moduleOriginByReg.get(g.propBase!);
       if (origin !== undefined) moduleOriginByReg.set(g.propTarget, origin);
     }
   }
-  return { moduleOriginByReg, keyAssignments };
+  if (scanJsxScreenProps) {
+    for (const pending of jsxScreenPending.values()) {
+      if (pending.name !== undefined && pending.targetId !== undefined) jsxScreenHits.push({ key: pending.name, targetId: pending.targetId });
+    }
+  }
+  return { moduleOriginByReg, keyAssignments: keyAssignments.concat(jsxScreenHits) };
 }
 
 interface ScreenHit {
@@ -236,7 +284,7 @@ interface ScreenHit {
  *  there is no lower-confidence "dynamic" case to distinguish in this
  *  implementation). */
 function detectScreenHits(id: number, text: string, deps: readonly number[]): ScreenHit[] {
-  const { keyAssignments } = traceModuleOrigins(text, deps);
+  const { keyAssignments } = traceModuleOrigins(text, deps, detectNavigatorKind(text).length > 0);
   const hits: ScreenHit[] = [];
   for (const a of keyAssignments) {
     if (a.targetId !== undefined) hits.push({ routeName: a.key, targetId: a.targetId, confidence: 0.85, sourceId: id });
@@ -264,11 +312,32 @@ function detectNavigatorKind(text: string): readonly string[] {
   return kinds;
 }
 
+/** 2026-09-02 (Service NSW brief): deps used to be *required* here -- with
+ *  no `--deps-report` (or a report that simply hasn't classified this
+ *  module's deps), `ownershipByModule`/`classByModule` are empty and the
+ *  loop below never sets `confidence`, so the whole function returned
+ *  `null` even when the call shape itself (`create<X>Navigator`) was
+ *  unambiguous. That is exactly the case a slow `deps` run (Service NSW,
+ *  >10 min) forces on every caller who just wants a named `src/screens/`
+ *  tree fast. Deps is now a *confirming*, not required, signal: the
+ *  call-shape match alone is `hasClassificationData` fallback confidence
+ *  0.6 (same floor as the existing "unnamed library-classified dep" tier,
+ *  so it still clears `MIN_NAME_CONFIDENCE`) -- but only when no
+ *  classification data was supplied *at all* (`hasClassificationData`
+ *  false, i.e. `deps === null` was passed to `segregateSplitTree`). When a
+ *  deps report *is* present but simply doesn't confirm this particular
+ *  call (none of its deps resolve to `@react-navigation/*` or a library),
+ *  this still returns `null` as before -- a real classify.ts verdict that
+ *  didn't confirm the call is stronger negative evidence than having no
+ *  verdict at all, and changing that would regress the acceptance numbers
+ *  the spec's §6 milestone-3 table records for react-navigation-example
+ *  (deps-confirmed run). */
 function detectNavigator(
   deps: readonly number[],
   text: string,
   ownershipByModule: ReadonlyMap<number, ModuleOwnership>,
   classByModule: ReadonlyMap<number, ModuleClassKind>,
+  hasClassificationData: boolean,
 ): { kind: string; confidence: number } | null {
   const kinds = detectNavigatorKind(text);
   if (kinds.length === 0) return null;
@@ -278,7 +347,9 @@ function detectNavigator(
     if (pkg !== undefined && /^@react-navigation\//.test(pkg)) { confidence = 0.9; break; }
     if (classByModule.get(d) === "library") confidence = confidence ?? 0.6;
   }
-  return confidence === null ? null : { kind: kinds[0]!, confidence };
+  if (confidence !== null) return { kind: kinds[0]!, confidence };
+  if (!hasClassificationData) return { kind: kinds[0]!, confidence: 0.6 };
+  return null;
 }
 
 /** §2.1 steps 1-5, in priority order, applied per module. Reads only this
@@ -367,6 +438,10 @@ function nameCustomModules(
   ownershipByModule: ReadonlyMap<number, ModuleOwnership>,
   classByModule: ReadonlyMap<number, ModuleClassKind>,
 ): Map<number, { path: string; signal: string; confidence: number } | null> {
+  // No classification data at all (no `--deps-report`, i.e. `classByModule`
+  // is empty) -- §3.1/3.2's deps-based guards below only ever *narrow*
+  // results when there is something to narrow with, never manufacture one.
+  const hasClassificationData = classByModule.size > 0;
   // Milestone 3 (§3.2): every screen hit any src-bucket module's route
   // registry produced, keyed by *target* module id — a target can in
   // principle be claimed by more than one registry (e.g. re-exported under
@@ -376,11 +451,16 @@ function nameCustomModules(
   for (const m of srcModules) {
     for (const hit of detectScreenHits(m.id, m.text, depsByModuleId.get(m.id) ?? [])) {
       // §3.1's own framing, restated for §3.2: a screen target is app code,
-      // never a library/unclassified module (a route registry that happens
-      // to also re-export a library barrel entry -- observed in the
-      // fixture this was built against -- is exactly the false positive
-      // this guard exists to drop).
-      if (classByModule.get(hit.targetId) !== "custom") continue;
+      // never a library module (a route registry that happens to also
+      // re-export a library barrel entry -- observed in the fixture this
+      // was built against -- is exactly the false positive this guard
+      // exists to drop). With no classification data at all (2026-09-02,
+      // Service NSW brief), there is nothing to confirm "custom" against --
+      // require it only when a deps report actually classified the target;
+      // otherwise let the literal route-name hit through (§3.2's own
+      // "resolved via require edges" evidence is real regardless of
+      // whether classify.ts ever ran).
+      if (hasClassificationData && classByModule.get(hit.targetId) !== "custom") continue;
       const list = hitsByTarget.get(hit.targetId);
       if (list === undefined) hitsByTarget.set(hit.targetId, [hit]);
       else list.push(hit);
@@ -394,7 +474,7 @@ function nameCustomModules(
 
   const raw = new Map<number, NameCandidate | null>();
   for (const m of srcModules) {
-    const navigator = detectNavigator(depsByModuleId.get(m.id) ?? [], m.text, ownershipByModule, classByModule);
+    const navigator = detectNavigator(depsByModuleId.get(m.id) ?? [], m.text, ownershipByModule, classByModule, hasClassificationData);
     raw.set(m.id, nameCandidateFor(m.text, m.id === entryId, bestScreenHitByTarget.get(m.id) ?? null, navigator));
   }
 
@@ -593,11 +673,25 @@ export function segregateSplitTree(splitFiles: ReadonlyMap<string, string>, deps
 
   // Milestone 2 (§2.1 steps 1-5): name every `src`-bucket module from its
   // own decompiled text (plus entry-ness from MODULES.json) — never
-  // node_modules/_unclassified modules, which keep module_<id>.js per §6
-  // milestone 1.
+  // node_modules modules.
+  //
+  // 2026-09-02 (Service NSW brief): `unclassified` modules (no
+  // `--deps-report`, or the report simply didn't cover this module id) are
+  // *also* fed through naming now, not just `src`-bucket ones — milestone
+  // 1's "no classification -> _unclassified/, never guessed" rule was right
+  // for the *bucketing* verdict (still true: an unclassified module that
+  // scores no name candidate stays in `_unclassified/`, never silently
+  // reclassified as app code), but was blocking §3.1/3.2's own call/config-
+  // shape evidence from ever running at all when deps is slow or absent
+  // (Service NSW: >10 min for a `deps` run) — exactly backwards from the
+  // spec's "deps confirms, doesn't gate" framing this milestone restores.
+  // A navigator/screen (or any §2.1 step 1-5) name candidate strong enough
+  // to clear `MIN_NAME_CONFIDENCE` promotes the module from `unclassified`
+  // to `src`; anything that doesn't name stays exactly where milestone 1
+  // left it.
   const srcTexts: { id: number; text: string }[] = [];
   for (const info of infos) {
-    if (info.bucket !== "src") continue;
+    if (info.bucket !== "src" && info.bucket !== "unclassified") continue;
     const text = splitFiles.get(info.originalFile);
     if (text === undefined) throw new Error(`segregate: split tree has no file for module ${info.id} (${info.originalFile})`);
     srcTexts.push({ id: info.id, text });
@@ -606,11 +700,11 @@ export function segregateSplitTree(splitFiles: ReadonlyMap<string, string>, deps
   const namesById = nameCustomModules(srcTexts, modulesJson.entry, depsByModuleId, ownershipByModule, classByModule);
   for (let i = 0; i < infos.length; i++) {
     const info = infos[i]!;
-    if (info.bucket !== "src") continue;
+    if (info.bucket !== "src" && info.bucket !== "unclassified") continue;
     const named = namesById.get(info.id) ?? null;
     if (named === null) continue;
     idToNewPath.set(info.id, named.path);
-    infos[i] = { ...info, newPath: named.path, nameSignal: named.signal, nameConfidence: named.confidence };
+    infos[i] = { ...info, bucket: "src", newPath: named.path, nameSignal: named.signal, nameConfidence: named.confidence };
   }
 
   const files = new Map<string, string>();

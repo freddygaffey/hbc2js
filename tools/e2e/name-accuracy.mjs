@@ -78,15 +78,21 @@ export function similarity(a, b) {
 async function main() {
   const [, , bundlePath, mapPath, ...rest] = process.argv;
   const asJson = rest.includes("--json");
+  // 2026-09-02 (Service NSW brief): proves navigator/screen detection works
+  // from call/config shape alone, with no `deps` run at all (the whole
+  // point -- Service NSW's own `deps` run takes >10 min). `--no-deps` skips
+  // `runDeps` entirely and passes `null` to `segregateSplitTree`, same as
+  // the CLI's `hbc2js segregate` with no `--deps-report`.
+  const noDeps = rest.includes("--no-deps");
   if (bundlePath === undefined || mapPath === undefined) {
-    process.stderr.write("usage: name-accuracy.mjs <bundle.hbc> <source.map> [--json]\n");
+    process.stderr.write("usage: name-accuracy.mjs <bundle.hbc> <source.map> [--json] [--no-deps]\n");
     process.exit(2);
   }
 
   const bytes = readFileSync(bundlePath);
   const split = splitProject(bytes, { moduleName: bundlePath.split("/").pop() });
-  const depsRun = await runDeps(bundlePath, { offline: true });
-  const seg = segregateSplitTree(split.files, depsRun.report);
+  const report = noDeps ? null : (await runDeps(bundlePath, { offline: true })).report;
+  const seg = segregateSplitTree(split.files, report);
 
   const map = JSON.parse(readFileSync(mapPath, "utf8"));
   const truthBasenames = map.sources.filter((s) => !s.includes("node_modules") && /\.(tsx?|jsx?)$/.test(s)).map(basenameNoExt);

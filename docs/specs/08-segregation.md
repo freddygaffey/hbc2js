@@ -180,7 +180,7 @@ evaluated against a module already classified `custom` by `classify.ts`
 they're either named via `moduleOwnership` or bucketed into
 `node_modules/_vendor/`).
 
-### 3.1 Navigator detection (confidence 0.9 named / 0.6 unnamed)
+### 3.1 Navigator detection (confidence 0.9 named / 0.6 unnamed / 0.6 shape-alone)
 A CUSTOM module contains a call `create<X>Navigator(...)` (`X` ∈
 `Stack|Native­Stack|BottomTab|Drawer|Material­TopTab|…`, i.e. any
 `Create[A-Za-z]*Navigator`-shaped callee) whose callee resolves, via the
@@ -191,6 +191,20 @@ only the call-name pattern is evidence — confidence 0.6. **Reads:** the
 module's decompiled text (grep for the call name) + `MODULES.json`'s `deps`
 array to resolve the callee's require edge to `moduleOwnership`/
 `classification`.
+
+**Deps confirms, it does not gate (2026-09-02, Service NSW brief).** A
+`--deps-report` is a *confirming* signal only: with no deps report at all
+(Service NSW's own `deps` run takes >10 min — too slow to require before a
+first, named `src/screens/` tree), the call/config shape ALONE still names
+the module — confidence 0.6, the same floor as the "unnamed library-
+classified" tier above, still clearing `MIN_NAME_CONFIDENCE`. When a deps
+report *is* present but simply doesn't confirm this particular call (none
+of its deps resolve to `@react-navigation/*` or a library), the call is
+still rejected as before — a real classify.ts verdict that didn't confirm
+is stronger negative evidence than no verdict at all, and weakening that
+would regress the acceptance table below. Implemented in
+`src/split/segregate.ts`'s `detectNavigator`/`nameCustomModules`
+(`hasClassificationData` flag).
 
 ### 3.2 Screen detection (confidence 0.85 literal route / 0.5 dynamic)
 Given a navigator module (3.1), the object/array literal passed as route
@@ -209,6 +223,31 @@ is not a bare identifier resolvable to one require target (e.g. computed,
 or a `React.lazy(() => import(...))`-shaped indirection) — the screen is
 still flagged in `SEGREGATION.json` as "route detected, target module
 unresolved" for manual follow-up rather than silently dropped.
+
+**Both config shapes are implemented, deps-free, in `traceModuleOrigins`**
+(`src/split/segregate.ts`, regex-driven linear scan, not a real AST walk —
+see its own doc comment): the pre-jsx-recover `{ RouteName: Component }`
+registry (`routeObjRegs`) and, added 2026-09-02, the post-jsx-recover
+`{ name: "<Lit>", component: <ref> }` props shape (`jsxScreenPending`,
+gated on the module itself also matching 3.1's navigator call shape, to
+keep the same "given a navigator module" framing and limit false positives
+from an unrelated `.name =`/`.component =` pair elsewhere in a large
+module). Neither shape's target resolution (`moduleOriginByReg`) needs a
+`--deps-report` — the classification guard that used to require a
+screen's *target* module be `classify.ts`-confirmed `custom` now only
+applies when a deps report was actually supplied (`hasClassificationData`);
+with none, a resolved literal-route hit is accepted on its own.
+
+**Known gap, not silently dropped (`docs/BUGS.md`, 2026-09-02):** on Service
+NSW specifically, the JSX-props shape's route-name literal resolves but its
+`component` target does not — that bundle's decompiled text calls
+everything, including `require`, through `Reflect.apply(fn, thisArg, [arg])`
+rather than a direct `fn(arg)` call, one hop `traceModuleOrigins` does not
+follow. A generalisation was tried and reverted in the same commit: it
+regressed the react-navigation-example acceptance table below (4→3
+navigators, 54→67 screens, mean fuzzy 0.686→0.662) by over-matching
+unrelated `Reflect.apply` sites in that fixture's own larger modules.
+Tracked as an open `docs/BUGS.md` row rather than shipped unsafely.
 
 ### 3.3 Store/slice detection (confidence 0.9 slice name / 0.4 zustand)
 `createSlice({ name: "foo", … })` (Redux Toolkit) → CUSTOM, filed
@@ -492,6 +531,26 @@ scores each recovered name against the single **best-matching** real
 app-source basename anywhere in the `.map`'s non-`node_modules` `sources`
 list — "did hbc2js recover a name close to some real file in this app", a
 weaker but honest claim, stated in the tool's own header comment.
+
+**No-deps proof (2026-09-02, Service NSW brief) — numbers only, no bundle
+content committed, per repo policy on proprietary local-corpus APKs:**
+
+| Bundle | Modules | Navigators (no deps) | Screens (no deps) |
+|---|---|---|---|
+| react-navigation-example-0.85.3 (HBC 98, own fixture) | 1782 | 6 | 58 (mean fuzzy 0.654, vs 0.686 WITH deps — expected: no deps means no `classify.ts`-"custom" guard narrowing screen targets, and a few more shape-alone navigator hits than the deps-confirmed 4) |
+| Service NSW (HBC 96, local/proprietary — hash only, see `tests/fixtures/bundles/hardened/BUILD.md` convention) | 4510 | 26 | 0 — known gap, `docs/BUGS.md` 2026-09-02 row (Reflect.apply require-call form not traced) |
+
+react-navigation-example WITH deps stays exactly at the milestone-3 table's
+own numbers above (4 navigators, 54 screens, mean fuzzy 0.686 ≥ 0.68) —
+the deps-optional change adds a fallback path, it does not touch the
+deps-confirmed one. Service NSW's 26 navigators (real call-shape matches;
+some plausibly count a library's own factory *definition* alongside actual
+app *usage* sites, since with no deps there is no way to tell them apart —
+an honest limitation of shape-alone detection, not claimed as 26 confirmed
+app navigators) is still strictly better than milestone 1/2's status quo
+with no `--deps-report`: previously **every** module landed in
+`_unclassified/`, zero names, zero screens, zero navigators, because
+naming only ever ran on the `classify.ts`-confirmed `src` bucket.
 
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →
