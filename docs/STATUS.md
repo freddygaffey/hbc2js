@@ -60,8 +60,9 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 
 ## Blocked / needs Fred
 
-- reg-split rung (real variable names) — blocked on docs/PUSHBACK.md P-6
-  (spec §4.1 vs §1/§8 example contradiction).
+- reg-split rung (real variable names) — **specced 2026-09-02**
+  (`docs/specs/passes/19-reg-split.md`; P-6 resolved); awaiting
+  implementation (docs/QUEUE.md item 1).
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top 5 (docs/QUEUE.md)

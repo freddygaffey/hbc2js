@@ -59,6 +59,7 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 | `call-shape` | R3 (+ builtins table) | all | all | `Reflect.apply(f, undefined, [a])` → `f(a)`; `Reflect.apply(o.m, o, [a])` → `o.m(a)`; `Reflect.construct(C, [a])` → `new C(a)`; `functionPrototypeCall/Apply` helpers → `.call/.apply` | done |
 | `fn-naming` | R4 | all | all | `_fnN` whose bytecode name is a valid, unshadowed identifier → that name; `_fnN` assigned once to `o.key`/`var k` → `key` | done |
 | `var-naming` | R5 | all | all | surviving `rN` → `v1…` by live range; params keep `aN` unless evidence names them; env slots `_eD_S` → names when §5.4 evidence exists | done (2026-08-31; 3.1% named — see PUSHBACK P-6 / reg-split) |
+| `reg-split` | R8 (needs row) | 04, 02, 11, 14, 22 | all | a register with ≥2 disjoint live ranges (webs — reaching-defs over the structured AST; loop-carried values and try→catch flows stay one web) → one variable per range (`r0`, `r0_2`, …), so var-naming can name each independently | **specced 2026-09-02** (`docs/specs/passes/19-reg-split.md`; unparks P-6), `after: [sugar rungs]`, `before: [var-naming]` |
 | `template-literal` | 21 | 43, 44 | all | `Reflect.apply(__hbc_HermesInternal.concat, c0, [s0, c1, …])` → template literal (never a `+` chain — row 21 corrected); `getTemplateObject` + tag call → tagged template | batch 3, **merged 2026-09-01** |
 | `default-params` | 24 | 39, 51 | 94, 99 (measured); orphan functions at v99, i.e. a top-level `function` with no `CreateClosure` site, are out of reach of the framework's stage-B driver — follow-up, not a shape gap | prologue labeled block `L: { r = arguments[k]; if (r !== U) break L; …default…; break L; }` (not the if/else spec §2 described — corrected per docs/PUSHBACK.md P-8) → `(r = e)` | **merged 2026-09-02** |
 | `destructure` | 22 (✅ verified, v94+v99) | 37, 38, 39 | all | one labeled block per array element (own `__hbc_iterBegin`/`__hbc_iterNext` + done flag; the commit may sit at the head of the *next* block) and per defaulted object property (`GetById` + `!== undefined` guard); plain properties are bare `GetById`s; object rest = **3-arg** `copyDataProperties`; array rest = inline append loop → `[rA, rB = d, , ...rR] = x` / `({ a: rA, ...rO } = x)` assignments (spec 16 §2; P-3/P-9 corrected — not straight-line, not an `Expr`) | **merged** (2026-09-02), `after: [default-params]`, `before: [var-naming]`; v1 scope: direct/staged-commit array elements + close block, object plain/defaulted/3-arg-rest properties — array per-element defaults, holes-by-shape and array rest not yet matched (refused, `docs/BUGS.md`) |
@@ -77,7 +78,7 @@ Not rungs: `29-promise-chaining`, `31-microtask-ordering`, `50-this-binding`
 (no idiom); `30-async-generator` (uncompilable); `21-iife-closures` (module
 wrapper `_fn0.call(globalThis)` is the emitter's, not a lowering).
 
-**Count: 30 rungs** (12 stage A, 18 stage B); 12 merged (jsx-recover opt-in), 4 hard, 1 unscheduled.
+**Count: 31 rungs** (12 stage A, 19 stage B); 12 merged (jsx-recover opt-in), 4 hard, 1 unscheduled, 1 specced (reg-split).
 
 ---
 
@@ -94,7 +95,7 @@ gen-lowered ────┼─► finally-dedup ─► loop-cond ─► for-head
                 │        └─► try-shape                            ├─► default-params ─► destructure│
                 └────────────────► async-recovery                 ├─► try-clean                    │
                             (all) ─► label-clean                  ├─► arguments-form, literal-forms│
-                                                                  └─► (all above) ─► var-naming/closure-naming ─► jsx-recover
+                                                                  └─► (all above) ─► reg-split ─► var-naming/closure-naming ─► jsx-recover
 ```
 
 Rationale, one line each (a spec must repeat the ones that bind its rung):
@@ -122,6 +123,11 @@ Rationale, one line each (a spec must repeat the ones that bind its rung):
 * **Naming after everything that deletes registers**: naming a temporary that
   a later rung would have folded wastes a name and blocks the fold
   (`var-naming` is fixed-point-safe but not free).
+* **`reg-split` immediately before `var-naming`** (spec 19): splitting a
+  reused register's disjoint live ranges into separate variables is what
+  lifts var-naming past its §4.1 reuse gate (P-6); it must see the final
+  register population, so it runs after every rung that folds or absorbs
+  registers.
 * **`jsx-recover` last**: it wants `React.createElement`/`jsx` as calls with
   named callees and named props, which every earlier rung supplies.
 

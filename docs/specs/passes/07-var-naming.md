@@ -330,6 +330,20 @@ the alpha-rename contract do not). No opcode is inspected.
 - [ ] Corpus metric 50-70% register-vars named; `docs/STATUS.md`, `docs/AGENT-
       LOG.md`, catalogue R5 Pass column updated in the same commit.
 
+## Review responses
+
+* **P-6 (2026-08-31 → resolved 2026-09-02).** The §1 example and §8's
+  "induction vars (i/j)" claim contradict §4.1's reuse gate on
+  `04-for-loop-basic` itself (`r11`/`r1` are multi-role there). Resolution:
+  **the gate stands; the example was optimistic.** The recall gap
+  (3.1 % named) is register *reuse*, and it is now `reg-split`'s job
+  (`docs/specs/passes/19-reg-split.md`, runs `before: [var-naming]`): after
+  splitting, each disjoint live range is its own single-def/single-role
+  variable and clears §4.1 unchanged. The §1 example is accurate again in a
+  post-reg-split pipeline. One implementation knock-on lands with reg-split
+  (its F15): the §4.3 emitter-name-class regex's `r\d+` becomes
+  `r\d+(_\d+)?` so a heuristic base can never collide with a split name.
+
 ## Estimated complexity
 
 **Medium** — heavier than `fn-naming` (which had one evidence source and one
