@@ -58,6 +58,15 @@ harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
 verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 `## Resolved`. Gate: `tests/gate/docs/bugs-ledger.test.ts`.
 
+## Naming overlay (Design D) — v1 live
+
+`src/name-overlay/` + `hbc2js name set|get|revert|search` + `hbc2js render`
+(docs/RENAME.md). A versioned, append-only, queryable layer of names keyed to
+`{fn,reg}` binding ids, rendered at emit as a pure frame-local alpha-rename
+(behaviour-preserving; trace-oracle 0-DIVERGENT). External names pass
+var-naming's reuse gate; `--override` forces one, stamped `overridden`+`low`.
+v1 = register locals; env slots / function names deferred (spec §8).
+
 ## Blocked / needs Fred
 
 - reg-split rung (real variable names) — **specced 2026-09-02**
