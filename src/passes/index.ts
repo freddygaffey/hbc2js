@@ -8,6 +8,7 @@ import type { Stmt as AstStmt } from "../emit/ast.ts";
 import { applyPasses } from "./driver.ts";
 import type { ApplyResult } from "./driver.ts";
 import { applyAstPasses, identUses, isRegisterName } from "./ast.ts";
+import type { Param } from "../emit/ast.ts";
 import type { AstApplyResult } from "./ast.ts";
 import { enabledPasses, REGISTRY } from "./registry.ts";
 import type { EnabledPassOptions } from "./registry.ts";
@@ -89,15 +90,27 @@ export type AstPassHook = (fn: AstStmt, cfg: FunctionCfg) => { readonly fn: AstS
  * nothing: a name `var-naming` produced always has a write (it was live), so
  * anything this finaliser could prune is still an `rN`, and a decl holding
  * one is found.
+ *
+ * `params` (F15, docs/specs/passes/15-default-params.md §3): a register can
+ * now be live *only* inside a parameter's own default (`default-params`
+ * moves its whole guarded body there, deleting every occurrence from
+ * `body`) — `identUses(withoutDecl, n)` alone would then see zero uses and
+ * prune a `let` a param's `init` still reads, turning that read into an
+ * accidental global in non-strict code the moment the function is called
+ * (docs/BUGS.md's default-params-prune-leak row). Each `init` is checked
+ * the same way `identUses` checks a statement: wrapped as a one-statement
+ * `expr` list so the very same reads/writes counter answers it.
  */
-export function pruneRegisterDecls(body: readonly AstStmt[]): readonly AstStmt[] {
+export function pruneRegisterDecls(body: readonly AstStmt[], params: readonly Param[] = []): readonly AstStmt[] {
   const idx = body.findIndex((s): s is AstStmt & { readonly k: "decl" } => s.k === "decl" && s.kind === "let" && s.names.length > 0 && s.names.some(isRegisterName));
   if (idx < 0) return body;
   const decl = body[idx] as AstStmt & { readonly k: "decl" };
   const withoutDecl = [...body.slice(0, idx), ...body.slice(idx + 1)];
+  const paramInits: AstStmt[] = params.filter((p) => p.init !== undefined).map((p) => ({ k: "expr", expr: p.init! }));
   const live = decl.names.filter((n) => {
     const u = identUses(withoutDecl, n);
-    return u.reads + u.writes > 0;
+    if (u.reads + u.writes > 0) return true;
+    return paramInits.length > 0 && identUses(paramInits, n).reads + identUses(paramInits, n).writes > 0;
   });
   if (live.length === decl.names.length) return body;
   if (live.length === 0) return withoutDecl;
@@ -127,7 +140,7 @@ export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions 
       diagnostic: (d) => diagnostics.push(d),
     });
     onResult?.(cfg.functionIndex, r);
-    const body = r.applied.length > 0 ? pruneRegisterDecls(r.body) : r.body;
+    const body = r.applied.length > 0 ? pruneRegisterDecls(r.body, fn.params) : r.body;
     return { fn: { ...fn, body }, diagnostics: [...diagnostics, ...r.diagnostics] };
   };
 }

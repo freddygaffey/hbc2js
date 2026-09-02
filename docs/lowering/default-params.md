@@ -1,7 +1,7 @@
 # Default parameters — `undefined`-check, evaluated per-call
 
 **Fixtures:** `39-destructuring-params`, `51-default-params`
-**Confidence:** ✅ single-version (v94, `-O0`)
+**Confidence:** ✅ verified (v94, v99, `-O0`)
 
 ## 1. Source
 
@@ -74,6 +74,38 @@ parameter boundaries).
 
 ## 7. Version differences
 
-Not cross-checked against v99 in this pass (v94 `-O0` only); shares the
-`StrictEq/Neq undefined` idiom with `destructuring.md`, which is likewise
-only single-version-confirmed. No divergence expected.
+Cross-checked at v99 (`51-default-params`, `-O0`): the raw bytecode idiom
+(§2) is unchanged — the same `LoadParam` + `StrictEq/Neq undefined` guard —
+except that v99 interleaves each defaulted parameter's own `LoadParam`
+immediately before its own guard, where v94 hoists every defaulted
+parameter's `LoadParam` to the front of the function (before the *first*
+guard). Both orders are accepted by the pass (`src/passes/default-params`);
+neither changes what the guard means.
+
+**Stage-B AST correction (docs/PUSHBACK.md P-8).** This file's §3/§4
+described the structurer's stage-B output as a plain
+`if (dst !== undefined) {} else { …default… }`. Measured directly
+(`--emit-tree`/`--emit-ast` on `51-default-params` at both versions), the
+shape that actually reaches stage B is one **labeled block per defaulted
+parameter**, each with a *tail* `break`:
+
+```js
+L0: {
+  r0 = arguments[k];          // may include a later parameter's load too (v94)
+  if (r0 !== U) {
+    break L0;                 // param WAS passed — skip the default entirely
+  }
+  …default body, ending by assigning r0…
+  break L0;
+}
+```
+
+`label-clean`'s own L2 rule (`docs/specs/passes/06-label-clean.md` §4) does
+**not** collapse this into an if/else: L2 only credits the tail set of a
+`seq`/labeled body from its *last* element, and here the guarding `if` is
+not last (the default body and its own trailing `break` follow it) — so
+label-clean refuses (`break-not-in-tail`) and the labeled-block shape
+survives unchanged into stage B, where `src/passes/default-params/match.ts`
+now matches it directly. The bytecode-level picture in §2 is unaffected —
+this correction is about the tree/AST shape the *structurer* produces from
+that bytecode, one layer up.
