@@ -238,16 +238,30 @@ screen's *target* module be `classify.ts`-confirmed `custom` now only
 applies when a deps report was actually supplied (`hasClassificationData`);
 with none, a resolved literal-route hit is accepted on its own.
 
-**Known gap, not silently dropped (`docs/BUGS.md`, 2026-09-02):** on Service
-NSW specifically, the JSX-props shape's route-name literal resolves but its
-`component` target does not — that bundle's decompiled text calls
-everything, including `require`, through `Reflect.apply(fn, thisArg, [arg])`
-rather than a direct `fn(arg)` call, one hop `traceModuleOrigins` does not
-follow. A generalisation was tried and reverted in the same commit: it
-regressed the react-navigation-example acceptance table below (4→3
-navigators, 54→67 screens, mean fuzzy 0.686→0.662) by over-matching
-unrelated `Reflect.apply` sites in that fixture's own larger modules.
-Tracked as an open `docs/BUGS.md` row rather than shipped unsafely.
+**Known gap, not silently dropped (`docs/BUGS.md`, 2026-09-02, revisited same
+day):** the original hypothesis here — Service NSW's `component` target not
+resolving because everything is called through `Reflect.apply(fn, thisArg,
+[arg])` — turned out to be wrong on inspection: no `.component =` assignment
+in the bundle actually goes through `Reflect.apply`. Three real, narrower
+gaps were found and fixed instead (all with their own synthetic regression
+test, no change to the acceptance table below): a `.component =
+require(dep).NamedExport;` compiled as one statement rather than two; the
+interop-default hop spelled `reg["default"]` (bracket notation) instead of
+`.default`; and a real bug in `jsxScreenPending` where a route-props register
+reused across sibling screens in the same navigator (Service NSW's own
+`routeConfig`-shaped modules do this dozens of times per module) silently
+kept only the *last* screen sharing that register instead of flushing each
+complete pair before the reset. Even with all three fixed, Service NSW still
+recovers 0 screens: the actual blocker is `detectNavigatorKind`'s call-shape
+gate (`.create<X>Navigator(`/`.createStaticNavigation(`) never matching
+Service NSW's own navigator-calling modules, which use the API's *other*
+shape (destructure `{Navigator, Screen}` once, then use `Stack.Navigator`/
+`Stack.Screen` as JSX components elsewhere) — so the JSX-props resolver never
+even turns on for the modules holding Service NSW's real route config.
+Tracked as an open `docs/BUGS.md` row rather than shipped unsafely; widening
+the navigator call-shape gate to recognise `.Navigator`/`.Screen` JSX usage
+needs the same over-matching care, with its own fixture-backed regression
+bar, before it ships.
 
 ### 3.3 Store/slice detection (confidence 0.9 slice name / 0.4 zustand)
 `createSlice({ name: "foo", … })` (Redux Toolkit) → CUSTOM, filed
@@ -538,7 +552,7 @@ content committed, per repo policy on proprietary local-corpus APKs:**
 | Bundle | Modules | Navigators (no deps) | Screens (no deps) |
 |---|---|---|---|
 | react-navigation-example-0.85.3 (HBC 98, own fixture) | 1782 | 6 | 58 (mean fuzzy 0.654, vs 0.686 WITH deps — expected: no deps means no `classify.ts`-"custom" guard narrowing screen targets, and a few more shape-alone navigator hits than the deps-confirmed 4) |
-| Service NSW (HBC 96, local/proprietary — hash only, see `tests/fixtures/bundles/hardened/BUILD.md` convention) | 4510 | 26 | 0 — known gap, `docs/BUGS.md` 2026-09-02 row (Reflect.apply require-call form not traced) |
+| Service NSW (HBC 96, local/proprietary — hash only, see `tests/fixtures/bundles/hardened/BUILD.md` convention) | 4510 | 26 | 0 — still, after fixing the component-resolution gaps this task found (see `docs/BUGS.md` 2026-09-02 row, revisited): the real blocker is `detectNavigatorKind` never matching Service NSW's own navigator-calling modules (`.Navigator`/`.Screen` JSX usage, not `.create<X>Navigator(` calls), so the (now-fixed) resolver never gets a module to run on |
 
 react-navigation-example WITH deps stays exactly at the milestone-3 table's
 own numbers above (4 navigators, 54 screens, mean fuzzy 0.686 ≥ 0.68) —
