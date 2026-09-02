@@ -16,7 +16,7 @@ If both slots are busy, WAIT — never launch a third. NO deobfuscation rungs (S
 
 **Lane L — ladder (one lean Sonnet agent at a time):**
 1. [DONE 2026-09-02, 9110fb9 — 7.7-10.7x, checker defUse recompute was the real cost] P-11a reg-split perf.
-2. P-11b: update the ~10 rungs whose tests assert `r\d+` regexes to accept `rN_j` split names (rung-owned assertions, never invert an assertion), then flip reg-split default-on.
+2. [ATTEMPTED 2026-09-03, BLOCKED — 1a44914: default-on breaks jsx-recover (cross-pass bug, BUGS row w/ repro); regex widenings kept; flip reverted] P-11b NEW SHAPE: fix the reg-split x jsx-recover interaction (matcher sees through rN_j renaming, or reorder reg-split after jsx-recover), verify 59-jsx-runtime-calls v94/v99, THEN flip default-on.
 3. var-naming compound: name the split ranges (loop->i, arrays, usage/alias/literal heuristics per reg-split spec s9 Q4; optionally a 2nd expr-rebuild pass). Target: registers-named 3-4% -> >=15% on rn-template + a real bundle.
 4. Non-deobf body-cleanup rungs: literal-forms, try-clean, arguments-form, for-in/for-of. Each: lean, sound checker, corpus-guard clean.
 
