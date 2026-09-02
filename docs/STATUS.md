@@ -34,15 +34,15 @@ stores) split into real files. (docs/LANES.md)
 - M2 Disassembler (100% match vs `hermesc -dump-bytecode`) — done
 - M3 Test harness (trace runner + recompile round-trip) — done
 - M4 Baseline (CFG + structurer + emitter) — done, 501/501 gate, 0 DIVERGENT
-- M5 Pass ladder (readability) — in progress, 14/30 rungs merged
+- M5 Pass ladder (readability) — in progress, 15/30 rungs merged
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 14/30 rungs live
+## Ladder — 15/30 rungs live
 
 `loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
 `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
-`destructure`, `template-literal`, `fn-naming`, `var-naming`, `jsx-recover`
-(opt-in `--jsx`). Next (batch 3): `spread-rest`.
+`destructure`, `spread-rest`, `template-literal`, `fn-naming`, `var-naming`,
+`jsx-recover` (opt-in `--jsx`). Next (batch 3): TBD.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
@@ -51,9 +51,9 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 ~111 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
 `npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
 
-## Open bugs — 23 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing)
+## Open bugs — 24 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing; +1 row 2026-09-02 spread-rest landing)
 
-By cluster (open only): emit-shape 7, metrics 3, passes 3, real-app 2,
+By cluster (open only): emit-shape 7, metrics 3, passes 4, real-app 2,
 harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
 verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 `## Resolved`. Gate: `tests/gate/docs/bugs-ledger.test.ts`.

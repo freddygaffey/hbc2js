@@ -150,12 +150,25 @@ test("a rest parameter does not count towards Function.prototype.length", () => 
   // v<=96 counts the rest element in paramCount and v>=97 does not; both must
   // emit `length === 1` for `html(strings, ...values)`. `fn-naming` (row R4)
   // now renames the declaration from `_fnN` to `html` (its own functionName
-  // evidence), so the declared-name capture group accepts either.
+  // evidence), so the declared-name capture group accepts either. `values`
+  // itself used to survive only as a body-level `__hbc_b_copyRestArgs` call
+  // (so the printed param list was just `a1`, with no `...` at all — the
+  // param-count assertion this test is really after was, until now, only
+  // ever true "by omission"); `spread-rest` (M5 rung 17, 2026-09-02)
+  // recovers it as a real `...` rest parameter, so `html`'s declared
+  // (non-rest) param count is still exactly 1 — the assertion below is
+  // stated against `Param.rest` now, the same "does a rest param count
+  // towards paramCount" fact this test has always been about, just checked
+  // the way spec 15 §2's own table checks it instead of by the absence of
+  // any `...` syntax to check.
   for (const version of [84, 94, 96, 98, 99]) {
     const text = code("44-tagged-templates", version);
     const m = /function (_fn\d+|html)\(([^)]*)\) \{\n\s+\/\/ fn#\d+ "html"/.exec(text);
     assert.ok(m !== null, `v${version}: html not found in the output`);
-    assert.equal(m[2]!.trim(), "a1", `v${version}: html has params "${m[2]}"`);
+    const params = m[2]!.trim();
+    assert.match(params, /^a1(, \.\.\.\w+)?$/, `v${version}: html has params "${params}"`);
+    const declaredCount = params.split(",").filter((p) => !p.trim().startsWith("...")).length;
+    assert.equal(declaredCount, 1, `v${version}: html has params "${params}"`);
   }
 });
 
