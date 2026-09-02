@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { requireSweep } from "../../support/tiers.ts";
+import { requireNetwork, runRequiringNetwork } from "../../support/network.ts";
 // @ts-expect-error — plain-JS tool, no declaration file.
 import { scoreAgainstTruth, formatScore } from "../../../tools/deps-truth.mjs";
 
@@ -27,6 +28,14 @@ test("react-navigation-example-0.85.3: hbc2js deps --confirm, --no-shared-db, em
     t.skip(`${hbcPath} or ${truthPath} not present — run this fixture's fetch.sh first (INCONCLUSIVE, not a failure)`);
     return;
   }
+  // `--confirm` is real network + real npm (docs/BUGS.md 2026-09-01 "deps
+  // --confirm sweep verification": precision is stable, but this test's own
+  // network/npm dependency is not). Skip gracefully rather than hard-fail
+  // when there's no network, same as an oracle-dependent sweep test skips
+  // when the oracle binary is absent — set HBC2JS_REQUIRE_NETWORK=1 to make
+  // that a real failure instead (e.g. a CI lane that must prove network is
+  // up before asserting precision).
+  if (!(await requireNetwork(t))) return;
 
   // A fresh scratch `--out` per run: an empty project-local sigdb (D17a
   // "every candidate must be confirmed via npm"), and where the confirm
@@ -37,7 +46,10 @@ test("react-navigation-example-0.85.3: hbc2js deps --confirm, --no-shared-db, em
   const out = mkdtempSync(join(tmpdir(), "hbc2js-sweep-confirm-out-"));
   try {
     const truth = JSON.parse(readFileSync(truthPath, "utf8"));
-    const s = await scoreAgainstTruth(hbcPath, truth, { confirm: true, offline: false, noSharedDb: true, out });
+    // `any` here matches scoreAgainstTruth's own untyped-plain-JS status (see the @ts-expect-error import above).
+    const outcome = await runRequiringNetwork<any>(t, () => scoreAgainstTruth(hbcPath, truth, { confirm: true, offline: false, noSharedDb: true, out }));
+    if (!outcome.ok) return; // skipped inside runRequiringNetwork — INCONCLUSIVE, not a failure
+    const s = outcome.value;
     console.log(formatScore(s));
     console.log(`[deps sweep --confirm] confirmed: ${s.confirmed.reported.join(", ") || "none"}`);
 
