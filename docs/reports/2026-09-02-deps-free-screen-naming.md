@@ -1,0 +1,4 @@
+# 2026-09-02 — deps-free navigator/screen naming — Sonnet, lean
+Tokens 188k · tool calls 129 · green.
+
+segregate now detects navigators/screens and names them WITHOUT a --deps-report (deps only raises confidence). unclassified-bucket modules run through naming, promote to src/ on a hit. react-navigation-example WITHOUT deps: 6 navigators, 58 screens, mean fuzzy 0.654 (WITH deps unchanged: 4/54/0.686). Service NSW no-deps: 26 navigators detected (was 0), 0 screens — root cause: NSW calls everything incl. require via Reflect.apply(fn, this, [arg]), one hop past the component resolver; a fix was tried, regressed react-navigation-example, reverted; filed BUGS with the exact hop. Screen NAMES are extractable from route strings (HomeScreen/WalletTabScreen/etc.) — wiring them to src/screens/ files needs the Reflect.apply hop.
