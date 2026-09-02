@@ -34,6 +34,10 @@ export const ErrorCode = {
   // pass ladder (docs/specs/07-pass-ladder.md §2.3)
   E_PASS_ORDER: "E_PASS_ORDER",
   E_PASS_CRASH: "E_PASS_CRASH",
+  // artifact / query (docs/specs/10-artifact-format.md §4.2) — staleness is a
+  // hard error, never a wrong answer; there is no --force.
+  E_STALE_RANGES: "E_STALE_RANGES",
+  E_STALE_INDEX: "E_STALE_INDEX",
   // internal
   E_INTERNAL: "E_INTERNAL",
 } as const;

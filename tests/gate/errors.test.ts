@@ -29,9 +29,13 @@ const EXPECTED_CODES = [
 // which spec 00 §6.1's list predates.
 const M4_CODES = ["E_ENV_UNRESOLVED", "E_TOO_COMPLEX", "E_STRUCTURE_UNSOUND", "E_EMIT_UNSUPPORTED", "E_UNBOUND_IDENT", "E_PASS_ORDER", "E_PASS_CRASH"];
 
+// Added by P2.1 (docs/specs/10-artifact-format.md §4.2): staleness is a hard
+// error, never a wrong answer — there is no `--force`.
+const P2_1_CODES = ["E_STALE_RANGES", "E_STALE_INDEX"];
+
 test("ErrorCode exports every code from spec 00 section 6.1, plus the M4/M5 codes", () => {
   const actual = Object.values(ErrorCode).sort();
-  assert.deepEqual(actual, [...EXPECTED_CODES, ...M4_CODES].sort());
+  assert.deepEqual(actual, [...EXPECTED_CODES, ...M4_CODES, ...P2_1_CODES].sort());
 });
 
 test("Hbc2jsError serialises code, message and context via toJSON", () => {

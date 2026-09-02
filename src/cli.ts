@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { basename, join } from "node:path";
 import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
@@ -29,6 +29,9 @@ import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
 import { splitProject } from "./split/index.ts";
 import { writeSplitResult } from "./split/write.ts";
 import { writeArtifact } from "./artifact/write.ts";
+import { ArtifactService } from "./artifact/service.ts";
+import { listNameable, contextSites } from "./artifact/frame-queries.ts";
+import { rawFrameBodies } from "./name-overlay/frames.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
 
@@ -44,6 +47,10 @@ Usage:
   hbc2js gate [options]            run the gate tier (spec 06 §7)
   hbc2js sweep [options]           run the sweep tier (spec 06 §7)
   hbc2js deps <bundle.hbc|.apk>    identify npm dependencies (D17/D17a/D17b)
+  hbc2js name <set|get|revert|search|list|context> …   Design-D naming overlay (rename-tool-DESIGN-D-overlay.md)
+  hbc2js render --hbc <in.hbc>     render source with the naming overlay applied
+  hbc2js segregate <split-dir>     segregate a flat split tree into src/node_modules form (spec 08)
+  hbc2js query <verb> --artifact <dir> …   query the P2.1 decompile artifact (docs/specs/10-artifact-format.md §3)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -895,7 +902,169 @@ function runNameOverlay(argv: readonly string[]): void {
     process.exit(0);
   }
 
-  fail(ErrorCode.E_USAGE, "name <set|get|revert|search> …", 2, json);
+  // `name list <fn>` / `name context <fn> <reg>` — P2.1a(b), docs/specs/
+  // 10-artifact-format.md §3.1. Live verbs: served from the warm gate/frame
+  // computation over the bundle itself, not from the index files (§3.3).
+  if (sub === "list") {
+    const fn = Number(rest[0]);
+    if (!Number.isInteger(fn) || hbc === undefined) fail(ErrorCode.E_USAGE, "name list <fn> --hbc <input.hbc> [--store <path>]", 2, json);
+    const frames = rawFrameBodies(buildAnalysis(hbc));
+    const overlayStore = existsSync(storePath) ? OverlayStore.load(storePath, hbc) : undefined;
+    const rows = listNameable(frames, fn, overlayStore);
+    if (json) process.stdout.write(JSON.stringify(rows) + "\n");
+    else for (const r of rows) process.stdout.write(`r${r.reg} uses:${r.uses} role:${r.role} named:${r.named ?? "-"}\n`);
+    process.exit(0);
+  }
+  if (sub === "context") {
+    const fn = Number(rest[0]);
+    const reg = Number(rest[1]);
+    if (!Number.isInteger(fn) || !Number.isInteger(reg) || hbc === undefined) fail(ErrorCode.E_USAGE, "name context <fn> <reg> --hbc <input.hbc> [--store <path>]", 2, json);
+    const frames = rawFrameBodies(buildAnalysis(hbc));
+    const CONTEXT_CAP = 40;
+    const rows = contextSites(frames, fn, reg);
+    const shown = rows.slice(0, CONTEXT_CAP);
+    if (json) process.stdout.write(JSON.stringify({ rows: shown, total: rows.length }) + "\n");
+    else {
+      for (const r of shown) process.stdout.write(`${r}\n`);
+      if (rows.length > shown.length) process.stdout.write(`… ${rows.length - shown.length} more; use --all\n`);
+    }
+    process.exit(0);
+  }
+
+  fail(ErrorCode.E_USAGE, "name <set|get|revert|search|list|context> …", 2, json);
+}
+
+// ---------------------------------------------------------------------------
+// `hbc2js query <verb> …` — docs/specs/10-artifact-format.md §3. A thin
+// formatting wrapper over `ArtifactService`; the caps + truncation markers
+// here are the CLI's own presentation of §3.1's bounds, never a second
+// source of truth for them (the service already slices to the cap).
+// ---------------------------------------------------------------------------
+function edgeLine(e: { readonly fn: number | string; readonly file: string | null; readonly line: number | null; readonly kind: string; readonly why?: string }): string {
+  const loc = e.file !== null && e.line !== null ? `${e.file}:${e.line}` : "";
+  const target = typeof e.fn === "number" ? `fn:${e.fn}` : e.fn;
+  const why = e.why !== undefined ? ` why:${e.why}` : "";
+  return [target, loc, e.kind + why].filter((s) => s.length > 0).join(" ");
+}
+
+function truncationLine(total: number, shown: number, hint: string): string | null {
+  if (shown >= total) return null;
+  return `… ${total - shown} more; use ${hint}`;
+}
+
+function runQuery(argv: readonly string[]): void {
+  const verb = argv[0];
+  const rest = argv.slice(1).filter((a) => a !== "--all" && a !== "--json");
+  const json = argv.includes("--json");
+  const all = argv.includes("--all");
+  const artifactDir = flagValue(argv, "--artifact");
+  const hbc = flagValue(argv, "--hbc");
+  if (artifactDir === undefined) fail(ErrorCode.E_USAGE, "query <verb> --artifact <dir> …", 2, json);
+
+  let svc: ArtifactService;
+  try {
+    svc = new ArtifactService(artifactDir, hbc !== undefined ? { hbc } : {});
+  } catch (e) {
+    const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
+    if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
+    else process.stderr.write(`${err.message}\n`);
+    process.exit(3);
+  }
+
+  const positional = rest.filter((a) => !a.startsWith("--"));
+
+  try {
+    if (verb === "fn") {
+      const summary = svc.fn(Number(positional[0]));
+      if (json) {
+        process.stdout.write(JSON.stringify(summary) + "\n");
+      } else {
+        process.stdout.write(
+          [
+            `fn:${summary.fn} name:${summary.name ?? "-"} overlayName:${summary.overlayName ?? "-"}`,
+            `module:${summary.module ?? "-"} file:${summary.file ?? "-"}${summary.lines !== null ? `:${summary.lines[0]}-${summary.lines[1]}` : ""}`,
+            `params:${summary.params} kind:${summary.kind}`,
+            `edges in:${summary.edgesIn} out:${summary.edgesOut} native:${summary.nativeSurfaceCount}`,
+            ...(summary.degraded !== null ? [`! degraded: ${summary.degraded}`] : []),
+          ].join("\n") + "\n",
+        );
+      }
+    } else if (verb === "who-calls" || verb === "calls-from") {
+      const fn = Number(positional[0]);
+      const result = verb === "who-calls" ? svc.whoCalls(fn, { all }) : { ...svc.callsFrom(fn, { all }), unknownInScope: undefined };
+      if (json) {
+        process.stdout.write(JSON.stringify(result) + "\n");
+      } else {
+        for (const e of result.rows) process.stdout.write(`${edgeLine(e)}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+        if ("unknownInScope" in result && result.unknownInScope !== undefined) process.stdout.write(`unknown-callee edges in scope: ${result.unknownInScope}\n`);
+      }
+    } else if (verb === "string") {
+      const sid = Number(positional[0]);
+      const showFull = argv.includes("--full");
+      const { value, uses } = svc.string(sid);
+      if (json) {
+        process.stdout.write(JSON.stringify({ value, uses }) + "\n");
+      } else {
+        if (value === undefined) process.stdout.write(`sid:${sid} <no such string>\n`);
+        else if ("v" in value) process.stdout.write(`${value.v}\n`);
+        else process.stdout.write(showFull ? `${value.head}… [truncated, len:${value.len} sha256:${value.sha256}]\n` : `${value.head}… [head only, len:${value.len}; use --full]\n`);
+        for (const u of uses.rows) process.stdout.write(`fn:${u.fn} ${u.role} n:${u.n}\n`);
+        const tl = truncationLine(uses.total, uses.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+      }
+    } else if (verb === "string-grep") {
+      const result = svc.stringGrep(positional[0] as string, { all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`${r.sid}  ${r.head}  ${r.uses}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "global-uses") {
+      const result = svc.globalUses(positional[0] as string, { all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`fn:${r.fn} ${r.access} n:${r.n} ${r.file ?? "-"}:${r.line ?? "-"}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "native") {
+      const fnFilter = flagValue(argv, "--fn");
+      const result = svc.native({ ...(fnFilter !== undefined ? { fn: Number(fnFilter) } : {}), all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`fn:${r.fn} ${r.surface} ${r.name} n:${r.n}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "module") {
+      const result = svc.module(Number(positional[0]));
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else
+        process.stdout.write(
+          `file:${result.file ?? "-"}\ndeps:${result.deps.join(",") || "-"}\ndependents:${result.dependents.join(",") || "-"}\nownedFnCount:${result.ownedFnCount}\n`,
+        );
+    } else if (verb === "source") {
+      const fn = Number(positional[0]);
+      const linesArg = flagValue(argv, "--lines");
+      const range = linesArg !== undefined ? (linesArg.split("-").map(Number) as [number, number]) : undefined;
+      process.stdout.write(svc.source(fn, range) + "\n");
+    } else {
+      fail(ErrorCode.E_USAGE, "query <fn|who-calls|calls-from|string|string-grep|global-uses|native|module|source> …", 2, json);
+    }
+    process.exit(0);
+  } catch (e) {
+    const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
+    if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
+    else process.stderr.write(`${err.message}\n`);
+    process.exit(3);
+  }
 }
 
 function runRender(argv: readonly string[]): void {
@@ -925,6 +1094,10 @@ function main(): void {
   }
   if (argv[0] === "render") {
     runRender(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "query") {
+    runQuery(argv.slice(1));
     return;
   }
   if (argv[0] === "segregate") {
