@@ -415,12 +415,83 @@ own note "the one signal that can't be a regex") and
 `react-navigation-example-0.85.3` fetched + `deps` run against it, since
 rn-template has no navigation to detect against.
 
-### Milestone 3 — screens/navigators
-3.1–3.2 — needs real AST walking (route config objects, JSX children),
-not grep; needs `react-navigation-example-0.85.3` (or an equivalent
-navigation-heavy fixture) to validate against, since `rn-template-0.72` has
-none to detect. Higher implementation cost (§3.2 note: "the one signal that
-can't be a regex").
+### Milestone 3 — DONE (2026-09-02) — screens/navigators
+
+**Shipped:** `segregateSplitTree` now also runs, per `src`-bucket module,
+§3.1 navigator detection (`detectNavigator`: a `create<X>Navigator`/
+`createStaticNavigation`-shaped property-access grep, gated on at least one
+of the module's own `MODULES.json` `deps` resolving via `moduleOwnership`
+to `^@react-navigation/` — confidence 0.9 — or to a `library`-classified,
+unnamed dep — confidence 0.6) and §3.2 screen detection (`detectScreenHits`
+via `traceModuleOrigins`: a single left-to-right symbolic scan of the
+module's own decompiled text that tracks, per register, which of the
+module's `deps` it traces back to through the fixed 7-param `factory(a1..
+a7)` calling convention — `a2`=`require`, `a7`=`dependencyMap`, confirmed
+uniform across all 1782 modules of the acceptance fixture — then reads off
+every `<routeRegistryObj>.<RouteName> = <ref>;` assignment whose `RouteName`
+key set is not react-navigation's own descriptor-key vocabulary
+(`screen`/`options`/`component`/...) and whose `ref` resolves to another
+`deps` entry classified `custom`). Screen hits are named `<RouteName>Screen`
+(§2.1 step 6) into `src/screens/`; navigator hits are named `<Kind>Navigator`
+into `src/navigation/`.
+
+**Documented deviation from the spec's literal 1-7 priority order** (full
+rationale + a synthetic acceptance test in `nameCandidateFor`'s own comment,
+`src/split/segregate.ts`): a resolved screen hit is placed *above*
+displayName/default-export/createSlice, not below (step 6) — every screen
+component in the acceptance fixture also has its own displayName/default
+export, and burying the route name behind it would throw away the more
+useful signal, the same reasoning §2.2 already states for screen-vs-
+component directory routing. Not a PUSHBACK (no existing test asserted the
+literal order for these new signals). Also added, single-module only:
+§3.3's `configureStore`/`createStore` → `src/store/index.js` (confidence
+0.8) — the cross-module "store assembled from reducers in other modules"
+half of §3.3 is not attempted (recorded here, not silently dropped, per §4
+"no silent loss" spirit).
+
+**Real-world approximation, not the spec's literal AST walk** (§3.2's own
+words: "the one signal that can't be a regex") — `traceModuleOrigins` is a
+regex-driven linear scan with no real scope/liveness tracking, so register
+reuse in a large module can silently miss a route (never, in the cases
+checked, silently invent a wrong one) — see the function's own doc comment.
+A route-registry object literal is told apart from a same-shape
+`{screen, options}` route *descriptor* only by its keys not being in a
+fixed descriptor-keyword set (both decompile to `{k: null, ...}`) and by
+requiring capitalised keys (screen/route-name convention) — without this
+guard, unrelated same-shape config objects elsewhere in a 2000+-line real
+`App.tsx` (gesture-handler/reanimated builder objects, `{get: null,
+changeX: null, ...}`, all lowercase) fired false positives; confirmed fixed
+by hand before shipping.
+
+**Result (react-navigation-example-0.85.3, HBC 98, 1782 modules, `deps
+--offline` report; `tools/e2e/name-accuracy.mjs`):**
+
+| Metric | Value |
+|---|---|
+| Navigators detected | 4 |
+| Screens detected | 54 |
+| `src/` modules named (of 726 custom) | 58 (8.0%) |
+| Ground-truth app basenames (`.map` `sources`, non-`node_modules`, `.tsx`/`.ts`) | 340 |
+| Mean fuzzy similarity (best-match; see caveat below) | 0.68 |
+| % named modules with similarity ≥ 0.8 | 10.3% |
+| Sample recovered → best-match truth pairs | `src/screens/ActivityModesScreen.js` → `ActivityModes` (0.83); `src/screens/AuthFlowScreen.js` → `AuthFlow` (0.83); `src/screens/BottomTabsScreen.js` → `BottomTabs` (0.80); `src/navigation/DrawerNavigator.js` → (no ≥0.5 match — real app has no file named similarly) |
+| No-silent-loss / collisions | 0 collisions across the whole tree (§4) |
+| Structural byte-diff (§4.1) | every module's factory body, modulo require() targets and rename headers, byte-identical before/after — including the require() *target string* itself changing when segregation renames a module another module requires (new in milestone 3; the acceptance test's own byte-diff helper had to stop assuming a require() target is always `module_<N>.js`-shaped) |
+| `boot-split.mjs` re-run | not run on this fixture — `--split` alone already emits a module-level scope-check diagnostic on it (a pre-existing, unrelated decompile-emission gap), so it is not a clean boot-equivalence signal here; rn-template-0.72's existing test already covers §4.2 end-to-end |
+
+**Ground-truth mapping caveat (read before trusting the similarity
+numbers):** the brief's suggested id → source-map-index correspondence does
+**not** hold on this fixture — verified by hand: `sources[986]` (Metro
+module id 986 is this bundle's `--split` entry) is an unrelated
+`node_modules` file, and `sources[1086]`/`sources[1368]` (real, by-content,
+`/example/App.tsx`-shaped and screen-registry app modules) are also
+unrelated `node_modules` paths. There is no cheap module-id ↔ source-path
+correspondence recoverable from this bundle's own metadata. Rather than
+present a misleadingly-precise id-verified score, `name-accuracy.mjs`
+scores each recovered name against the single **best-matching** real
+app-source basename anywhere in the `.map`'s non-`node_modules` `sources`
+list — "did hbc2js recover a name close to some real file in this app", a
+weaker but honest claim, stated in the tool's own header comment.
 
 ### Milestone 4 — stores, component/util split, `SCREENS.md` generation
 3.3, 3.4, and the D19 `SCREENS.md` index (route name → screen file →

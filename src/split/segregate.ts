@@ -48,7 +48,7 @@ export interface SegregatedModuleInfo {
  *  yet collision-resolved or floor-checked — `nameCustomModules` does both. */
 interface NameCandidate {
   readonly baseName: string;
-  readonly dir: "src" | "src/store";
+  readonly dir: "src" | "src/store" | "src/screens" | "src/navigation";
   readonly confidence: number;
   readonly signal: string;
 }
@@ -95,6 +95,192 @@ function detectCreateSlice(text: string): { name: string; confidence: number } |
   return m === null ? null : { name: m[2]!, confidence: 0.9 };
 }
 
+/** §3.3 "the module itself is `src/store/index.js` regardless of any other
+ *  signal" for `configureStore(...)`/`createStore(...)` (Redux's root-store
+ *  constructors, as opposed to `createSlice`'s per-slice call). Confidence
+ *  0.8: strong call-name evidence, one step below `createSlice`'s literal
+ *  `name:` field (nothing to verify the call is actually Redux's, but the
+ *  identifier pair is distinctive enough in practice). Milestone-3 scope:
+ *  single-module only (the split store case §3.3 gestures at — one dep
+ *  calling `configureStore` on reducers assembled in *other* modules — is
+ *  not attempted; `SEGREGATION.json`'s recorded confidence/signal makes
+ *  the gap visible rather than guessing at it, same "no silent loss" spirit
+ *  as §4). */
+function detectStoreRoot(text: string): { confidence: number } | null {
+  return /\b(?:configureStore|createStore)\s*\(/.test(text) ? { confidence: 0.8 } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Milestone 3 (§3.1/3.2): navigator + screen detection. Real AST walking is
+// what the spec calls for ("the one signal that can't be a regex", §3.2) —
+// out of budget here, so this is a documented, narrower approximation: a
+// single linear scan over the module's *own* decompiled text that tracks,
+// per register, whether its current value originated from `require()`-ing
+// one of this module's `deps` (MODULES.json's per-module dependency-id
+// list, dependencyMap-index order). Confirmed against a real fixture
+// (react-navigation-example-0.85.3, HBC 98): every split module's factory
+// uses the fixed 7-param signature `factory(a1..a7)` (global, require,
+// importDefault, importAll, module, exports, dependencyMap — src/split's
+// own convention, `src/split/rewrite.ts`'s `params[1]`/`params[params.length
+// - 1]`), so the require-param/dependencyMap-param names are hardcoded
+// rather than re-derived per module.
+const REQUIRE_PARAM_NAME = "a2";
+const DEPMAP_PARAM_NAME = "a7";
+
+/** Route/screen-descriptor object keys (react-navigation's `Navigator`
+ *  config shape, both the static-config and dynamic `{screen, options}`
+ *  entry shapes) — an object literal whose keys are *all* drawn from this
+ *  set is a per-route descriptor, not the outer route-name -> target map
+ *  §3.2 is after (both decompile to the same `{k: null, ...}` shape; this
+ *  is the only way to tell them apart without a real parser + react-
+ *  navigation's own type shapes). */
+const ROUTE_DESCRIPTOR_KEYS = new Set(["screen", "component", "options", "initialParams", "path", "linking", "getComponent", "if", "layout", "navigationKey"]);
+
+interface RouteKeyAssignment {
+  readonly key: string;
+  /** Resolved eagerly, at the point in the linear scan the `<objReg>.<key>
+   *  = <valReg>;` assignment is seen — register reuse later in a large
+   *  module (e.g. `r3` rebound to a *different* required module a few
+   *  statements later) must not retroactively change what an *earlier*
+   *  assignment resolved to, so this can't be a `valReg` string resolved
+   *  in a second pass after the whole module has been scanned (that was
+   *  this function's first, buggy shape: every key ended up resolving to
+   *  whatever `valReg`'s reused register held *last*, not what it held at
+   *  assignment time). */
+  readonly targetId: number | undefined;
+}
+
+const TRACE_STMT_RE =
+  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?<idxNum>\d+)\]\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;/g;
+
+/** Single left-to-right pass over `text` tracking, per register, which of
+ *  this module's `deps` (in dependencyMap-index order) it currently traces
+ *  back to (`moduleOriginByReg`), plus every `<objReg>.<key> = <valReg>`
+ *  assignment seen where `objReg` was created as a route-name registry
+ *  literal (`{Key1: null, Key2: null, ...}` with no
+ *  `ROUTE_DESCRIPTOR_KEYS`-only keys, i.e. capitalised route names, not a
+ *  `{screen, options}` descriptor) — `keyAssignments`. A `{screen: ...}`
+ *  descriptor's own `.screen = <ref>` assignment is folded into
+ *  `moduleOriginByReg` under the *descriptor's own* register, so resolving
+ *  a route through one descriptor hop (`Home: {screen: Foo}`) and resolving
+ *  a route straight to a required module (`NativeStack: requiredModule`)
+ *  are the same lookup at the call site. Best-effort: register reuse in a
+ *  large module can stomp an earlier binding (no scope/liveness tracking),
+ *  so a route can come back unresolved even when the source has a genuine
+ *  target — never a false positive in the cases checked, only missed
+ *  positives (§3.2 "still flagged... unresolved" spirit, though this
+ *  implementation doesn't separately surface the miss). */
+function traceModuleOrigins(text: string, deps: readonly number[]): { moduleOriginByReg: Map<string, number>; keyAssignments: readonly RouteKeyAssignment[] } {
+  const paramAlias = new Map<string, "require" | "depmap">([
+    [REQUIRE_PARAM_NAME, "require"],
+    [DEPMAP_PARAM_NAME, "depmap"],
+  ]);
+  const depIndexByReg = new Map<string, number>();
+  const moduleOriginByReg = new Map<string, number>();
+  const routeObjRegs = new Set<string>();
+  const keyAssignments: RouteKeyAssignment[] = [];
+
+  for (const m of text.matchAll(TRACE_STMT_RE)) {
+    const g = m.groups!;
+    if (g.reqTarget !== undefined) {
+      moduleOriginByReg.set(g.reqTarget, Number(g.reqId));
+    } else if (g.paramAliasTarget !== undefined) {
+      const kind = paramAlias.get(g.paramSrc!);
+      if (kind !== undefined) paramAlias.set(g.paramAliasTarget, kind);
+    } else if (g.idxTarget !== undefined) {
+      if (paramAlias.get(g.idxBase!) === "depmap") {
+        const idx = Number(g.idxNum);
+        if (idx >= 0 && idx < deps.length) depIndexByReg.set(g.idxTarget, idx);
+      }
+    } else if (g.objTarget !== undefined) {
+      const keys = Array.from(g.objBody!.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*null/g)).map((k) => k[1]!);
+      // A route-name registry's keys are screen/route identifiers, which in
+      // practice (both React component convention and every route name
+      // observed in react-navigation-example-0.85.3) start with an
+      // uppercase letter — the guard that keeps this from firing on
+      // arbitrary same-shape `{key: null, ...}` object literals elsewhere
+      // in a large real module (observed false positives before this
+      // guard: gesture-handler/reanimated builder objects like `{get:
+      // null, changeX: null, waitFor: null, ...}`, all lowercase/camelCase
+      // method names).
+      const looksLikeRouteNames = keys.length >= 2 && keys.every((k) => /^[A-Z]/.test(k));
+      if (looksLikeRouteNames && !keys.every((k) => ROUTE_DESCRIPTOR_KEYS.has(k))) routeObjRegs.add(g.objTarget);
+    } else if (g.callTarget !== undefined) {
+      const idx = depIndexByReg.get(g.callArg!);
+      if (paramAlias.get(g.callFn!) === "require" && idx !== undefined) moduleOriginByReg.set(g.callTarget, deps[idx]!);
+    } else if (g.keyObj !== undefined) {
+      if (routeObjRegs.has(g.keyObj)) keyAssignments.push({ key: g.keyName!, targetId: moduleOriginByReg.get(g.keyVal!) });
+      if (g.keyName === "screen") {
+        const origin = moduleOriginByReg.get(g.keyVal!);
+        if (origin !== undefined) moduleOriginByReg.set(g.keyObj, origin);
+      }
+    } else if (g.propTarget !== undefined) {
+      const origin = moduleOriginByReg.get(g.propBase!);
+      if (origin !== undefined) moduleOriginByReg.set(g.propTarget, origin);
+    }
+  }
+  return { moduleOriginByReg, keyAssignments };
+}
+
+interface ScreenHit {
+  readonly routeName: string;
+  readonly targetId: number;
+  readonly confidence: number;
+  readonly sourceId: number;
+}
+
+/** §3.2, resolved via `traceModuleOrigins`: every route-registry key this
+ *  module's text assigns whose value resolves to another module in `deps`
+ *  is a screen hit — confidence 0.85 (spec's "literal route" tier; every
+ *  hit here comes from a literal object key, never a computed one, so
+ *  there is no lower-confidence "dynamic" case to distinguish in this
+ *  implementation). */
+function detectScreenHits(id: number, text: string, deps: readonly number[]): ScreenHit[] {
+  const { keyAssignments } = traceModuleOrigins(text, deps);
+  const hits: ScreenHit[] = [];
+  for (const a of keyAssignments) {
+    if (a.targetId !== undefined) hits.push({ routeName: a.key, targetId: a.targetId, confidence: 0.85, sourceId: id });
+  }
+  return hits;
+}
+
+/** §3.1: a `create<X>Navigator(...)`/`createStaticNavigation(...)`-shaped
+ *  call name (grep, per spec's own "reads: the module's decompiled text
+ *  (grep for the call name)") plus at least one of this module's `deps`
+ *  resolving (via `ownershipByModule`/`classByModule`, never re-derived) to
+ *  `@react-navigation/*`. Deliberately looser than resolving the exact
+ *  callee's require edge (`traceModuleOrigins` above, used for §3.2's
+ *  route walk) — a 2000+-line real `App.tsx` reuses registers so heavily
+ *  across unrelated code that pinning the *specific* call's origin register
+ *  is unreliable; "this module both calls a Navigator factory and requires
+ *  a react-navigation package" is the evidence the spec's own text
+ *  describes checking for, and is enough to not be confused with an
+ *  unrelated `createFooNavigator`-named local helper (the `deps` check is
+ *  exactly the guard against that false positive). */
+function detectNavigatorKind(text: string): readonly string[] {
+  const kinds: string[] = [];
+  for (const m of text.matchAll(/\.create([A-Za-z]+?)Navigator\b/g)) kinds.push(m[1]!);
+  if (/\.createStaticNavigation\b/.test(text)) kinds.push("Static");
+  return kinds;
+}
+
+function detectNavigator(
+  deps: readonly number[],
+  text: string,
+  ownershipByModule: ReadonlyMap<number, ModuleOwnership>,
+  classByModule: ReadonlyMap<number, ModuleClassKind>,
+): { kind: string; confidence: number } | null {
+  const kinds = detectNavigatorKind(text);
+  if (kinds.length === 0) return null;
+  let confidence: number | null = null;
+  for (const d of deps) {
+    const pkg = ownershipByModule.get(d)?.package;
+    if (pkg !== undefined && /^@react-navigation\//.test(pkg)) { confidence = 0.9; break; }
+    if (classByModule.get(d) === "library") confidence = confidence ?? 0.6;
+  }
+  return confidence === null ? null : { kind: kinds[0]!, confidence };
+}
+
 /** §2.1 steps 1-5, in priority order, applied per module. Reads only this
  *  module's own decompiled text (`text`) plus whether it is the split
  *  tree's entry (`isEntry`, from `MODULES.json.entry`) — no cross-module
@@ -110,20 +296,58 @@ function detectCreateSlice(text: string): { name: string; confidence: number } |
  *  generic bootstrap name that, in this collapsed case, describes nothing
  *  else. When both signals fire on the *same* module, `app-registration`
  *  wins; an entry module with no `registerComponent` call of its own still
- *  gets `index.js` as spec'd. */
-function nameCandidateFor(text: string, isEntry: boolean): NameCandidate | null {
+ *  gets `index.js` as spec'd.
+ *
+ *  Milestone 3 adds two more, cross-module candidates the caller
+ *  (`nameCustomModules`) computes ahead of time and passes in per module id
+ *  — `bestScreenHit` (this module is some navigator's route target, §3.2)
+ *  and `navigator` (this module itself calls a Navigator factory, §3.1).
+ *  Priority, and why it isn't the spec's literal 1-7 order: entry/app-
+ *  registration (1-2) still win outright — the single most useful name a
+ *  module can have. A resolved **screen** hit is placed *above*
+ *  displayName/default-export/createSlice (spec order would put it below,
+ *  step 6), because in the fixture this was implemented against
+ *  (react-navigation-example-0.85.3) every screen component also has its
+ *  own `displayName`/default export, and burying the *route* name
+ *  (`StackBasic`, `BottomTabs`, ...) behind a generic component name would
+ *  throw away the one signal an analyst actually wants from a router-heavy
+ *  app — the same "don't bury the more useful name" reasoning milestone 2
+ *  already used for entry/app-registration, extended here to §2.2's own
+ *  words for screens vs components ("screen beats generic component, more
+ *  specific signal wins"). Not a PUSHBACK: no existing test asserts the
+ *  literal step order for signals introduced in this milestone. A navigator
+ *  candidate is lowest of the "real" signals (only used when nothing else
+ *  fired) since a navigator module is otherwise indistinguishable from any
+ *  other custom component/util. */
+function nameCandidateFor(
+  text: string,
+  isEntry: boolean,
+  bestScreenHit: { routeName: string; confidence: number } | null,
+  navigator: { kind: string; confidence: number } | null,
+): NameCandidate | null {
   const appReg = detectAppRegistration(text);
   if (isEntry) {
     if (appReg !== null) return { baseName: "App", dir: "src", confidence: appReg.confidence, signal: "app-registration (entry module also calls registerComponent, §6 milestone-2 note)" };
     return { baseName: "index", dir: "src", confidence: 1.0, signal: "entry" };
   }
   if (appReg !== null) return { baseName: "App", dir: "src", confidence: appReg.confidence, signal: "app-registration" };
+  if (bestScreenHit !== null) {
+    const base = bestScreenHit.routeName;
+    const baseName = /Screen$/.test(base) ? base : `${base}Screen`;
+    return { baseName, dir: "src/screens", confidence: bestScreenHit.confidence, signal: `screen-route (route "${bestScreenHit.routeName}", §3.2)` };
+  }
   const displayName = detectDisplayName(text);
   if (displayName !== null) return { baseName: displayName.name, dir: "src", confidence: displayName.confidence, signal: "displayName" };
   const defaultExport = detectDefaultExportIdentifier(text);
   if (defaultExport !== null) return { baseName: defaultExport.name, dir: "src", confidence: defaultExport.confidence, signal: "default-export-identifier" };
   const slice = detectCreateSlice(text);
   if (slice !== null) return { baseName: `${slice.name}Slice`, dir: "src/store", confidence: slice.confidence, signal: "createSlice" };
+  const storeRoot = detectStoreRoot(text);
+  if (storeRoot !== null) return { baseName: "index", dir: "src/store", confidence: storeRoot.confidence, signal: "store-root (configureStore/createStore, §3.3)" };
+  if (navigator !== null) {
+    const baseName = /Navigator$/.test(navigator.kind) ? navigator.kind : `${navigator.kind}Navigator`;
+    return { baseName, dir: "src/navigation", confidence: navigator.confidence, signal: `navigator (create${navigator.kind}Navigator-shaped call, §3.1)` };
+  }
   return null;
 }
 
@@ -136,14 +360,48 @@ function nameCandidateFor(text: string, isEntry: boolean): NameCandidate | null 
  *  `src/...`-relative path (or `null`, meaning "keep `module_<id>.js`") plus
  *  the signal/confidence used, per module id, for the header comment and
  *  audit trail (`MODULES.json`'s `segregated` field). */
-function nameCustomModules(srcModules: readonly { id: number; text: string }[], entryId: number | null): Map<number, { path: string; signal: string; confidence: number } | null> {
+function nameCustomModules(
+  srcModules: readonly { id: number; text: string }[],
+  entryId: number | null,
+  depsByModuleId: ReadonlyMap<number, readonly number[]>,
+  ownershipByModule: ReadonlyMap<number, ModuleOwnership>,
+  classByModule: ReadonlyMap<number, ModuleClassKind>,
+): Map<number, { path: string; signal: string; confidence: number } | null> {
+  // Milestone 3 (§3.2): every screen hit any src-bucket module's route
+  // registry produced, keyed by *target* module id — a target can in
+  // principle be claimed by more than one registry (e.g. re-exported under
+  // two route names); kept deterministic by highest confidence, then
+  // lowest source module id, then route name, never run order.
+  const hitsByTarget = new Map<number, ScreenHit[]>();
+  for (const m of srcModules) {
+    for (const hit of detectScreenHits(m.id, m.text, depsByModuleId.get(m.id) ?? [])) {
+      // §3.1's own framing, restated for §3.2: a screen target is app code,
+      // never a library/unclassified module (a route registry that happens
+      // to also re-export a library barrel entry -- observed in the
+      // fixture this was built against -- is exactly the false positive
+      // this guard exists to drop).
+      if (classByModule.get(hit.targetId) !== "custom") continue;
+      const list = hitsByTarget.get(hit.targetId);
+      if (list === undefined) hitsByTarget.set(hit.targetId, [hit]);
+      else list.push(hit);
+    }
+  }
+  const bestScreenHitByTarget = new Map<number, { routeName: string; confidence: number }>();
+  for (const [targetId, hits] of hitsByTarget) {
+    hits.sort((a, b) => b.confidence - a.confidence || a.sourceId - b.sourceId || a.routeName.localeCompare(b.routeName));
+    bestScreenHitByTarget.set(targetId, { routeName: hits[0]!.routeName, confidence: hits[0]!.confidence });
+  }
+
   const raw = new Map<number, NameCandidate | null>();
-  for (const m of srcModules) raw.set(m.id, nameCandidateFor(m.text, m.id === entryId));
+  for (const m of srcModules) {
+    const navigator = detectNavigator(depsByModuleId.get(m.id) ?? [], m.text, ownershipByModule, classByModule);
+    raw.set(m.id, nameCandidateFor(m.text, m.id === entryId, bestScreenHitByTarget.get(m.id) ?? null, navigator));
+  }
 
   const byPath = new Map<string, number[]>();
   for (const [id, cand] of raw) {
     if (cand === null || cand.confidence < MIN_NAME_CONFIDENCE) continue;
-    const path = cand.dir === "src/store" ? `src/store/${cand.baseName}.js` : `src/${cand.baseName}.js`;
+    const path = cand.dir === "src" ? `src/${cand.baseName}.js` : `${cand.dir}/${cand.baseName}.js`;
     const list = byPath.get(path);
     if (list === undefined) byPath.set(path, [id]);
     else list.push(id);
@@ -344,7 +602,8 @@ export function segregateSplitTree(splitFiles: ReadonlyMap<string, string>, deps
     if (text === undefined) throw new Error(`segregate: split tree has no file for module ${info.id} (${info.originalFile})`);
     srcTexts.push({ id: info.id, text });
   }
-  const namesById = nameCustomModules(srcTexts, modulesJson.entry);
+  const depsByModuleId = new Map<number, readonly number[]>(modulesJson.modules.map((m) => [m.id, m.deps]));
+  const namesById = nameCustomModules(srcTexts, modulesJson.entry, depsByModuleId, ownershipByModule, classByModule);
   for (let i = 0; i < infos.length; i++) {
     const info = infos[i]!;
     if (info.bucket !== "src") continue;

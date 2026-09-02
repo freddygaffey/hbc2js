@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
@@ -30,9 +30,19 @@ const MIN_MODULES_RUN = 76;
  *  milestone 2) a renamed module's prepended `// hbc2js segregate --`
  *  header line. Everything else in a module file — including the original
  *  `// hbc2js --split --` header — must come out byte-identical. */
+// Milestone 3 note: a segregation rewrite's require() target string can now
+// name a *renamed* module (e.g. `./screens/TouchEventTypeScreen.js`, not
+// `./module_478.js` — observed on react-navigation-example-0.85.3's own
+// module 5, which requires a module milestone 3 renamed), so this can no
+// longer normalise by recovering the numeric module id from a
+// `module_<N>.js`-shaped target (milestone 1/2's tests never exercised a
+// require() *target* that got renamed, only the modules being renamed
+// themselves) — it normalises away the whole require() argument instead,
+// on both sides, which is still exactly what §4 says segregation is
+// allowed to touch (a require() call's string-literal argument).
 function normaliseRequireTargets(text: string): string {
   const withoutSegregateHeader = text.startsWith("// hbc2js segregate -- ") ? text.slice(text.indexOf("\n") + 1) : text;
-  return withoutSegregateHeader.replace(/require\((['"])[^'"]*module_(\d+)\.js\1\)/g, "require(<module_$2>)");
+  return withoutSegregateHeader.replace(/require\((['"])(?:(?!\1).)*\1\)/g, "require(<target>)");
 }
 
 void test("segregate: moves rn-template-0.72's split tree into node_modules/ vs src/, no factory body changes, boot still reaches registerComponent", async () => {
@@ -167,4 +177,126 @@ void test("segregate: names displayName/default-export/createSlice modules and s
   const pathCounts = new Map<string, number>();
   for (const m of seg.modules) pathCounts.set(m.newPath, (pathCounts.get(m.newPath) ?? 0) + 1);
   for (const [path, count] of pathCounts) assert.equal(count, 1, `${count} modules collided on ${path}`);
+});
+
+/** Milestone 3 (docs/specs/08-segregation.md §6 milestone 3, §3.1/§3.2):
+ *  a hand-built split tree exercising the two new cross-module signals on
+ *  the exact statement shapes observed on react-navigation-example-0.85.3
+ *  (fixed 7-param `factory(a1..a7)` signature; `require`/`dependencyMap`
+ *  accessed positionally as `a2`/`a7`; a route registry as a `{RouteName:
+ *  null, ...}` object literal whose keys get overwritten one by one with a
+ *  required module's value) -- deterministic and fast, independent of the
+ *  real fixture so a future decompiler change can't silently break this
+ *  rung's own signal-detection logic without a fixture rebuild.
+ */
+void test("segregate: detects a navigator (create<X>Navigator + @react-navigation dep) and a route registry's screen targets", () => {
+  const modulesJson = {
+    hbcVersion: 98,
+    moduleCount: 4,
+    entry: null,
+    modules: [
+      { id: 11, file: "module_11.js", factoryFunctionIndex: 11, deps: [] }, // @react-navigation/stack (library)
+      { id: 12, file: "module_12.js", factoryFunctionIndex: 12, deps: [11, 20, 21] }, // navigator module
+      { id: 20, file: "module_20.js", factoryFunctionIndex: 20, deps: [] }, // Home screen component
+      { id: 21, file: "module_21.js", factoryFunctionIndex: 21, deps: [] }, // Profile screen component
+    ],
+  };
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify(modulesJson)],
+    [
+      "index.js",
+      `require('./module_11.js');\nrequire('./module_12.js');\nrequire('./module_20.js');\nrequire('./module_21.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    ["module_11.js", `// hbc2js --split -- Metro module 11\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 11, []);\n`],
+    // Navigator module (§3.1): calls a create<X>Navigator-shaped property,
+    // and depends directly on module 11 (owned by @react-navigation/stack).
+    [
+      "module_12.js",
+      `// hbc2js --split -- Metro module 12\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r2, r3, r4, r5;\n  r2 = a2;\n  r1 = a7;\n  r0 = require('./module_11.js');\n  r5 = r0.createStackNavigator;\n  r4 = r1[1];\n  r3 = r2(r4);\n  r0 = {Home: null, Profile: null};\n  r0.Home = r3;\n  r4 = r1[2];\n  r3 = r2(r4);\n  r0.Profile = r3;\n}\n\n__d(factory, 12, [11, 20, 21]);\n`,
+    ],
+    ["module_20.js", `// hbc2js --split -- Metro module 20\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 20, []);\n`],
+    ["module_21.js", `// hbc2js --split -- Metro module 21\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 21, []);\n`],
+  ]);
+  const deps = {
+    matches: [],
+    guesses: [],
+    confirmed: [],
+    moduleOwnership: [{ localModuleId: 11, factoryFunctionIndex: 11, package: "@react-navigation/stack", version: "7.0.0" }],
+    classification: {
+      modules: [
+        { localModuleId: 11, factoryFunctionIndex: 11, instrCount: 1, classification: "library", signal: "package-name-version-string", confidence: 0.95, libraryPackageHint: "@react-navigation/stack" },
+        { localModuleId: 12, factoryFunctionIndex: 12, instrCount: 1, classification: "custom", signal: "app-vocabulary", confidence: 0.9, libraryPackageHint: null },
+        { localModuleId: 20, factoryFunctionIndex: 20, instrCount: 1, classification: "custom", signal: "app-vocabulary", confidence: 0.9, libraryPackageHint: null },
+        { localModuleId: 21, factoryFunctionIndex: 21, instrCount: 1, classification: "custom", signal: "app-vocabulary", confidence: 0.9, libraryPackageHint: null },
+      ],
+    },
+  } as unknown as DepsReport;
+
+  const seg = segregateSplitTree(files, deps);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+
+  // §3.1: module 12 calls `.createStackNavigator` and directly depends on
+  // module 11, owned by @react-navigation/stack -- named into
+  // src/navigation/, confidence 0.9 (spec's "named" tier).
+  assert.equal(byId.get(12)!.newPath, "src/navigation/StackNavigator.js");
+  assert.equal(byId.get(12)!.nameConfidence, 0.9);
+
+  // §3.2: module 12's `{Home: null, Profile: null}` route registry
+  // resolves Home -> module 20, Profile -> module 21 via the dependencyMap-
+  // index trace (`a7[1]`/`a7[2]` -> deps[1]/deps[2] -> require(a2, ...)).
+  assert.equal(byId.get(20)!.newPath, "src/screens/HomeScreen.js");
+  assert.equal(byId.get(21)!.newPath, "src/screens/ProfileScreen.js");
+  assert.equal(byId.get(20)!.nameConfidence, 0.85);
+  assert.equal(byId.get(20)!.nameSignal, 'screen-route (route "Home", §3.2)');
+});
+
+// Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
+// milestone 3, §6.3): react-navigation-example-0.85.3, a real router-heavy
+// app -- rn-template-0.72 (used by every other test in this file) ships no
+// navigation at all (§5's own table: 0 navigators/screens there, correctly).
+// Uncommitted (`tests/fixtures/bundles/react-navigation-example-0.85.3/
+// fetch.sh`, same convention as tests/gate/deps/match.test.ts's "uncommitted
+// react-navigation-example bundle" note) -- skips rather than fails when
+// not fetched, so a fresh clone's `npm test` still passes.
+const REACT_NAV_EXAMPLE = join(repoRoot(), "tests", "fixtures", "bundles", "react-navigation-example-0.85.3", "react-navigation-example.hbc");
+
+void test("segregate: detects real navigators/screens on react-navigation-example-0.85.3 (milestone 3 acceptance fixture)", async (t) => {
+  if (!existsSync(REACT_NAV_EXAMPLE)) {
+    t.skip(`react-navigation-example-0.85.3 not fetched (run tests/fixtures/bundles/react-navigation-example-0.85.3/fetch.sh)`);
+    return;
+  }
+  const bytes = readFileSync(REACT_NAV_EXAMPLE);
+  const split = splitProject(bytes, { moduleName: "react-navigation-example.hbc" });
+  const depsRun = await runDeps(REACT_NAV_EXAMPLE, { offline: true });
+  const seg = segregateSplitTree(split.files, depsRun.report);
+
+  const screens = seg.modules.filter((m) => m.nameSignal?.startsWith("screen-route"));
+  const navigators = seg.modules.filter((m) => m.nameSignal?.startsWith("navigator"));
+  assert.ok(screens.length > 0, "expected at least one screen detected on react-navigation-example-0.85.3");
+  assert.ok(navigators.length > 0, "expected at least one navigator detected on react-navigation-example-0.85.3");
+  for (const s of screens) assert.match(s.newPath, /^src\/screens\//, `screen ${s.newPath} not filed under src/screens/`);
+  for (const n of navigators) assert.match(n.newPath, /^src\/navigation\//, `navigator ${n.newPath} not filed under src/navigation/`);
+
+  // No collisions across the whole tree.
+  const pathCounts = new Map<string, number>();
+  for (const m of seg.modules) pathCounts.set(m.newPath, (pathCounts.get(m.newPath) ?? 0) + 1);
+  for (const [path, count] of pathCounts) assert.equal(count, 1, `${count} modules collided on ${path}`);
+
+  // §4.1 structural byte-diff: every module's factory body, modulo
+  // require() targets and the rename header, is unchanged.
+  for (const m of split.modules) {
+    const before = split.files.get(m.file);
+    const after = seg.files.get(seg.modules.find((s) => s.id === m.id)!.newPath);
+    assert.ok(before !== undefined && after !== undefined, `module ${m.id} missing before/after text`);
+    assert.equal(normaliseRequireTargets(after!), normaliseRequireTargets(before!), `module ${m.id}'s factory body changed during segregation`);
+  }
+
+  // §4.2 boot-still-works: not run here -- `--split` itself already reports
+  // a module-level scope-check diagnostic on this fixture (an existing,
+  // unrelated decompile-emission gap on this real bundle, tracked
+  // separately from segregation), so a boot-split re-run on this
+  // particular fixture is not a clean signal for segregation's own
+  // correctness. rn-template-0.72's test above already exercises §4.2's
+  // boot-equivalence proof end-to-end; this test's byte-diff (above) is
+  // segregation's half of the correctness story on this fixture.
 });
