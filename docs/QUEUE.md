@@ -15,7 +15,7 @@ One item = one lean agent (Sonnet by default; Fable only where marked hard). Whe
 If both slots are busy, WAIT — never launch a third. NO deobfuscation rungs (Stage 3, after Stage 2).
 
 **Lane L — ladder (one lean Sonnet agent at a time):**
-1. P-11a reg-split perf: 13.6x -> under the 12x pipeline-speed ceiling (R-loop/R-catch coarsening is O(regs x tries)/fn).
+1. [DONE 2026-09-02, 9110fb9 — 7.7-10.7x, checker defUse recompute was the real cost] P-11a reg-split perf.
 2. P-11b: update the ~10 rungs whose tests assert `r\d+` regexes to accept `rN_j` split names (rung-owned assertions, never invert an assertion), then flip reg-split default-on.
 3. var-naming compound: name the split ranges (loop->i, arrays, usage/alias/literal heuristics per reg-split spec s9 Q4; optionally a 2nd expr-rebuild pass). Target: registers-named 3-4% -> >=15% on rn-template + a real bundle.
 4. Non-deobf body-cleanup rungs: literal-forms, try-clean, arguments-form, for-in/for-of. Each: lean, sound checker, corpus-guard clean.
