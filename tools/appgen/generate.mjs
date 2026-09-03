@@ -8,11 +8,13 @@
 //   - dependency-loading style: "static" import, "lazyRequire" (require()
 //     inside a function), "reexport" (barrel indirection)
 //   - 2-4 screens with seeded, distinctive names (tools/appgen/lib/wordlist.mjs)
-// Build-config axes (bundler, RN/Hermes version, libraries, obfuscation —
-// spec §2.1's table) are NOT varied yet; build.mjs pins RN 0.73.11 (HBC 96)
-// for this increment's one proven triple. The seed fully determines the
-// app; `fingerprint()` (tools/appgen/lib/manifest.mjs) is the dedup key
-// used to reject a same-app re-generation (spec §2.3.1).
+// Build-config axes (spec §2.1's table): RN/Hermes version is now selectable
+// via `generateApp(seed, { rnVersion })` (tools/appgen/lib/versions.mjs's
+// pin table; build.mjs picks it). bundler (Metro plain/RAM) and obfuscation
+// are build.mjs concerns, not source-generation ones -- see its header.
+// libraries axis is still NOT varied (future increment). The seed fully
+// determines the app; `fingerprint()` (tools/appgen/lib/manifest.mjs) is the
+// dedup key used to reject a same-app re-generation (spec §2.3.1).
 //
 // Usage:
 //   node tools/appgen/generate.mjs --seed 12345 --out /path/to/app-dir
@@ -164,15 +166,28 @@ module.exports = mergeConfig(getDefaultConfig(__dirname), {});
 `;
 }
 
-function packageJsonSource(appName) {
+// docs/specs/09-fuzzing.md §2.1 "RN + Hermes version" axis (increment-2 task
+// brief item 1): react/babel-preset/metro-config versions must track the
+// pinned react-native release (peer-dependency requirement), so this table
+// keys off rnVersion rather than hardcoding one release everywhere.
+const RN_TOOLING = {
+  "0.73.11": { react: "18.2.0", babelPreset: "0.73.21", metroConfig: "0.73.5" },
+  // RN >= 0.83 split @react-native-community/cli out of react-native core
+  // (discovered empirically: `react-native bundle` fails without it in
+  // devDependencies), unlike the 0.73.11 pin above.
+  "0.86.0": { react: "19.2.3", babelPreset: "0.86.0", metroConfig: "0.86.0", cli: "^20.0.0" },
+};
+
+function packageJsonSource(appName, rnVersion) {
+  const tooling = RN_TOOLING[rnVersion] || RN_TOOLING["0.73.11"];
   const pkg = {
     name: appName,
     version: "0.0.1",
     private: true,
     scripts: { start: "react-native start" },
     dependencies: {
-      react: "18.2.0",
-      "react-native": "0.73.11",
+      react: tooling.react,
+      "react-native": rnVersion,
       "@react-navigation/native": "^6.1.9",
       "@react-navigation/native-stack": "^6.9.17",
       "@react-navigation/bottom-tabs": "^6.5.11",
@@ -182,8 +197,9 @@ function packageJsonSource(appName) {
     devDependencies: {
       "@babel/core": "^7.20.0",
       "@babel/runtime": "^7.20.0",
-      "@react-native/babel-preset": "0.73.21",
-      "@react-native/metro-config": "0.73.5",
+      "@react-native/babel-preset": tooling.babelPreset,
+      "@react-native/metro-config": tooling.metroConfig,
+      ...(tooling.cli ? { "@react-native-community/cli": tooling.cli } : {}),
     },
   };
   return JSON.stringify(pkg, null, 2) + "\n";
@@ -192,7 +208,7 @@ function packageJsonSource(appName) {
 /** Pure app-tree generator: `seed -> { manifest, files }` with no fs access,
  *  so it is trivially unit-testable for determinism (tests/appgen/generate.test.ts).
  *  `files` is a Map of repo-root-relative path -> file content string. */
-export function generateApp(seed) {
+export function generateApp(seed, { rnVersion = "0.73.11" } = {}) {
   const rng = makeRng(seed);
   const routerShape = rng.pick(ROUTER_SHAPES);
   const depStyle = rng.pick(DEP_STYLES);
@@ -201,7 +217,7 @@ export function generateApp(seed) {
   const appName = `Appgen${fingerprintSlug(seed)}`;
 
   const files = new Map();
-  files.set("package.json", packageJsonSource(appName));
+  files.set("package.json", packageJsonSource(appName, rnVersion));
   files.set("babel.config.js", babelConfigSource());
   files.set("metro.config.js", metroConfigSource());
   files.set("index.js", indexSource(appName));
@@ -220,7 +236,7 @@ export function generateApp(seed) {
     routerShape,
     depStyle,
     screens: names,
-    rnVersion: "0.73.11",
+    rnVersion,
     files: [...files.keys()].sort(),
   };
   manifest.fingerprint = fingerprint(manifest);

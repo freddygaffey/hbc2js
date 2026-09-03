@@ -25,6 +25,41 @@ export function isDuplicate(store, fp) {
   return store.some((entry) => entry.fingerprint === fp);
 }
 
+/** Build-axis fingerprint (spec §2.3 item 1: "(rn, bundler, router,
+ *  sortedLibs, obfuscation)") — distinct from `fingerprint()`'s app-shape
+ *  fingerprint above. Used by the campaign sampler (tools/appgen/campaign.mjs)
+ *  for candidate rejection: "a candidate whose axis fingerprint equals any
+ *  manifest entry's is rejected outright". `libs` defaults to `[]` (the
+ *  libraries axis is not yet varied by the generator). */
+export function axisFingerprint({ rnVersion, bundler, router, libs = [], obfuscation }) {
+  const canonical = JSON.stringify({
+    rnVersion,
+    bundler,
+    router,
+    libs: [...libs].sort(),
+    obfuscation,
+  });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+/** spec §2.3 item 2: "once the manifest holds >= 5 triples, no single value
+ *  of any axis may exceed 40% of stored triples". Returns the set of axis
+ *  values that are currently AT or over quota for `store` (non-evicted
+ *  entries only), keyed `"<axis>:<value>"`. */
+export function axesOverQuota(store, { axes = ["rnVersion", "bundler", "router", "obfuscation"], quota = 0.4 } = {}) {
+  const live = store.filter((e) => !e.evicted);
+  const over = new Set();
+  if (live.length < 5) return over; // quota not yet in effect
+  for (const axis of axes) {
+    const counts = new Map();
+    for (const e of live) counts.set(e[axis], (counts.get(e[axis]) || 0) + 1);
+    for (const [value, count] of counts) {
+      if (count / live.length >= quota) over.add(`${axis}:${value}`);
+    }
+  }
+  return over;
+}
+
 /** Load a manifest-store JSON array from disk, tolerating a missing file
  *  (fresh store). Shape: `[{ id, seed, fingerprint, createdAt }, ...]`. */
 export function loadStore(path, fs) {

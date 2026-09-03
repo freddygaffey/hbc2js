@@ -14,7 +14,10 @@ export interface AppManifest {
   readonly fingerprint: string;
 }
 
-export function generateApp(seed: string | number): {
+export function generateApp(
+  seed: string | number,
+  opts?: { readonly rnVersion?: string },
+): {
   readonly manifest: AppManifest;
   readonly files: ReadonlyMap<string, string>;
 };

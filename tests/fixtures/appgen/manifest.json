@@ -19,5 +19,100 @@
     "sizeBytes": 5054243,
     "heldOut": false,
     "evicted": false
+  },
+  {
+    "id": "d96a182cc0ae6413-3d6e3c6e",
+    "seed": "90001",
+    "fingerprint": "d96a182cc0ae6413ad514d41278ccb8b56e1cb0af648aca46839568cf0f684d2",
+    "createdAt": "2026-09-03T12:37:27.979Z",
+    "rnVersion": "0.86.0",
+    "hbcVersion": 98,
+    "bundler": "metro-plain",
+    "compiler": "project-hermesc",
+    "obfuscation": "off",
+    "router": "weird",
+    "depStyle": "static",
+    "screens": [
+      "AmberAtlas",
+      "SableMeadow",
+      "SaffronHarbor"
+    ],
+    "sha256": "a1e3ef92ea17ae64da324c1615927012314c02078767d67f56b150e41c307438",
+    "sizeBytes": 5422932,
+    "buildStatus": "ok",
+    "errorClass": null,
+    "heldOut": false,
+    "evicted": false
+  },
+  {
+    "id": "426ebc64f62379d4-31eb2755",
+    "seed": "90099",
+    "fingerprint": "426ebc64f62379d40e00bbdf2f35d96be708a399d97d52d58eee6efe08d8d3c2",
+    "createdAt": "2026-09-03T12:38:33.021Z",
+    "rnVersion": "0.73.11",
+    "hbcVersion": 96,
+    "bundler": "metro-plain",
+    "compiler": "project-hermesc",
+    "obfuscation": "off",
+    "router": "weird",
+    "depStyle": "lazyRequire",
+    "screens": [
+      "MarbleGrove",
+      "LyricAtlas",
+      "GraniteLedger"
+    ],
+    "sha256": "be3d02f657ed50d307666013dc092196196247add18db202540614678d06408d",
+    "sizeBytes": 4928144,
+    "buildStatus": "ok",
+    "errorClass": null,
+    "heldOut": true,
+    "evicted": false
+  },
+  {
+    "id": "7d19a712b609023c-871cc927",
+    "seed": "90002",
+    "fingerprint": "7d19a712b609023c5a1ba786db683c2477c09bf70a04db8701e287ad6a05e0d5",
+    "createdAt": "2026-09-03T12:40:34.673Z",
+    "rnVersion": "0.73.11",
+    "hbcVersion": 96,
+    "bundler": "metro-ram",
+    "compiler": "project-hermesc",
+    "obfuscation": "off",
+    "router": "weird",
+    "depStyle": "reexport",
+    "screens": [
+      "AmberForge",
+      "SaffronPrism",
+      "LyricCove"
+    ],
+    "sha256": null,
+    "sizeBytes": 0,
+    "buildStatus": "failed",
+    "errorClass": "error: unknown option '--indexed-ram-bundle'",
+    "heldOut": false,
+    "evicted": false
+  },
+  {
+    "id": "9d88db3841043cd7-732bef50",
+    "seed": "90003",
+    "fingerprint": "9d88db3841043cd74dc4f14900a5d4bbf2885cb718bac4bc77e9928dc38af779",
+    "createdAt": "2026-09-03T12:40:59.986Z",
+    "rnVersion": "0.73.11",
+    "hbcVersion": 96,
+    "bundler": "metro-plain",
+    "compiler": "project-hermesc",
+    "obfuscation": "metro-minify",
+    "router": "stack",
+    "depStyle": "static",
+    "screens": [
+      "MarbleForge",
+      "LyricMeadow"
+    ],
+    "sha256": "84b0cee66ecc12ab19298509b46fc16fc84af1d0005f2d814fb496d567c43de4",
+    "sizeBytes": 4926768,
+    "buildStatus": "ok",
+    "errorClass": null,
+    "heldOut": false,
+    "evicted": false
   }
 ]
