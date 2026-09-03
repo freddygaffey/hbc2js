@@ -3,32 +3,10 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
-- **[LANDED 2026-09-02, tools/metrics/collect.mjs + docs/reports/metrics/scoreboard.md + docs/METRICS.md — baseline row captured pre-reg-split-default-on; run at each landing/day] METRICS SCOREBOARD — standing, one row per day (Fred 2026-09-02: project runs a few more days, start collecting NOW; trends > snapshots).** Append-only table (extend the STATUS scoreboard / `docs/reports/metrics/`), a small collector script + a scheduled or landing hook. Collect:
-  - **velocity/cost** — commits/day, and **tokens + $ per LANDED item, model mix, cost-per-test-added** (the cost-ordering feature: attribute spend to the queue item/commit in AGENT-LOG, then RANK — so "keep costs down" becomes "this item is 4x the median, look at it").
-  - **volume** — LOC by category, comment %, docs:code ratio.
-  - **goal proxies** — registers-named %, unresolved-env markers, `node --check` failures, rungs X/30.
-  - **truth guard** — trace-oracle DIVERGENT count (must stay 0), test-count vs baseline, open BUGS.md rows.
-  - **corpus/truth** — pass MATRIX per Hermes-version & bundler, # map-bearing apps, naming/structure accuracy on the ground-truth set, held-out vs held-in delta.
-  Baseline snapshot (2026-09-02): src hand-written 24,754 code / 8,090 comment (24.6%); tests 14,068 / 3,754; 482 commits; **1 source map / 895 bundles** (ground-truth is the gap — see corpus note). Lean.
-## TONIGHT (Fred GO 2026-09-02 ~22:15 Sydney) — TWO LANES, MAX 2 AGENTS (one per lane), NEVER 3
-**METRICS FIRST (Fred ~22:30: "other metrics in place, I would do that first — then you've got better data"): the metrics scoreboard collector (## Now item) lands BEFORE any ladder change, capturing tonight's BASELINE row while reg-split is still opt-in.** Salvage candidate: origin/worktree-agent-a99810bd07c13c086 has an unmerged tools/app-metrics.mjs (written, never run).
-If both slots are busy, WAIT — never launch a third. NO deobfuscation rungs (Stage 3, after Stage 2).
+- [LANDED 2026-09-02] Metrics scoreboard — tools/metrics/collect.mjs, one row/day at landings (docs/METRICS.md).
 
-**Lane L — ladder (one lean Sonnet agent at a time):**
-1. [DONE 2026-09-02, 9110fb9 — 7.7-10.7x, checker defUse recompute was the real cost] P-11a reg-split perf.
-2a. [DONE 2026-09-03, 51c3be2..9b6e3c2 — D23; reg-split DEFAULT-ON; registers-named 3.2->5.2%] STAGE-BOUNDARY REORDER + FLIP (Fred approved): move renaming rungs (reg-split, then var-naming) to run AFTER all structure-recovery rungs; flip reg-split default-on; write the 'structure before renaming — keep it in computer language until the end' invariant into DECISIONS + 00-LADDER; resolves the P-11b blocker below.
-2b. MATCHER MIGRATION (standing, Fred agrees w/ CONSOLIDATION §B spirit): future pass specs MUST match def-use/value flow, not register identity (reviewer-enforced); gradually migrate highest-risk existing matchers, jsx-recover first. Lane L, low priority per slot availability.
-2. [ATTEMPTED 2026-09-03, BLOCKED — 1a44914: default-on breaks jsx-recover (cross-pass bug, BUGS row w/ repro); regex widenings kept; flip reverted] P-11b NEW SHAPE: fix the reg-split x jsx-recover interaction (matcher sees through rN_j renaming, or reorder reg-split after jsx-recover), verify 59-jsx-runtime-calls v94/v99, THEN flip default-on.
-3. var-naming compound: name the split ranges (loop->i, arrays, usage/alias/literal heuristics per reg-split spec s9 Q4; optionally a 2nd expr-rebuild pass). Target: registers-named 3-4% -> >=15% on rn-template + a real bundle.
-4. Non-deobf body-cleanup rungs: literal-forms, try-clean, arguments-form, for-in/for-of. Each: lean, sound checker, corpus-guard clean.
-
-**Lane T — testing decisions 1-4 of docs/orchestrator-handoff-2026-09-02.md (one agent at a time):**
-1. [SPEC LANDED 2026-09-02, docs/specs/09-fuzzing.md, 4f39240 — now in step 2 review] SPEC (Fable): construct-level fuzzer (random valid JS -> hermesc -> decompile -> trace-compare, oracle-backed) + app-generation fuzzer (generate app SOURCE + BUILD config: vary framework / bundler [Metro plain/RAM, Expo] / router / libs / Hermes+RN version / obfuscation -> build -> (bundle, map, source) ground-truth triples; rotate a SAMPLE per run, reject same-app-N-times) + blind held-out set (some generated + some existing apps, never tuned against). Spec MUST state metric + target number + measurement method + held-out check (decision 8).
-2. [DONE 2026-09-02, APPROVED w/ edits E1-E4, e4da11d — 0-novel-divergence bar; v98 confirmed; reports gitignored] REVIEW gate (Fable).
-3. IMPL construct-level fuzzer (lean Sonnet). 4. IMPL app-generation fuzzer (lean Sonnet). 5. Wire held-out set + pass MATRIX per Hermes-version x bundler into the corpus harness.
-**When Lane T's fuzzers are landed and generating unique bundles, Lane T's slot joins the ladder (both slots on Lane L, still max 2 / prefer 1).**
-
-P2.1 artifact-format+xref spec: AFTER the above are moving (morning). Corpus regression harness guards every change.
+## TONIGHT 2026-09-02 [COMPLETE — see PIVOT below]
+All lanes landed or superseded: P-11a perf, D23 stage-boundary + reg-split default-on, var-naming compound (20.2%), fuzzing spec+review+construct-fuzzer+triage. Matcher-migration (def-use not register identity; jsx-recover first) remains a standing low-priority item. App-gen fuzzer + campaign-1 + held-out wiring PARKED on deb reachability.
 
 ## PIVOT (Fred 2026-09-03 morning): STAGE 2 TOOLING IS NOW THE PRIORITY
 Fred: remaining rungs "aren't strictly necessary — the main body of most of the code reads quite nice." After the two in-flight agents land (stage-boundary reorder + P2.1 spec):
