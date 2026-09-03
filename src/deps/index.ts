@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { analyzeApk, apkHintsFromEvidence, extractBundleFromApk } from "./apk.ts";
 import type { ApkEvidence } from "./apk.ts";
+import { deriveCandidatePackages } from "./candidates.ts";
 import { classifyInventory, loadCommonalityIndex, DEFAULT_COMMONALITY_INDEX_PATH } from "./classify.ts";
 import type { ClassificationReport } from "./classify.ts";
 import { confirmCandidates, detectRnVersionFromBaselineFilenames } from "./confirm.ts";
@@ -43,6 +44,15 @@ export interface DepsOptions {
   /** Skips the classification stage entirely (`report.classification` stays
    *  null) — e.g. for callers that only want match/guess/confirm output. */
   readonly skipClassification?: boolean;
+  /** QUEUE 22a: brute-force every signature file in every DB layer (the
+   *  behaviour before this task), instead of the new default —
+   *  evidence-directed candidate matching (`candidates.ts`), which loads
+   *  only the non-baseline signature files whose package name the bundle's
+   *  own strings give some reason to check. Preserves today's behaviour
+   *  exactly, byte-for-byte identical match/report output, for a caller
+   *  that needs the old exhaustive recall (docs/DEPS.md's
+   *  evidence-directed section has the measured recall comparison). */
+  readonly exhaustive?: boolean;
 }
 
 export interface DepsRunResult {
@@ -75,7 +85,7 @@ export async function runDeps(inputPath: string, opts: DepsOptions = {}): Promis
   const { inventory } = buildInventory(bytes);
 
   const layers = resolveDbLayers({ ...(opts.out !== undefined ? { outDir: opts.out } : {}), ...(opts.sigdb !== undefined ? { sigdb: opts.sigdb } : {}), noSharedDb: opts.noSharedDb === true });
-  const dbs = loadSignatures(layers);
+  const dbs = loadSignatures(layers, opts.exhaustive === true ? {} : { candidates: deriveCandidatePackages(layers, inventory) });
   const matchReport = matchInventory(inventory, dbs, opts.minInstr !== undefined ? { minInstr: opts.minInstr } : {});
 
   const apkHints = apkEvidence !== null ? apkHintsFromEvidence(apkEvidence) : undefined;

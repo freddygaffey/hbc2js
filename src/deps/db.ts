@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packageNameFromSigFilename } from "./candidates.ts";
 import type { SigDbFile, SigDbIndex, SigDbIndexEntry } from "./sigdb-types.ts";
 
 export type DbLayerName = "project" | "user" | "shared";
@@ -66,14 +67,29 @@ export interface LoadedSig {
   readonly path: string;
 }
 
-function listJsonFiles(dir: string): string[] {
+function listJsonFiles(dir: string, candidates?: ReadonlySet<string>): string[] {
   const files: string[] = [];
   if (!existsSync(dir)) return files;
   for (const name of readdirSync(dir)) {
     if (name === "index.json") continue;
-    const full = join(dir, name);
-    if (name.endsWith(".json")) files.push(full);
+    if (!name.endsWith(".json")) continue;
+    // Evidence-directed filtering (QUEUE 22a, `candidates.ts`): when a
+    // candidate set is given, skip any non-baseline file whose own
+    // filename-derived package name isn't in it — this is what turns
+    // "read and JSON.parse every signature file" into "read only the ones
+    // the bundle's own strings gave a reason to check". `candidates`
+    // undefined (the default for every existing caller of `loadSignatures`)
+    // preserves the exact previous exhaustive behaviour.
+    if (candidates !== undefined) {
+      const pkg = packageNameFromSigFilename(name);
+      if (pkg === null || !candidates.has(pkg)) continue;
+    }
+    files.push(join(dir, name));
   }
+  // Baselines are foundational subtraction data (react/react-native/metro
+  // "empty app" noise floors), not named npm packages a bundle's strings
+  // could ever give evidence for — always loaded in full, regardless of
+  // candidates, same as before this task.
   const baselines = join(dir, "_baselines");
   if (existsSync(baselines)) {
     for (const name of readdirSync(baselines)) {
@@ -87,17 +103,30 @@ function keyOf(f: SigDbFile): string {
   return `${f.package}@${f.version}__hbc${f.hbcVersion}`;
 }
 
+export interface LoadSignaturesOptions {
+  /** Evidence-directed candidate set (QUEUE 22a, `candidates.ts`): when
+   *  given, `user`/`shared` layers only load a non-baseline signature file
+   *  whose own package name is in this set (baselines always load in full
+   *  — see `listJsonFiles`). The `project` layer always loads in full
+   *  regardless — it's small (this project's own `--confirm` results) and
+   *  explicit, not something string-evidence should gate. Omitted (every
+   *  existing caller before this task) preserves the exact previous
+   *  exhaustive behaviour. */
+  readonly candidates?: ReadonlySet<string>;
+}
+
 /**
  * Load every signature file across the given layers, in priority order,
  * deduplicating by `package@version` x HBC version so a project-local
  * confirmation shadows a stale shared/user-cache copy rather than being
  * matched twice.
  */
-export function loadSignatures(layers: readonly DbLayer[]): LoadedSig[] {
+export function loadSignatures(layers: readonly DbLayer[], opts: LoadSignaturesOptions = {}): LoadedSig[] {
   const seen = new Set<string>();
   const out: LoadedSig[] = [];
   for (const layer of layers) {
-    for (const path of listJsonFiles(layer.dir)) {
+    const candidates = layer.name === "project" ? undefined : opts.candidates;
+    for (const path of listJsonFiles(layer.dir, candidates)) {
       let file: SigDbFile;
       try {
         file = JSON.parse(readFileSync(path, "utf8")) as SigDbFile;

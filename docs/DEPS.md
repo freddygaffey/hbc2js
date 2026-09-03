@@ -9,7 +9,7 @@ second — never by executing any package's code.
 
 ```sh
 hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
-  [--sigdb <dir>] [--no-shared-db] [--min-instr <n>] [--json]
+  [--sigdb <dir>] [--no-shared-db] [--min-instr <n>] [--json] [--exhaustive]
 ```
 
 - `<bundle.hbc|app.apk>` — a compiled Hermes bundle, or an Android APK
@@ -34,6 +34,9 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
   `docs/PACKAGE-SIGNATURES.md` §2.4).
 - `--json` — machine-readable `DepsReport` (see `src/deps/report.ts`) on
   stdout instead of the human table.
+- `--exhaustive` — score every signature file in every DB layer (the only
+  behaviour before QUEUE item 22a). Default is now **evidence-directed**
+  matching — see "Evidence-directed matching (QUEUE 22a)" below.
 
 ## Pipeline
 
@@ -273,6 +276,113 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
 5. **Report** (`src/deps/report.ts`): the human table / `--json` shape, plus
    `<out>/package.json` when confident. `DepsReport.moduleOwnership` is the
    module-id -> package mapping the M6 emitter needs (see "For M6" below).
+
+## Evidence-directed matching (QUEUE item 22a, 2026-09-03)
+
+Before this task, step 2 above (`match`) always loaded and JSON-parsed
+**every** signature file in every DB layer (`db.ts`'s `loadSignatures`) up
+front, then scored the whole target function set against every one of
+them — measured on a real NSW production bundle (43,384 functions) with the
+D17c bulk DB layered in (32,708 signature files across ~2,000 packages):
+**>159s single-threaded, killed unfinished**, by far the slowest operation
+in the product (a `split` on the same class of bundle took 12s).
+
+**Design.** `src/deps/candidates.ts` adds a candidate-derivation pass that
+runs before any signature file is read: a single, cheap walk over the
+bundle's own module string constants (already recovered structurally by
+`inventory.ts` — no extra bytecode parsing) builds one evidence text blob,
+then every candidate package name available in a DB layer — derived purely
+from its filename (`<pkg>@<version>__hbc<N>.json`, no JSON parsing needed to
+know a package's name — `packageNameFromSigFilename`) — is tested for
+whether it occurs as a literal, case-insensitive substring anywhere in that
+text: a `node_modules/<pkg>/...` path fragment, a quoted `require`-shaped
+string, a deprecation-notice sentence naming the package
+(`"...install it from 'react-native-foo' instead"`), a version banner, or
+simply the name occurring inside a longer identifier (`ReactNative` contains
+`react-native`). A second, scope-level pass catches a scoped package whose
+own full name doesn't survive verbatim but a sibling under the same scope's
+does (measured: `@react-navigation/native` doesn't appear verbatim in
+`react-navigation-example`'s strings, but `@react-navigation/stack` does,
+and the bare `@react-navigation/` prefix does too — evidently from a third
+string the local DB has no signature for).
+
+Matching thousands of candidate names against the evidence text one
+`String.prototype.includes` call at a time would be O(patterns x text
+length) — worse than useless at 32k patterns. `findCandidatesInText` is a
+small Aho-Corasick automaton instead: O(total pattern length + text length +
+match count), independent of how many candidate names exist. `db.ts`'s
+`loadSignatures` gained an optional `{ candidates }` filter (omitted —
+every caller before this task — is byte-for-byte the old exhaustive
+behaviour); `listJsonFiles` skips any non-baseline file whose
+filename-derived package name isn't in the candidate set. Baselines
+(`_baselines/*`, foundational subtraction data, not named npm packages) and
+the small `project`-local layer (explicit `--confirm` results) are always
+loaded in full regardless of candidates.
+
+**Default and `--exhaustive`.** `hbc2js deps` now runs evidence-directed by
+default; `--exhaustive` (`runDeps({ exhaustive: true })`) restores the exact
+previous behaviour — every existing test that constructs its own DB via
+`loadSignatures(layers)` with no options is completely unaffected (that
+call shape still means "load everything"; only `runDeps`'s own default
+changed). One existing sweep test
+(`tests/sweep/deps/corpus.test.ts`) needs the scope-prefix pass above to
+still find all 9 of `react-navigation-example`'s known dependencies by
+default — see below.
+
+**Correctness bar (measured 2026-09-03).** `tests/gate/deps/candidates.test.ts`
+runs both paths (default evidence-directed vs `--exhaustive`) against
+`rn-template-0.72` and diffs `moduleAttributions`: **zero divergences** on
+every module both paths attribute, and the `confirmedDeps` package sets are
+identical (`react`, `react-native`). `tests/sweep/deps/corpus.test.ts`
+(react-navigation-example-0.85.3, run directly, not via a diff) confirms all
+9 known dependencies at "high" by default — same recall as `--exhaustive`
+gave before this task; no recall drop was needed or shipped on either
+committed correctness-bar fixture. `evidence-directed N vs exhaustive M`
+attributions on `react-navigation-example-0.85.3`: identical, 9 confirmed
+either way (`react`, `react-native`, `@react-navigation/stack`,
+`@react-navigation/native`, `react-native-gesture-handler`,
+`react-native-reanimated`, `react-native-screens`, `react-native-safe-area-context`,
+`@react-native-async-storage/async-storage`).
+
+**Wall-time (shared 41-file starter DB only — the D17c 32,708-signature
+bulk DB isn't fetchable from this task's sandboxed environment, no network
+to the `deb` build host):**
+
+| Bundle | `--exhaustive` | default (evidence-directed) |
+|---|---|---|
+| `rn-template-0.72` | 0.39s | 0.35s |
+| `react-navigation-example-0.85.3` | 0.82s | 0.87s |
+| `au.gov.nsw.service.apk` (local corpus) | 2.58s | 2.65s |
+
+At 41 signature files, load time is not the bottleneck for either path
+(noise-level difference, sometimes negative) — this is expected and
+doesn't demonstrate the fix; QUEUE 22a's whole premise is that the cost is
+in the DB's *file count*, not in matching a small starter set.
+
+**Synthetic bulk-DB-scale benchmark (same file count as the real D17c bulk
+DB: 32,708 signature files, HBC96, synthesized content — package function
+counts/hash shapes are representative but not the real npm signatures,
+since those aren't reachable here).** Run against the real
+`au.gov.nsw.service.apk` bundle (43,384 functions — this is the same
+bundle/function-count the >159s measurement above was taken on):
+
+```
+target: totalFunctions 43384 modules 4510 hbcVersion 96
+--exhaustive:        load=2920ms match=1453ms total=4373ms  (loaded 32708 sig files)
+evidence-directed:   derive=114ms load=23ms   match=25ms   total=162ms   (loaded 6 sig files, candidates=6)
+```
+
+**~27x** at this synthetic scale (4.37s -> 0.16s), almost entirely from no
+longer reading+parsing 32,702 irrelevant files (load: 2920ms -> 23ms) and
+no longer scoring their functions (match: 1453ms -> 25ms). This is
+consistent with "seconds not minutes" but is **not** a reproduction of the
+originally measured >159s (synthetic content, and this task's environment
+has neither the real bulk DB nor the same host/disk the original number was
+measured on) — flagged honestly rather than overclaimed; a real NSW run
+against the real bulk DB is the next validation step once that DB is
+reachable from wherever `hbc2js deps` actually runs. Parts (b) (worker pool)
+and (c) (sha256 fingerprint cache) are separate, later QUEUE 22 items, not
+attempted here.
 
 ## Signature DB layering (D17b)
 

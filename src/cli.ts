@@ -136,6 +136,9 @@ Options (deps):
   --no-shared-db            don't consult tools/pkgsig/db (this repo's starter set)
   --min-instr <n>           minimum-instruction floor before a hash is trusted (default 8)
   --json                    machine-readable DepsReport on stdout
+  --exhaustive              score every signature file in every DB layer (pre-QUEUE-22a behaviour);
+                             default is evidence-directed: only packages the bundle's own strings
+                             give a reason to check (docs/DEPS.md, "evidence-directed matching")
 
 hbc2js segregate <split-dir> [outDir]   (docs/specs/08-segregation.md, milestones 1-3)
   Places a --split tree's modules into node_modules/<pkg>/ (library,
@@ -654,6 +657,7 @@ interface DepsArgs {
   readonly noSharedDb: boolean;
   readonly minInstr: number | undefined;
   readonly json: boolean;
+  readonly exhaustive: boolean;
 }
 
 function parseDepsArgs(argv: readonly string[]): DepsArgs {
@@ -666,6 +670,7 @@ function parseDepsArgs(argv: readonly string[]): DepsArgs {
   let noSharedDb = false;
   let minInstr: number | undefined;
   let json = false;
+  let exhaustive = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--help" || a === "-h") help = true;
@@ -676,9 +681,10 @@ function parseDepsArgs(argv: readonly string[]): DepsArgs {
     else if (a === "--no-shared-db") noSharedDb = true;
     else if (a === "--min-instr") minInstr = Number(argv[++i]);
     else if (a === "--json") json = true;
+    else if (a === "--exhaustive") exhaustive = true;
     else if (input === undefined && !a.startsWith("-")) input = a;
   }
-  return { help, input, out, confirm, offline, sigdb, noSharedDb, minInstr, json };
+  return { help, input, out, confirm, offline, sigdb, noSharedDb, minInstr, json, exhaustive };
 }
 
 async function runDepsCmd(argv: readonly string[]): Promise<number> {
@@ -694,6 +700,7 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
       offline: args.offline,
       ...(args.sigdb !== undefined ? { sigdb: args.sigdb } : {}),
       noSharedDb: args.noSharedDb,
+      exhaustive: args.exhaustive,
       ...(args.minInstr !== undefined ? { minInstr: args.minInstr } : {}),
       // `--confirm` can take several minutes with no other output (a real
       // scratch `npm install`, then one npm-pack + Metro bundle + hermesc
