@@ -100,7 +100,7 @@ joins (§6).
   hard `RAISE(ABORT)` (§2.5), so even a buggy writer cannot rewrite history.
 - Unlike git, there is no branching in v1: one linear history per file.
   Two-session merge stays spec 11 §2.3's batch line-union semantics, now as a
-  row-union with the same conflict records (§9 Q4).
+  row-union with the same conflict records (§10 Q4).
 - `hbc2js project log [--since <seq|iso>] [--who <actor>]` (§3.2) is the
   bounded query over this history — the cross-session "what happened here"
   answer that motivates cost 2 in §0.
@@ -227,7 +227,7 @@ mandate. So: when a `.hbcproj` exists, `name` CLI verbs and `NameService`
 read/write `revisions(kind='name')+d_names` (same gate, same alpha-rename at
 render); `hbc2js init --from` imports the existing overlay records preserving
 timeline (§4.3); and `<hbc>.names.json` remains available as an EXPORT
-(§3.3), so any external consumer of that format keeps working. §9 Q1 asks the
+(§3.3), so any external consumer of that format keeps working. §10 Q1 asks the
 reviewer to confirm this reversal.
 
 ### 2.4 Derived index stratum — spec 10 §2, one table per JSONL kind
