@@ -8,9 +8,9 @@
 
 **Semantics rule (D14).** The bytecode under the Hermes VM is ground truth, not the source under Node: Hermes shares one `let` binding across loop iterations, TDZ varies by version, no sloppy `arguments` aliasing. Emit what the bytecode does.
 
-**Fixtures.** `tests/fixtures/constructs/<NN-name>/{source.js,expected.txt,vNN.hbc,…}` (57 constructs × 5 versions, `.obf`/`.min` variants; `build.sh` regenerates), `hermes-dec-sample/`, `bundles/` (RN template committed; react-navigation and Expensify via `fetch.sh`), `local-corpus/` (proprietary APK bundles — NEVER in the repo, hashes only).
+**Fixtures.** `tests/fixtures/constructs/<NN-name>/{source.js,expected.txt,vNN.hbc,…}` (61 constructs × 5 versions, `.obf`/`.min` variants; `build.sh` regenerates), `hermes-dec-sample/`, `bundles/` (RN template committed; react-navigation and Expensify via `fetch.sh`), `local-corpus/` (proprietary APK bundles — NEVER in the repo, hashes only).
 
-**Tests.** `npm test` = gate (~70 s; must stay green, currently 800+ tests, 492/492 fixture PASS through the real decompiler). `npm run test:all` adds sweep (~2 min). `HBC2JS_REQUIRE_ORACLES=1` turns oracle skips into failures.
+**Tests.** `npm test` = gate (~2 min; must stay green, currently 1800+ tests, 492/492 fixture PASS through the real decompiler). `npm run test:all` adds sweep (~2 min). `HBC2JS_REQUIRE_ORACLES=1` turns oracle skips into failures.
 
 **Hard rules.** No code from hermes-dec (AGPL) — oracle only. Every change ships tests + docs in the same commit; every bug fix ships a regression test (semantic bugs → a new construct fixture) or a `docs/BUGS.md` row. Stage files explicitly, never `git add -A` (other agents share the tree). Commit with trailer `Co-Authored-By: Claude <Model> <noreply@anthropic.com>`; never push, never open PRs, never `gh`. Append one line to `docs/AGENT-LOG.md`. macOS + Linux.
 

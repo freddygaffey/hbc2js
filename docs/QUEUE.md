@@ -94,3 +94,10 @@ Lowest priority; only after Stage 2 is standing.
 - reg-split rung (P-6) — unlocks real variable names.
 - Device round-trip on a real app (tablet).
 - **Add clonable OSS apps (Expo examples) to the OSS ground-truth benchmark**: `tools/e2e/oss-benchmark.mjs`'s `APPS` array today has react-navigation-example-0.85.3 (scored, has a `.map`) and rn-template-0.72 (pipeline-only, no `.map`). Adding 2-3 more (an Expo example, a small react-navigation demo) needs cloning + building each with `npx expo export`/Metro to get a fresh bundle+map pair — network/build work `deb` would normally do, and `deb` is down as of 2026-09-02. Docs: docs/e2e/OSS-BENCHMARK.md "Adding an app".
+
+## Sweep 2026-09-03 (docs/reports/2026-09-03-architecture-sweep.md — ranked, top 5)
+1. Perf: `expressionOnlyCheck`'s `defUse(after)` full-list walk per site is the last known O(n²) cliff (= existing "Perf part 3" item; report finding 1) — needs spec, checker-sensitive.
+2. Tests: shared memoised rn-template decompile in tests/support + migrate 20 raw-readFileSync fixture loaders to support/fixtures.ts; biggest single gate-time win (finding 2, S–M, test-only).
+3. Passes: reg-split/var-naming private AST walkers (~150 lines each) re-implement passes/ast.ts traversal — one occurrence-visitor in ast.ts, D12a spec addendum (finding 3; check-index stays independent per spec 10).
+4. Docs: QUEUE.md itself — move DONE/LANDED/stale generations out; a popped "top item" is currently a landed one (finding 4, docs-only, orchestrator owns ordering).
+5. Decision (Fred/orchestrator): delete-or-keep deprecated `tools/equiv/` (128K, provably unimported since M3 baf9972) — deletion requires rewording docs/EQUIVALENCE.md's reproducibility claim (finding 5).
