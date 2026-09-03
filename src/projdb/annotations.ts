@@ -18,7 +18,7 @@ export interface NameValue {
   readonly name: string;
 }
 
-const nameAdapter: DetailAdapter<NameValue> = {
+export const nameAdapter: DetailAdapter<NameValue> = {
   kind: "name",
   writeDetail(db, rid, value) {
     db.prepare(`INSERT INTO d_names (rid, name) VALUES (?, ?)`).run(rid, value.name);
@@ -58,7 +58,7 @@ export interface CommentValue {
   readonly range?: CommentRangeValue;
 }
 
-const commentAdapter: DetailAdapter<CommentValue> = {
+export const commentAdapter: DetailAdapter<CommentValue> = {
   kind: "comment",
   writeDetail(db, rid, value) {
     db.prepare(`INSERT INTO d_comments (rid, body, range_line, range_col) VALUES (?, ?, ?, ?)`).run(
@@ -116,7 +116,7 @@ export interface TagValue {
   readonly note?: string;
 }
 
-const tagAdapter: DetailAdapter<TagValue> = {
+export const tagAdapter: DetailAdapter<TagValue> = {
   kind: "tag",
   writeDetail(db, rid, value) {
     db.prepare(`INSERT INTO d_tags (rid, tag, note) VALUES (?, ?, ?)`).run(rid, value.tag, value.note ?? null);
@@ -163,7 +163,7 @@ export interface BookmarkValue {
   readonly label?: string;
 }
 
-const bookmarkAdapter: DetailAdapter<BookmarkValue> = {
+export const bookmarkAdapter: DetailAdapter<BookmarkValue> = {
   kind: "bookmark",
   writeDetail(db, rid, value) {
     db.prepare(`INSERT INTO d_bookmarks (rid, label) VALUES (?, ?)`).run(rid, value.label ?? null);
@@ -202,7 +202,7 @@ export interface FindingValue {
   readonly evidence: readonly FindingEvidenceValue[];
 }
 
-const findingAdapter: DetailAdapter<FindingValue> = {
+export const findingAdapter: DetailAdapter<FindingValue> = {
   kind: "finding",
   writeDetail(db, rid, value) {
     db.prepare(`INSERT INTO d_findings (rid, finding_no, severity, status, claim) VALUES (?, ?, ?, ?, ?)`).run(

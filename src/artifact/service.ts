@@ -22,6 +22,15 @@ import { rawFrameBodies } from "../name-overlay/frames.ts";
 import { OverlayStore } from "../name-overlay/store.ts";
 import { listNameable, contextSites, type NameableRegister as FrameNameableRegister } from "./frame-queries.ts";
 import { sha256Hex } from "./schema.ts";
+import {
+  checkDbStaleness,
+  hasProjectDb,
+  loadIndexRowsFromDb,
+  openProjectDbReadonly,
+  readMeta,
+  synthesizeManifestFromMeta,
+  type DbIndexRows,
+} from "../projdb/artifact-read.ts";
 import type {
   CallRow,
   FunctionRow,
@@ -101,10 +110,10 @@ export class ArtifactService {
   private readonly callersByCallee = new Map<number, CallRow[]>();
   private readonly callsByCaller = new Map<number, CallRow[]>();
   private readonly stringsById = new Map<number, StringRow>();
-  private readonly stringUses: readonly StringUseRow[];
-  private readonly globals: readonly GlobalRow[];
-  private readonly nativeRows: readonly NativeRow[];
-  private readonly modulesIndex: ModulesIndex;
+  private stringUses!: readonly StringUseRow[];
+  private globals!: readonly GlobalRow[];
+  private nativeRows!: readonly NativeRow[];
+  private modulesIndex!: ModulesIndex;
   /** Bundle-wide `?`-callee edge count (§4.2's own note: ANY unresolved
    *  callee could, in principle, be a call to the fn `who-calls` is asked
    *  about — the completeness caveat is necessarily graph-wide, not
@@ -117,61 +126,68 @@ export class ArtifactService {
   private frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> | undefined;
   private overlay: OverlayStore | undefined;
 
+  /** §4.3 backend selection: `.hbcproj` present → DB-backed; else the
+   *  JSONL path (unchanged). Exposed for callers that need to know without
+   *  constructing the service (e.g. `ProjectService`'s own selection). */
+  readonly dbBacked: boolean;
+
   constructor(artifactDir: string, opts: { readonly hbc?: string; readonly overlayStorePath?: string } = {}) {
     this.artifactDir = artifactDir;
     this.hbcPath = opts.hbc;
     const manifestPath = join(artifactDir, "manifest.json");
-    if (!existsSync(manifestPath)) {
+    const manifestExists = existsSync(manifestPath);
+    this.dbBacked = hasProjectDb(artifactDir);
+
+    if (!this.dbBacked && !manifestExists) {
       throw new Hbc2jsError(ErrorCode.E_IO, `${artifactDir} has no manifest.json — not an artifact (docs/specs/10-artifact-format.md §1.2)`);
     }
-    this.manifest = readJson<Manifest>(manifestPath);
 
-    const dir = fnDir(artifactDir);
-    const { rows: functionRows } = readJsonlRows<FunctionRow>(join(dir, "functions.jsonl"));
-    for (const r of functionRows) this.functionsByFn.set(r.fn, r);
+    if (this.dbBacked) {
+      // §3.2/§5.2: prepared-statement read path over `project.hbcproj`'s
+      // `ix_*` tables — see `src/projdb/artifact-read.ts`. §4.3: once
+      // `.hbcproj` exists, `index/*.jsonl` in the same dir is ignored.
+      const db = openProjectDbReadonly(artifactDir);
+      const meta = readMeta(db);
+      this.manifest = manifestExists ? readJson<Manifest>(manifestPath) : synthesizeManifestFromMeta(meta);
+      if (manifestExists) checkDbStaleness(artifactDir, meta, this.manifest);
+      const rows = loadIndexRowsFromDb(db);
+      db.close();
+      this.populateFromRows(rows);
+    } else {
+      this.manifest = readJson<Manifest>(manifestPath);
 
-    const { rows: callRows } = readJsonlRows<CallRow>(join(dir, "calls.jsonl"));
-    for (const c of callRows) {
-      const list = this.callsByCaller.get(c.caller) ?? [];
-      list.push(c);
-      this.callsByCaller.set(c.caller, list);
-      if (typeof c.callee === "number") {
-        const inList = this.callersByCallee.get(c.callee) ?? [];
-        inList.push(c);
-        this.callersByCallee.set(c.callee, inList);
+      const dir = fnDir(artifactDir);
+      const { rows: functionRows } = readJsonlRows<FunctionRow>(join(dir, "functions.jsonl"));
+      const { rows: callRows } = readJsonlRows<CallRow>(join(dir, "calls.jsonl"));
+      const stringsIndex = readJson<StringsIndex>(join(dir, "strings.json"));
+      const { rows: stringUseRows } = readJsonlRows<StringUseRow>(join(dir, "string-uses.jsonl"));
+      const { rows: globalRows } = readJsonlRows<GlobalRow>(join(dir, "globals.jsonl"));
+      const { rows: nativeRows } = readJsonlRows<NativeRow>(join(dir, "native.jsonl"));
+      const modulesIndex = readJson<ModulesIndex>(join(dir, "modules.json"));
+
+      // §4.2 staleness: ranges header renderHash must equal manifest render.hash.
+      const { header: rangesHeader, rows: rangeRows } = readJsonlRows<RangeRow>(join(dir, "ranges.jsonl"));
+      if (rangesHeader.renderHash !== this.manifest.render.hash) {
+        throw new Hbc2jsError(
+          ErrorCode.E_STALE_RANGES,
+          `${artifactDir}: ranges.jsonl renderHash (${rangesHeader.renderHash}) != manifest.render.hash (${this.manifest.render.hash}) — ` +
+            `run \`hbc2js render\` to regenerate ranges before querying (docs/specs/10-artifact-format.md §4.2)`,
+        );
       }
-      if (c.callee === "?") this.totalUnknownCallees++;
-    }
 
-    const stringsIndex = readJson<StringsIndex>(join(dir, "strings.json"));
-    for (const e of stringsIndex.entries) this.stringsById.set(e.sid, e);
+      // index.builtFor must agree with the manifest's own bundle+producer —
+      // guards a hand-edited or half-written manifest (§4.2).
+      const producerHash = this.manifest.index.builtFor.producer;
+      const expectedProducerHash = sha256OfProducer(this.manifest.producer);
+      if (this.manifest.index.builtFor.bundleSha256 !== this.manifest.bundle.sha256 || producerHash !== expectedProducerHash) {
+        throw new Hbc2jsError(
+          ErrorCode.E_STALE_INDEX,
+          `${artifactDir}: index.builtFor does not match this manifest's bundle/producer — the semantic layer is stale ` +
+            `(docs/specs/10-artifact-format.md §4.2); re-decompile into a fresh artifact directory`,
+        );
+      }
 
-    ({ rows: this.stringUses } = readJsonlRows<StringUseRow>(join(dir, "string-uses.jsonl")));
-    ({ rows: this.globals } = readJsonlRows<GlobalRow>(join(dir, "globals.jsonl")));
-    ({ rows: this.nativeRows } = readJsonlRows<NativeRow>(join(dir, "native.jsonl")));
-    this.modulesIndex = readJson<ModulesIndex>(join(dir, "modules.json"));
-
-    // §4.2 staleness: ranges header renderHash must equal manifest render.hash.
-    const { header: rangesHeader, rows: rangeRows } = readJsonlRows<RangeRow>(join(dir, "ranges.jsonl"));
-    if (rangesHeader.renderHash !== this.manifest.render.hash) {
-      throw new Hbc2jsError(
-        ErrorCode.E_STALE_RANGES,
-        `${artifactDir}: ranges.jsonl renderHash (${rangesHeader.renderHash}) != manifest.render.hash (${this.manifest.render.hash}) — ` +
-          `run \`hbc2js render\` to regenerate ranges before querying (docs/specs/10-artifact-format.md §4.2)`,
-      );
-    }
-    for (const r of rangeRows) this.rangesByFn.set(r.fn, r);
-
-    // index.builtFor must agree with the manifest's own bundle+producer —
-    // guards a hand-edited or half-written manifest (§4.2).
-    const producerHash = this.manifest.index.builtFor.producer;
-    const expectedProducerHash = sha256OfProducer(this.manifest.producer);
-    if (this.manifest.index.builtFor.bundleSha256 !== this.manifest.bundle.sha256 || producerHash !== expectedProducerHash) {
-      throw new Hbc2jsError(
-        ErrorCode.E_STALE_INDEX,
-        `${artifactDir}: index.builtFor does not match this manifest's bundle/producer — the semantic layer is stale ` +
-          `(docs/specs/10-artifact-format.md §4.2); re-decompile into a fresh artifact directory`,
-      );
+      this.populateFromRows({ functionRows, callRows, stringsIndex, stringUseRows, globalRows, nativeRows, modulesIndex, rangeRows });
     }
 
     if (opts.overlayStorePath !== undefined && existsSync(opts.overlayStorePath)) {
@@ -199,6 +215,31 @@ export class ArtifactService {
         }
       }
     }
+  }
+
+  /** Populates every private map from one row bundle, whichever backend
+   *  produced it (JSONL reads or `src/projdb/artifact-read.ts`'s DB reads)
+   *  — the ONE place caps/slicing-relevant state is built, so every verb
+   *  below answers identically regardless of backend (§3.2). */
+  private populateFromRows(rows: DbIndexRows): void {
+    for (const r of rows.functionRows) this.functionsByFn.set(r.fn, r);
+    for (const c of rows.callRows) {
+      const list = this.callsByCaller.get(c.caller) ?? [];
+      list.push(c);
+      this.callsByCaller.set(c.caller, list);
+      if (typeof c.callee === "number") {
+        const inList = this.callersByCallee.get(c.callee) ?? [];
+        inList.push(c);
+        this.callersByCallee.set(c.callee, inList);
+      }
+      if (c.callee === "?") this.totalUnknownCallees++;
+    }
+    for (const e of rows.stringsIndex.entries) this.stringsById.set(e.sid, e);
+    this.stringUses = rows.stringUseRows;
+    this.globals = rows.globalRows;
+    this.nativeRows = rows.nativeRows;
+    this.modulesIndex = rows.modulesIndex;
+    for (const r of rows.rangeRows) this.rangesByFn.set(r.fn, r);
   }
 
   private range(fn: number): RangeRow | undefined {

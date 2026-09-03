@@ -22,6 +22,8 @@ import { join } from "node:path";
 import type { ArtifactService } from "../artifact/service.ts";
 import { parseKey } from "../name-overlay/id.ts";
 import { loadProjectStore, saveProjectStore, type ProjectStore } from "./io.ts";
+import { openProjectDbReadonly } from "../projdb/artifact-read.ts";
+import { loadProjectStoreFromDb } from "../projdb/project-read.ts";
 import {
   PROJECT_SCHEMA,
   type BookmarkRecord,
@@ -146,7 +148,21 @@ export class ProjectService {
     this.artifact = artifact;
     this.storeDir = join(artifactDir, "project");
     const bundleSha256 = artifact.manifest.bundle.sha256;
-    const store: ProjectStore = existsSync(this.storeDir) ? loadProjectStore(this.storeDir) : emptyStore(this.storeDir, bundleSha256);
+    // §4.3 backend selection, same rule as `ArtifactService`: `artifact`
+    // already decided (and, on construction, already ran the §5.2
+    // staleness checks — a stale DB never reaches this far). When DB-backed,
+    // the annotation stratum comes from `project.hbcproj`'s `revisions`
+    // table (`src/projdb/project-read.ts`, reusing step 3's
+    // `DbRevisionStore`) instead of `project/*.jsonl`, which is ignored
+    // per §4.3's coexistence rule.
+    let store: ProjectStore;
+    if (artifact.dbBacked) {
+      const db = openProjectDbReadonly(artifactDir);
+      store = loadProjectStoreFromDb(db, this.storeDir, bundleSha256);
+      db.close();
+    } else {
+      store = existsSync(this.storeDir) ? loadProjectStore(this.storeDir) : emptyStore(this.storeDir, bundleSha256);
+    }
     this.targetIndex = {
       hasFn: (fn) => artifact.hasFn(fn),
       hasString: (sid) => artifact.hasString(sid),

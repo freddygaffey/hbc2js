@@ -52,6 +52,8 @@ export interface DbRevision<T> {
   readonly ts: string;
   readonly supersedes: string | null;
   readonly active: boolean;
+  readonly ctx: DbCtxSnapshot;
+  readonly prov: DbProvenance;
 }
 
 export interface DbRevisionSetResult<T> {
@@ -80,6 +82,12 @@ interface RevisionRow {
   readonly target: string;
   readonly ts: string;
   readonly supersedes: number | null;
+  readonly ctxName: string | null;
+  readonly ctxLoc: string | null;
+  readonly ctxOwner: string | null;
+  readonly provSource: "human" | "llm" | "tool";
+  readonly provWho: string;
+  readonly provRun: string | null;
 }
 
 function nowIso(): string {
@@ -122,7 +130,7 @@ export class DbRevisionStore<T> {
     const active = this.activeRow(slot);
     const rows = this.db
       .prepare(
-        `SELECT rid, target, ts, supersedes FROM revisions
+        `SELECT rid, target, ts, supersedes, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions
           WHERE slot = ? AND kind = ? AND reactivates IS NULL AND cleared = 0
           ORDER BY rid DESC`,
       )
@@ -135,7 +143,7 @@ export class DbRevisionStore<T> {
   allRecords(): readonly DbRevision<T>[] {
     const rows = this.db
       .prepare(
-        `SELECT rid, target, ts, supersedes, slot FROM revisions
+        `SELECT rid, target, ts, supersedes, slot, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions
           WHERE kind = ? AND reactivates IS NULL AND cleared = 0
           ORDER BY rid ASC`,
       )
@@ -188,7 +196,7 @@ export class DbRevisionStore<T> {
       this.adapter.writeDetail(db, rid, value);
       this.appendLog(prov, ts, "annotate", rid);
       db.exec("COMMIT;");
-      const record: DbRevision<T> = { rid: String(rid), target, value, ts, supersedes: toRevisionId(prior === undefined ? null : prior.payloadRid), active: true };
+      const record: DbRevision<T> = { rid: String(rid), target, value, ts, supersedes: toRevisionId(prior === undefined ? null : prior.payloadRid), active: true, ctx: ctx ?? {}, prov };
       return { record, superseded: priorRecord };
     } catch (err) {
       db.exec("ROLLBACK;");
@@ -209,7 +217,7 @@ export class DbRevisionStore<T> {
     if (toTs !== undefined) {
       const row = this.db
         .prepare(
-          `SELECT rid, target, ts, supersedes FROM revisions
+          `SELECT rid, target, ts, supersedes, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions
             WHERE slot = ? AND kind = ? AND reactivates IS NULL AND cleared = 0 AND ts = ?`,
         )
         .get(slot, this.adapter.kind, toTs) as unknown as RevisionRow | undefined;
@@ -217,11 +225,11 @@ export class DbRevisionStore<T> {
       next = row;
     } else if (current !== undefined) {
       const currentRow = this.db
-        .prepare(`SELECT rid, target, ts, supersedes FROM revisions WHERE rid = ?`)
+        .prepare(`SELECT rid, target, ts, supersedes, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions WHERE rid = ?`)
         .get(current.payloadRid) as unknown as RevisionRow;
       next =
         currentRow.supersedes !== null
-          ? ((this.db.prepare(`SELECT rid, target, ts, supersedes FROM revisions WHERE rid = ?`).get(currentRow.supersedes) as unknown as
+          ? ((this.db.prepare(`SELECT rid, target, ts, supersedes, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions WHERE rid = ?`).get(currentRow.supersedes) as unknown as
               | RevisionRow
               | undefined) ?? null)
           : null;
@@ -289,12 +297,18 @@ export class DbRevisionStore<T> {
   }
 
   private toDbRevision(rid: number, active: boolean): DbRevision<T> {
-    const row = this.db.prepare(`SELECT rid, target, ts, supersedes FROM revisions WHERE rid = ?`).get(rid) as unknown as RevisionRow;
+    const row = this.db.prepare(`SELECT rid, target, ts, supersedes, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions WHERE rid = ?`).get(rid) as unknown as RevisionRow;
     return this.rowToDbRevision(row, active);
   }
 
   private rowToDbRevision(row: RevisionRow, active: boolean): DbRevision<T> {
     const value = this.adapter.readDetail(this.db, row.rid);
+    const ctx: DbCtxSnapshot = {
+      ...(row.ctxName !== null ? { name: row.ctxName } : {}),
+      ...(row.ctxLoc !== null ? { loc: row.ctxLoc } : {}),
+      ...(row.ctxOwner !== null ? { ownerFn: row.ctxOwner } : {}),
+    };
+    const prov: DbProvenance = { source: row.provSource, who: row.provWho, ...(row.provRun !== null ? { run: row.provRun } : {}) };
     return {
       rid: String(row.rid),
       target: row.target,
@@ -302,6 +316,8 @@ export class DbRevisionStore<T> {
       ts: row.ts,
       supersedes: toRevisionId(row.supersedes),
       active,
+      ctx,
+      prov,
     };
   }
 }
