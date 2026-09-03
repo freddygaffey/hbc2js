@@ -30,7 +30,7 @@ Testing lane leftovers (app-gen fuzzer impl, divergence triage, held-out wiring)
 15. B — `--split` passes default-on now that they're fast (branch a489f29 landed the option) + wire remaining passes; drop origin/worktree-agent-aa57ac33c4ce367cb.
 19. C — next rung (NOT reg-split — needs Fred's decision, PUSHBACK P-6).
 20. A — Tier 2: RN-web boot loop (from 14's plan).
-22. **Speed up `deps`** (measured 2026-09-03 on M5: NSW deps ran >159s single-threaded, ~1 of 10 cores, killed unfinished — the slowest op by far; split was 12s by comparison). ORDER: (a) ALGORITHMIC FIRST — evidence-directed candidate matching (package names from the bundle's own strings / node_modules paths → confirm just those) instead of brute-forcing 43k fns × 32k sigs (per the deps-strategy memory); (b) worker pool across cores for the remainder; (c) cache fingerprints keyed by bundle sha256. Goal: NSW deps in seconds, not minutes.
+22. **[part (a) DONE 2026-09-03 377abff — evidence-directed default, 0-divergence bar, ~27x at scale (synthetic caveat); (b) pool + (c) cache HELD] Speed up `deps`** (measured 2026-09-03 on M5: NSW deps ran >159s single-threaded, ~1 of 10 cores, killed unfinished — the slowest op by far; split was 12s by comparison). ORDER: (a) ALGORITHMIC FIRST — evidence-directed candidate matching (package names from the bundle's own strings / node_modules paths → confirm just those) instead of brute-forcing 43k fns × 32k sigs (per the deps-strategy memory); (b) worker pool across cores for the remainder; (c) cache fingerprints keyed by bundle sha256. Goal: NSW deps in seconds, not minutes.
 21. Held-out fixtures finish (1) from origin/worktree-agent-a95cf9a2d5716d76b.
 
 
