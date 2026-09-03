@@ -34,6 +34,10 @@ import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
+import { ProjectService } from "./project/service.ts";
+import type { AnnotationRow } from "./project/service.ts";
+import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
+import type { ResolvedFinding } from "./project/findings.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
@@ -51,6 +55,7 @@ Usage:
   hbc2js render --hbc <in.hbc>     render source with the naming overlay applied
   hbc2js segregate <split-dir>     segregate a flat split tree into src/node_modules form (spec 08)
   hbc2js query <verb> --artifact <dir> …   query the P2.1 decompile artifact (docs/specs/10-artifact-format.md §3)
+  hbc2js project <verb> --artifact <dir> …   the P2.2 project store: tags/comments/bookmarks/findings (docs/specs/11-project-store.md §3)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -1067,6 +1072,202 @@ function runQuery(argv: readonly string[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// `hbc2js project <verb> …` — docs/specs/11-project-store.md §3, §7 step 5.
+// A thin formatting wrapper over `ProjectService`, same split as `query`'s
+// CLI is over `ArtifactService` — the caps/truncation markers here present
+// `ProjectService`'s already-bounded row sets, never a second source of
+// truth for the §3.1 caps.
+// ---------------------------------------------------------------------------
+function requireProv(argv: readonly string[], json: boolean): Provenance {
+  const source = flagValue(argv, "--prov-source");
+  const who = flagValue(argv, "--prov-who");
+  const run = flagValue(argv, "--prov-run");
+  if (source === undefined || who === undefined || !["human", "llm", "tool"].includes(source)) {
+    fail(ErrorCode.E_USAGE, "project <write-verb>: needs --prov-source <human|llm|tool> --prov-who <id> [--prov-run <id>]", 2, json);
+  }
+  return { source: source as Provenance["source"], who, ...(run !== undefined ? { run } : {}) };
+}
+
+/** `--evidence ref=role` (repeatable); `=` is unambiguous against the ref
+ *  vocabulary's own `:`-separated prefixes (`fn:`/`reg:F:R`/`sid:`/`mod:`/
+ *  `trace:`/`fuzz:`/`repro:`, none of which contain `=`). */
+function parseEvidence(argv: readonly string[]): readonly EvidenceRef[] {
+  const refs: EvidenceRef[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--evidence" && i + 1 < argv.length) {
+      const raw = argv[i + 1] as string;
+      const eq = raw.indexOf("=");
+      refs.push(eq >= 0 ? { ref: raw.slice(0, eq), role: raw.slice(eq + 1) } : { ref: raw, role: "context" });
+    }
+  }
+  return refs;
+}
+
+function annotationLine(row: AnnotationRow): string {
+  if (row.type === "tag") return `tag ${row.record.tag} ${provLine(row.record.prov)}${row.record.note !== undefined ? ` "${row.record.note}"` : ""}`;
+  if (row.type === "comment") return `comment${row.record.range !== undefined ? ` L${row.record.range.line}` : ""} "${row.record.body.slice(0, 60)}"`;
+  const rf: ResolvedFinding = row.record;
+  return `finding#${rf.record.rid} ${rf.record.severity} ${rf.status} "${rf.record.claim.slice(0, 40)}"`;
+}
+
+function provLine(prov: Provenance): string {
+  return prov.run !== undefined ? `${prov.source}@${prov.run}` : prov.source;
+}
+
+function runProject(argv: readonly string[]): void {
+  const verb = argv[0];
+  const sub = argv[1];
+  const json = argv.includes("--json");
+  const all = argv.includes("--all");
+  const artifactDir = flagValue(argv, "--artifact");
+  if (artifactDir === undefined) fail(ErrorCode.E_USAGE, "project <verb> --artifact <dir> …", 2, json);
+
+  let artifact: ArtifactService;
+  let svc: ProjectService;
+  try {
+    artifact = new ArtifactService(artifactDir);
+    svc = new ProjectService(artifactDir, artifact);
+  } catch (e) {
+    const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
+    if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
+    else process.stderr.write(`${err.message}\n`);
+    process.exit(3);
+  }
+
+  const rest = argv.slice(verb === "tag" || verb === "finding" || verb === "bookmark" || verb === "comment" ? 2 : 1);
+  const positional = rest.filter((a) => !a.startsWith("--"));
+
+  try {
+    if (verb === "for-fn") {
+      const result = svc.forFn(Number(positional[0]), { all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`${annotationLine(r)}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "tag" && sub === "set") {
+      const target = positional[0] as string;
+      const tag = positional[1] as Tag;
+      const note = flagValue(argv, "--note");
+      const prov = requireProv(argv, json);
+      const result = svc.setTag(target, tag, prov, note !== undefined ? { note } : {});
+      process.stdout.write(`${result.line}\n`);
+    } else if (verb === "tag" && sub === "get") {
+      const result = svc.tagsOn(positional[0] as string);
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`${r.tag} ${provLine(r.prov)}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+      }
+    } else if (verb === "findings") {
+      const tag = flagValue(argv, "--tag");
+      const severity = flagValue(argv, "--severity");
+      const status = flagValue(argv, "--status");
+      const result = svc.findings(
+        { ...(tag !== undefined ? { tag: tag as Tag } : {}), ...(severity !== undefined ? { severity: severity as Severity } : {}), ...(status !== undefined ? { status: status as FindingStatus } : {}) },
+        { all },
+      );
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const rf of result.rows) process.stdout.write(`#${rf.record.rid} ${rf.record.severity} ${rf.status} ${rf.record.target} "${rf.record.claim.slice(0, 40)}"\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "finding" && sub === "show") {
+      const rf = svc.finding(positional[0] as string);
+      if (rf === null) fail(ErrorCode.E_USAGE, `finding show: no such finding ${positional[0]}`, 2, json);
+      if (json) process.stdout.write(JSON.stringify(rf) + "\n");
+      else {
+        process.stdout.write(`finding#${rf.record.rid} ${rf.record.severity} ${rf.status} ${rf.record.target} valid:${rf.valid}\n`);
+        process.stdout.write(`claim: ${rf.record.claim}\n`);
+        for (const e of rf.refs) process.stdout.write(`evidence ${e.ref.ref} [${e.ref.role}] resolved:${e.resolved}\n`);
+      }
+    } else if (verb === "finding" && sub === "add") {
+      const target = positional[0] as string;
+      const claim = flagValue(argv, "--claim") ?? "";
+      const severity = (flagValue(argv, "--severity") ?? "low") as Severity;
+      const cwe = flagValue(argv, "--cwe");
+      const prov = requireProv(argv, json);
+      const evidence = parseEvidence(argv);
+      const result = svc.addFinding({ target, claim, severity, evidence, prov, ...(cwe !== undefined ? { cwe } : {}) });
+      process.stdout.write(`${result.line}\n`);
+    } else if (verb === "finding" && sub === "set-status") {
+      const rid = positional[0] as string;
+      const to = positional[1] as FindingStatus;
+      const prov = requireProv(argv, json);
+      const evidence = parseEvidence(argv);
+      const result = svc.setFindingStatus(rid, to, evidence, prov);
+      process.stdout.write(`${result.line}\n`);
+    } else if (verb === "comment" && sub === "add") {
+      const target = positional[0] as string;
+      const body = flagValue(argv, "--body") ?? "";
+      const rangeArg = flagValue(argv, "--range");
+      const prov = requireProv(argv, json);
+      const range = rangeArg !== undefined ? (rangeArg.includes(":") ? { line: Number(rangeArg.split(":")[0]), col: Number(rangeArg.split(":")[1]) } : { line: Number(rangeArg) }) : undefined;
+      const result = svc.addComment(target, body, prov, range !== undefined ? { range } : {});
+      process.stdout.write(`${result.line}\n`);
+    } else if (verb === "comments") {
+      const result = svc.comments(Number(positional[0]), { all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`${r.rid}${r.range !== undefined ? ` L${r.range.line}` : ""} "${r.body.slice(0, 60)}"\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "bookmark" && sub === "add") {
+      const target = positional[0] as string;
+      const label = flagValue(argv, "--label");
+      const prov = requireProv(argv, json);
+      const result = svc.addBookmark(target, prov, label !== undefined ? { label } : {});
+      process.stdout.write(`${result.line}\n`);
+    } else if (verb === "bookmarks") {
+      const fnFilter = flagValue(argv, "--fn");
+      const result = svc.bookmarks(fnFilter !== undefined ? { fn: Number(fnFilter) } : {}, { all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`${r.target}${r.label !== undefined ? ` "${r.label}"` : ""}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "orphans") {
+      const result = svc.orphans({ all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else process.stdout.write(`total:${result.total} (orphan detection lands in step 6, spec 11 §7)\n`);
+    } else if (verb === "conflicts") {
+      const result = svc.conflicts({ all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else process.stdout.write(`total:${result.total} (conflict detection lands in step 7, spec 11 §7)\n`);
+    } else if (verb === "stat") {
+      const s = svc.stat();
+      if (json) process.stdout.write(JSON.stringify(s) + "\n");
+      else {
+        process.stdout.write(`comments:${s.comments} tags:${s.tags} bookmarks:${s.bookmarks} findings:${s.findings}\n`);
+        process.stdout.write(`invalidFindings:${s.invalidFindings} orphans:${s.orphans} conflicts:${s.conflicts}\n`);
+      }
+    } else {
+      fail(
+        ErrorCode.E_USAGE,
+        "project <for-fn|tag set|tag get|findings|finding show|finding add|finding set-status|comment add|comments|bookmark add|bookmarks|orphans|conflicts|stat> …",
+        2,
+        json,
+      );
+    }
+    process.exit(0);
+  } catch (e) {
+    const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
+    if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
+    else process.stderr.write(`${err.message}\n`);
+    process.exit(3);
+  }
+}
+
 function runRender(argv: readonly string[]): void {
   const hbc = flagValue(argv, "--hbc") ?? argv.find((a) => !a.startsWith("-") && a.endsWith(".hbc"));
   if (hbc === undefined) fail(ErrorCode.E_USAGE, "render --hbc <input.hbc> [--fn N] [--store <path>] [--out <file>]", 2, false);
@@ -1098,6 +1299,10 @@ function main(): void {
   }
   if (argv[0] === "query") {
     runQuery(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "project") {
+    runProject(argv.slice(1));
     return;
   }
   if (argv[0] === "segregate") {

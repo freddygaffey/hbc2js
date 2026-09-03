@@ -38,6 +38,10 @@ export const ErrorCode = {
   // hard error, never a wrong answer; there is no --force.
   E_STALE_RANGES: "E_STALE_RANGES",
   E_STALE_INDEX: "E_STALE_INDEX",
+  // project store (docs/specs/11-project-store.md §2.5, §7 step 5): a store
+  // whose builtFor doesn't match the loaded artifact is refused at open —
+  // step 6 relaxes this into live orphan-flagging instead of a hard refusal.
+  E_STALE_PROJECT_STORE: "E_STALE_PROJECT_STORE",
   // internal
   E_INTERNAL: "E_INTERNAL",
 } as const;

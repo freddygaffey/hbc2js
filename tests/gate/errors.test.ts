@@ -33,9 +33,13 @@ const M4_CODES = ["E_ENV_UNRESOLVED", "E_TOO_COMPLEX", "E_STRUCTURE_UNSOUND", "E
 // error, never a wrong answer — there is no `--force`.
 const P2_1_CODES = ["E_STALE_RANGES", "E_STALE_INDEX"];
 
+// Added by P2.2 step 5 (docs/specs/11-project-store.md §2.5): the
+// ProjectService open-time builtFor guard.
+const P2_2_CODES = ["E_STALE_PROJECT_STORE"];
+
 test("ErrorCode exports every code from spec 00 section 6.1, plus the M4/M5 codes", () => {
   const actual = Object.values(ErrorCode).sort();
-  assert.deepEqual(actual, [...EXPECTED_CODES, ...M4_CODES, ...P2_1_CODES].sort());
+  assert.deepEqual(actual, [...EXPECTED_CODES, ...M4_CODES, ...P2_1_CODES, ...P2_2_CODES].sort());
 });
 
 test("Hbc2jsError serialises code, message and context via toJSON", () => {
