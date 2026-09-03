@@ -599,3 +599,6 @@ CHANGES REQUIRED items remain.
 - **R-N** (§10 T3): committed OSV DB slice carries its CC-BY 4.0
   attribution header.
 - Status line updated to gate-passed.
+
+### P-13 ruling (orchestrator triage, 2026-09-03)
+PUSHBACK P-13 accepted as a textual defect: §3.2's substantive rule ("neither key -> no record") is the reviewed decision-8 gate and WINS; §10's T2 description labelling that case "candidate" was a drafting slip and is to be read per §3.2. Implementation (osv-gate.ts) and T2 already follow §3.2. No behaviour change required.
