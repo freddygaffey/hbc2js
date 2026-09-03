@@ -336,3 +336,30 @@ Fundamentals (transport, lifecycle, auth, deployment, framework) remain deferred
 - **Output:** a clearly-labelled synthetic/modified artifact (its provenance record marks it edited-and-recompiled, with the base bundle hash + the edit), and, if run, its trace for comparison. Never presented as, or confused with, the original.
 - **WARNING (required, per Fred):** unlike every other tool this one PRODUCES A MODIFIED BINARY, not a read-only answer. It carries an explicit warning/confirmation before it runs, the output is watermarked as a modified artifact, and it is scoped to local hypothesis-testing inside the research loop — not distribution. It writes a `log` row like any other action so the session stays auditable.
 - Fundamentals (sandboxing/isolation of the recompile+run step) fold into the transport/lifecycle design deferred to Fred.
+
+## 14. Surface revision (Fred + review agent, 2026-09-04) — BINDING
+
+Reviewed hands-on against an NSW hunt. Supersedes the §1/§2 surface where they conflict.
+
+**Cuts:**
+- **CUT `query`** — a generic unbounded reader is the opposite of the token goal (invites whole-bundle dumps). Its legitimate need is replaced by paginated `search/*` below.
+- **CUT `navigate`** — implies cursor state; every read is already addressable by {fn}, so the state is pure complexity.
+- **CUT full `module-graph`** — a 4,510-node dump on NSW, another unbounded footgun.
+
+**Merges / reshapes:**
+- **`context/{fn}` gains `include: [metadata, source, callers, callees, strings]` + a depth** — tunable, never double-fetches source. `fn/{fn}` and `source/{fn}` remain as minimal presets (fn = cheapest, flags only; source = source without the xref envelope).
+- **Merge the two string endpoints into one `xref/string` with `mode: exact | substring | regex`.**
+- **`module/{mod}`** returns the module + its DIRECT edges only; the analyst walks it (no whole-graph read).
+- **`name-context` = pass-through to P2.1a** (wrap the overlay's existing defs/uses; do not reimplement).
+- **Inline light metadata in every xref result**: each neighbor returns `{fn, name, size}`, not a bare id — kills the N+1 (who-calls forced ~12 follow-up fn/{fn} calls).
+
+**Additions (from what the hunt actually needed):**
+1. **`leads` / `security-sinks` (highest value)** — enumerate security-decision call sites grouped by class (verify/sign/decrypt/keychain/AsyncStorage/WebView/…). The entry point to the whole loop; today you must grep for it.
+2. **`scan/{secrets|deps|semgrep}`** — the cheap lead generators, callable (not just the `package-id` read). The loop's lead-generation step.
+3. **`search/functions` (by name) + `search/source` (bounded grep)** — paginated, typed; the safe version of the cut `query`. Finding "the licence-validity function" is a constant need.
+4. **`generate_documentation` (Fred)** — emit a shareable, self-contained reproduction script/report from the session's logged tool history + findings, so a third party can REGENERATE the findings and run the POCs (uses the log + `recompile_edit`). The payoff of the auditable-log design: a session becomes a portable, re-runnable disclosure artifact.
+5. **FLAG for the future: `trace` / `dataflow`** — the two questions that actually mattered on NSW ("does the render bind to a verified payload", "does the PIN reach local AES") are data-flow questions xref can't answer. Needs the taint engine we don't have yet; note it now as the eventual killer endpoint.
+
+**Write side — one fix, rest unchanged:**
+- **`set_finding_status → confirmed` accepts EITHER a dynamic repro OR a fidelity-checked STATIC proof.** Dynamic-only over-constrains: a hardcoded key, or a signature parsed-but-never-checked, is provable from the code alone. Broaden what counts as confirming evidence; keep the evidence gate.
+- **Keep exactly as-is:** `record_finding` requires a resolving evidence ref; no self-confirm; every write logged + replayable. This bakes truth-first in as a schema constraint, not a prompt. Distinction that is the throughline: requiring evidence for a finding is legitimate rigor; refusing a capability is crippling — the write side is the good kind.

@@ -59,7 +59,6 @@ for-in/for-of.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
-
 `npm test` (this run, 2026-09-04): 1957 tests, 1951 pass, 0 fail, 6 skipped,
 ~120s. Typecheck runs first (CONSOLIDATION.md item 29, fixed 2026-08-31).
 +5 tests this run: `tests/projdb/schema.test.ts` (spec 16 A1).
@@ -72,9 +71,7 @@ landed 2026-09-04 (§4/§10 step 6): `src/deps/db.ts`'s `writeSignature`/
 `tools/pkgsig/bulk/build-one.mjs`) route to a `.sqlite` sigdb v3 file when
 one is named, JSON otherwise (default, unchanged) — the A8 acceptance test
 (full `--json` DepsReport parity) is still open, spec-owned.
-
 ## Open bugs — 24 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing; +1 row 2026-09-02 spread-rest landing)
-
 By cluster (open only): emit-shape 7, metrics 3, passes 4, real-app 2,
 harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
 verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
