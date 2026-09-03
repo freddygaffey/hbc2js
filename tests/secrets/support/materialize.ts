@@ -16,7 +16,7 @@
 // spec-10 artifact (real-format values) into a fresh scratch directory under
 // `os.tmpdir()` — that materialized copy, never the checked-in fixture, is
 // what a scanner-under-test should be pointed at.
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -89,19 +89,29 @@ export function loadGroundTruth(fixtureDir: string = FIXTURE_DIR): GroundTruth {
  * under `os.tmpdir()`. `string-uses.jsonl` carries no values so it is
  * copied verbatim. Returns the scratch dir path — point any
  * scanner-under-test's `artifactDir` at this, never at `FIXTURE_DIR`.
+ * `targetDir`, if given, overwrites `index/strings.json`/`index/
+ * string-uses.jsonl` INSIDE an already-built full artifact (e.g. one from
+ * `writeArtifact`) instead of making a fresh index-only directory — for
+ * tests that also need a real `manifest.json`/`functions.jsonl`/… so
+ * `ArtifactService`/`ProjectService` can load the same directory.
  */
-export function materializeArtifact(fixtureDir: string = FIXTURE_DIR): string {
-  const outDir = mkdtempSync(join(tmpdir(), "hbc2js-secrets-seeded-"));
+export function materializeArtifact(fixtureDir: string = FIXTURE_DIR, targetDir?: string): string {
+  const outDir = targetDir ?? mkdtempSync(join(tmpdir(), "hbc2js-secrets-seeded-"));
+  mkdirSync(join(outDir, "index"), { recursive: true });
 
-  const strings = JSON.parse(readFileSync(join(fixtureDir, "strings.json"), "utf8")) as {
+  // Real artifacts nest the string index under `index/` (spec 10 §2.3,
+  // `src/artifact/write.ts`); `SecretsService`'s `artifactDir` is the
+  // artifact ROOT, so this materializes into that same nested shape —
+  // one layout, matched to the only writer that actually exists.
+  const strings = JSON.parse(readFileSync(join(fixtureDir, "index", "strings.json"), "utf8")) as {
     entries: { sid: number; v: string }[];
     [key: string]: unknown;
   };
   strings.entries = strings.entries.map((e) => ({ ...e, v: undefuse(e.v) }));
-  writeFileSync(join(outDir, "strings.json"), JSON.stringify(strings, null, 2) + "\n");
+  writeFileSync(join(outDir, "index", "strings.json"), JSON.stringify(strings, null, 2) + "\n");
 
-  const uses = readFileSync(join(fixtureDir, "string-uses.jsonl"), "utf8");
-  writeFileSync(join(outDir, "string-uses.jsonl"), uses);
+  const uses = readFileSync(join(fixtureDir, "index", "string-uses.jsonl"), "utf8");
+  writeFileSync(join(outDir, "index", "string-uses.jsonl"), uses);
 
   const gt = loadGroundTruth(fixtureDir);
   writeFileSync(join(outDir, "ground-truth.json"), JSON.stringify(gt, null, 2) + "\n");

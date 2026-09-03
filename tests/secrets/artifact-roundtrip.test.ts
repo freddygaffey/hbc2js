@@ -31,10 +31,10 @@ test("T4 scan over the seeded artifact: evidence resolves, one finding per (sid,
   // checked-in fixture is defused at rest, see
   // tests/fixtures/secrets/seeded/README.md.
   const fixtureDir = materializeArtifact() + "/";
-  const strings = JSON.parse(readFileSync(join(fixtureDir, "strings.json"), "utf8")) as {
+  const strings = JSON.parse(readFileSync(join(fixtureDir, "index", "strings.json"), "utf8")) as {
     entries: { sid: number }[];
   };
-  const usesLines = readFileSync(join(fixtureDir, "string-uses.jsonl"), "utf8").trim().split("\n").slice(1);
+  const usesLines = readFileSync(join(fixtureDir, "index", "string-uses.jsonl"), "utf8").trim().split("\n").slice(1);
   const validFns = new Set(usesLines.map((l) => JSON.parse(l).fn as number));
   const sids = new Set(strings.entries.map((e) => e.sid));
 

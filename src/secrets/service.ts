@@ -1,7 +1,10 @@
 // src/secrets/service.ts — spec 12 §9 steps 2-3: the scan driver + store
 // integration. Reads ONLY the P2.1 artifact's published files directly
-// (`strings.json` + `string-uses.jsonl`, spec 10 §2.3a/§2.3b) — no bundle,
-// no `src/parse`/`src/disasm` (spec 12 §1). Writes finding records through
+// (`index/strings.json` + `index/string-uses.jsonl`, spec 10 §2.3a/§2.3b —
+// `artifactDir` is the artifact ROOT, same convention as ArtifactService/
+// ProjectService; there is one code path, no flat-layout fallback, because
+// every real writer (`src/artifact/write.ts`) only ever emits the nested
+// form) — no bundle, no `src/parse`/`src/disasm` (spec 12 §1). Writes finding records through
 // `src/project/findings.ts`'s `FindingStore` (the R3 patternId-slot writer),
 // never a raw JSONL append (spec 12 §9's "reuse explicitly" list).
 //
@@ -89,12 +92,12 @@ function sha256Hex(s: string): string {
 }
 
 function readStringsIndex(artifactDir: string): readonly StringRow[] {
-  const raw = JSON.parse(readFileSync(join(artifactDir, "strings.json"), "utf8")) as { entries: StringRow[] };
+  const raw = JSON.parse(readFileSync(join(artifactDir, "index", "strings.json"), "utf8")) as { entries: StringRow[] };
   return raw.entries;
 }
 
 function readStringUses(artifactDir: string): readonly StringUseRow[] {
-  const path = join(artifactDir, "string-uses.jsonl");
+  const path = join(artifactDir, "index", "string-uses.jsonl");
   if (!existsSync(path)) return [];
   const lines = readFileSync(path, "utf8").trim().split("\n");
   return lines.slice(1).filter((l) => l.length > 0).map((l) => JSON.parse(l) as StringUseRow);
@@ -127,7 +130,7 @@ export class SecretsService {
       list.push(u);
       this.usesBySid.set(u.sid, list);
     }
-    this.bundleHash8 = sha256Hex(readFileSync(join(this.artifactDir, "strings.json"), "utf8")).slice(0, 8);
+    this.bundleHash8 = sha256Hex(readFileSync(join(this.artifactDir, "index", "strings.json"), "utf8")).slice(0, 8);
     this.store = this.loadStore();
   }
 

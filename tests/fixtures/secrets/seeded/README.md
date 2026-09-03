@@ -1,6 +1,6 @@
 # Seeded secrets ground-truth fixture — defused at rest
 
-`ground-truth.json` and `strings.json` seed the spec 12 §7.3 recall/FP
+`ground-truth.json` and `index/strings.json` seed the spec 12 §7.3 recall/FP
 measurement with synthetic secrets in every v1 pattern's format (fake AWS
 key, throwaway self-signed PEM, `sk_live_`-prefixed Stripe key, …). All
 values are synthetic/officially-published-example values — nothing live —
@@ -37,9 +37,10 @@ Tests import `materializeArtifact()` / `loadGroundTruth()` from
 
 1. Reads this defused-at-rest fixture.
 2. Reverses the `hbc2js-defused:` encoding on every seeded value.
-3. Writes the TRUE spec-10 artifact (`strings.json`, `string-uses.jsonl`,
-   and a real-value `ground-truth.json`) into a fresh scratch directory
-   under `os.tmpdir()`.
+3. Writes the TRUE spec-10 artifact (`index/strings.json`,
+   `index/string-uses.jsonl` — spec 10 §2.3's actual nested layout — and a
+   real-value `ground-truth.json`) into a fresh scratch directory under
+   `os.tmpdir()`.
 
 Only that materialized scratch copy — never this directory — is what the
 scanner-under-test (`src/secrets/classify.ts`, `src/secrets/service.ts`,

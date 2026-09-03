@@ -17,9 +17,9 @@
 // (tests/fixtures/bundles/rn-template-0.72/index.android.hbc, checked in) —
 // a real artifact is built for it with `splitProject`/`writeArtifact`
 // (same pipeline as tools/artifact/measure.ts), then `SecretsService` is
-// pointed at that artifact's `index/` subdirectory (spec 10 §2.3's actual
-// on-disk path for `strings.json`/`string-uses.jsonl` — the flat layout
-// `SecretsService` reads directly). No allowlist review of rn-template's
+// pointed at that artifact's ROOT (it resolves `index/strings.json`/
+// `index/string-uses.jsonl` itself, spec 10 §2.3's actual on-disk path).
+// No allowlist review of rn-template's
 // strings has been done in this pass (out of scope for this tool's landing
 // — the number below is the RAW active tier A/B/C finding count with zero
 // hand-curated exclusions); the landing report states this plainly rather
@@ -87,25 +87,25 @@ function computeRecall(): { tierA: number; overall: number } {
 }
 
 /** Build a real spec-10 artifact for `hbcPath` into a fresh tmpdir and
- *  return the `index/` subdirectory `SecretsService` should be pointed at
- *  (its `artifactDir` reads `strings.json`/`string-uses.jsonl` directly,
- *  the flat layout that lives at `<artifact>/index/*`, spec 10 §2.3). */
-function buildArtifactIndexDir(hbcPath: string): string {
+ *  return the artifact ROOT `SecretsService` should be pointed at (its
+ *  `artifactDir` reads `index/strings.json`/`index/string-uses.jsonl`
+ *  itself, spec 10 §2.3). */
+function buildArtifactRootDir(hbcPath: string): string {
   const bytes = readFileSync(hbcPath);
   const outDir = mkdtempSync(join(tmpdir(), "hbc2js-secrets-measure-"));
   const sr = splitProject(bytes, { moduleName: hbcPath });
   writeArtifact({ bytes, splitResult: sr, outDir, passes: {}, strictEnv: false, form: "flat", overwrite: true });
-  return join(outDir, "index");
+  return outDir;
 }
 
 /** FP rate (§7.1.2): active tier A/B/C finding count over a fresh scan,
  *  per 1,000 strings scanned. No allowlist subtraction (see module header). */
 function fpPer1kOnBundle(hbcPath: string): number {
-  const indexDir = buildArtifactIndexDir(hbcPath);
-  const svc = new SecretsService({ artifactDir: indexDir });
+  const rootDir = buildArtifactRootDir(hbcPath);
+  const svc = new SecretsService({ artifactDir: rootDir });
   svc.scan({ force: true });
   const findings = svc.list();
-  const strings = JSON.parse(readFileSync(join(indexDir, "strings.json"), "utf8")) as { entries: unknown[] };
+  const strings = JSON.parse(readFileSync(join(rootDir, "index", "strings.json"), "utf8")) as { entries: unknown[] };
   const total = strings.entries.length;
   return total === 0 ? 0 : (findings.length / total) * 1000;
 }

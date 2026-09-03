@@ -38,6 +38,8 @@ import { ProjectService } from "./project/service.ts";
 import type { AnnotationRow } from "./project/service.ts";
 import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
 import type { ResolvedFinding } from "./project/findings.ts";
+import { SecretsService } from "./secrets/service.ts";
+import type { Tier as SecretTier } from "./secrets/patterns.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
 
@@ -56,6 +58,7 @@ Usage:
   hbc2js segregate <split-dir>     segregate a flat split tree into src/node_modules form (spec 08)
   hbc2js query <verb> --artifact <dir> …   query the P2.1 decompile artifact (docs/specs/10-artifact-format.md §3)
   hbc2js project <verb> --artifact <dir> …   the P2.2 project store: tags/comments/bookmarks/findings (docs/specs/11-project-store.md §3)
+  hbc2js secrets <verb> --artifact <dir> …   the P2.3 string-secrets indexer: scan/report/list/show/hosts/paths (docs/specs/12-string-secrets.md §5)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -1287,6 +1290,102 @@ function runProject(argv: readonly string[]): void {
   }
 }
 
+/** `hbc2js secrets <verb> --artifact <dir> …` (spec 12 §5). Every verb here
+ *  is a read over `SecretsService`'s own bounds (§5's table) — `scan` is the
+ *  one verb that writes, and it self-provenances its findings as
+ *  `prov.source:"tool"` inside `SecretsService.scan()` (module header), so
+ *  unlike `project`'s write verbs this command never needs `--prov-*`
+ *  flags. `show`/`hosts`/`paths` need the artifact ROOT `SecretsService`
+ *  already resolves against (deliverable 1 of this step's layout fix);
+ *  `hosts`/`paths` are honestly empty until the spec-11 tag taxonomy lands
+ *  (module header in src/secrets/service.ts) — not a bug in this wiring. */
+function runSecrets(argv: readonly string[]): void {
+  const verb = argv[0];
+  const json = argv.includes("--json");
+  const force = argv.includes("--force");
+  const artifactDir = flagValue(argv, "--artifact");
+  if (artifactDir === undefined) fail(ErrorCode.E_USAGE, "secrets <verb> --artifact <dir> …", 2, json);
+
+  let svc: SecretsService;
+  try {
+    svc = new SecretsService({ artifactDir });
+  } catch (e) {
+    const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
+    if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
+    else process.stderr.write(`${err.message}\n`);
+    process.exit(3);
+  }
+
+  const positional = argv.slice(1).filter((a) => !a.startsWith("--"));
+
+  try {
+    if (verb === "scan") {
+      const summary = svc.scan({ force });
+      if (json) process.stdout.write(JSON.stringify(summary) + "\n");
+      else {
+        process.stdout.write(
+          `secrets scan: ${summary.new} new, ${summary.cached} cached, ${summary.skippedRefuted} refuted-skipped, ` +
+            `${summary.total} strings scanned (${summary.wallTimeMs}ms)\n`,
+        );
+      }
+    } else if (verb === "report") {
+      const lines = svc.report();
+      if (json) process.stdout.write(JSON.stringify({ lines }) + "\n");
+      else for (const l of lines) process.stdout.write(`${l}\n`);
+    } else if (verb === "list") {
+      const category = flagValue(argv, "--category");
+      const tier = flagValue(argv, "--tier");
+      const rows = svc.list({ ...(category !== undefined ? { category } : {}), ...(tier !== undefined ? { tier: tier as SecretTier } : {}) });
+      if (json) process.stdout.write(JSON.stringify({ rows, total: rows.length }) + "\n");
+      else {
+        for (const r of rows) {
+          const patternId = r.ctx.patternId ?? "";
+          const uses = r.evidence.filter((e) => e.role === "use-site").length;
+          process.stdout.write(`#${r.id} ${r.ctx.tier ?? "-"} ${r.severity} ${r.target} uses:${uses} ${patternId}\n`);
+        }
+        process.stdout.write(`total:${rows.length}\n`);
+      }
+    } else if (verb === "show") {
+      const id = positional[0];
+      if (id === undefined) fail(ErrorCode.E_USAGE, "secrets show <finding-id> --artifact <dir>", 2, json);
+      const row = svc.list().find((r) => r.id === id);
+      if (row === undefined) fail(ErrorCode.E_USAGE, `secrets show: no such finding ${id}`, 2, json);
+      if (json) process.stdout.write(JSON.stringify(row) + "\n");
+      else {
+        process.stdout.write(`finding#${row!.id} ${row!.ctx.tier ?? "-"} ${row!.severity} ${row!.status} ${row!.target}\n`);
+        for (const e of row!.evidence) {
+          const span = e.span !== undefined ? ` span=[${e.span[0]},${e.span[1]}]` : "";
+          process.stdout.write(`evidence ${e.ref} [${e.role}]${span}${e.note !== undefined ? ` ${e.note}` : ""}\n`);
+        }
+      }
+    } else if (verb === "hosts") {
+      const rows = svc.hosts();
+      if (json) process.stdout.write(JSON.stringify({ rows, total: rows.length }) + "\n");
+      else {
+        for (const r of rows) process.stdout.write(`${r.host}  paths:${r.paths}  fns:${r.fns}\n`);
+        process.stdout.write(`total:${rows.length}\n`);
+      }
+    } else if (verb === "paths") {
+      const host = positional[0];
+      if (host === undefined) fail(ErrorCode.E_USAGE, "secrets paths <host> --artifact <dir>", 2, json);
+      const rows = svc.paths(host as string);
+      if (json) process.stdout.write(JSON.stringify({ rows, total: rows.length }) + "\n");
+      else {
+        for (const r of rows) process.stdout.write(`${r.path}  fn:${r.fn}\n`);
+        process.stdout.write(`total:${rows.length}\n`);
+      }
+    } else {
+      fail(ErrorCode.E_USAGE, "secrets <scan [--force]|report|list [--category c] [--tier t]|show <id>|hosts|paths <host>> --artifact <dir> …", 2, json);
+    }
+    process.exit(0);
+  } catch (e) {
+    const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
+    if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
+    else process.stderr.write(`${err.message}\n`);
+    process.exit(3);
+  }
+}
+
 function runRender(argv: readonly string[]): void {
   const hbc = flagValue(argv, "--hbc") ?? argv.find((a) => !a.startsWith("-") && a.endsWith(".hbc"));
   if (hbc === undefined) fail(ErrorCode.E_USAGE, "render --hbc <input.hbc> [--fn N] [--store <path>] [--out <file>]", 2, false);
@@ -1322,6 +1421,10 @@ function main(): void {
   }
   if (argv[0] === "project") {
     runProject(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "secrets") {
+    runSecrets(argv.slice(1));
     return;
   }
   if (argv[0] === "segregate") {

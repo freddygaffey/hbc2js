@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { PATTERNS } from "../../src/secrets/patterns.ts";
 import { FIXTURE_DIR, DEFUSED_MARKER } from "./support/materialize.ts";
 
-const AT_REST_FILES = ["ground-truth.json", "strings.json", "string-uses.jsonl"];
+const AT_REST_FILES = ["ground-truth.json", "index/strings.json", "index/string-uses.jsonl"];
 
 // The checklist is every pattern with a distinctive vendor anchor (a fixed
 // prefix/structure a real scanner keys on: AKIA/ASIA, AIza, sk_/pk_/rk_,
@@ -69,12 +69,12 @@ test("at-rest fixture: every seeded secret value is behind the defused marker", 
     assert.ok(s.defused.startsWith(DEFUSED_MARKER), `ground-truth.json secret not defused: ${JSON.stringify(s)}`);
   }
 
-  const stringsRaw = JSON.parse(readFileSync(join(FIXTURE_DIR, "strings.json"), "utf8")) as {
+  const stringsRaw = JSON.parse(readFileSync(join(FIXTURE_DIR, "index", "strings.json"), "utf8")) as {
     entries: { sid: number; v: string }[];
   };
   const secretSids = new Set(gtRaw.secrets.map((_, i) => i + 1));
   for (const e of stringsRaw.entries) {
     if (!secretSids.has(e.sid)) continue;
-    assert.ok(e.v.startsWith(DEFUSED_MARKER), `strings.json sid ${e.sid} not defused: ${JSON.stringify(e.v)}`);
+    assert.ok(e.v.startsWith(DEFUSED_MARKER), `index/strings.json sid ${e.sid} not defused: ${JSON.stringify(e.v)}`);
   }
 });
