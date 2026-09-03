@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { basename, join } from "node:path";
 import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
@@ -29,6 +29,9 @@ import { formatReportText, packageJsonDependencies } from "./deps/report.ts";
 import { splitProject } from "./split/index.ts";
 import { writeSplitResult } from "./split/write.ts";
 import { writeArtifact } from "./artifact/write.ts";
+import { buildIndexRows } from "./artifact/index-rows.ts";
+import { openProjectDb } from "./projdb/db.ts";
+import { initProjectDb } from "./projdb/ix-write.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
@@ -59,6 +62,8 @@ Usage:
   hbc2js query <verb> --artifact <dir> …   query the P2.1 decompile artifact (docs/specs/10-artifact-format.md §3)
   hbc2js project <verb> --artifact <dir> …   the P2.2 project store: tags/comments/bookmarks/findings (docs/specs/11-project-store.md §3)
   hbc2js secrets <verb> --artifact <dir> …   the P2.3 string-secrets indexer: scan/report/list/show/hosts/paths (docs/specs/12-string-secrets.md §5)
+  hbc2js init <bundle.hbc> [--out <dir>]     create a project.hbcproj (docs/specs/16-project-db.md §4.1): split
+                                              render + ix_* index rows in one SQLite file; refuses if it exists
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -640,6 +645,70 @@ function runDecompile(argv: readonly string[]): void {
   } catch (e) {
     if (e instanceof Hbc2jsError) fail(e.code, e.message, exitCodeFor(e.code), false);
     fail(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e), 1, false);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// `hbc2js init <bundle.hbc>` — docs/specs/16-project-db.md §4.1 fresh path.
+// ---------------------------------------------------------------------------
+
+/** `hbc2js init <bundle.hbc> [--out <dir>]`: splits + renders as `--split`
+ *  does (§4.1 step 1), then creates `<outDir>/project.hbcproj` (step 2) and
+ *  builds the `ix_*` stratum via the same builders `--split`'s artifact uses
+ *  (`buildIndexRows`, step 3, "the extractors are reused verbatim, only the
+ *  sink changes"), and writes the `init` + `rebuild-index` (gen 1) `log`
+ *  rows (step 4). No `index/*.jsonl` is written for this project — §4.1's
+ *  "after init, spec-10/11 JSONL files are no longer written by any command
+ *  for this project". Refuses (does not `--force`-overwrite) if
+ *  `project.hbcproj` already exists (§4.1 step 2, mirrors spec 10 §1.3 E4). */
+function runInit(argv: readonly string[]): number {
+  const input = argv.find((a) => !a.startsWith("-"));
+  if (argv.includes("--help") || input === undefined) {
+    process.stdout.write(USAGE);
+    return argv.includes("--help") ? 0 : 2;
+  }
+  const outDir = flagValue(argv, "--out") ?? `${input.replace(/\.hbc$/, "")}-project`;
+  const dbPath = join(outDir, "project.hbcproj");
+  if (existsSync(dbPath)) {
+    process.stderr.write(`hbc2js init: ${dbPath} already exists — init refuses to overwrite an existing project.hbcproj (docs/specs/16-project-db.md §4.1); archive or remove it first\n`);
+    return 3;
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = readFileSync(input);
+  } catch (e) {
+    process.stderr.write(`hbc2js init: cannot read ${input}: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 2;
+  }
+  try {
+    const splitResult = splitProject(bytes, { moduleName: basename(input) });
+    writeSplitResult(splitResult, outDir);
+    const rows = buildIndexRows({ bytes, splitResult, passes: {}, strictEnv: false, form: "flat" });
+    const db = openProjectDb(dbPath);
+    try {
+      initProjectDb(db, rows, { actorWho: "hbc2js-cli" });
+    } finally {
+      db.close();
+    }
+    process.stdout.write(
+      `hbc2js init: wrote ${splitResult.modules.length} module file(s) to ${outDir} and ${dbPath} ` +
+        `(${rows.functionRows.length} functions, ${rows.modulesIndex.modules.length} modules, ${rows.callRows.length} calls)\n`,
+    );
+    return 0;
+  } catch (e) {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        /* best-effort cleanup of a partial project.hbcproj */
+      }
+    }
+    if (e instanceof Hbc2jsError) {
+      process.stderr.write(`hbc2js init: ${e.message}\n`);
+      return exitCodeFor(e.code);
+    }
+    process.stderr.write(`hbc2js init: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 1;
   }
 }
 
@@ -1436,6 +1505,10 @@ function main(): void {
   }
   if (argv[0] === "segregate") {
     process.exitCode = runSegregateCmd(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "init") {
+    process.exitCode = runInit(argv.slice(1));
     return;
   }
   if (argv[0] === "disasm") {
