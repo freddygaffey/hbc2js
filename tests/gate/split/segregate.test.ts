@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
-import { splitProject } from "../../../src/split/index.ts";
+import { cachedSplitProject as splitProject } from "../../support/decompiled.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "../../../src/split/segregate.ts";
 import { runDeps } from "../../../src/deps/index.ts";
 import type { DepsReport } from "../../../src/deps/report.ts";

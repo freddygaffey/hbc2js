@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
-import { splitProject } from "../../../src/split/index.ts";
+import { cachedSplitProject as splitProject } from "../../support/decompiled.ts";
 import { nodeCheck } from "../../../src/decompile.ts";
 
 const RN_TEMPLATE = join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc");

@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../support/paths.ts";
-import { splitProject } from "../../src/split/index.ts";
+import { cachedSplitProject as splitProject } from "../support/decompiled.ts";
 import { writeArtifact } from "../../src/artifact/write.ts";
 import { HOST_GLOBALS } from "../../src/artifact/host-globals.ts";
 

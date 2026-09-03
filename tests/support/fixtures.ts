@@ -136,3 +136,18 @@ export function fixture(group: string, name: string): Fixture {
   if (found === undefined) throw new Error(`fixture not found: ${group}/${name}`);
   return found;
 }
+
+/** `tests/fixtures/bundles/rn-template-0.72/index.android.hbc` — one path
+ *  literal instead of the same `join(repoRoot(), ...)` hand-rolled in a
+ *  dozen test files (sweep 2026-09-03 finding 2). */
+export function rnTemplatePath(): string {
+  return join(FIXTURES_ROOT(), "bundles", "rn-template-0.72", "index.android.hbc");
+}
+
+/** `readBytes`-cached (per-process) bytes of the RN template bundle. Callers
+ *  that need cross-process reuse of the *decompile*, not just the bytes,
+ *  want `tests/support/decompiled.ts`'s `cachedSplitProject`/`cachedDecompile`
+ *  instead. */
+export function rnTemplateBytes(): Uint8Array {
+  return readBytes(rnTemplatePath());
+}

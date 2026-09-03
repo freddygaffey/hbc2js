@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
-import { decompile } from "../../../src/decompile.ts";
+import { cachedDecompile as decompile } from "../../support/decompiled.ts";
 import type { Expr, Stmt } from "../../../src/emit/ast.ts";
 import { id, jsxToCall, lit } from "../../../src/emit/ast.ts";
 import { printProgram } from "../../../src/emit/print.ts";
@@ -22,7 +22,7 @@ import { deriveSites, match } from "../../../src/passes/jsx-recover/match.ts";
 import { rewrite } from "../../../src/passes/jsx-recover/rewrite.ts";
 import { enabledPasses, REGISTRY } from "../../../src/passes/registry.ts";
 import type { PassContext } from "../../../src/passes/types.ts";
-import { splitProject } from "../../../src/split/index.ts";
+import { cachedSplitProject as splitProject } from "../../support/decompiled.ts";
 import { measureJsxRecoverBundle } from "../../../tools/passes-metrics.mjs";
 
 // ---------------------------------------------------------------------------
