@@ -13,16 +13,19 @@ import { join } from "node:path";
 import type { Diagnostic } from "./errors.ts";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { analyseModule } from "./cfg/index.ts";
-import type { AnalysisOptions } from "./cfg/types.ts";
+import type { AnalysisOptions, FunctionCfg } from "./cfg/types.ts";
 import { emitModule } from "./emit/index.ts";
 import type { EmitOptions } from "./emit/index.ts";
 import { parseHbc } from "./parse/module.ts";
 import type { HbcModule, OpcodeTableId } from "./parse/types.ts";
 import { printTree, structure } from "./structure/index.ts";
+import type { StructureOptions, StructuredFunction } from "./structure/index.ts";
 import { astPassHook, passHook, runPasses } from "./passes/index.ts";
 import type { PassPipelineOptions } from "./passes/index.ts";
 import { printProgram } from "./emit/print.ts";
 import type { Stmt } from "./emit/ast.ts";
+import { resolveWorkerCount, runStageAPool } from "./parallel/pool.ts";
+import type { StageAResult } from "./parallel/types.ts";
 
 export interface DecompileOptions {
   readonly moduleName?: string;
@@ -55,6 +58,26 @@ export interface DecompileOptions {
    * `--passes=none` (the M4 baseline, PL-05).
    */
   readonly passes?: PassPipelineOptions;
+  /**
+   * INTERNAL — set only by `decompileParallel` (docs/perf/PARALLEL-DECOMPILE.md).
+   * Precomputed stage-A (`structure()` + pass pipeline) results, keyed by
+   * function index, from `src/parallel/pool.ts`'s worker pool. When present,
+   * `decompile()` splices these fields into its own `structure(cfg)` result
+   * instead of calling `opts.passes` inline — never `.graph` (not
+   * structured-clone-safe; recomputed on the main thread regardless). Do not
+   * set this directly; it bypasses the ordinary pass pipeline and is only
+   * proven equivalent when the precomputing pool used the exact same
+   * options `decompileParallel` derives.
+   */
+  readonly stageAResults?: ReadonlyMap<number, StageAResult>;
+}
+
+/** Shared by `decompile()` and `decompileParallel()` so both compute the
+ *  exact same `structure()` options — a worker's stage-A result is only
+ *  valid to splice in if it was produced against this same options object. */
+function effectiveStructureOpts(opts: DecompileOptions): StructureOptions | undefined {
+  if (opts.verify === false) return { ...opts.emit?.structure, verify: false };
+  return opts.emit?.structure;
 }
 
 export interface DecompileResult {
@@ -98,14 +121,36 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
       context: { section: "decompile" },
     });
   }
+  const structureOpts = effectiveStructureOpts(opts);
+  // docs/perf/PARALLEL-DECOMPILE.md: when `decompileParallel` has precomputed
+  // stage-A (structure()+passes) results, splice them into this function's
+  // own `structure(cfg)` output (still computed here, on the main thread —
+  // cheap, and the only source of `.graph`, which never crosses the worker
+  // boundary) instead of calling the ordinary `passHook`. Falls back to it
+  // for any index the pool did not cover (should never happen in practice;
+  // defensive, not a silent partial-result path — `decompileParallel` awaits
+  // full coverage before calling this).
+  const stageA = opts.stageAResults;
+  const ordinaryPasses = passHook(analysis, opts.passes);
+  const passesHook =
+    stageA === undefined
+      ? ordinaryPasses
+      : (fn: StructuredFunction, cfg: FunctionCfg) => {
+          const r = stageA.get(cfg.functionIndex);
+          if (r === undefined) return ordinaryPasses(fn, cfg);
+          return {
+            fn: { ...fn, root: r.root, labels: r.labels, dispatchVars: r.dispatchVars, duplicatedBlocks: r.duplicatedBlocks, stats: r.stats },
+            diagnostics: r.diagnostics,
+          };
+        };
   const result = emitModule(analysis, {
     moduleName: opts.moduleName ?? "input.hbc",
     provenanceComments: false,
     strictEnv,
-    passes: passHook(analysis, opts.passes),
+    passes: passesHook,
     astPasses: astPassHook(analysis, opts.passes),
     ...opts.emit,
-    ...(opts.verify === false ? { structure: { ...opts.emit?.structure, verify: false } } : {}),
+    ...(structureOpts !== undefined ? { structure: structureOpts } : {}),
   });
   return {
     code: result.code,
@@ -115,6 +160,46 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
     forcedOpcodeTable: forced,
     decompileDiagnostics: result.stubbedFunctions,
   };
+}
+
+/**
+ * docs/perf/PARALLEL-DECOMPILE.md — part 1. Byte-identical to `decompile()`
+ * for the same `bytes`/`opts`; the only difference is where the stage-A
+ * (structure()+pass pipeline) work happens. `workers=1` (the default when
+ * `cpus - 2 <= 1`, or an explicit `{ workers: 1 }`, or `HBC2JS_WORKERS=1`)
+ * takes `decompile()`'s exact serial path — no `Worker` is spawned.
+ */
+export async function decompileParallel(bytes: Uint8Array, opts: DecompileOptions = {}, workers?: number): Promise<DecompileResult> {
+  const workerCount = resolveWorkerCount(workers);
+  if (workerCount <= 1) return decompile(bytes, opts);
+
+  const { module, forced } = parseForDecompile(bytes, opts);
+  const strictEnv = opts.strictEnv ?? true;
+  const indices = module.functions.map((_, i) => i);
+  const stageAResults = await runStageAPool(
+    bytes,
+    indices,
+    {
+      opcodeTable: module.layout.opcodeTable,
+      strictEnv,
+      analysis: opts.analysis,
+      structureOpts: effectiveStructureOpts(opts),
+      passesOpts: opts.passes,
+    },
+    workerCount,
+  );
+  // A worker cannot redo `parseForDecompile`'s ambiguity resolution (it
+  // would throw `E_LAYOUT_AMBIGUOUS` on a genuinely ambiguous v98 file), so
+  // it is always given the exact table the main thread's probe/forcing just
+  // resolved (above). The follow-up `decompile()` call below must NOT pass
+  // that through as `opts.opcodeTable`, though, unless the original call
+  // already forced one: `opts.opcodeTable !== undefined` is `parseForDecompile`'s
+  // own "was this forced" test (`forced: true` unconditionally), so doing it
+  // for a run that was never ambiguous (`forced === false`) would spuriously
+  // flip `forcedOpcodeTable`/add `W_FORCED_OPCODE_TABLE` relative to
+  // `decompile()`'s own serial result — a metadata drift the byte-identity
+  // gate doesn't catch (it's not part of `code`) but would still be wrong.
+  return decompile(bytes, { ...opts, ...(forced && module.layout.opcodeTable !== undefined ? { opcodeTable: module.layout.opcodeTable } : {}), stageAResults });
 }
 
 /** `--emit-tree`: the structurer's tree IR for one function (or all of them). */
