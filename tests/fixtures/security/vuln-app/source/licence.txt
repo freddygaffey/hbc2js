@@ -1,0 +1,3 @@
+Original work, written for the hbc2js project as a synthetic, obviously-
+insecure scanner-validation fixture (spec 13, P2.4 reuse-validation). Licensed
+MIT, same terms as the rest of hbc2js. Not derived from any external corpus.

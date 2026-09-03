@@ -12,10 +12,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run typecheck && node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts",
-    "test:gate": "node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts",
+    "test": "npm run typecheck && node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" \"tests/security/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts",
+    "test:gate": "node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" \"tests/security/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts",
     "test:sweep": "HBC2JS_TIER=sweep node --test \"tests/sweep/**/*.test.ts\"",
-    "test:all": "HBC2JS_TIER=all node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts && HBC2JS_TIER=all node --test \"tests/sweep/**/*.test.ts\"",
+    "test:all": "HBC2JS_TIER=all node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" \"tests/security/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts && HBC2JS_TIER=all node --test \"tests/sweep/**/*.test.ts\"",
     "test:fuzz": "node --test \"tests/fuzz/**/*.test.ts\"",
     "gen:tables": "node tools/gen-tables/gen.ts",
     "gen:tables:check": "node tools/gen-tables/gen.ts --check",

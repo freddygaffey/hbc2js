@@ -1,0 +1,78 @@
+{
+  "_comment": "spec 13 (P2.4 reuse-validation) step 1 seeded fixture ground truth. seedClasses drive T1 (fixture integrity) and are consumed later by tools/security/measure-semgrep.ts (step 3) and tools/security/measure-osv.ts (step 2). lockfilePins are the >=3 packages pinned to versions with known OSV advisories spec 13 8.2 requires; they are NOT yet compiled into vNN.hbc (that bundling is step 2's job, per spec 13 8.2 'extends the 2.3 fixture's build') -- v96.hbc here is built straight from source/App.js.",
+  "sourceFile": "source/App.js",
+  "seedClasses": [
+    {
+      "id": "eval-network-data",
+      "description": "eval() over data received from the network",
+      "fn": "handleServerConfig"
+    },
+    {
+      "id": "command-injection",
+      "description": "unsanitized input reaches a shell-style bridge call",
+      "fn": "runDeviceCommand"
+    },
+    {
+      "id": "sql-injection",
+      "description": "string-built SQL query",
+      "fn": "findUserByName"
+    },
+    {
+      "id": "insecure-deeplink",
+      "description": "deep-link handler navigates on unvalidated input",
+      "fn": "onDeepLink"
+    },
+    {
+      "id": "weak-hash",
+      "description": "MD5 used for a password/credential hash",
+      "fn": "hashPassword"
+    },
+    {
+      "id": "hardcoded-credential",
+      "description": "hardcoded API secret (defused at rest, see source header + README)",
+      "fn": null,
+      "binding": "API_SECRET",
+      "defused": true
+    },
+    {
+      "id": "insecure-random",
+      "description": "Math.random() used to mint a security token",
+      "fn": "makeSessionToken"
+    },
+    {
+      "id": "html-injection",
+      "description": "unsanitized string injected into a WebView as HTML",
+      "fn": "renderBio"
+    },
+    {
+      "id": "path-traversal",
+      "description": "user-controlled path segment concatenated onto a base dir",
+      "fn": "readAsset"
+    },
+    {
+      "id": "disabled-tls",
+      "description": "TLS verification explicitly turned off on a fetch",
+      "fn": "fetchInsecure"
+    }
+  ],
+  "lockfilePins": [
+    {
+      "package": "lodash",
+      "version": "4.17.15",
+      "advisory": "GHSA-p6mc-m468-83gw",
+      "note": "prototype pollution (CVE-2020-8203); fixed in 4.17.19"
+    },
+    {
+      "package": "minimist",
+      "version": "0.0.8",
+      "advisory": "GHSA-vh95-rmgr-6w4m",
+      "note": "prototype pollution (CVE-2020-7598); fixed in 1.2.3"
+    },
+    {
+      "package": "axios",
+      "version": "0.21.0",
+      "advisory": "GHSA-4w2v-q235-vp99",
+      "note": "SSRF via unexpected proxy behaviour (CVE-2021-3749); fixed in 0.21.2"
+    }
+  ]
+}

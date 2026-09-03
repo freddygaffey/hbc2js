@@ -30,6 +30,7 @@ stores) split into real files. (docs/LANES.md)
 | P2.1 artifact format | complete | index ≤25% decompile time, ≤30% rendered bytes, query costs under cap — rn-template + held-out react-navigation | docs/specs/10-artifact-format.md §5; docs/reports/2026-09-03-p21-*.md |
 | P2.2 project store | complete | decision-8 all 4 MET: integrity 100% (120/120 rn-template, 120/120 held-out react-navigation, reject-gate live, 0 invalid-on-disk); read cost `for-fn` median 182B (≤1536B); run cost load 0.4ms=0.8-2.5% of artifact load (≤15%), 292-295B/record (≤300B); held-out orphan check (rn-template noopt-debug vs release build, no network): 4/60 vanished fns → 16/16 dependent records flagged orphaned w/ ctx, 240/240 rows survived (zero silent drops) | docs/specs/11-project-store.md §5; `tools/project/{check-store,measure}.ts`; docs/reports/2026-09-03-p22-step[0-8].md |
 | P2.3 secrets scan | classify+service+measure done, targets MET, CLI wiring pending | precision 100% (≥95%), FP 0.38/1k tuning, 1.41/1k held-out (≤5/≤8) | docs/specs/12-string-secrets.md; docs/reports/2026-09-03-p23-finisher.md |
+| P2.4 reuse-validation (Semgrep/OSV/manifest) | steps 0-1 done (licensing re-verified, tool-presence probes, seeded fixture, T-L/T1 green, T2-T8 red-skipped pending lane impl); lanes O/S/M not implemented | T-L/T1 6/6 pass; T2-T8 skip-with-reason (`HBC2JS_REQUIRE_ORACLES=1` fails them) | docs/specs/13-reuse-validation.md §9 steps 0-1 |
 
 ## Milestones
 

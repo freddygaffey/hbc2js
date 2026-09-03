@@ -1,0 +1,10 @@
+{
+  "_comment": "Minimal lockfile-shaped pin list for the seeded fixture (spec 13 8.2). Not a real npm lockfile of a buildable app -- just the >=3 name@version pins with known OSV advisories that Lane O's measure-osv.ts (step 2) checks recall against, mirrored from ground-truth.json's lockfilePins.",
+  "name": "hbc2js-security-vuln-app-fixture",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.15",
+    "minimist": "0.0.8",
+    "axios": "0.21.0"
+  }
+}
