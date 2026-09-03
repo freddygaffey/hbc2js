@@ -138,6 +138,13 @@ export interface BuildManifestOptions {
   readonly form: "segregated" | "flat";
   readonly semanticFiles: ReadonlyMap<string, string>;
   readonly git?: string | null;
+  /** §1.2 `render.overlayHash`: sha256 of the Design-D overlay store's
+   *  on-disk content at render time (`null` when no overlay store was in
+   *  scope for this render — e.g. `--split` with no `name set` ever run).
+   *  Wired from `writeArtifact`'s own `overlayStorePath` option, which reads
+   *  and hashes the same file `ArtifactService` loads via `opts.overlayStorePath`
+   *  (docs/BUGS.md 2026-09-03 "overlayHash always null" row). */
+  readonly overlayHash?: string | null;
 }
 
 /** §1.2 `manifest.json` — the root of trust tying bundle bytes, render and
@@ -165,7 +172,7 @@ export function buildManifest(opts: BuildManifestOptions): Manifest {
       hash: renderHash,
       form: opts.form,
       ts: new Date().toISOString(),
-      overlayHash: null,
+      overlayHash: opts.overlayHash ?? null,
     },
     index: {
       semanticHash,
@@ -197,9 +204,23 @@ export function buildFactoryInfo(module: HbcModule, splitModules: SplitResult["m
 /** Re-parses + re-analyses `bytes` (deliberately independent of the render
  *  pass, see file header) and returns everything the manifest + step-1/2
  *  index files need. */
-export function analyseForArtifact(bytes: Uint8Array): { module: HbcModule; analysis: ReturnType<typeof analyseModule>; parents: ReadonlyMap<number, number | null> } {
-  const module = parseHbc(bytes);
-  const analysis = analyseModule(module, { strictEnv: false });
+export function analyseForArtifact(
+  bytes: Uint8Array,
+  /** Reuse a `{module,analysis}` pair the caller already built with the same
+   *  `{strictEnv:false}` config (typically `SplitResult.module`/`.analysis`
+   *  from the very `splitProject` call that produced the artifact's own
+   *  render) instead of re-parsing + re-analysing the whole bundle a second
+   *  time. Deliberately opt-in, not automatic: the semantic layer's
+   *  independence from the render (§0) means an artifact builder invoked
+   *  WITHOUT a `SplitResult` in hand (or against different bytes) must still
+   *  parse for itself — this parameter only short-circuits the common
+   *  combined `splitProject` -> `writeArtifact` call path where redoing the
+   *  parse is pure waste (docs/BUGS.md 2026-09-03 "index build 51.4% of
+   *  decompile" row: this was ~78% of that gap). */
+  reuse?: { module: HbcModule; analysis: ReturnType<typeof analyseModule> },
+): { module: HbcModule; analysis: ReturnType<typeof analyseModule>; parents: ReadonlyMap<number, number | null> } {
+  const module = reuse?.module ?? parseHbc(bytes);
+  const analysis = reuse?.analysis ?? analyseModule(module, { strictEnv: false });
   const parents = computeLexicalParents(module, analysis);
   return { module, analysis, parents };
 }

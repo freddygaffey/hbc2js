@@ -176,6 +176,28 @@ export class ArtifactService {
 
     if (opts.overlayStorePath !== undefined && existsSync(opts.overlayStorePath)) {
       this.overlay = OverlayStore.load(opts.overlayStorePath, opts.hbc);
+
+      // §4.2 staleness, the overlay-hash half (docs/BUGS.md 2026-09-03
+      // "overlayHash always null" row): a `name set` changes the overlay
+      // store's content without touching `ranges.jsonl`/`render.hash` (a
+      // rename alone never reprints anything) — the ranges check above
+      // cannot see that, so this is the only place a stale-after-rename
+      // artifact gets caught. Only enforced when the manifest actually
+      // recorded a hash (an artifact built with no overlay in scope has
+      // `overlayHash: null` and stays valid against a store that starts
+      // existing later — `manifest.render.overlayHash` is null. Nothing to
+      // compare it against).
+      if (this.manifest.render.overlayHash !== null) {
+        const currentOverlayHash = sha256Hex(readFileSync(opts.overlayStorePath, "utf8"));
+        if (currentOverlayHash !== this.manifest.render.overlayHash) {
+          throw new Hbc2jsError(
+            ErrorCode.E_STALE_INDEX,
+            `${artifactDir}: overlay store content hash (${currentOverlayHash}) != manifest.render.overlayHash ` +
+              `(${this.manifest.render.overlayHash}) — a name was renamed after this artifact was rendered; run ` +
+              `\`hbc2js render\` (or re-write the artifact) before querying (docs/specs/10-artifact-format.md §4.2)`,
+          );
+        }
+      }
     }
   }
 

@@ -17,6 +17,7 @@
 // rewrites to a real `require('./module_<id>.js')` — good enough to prove
 // the require graph, not a readability pass.
 import { analyseModule } from "../cfg/index.ts";
+import type { ModuleAnalysis } from "../cfg/types.ts";
 import { buildInventoryFromModule } from "../deps/inventory.ts";
 import type { Stmt } from "../emit/ast.ts";
 import { emitModule } from "../emit/index.ts";
@@ -148,6 +149,20 @@ export interface SplitResult {
    *  split tree (unreached, or the rare inline-closure form) has no entry —
    *  never a fabricated one. */
   readonly functionRanges: ReadonlyMap<number, { readonly file: string; readonly lines: readonly [number, number] }>;
+  /** The parsed module + `{strictEnv:false}` analysis this split pass built
+   *  internally (`decompileAllBodies`'s own `analyseModule` call) — exposed
+   *  so `src/artifact/write.ts` can reuse them instead of re-parsing +
+   *  re-analysing the whole bundle a second time when the caller runs
+   *  `splitProject` then `writeArtifact` back to back on the same bytes
+   *  (the common `--split`/index-build path; docs/BUGS.md 2026-09-03 "index
+   *  build 51.4% of decompile" row — this was ~78% of that gap). An
+   *  artifact builder that does NOT have a `SplitResult` in hand (or is
+   *  building against different bytes) still re-parses on its own; the
+   *  semantic layer's spec-mandated independence from the render (§0) is
+   *  about correctness of WHEN the index is rebuilt, not about forcing a
+   *  redundant parse on every combined call. */
+  readonly module: HbcModule;
+  readonly analysis: ModuleAnalysis;
 }
 
 export interface SplitOptions {
@@ -182,6 +197,7 @@ interface DecompiledBodies {
    *  references, computed once from the same single `emitModule` pass this
    *  function already runs (no second traversal). */
   readonly helpersUsed: readonly string[];
+  readonly analysis: ModuleAnalysis;
 }
 
 function decompileAllBodies(module: HbcModule, passes: PassPipelineOptions | undefined, diagnostics: string[]): DecompiledBodies {
@@ -211,7 +227,7 @@ function decompileAllBodies(module: HbcModule, passes: PassPipelineOptions | und
     if (!(e instanceof Hbc2jsError) || e.code !== ErrorCode.E_UNBOUND_IDENT) throw e;
     diagnostics.push(`module-level scope check failed after every function was emitted (${e.code}: ${e.message}); bodies kept as emitted`);
   }
-  return { bodies, helpersUsed };
+  return { bodies, helpersUsed, analysis };
 }
 
 function fileNameFor(moduleId: number): string {
@@ -222,7 +238,7 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
   const module = parseHbc(bytes);
   const inventory = buildInventoryFromModule(module);
   const diagnostics: string[] = [];
-  const { bodies, helpersUsed } = decompileAllBodies(module, opts.passes, diagnostics);
+  const { bodies, helpersUsed, analysis } = decompileAllBodies(module, opts.passes, diagnostics);
   const printOpts = { indent: "  ", jsx: opts.jsx === true };
 
   const files = new Map<string, string>();
@@ -410,5 +426,5 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     ) + "\n",
   );
 
-  return { files, modules, entryModuleId: resolvedEntry, diagnostics, functionRanges };
+  return { files, modules, entryModuleId: resolvedEntry, diagnostics, functionRanges, module, analysis };
 }

@@ -1,13 +1,13 @@
 // src/artifact/write.ts — writes the P2.1 artifact (manifest + semantic index
 // files built so far) to disk. §1 layout, §1.3 immutability (E4).
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { SplitResult } from "../split/index.ts";
 import { analyseForArtifact, buildFactoryInfo, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
 import { buildNativeIndex } from "./native.ts";
-import { buildCallsIndex, buildGlobalsIndex, buildStringUsesIndex } from "./semantic-walk.ts";
-import { indexHeader, rangesHeader, toJsonl, type Manifest } from "./schema.ts";
+import { buildSemanticIndexes } from "./semantic-walk.ts";
+import { indexHeader, rangesHeader, sha256Hex, toJsonl, type Manifest } from "./schema.ts";
 import { buildStringsIndex } from "./strings.ts";
 
 export interface WriteArtifactOptions {
@@ -22,6 +22,14 @@ export interface WriteArtifactOptions {
    *  internally consistent for anyone still holding it. */
   readonly overwrite?: boolean;
   readonly git?: string | null;
+  /** §1.2 `render.overlayHash` (§4.2 staleness): path to the Design-D
+   *  overlay store file in scope for this render (the same path
+   *  `ArtifactService`'s `opts.overlayStorePath` is later constructed with).
+   *  When given and the file exists, its content is sha256-hashed into
+   *  `manifest.render.overlayHash`; omitted or missing -> `null` (no overlay
+   *  store was in scope for this render — the honest v1 default before this
+   *  option was wired, docs/BUGS.md 2026-09-03 "overlayHash always null"). */
+  readonly overlayStorePath?: string;
 }
 
 export interface WrittenArtifact {
@@ -54,16 +62,14 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     );
   }
 
-  const { module, analysis, parents } = analyseForArtifact(opts.bytes);
+  const { module, analysis, parents } = analyseForArtifact(opts.bytes, { module: opts.splitResult.module, analysis: opts.splitResult.analysis });
   const ownership = computeFnOwnership(module, parents, opts.splitResult.modules);
   const functionRows = buildFunctionsIndex(module, parents, ownership);
   const modulesIndex = buildModulesIndex(opts.splitResult, ownership);
   const factoryInfo = buildFactoryInfo(module, opts.splitResult.modules);
 
-  const callRows = buildCallsIndex(module, analysis, factoryInfo);
+  const { callRows, globalRows, stringUseRows } = buildSemanticIndexes(module, analysis, factoryInfo);
   const stringsIndex = buildStringsIndex(module);
-  const stringUseRows = buildStringUsesIndex(module, analysis, factoryInfo);
-  const globalRows = buildGlobalsIndex(module, analysis, factoryInfo, callRows);
   const nativeRows = buildNativeIndex(callRows, globalRows);
 
   const functionsJsonl = toJsonl(indexHeader("functions"), functionRows);
@@ -86,6 +92,8 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
 
   const rangeRows = buildRangesIndex(opts.splitResult.functionRanges);
 
+  const overlayHash = opts.overlayStorePath !== undefined && existsSync(opts.overlayStorePath) ? sha256Hex(readFileSync(opts.overlayStorePath, "utf8")) : null;
+
   const manifest = buildManifest({
     bytes: opts.bytes,
     module,
@@ -94,6 +102,7 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     strictEnv: opts.strictEnv,
     form: opts.form,
     semanticFiles,
+    overlayHash,
     ...(opts.git !== undefined ? { git: opts.git } : {}),
   });
 

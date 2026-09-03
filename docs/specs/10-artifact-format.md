@@ -378,7 +378,7 @@ INCONCLUSIVE is never PASS.
 |---|---|---|---|
 | 1 | **Index truth**: checker (§4.1) agreement on N=200 sampled functions — unmarked-wrong edges (index says X, recount says Y, neither is `?`) | **0** (derived data; any disagreement is a bug). `?`-rate is *reported*, not targeted — but every `?` must carry a `why` (checker enforces 100% of `?` rows have one) | `tools/artifact/check-index.ts --sample 200 --seed 1` on the held-out bundle, plus one `--all` run on rn-template (small enough); both in the landing report |
 | 2 | **Query token cost**: bytes/lines per answer over the fixed query corpus (every verb × 30 sampled args) | every answer within its §3.1 cap; median `who-calls` ≤ 2 KB; median `fn` ≤ 800 bytes; `context` ≤ 40 lines always | `tools/artifact/measure.ts` runs the corpus, emits max/median per verb |
-| 3 | **Run cost**: semantic index build wall-time as fraction of decompile+render wall-time; on-disk index size vs rendered source size | build ≤ 25% of decompile time; `index/` ≤ 30% of rendered-source bytes (both on rn-template AND the held-out bundle) | same `measure.ts`, best-of-3 |
+| 3 | **Run cost**: semantic index build wall-time as fraction of decompile+render wall-time; on-disk index size vs rendered source size | build ≤ 25% of decompile time (met, 2026-09-03 close-out); `index/` ≤ 70% of rendered-source bytes (renegotiated 2026-09-03, was ≤ 30% — §10 "P2.1 close-out size renegotiation", both on rn-template AND the held-out bundle) | same `measure.ts`, best-of-3 |
 | 4 | **Held-out check** | targets 1–3 hold unchanged on a bundle never used while building/tuning the extractor | tune on `tests/fixtures/bundles/rn-template` + construct fixtures; **measure on the react-navigation bundle (`fetch.sh`)**, plus a hash-recorded local-corpus app spot-check (numbers in the report, bundle never in the repo) |
 
 `measure.ts` prints one summary block; the acceptance suite (§7) asserts
@@ -666,3 +666,64 @@ not import the emitter's dataflow (finding 3); A1's `new URL(...).pathname`
 is fine for macOS/Linux (the project's supported platforms); `query check`
 output has no §3.1 cap because it is not a loop verb — on FAIL it prints the
 row-level diff, on PASS one line.
+
+### P2.1 close-out size renegotiation (2026-09-03)
+
+Per ruling 3 above ("optimise, or come back through this gate with the
+measured number and renegotiate the budget openly — the budget number may
+move, the graph's completeness may not"): docs/BUGS.md's 2026-09-03 "index
+build 51.4% of decompile / index 64.5% of rendered source" row was closed out
+in two parts.
+
+**Build time (target 1 of the pair): FIXED, no renegotiation needed.**
+Diagnosed with `--cpu-prof`-style manual timing splits
+(`src/artifact/write.ts`'s call sequence): the walk-cost part
+(`src/artifact/semantic-walk.ts`) was calling `walkFunction` on every
+function **three times** (once each for `calls.jsonl`/`globals.jsonl`/
+`string-uses.jsonl`, `decoded`/`cfg` memoized but the walk's own per-
+instruction dataflow loop was not) — consolidated into one
+`buildSemanticIndexes` pass, byte-identical output (verified: sorted-diff
+against the pre-change three-pass output on rn-template, zero lines
+differ). That cut the walk 3x but the dominant remaining cost turned out to
+be `analyseForArtifact` re-parsing + re-analysing the whole bundle from raw
+bytes a SECOND time, independent of `splitProject`'s own parse+analyse
+(deliberate by the original design, for the case an artifact is built
+without a `SplitResult` in hand) — ~78% of index-build time on rn-template.
+Fix: `SplitResult` now exposes the `{module,analysis}` pair `splitProject`
+already built internally (`src/split/index.ts`); `writeArtifact` reuses it
+when available instead of re-parsing (`src/artifact/build.ts`'s
+`analyseForArtifact` takes an optional `reuse` pair) — an artifact builder
+invoked without a `SplitResult` still parses for itself, so the semantic
+layer's render-independence (§0) is unaffected. Measured: index build
+51.4% -> **9.4%** of decompile+render time on rn-template (target ≤25%,
+now met with margin).
+
+**Index size (target 2 of the pair): RENEGOTIATED, floor measured.**
+Per-file byte breakdown on rn-template (index/ = 3,721,684 bytes total):
+`calls.jsonl` 1,162,450 (31.2%), `string-uses.jsonl` 1,250,411 (33.6%),
+`functions.jsonl` 443,625 (11.9%), `strings.json` 334,232 (9.0%),
+`ranges.jsonl` 216,375 (5.8%), `modules.json` 145,336 (3.9%),
+`native.jsonl` 108,685 (2.9%), `globals.jsonl` 81,148 (2.2%). `calls.jsonl`
++ `string-uses.jsonl` alone are 2,412,861 bytes — **41.8% of rendered
+source bytes**, already above the original 30% target with every OTHER
+index file at zero. These two files are exactly the per-call-site and
+per-(sid,fn,role)-aggregate rows §2.2/§2.3b require for truth (never a
+guessed edge, `?` is a first-class answer with a mandatory `why`) — cutting
+either row set is trading completeness, which ruling 3 forbids outright.
+The remaining lever is the JSON *encoding* (per-row field-name repetition:
+e.g. `{"caller":42,"site":7,"callee":57,"kind":"closure","via":"direct"}`
+vs a positional-array form `[42,7,57,"closure","direct"]`) — a real, still
+open optimisation (queued below) that this close-out's budget did not
+reach; it was not attempted rather than attempted and reverted. **New
+target: `index/` ≤ 70% of rendered-source bytes** (measured actual on
+rn-template: 64.5%, unchanged by the time fix since it touches build cost,
+not row content — headroom kept for the held-out bundle). §5's table and
+docs/BUGS.md updated in the same commit as this renegotiation.
+
+**Follow-up queued, not part of this close-out**: a compact positional-array
+encoding for `calls.jsonl`/`string-uses.jsonl` (bump `hbc2js-index/2`,
+update §1.1/§2.2/§2.3b and the A1 format tests in the same commit) could
+plausibly claw the ratio back toward the original 30% — estimated ~40-45%
+smaller per row from dropping repeated field names alone, unverified. Left
+for a dedicated task rather than attempted under this close-out's remaining
+budget (docs/BUGS.md row updated, unassigned lane).
