@@ -24,6 +24,13 @@ stores) split into real files. (docs/LANES.md)
 | 5 readable | template-literal: sites converted | 99.45% | – | – | STATUS-ARCHIVE.md `template-literal`, 2026-09-01 |
 | 5 readable | surviving `rN` per 1k lines | – | – | – | not yet tracked (no docs/reports entry) |
 
+## Stage 2 — analyst/LLM annotation layer (P2.x, docs/QUEUE.md STAGE 2)
+| item | status | numbers | source |
+|---|---|---|---|
+| P2.1 artifact format | complete | index ≤25% decompile time, ≤30% rendered bytes, query costs under cap — rn-template + held-out react-navigation | docs/specs/10-artifact-format.md §5; docs/reports/2026-09-03-p21-*.md |
+| P2.2 project store | complete | decision-8 all 4 MET: integrity 100% (120/120 rn-template, 120/120 held-out react-navigation, reject-gate live, 0 invalid-on-disk); read cost `for-fn` median 182B (≤1536B); run cost load 0.4ms=0.8-2.5% of artifact load (≤15%), 292-295B/record (≤300B); held-out orphan check (rn-template noopt-debug vs release build, no network): 4/60 vanished fns → 16/16 dependent records flagged orphaned w/ ctx, 240/240 rows survived (zero silent drops) | docs/specs/11-project-store.md §5; `tools/project/{check-store,measure}.ts`; docs/reports/2026-09-03-p22-step[0-8].md |
+| P2.3 secrets scan | classify+service+measure done, targets MET, CLI wiring pending | precision 100% (≥95%), FP 0.38/1k tuning, 1.41/1k held-out (≤5/≤8) | docs/specs/12-string-secrets.md; docs/reports/2026-09-03-p23-finisher.md |
+
 ## Milestones
 
 - M0 Research (toolchain, prior art, corpus candidates) — done
@@ -51,9 +58,8 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
 
-`npm test` (this run, 2026-09-02): 1668 tests, 1664 pass, 0 fail, 4 skipped,
-~111 s. CI: red-CI root cause (typecheck not run locally) fixed 2026-08-31 —
-`npm test` now runs typecheck first; source: docs/CONSOLIDATION.md item 29.
+`npm test` (this run, 2026-09-03): 1886 tests, 1883 pass, 0 fail, 3 skipped,
+~159s. Typecheck runs first (CONSOLIDATION.md item 29, fixed 2026-08-31).
 
 ## Open bugs — 24 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing; +1 row 2026-09-02 spread-rest landing)
 
