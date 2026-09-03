@@ -1,6 +1,6 @@
 # Spec 13 — P2.4 REUSE validation: existing scanners over hbc2js outputs
 
-Status: SPEC (2026-09-03, Fable spec agent). Design only — no implementation in
+Status: SPEC — review gate PASSED (2026-09-03, Fable reviewer, §13). Design only — no implementation in
 this commit. Style precedent: specs 10/11/12 (spec authoritative; reviewer gate
 before impl; Decision-8 quadruple per lane). Stage-2 order of values applies:
 TRUTH first, then EFFICIENT TO USE (QUEUE Stage-2 header).
@@ -172,6 +172,12 @@ work). Identity key only, version indirect → **candidate tier**: claim text
 unevidenced)`, severity capped at `med` regardless of CVSS. Neither key →
 no record at all (a Low/hint dep never generates CVE noise).
 
+Tripwire (reviewer ruling 2): if any measured run — fixture, held-out or
+corpus — ever surfaces a claim-tier finding whose package is provably absent
+from the app, claims resting on a guessed (non-High) identity key demote to
+candidate tier repo-wide until a review reinstates them. The two-key gate is
+a pre-registered bar, not a proof.
+
 Version-range matching uses OSV's own `affected[].ranges` semver logic (the
 scanner or the API does it; we never reimplement semver range math — reuse).
 
@@ -224,7 +230,13 @@ landing, honest about anchorability:
 
 Ground truth = `aapt2 dump badging` / `xmltree` on the same APK (aapt2 ships
 with the Android build tools already present for corpus work; if absent, a
-hand-written expected file for the fixture APK). Bar: **100% agreement** on
+hand-written expected file for the fixture APK). Comparison discipline
+(reviewer edit R-M): `aapt2` emits RAW manifest facts, while androguard
+computes *effective* exported status under Android-12 defaulting rules that
+aapt2 does not apply — so the measure script diffs raw facts (declared
+attributes, intent-filter presence, targetSdk) against aapt2, and
+effective-exported against the committed hand-verified expected file for the
+fixture; it never grades androguard's interpretation against itself. Bar: **100% agreement** on
 exported-component list, permission list, and scheme list for the fixture APK,
 and 20/20 on a spot-check of one corpus APK. Below 100% on structured facts =
 extraction bug, fix or cut — there is no acceptable error rate for reading a
@@ -241,6 +253,13 @@ manifest.
 | androguard | **Apache-2.0** | run (pipx) |
 | apktool | **Apache-2.0** | run |
 | CodeQL | GitHub CodeQL Terms: free only for open-source codebases/academic research. Scanning proprietary corpus APKs is outside the grant. **SET ASIDE — licence-unfit**, recorded here per the QUEUE line asking for the licensing/fit check; revisit only under a paid licence decision by Fred. | none |
+
+Reviewer verification (2026-09-03, gate): SPDX ids confirmed hands-on via
+the GitHub licence API — semgrep/semgrep `LGPL-2.1`; semgrep/semgrep-rules
+`NOASSERTION` (custom licence, consistent with the non-open row);
+google/osv-scanner, androguard and Apktool all `Apache-2.0`. The CodeQL row
+was not re-fetched (it is SET ASIDE anyway). T-L re-verification (licence
+string + URL + retrieval date; mismatch blocks the lane) remains MANDATORY.
 
 Standing rule (P2.3 precedent, spec 12 R2): any AGPL component encountered in
 this space (e.g. trufflehog v3) is **behaviour-oracle only** — observe its
@@ -336,8 +355,10 @@ lane takes an API key; no lane probes any live endpoint found in the app
   (extends the §2.3 fixture's build), run `deps --json` → OSV adapter;
   `tools/security/measure-osv.ts` compares against the lockfile-derived
   ground truth.
-- **Held-out**: the Expensify bundle (`bundles/fetch.sh`; its upstream
-  `package.json` at the fetched tag is public ground truth): every claim-tier
+- **Held-out**: the Expensify bundle (`bundles/fetch.sh`; ground truth is
+  the dependency closure derived from the upstream *committed lockfile* at
+  the fetched tag, fetched once and hash-recorded in scan-state — never
+  resolved live from `package.json`): every claim-tier
   finding's package must appear in that dependency closure — asserted, 0
   violations. (react-navigation stays spec 11/12's held-out; using a
   different app avoids piling a third metric on it.)
@@ -349,9 +370,10 @@ lane takes an API key; no lane probes any live endpoint found in the app
   20/20 corpus spot-check; 100% of anchored tags' sids resolve.
 - **Method**: `tools/security/measure-manifest.ts` diffs androguard-extracted
   facts against `aapt2 dump` (or the committed expected file) for the fixture
-  APK in `tests/fixtures/security/vuln-app/apk/` (built once by `build.sh`
-  from the fixture app; if APK build tooling is unavailable on a machine the
-  committed APK artefact is used, like committed `.hbc` fixtures).
+  APK in `tests/fixtures/security/vuln-app/apk/` (the committed APK artefact is
+  the default, like committed `.hbc` fixtures — reviewer ruling 4; `build.sh`
+  regenerates it only where Android build tooling is present, and the gate
+  never requires that tooling).
 - **Held-out**: one corpus APK, spot-check protocol above.
 
 Ratchet rule for all three (spec 12 ruling 2): after the first measured
@@ -390,8 +412,8 @@ red in step 0 (spec 12 step-0 precedent satisfies tests-before-impl).
   (identity key fails); Low/hint → no record. No network.
 - **T3 lane-O recall**: measure-osv on the fixture = 100% seeded recall, 0
   claim-tier off-lockfile findings (network-free via committed OSV DB
-  slice for the pinned packages; the full offline DB is a local resource
-  like tools/hermesc).
+  slice for the pinned packages, committed with its CC-BY 4.0 attribution
+  header; the full offline DB is a local resource like tools/hermesc).
 - **T4 record conformance**: every lane-written record resolves all evidence
   via `ArtifactService` re-check; provenance fields present; claim text of
   every candidate-tier finding starts `candidate:`; no tool record has
@@ -447,6 +469,133 @@ in `measure-*` scripts and land as numbers in the report, not in the gate
 
 ## 13. Review responses
 
-*(Reviewer: verify the three §8 quadruples exist and targets are sane; verify
-§5 licensing rows hands-on (they are claims until T-L); rule on §12; responses
-land here.)*
+### Review responses (2026-09-03, Fable reviewer gate)
+
+**VERDICT: APPROVED.** Implementation may launch at step 0 (§9); lane O
+(step 2) implements first after steps 0–1. Every issue found was fixed by a
+small in-place reviewer edit (marked R-* below) plus the five rulings. No
+CHANGES REQUIRED items remain.
+
+**Checklist findings**
+
+1. *Decision-8 quadruples (§8)*: complete and sane, all three lanes —
+   metric / numeric target / measure script / held-out present. The two bars
+   the gate was told to stress-test hold up:
+   - **Lane M 100%-or-cut**: the measurement CAN distinguish pass from fail
+     because "structured fact" is an enumerable set diff (exported-component
+     list, permission list, scheme list) against an independent extractor —
+     but only after edit **R-M** (§4.3): `aapt2` emits raw manifest facts
+     while androguard computes *effective* exported status under Android-12
+     defaulting, so a naive diff would either mis-fail correct extraction or
+     silently grade androguard against itself. The measure script now diffs
+     raw facts vs aapt2 and effective-exported vs the committed hand-verified
+     expected file. With that split, 100% is the right bar: manifest reading
+     is deterministic parsing, and any disagreement is a bug.
+   - **Lane O 0-false-attribution**: distinguishable because ground truth is
+     a concrete package set in both places — the fixture's own lockfile
+     (we author it), and for the held-out the closure derived from
+     Expensify's upstream *committed lockfile* at the fetched tag (edit
+     **R-O**: closure from the lockfile, hash-recorded, never resolved live
+     from `package.json`, which would need network resolution at measure
+     time and be non-reproducible). "Off-lockfile" = claim-tier finding
+     naming a package outside that set; a membership check, no judgement
+     call. Candidate-tier misattributions are counted, not targeted — right,
+     since candidate language already discounts them.
+   - Lane S recall (9/10 seeded) is deterministic against the ground-truth
+     JSON; artifact-rate depends on the recorded per-hit classification,
+     which §2.3.3 makes re-derivable (file/line refs) — auditable, accepted.
+2. *Licensing rows (§5)*: verified hands-on this gate via the GitHub licence
+   API (recorded in §5): semgrep/semgrep `LGPL-2.1`, semgrep-rules
+   `NOASSERTION` (custom licence — consistent with the Semgrep Rules License
+   v1.0 non-open row), osv-scanner / androguard / Apktool `Apache-2.0`. All
+   rows as claimed. CodeQL terms not re-fetched; the row is SET ASIDE anyway
+   and its posture (free grant excludes proprietary-corpus scanning) matches
+   reviewer knowledge. T-L re-verification with URL + retrieval date remains
+   MANDATORY and lane-blocking on mismatch (§5 wording confirmed).
+3. *Truth posture*: consistent with specs 11/12 as reviewed. All lane-S and
+   lane-M findings carry `candidate:`; lane-O claim tier is ruled on below
+   (ruling 2). No self-confirm path in any lane; `status:"open"` only;
+   refutation suppression is store-driven off stable slot keys
+   (`ruleId`/`advisoryId`), the spec-12 R1 pattern applied correctly.
+   Severity mappings are fixed, documented, versioned with the adapter,
+   under spec 12 ruling 3 (indexer-as-analyst-of-record). Unanchorable
+   manifest facts go to a derived report file, never fake-anchored — the
+   honest reading of spec 11 §4.1. The §7 tag list (`deeplink`, `endpoint`,
+   `source`, `sink`, `sanitizer`) is verified all-ratified: the first two by
+   spec 12 ruling 1, the last three in spec 11 §1.3's v1 taxonomy — no new
+   ratification needed from this gate.
+4. *Efficiency*: raw tool JSON never enters LLM context; consumption is via
+   spec-11 capped verbs; zero new verbs. ≤ ~5k-token first triage pass is a
+   stated budget in the spec-12 style. Run-cost ceilings (§6.1) become
+   ratchets after first measurement (ruling 5 pattern). Sound.
+5. *Implementation plan (§9)*: per-lane cuttable is real (steps 2/3/4 land
+   nothing if their bar fails, with the failing data recorded), steps are
+   lean-agent-sized, and the order is right. **Lane O first**: smallest
+   surface, pure two-key gate logic testable without network (T2/T3),
+   exercises the store contract end-to-end cheapest, and its fixture needs
+   (lockfile pins) ride the step-1 fixture anyway. Lane S is the largest and
+   noisiest (validation/classification loop); lane M last as the only lane
+   touching non-bundle inputs. Step 0's red acceptance tests satisfy
+   tests-before-implementation (spec 12 step-0 precedent).
+
+**Rulings on the §12 open questions**
+
+1. **Registry rules: run-time-fetch-never-vendor ACCEPTED for the shipped
+   lane.** The Semgrep Rules License restricts *competing use* and
+   redistribution; an analyst's local semgrep run fetching rules through
+   semgrep's own client, cached in `~/.semgrep`, with nothing entering this
+   MIT repo, is ordinary permitted use — the same posture every semgrep CLI
+   user has. Conditions already in the spec and confirmed binding: SHA pin
+   in scan-state; T-L anti-vendoring tripwire (no file under
+   `tools/security/semgrep/` matching a cached registry rule); a T-L licence
+   mismatch blocks the lane. §2.4's recall floor already routes missed
+   classes to our own MIT rules first, so a future forced demotion of
+   registry rules to validation-oracle-only degrades, not breaks, the lane.
+2. **Claim-tier wording ACCEPTED: no `candidate:` prefix when both keys
+   hold.** The un-prefixed claim asserts exactly what was verified — an
+   advisory-range match on an evidenced version of an evidenced package —
+   and explicitly not reachability. Blanket-prefixing everything would
+   erase the two-key distinction the lane exists to draw, and the
+   falsifiable check is the 0-off-lockfile target plus the held-out
+   containment assertion. Condition (edit **R-T**, §3.2): a demotion
+   tripwire — any measured claim-tier misattribution anywhere demotes
+   guessed-identity (non-High) claims to candidate tier repo-wide pending
+   review. Truth stays protected by measurement, not by hedging every
+   sentence.
+3. **Expensify as lane-O held-out ACCEPTED; do not standardise on one
+   app.** react-navigation already carries spec 11's and spec 12's held-out
+   metrics; a single universal held-out concentrates correlated
+   tuning-contact risk and makes promote-and-replace (spec 12 R4) a
+   three-spec event. Lane O additionally needs a public committed lockfile
+   at a pinned tag for its ground truth, which Expensify provides. Corpus
+   roles in scan-state keep the assignment auditable.
+4. **Fixture APK: COMMIT the built artefact; never require Android build
+   tooling.** Exact `.hbc` precedent — the gate must run on a bare
+   macOS/Linux checkout (repo hard rule), and Android SDK presence is the
+   opposite of that. `build.sh` regenerates the APK only where tooling
+   exists; provenance (build inputs, tool versions) recorded next to the
+   artefact so it is reproducible, not magic. Edit **R-A** (§8.3) pins this
+   as the default rather than the fallback.
+5. **Adoption-bar numbers ACCEPTED as pre-registered starting ratchets**
+   (30% pair / 40% held-out artifact-rate; ≥ 4-hit → > 50%-artifact per-rule
+   blocklist). Admitted folklore, but Decision-8 wants a falsifiable
+   pre-registered bar, not a proven-optimal one — exactly the spec 12
+   ruling-2 posture. First measured landing becomes the bar; loosening
+   requires review, tightening does not. The per-rule ≥ 4-hit floor
+   correctly avoids blocklisting on 1–3 hit noise.
+
+**Edits applied (in place)**
+
+- **R-M** (§4.3): raw-facts-vs-aapt2 / effective-exported-vs-expected-file
+  comparison split, so the 100% bar measures extraction, not interpretation.
+- **R-O** (§8.2): held-out closure derived from Expensify's committed
+  lockfile at the fetched tag, hash-recorded; never live-resolved.
+- **R-T** (§3.2): claim-tier demotion tripwire on any measured
+  misattribution.
+- **R-A** (§8.3): committed fixture APK is the default; gate never requires
+  Android build tooling.
+- **R-V** (§5): hands-on licence verification results recorded; T-L
+  mandatory re-verification confirmed blocking.
+- **R-N** (§10 T3): committed OSV DB slice carries its CC-BY 4.0
+  attribution header.
+- Status line updated to gate-passed.
