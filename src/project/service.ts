@@ -7,16 +7,17 @@
 // `hbc2js project <verb>` (src/cli.ts) is a thin formatting wrapper over this
 // class, same split as `query`'s CLI is over `ArtifactService`.
 //
-// Scope note (this step): §3.2 lists `orphans()`/`conflicts()` in the API
-// shape, but orphan DETECTION is step 6's job and merge/conflict records are
-// step 7's (§7 table) — both are stubbed here (empty, documented) rather than
-// faked, so their real implementation lands with the step that owns the
-// truth guarantee behind them (flag-never-drop for orphans, no-silent-pick
-// for conflicts). `stat()`'s orphan/conflict counts are 0 for the same
-// reason until steps 6/7 land.
+// Scope note: §3.2 lists `orphans()`/`conflicts()` in the API shape.
+// Orphan DETECTION (§2.5, this step, step 6) is implemented below: every
+// read that used to filter on `active` alone now also excludes a record
+// whose `target` no longer resolves against the live `ArtifactService`
+// index (`src/project/orphans.ts`'s `isOrphaned`, live-computed every call,
+// never cached — §3.3), and `orphans()`/`stat().orphans` report them with
+// their write-time `ctx` snapshot. Merge/conflict records are step 7's
+// (§7 table) — `conflicts()` stays stubbed (empty, documented) until then;
+// `stat()`'s conflict count is 0 for the same reason.
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { ArtifactService } from "../artifact/service.ts";
 import { parseKey } from "../name-overlay/id.ts";
 import { loadProjectStore, saveProjectStore, type ProjectStore } from "./io.ts";
@@ -38,6 +39,7 @@ import { CommentStore } from "./comments.ts";
 import { BookmarkStore } from "./bookmarks.ts";
 import { FindingStore, type AddFindingInput, type ResolvedFinding } from "./findings.ts";
 import { ArtifactEvidenceResolver } from "./evidence-resolver.ts";
+import { collectOrphans, isOrphaned, type OrphanRow, type TargetIndexCheck } from "./orphans.ts";
 
 export interface Bounded<T> {
   readonly rows: readonly T[];
@@ -52,6 +54,7 @@ export const PROJECT_CAPS = {
   comments: 30,
   bookmarks: 50,
   tagsGet: 10,
+  orphans: 50,
 } as const;
 
 export type AnnotationRow =
@@ -117,29 +120,29 @@ export class ProjectService {
   private readonly bookmarkStore: BookmarkStore;
   private readonly findingStore: FindingStore;
 
+  private readonly targetIndex: TargetIndexCheck;
+
   /** `artifactDir` is the SAME directory `artifact` was built from (its
    *  `project/` subdirectory is this store, §2.2); `artifact` is the shared
    *  warm index (§3.2's "shares the warm index"). Bootstraps an empty store
    *  (keyed to the artifact's own `builtFor`) when `project/` doesn't exist
-   *  yet; otherwise loads it and refuses a `builtFor` mismatch (§2.5 —
-   *  relaxed into live orphan-flagging once step 6 lands). */
+   *  yet; otherwise loads it. A `builtFor` mismatch is NO LONGER refused
+   *  (that was step 5's stub, §2.5's "relaxed into live orphan-flagging once
+   *  step 6 lands" — this is step 6): opening a store whose `builtFor`
+   *  differs from this artifact is exactly the cross-version case §2.5
+   *  specs, so every read below live-resolves each record's `target`
+   *  against `artifact` and excludes what no longer resolves — never a
+   *  refusal, never a silent drop. */
   constructor(artifactDir: string, artifact: ArtifactService) {
     this.artifact = artifact;
     this.storeDir = join(artifactDir, "project");
     const bundleSha256 = artifact.manifest.bundle.sha256;
-    let store: ProjectStore;
-    if (existsSync(this.storeDir)) {
-      store = loadProjectStore(this.storeDir);
-      if (store.header.builtFor.bundleSha256 !== bundleSha256) {
-        throw new Hbc2jsError(
-          ErrorCode.E_STALE_PROJECT_STORE,
-          `${this.storeDir}: builtFor.bundleSha256 (${store.header.builtFor.bundleSha256}) != this artifact's bundle (${bundleSha256}) — ` +
-            `refused (spec 11 §2.5); cross-build orphan-flagging lands in step 6`,
-        );
-      }
-    } else {
-      store = emptyStore(this.storeDir, bundleSha256);
-    }
+    const store: ProjectStore = existsSync(this.storeDir) ? loadProjectStore(this.storeDir) : emptyStore(this.storeDir, bundleSha256);
+    this.targetIndex = {
+      hasFn: (fn) => artifact.hasFn(fn),
+      hasString: (sid) => artifact.hasString(sid),
+      hasModule: (id) => artifact.hasModule(id),
+    };
     this.resolver = new ArtifactEvidenceResolver(artifact);
     this.tagStore = new TagStore({ records: store.tags });
     this.commentStore = new CommentStore({ records: store.comments });
@@ -176,6 +179,13 @@ export class ProjectService {
     });
   }
 
+  /** §2.5/§3.3: is `target` orphaned against the currently-loaded artifact,
+   *  live-computed every call. Every read below that used to filter on
+   *  `active` alone also excludes an orphaned target. */
+  private orphaned(target: string): boolean {
+    return isOrphaned(target, this.targetIndex);
+  }
+
   private captureCtx(target: string): CtxSnapshot {
     const fn = ownerFn(target);
     if (fn === null || !this.artifact.hasFn(fn)) return {};
@@ -189,22 +199,23 @@ export class ProjectService {
 
   // --- reads ------------------------------------------------------------
 
-  /** §3.1 `project for-fn <fn>` — every active tag/comment/finding whose
-   *  target is `fn:N` or a `reg:N:*`/`env:N:*` owned by it, one row each,
-   *  bounded (§3.1's aggregating read the loop leans on). */
+  /** §3.1 `project for-fn <fn>` — every active, NON-ORPHANED (§2.5)
+   *  tag/comment/finding whose target is `fn:N` or a `reg:N:*`/`env:N:*`
+   *  owned by it, one row each, bounded (§3.1's aggregating read the loop
+   *  leans on). */
   forFn(fn: number, page: { readonly all?: boolean } = {}): Bounded<AnnotationRow> {
     const rows: AnnotationRow[] = [
       ...this.tagStore
         .allRecords()
-        .filter((r) => r.active && ownerFn(r.target) === fn)
+        .filter((r) => r.active && ownerFn(r.target) === fn && !this.orphaned(r.target))
         .map((record): AnnotationRow => ({ type: "tag", record })),
       ...this.commentStore
         .allRecords()
-        .filter((r) => r.active && ownerFn(r.target) === fn)
+        .filter((r) => r.active && ownerFn(r.target) === fn && !this.orphaned(r.target))
         .map((record): AnnotationRow => ({ type: "comment", record })),
       ...this.findingStore
         .findings(this.resolver, {}, { all: true })
-        .rows.filter((rf) => ownerFn(rf.record.target) === fn)
+        .rows.filter((rf) => ownerFn(rf.record.target) === fn && !this.orphaned(rf.record.target))
         .map((record): AnnotationRow => ({ type: "finding", record })),
     ];
     const key = (r: AnnotationRow): { readonly target: string; readonly rid: string } => (r.type === "finding" ? r.record.record : r.record);
@@ -213,22 +224,27 @@ export class ProjectService {
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
-  /** §3.1 `project tag get <id>`. */
+  /** §3.1 `project tag get <id>` — empty when `target` itself is orphaned
+   *  (§2.5: orphaned targets are excluded from active reads). */
   tagsOn(target: string): Bounded<TagRecord> {
-    const rows = this.tagStore.getTags(target);
+    const rows = this.orphaned(target) ? [] : this.tagStore.getTags(target);
     const cap = PROJECT_CAPS.tagsGet;
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
   /** §3.1 `project findings [--tag] [--severity] [--status]`. `tag` filters
    *  to findings whose TARGET carries that active tag (a finding has no tag
-   *  field of its own, §1.5) — cross-referencing the tag store. */
+   *  field of its own, §1.5) — cross-referencing the tag store. Orphaned
+   *  targets (§2.5) are excluded, same as an invalid (unresolving-evidence)
+   *  finding. */
   findings(
     query: { readonly tag?: Tag; readonly severity?: Severity; readonly status?: FindingStatus } = {},
     page: { readonly all?: boolean } = {},
   ): Bounded<ResolvedFinding> {
     const { severity, status } = query;
-    const all = this.findingStore.findings(this.resolver, { ...(severity !== undefined ? { severity } : {}), ...(status !== undefined ? { status } : {}) }, { all: true }).rows;
+    const all = this.findingStore
+      .findings(this.resolver, { ...(severity !== undefined ? { severity } : {}), ...(status !== undefined ? { status } : {}) }, { all: true })
+      .rows.filter((rf) => !this.orphaned(rf.record.target));
     const filtered = query.tag !== undefined ? all.filter((rf) => this.tagStore.getTags(rf.record.target).some((t) => t.tag === query.tag)) : all;
     const cap = page.all === true ? filtered.length : PROJECT_CAPS.findings;
     return { rows: filtered.slice(0, cap), total: filtered.length, truncated: filtered.length > cap };
@@ -240,25 +256,41 @@ export class ProjectService {
     return this.findingStore.finding(rid, this.resolver);
   }
 
-  /** §3.1 `project comments <fn>`. */
+  /** §3.1 `project comments <fn>` — orphaned comments (§2.5) excluded. */
   comments(fn: number, page: { readonly all?: boolean } = {}): Bounded<CommentRecord> {
-    const rows = this.commentStore.forTarget(`fn:${fn}`).concat(this.commentStore.allRecords().filter((r) => r.active && r.target !== `fn:${fn}` && ownerFn(r.target) === fn));
+    const rows = this.commentStore
+      .forTarget(`fn:${fn}`)
+      .concat(this.commentStore.allRecords().filter((r) => r.active && r.target !== `fn:${fn}` && ownerFn(r.target) === fn))
+      .filter((r) => !this.orphaned(r.target));
     const cap = page.all === true ? rows.length : PROJECT_CAPS.comments;
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
-  /** §3.1 `project bookmarks [--fn N]`. */
+  /** §3.1 `project bookmarks [--fn N]` — orphaned bookmarks (§2.5) excluded. */
   bookmarks(query: { readonly fn?: number } = {}, page: { readonly all?: boolean } = {}): Bounded<BookmarkRecord> {
-    const rows = this.bookmarkStore.allRecords().filter((r) => r.active && (query.fn === undefined || ownerFn(r.target) === query.fn));
+    const rows = this.bookmarkStore
+      .allRecords()
+      .filter((r) => r.active && (query.fn === undefined || ownerFn(r.target) === query.fn) && !this.orphaned(r.target));
     const cap = page.all === true ? rows.length : PROJECT_CAPS.bookmarks;
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
-  /** §3.1 `project orphans` — stubbed (module header): orphan detection is
-   *  step 6's (§2.5). Always empty here, never a silent lie about counts —
-   *  `stat().orphans` is 0 for the identical reason. */
-  orphans(_page: { readonly all?: boolean } = {}): Bounded<never> {
-    return { rows: [], total: 0, truncated: false };
+  /** §3.1 `project orphans` (§2.5, this step): every active record across
+   *  all four record types whose `target` no longer resolves against the
+   *  live artifact, with its write-time `ctx` snapshot — live-computed every
+   *  call (§3.3), never a mutation of the stored line. Bounded per §3.1. */
+  orphans(page: { readonly all?: boolean } = {}): Bounded<OrphanRow> {
+    const rows = collectOrphans(
+      [
+        ...this.tagStore.allRecords().map((r) => ({ kind: "tag", rid: r.rid, target: r.target, active: r.active, ctx: r.ctx })),
+        ...this.commentStore.allRecords().map((r) => ({ kind: "comment", rid: r.rid, target: r.target, active: r.active, ctx: r.ctx })),
+        ...this.bookmarkStore.allRecords().map((r) => ({ kind: "bookmark", rid: r.rid, target: r.target, active: r.active, ctx: r.ctx })),
+        ...this.findingStore.allRecords().map((r) => ({ kind: r.kind, rid: r.rid, target: r.target, active: r.active, ctx: r.ctx })),
+      ],
+      this.targetIndex,
+    );
+    const cap = page.all === true ? rows.length : PROJECT_CAPS.orphans;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
   /** §3.1 `project conflicts` — stubbed (module header): conflict records
@@ -267,7 +299,8 @@ export class ProjectService {
     return { rows: [], total: 0, truncated: false };
   }
 
-  /** §3.1 `project stat`. */
+  /** §3.1 `project stat`. `orphans` is the FULL (uncapped) orphan count
+   *  across all record types (§2.5), matching `orphans({all:true}).total`. */
   stat(): StatRow {
     const findingRows = this.findingStore.allFindings().filter((r) => r.active);
     const invalid = findingRows.filter((r) => !this.findingStore.resolve(r, this.resolver).valid).length;
@@ -277,7 +310,7 @@ export class ProjectService {
       bookmarks: this.bookmarkStore.allRecords().filter((r) => r.active).length,
       findings: findingRows.length,
       invalidFindings: invalid,
-      orphans: 0,
+      orphans: this.orphans({ all: true }).total,
       conflicts: 0,
     };
   }

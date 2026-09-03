@@ -1239,7 +1239,15 @@ function runProject(argv: readonly string[]): void {
     } else if (verb === "orphans") {
       const result = svc.orphans({ all });
       if (json) process.stdout.write(JSON.stringify(result) + "\n");
-      else process.stdout.write(`total:${result.total} (orphan detection lands in step 6, spec 11 §7)\n`);
+      else {
+        for (const r of result.rows) {
+          const ctxBits = [r.ctx.name, r.ctx.loc, r.ctx.ownerFn].filter((x) => x !== undefined).join(" ");
+          process.stdout.write(`${r.kind}#${r.rid} ${r.target}${ctxBits !== "" ? ` [${ctxBits}]` : ""}\n`);
+        }
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
     } else if (verb === "conflicts") {
       const result = svc.conflicts({ all });
       if (json) process.stdout.write(JSON.stringify(result) + "\n");

@@ -1,4 +1,4 @@
-// tests/project/service.test.ts — P2.2 project-store step 5
+// tests/project/service.test.ts — P2.2 project-store steps 5-6
 // (docs/specs/11-project-store.md §3.2, §7 step 5): `ProjectService` over a
 // small real artifact (a construct fixture, not rn-template — cheap enough
 // for a lean-agent-sized step; rn-template-scale measurement is A-MEASURE's
@@ -15,7 +15,6 @@ import { cachedSplitProject as splitProject } from "../support/decompiled.ts";
 import { writeArtifact } from "../../src/artifact/write.ts";
 import { ArtifactService } from "../../src/artifact/service.ts";
 import { ProjectService } from "../../src/project/service.ts";
-import { Hbc2jsError, ErrorCode } from "../../src/errors.ts";
 import { readFileSync } from "node:fs";
 
 const FIXTURE_A = join(repoRoot(), "tests", "fixtures", "constructs", "01-if-else-chain", "v94.hbc");
@@ -43,17 +42,49 @@ test("bootstraps an empty project/ dir on first open, keyed to the artifact's bu
   assert.equal(existsSync(join(a.dir, "project", "project.json")), true);
 });
 
-test("refuses to open a store whose builtFor doesn't match this artifact (E_STALE_PROJECT_STORE)", () => {
+// A-ORPHAN (docs/specs/11-project-store.md §2.5, §7 step 6): annotate a real
+// target, then load the SAME store against an artifact with a DIFFERENT
+// `builtFor` where that target no longer resolves — `fn:1` is a real
+// function in FIXTURE_A (if-else-chain) that FIXTURE_B (while-loop) does not
+// have (confirmed by probing both artifacts' `hasFn`). Opening must NOT
+// throw (step 5's refusal is relaxed, module header); the record must
+// become `orphaned`: excluded from active reads, listed by `orphans()` with
+// its write-time `ctx`, counted in `stat()`, and NEVER dropped from disk.
+test("cross-builtFor load flags a vanished target as orphaned — never drops it (A-ORPHAN)", () => {
   const b = buildArtifact(FIXTURE_B);
   try {
-    // seed a's store, then point b's ArtifactService at a's project/ dir bytes.
-    new ProjectService(a.dir, a.svc).setTag("fn:0", "reviewed", HUMAN);
+    assert.equal(a.svc.hasFn(1), true);
+    assert.equal(b.svc.hasFn(1), false);
+
+    const setResult = new ProjectService(a.dir, a.svc).setTag("fn:1", "reviewed", HUMAN, { note: "cross-build orphan probe" });
+
     rmSync(join(b.dir, "project"), { recursive: true, force: true });
     cpSync(join(a.dir, "project"), join(b.dir, "project"), { recursive: true });
-    assert.throws(
-      () => new ProjectService(b.dir, b.svc),
-      (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_STALE_PROJECT_STORE,
-    );
+
+    // Opening against the mismatched artifact does not throw.
+    const svcB = new ProjectService(b.dir, b.svc);
+
+    // Excluded from active reads.
+    assert.deepEqual(svcB.tagsOn("fn:1").rows, []);
+    assert.deepEqual(svcB.forFn(1).rows, []);
+
+    // Live-computed, with last-known ctx, counted in stat() — zero drops.
+    const orphans = svcB.orphans();
+    assert.equal(orphans.total, 1);
+    assert.equal(orphans.rows.length, 1);
+    assert.equal(orphans.rows[0]?.kind, "tag");
+    assert.equal(orphans.rows[0]?.rid, setResult.rid);
+    assert.equal(orphans.rows[0]?.target, "fn:1");
+    assert.equal(orphans.rows[0]?.ctx.ownerFn, "fn:1");
+    assert.equal(svcB.stat().orphans, 1);
+
+    // Never a mutation of the stored line: reopened against the ORIGINAL
+    // (matching) artifact, the exact same record is active and NOT
+    // orphaned — the tag itself was never touched, only excluded live.
+    const svcAAgain = new ProjectService(a.dir, a.svc);
+    assert.equal(svcAAgain.stat().orphans, 0);
+    assert.equal(svcAAgain.tagsOn("fn:1").rows.length, 1);
+    assert.equal(svcAAgain.tagsOn("fn:1").rows[0]?.rid, setResult.rid);
   } finally {
     rmSync(b.dir, { recursive: true, force: true });
   }
@@ -106,8 +137,14 @@ test("a write with no provenance is rejected (A-PROV, exercised through the serv
   assert.throws(() => svc.setTag("fn:0", "reviewed", undefined as never));
 });
 
-test("orphans()/conflicts() are stubbed empty in step 5 (steps 6/7 own the real detection)", () => {
+test("conflicts() stays a step-7 stub; orphans() is empty when nothing on this store is orphaned", () => {
   const svc = new ProjectService(a.dir, a.svc);
+  // Every annotation this file has written to `a.dir` targets a real fn
+  // (0 or 1, or a distinct `reg:0:*`/`reg:1:*`) — see the A-BOUNDS test
+  // below, which switched off bare high `fn:N` targets for exactly this
+  // reason (§2.5's real orphan detection, step 6). The one write that used
+  // an unresolving target (`fn:99999`, the §4.1 rejection test above) was
+  // never persisted. So `orphans()` is genuinely empty here, not a stub.
   assert.deepEqual(svc.orphans(), { rows: [], total: 0, truncated: false });
   assert.deepEqual(svc.conflicts(), { rows: [], total: 0, truncated: false });
 });
@@ -115,8 +152,14 @@ test("orphans()/conflicts() are stubbed empty in step 5 (steps 6/7 own the real 
 test("every §3.1 verb caps its default answer and announces truncation (A-BOUNDS)", () => {
   const svc = new ProjectService(a.dir, a.svc);
   // distinct targets — bookmarks slot on `target` alone (bookmarks.ts module
-  // header), so re-bookmarking the SAME target would just supersede, not add.
-  for (let i = 0; i < 60; i++) svc.addBookmark(`fn:${1000 + i}`, HUMAN, { label: `mark-${i}` });
+  // header), so re-bookmarking the SAME target would just supersede, not
+  // add. Uses `reg:0:N` (register N of the real fn 0), not a bare high
+  // `fn:N`: since step 6 (§2.5) live-excludes orphaned targets from every
+  // read incl. `bookmarks()`, a fabricated `fn:1000+` (this fixture has only
+  // 2 real functions) would be orphaned and filtered out, breaking this
+  // truncation count — `reg:0:N` stays distinct per `i` while resolving
+  // (fn 0 is real), same as a real per-register bookmark would.
+  for (let i = 0; i < 60; i++) svc.addBookmark(`reg:0:${1000 + i}`, HUMAN, { label: `mark-${i}` });
   const capped = svc.bookmarks();
   assert.ok(capped.rows.length <= 50);
   assert.equal(capped.truncated, true);
