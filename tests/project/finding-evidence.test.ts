@@ -1,47 +1,36 @@
 // P2 (spec 11 §6, pre-implementation) — a finding requires resolving
 // evidence, run "against a mock ArtifactService resolver" as the spec
-// prescribes. No `src/project/*` module exists yet (step 0 ships no code,
-// spec 11 §7): `findingIsValid` below is a test-local reference
-// implementation of the ONE rule spec 11 §4.1 pins precisely —
+// prescribes.
 //
 //   "Every finding REQUIRES >=1 evidence ref, and every ref must RESOLVE...
 //    A finding with zero resolving refs is REJECTED at write time."
 //
-// — checked against a hand-rolled mock resolver standing in for the real
-// `ArtifactService` (which step 4 wires in for real, spec 11 §7). This test
-// exercises the RULE, not a future API; when step 4 lands
-// `ProjectService.setFinding*`, that step's own tests exercise the real
-// resolver, and may additionally point this file at the real implementation.
+// Step 4 (spec 11 §7) landed `src/project/evidence-resolver.ts`; this file
+// is now repointed at its real `EvidenceResolver` type and
+// `hasResolvingEvidence` rule (renamed from the test-local `findingIsValid`,
+// same logic) per its own header's "may additionally point this file at the
+// real implementation" — the RESOLVER stays a hand-rolled mock, exactly as
+// spec 11 §6 prescribes for P2 ("runnable against a mock ArtifactService
+// resolver"); the real `ArtifactService`-backed resolver
+// (`ArtifactEvidenceResolver`) is exercised directly by
+// `tests/project/evidence-resolver.test.ts`, and the status-transition
+// rules P2 doesn't cover are `tests/project/finding-status.test.ts` (A-STATUS).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-
-interface EvidenceRef {
-  readonly ref: string;
-  readonly role: string;
-}
+import { hasResolvingEvidence, type EvidenceResolver } from "../../src/project/evidence-resolver.ts";
+import type { EvidenceRef } from "../../src/project/schema.ts";
 
 interface FindingDraft {
   readonly evidence: readonly EvidenceRef[];
 }
 
-/** Stands in for `ArtifactService`'s id/trace/fuzz resolution (spec 11
- *  §4.1): a set of refs the mock artifact/trace/fuzz store knows about. */
-interface MockResolver {
-  resolves(ref: string): boolean;
-}
-
-function mockResolver(knownRefs: readonly string[]): MockResolver {
+function mockResolver(knownRefs: readonly string[]): EvidenceResolver {
   const known = new Set(knownRefs);
   return { resolves: (ref) => known.has(ref) };
 }
 
-/** §4.1's write-time acceptance rule: a finding needs >=1 evidence ref AND
- *  at least one of those refs must resolve. Zero refs, or refs that are all
- *  unknown, are both rejections — a ref-that-doesn't-resolve is not "no
- *  evidence", it is invalid evidence, same outcome (never a live finding). */
-function findingIsValid(finding: FindingDraft, resolver: MockResolver): boolean {
-  if (finding.evidence.length === 0) return false;
-  return finding.evidence.some((e) => resolver.resolves(e.ref));
+function findingIsValid(finding: FindingDraft, resolver: EvidenceResolver): boolean {
+  return hasResolvingEvidence(finding.evidence, resolver);
 }
 
 test("P2a a finding with zero evidence refs is rejected", () => {

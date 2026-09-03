@@ -35,10 +35,23 @@ export interface CtxSnapshot {
   readonly ownerFn?: string;
 }
 
-/** One evidence reference on a finding or a status transition (§1.5). */
+/** One evidence reference on a finding or a status transition (§1.5). The
+ *  base shape is `{ref, role}`; spec 11 names no closed `role` enum (§4.2's
+ *  reviewed reading, confirmed by spec 12 §4.2's `use-site`/`match`/`context`
+ *  roles), so producers may attach extra descriptive fields — `span` locates
+ *  a match inside a string without quoting it, `patternId` names which
+ *  pattern matched (also the R3 finding-slot discriminator, see
+ *  `FindingRecord.patternId` below), `useRole`/`n` describe a use-site ref.
+ *  All optional and additive; `ref`/`role` are the only fields a resolver or
+ *  the status-transition rules (§4.1) ever depend on. */
 export interface EvidenceRef {
   readonly ref: string;
   readonly role: string;
+  readonly span?: readonly [number, number];
+  readonly patternId?: string;
+  readonly useRole?: string;
+  readonly n?: number;
+  readonly note?: string;
 }
 
 /** The §2.1 fields every record carries regardless of `kind`. Concrete record
@@ -115,6 +128,14 @@ export interface FindingRecord extends EnvelopeBase {
   readonly evidence: readonly EvidenceRef[];
   readonly status: FindingStatus;
   readonly cwe?: string;
+  /** The R3 finding-slot discriminator (spec 12 §4.2, ratified for spec 11
+   *  §2.1's `(kind,target[,tag])` bracket): a mechanically-proposed finding
+   *  keys its append-only slot on `(target, patternId)`, not `target` alone,
+   *  so a second pattern's finding on the same target coexists rather than
+   *  superseding the first. Absent for ordinary human/LLM findings, which
+   *  get their own fresh slot per `src/project/findings.ts`'s default (see
+   *  its module header) unless the caller explicitly revises a known slot. */
+  readonly patternId?: string;
 }
 
 /** An `open->confirmed`/`refuted` transition (§1.5) — itself an append-only
@@ -190,6 +211,22 @@ export function parseSchemaHeader(line: string, expectedKind?: string): SchemaHe
   return { schema: h.schema, kind: h.kind };
 }
 
+/** §4.2's mandatory-provenance rule, standalone so every write verb (not just
+ *  the on-disk validator below) can reject a missing/malformed `prov` before
+ *  a record is ever minted — "a tag, comment or finding with no provenance is
+ *  not writable". Throws naming what's wrong; `Provenance` itself is a plain
+ *  interface with no runtime guarantee a caller obeys it (a JS caller, or a
+ *  test deliberately bypassing the type), hence the explicit check. */
+export function assertProvenance(prov: unknown, fileLabel: string): asserts prov is Provenance {
+  const p = prov as Record<string, unknown> | null | undefined;
+  if (!p || typeof p !== "object") throw new Error(`${fileLabel}: prov is required`);
+  if (!["human", "llm", "tool"].includes(p.source as string)) {
+    throw new Error(`${fileLabel}: prov.source must be human|llm|tool`);
+  }
+  if (typeof p.who !== "string" || p.who.length === 0) throw new Error(`${fileLabel}: prov.who must be a non-empty string`);
+  if (p.run !== undefined && typeof p.run !== "string") throw new Error(`${fileLabel}: prov.run must be a string`);
+}
+
 /** Every §2.1 envelope field is present and well-typed. Throws with the
  *  offending field named, mirroring the P1c assertions. */
 export function assertEnvelope(row: Record<string, unknown>, fileLabel: string): void {
@@ -198,11 +235,7 @@ export function assertEnvelope(row: Record<string, unknown>, fileLabel: string):
       throw new Error(`${fileLabel}: record ${JSON.stringify((row as { rid?: unknown }).rid)} is missing envelope field "${field}"`);
     }
   }
-  const prov = row.prov as Record<string, unknown> | undefined;
-  if (!prov || !["human", "llm", "tool"].includes(prov.source as string)) {
-    throw new Error(`${fileLabel}: prov.source must be human|llm|tool`);
-  }
-  if (typeof prov.who !== "string") throw new Error(`${fileLabel}: prov.who must be a string`);
+  assertProvenance(row.prov, fileLabel);
   if (typeof row.rid !== "string") throw new Error(`${fileLabel}: rid must be a string`);
   if (typeof row.target !== "string") throw new Error(`${fileLabel}: target must be a string`);
   if (typeof row.ts !== "string") throw new Error(`${fileLabel}: ts must be a string`);

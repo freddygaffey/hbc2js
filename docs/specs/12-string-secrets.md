@@ -477,6 +477,29 @@ counts/set-membership, never literal output.
   `bundles/fetch.sh` output is absent; `HBC2JS_REQUIRE_ORACLES=1` makes the
   skip a failure.
 
+**Implementation note (2026-09-03): fixture defused at rest.** GitHub push
+protection flagged four values in the committed seeded fixture at ac65a50
+(Stripe live key, Slack token, Stripe restricted test key, Twilio SID) and
+blocked pushes — correctly: the fixture's whole point (§7.3) is that its
+synthetic secrets are *format-faithful*, so a scanner cannot and should not
+distinguish them from real ones by shape alone. Defense in depth means the
+repo should never contain a format-live value regardless of provenance, so
+`tests/fixtures/secrets/seeded/{ground-truth.json,strings.json}` now store
+every seeded secret **defused at rest**: base64-encode the real value, split
+the base64 into 8-char chunks joined by `.`, prefix with `hbc2js-defused:`.
+The chunk size is deliberately under every pattern's length threshold (JWT
+segments need ≥10 chars, the tier-C generic-entropy patterns need ≥20/≥32)
+so the at-rest text matches none of `src/secrets/patterns.ts`'s anchored
+formats — see `tests/fixtures/secrets/seeded/README.md` for the full
+rationale and `tests/secrets/at-rest-defused.test.ts` for the standing
+check. `tests/secrets/support/materialize.ts` reverses the encoding at test
+time only, writing the TRUE spec-10 artifact (real-format values) into a
+scratch dir under `os.tmpdir()`; every T-test that needs real values calls
+`loadGroundTruth()` / `materializeArtifact()` instead of reading the fixture
+directory directly. `nearMisses` values that don't match any anchored
+pattern by construction (§7.3) stay literal, matching the spec's own
+"near-misses ... MUST NOT hit" framing.
+
 ## 9. Implementation plan (lean-agent-sized, ordered)
 
 Reuse explicitly: artifact string index + `ArtifactService` (spec 10 — read

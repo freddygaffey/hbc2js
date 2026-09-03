@@ -309,6 +309,25 @@ export class ArtifactService {
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
+  /** True iff `fn` is a real function index in this artifact — the cheap,
+   *  non-throwing existence check `src/project/evidence-resolver.ts` (spec
+   *  11 §4.1) needs to resolve a `fn:N`/`reg:F:N` evidence ref without
+   *  paying for `fn()`'s full summary or a try/catch. */
+  hasFn(fn: number): boolean {
+    return this.functionsByFn.has(fn);
+  }
+
+  /** True iff `sid` is a real string id — same existence-check shape as
+   *  `hasFn` for the evidence resolver's `sid:N` refs. */
+  hasString(sid: number): boolean {
+    return this.stringsById.has(sid);
+  }
+
+  /** True iff `id` names a real module — same shape, for `mod:N` refs. */
+  hasModule(id: number): boolean {
+    return this.modulesIndex.modules.some((m) => m.id === id);
+  }
+
   /** §3.1 `query module <id>`. */
   module(id: number): { readonly deps: readonly number[]; readonly dependents: readonly number[]; readonly ownedFnCount: number; readonly file: string | null } {
     const m = this.modulesIndex.modules.find((x) => x.id === id);
