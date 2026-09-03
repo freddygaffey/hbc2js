@@ -1,0 +1,23 @@
+[
+  {
+    "id": "d4e1aacf818f482d",
+    "seed": "4242",
+    "fingerprint": "d4e1aacf818f482d982f6e115246336908d7e84a319a982ea7de65a870cf146e",
+    "createdAt": "2026-09-03T11:39:03.451Z",
+    "rnVersion": "0.73.11",
+    "hbcVersion": 96,
+    "bundler": "metro-plain",
+    "router": "tabs",
+    "depStyle": "lazyRequire",
+    "screens": [
+      "LyricSignal",
+      "SableRidge",
+      "WillowPrism",
+      "AmberGrove"
+    ],
+    "sha256": "8dc8ff542a9e800242ff492c21de498cc09bd081778d137a16e8204e735dea00",
+    "sizeBytes": 5054243,
+    "heldOut": false,
+    "evicted": false
+  }
+]
