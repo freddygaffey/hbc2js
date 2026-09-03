@@ -18,9 +18,9 @@ import {
   PROJECT_DIR_FILES,
   RECORD_FILE_NAMES,
   type RecordFileKind,
-  type CommentRecord,
-  type TagRecord,
-  type BookmarkRecord,
+  type CommentsFileRecord,
+  type TagsFileRecord,
+  type BookmarksFileRecord,
   type FindingsFileRecord,
   type ProjectHeader,
 } from "./schema.ts";
@@ -110,9 +110,9 @@ export function saveProjectHeader(path: string, header: ProjectHeader): void {
 export interface ProjectStore {
   readonly dir: string;
   readonly header: ProjectHeader;
-  readonly comments: readonly CommentRecord[];
-  readonly tags: readonly TagRecord[];
-  readonly bookmarks: readonly BookmarkRecord[];
+  readonly comments: readonly CommentsFileRecord[];
+  readonly tags: readonly TagsFileRecord[];
+  readonly bookmarks: readonly BookmarksFileRecord[];
   readonly findings: readonly FindingsFileRecord[];
 }
 
@@ -128,9 +128,9 @@ export function loadProjectStore(dir: string): ProjectStore {
     throw new Error(`${dir}: expected exactly ${JSON.stringify(expected)}, found ${JSON.stringify(files)}`);
   }
   const header = loadProjectHeader(join(dir, "project.json"));
-  const comments = loadRecordFile<CommentRecord>(join(dir, RECORD_FILE_NAMES.comments), "comments").rows;
-  const tags = loadRecordFile<TagRecord>(join(dir, RECORD_FILE_NAMES.tags), "tags").rows;
-  const bookmarks = loadRecordFile<BookmarkRecord>(join(dir, RECORD_FILE_NAMES.bookmarks), "bookmarks").rows;
+  const comments = loadRecordFile<CommentsFileRecord>(join(dir, RECORD_FILE_NAMES.comments), "comments").rows;
+  const tags = loadRecordFile<TagsFileRecord>(join(dir, RECORD_FILE_NAMES.tags), "tags").rows;
+  const bookmarks = loadRecordFile<BookmarksFileRecord>(join(dir, RECORD_FILE_NAMES.bookmarks), "bookmarks").rows;
   const findings = loadRecordFile<FindingsFileRecord>(join(dir, RECORD_FILE_NAMES.findings), "findings").rows;
   assertSorted(comments, RECORD_FILE_NAMES.comments);
   assertSorted(tags, RECORD_FILE_NAMES.tags);

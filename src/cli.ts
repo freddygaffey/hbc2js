@@ -1251,7 +1251,18 @@ function runProject(argv: readonly string[]): void {
     } else if (verb === "conflicts") {
       const result = svc.conflicts({ all });
       if (json) process.stdout.write(JSON.stringify(result) + "\n");
-      else process.stdout.write(`total:${result.total} (conflict detection lands in step 7, spec 11 §7)\n`);
+      else {
+        for (const r of result.rows) process.stdout.write(`conflict#${r.record.rid} ${r.file} ${r.record.target} rids:[${r.record.rids.join(",")}]\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
+    } else if (verb === "merge") {
+      const otherDir = positional[0];
+      if (otherDir === undefined) fail(ErrorCode.E_USAGE, "project merge <otherArtifactDir>", 2, json);
+      const result = svc.mergeFrom(otherDir as string);
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else process.stdout.write(`merged ${otherDir}: conflicts:${result.conflictCount}\n`);
     } else if (verb === "stat") {
       const s = svc.stat();
       if (json) process.stdout.write(JSON.stringify(s) + "\n");
@@ -1262,7 +1273,7 @@ function runProject(argv: readonly string[]): void {
     } else {
       fail(
         ErrorCode.E_USAGE,
-        "project <for-fn|tag set|tag get|findings|finding show|finding add|finding set-status|comment add|comments|bookmark add|bookmarks|orphans|conflicts|stat> …",
+        "project <for-fn|tag set|tag get|findings|finding show|finding add|finding set-status|comment add|comments|bookmark add|bookmarks|orphans|conflicts|merge <dir>|stat> …",
         2,
         json,
       );

@@ -8,14 +8,15 @@
 // class, same split as `query`'s CLI is over `ArtifactService`.
 //
 // Scope note: §3.2 lists `orphans()`/`conflicts()` in the API shape.
-// Orphan DETECTION (§2.5, this step, step 6) is implemented below: every
-// read that used to filter on `active` alone now also excludes a record
-// whose `target` no longer resolves against the live `ArtifactService`
-// index (`src/project/orphans.ts`'s `isOrphaned`, live-computed every call,
-// never cached — §3.3), and `orphans()`/`stat().orphans` report them with
-// their write-time `ctx` snapshot. Merge/conflict records are step 7's
-// (§7 table) — `conflicts()` stays stubbed (empty, documented) until then;
-// `stat()`'s conflict count is 0 for the same reason.
+// Orphan DETECTION (§2.5, step 6) is implemented below: every read that
+// used to filter on `active` alone now also excludes a record whose
+// `target` no longer resolves against the live `ArtifactService` index
+// (`src/project/orphans.ts`'s `isOrphaned`, live-computed every call, never
+// cached — §3.3), and `orphans()`/`stat().orphans` report them with their
+// write-time `ctx` snapshot. `mergeFrom`/`conflicts()`/`stat().conflicts`
+// (§2.3, step 7) are implemented in terms of `src/project/merge.ts`'s pure
+// merge function; a `conflict`-kind row is minted only by a merge, never by
+// ordinary writes.
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ArtifactService } from "../artifact/service.ts";
@@ -26,6 +27,7 @@ import {
   type BookmarkRecord,
   type CommentRange,
   type CommentRecord,
+  type ConflictRecord,
   type CtxSnapshot,
   type EvidenceRef,
   type FindingStatus,
@@ -40,6 +42,7 @@ import { BookmarkStore } from "./bookmarks.ts";
 import { FindingStore, type AddFindingInput, type ResolvedFinding } from "./findings.ts";
 import { ArtifactEvidenceResolver } from "./evidence-resolver.ts";
 import { collectOrphans, isOrphaned, type OrphanRow, type TargetIndexCheck } from "./orphans.ts";
+import { mergeStores } from "./merge.ts";
 
 export interface Bounded<T> {
   readonly rows: readonly T[];
@@ -55,6 +58,7 @@ export const PROJECT_CAPS = {
   bookmarks: 50,
   tagsGet: 10,
   orphans: 50,
+  conflicts: 50,
 } as const;
 
 export type AnnotationRow =
@@ -76,10 +80,9 @@ export interface StatRow {
   readonly bookmarks: number;
   readonly findings: number;
   readonly invalidFindings: number;
-  /** Always 0 until step 6 (§2.5's orphan detection) lands — see module
-   *  header. */
+  /** Full (uncapped) orphan count (§2.5), live-computed. */
   readonly orphans: number;
-  /** Always 0 until step 7 (§2.3's merge/conflict records) lands. */
+  /** Full (uncapped) count of `conflict` records minted by a merge (§2.3). */
   readonly conflicts: number;
 }
 
@@ -115,10 +118,16 @@ export class ProjectService {
   private readonly artifact: ArtifactService;
   private readonly storeDir: string;
   private readonly resolver: ArtifactEvidenceResolver;
-  private readonly tagStore: TagStore;
-  private readonly commentStore: CommentStore;
-  private readonly bookmarkStore: BookmarkStore;
-  private readonly findingStore: FindingStore;
+  private tagStore: TagStore;
+  private commentStore: CommentStore;
+  private bookmarkStore: BookmarkStore;
+  private findingStore: FindingStore;
+  /** `conflict`-kind rows (§2.3, §7 step 7) pulled out of each file's row
+   *  set on load — `TagStore`/`CommentStore`/`BookmarkStore`/`FindingStore`
+   *  only know their own record shape, so a `conflict` row (which lacks a
+   *  `.tag`/`.body`/`.label`/`.claim`) is carried here instead and spliced
+   *  back into the file's rows on `save()`. */
+  private conflictRecords: { comments: ConflictRecord[]; tags: ConflictRecord[]; bookmarks: ConflictRecord[]; findings: ConflictRecord[] };
 
   private readonly targetIndex: TargetIndexCheck;
 
@@ -144,9 +153,29 @@ export class ProjectService {
       hasModule: (id) => artifact.hasModule(id),
     };
     this.resolver = new ArtifactEvidenceResolver(artifact);
-    this.tagStore = new TagStore({ records: store.tags });
-    this.commentStore = new CommentStore({ records: store.comments });
-    this.bookmarkStore = new BookmarkStore({ records: store.bookmarks });
+    this.tagStore = new TagStore();
+    this.commentStore = new CommentStore();
+    this.bookmarkStore = new BookmarkStore();
+    this.findingStore = new FindingStore();
+    this.conflictRecords = { comments: [], tags: [], bookmarks: [], findings: [] };
+    this.applyStore(store);
+  }
+
+  /** (Re)builds the four record-type sub-stores plus the pulled-out
+   *  `conflict` rows from a loaded/merged `ProjectStore` — the constructor's
+   *  own logic, factored out so `mergeFrom` (§7 step 7) can reuse it after
+   *  replacing the in-memory rows with a merge result. */
+  private applyStore(store: ProjectStore): void {
+    const isConflict = (r: { readonly kind: string }): r is ConflictRecord => r.kind === "conflict";
+    this.conflictRecords = {
+      comments: store.comments.filter(isConflict),
+      tags: store.tags.filter(isConflict),
+      bookmarks: store.bookmarks.filter(isConflict),
+      findings: store.findings.filter(isConflict),
+    };
+    this.tagStore = new TagStore({ records: store.tags.filter((r): r is TagRecord => !isConflict(r)) });
+    this.commentStore = new CommentStore({ records: store.comments.filter((r): r is CommentRecord => !isConflict(r)) });
+    this.bookmarkStore = new BookmarkStore({ records: store.bookmarks.filter((r): r is BookmarkRecord => !isConflict(r)) });
     this.findingStore = new FindingStore({
       findings: store.findings.filter((r) => r.kind === "finding"),
       statuses: store.findings.filter((r) => r.kind === "status"),
@@ -160,10 +189,10 @@ export class ProjectService {
    *  writes and call `save()` once. */
   save(): void {
     if (!existsSync(this.storeDir)) mkdirSync(this.storeDir, { recursive: true });
-    const comments = this.commentStore.allRecords();
-    const tags = this.tagStore.allRecords();
-    const bookmarks = this.bookmarkStore.allRecords();
-    const findings = this.findingStore.allRecords();
+    const comments = [...this.commentStore.allRecords(), ...this.conflictRecords.comments];
+    const tags = [...this.tagStore.allRecords(), ...this.conflictRecords.tags];
+    const bookmarks = [...this.bookmarkStore.allRecords(), ...this.conflictRecords.bookmarks];
+    const findings = [...this.findingStore.allRecords(), ...this.conflictRecords.findings];
     saveProjectStore({
       dir: this.storeDir,
       header: {
@@ -177,6 +206,30 @@ export class ProjectService {
       bookmarks,
       findings,
     });
+  }
+
+  /** `project merge <otherDir>` (§2.3, §7 step 7): line-unions `otherDir`'s
+   *  `project/` store into this one and persists the result. Refuses (the
+   *  thrown error is the CLI's failure message) unless both stores'
+   *  `builtFor.bundleSha256` match (§2.3, reviewer ruling 4) — checked
+   *  BEFORE any in-memory state changes, so a refused merge leaves this
+   *  store exactly as it was. Returns the number of `conflict` records
+   *  minted (0 when the two stores never touched the same slot). */
+  mergeFrom(otherArtifactDir: string): { readonly conflictCount: number } {
+    const otherStoreDir = join(otherArtifactDir, "project");
+    const other = loadProjectStore(otherStoreDir);
+    const self: ProjectStore = {
+      dir: this.storeDir,
+      header: { schema: PROJECT_SCHEMA, kind: "header", seq: { comments: 0, tags: 0, bookmarks: 0, findings: 0 }, builtFor: { bundleSha256: this.artifact.manifest.bundle.sha256 } },
+      comments: [...this.commentStore.allRecords(), ...this.conflictRecords.comments],
+      tags: [...this.tagStore.allRecords(), ...this.conflictRecords.tags],
+      bookmarks: [...this.bookmarkStore.allRecords(), ...this.conflictRecords.bookmarks],
+      findings: [...this.findingStore.allRecords(), ...this.conflictRecords.findings],
+    };
+    const { store, conflictCount } = mergeStores(self, other);
+    this.applyStore(store);
+    this.save();
+    return { conflictCount };
   }
 
   /** §2.5/§3.3: is `target` orphaned against the currently-loaded artifact,
@@ -293,10 +346,18 @@ export class ProjectService {
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
-  /** §3.1 `project conflicts` — stubbed (module header): conflict records
-   *  are step 7's (§2.3/§7). */
-  conflicts(_page: { readonly all?: boolean } = {}): Bounded<never> {
-    return { rows: [], total: 0, truncated: false };
+  /** §3.1 `project conflicts` (§2.3, §7 step 7) — every contested slot: a
+   *  `conflict` record minted by a prior `project merge` (module header),
+   *  across all four record types, sorted `(target, rid)`, bounded. */
+  conflicts(page: { readonly all?: boolean } = {}): Bounded<{ readonly file: string; readonly record: ConflictRecord }> {
+    const rows = [
+      ...this.conflictRecords.comments.map((record) => ({ file: "comments", record })),
+      ...this.conflictRecords.tags.map((record) => ({ file: "tags", record })),
+      ...this.conflictRecords.bookmarks.map((record) => ({ file: "bookmarks", record })),
+      ...this.conflictRecords.findings.map((record) => ({ file: "findings", record })),
+    ].sort((a, b) => a.record.target.localeCompare(b.record.target) || a.record.rid.localeCompare(b.record.rid));
+    const cap = page.all === true ? rows.length : PROJECT_CAPS.conflicts;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
   }
 
   /** §3.1 `project stat`. `orphans` is the FULL (uncapped) orphan count
@@ -311,7 +372,7 @@ export class ProjectService {
       findings: findingRows.length,
       invalidFindings: invalid,
       orphans: this.orphans({ all: true }).total,
-      conflicts: 0,
+      conflicts: this.conflicts({ all: true }).total,
     };
   }
 

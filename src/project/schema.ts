@@ -148,7 +148,27 @@ export interface StatusRecord extends EnvelopeBase {
   readonly evidence: readonly EvidenceRef[];
 }
 
-export type FindingsFileRecord = FindingRecord | StatusRecord;
+// --- conflict records (§2.3, §7 step 7) -------------------------------------
+
+/** A slot conflict minted by `project merge` (§2.3): two stores each
+ *  superseded the same active slot with a DIFFERENT record, and the merge
+ *  refuses to pick a winner. `rids` names every record (from both stores)
+ *  that was simultaneously active for the slot post-merge — always ≥2,
+ *  sorted ascending for a deterministic on-disk shape. `target` is the
+ *  records' shared `target` field (not the store-internal composite slot
+ *  key, e.g. a tag's `target tag` pair — the conflict record itself is
+ *  bucketed into whichever `project/*.jsonl` file its record type lives in,
+ *  so it needs no separate file). Always minted with `prov.source:"tool"`
+ *  (§4.2 — mechanical, not an analyst assertion) by the merge itself. */
+export interface ConflictRecord extends EnvelopeBase {
+  readonly kind: "conflict";
+  readonly rids: readonly string[];
+}
+
+export type CommentsFileRecord = CommentRecord | ConflictRecord;
+export type TagsFileRecord = TagRecord | ConflictRecord;
+export type BookmarksFileRecord = BookmarkRecord | ConflictRecord;
+export type FindingsFileRecord = FindingRecord | StatusRecord | ConflictRecord;
 
 export type ProjectRecord = CommentRecord | TagRecord | BookmarkRecord | FindingsFileRecord;
 
