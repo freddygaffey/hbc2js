@@ -21,9 +21,8 @@ const REVISION_STORE_PATH = "../../src/project/revision-store.ts";
 
 test(
   "P3 tag record supersession + revert mirrors the overlay's RevisionStore shape (spec 11 §2.4/§7 step 1)",
-  { todo: "lands with src/project/revision-store.ts, spec 11 §7 step 1 (RevisionStore extraction)" },
   async () => {
-    const mod = (await import(REVISION_STORE_PATH).catch(() => null)) as null | {
+    const mod = (await import(REVISION_STORE_PATH)) as {
       RevisionStore: new (opts: { bundle?: string }) => {
         now: () => string;
         set(target: string, value: unknown): { record: { rid: string; supersedes: string | null }; superseded: { rid: string } | null };
@@ -33,8 +32,6 @@ test(
         allRecords(): { active: boolean }[];
       };
     };
-    assert.ok(mod, `${REVISION_STORE_PATH} does not exist yet (spec 11 §7 step 1)`);
-    if (!mod) return;
 
     const { RevisionStore } = mod;
     const store = new RevisionStore({ bundle: "t.hbc" });

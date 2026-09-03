@@ -5,10 +5,19 @@
 // is pure data: it runs no gate and reads no bytecode (that is `gate.ts` /
 // `render.ts`). Keeping it side-effect-free is what makes history/revert/search
 // unit-testable with no network and no VM (spec §11.9).
+//
+// The append-only supersession/revert engine is `RevisionStore<T>` (spec
+// 11-project-store.md §2.4/§7 step 1) — this module is a thin consumer: it
+// maps a `BindingId` to its slot key (`bindingKey`) and a name's fields to/from
+// the engine's generic `value`, and owns the on-disk `.names.json` shape
+// itself, which the engine knows nothing about (byte-identical contract with
+// every prior release — see `tests/gate/name-overlay/store.test.ts`).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import type { BindingId } from "./id.ts";
 import { bindingKey, parseKey } from "./id.ts";
+import { RevisionStore } from "../project/revision-store.ts";
+import type { Revision } from "../project/revision-store.ts";
 
 export type Confidence = "low" | "med" | "high";
 export type Source = "llm" | "heuristic" | "human";
@@ -70,19 +79,58 @@ interface StoreFile {
   readonly records: readonly NameRecord[];
 }
 
+/** The engine's `value` shape: every `NameRecord` field except the ones the
+ *  engine already owns (`rid`, `ts`, `supersedes`, `active`) and the ones that
+ *  fold into the slot key (`id`). */
+type NameFields = Pick<NameRecord, "name" | "confidence" | "evidence" | "source" | "gate" | "renderedAs">;
+
+/** Reconstruct a `NameRecord` from an engine revision, in the field order the
+ *  on-disk format has always used (byte-identical contract). */
+function toNameRecord(r: Revision<NameFields>): NameRecord {
+  const { name, confidence, evidence, source, gate, renderedAs } = r.value;
+  return {
+    rid: r.rid,
+    id: parseKey(r.target),
+    name,
+    confidence,
+    evidence,
+    source,
+    gate,
+    ts: r.ts,
+    supersedes: r.supersedes,
+    active: r.active,
+    ...(renderedAs !== undefined ? { renderedAs } : {}),
+  };
+}
+
+function toRevision(r: NameRecord): Revision<NameFields> {
+  const { name, confidence, evidence, source, gate, renderedAs } = r;
+  return {
+    rid: r.rid,
+    target: bindingKey(r.id),
+    value: { name, confidence, evidence, source, gate, ...(renderedAs !== undefined ? { renderedAs } : {}) },
+    ts: r.ts,
+    supersedes: r.supersedes,
+    active: r.active,
+  };
+}
+
 /** The append-only overlay store. In-memory; `save`/`load` persist the JSON
  *  sidecar. A binding's records form a supersession chain; at most one is
- *  `active` at a time. */
+ *  `active` at a time. Thin consumer of `RevisionStore<NameFields>`: this
+ *  class owns id<->slot-key mapping and the on-disk shape, the engine owns
+ *  append/supersede/revert. */
 export class OverlayStore {
-  private records: NameRecord[];
-  private seq: number;
+  private readonly engine: RevisionStore<NameFields>;
   readonly bundle: string | undefined;
   /** Injectable clock — overridden in tests for deterministic timestamps. */
   now: () => string = () => new Date().toISOString();
 
   constructor(init?: { readonly bundle?: string; readonly records?: readonly NameRecord[]; readonly seq?: number }) {
-    this.records = init?.records ? [...init.records] : [];
-    this.seq = init?.seq ?? this.records.length;
+    this.engine = new RevisionStore<NameFields>({
+      ...(init?.records ? { records: init.records.map(toRevision) } : {}),
+      ...(init?.seq !== undefined ? { seq: init.seq } : {}),
+    });
     this.bundle = init?.bundle;
   }
 
@@ -100,53 +148,42 @@ export class OverlayStore {
   }
 
   save(path: string): void {
-    const file: StoreFile = { version: STORE_VERSION, ...(this.bundle !== undefined ? { bundle: this.bundle } : {}), seq: this.seq, records: this.records };
+    const file: StoreFile = {
+      version: STORE_VERSION,
+      ...(this.bundle !== undefined ? { bundle: this.bundle } : {}),
+      seq: this.engine.currentSeq(),
+      records: this.allRecords(),
+    };
     writeFileSync(path, JSON.stringify(file, null, 2) + "\n");
   }
 
   /** Every record ever written, oldest first (the raw append log). */
   allRecords(): readonly NameRecord[] {
-    return this.records;
+    return this.engine.allRecords().map(toNameRecord);
   }
 
   /** The currently-active record for `id`, or `null` (an unnamed binding, or
    *  one reverted back to `rN`). */
   getName(id: BindingId): NameRecord | null {
-    const key = bindingKey(id);
-    for (let i = this.records.length - 1; i >= 0; i--) {
-      const r = this.records[i]!;
-      if (r.active && bindingKey(r.id) === key) return r;
-    }
-    return null;
+    const r = this.engine.get(bindingKey(id));
+    return r ? toNameRecord(r) : null;
   }
 
   /** The full supersession chain for `id`, newest first (spec §9 `history`). */
   history(id: BindingId): readonly NameRecord[] {
-    const key = bindingKey(id);
-    return this.records.filter((r) => bindingKey(r.id) === key).slice().reverse();
+    return this.engine.history(bindingKey(id)).map(toNameRecord);
   }
 
   /** Assign a name (spec §5). Append-only: any prior active record for the
    *  binding is superseded (deactivated, its `rid` recorded on the new one),
    *  never overwritten. */
   setName(id: BindingId, name: string, meta: NameMeta): SetResult {
-    const prior = this.getName(id);
-    if (prior !== null) this.deactivate(prior.rid);
-    const rid = String(this.seq++);
-    const record: NameRecord = {
-      rid,
-      id,
-      name,
-      confidence: meta.confidence,
-      evidence: meta.evidence,
-      source: meta.source,
-      gate: meta.gate,
-      ts: meta.ts ?? this.now(),
-      supersedes: prior?.rid ?? null,
-      active: true,
-    };
-    this.records.push(record);
-    return { record, superseded: prior };
+    const { record, superseded } = this.engine.set(
+      bindingKey(id),
+      { name, confidence: meta.confidence, evidence: meta.evidence, source: meta.source, gate: meta.gate },
+      meta.ts ?? this.now(),
+    );
+    return { record: toNameRecord(record), superseded: superseded ? toNameRecord(superseded) : null };
   }
 
   /** Revert (spec §5/§9). With `toTs`, re-activate the record for `id` bearing
@@ -155,46 +192,35 @@ export class OverlayStore {
    *  destroyed — a revert only flips `active`. Returns the now-active record,
    *  or `null` when cleared to `rN`. */
   revert(id: BindingId, toTs?: string): NameRecord | null {
-    const key = bindingKey(id);
-    const chain = this.records.filter((r) => bindingKey(r.id) === key);
-    if (chain.length === 0) return null;
-    const current = chain.find((r) => r.active) ?? null;
-    let target: NameRecord | null;
-    if (toTs !== undefined) {
-      target = chain.find((r) => r.ts === toTs) ?? null;
-      if (target === null) throw new Error(`revert: no record for ${key} at ts ${toTs}`);
-    } else {
-      // The record `current` superseded (its `supersedes` rid), else — when
-      // `current` is the chain's first — clear to `rN`.
-      target = current?.supersedes != null ? chain.find((r) => r.rid === current.supersedes) ?? null : null;
-    }
-    if (current !== null) this.deactivate(current.rid);
-    if (target !== null) this.activate(target.rid);
-    return target;
+    const r = this.engine.revert(bindingKey(id), toTs);
+    return r ? toNameRecord(r) : null;
   }
 
   /** Filtered query over active records (spec §5/§9). Empty result is empty,
    *  never an error. */
   search(query: NameQuery): readonly NameRecord[] {
     const text = query.text?.toLowerCase();
-    return this.records.filter((r) => {
-      if (!r.active) return false;
-      if (query.confidence !== undefined && r.confidence !== query.confidence) return false;
-      if (query.source !== undefined && r.source !== query.source) return false;
-      if (query.gate !== undefined && r.gate !== query.gate) return false;
-      if (query.fn !== undefined && r.id.fn !== query.fn) return false;
-      if (text !== undefined && !r.name.toLowerCase().includes(text) && !r.evidence.toLowerCase().includes(text)) return false;
-      return true;
-    });
+    return this.engine
+      .search((r) => {
+        if (query.confidence !== undefined && r.value.confidence !== query.confidence) return false;
+        if (query.source !== undefined && r.value.source !== query.source) return false;
+        if (query.gate !== undefined && r.value.gate !== query.gate) return false;
+        if (query.fn !== undefined && parseKey(r.target).fn !== query.fn) return false;
+        if (text !== undefined && !r.value.name.toLowerCase().includes(text) && !r.value.evidence.toLowerCase().includes(text)) return false;
+        return true;
+      })
+      .map(toNameRecord);
   }
 
   /** Every active register-local name for function `fn`, as a `reg → name` map
    *  — what `render` applies. */
   activeNamesForFn(fn: number): ReadonlyMap<number, NameRecord> {
     const out = new Map<number, NameRecord>();
-    for (const r of this.records) {
-      if (!r.active || r.id.kind !== "reg" || r.id.fn !== fn) continue;
-      out.set(r.id.reg, r);
+    for (const r of this.engine.allRecords()) {
+      if (!r.active) continue;
+      const id = parseKey(r.target);
+      if (id.kind !== "reg" || id.fn !== fn) continue;
+      out.set(id.reg, toNameRecord(r));
     }
     return out;
   }
@@ -204,24 +230,12 @@ export class OverlayStore {
    *  Idempotent when `renderedAs` is unchanged. */
   flagCollision(id: BindingId, renderedAs: string): void {
     const key = bindingKey(id);
-    for (let i = this.records.length - 1; i >= 0; i--) {
-      const r = this.records[i]!;
-      if (r.active && bindingKey(r.id) === key) {
-        if (r.renderedAs !== renderedAs) this.records[i] = { ...r, renderedAs };
-        return;
-      }
+    const current = this.engine.get(key);
+    if (current !== undefined && current.value.renderedAs !== renderedAs) {
+      this.engine.patchActive(key, (v) => ({ ...v, renderedAs }));
     }
   }
 
-  private deactivate(rid: string): void {
-    const i = this.records.findIndex((r) => r.rid === rid);
-    if (i >= 0) this.records[i] = { ...this.records[i]!, active: false };
-  }
-
-  private activate(rid: string): void {
-    const i = this.records.findIndex((r) => r.rid === rid);
-    if (i >= 0) this.records[i] = { ...this.records[i]!, active: true };
-  }
 }
 
 export { bindingKey, parseKey };
