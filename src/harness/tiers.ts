@@ -500,6 +500,12 @@ export async function runTier(o: RunnerOptions): Promise<TierReport> {
         hbcBytes,
         hbcVersion: input.version,
         embeddedFilename: input.embeddedFilename,
+        // P-14: source.js here is always the program that produced hbcBytes
+        // (this function's own decompiler call two lines above proves it —
+        // both come from `input.sourceJs`/`input.hbcBytes`), so the D14
+        // reference run may safely recompile it with a matched sibling
+        // hermesc when the VM oracle is source-built (v94/v99).
+        matchedCompilerReference: true,
         oracles,
         seed: 0,
         fuzz: 50,

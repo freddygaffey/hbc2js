@@ -134,27 +134,38 @@ function isKnownDivergentFixture(name: string): boolean {
  * project's own source-built v99 VM* (`tools/build-hermes-vm.sh 99`, built
  * from the closest publicly-identifiable commit — docs/TOOLCHAIN.md already
  * documents that this build is not byte-identical to either v99 fixture).
- * Verified directly (this milestone): `tools/hermes-vm/v99/bin/hermes -b
- * v99.hbc` on each of these throws `Uncaught TypeError: undefined is not a
- * function at _makeAsyncIterator (address at InternalBytecode.js:...)` —
- * Static Hermes's own JS-implemented async-iterator runtime helper is
- * missing or broken in this build, for every construct that touches
- * `for await`, async generators, or promise microtask ordering. Using this
- * VM as the truth for these constructs at v99 would fail every one of them
- * for a reason that has nothing to do with a decompiler's correctness, so
- * they fall back to `expected-txt` with a caveat instead of `hermes-vm`,
- * same as an absent VM (rule 3) — the VM exists, but is known-broken for
- * exactly this shape of program.
+ *
+ * P-14 (docs/PUSHBACK.md, docs/reports/2026-09-04-toolchain-artifact-
+ * investigation.md) root-caused the `_makeAsyncIterator` half of this table
+ * to a *compiler/VM commit mismatch*, not a real VM incompleteness: v99
+ * fixtures are compiled with `tools/hermesc/v99/hermesc` but this table
+ * routed their D14 reference run away from `tools/hermes-vm/v99/bin/hermes`
+ * (a different, source-built Hermes commit) entirely, rather than fixing the
+ * mismatch. `ladder.ts`'s `matchedCompilerReference` option now recompiles
+ * the fixture's own `source.js` with the VM's own sibling `hermesc`
+ * (`tools/hermes-vm/v99/bin/hermesc`) for the reference run instead — every
+ * real caller (`tiers.ts`'s gate/sweep runner, every `tools/fuzz/*.mjs`
+ * script) opts in. Re-verified directly against every fixture this table
+ * used to carry for that reason (`27-async-await-basic`,
+ * `28-async-await-error`, `29-promise-chaining`, `31-microtask-ordering`,
+ * `54-try-catch-finally-shared-range`, plus the adversarial-tier
+ * `43-fuzz-async-guard-shared-range` this same mechanism blocked from ever
+ * being added here, docs/PUSHBACK.md P-14): all six now PASS through the
+ * real `hermes-vm` engine with the matched compiler, so they are removed
+ * from this table — the VM was never actually broken for them.
+ *
+ * `07-for-of-iterable` stays: re-verified with the matched compiler too, it
+ * still throws (`Uncaught TypeError`) on this fixture's custom
+ * `Symbol.iterator` range, which is not the `_makeAsyncIterator`/async
+ * mechanism at all (07 touches no `async`/`await`) — a genuinely different,
+ * still-open incompleteness in this source-built VM, unaffected by the P-14
+ * fix. Using this VM as the truth for it at v99 would fail it for a reason
+ * that has nothing to do with a decompiler's correctness, so it falls back
+ * to `expected-txt` with a caveat instead of `hermes-vm`, same as an absent
+ * VM (rule 3) — the VM exists, but is known-broken for this one construct.
  */
 const VM_LIMITATIONS: Readonly<Record<string, readonly number[]>> = {
   "07-for-of-iterable": [99],
-  "27-async-await-basic": [99],
-  "28-async-await-error": [99],
-  "29-promise-chaining": [99],
-  "31-microtask-ordering": [99],
-  // Its `guardedAwait` half is an `async function`, so this build's broken
-  // `_makeAsyncIterator` throws before the fixture's second half runs.
-  "54-try-catch-finally-shared-range": [99],
 };
 
 function isVmLimited(name: string, version: number): boolean {

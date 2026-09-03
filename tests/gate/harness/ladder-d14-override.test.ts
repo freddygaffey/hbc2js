@@ -10,17 +10,15 @@
 // downgrades a genuine candidate-vs-VM disagreement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runOracleLadder, VERDICT } from "../../../src/harness/ladder.ts";
 import { compileWithHermesc } from "../../../src/harness/roundtrip.ts";
 import { findHermesVm } from "../../../src/harness/hermes-vm.ts";
 import { chooseReference } from "../../../src/harness/reference-policy.ts";
-import { hbc2jsDecompiler } from "../../../src/harness/tiers.ts";
 import { findHermesc } from "../../support/hermesc.ts";
 import { requireOracles } from "../../support/tiers.ts";
-import { repoRoot } from "../../support/paths.ts";
 import type { TestContext } from "node:test";
 
 function oraclesReady(t: TestContext, version: 94 | 99): { hermescPath: string } | null {
@@ -76,26 +74,83 @@ test("D14 override is evidence-based: a nameless program the VM confirms gets PA
   }
 });
 
-test("D14 override soundness: a genuine candidate-vs-VM disagreement (adversarial/43) stays DIVERGENT, not downgraded", async (t) => {
-  const o = oraclesReady(t, 99);
-  if (o === null) return;
-  const dir = join(repoRoot(), "tests", "fixtures", "adversarial", "43-fuzz-async-guard-shared-range");
-  const hbcBytes = new Uint8Array(readFileSync(join(dir, "v99.hbc")));
-  const sourceJs = readFileSync(join(dir, "source.js"), "utf8");
-  const candidateJs = hbc2jsDecompiler({ hbcBytes, version: 99, fixtureName: "43-fuzz-async-guard-shared-range", sourceJs });
+// docs/PUSHBACK.md P-14: this used to be one test against
+// `tests/fixtures/adversarial/43-fuzz-async-guard-shared-range`, treated as
+// a genuine candidate-vs-VM disagreement. It was not — `docs/reports/
+// 2026-09-04-toolchain-artifact-investigation.md` root-caused fixture 43's
+// DIVERGENT verdict to a toolchain artifact (the D14 VM oracle's `hermesc`/
+// `hermes` commit mismatch at v99), now fixed at the source in
+// `ladder.ts`'s matched-compiler reference recompilation. Testing the
+// override's soundness against 43 was therefore testing a false premise —
+// the fixture was never evidence that the override could wrongly downgrade
+// a real disagreement, because there never was a real disagreement to guard
+// against there.
+//
+// Reframed per the fix's own recommendation (that report's "Recommended
+// fix" section): drive `runOracleLadder`'s D14 branch directly with a
+// synthetic `(candidate, vm, node)` trace triple, constructing
+// `LadderOptions.reference` by hand (bypassing `chooseReference`/
+// `findHermesVm` — no real hermesc/Hermes-VM binary needed at all) and
+// standing in for "the Hermes VM" with a tiny fake executable that prints a
+// fixed, controlled line regardless of the bytecode file it's handed. This
+// tests the override's decision logic itself with fully owned inputs — not
+// a specific fixture whose classification turned out to be wrong — so it
+// can never again be invalidated by a future root-cause finding about one
+// fixture, and it never skips (no `tools/build-hermes-vm.sh`/`get-hermesc.sh`
+// prerequisite).
+function writeFakeVm(dir: string, printedLine: string): string {
+  // `#!/usr/bin/env node` + chmod 755: a real executable `runHermesAsync`
+  // can `execFile` directly (macOS + Linux both ship `env`), that ignores
+  // whatever `-b <file>` bytecode path it's given and always reports one
+  // fixed line — standing in for "the Hermes VM's own trace of the original
+  // bytecode" without needing a real Hermes build.
+  const vmPath = join(dir, "fake-hermes-vm.js");
+  writeFileSync(vmPath, `#!/usr/bin/env node\nconsole.log(${JSON.stringify(printedLine)});\n`, { mode: 0o755 });
+  return vmPath;
+}
 
-  const tmp = mkdtempSync(join(tmpdir(), "hbc2js-ladder-d14-adv43-"));
+test("D14 override soundness: a synthetic vm != candidate triple stays DIVERGENT, never downgraded", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hbc2js-ladder-d14-synth-a-"));
   try {
-    const candidatePath = join(tmp, "candidate.js");
-    writeFileSync(candidatePath, candidateJs);
-    const fixture = { name: "43-fuzz-async-guard-shared-range" };
-    const reference = chooseReference(fixture, 99);
-    assert.equal(reference.engine, "hermes-vm");
-    assert.deepEqual(reference.knownDivergences, [], "not curated — this is a real, unfixed bug (docs/BUGS.md), never a documented divergence");
+    // candidate and node(source.js) agree with each other ("A") — proving
+    // the override's DIVERGENT verdict here comes from the VM disagreement
+    // itself, not from an unrelated candidate-vs-Node mismatch the override
+    // might be papering over.
+    const candidatePath = join(dir, "candidate.js");
+    const sourcePath = join(dir, "source.js");
+    writeFileSync(candidatePath, `print("A");\n`);
+    writeFileSync(sourcePath, `print("A");\n`);
+    const vmPath = writeFakeVm(dir, "B"); // vm != candidate
 
-    const r = await runOracleLadder({ fixture, candidateJsPath: candidatePath, sourceJsPath: join(dir, "source.js"), reference, hbcBytes, hbcVersion: 99, oracles: ["syntax", "trace"] });
-    assert.equal(r.verdict, VERDICT.DIVERGENT, `this fixture is a documented, still-open real divergence (docs/BUGS.md 2026-09-02) — the D14 override must never fire without vm-agrees evidence: ${JSON.stringify(r.oracles)} caveats=${JSON.stringify(r.caveats)}`);
+    const fixture = { name: "synthetic-vm-disagrees" };
+    const reference = { engine: "hermes-vm" as const, reason: "synthetic test", vm: { hbcVersion: 99, path: vmPath }, knownDivergences: [] };
+    const r = await runOracleLadder({ fixture, candidateJsPath: candidatePath, sourceJsPath: sourcePath, reference, hbcBytes: new Uint8Array([0]), hbcVersion: 99, oracles: ["syntax", "trace"] });
+    assert.equal(r.verdict, VERDICT.DIVERGENT, `vm ("B") != candidate ("A") must never be downgraded, even though candidate agrees with Node: ${JSON.stringify(r.oracles)} caveats=${JSON.stringify(r.caveats)}`);
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("D14 override soundness: a synthetic vm == candidate != node triple is PASS (D14-legit)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hbc2js-ladder-d14-synth-b-"));
+  try {
+    // candidate and node(source.js) disagree ("A" vs "N"), which on its own
+    // is a DIVERGENT trace comparison; the VM's own run agrees with the
+    // candidate ("A"), which is exactly the D14 override's condition for
+    // "this is a legitimate source.js-vs-bytecode divergence, not a
+    // decompiler bug".
+    const candidatePath = join(dir, "candidate.js");
+    const sourcePath = join(dir, "source.js");
+    writeFileSync(candidatePath, `print("A");\n`);
+    writeFileSync(sourcePath, `print("N");\n`);
+    const vmPath = writeFakeVm(dir, "A"); // vm == candidate
+
+    const fixture = { name: "synthetic-vm-agrees-d14-legit" };
+    const reference = { engine: "hermes-vm" as const, reason: "synthetic test", vm: { hbcVersion: 99, path: vmPath }, knownDivergences: [] };
+    const r = await runOracleLadder({ fixture, candidateJsPath: candidatePath, sourceJsPath: sourcePath, reference, hbcBytes: new Uint8Array([0]), hbcVersion: 99, oracles: ["syntax", "trace"] });
+    assert.equal(r.verdict, VERDICT.PASS, `vm ("A") == candidate ("A") != node ("N") is the override's own legit case: ${JSON.stringify(r.oracles)} caveats=${JSON.stringify(r.caveats)}`);
+    assert.match(r.caveats.join("\n"), /vm-agrees evidence/, "PASS must be recorded as a vm-agrees override, not a silent pass");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

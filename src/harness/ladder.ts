@@ -94,6 +94,25 @@ export interface LadderOptions {
   readonly maxRecords?: number;
   readonly relax?: readonly string[];
   readonly roundTripBaseline?: readonly boolean[];
+  /**
+   * P-14 (docs/PUSHBACK.md, docs/reports/2026-09-04-toolchain-artifact-
+   * investigation.md): opt-in, default `false`. When `true` *and* a matched
+   * sibling `hermesc` exists next to `opts.reference.vm.path` (a
+   * source-built VM, v94/v99) *and* `opts.sourceJsPath` is set, the D14
+   * reference run recompiles `opts.sourceJsPath`'s own content with that
+   * sibling `hermesc` and runs the result, instead of `opts.hbcBytes`.
+   * Opt-in rather than automatic on file-existence alone: this is only
+   * sound when `opts.sourceJsPath` is *definitionally* the program
+   * `opts.hbcBytes` was compiled from (true for every real caller —
+   * `tiers.ts`'s gate/sweep fixture runner and every `tools/fuzz/*.mjs`
+   * script always write the identical program text to both places) — a
+   * test harness that deliberately passes a *different* program as
+   * `sourceJsPath` than the one that produced `hbcBytes` (e.g.
+   * `tests/gate/harness/ladder-uncaught.test.ts`, which does this on
+   * purpose to isolate the VM cross-check) must not have that mismatch
+   * silently erased by a recompile it never asked for.
+   */
+  readonly matchedCompilerReference?: boolean;
 }
 
 const DEFAULT_ORACLES: readonly OracleName[] = ["syntax", "trace", "fuzz", "roundtrip"];
@@ -181,13 +200,49 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
     // remains the *only* fallback then (rule 3, no VM to measure with).
     let vmAgreesEvidence: string | undefined;
     if (opts.reference.engine === "hermes-vm" && opts.reference.vm !== undefined && opts.hbcBytes !== undefined) {
-      const { writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
+      const { writeFileSync, mkdtempSync, rmSync, existsSync, readFileSync } = await import("node:fs");
       const { tmpdir } = await import("node:os");
-      const { join } = await import("node:path");
+      const { join, dirname } = await import("node:path");
       const dir = mkdtempSync(join(tmpdir(), "hbc2js-ladder-hermes-"));
       try {
         const hbcPath = join(dir, "original.hbc");
-        writeFileSync(hbcPath, opts.hbcBytes);
+        // P-14 (docs/PUSHBACK.md, docs/reports/2026-09-04-toolchain-artifact-
+        // investigation.md): a source-built VM (`tools/hermes-vm/v<N>/bin/
+        // hermes`, v94/v99) is a *different Hermes commit* than the
+        // `tools/hermesc/v<N>/hermesc` that compiled `opts.hbcBytes` — they
+        // can disagree on builtin-closure indices (confirmed: v99's async
+        // driver, `GetBuiltinClosure`/`_makeAsyncIterator`), which crashes
+        // the VM on valid bytecode and would falsely read as a candidate
+        // divergence below. When the VM has its own sibling `hermesc` next
+        // to it (source-built pairing) and the fixture's own hand-written
+        // source is available, recompile *that* source with the VM's own
+        // matched compiler and use the result as the reference bytecode
+        // instead of `opts.hbcBytes` — this is the D14 ground truth staying
+        // internally consistent (one commit's compiler feeding that same
+        // commit's VM). `opts.candidateJsPath`/the decompiled candidate is
+        // untouched: it keeps being derived from the real
+        // `tools/hermesc`-compiled bytecode, matching what an actual RN
+        // bundle's decompiler input looks like — only the "what should this
+        // program truly do" oracle side gets the matched compiler. No
+        // sibling hermesc (v84/v96/v98's `findHermesVm` resolves to the same
+        // binary tree that compiled `opts.hbcBytes` in the first place, so
+        // there is no mismatch to correct) or no `sourceJsPath` falls back to
+        // `opts.hbcBytes` unchanged, exactly as before.
+        let referenceHbcBytes: Uint8Array = opts.hbcBytes;
+        if (opts.matchedCompilerReference === true && opts.sourceJsPath !== undefined) {
+          const siblingHermesc = join(dirname(opts.reference.vm.path), "hermesc");
+          if (existsSync(siblingHermesc)) {
+            const sourceContent = readFileSync(opts.sourceJsPath, "utf8");
+            const matched = compileWithHermesc({ version: opts.reference.vm.hbcVersion, path: siblingHermesc }, sourceContent, opts.embeddedFilename ?? "source.js");
+            if (matched.ok) {
+              referenceHbcBytes = matched.bytes;
+              caveats.push(`${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} reference recompiled from source.js with the VM's own matched hermesc (${siblingHermesc}) rather than the original .hbc, to avoid a compiler/VM commit mismatch (P-14, docs/reports/2026-09-04-toolchain-artifact-investigation.md) — informational, not a downgrade`);
+            } else {
+              caveats.push(`${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} has a matched hermesc (${siblingHermesc}) but it failed to recompile source.js (${matched.error}); falling back to the original .hbc for the reference run, which may still show the P-14 compiler/VM mismatch`);
+            }
+          }
+        }
+        writeFileSync(hbcPath, referenceHbcBytes);
         // Async (not `runHermes`'s sync `execFileSync`): this ladder runs
         // inside `tiers.ts`'s worker pool, and a blocking syscall here would
         // stall every other pooled fixture too (see runHermesAsync's doc).

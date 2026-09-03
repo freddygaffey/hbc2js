@@ -49,7 +49,7 @@ async function runOnce(version, program) {
     const isTraced = TRACED_VERSIONS.includes(version);
     const result = await runOracleLadder({
       fixture, candidateJsPath: candidatePath, sourceJsPath: sourcePath, reference,
-      hbcBytes: compiled.bytes, hbcVersion: version, embeddedFilename: "fuzz.js",
+      hbcBytes: compiled.bytes, hbcVersion: version, embeddedFilename: "fuzz.js", matchedCompilerReference: true,
       oracles: isTraced ? ["syntax", "trace", "fuzz"] : ["syntax", "roundtrip"],
       seed: 0, fuzz: 20, timeoutMs: 5000, maxRecords: 5000,
     });

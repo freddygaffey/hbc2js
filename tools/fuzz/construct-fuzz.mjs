@@ -100,6 +100,11 @@ async function runOne(version, seed, findsDir, findsCount) {
       hbcBytes: compiled.bytes,
       hbcVersion: version,
       embeddedFilename: "fuzz.js",
+      // P-14: sourcePath above is always `program`, the exact text
+      // compiled into hbcBytes, so the D14 reference run may safely
+      // recompile it with a matched sibling hermesc when the VM oracle
+      // is source-built (v94/v99).
+      matchedCompilerReference: true,
       oracles: isTraced ? ["syntax", "trace", "fuzz"] : ["syntax", "roundtrip"],
       seed,
       fuzz: 20,
