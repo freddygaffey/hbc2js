@@ -96,5 +96,4 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
    cleanup rungs.
 3. Lane T: testing-decisions spec (construct-level + app-generation
    fuzzers, held-out set) -> Fable review -> impl.
-
 Numbers are measured, not hoped — every cell cites its source file.
