@@ -1,0 +1,44 @@
+{
+  "schema": 2,
+  "package": "lodash",
+  "version": "4.17.15",
+  "hbcVersion": 96,
+  "totalFunctions": 14,
+  "rawFunctionCount": 1,
+  "subtractedBaselines": [],
+  "functions": [
+    {
+      "index": 11,
+      "name": "",
+      "paramCount": 1,
+      "instrCount": 18,
+      "exactHash": "d5de82c895130181cbef668c",
+      "fuzzyHash": "da176cadfcf9709949193331",
+      "stringSetHash": "1c2b3190ee2b53bb3b2e516d",
+      "stringCount": 2
+    }
+  ],
+  "modules": [
+    {
+      "factoryFunctionIndex": 11,
+      "localModuleId": 9001,
+      "depCount": 0,
+      "depIds": [],
+      "factoryExactHash": "d5de82c895130181cbef668c",
+      "factoryFuzzyHash": "da176cadfcf9709949193331",
+      "nestedFunctionCount": 0,
+      "functionSetHash": "371beaf46b71073d01287192",
+      "factoryIsBaseline": false
+    }
+  ],
+  "toolchainBaseline": false,
+  "provenance": {
+    "packageSha256": null,
+    "metroVersion": null,
+    "reactNativeVersion": null,
+    "hermescVersion": 96,
+    "hermescRnEra": null,
+    "repoCommit": null,
+    "builtAt": "2026-09-03T12:02:12.140Z"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "schema": 2,
+  "package": "minimist",
+  "version": "0.0.8",
+  "hbcVersion": 96,
+  "totalFunctions": 14,
+  "rawFunctionCount": 1,
+  "subtractedBaselines": [],
+  "functions": [
+    {
+      "index": 12,
+      "name": "",
+      "paramCount": 1,
+      "instrCount": 26,
+      "exactHash": "a14c4936516018365062d009",
+      "fuzzyHash": "20c943465b311d0fcbe0b47e",
+      "stringSetHash": "52442eec082ad3d4d3618b7d",
+      "stringCount": 6
+    }
+  ],
+  "modules": [
+    {
+      "factoryFunctionIndex": 12,
+      "localModuleId": 9002,
+      "depCount": 0,
+      "depIds": [],
+      "factoryExactHash": "a14c4936516018365062d009",
+      "factoryFuzzyHash": "20c943465b311d0fcbe0b47e",
+      "nestedFunctionCount": 0,
+      "functionSetHash": "f008edf7c9f6a8446f073233",
+      "factoryIsBaseline": false
+    }
+  ],
+  "toolchainBaseline": false,
+  "provenance": {
+    "packageSha256": null,
+    "metroVersion": null,
+    "reactNativeVersion": null,
+    "hermescVersion": 96,
+    "hermescRnEra": null,
+    "repoCommit": null,
+    "builtAt": "2026-09-03T12:02:12.141Z"
+  }
+}

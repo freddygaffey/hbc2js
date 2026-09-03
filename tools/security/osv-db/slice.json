@@ -1,0 +1,89 @@
+{
+  "_attribution": "Advisory records in this file are adapted from the OSV.dev aggregated database (which itself aggregates GHSA and other sources), licensed CC-BY 4.0 (https://osv.dev, https://github.com/google/osv.dev/blob/main/LICENSE). This is a small hand-curated slice covering the seeded vuln-app fixture's pinned packages plus a few neighbours, not the full OSV database. Attribution satisfies spec 13 (docs/specs/13-reuse-validation.md) ruling R-N; provenance also recorded per-record via `who:\"osv@<db-date>+...\"` on written findings (spec 13 §3.3).",
+  "_source": "https://osv.dev (OSV Schema https://ossf.github.io/osv-schema/)",
+  "_retrieved": "2026-09-03",
+  "_refresh": "Regenerate/extend by querying https://api.osv.dev/v1/query or /v1/querybatch for {\"package\":{\"name\":\"<pkg>\",\"ecosystem\":\"npm\"},\"version\":\"<version>\"} and appending the returned records here (never resolved live at measure time -- spec 13 R-O's discipline extended to this slice too: commit, don't live-fetch). Full DB stays external (osv-scanner --offline mode, tools/security/probe.ts's probeOsvScanner), like tools/hermesc/ is a local resource never vendored whole.",
+  "advisories": [
+    {
+      "id": "GHSA-p6mc-m468-83gw",
+      "summary": "Prototype Pollution in lodash",
+      "cve": "CVE-2020-8203",
+      "severity": "high",
+      "cvssScore": 7.4,
+      "affected": [
+        {
+          "package": { "name": "lodash", "ecosystem": "npm" },
+          "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0.0.0" }, { "fixed": "4.17.19" }] }]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-35jh-r3h4-6jhm",
+      "summary": "Command Injection / template injection in lodash (via template)",
+      "cve": "CVE-2021-23337",
+      "severity": "high",
+      "cvssScore": 7.2,
+      "affected": [
+        {
+          "package": { "name": "lodash", "ecosystem": "npm" },
+          "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0.0.0" }, { "fixed": "4.17.21" }] }]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-vh95-rmgr-6w4m",
+      "summary": "Prototype Pollution in minimist",
+      "cve": "CVE-2020-7598",
+      "severity": "med",
+      "cvssScore": 5.6,
+      "affected": [
+        {
+          "package": { "name": "minimist", "ecosystem": "npm" },
+          "ranges": [
+            { "type": "SEMVER", "events": [{ "introduced": "0.0.0" }, { "fixed": "0.2.1" }] },
+            { "type": "SEMVER", "events": [{ "introduced": "1.0.0" }, { "fixed": "1.2.3" }] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-4w2v-q235-vp99",
+      "summary": "axios Server-Side Request Forgery (unexpected proxy behaviour)",
+      "cve": "CVE-2021-3749",
+      "severity": "med",
+      "cvssScore": 6.5,
+      "affected": [
+        {
+          "package": { "name": "axios", "ecosystem": "npm" },
+          "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0.0.0" }, { "fixed": "0.21.2" }] }]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-wf5p-g6vw-rhxx",
+      "summary": "axios Cross-Site Request Forgery (surrounding-set entry, does not match the fixture's pinned 0.21.0 -- introduced at 1.0.0)",
+      "cve": "CVE-2023-45857",
+      "severity": "med",
+      "cvssScore": 6.5,
+      "affected": [
+        {
+          "package": { "name": "axios", "ecosystem": "npm" },
+          "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "1.0.0" }, { "fixed": "1.6.0" }] }]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-hjq7-5jjr-mrx4",
+      "summary": "Prototype Pollution in qs (surrounding-set entry, package not present in the fixture's lockfile at all)",
+      "cve": "CVE-2022-24999",
+      "severity": "high",
+      "cvssScore": 7.5,
+      "affected": [
+        {
+          "package": { "name": "qs", "ecosystem": "npm" },
+          "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "6.5.0" }, { "fixed": "6.10.3" }] }]
+        }
+      ]
+    }
+  ]
+}

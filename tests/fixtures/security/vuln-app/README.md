@@ -45,12 +45,26 @@ it (`undefuse()` from the same module) into a fresh scratch copy of
 directory or the repo — same discipline as
 `tests/secrets/support/materialize.ts`'s own doc comment.
 
+## Lane O dependency stand-ins (step 2)
+
+`source/App.js` ends with three `__d(factory, moduleId, [])`-wrapped
+synthetic module registrations tagged `lodash@4.17.15` / `minimist@0.0.8` /
+`axios@0.21.0` — the `lockfilePins` packages (`ground-truth.json`), now
+compiled into `v96.hbc` so `hbc2js deps --json` has real Metro-shaped modules
+to attribute (spec 13 §8.2 "extends the §2.3 fixture's build"). These are
+**not** real lodash/minimist/axios source (never copy third-party code into
+this repo) — each factory's own bytecode is distinctive synthetic control
+flow, fingerprinted by `tools/security/build-vulnapp-sigdb.ts` into a
+project-local signature DB (`sigdb/<pkg>@<version>__hbc96.json`, also
+committed) that `hbc2js deps --sigdb sigdb --no-shared-db --offline` matches
+at High tier with an exact-hash version — self-consistent plumbing that
+proves the two-key gate's claim-tier path end to end against a real `hbc2js
+deps` run, not a real-world detection claim. Regenerate the sigdb after
+changing the stand-ins: `node tools/security/build-vulnapp-sigdb.ts` (after
+`build.sh`).
+
 ## What is NOT yet in this fixture (future steps)
 
-- The `lockfilePins` packages (lodash/minimist/axios) are **not** compiled
-  into `v96.hbc` — Lane O (step 2) extends this fixture's build to actually
-  bundle them so `hbc2js deps --json` has something to match (spec 13 §8.2
-  "extends the §2.3 fixture's build").
 - No APK exists yet for Lane M (step 4); the manifest lane needs its own
   small Android project + `aapt2`/Android build tooling to produce one. Per
   spec 13 ruling R-A the built APK will be **committed** (like this `.hbc`),

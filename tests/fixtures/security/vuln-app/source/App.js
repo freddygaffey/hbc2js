@@ -80,3 +80,71 @@ print(
   readAsset,
   fetchInsecure
 );
+
+// ---------------------------------------------------------------------------
+// Lane O dependency stand-ins (spec 13 P2.4 step 2, docs/specs/13-reuse-
+// validation.md §8.2 "extends the §2.3 fixture's build"). These are NOT real
+// lodash/minimist/axios source (never copy third-party code into this repo,
+// AGPL-adjacent hard rule applies to any third-party source generally) --
+// they are synthetic Metro-__d()-shaped factories tagged with the real
+// pinned package name+version (lockfile.json / ground-truth.json
+// lockfilePins), so `hbc2js deps`'s existing __d() module-graph recovery
+// (src/deps/dscan.ts) and signature-DB matching (src/deps/match.ts) can
+// attribute them for real against a project-local signature DB generated
+// from this exact compiled bytecode (tools/security/build-vulnapp-sigdb.ts
+// -- self-consistent plumbing test, not a real-world detection claim; see
+// README.md "Lane O fixture bundling" section). `__d` itself is a minimal
+// stand-in for Metro's runtime module registrar (also not copied from
+// anywhere -- three lines, calls its factory immediately).
+function __d(factory, moduleId, deps) {
+  factory();
+}
+
+// Each factory's own bytecode (not a nested closure -- exact-hash
+// normalisation masks string-literal content, so a generic "declare a
+// const, create a closure, return it" outer shape would hash identically
+// across all three and could never be package-distinguishing evidence; the
+// distinguishing control flow has to live in the factory body itself) is
+// what the project-local signature (tools/security/build-vulnapp-sigdb.ts)
+// fingerprints, giving both function- and module-level exact-hash evidence.
+__d(
+  function () {
+    var total = 0;
+    for (var i = 0; i < 7; i++) {
+      total = total + 3 * 5 - i;
+      if (total > 1000) {
+        total = total % 997;
+      }
+    }
+    return total + 'lodash@4.17.15'.length;
+  },
+  9001,
+  []
+);
+
+__d(
+  function () {
+    var argv = ['--port', '--verbose'];
+    var out = {};
+    for (var i = 0; i < argv.length; i++) {
+      var part = argv[i];
+      if (part.indexOf('--') === 0) {
+        out[part.slice(2)] = true;
+      }
+    }
+    return out.count === undefined ? 'minimist@0.0.8'.length : out;
+  },
+  9002,
+  []
+);
+
+__d(
+  function () {
+    var url = 'https://example.invalid/api';
+    var method = 'GET';
+    var full = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + 'axios@0.21.0'.length;
+    return { method: method, url: full };
+  },
+  9003,
+  []
+);

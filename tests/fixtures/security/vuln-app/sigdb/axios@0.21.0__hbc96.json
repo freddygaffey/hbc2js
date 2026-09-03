@@ -1,0 +1,44 @@
+{
+  "schema": 2,
+  "package": "axios",
+  "version": "0.21.0",
+  "hbcVersion": 96,
+  "totalFunctions": 14,
+  "rawFunctionCount": 1,
+  "subtractedBaselines": [],
+  "functions": [
+    {
+      "index": 13,
+      "name": "",
+      "paramCount": 1,
+      "instrCount": 19,
+      "exactHash": "984dc23f2c1d5a2dd117a8c9",
+      "fuzzyHash": "adb67155c308bd82d18c60c7",
+      "stringSetHash": "4d7092a1d69ac301e83ff8d5",
+      "stringCount": 10
+    }
+  ],
+  "modules": [
+    {
+      "factoryFunctionIndex": 13,
+      "localModuleId": 9003,
+      "depCount": 0,
+      "depIds": [],
+      "factoryExactHash": "984dc23f2c1d5a2dd117a8c9",
+      "factoryFuzzyHash": "adb67155c308bd82d18c60c7",
+      "nestedFunctionCount": 0,
+      "functionSetHash": "c3ba891ebdcc3d9bc671e4f4",
+      "factoryIsBaseline": false
+    }
+  ],
+  "toolchainBaseline": false,
+  "provenance": {
+    "packageSha256": null,
+    "metroVersion": null,
+    "reactNativeVersion": null,
+    "hermescVersion": 96,
+    "hermescRnEra": null,
+    "repoCommit": null,
+    "builtAt": "2026-09-03T12:02:12.141Z"
+  }
+}

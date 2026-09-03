@@ -15,6 +15,23 @@ export interface ConfirmedDep {
   readonly modulesCovered: number;
   readonly moduleTotal: number;
   readonly source: "db-match" | "confirmed";
+  /** How `version` was pinned (spec 13 `docs/specs/13-reuse-validation.md`
+   *  §3.2's "version key" distinction — added for the OSV lane's two-key
+   *  gate, additive/optional so no existing consumer breaks). `source:
+   *  "db-match"` is always `"exact-hash"` (the version comes straight off
+   *  the matched `SigDbFile`'s own `version` field, itself an exact-hash
+   *  match — never populated any other way, see `match.ts`). `source:
+   *  "confirmed"` (the `--confirm` stage) is `"exact-hash"` when the
+   *  candidate version was supplied directly (a real guess or an npm-search
+   *  hit) and *verified* by exact-hash comparison, or `"date-inferred"`
+   *  when `ConfirmResult.usedPrereleaseVersion` is set — the candidate
+   *  version itself was chosen by `nearestVersionByDateDetailed` before
+   *  that verification ever ran, so the *specific number* is a heuristic
+   *  guess even though the tier it landed at is real. Undefined only for
+   *  reports built before this field existed (older cached JSON) — callers
+   *  that care (the OSV gate) treat `undefined` as `"exact-hash"` for
+   *  `db-match` and as unknown/non-direct for `"confirmed"`. */
+  readonly versionEvidence?: "exact-hash" | "date-inferred";
 }
 
 export interface GuessedDep {
@@ -265,7 +282,7 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
   const confirmedNamesFromRealPackages = new Set<string>();
   for (const p of matchReport.packages) {
     if (p.tier === "high" && !p.isBaseline) {
-      confirmedDeps.push({ package: p.package, version: p.version, confidence: p.tier, modulesCovered: p.moduleExactHits, moduleTotal: p.moduleTotal, source: "db-match" });
+      confirmedDeps.push({ package: p.package, version: p.version, confidence: p.tier, modulesCovered: p.moduleExactHits, moduleTotal: p.moduleTotal, source: "db-match", versionEvidence: "exact-hash" });
       confirmedNamesFromRealPackages.add(p.package);
     }
   }
@@ -276,12 +293,20 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
     if (p.tier !== "high" || !p.isBaseline) continue;
     const alias = BASELINE_ALIAS.get(p.package);
     if (alias === null || alias === undefined || confirmedNamesFromRealPackages.has(alias)) continue;
-    confirmedDeps.push({ package: alias, version: p.version, confidence: p.tier, modulesCovered: p.moduleExactHits, moduleTotal: p.moduleTotal, source: "db-match" });
+    confirmedDeps.push({ package: alias, version: p.version, confidence: p.tier, modulesCovered: p.moduleExactHits, moduleTotal: p.moduleTotal, source: "db-match", versionEvidence: "exact-hash" });
     confirmedNamesFromRealPackages.add(alias);
   }
   for (const r of confirmResults) {
     if (r.ok && r.score !== undefined) {
-      confirmedDeps.push({ package: r.candidate.package, version: r.candidate.version, confidence: r.score.tier, modulesCovered: r.score.moduleExactHits, moduleTotal: r.score.moduleTotal, source: "confirmed" });
+      confirmedDeps.push({
+        package: r.candidate.package,
+        version: r.candidate.version,
+        confidence: r.score.tier,
+        modulesCovered: r.score.moduleExactHits,
+        moduleTotal: r.score.moduleTotal,
+        source: "confirmed",
+        versionEvidence: r.usedPrereleaseVersion === true ? "date-inferred" : "exact-hash",
+      });
     }
   }
   const confirmedPackageNames = new Set(confirmedDeps.map((d) => d.package));
