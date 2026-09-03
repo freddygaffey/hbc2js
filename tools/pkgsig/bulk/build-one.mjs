@@ -72,6 +72,12 @@ import { computeBaselineUnion, hasCompleteBaselineSet, subtractBaseline } from "
 // mkdir-based mutual-exclusion lock (mkdir is atomic on POSIX filesystems)
 // around just the fast index-update step, not the slow bundle/compile work.
 function withIndexLock(dir, fn) {
+  // docs/specs/15-sigdb-schema.md §4: `dir` ending in `.sqlite` is a sigdb
+  // v3 file (writeSignature's own `.sqlite`-suffix dispatch), not a legacy
+  // JSON layer directory with an index.json to lock — sqlite serializes
+  // its own writers, and `dir` here names a file, not a directory `mkdir`
+  // can lock against.
+  if (dir.endsWith(".sqlite")) return fn();
   const lockPath = join(dir, ".index.lock");
   mkdirSync(dir, { recursive: true });
   const deadline = Date.now() + 30_000;

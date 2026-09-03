@@ -14,7 +14,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { DatabaseSync } from "node:sqlite";
 import { packageNameFromSigFilename } from "./candidates.ts";
+import { hexHash, insertFingerprint, newShapeCache, openSigDb, type ShapeCache } from "./sigdb-sql.ts";
 import type { SigDbFile, SigDbIndex, SigDbIndexEntry } from "./sigdb-types.ts";
 
 export type DbLayerName = "project" | "user" | "shared";
@@ -103,6 +105,154 @@ function keyOf(f: SigDbFile): string {
   return `${f.package}@${f.version}__hbc${f.hbcVersion}`;
 }
 
+// docs/specs/15-sigdb-schema.md §4 write-path dispatch: a path ending in
+// `.sqlite` is a sigdb v3 SQLite file (per `src/deps/sigdb-sql.ts`), any
+// other path is a legacy JSON layer directory — unchanged behaviour. This
+// is the one dispatch point both `writeSignature` call sites (`confirm.ts`,
+// `tools/pkgsig/bulk/build-one.mjs`) share, per the spec's "both callers
+// change minimally" note.
+const SQLITE_SUFFIX = ".sqlite";
+
+// One open `DatabaseSync` + shape-intern cache per sqlite path for this
+// process's lifetime — `openSigDb` rejects being re-applied to an existing
+// file (§9 A1), and reopening per call would also throw away the intern
+// cache's dedupe benefit across a run's many `writeSignature` calls.
+const sqliteWriteHandles = new Map<string, { db: DatabaseSync; cache: ShapeCache }>();
+
+function sqliteWriteHandleFor(path: string): { db: DatabaseSync; cache: ShapeCache } {
+  let handle = sqliteWriteHandles.get(path);
+  if (handle === undefined) {
+    mkdirSync(dirname(path), { recursive: true });
+    handle = { db: openSigDb(path), cache: newShapeCache() };
+    sqliteWriteHandles.set(path, handle);
+  }
+  return handle;
+}
+
+/** Reads every fingerprint out of a sigdb v3 SQLite file as `SigDbFile`
+ *  objects, for `loadSignatures`'s DB-layer fallback (§4 "Read side" —
+ *  full parity with the §6 candidate-probe query is implementation step 6
+ *  in the spec's own plan; this is the minimal read needed so a layer
+ *  written via `writeSignature(..., ".sqlite")` is served back, not the
+ *  optimized probe). Quarantined fingerprints (§12 "quarantine-as-column")
+ *  are never served, matching the old quarantine-by-moving-files
+ *  behaviour. Deliberately does not reuse `tools/pkgsig/sigdb/import-json.mjs`'s
+ *  `reconstructFingerprint` — that reader is kept independent of every other
+ *  writer/reader pair on purpose (§12 review item 6, `sigdb-sql.ts`'s own
+ *  header); this is a third, ordinary consumer, not a validator. */
+function loadSqliteSignatures(dbPath: string): SigDbFile[] {
+  const db = openSigDb(dbPath);
+  const fps = db
+    .prepare(
+      `SELECT f.fp_id, f.hbc_version, f.source_schema, f.total_functions, f.raw_function_count,
+              f.toolchain_baseline, f.package_sha256, f.metro_version, f.react_native_version,
+              f.hermesc_version, f.hermesc_rn_era, f.repo_commit, f.built_at,
+              pv.version AS pv_version, p.name AS pkg_name
+       FROM fingerprints f
+       JOIN package_versions pv ON pv.pv_id = f.pv_id
+       JOIN packages p ON p.pkg_id = pv.pkg_id
+       WHERE f.quarantined IS NULL`,
+    )
+    .all() as Array<{
+    fp_id: number;
+    hbc_version: number;
+    source_schema: number;
+    total_functions: number;
+    raw_function_count: number;
+    toolchain_baseline: number;
+    package_sha256: string | null;
+    metro_version: string | null;
+    react_native_version: string | null;
+    hermesc_version: number;
+    hermesc_rn_era: string | null;
+    repo_commit: string | null;
+    built_at: string;
+    pv_version: string;
+    pkg_name: string;
+  }>;
+
+  return fps.map((fp) => {
+    const subtractedBaselines = (
+      db.prepare(`SELECT baseline_ref FROM fingerprint_baselines WHERE fp_id = ? ORDER BY ordinal`).all(fp.fp_id) as Array<{ baseline_ref: string }>
+    ).map((r) => r.baseline_ref);
+
+    const functions = (
+      db
+        .prepare(
+          `SELECT ff.fn_index AS idx, s.exact_hash, s.fuzzy_hash, s.string_set_hash, s.name,
+                  s.param_count, s.instr_count, s.string_count
+           FROM fingerprint_functions ff JOIN function_shapes s ON s.shape_id = ff.shape_id
+           WHERE ff.fp_id = ? ORDER BY ff.fn_index`,
+        )
+        .all(fp.fp_id) as Array<{
+        idx: number;
+        exact_hash: Uint8Array;
+        fuzzy_hash: Uint8Array;
+        string_set_hash: Uint8Array;
+        name: string;
+        param_count: number;
+        instr_count: number;
+        string_count: number;
+      }>
+    ).map((r) => ({
+      index: r.idx,
+      name: r.name,
+      paramCount: r.param_count,
+      instrCount: r.instr_count,
+      exactHash: hexHash(r.exact_hash),
+      fuzzyHash: hexHash(r.fuzzy_hash),
+      stringSetHash: hexHash(r.string_set_hash),
+      stringCount: r.string_count,
+    }));
+
+    const modules = (
+      db.prepare(`SELECT * FROM modules WHERE fp_id = ? ORDER BY module_ordinal`).all(fp.fp_id) as Array<{
+        factory_function_index: number;
+        local_module_id: number | null;
+        dep_count: number | null;
+        dep_ids: string | null;
+        factory_exact_hash: Uint8Array | null;
+        factory_fuzzy_hash: Uint8Array | null;
+        nested_function_count: number;
+        function_set_hash: Uint8Array;
+        factory_is_baseline: number;
+      }>
+    ).map((r) => ({
+      factoryFunctionIndex: r.factory_function_index,
+      localModuleId: r.local_module_id,
+      depCount: r.dep_count,
+      depIds: r.dep_ids != null ? (JSON.parse(r.dep_ids) as number[]) : null,
+      factoryExactHash: r.factory_exact_hash != null ? hexHash(r.factory_exact_hash) : null,
+      factoryFuzzyHash: r.factory_fuzzy_hash != null ? hexHash(r.factory_fuzzy_hash) : null,
+      nestedFunctionCount: r.nested_function_count,
+      functionSetHash: hexHash(r.function_set_hash),
+      factoryIsBaseline: !!r.factory_is_baseline,
+    }));
+
+    return {
+      schema: fp.source_schema as 2,
+      package: fp.pkg_name,
+      version: fp.pv_version,
+      hbcVersion: fp.hbc_version,
+      totalFunctions: fp.total_functions,
+      rawFunctionCount: fp.raw_function_count,
+      subtractedBaselines,
+      functions,
+      modules,
+      toolchainBaseline: !!fp.toolchain_baseline,
+      provenance: {
+        packageSha256: fp.package_sha256,
+        metroVersion: fp.metro_version,
+        reactNativeVersion: fp.react_native_version,
+        hermescVersion: fp.hermesc_version,
+        hermescRnEra: fp.hermesc_rn_era,
+        repoCommit: fp.repo_commit,
+        builtAt: fp.built_at,
+      },
+    };
+  });
+}
+
 export interface LoadSignaturesOptions {
   /** Evidence-directed candidate set (QUEUE 22a, `candidates.ts`): when
    *  given, `user`/`shared` layers only load a non-baseline signature file
@@ -125,6 +275,23 @@ export function loadSignatures(layers: readonly DbLayer[], opts: LoadSignaturesO
   const seen = new Set<string>();
   const out: LoadedSig[] = [];
   for (const layer of layers) {
+    // §4 layer detection: a `sigdb.sqlite` in the layer directory (or the
+    // layer dir itself naming a `.sqlite` file, for callers that pass one
+    // directly) is served from the DB; otherwise fall back to the JSON
+    // layer unchanged — existing JSON-only callers see no behaviour change.
+    const sqlitePath = layer.dir.endsWith(SQLITE_SUFFIX) ? (existsSync(layer.dir) ? layer.dir : null) : (() => {
+      const candidate = join(layer.dir, "sigdb.sqlite");
+      return existsSync(candidate) ? candidate : null;
+    })();
+    if (sqlitePath !== null) {
+      for (const file of loadSqliteSignatures(sqlitePath)) {
+        const key = keyOf(file);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ file, layer: layer.name, path: sqlitePath });
+      }
+      continue;
+    }
     const candidates = layer.name === "project" ? undefined : opts.candidates;
     for (const path of listJsonFiles(layer.dir, candidates)) {
       let file: SigDbFile;
@@ -144,8 +311,20 @@ export function loadSignatures(layers: readonly DbLayer[], opts: LoadSignaturesO
 
 /** Write (or overwrite) one signature file into `dir` and update its
  *  `index.json` manifest. Used by the confirm stage (project-local + user
- *  cache) and by whoever seeds/rebuilds the shared DB. */
+ *  cache) and by whoever seeds/rebuilds the shared DB.
+ *
+ *  §4 write-path dispatch: when `dir` ends in `.sqlite`, this instead opens
+ *  (or reuses, per-process) that sigdb v3 file and writes via
+ *  `insertFingerprint` — the JSON-writing code below is untouched, so both
+ *  outputs stay available (JSON remains ground truth per §8/§12 non-goals).
+ *  Returns `dir` itself in that case (there is no per-file path — the DB is
+ *  its own index). */
 export function writeSignature(dir: string, db: SigDbFile): string {
+  if (dir.endsWith(SQLITE_SUFFIX)) {
+    const { db: sqlDb, cache } = sqliteWriteHandleFor(dir);
+    insertFingerprint(sqlDb, db, cache);
+    return dir;
+  }
   const outDir = db.toolchainBaseline ? join(dir, "_baselines") : dir;
   mkdirSync(outDir, { recursive: true });
   const safeName = db.package.replace(/\//g, "__");

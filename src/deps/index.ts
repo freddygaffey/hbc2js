@@ -118,13 +118,21 @@ export async function runDeps(inputPath: string, opts: DepsOptions = {}): Promis
       // npm release nearest its reference date before packing anything, and
       // dedupes by package (docs/DEPS.md §4).
       const candidates = guesses.map((g) => g.candidates[0]).filter((c): c is NonNullable<typeof c> => c !== undefined);
+      // docs/specs/15-sigdb-schema.md §4: `HBC2JS_SIGDB=1` routes confirm's
+      // two writeSignature calls at a sigdb v3 `.sqlite` file in each
+      // layer dir instead of the layer dir itself (db.ts's `.sqlite`-suffix
+      // dispatch); unset (the default, per §8 — JSON stays ground truth
+      // until §7 targets 1 and H are green) is byte-for-byte the previous
+      // JSON-only behaviour. `baselineDirs` above is unaffected — baseline
+      // reads stay JSON-only regardless (out of this step's scope).
+      const useSigDb = process.env.HBC2JS_SIGDB === "1";
       confirmResults = await confirmCandidates(candidates, inventory, {
         scratchProjectDir: scratchDir,
         rnVersion,
         hbcVersion: inventory.hbcVersion,
         hermescPath,
-        projectDbDir,
-        userCacheDbDir,
+        projectDbDir: useSigDb ? join(projectDbDir, "sigdb.sqlite") : projectDbDir,
+        userCacheDbDir: useSigDb ? join(userCacheDbDir, "sigdb.sqlite") : userCacheDbDir,
         baselineDirs,
         rateLimitMs: 500,
         failureLogPath: join(scratchDir, "..", "confirm-failures.json"),
