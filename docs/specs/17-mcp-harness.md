@@ -327,3 +327,12 @@ Reviewed the resource + tool surface. Kept as drafted, with two changes:
 - **NEW read resource `disasm/{fn}`** — exposes the raw Hermes bytecode / disassembly of a function (the `src/disasm` output), distinct from `source/{fn}` (the lifted, decompiled source). Same fnIndex/binding-id keying; token-cap = one function's instruction listing (bounded like `source/{fn}`; a very large function clips with a continuation marker). Rationale: an analyst verifying a subtle lift, or working where recovery is incomplete, needs the ground-truth instructions, not only the rendered source.
 
 Fundamentals (transport, lifecycle, auth, deployment, framework) remain deferred to Fred. My earlier prune-flags (navigate/query redundancy, string vs string-grep, module vs module-graph) are left as reviewer notes, not acted on — Fred approved the surface as-is.
+
+## 13. Recompile / patch-and-test tool (Fred, 2026-09-04)
+
+**NEW write/action tool `recompile_edit`** (name provisional). Purpose: the research loop sometimes needs to test a hypothesis by editing a function's source and rebuilding it — patch-and-verify, the standard binary-analysis move (edit → recompile → run → compare), feeding the existing `request_fidelity_check` / trace-comparison loop.
+
+- **Inputs:** a target ({fn}/module) + edited source; compiles it with the project's own `tools/hermesc/vNN` to Hermes bytecode and optionally splices it into a COPY of the bundle. Never mutates the original bundle or the `.hbcproj`.
+- **Output:** a clearly-labelled synthetic/modified artifact (its provenance record marks it edited-and-recompiled, with the base bundle hash + the edit), and, if run, its trace for comparison. Never presented as, or confused with, the original.
+- **WARNING (required, per Fred):** unlike every other tool this one PRODUCES A MODIFIED BINARY, not a read-only answer. It carries an explicit warning/confirmation before it runs, the output is watermarked as a modified artifact, and it is scoped to local hypothesis-testing inside the research loop — not distribution. It writes a `log` row like any other action so the session stays auditable.
+- Fundamentals (sandboxing/isolation of the recompile+run step) fold into the transport/lifecycle design deferred to Fred.
