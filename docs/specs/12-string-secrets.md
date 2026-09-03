@@ -1,7 +1,8 @@
 # Spec 12 — String + secrets indexer (P2.3)
 
-Status: SPEC — awaiting review gate (Decision-8: metric + target + measurement +
-held-out are in §7; a reviewer verifies them before implementation launches).
+Status: SPEC — review gate PASSED (2026-09-03, Fable reviewer; APPROVED with
+in-place edits R1–R6 — see §11). Decision-8 quadruple verified in §7.
+Implementation may launch at step 0 (§9).
 Depends on: spec 10 (artifact format — string table + string-uses xref + query
 caps), spec 11 (project store — finding/tag records, provenance, evidence
 resolution). Consumed by: P2.7 orchestration loop; P2.4 (Semgrep findings sit
@@ -61,11 +62,15 @@ Patterns are **written by us from publicly documented token formats** (vendor
 docs for key prefixes: AWS `AKIA`/`ASIA`, Google `AIza`, Stripe `sk_live_`/
 `pk_live_`/`rk_live_`, GitHub `ghp_`/`gho_`, Slack `xox[bpars]-`, Twilio
 `SK`+hex32, Firebase config shapes; RFC 7519 for JWT structure; RFC 7468 for
-PEM encapsulation boundaries). Open-source scanner rulesets (gitleaks,
-trufflehog — both permissively licensed) may be consulted as *behaviour
-references* for which formats exist and roughly how strict to be, same
-oracle-only discipline as hermes-dec: **no regex is copied**; each pattern
-cites the vendor doc or RFC it was derived from in its `source` field.
+PEM encapsulation boundaries). Open-source scanner rulesets (gitleaks — MIT;
+trufflehog — **AGPL-3.0**, the same license class as hermes-dec) may be
+consulted as *behaviour references* for which formats exist and roughly how
+strict to be, oracle-only: **copying a regex from either ruleset is a
+violation of this spec** — mandatory for AGPL trufflehog, and our citation
+discipline even for MIT gitleaks. Each pattern cites the vendor doc or RFC it
+was derived from in its `source` field, and must be derivable from that
+citation alone. (Reviewer edit R2: the spec previously called both rulesets
+permissively licensed; trufflehog v3 is AGPL-3.0.)
 
 ### 2.2 Format
 
@@ -235,6 +240,11 @@ fields; nothing new is invented — these are ordinary findings):
 
 - `target` is the `sid` (spec 11 permits `sid:N` targets); one finding per
   (sid, patternId) — multiple patterns on one string are multiple findings.
+  `patternId` is the finding-slot discriminator in spec 11 §2.1's
+  `(kind,target[,tag])` sense: the writer supersedes only within its own
+  (finding, sid, patternId) slot, so two patterns' findings on one string
+  coexist. (Reviewer edit R3: read literally, spec 11 §2.1 would otherwise
+  have the second pattern's finding supersede the first.)
 - **Every evidence ref resolves** (spec 11 §1.5): `sid:N` must exist in
   `strings.json`; each `fn:N` comes verbatim from a `string-uses.jsonl` row.
   A string with zero use rows still gets its finding (data-only strings are
@@ -247,10 +257,14 @@ fields; nothing new is invented — these are ordinary findings):
 **Category hits (endpoint/deeplink/sql/flag/debug/asset) → `tag` records**
 (spec 11 §1.3): `{ kind:"tag", target:"sid:N", tag:"<category>",
 note:"<patternId>[ host=api.example.com]", prov:{source:"tool", …} }`.
-This requires adding these category values to spec 11's tag taxonomy — a
-closed-set extension the P2.2 owner ratifies at this spec's review gate
-(open question for the reviewer, §10). Fallback if refused: category hits
-become tier-"info" findings; the schema then needs no change.
+This requires adding these category values to spec 11 §1.3's tag taxonomy —
+a closed-set extension **ratified at this spec's review gate** (ruling 1,
+§11; spec 11 defines its taxonomy as extensible by a reviewed commit, and
+this gate is that review). The spec-11 §1.3 edit lands in the same commit as
+impl step 3: add the six values and extend the tool-may-propose sentence to
+cover them (provenance-stamped, refutable, like `provably-dead`). The
+info-findings fallback is dropped. (Reviewer edit R5; also fixed a stale
+§10 cross-reference — the open questions are §11.)
 
 **Scan bookkeeping → NOT a new record kind.** Spec 11's `kind` enum is
 closed; scan metadata (pattern-set version, timing, cache stats, per-category
@@ -272,10 +286,16 @@ version in `ctx`, so store records are self-describing without a scan kind.
   (impl step 5, cuttable without failing acceptance).
 - **Refutation** is a normal spec-11 status transition with counter-evidence
   (e.g. `note:"docs example key"`). Re-scans NEVER resurrect a refuted
-  finding: the cache (§6) keys verdicts by (value-hash, patternSetVersion),
-  and a refuted (sid, patternId) slot is skipped on re-emit while the store
-  shows the refuted record — silent resurrection would be the store-corruption
-  failure spec 11 exists to prevent.
+  finding, and the suppression is driven by the **store, not the cache**: on
+  emit the writer looks up the (finding, sid, patternId) slot and, if its
+  active record is `refuted`, skips emission, leaving the refuted chain
+  visible. The cache (§6, keyed by value-hash + patternSetVersion) is a
+  performance layer only; a pattern-set bump invalidates the cache but MUST
+  NOT resurrect a refuted slot — pattern ids are never reused (§2.2), so the
+  slot key survives bumps. (Reviewer edit R1: as previously written the skip
+  read as cache-driven, which the first pattern-set bump would have wiped.)
+  Silent resurrection would be the store-corruption failure spec 11 exists
+  to prevent.
 
 ## 5. Query verbs + token cost of use
 
@@ -393,7 +413,10 @@ the acceptance tests (§8, T5).
   held-out app, it stops being held-out — promote it to tuning and nominate a
   replacement (Expensify bundle) in the same commit; the measure tool records
   which corpus played which role in `scan-state.json` so the roles are audit-
-  able, not folklore.
+  able, not folklore. A red T8 during threshold iteration IS "tuning needs
+  the held-out app": the promote-and-replace rule fires — never a quiet
+  threshold tweak measured against react-navigation while it still counts as
+  held-out. (Reviewer edit R4.)
 
 ## 8. Acceptance tests
 
@@ -475,7 +498,8 @@ CLI plumbing and cap/paging helpers the spec-10 query verbs use. New code:
 4. **Step 3 — store integration + cache** (M): write through
    `ProjectService`/`RevisionStore` with §4.2 shapes; idempotent re-emit;
    refutation-sticky skip; `scan-state.json` cache. T4/T7 green. (Blocked on
-   spec-11 impl step 1 landing `RevisionStore<T>`; coordinate via QUEUE.)
+   spec-11 impl step 1 landing `RevisionStore<T>`; coordinate via QUEUE — if
+   it stalls, ruling 4 in §11 governs the interim.)
 5. **Step 4 — CLI verbs + measure + tune** (M): §5 verbs on the warm service,
    caps, `measure.ts`, tune thresholds on tuning corpus only, T5/T6 green;
    record numbers in the landing report.
@@ -531,3 +555,132 @@ Open questions for the reviewer:
 4. **Step 3 dependency**: P2.2 impl step 1 (`RevisionStore<T>` extraction) is
    in flight; if it stalls, is writing through the overlay-store pattern
    directly an acceptable interim, or does step 3 wait?
+
+### Review responses (2026-09-03, Fable reviewer gate)
+
+**VERDICT: APPROVED.** Implementation may launch at step 0 (§9). Every issue
+found was fixed by a small in-place reviewer edit (R1–R6, marked in the text
+where load-bearing) plus the four rulings below. No CHANGES REQUIRED items
+remain.
+
+**Checklist findings**
+
+1. *Decision-8 quadruple (§7)*: complete. Metrics (recall / FP-per-1k /
+   cold+warm wall time), targets (100% tier A + ≥ 95% overall recall on the
+   seeded set; FP ≤ 5/1k tuning, ≤ 8/1k held-out; cold < 5 s, warm < 0.5 s at
+   4k-fn scale), measurement (seeded ~50-secret + ~30-near-miss fixture in
+   spec 10's exact row format, `tools/secrets/measure.ts`, T5 with ×3 CI
+   slack and hard numbers demonstrated in the landing report), held-out
+   (react-navigation, never tuned on, promote-and-replace with Expensify
+   nominated, corpus roles recorded in `scan-state.json`). Targets are sane:
+   100% tier-A recall is right for anchored formats (a miss is a pattern bug,
+   not noise), and seeded-set recall is deterministic so T2 can assert it
+   exactly. The FP metric correctly counts above a reviewed allowlist and
+   excludes tag categories. Held-out discipline tightened by R4 (a red T8
+   during tuning fires promote-and-replace, never a quiet threshold tweak).
+   Note: react-navigation is also spec 11's held-out — different metrics, no
+   tuning contact from either spec; acceptable, and the promote-and-replace
+   rule keeps it honest.
+2. *Record-contract conformance (§4 vs spec 11 as reviewed)*: the finding
+   shape is the spec 11 §2.1 envelope with nothing invented; `sid:N` targets
+   are envelope-legal; evidence roles `match`/`use-site`/`context` are
+   additive (spec 11 names no closed role enum) and its §4.1 dynamic-role
+   rule is untouched because this tool never writes `confirmed` — §4.3 is
+   explicit, and static corroboration only appends context evidence and may
+   raise C→B while status stays `open`; there is no self-confirm path.
+   Evidence resolves at write (through `ProjectService`, spec 11 §4.1) and
+   at read (spec 11 §3.3), independently re-checked by T4. Provenance is
+   `tool` + run id on every record. One real gap fixed (R3): spec 11 §2.1's
+   `(kind,target[,tag])` slot key, read literally, would have a second
+   pattern's finding supersede the first on the same sid — `patternId` is
+   now pinned as the finding-slot discriminator. Envelope fields
+   (`rid`/`ts`/`supersedes`/`active`) are writer-assigned and correctly
+   absent from the §4.2 example.
+3. *Truth posture*: candidate language is pinned in claim text (§3.5) and no
+   verb renders a liveness word. Refuted-never-resurrected was cache-driven
+   as written — the first pattern-set bump invalidates the whole cache and
+   would have resurrected every refuted finding; fixed (R1): suppression is
+   store-driven off the active `refuted` record on the (finding, sid,
+   patternId) slot, the cache is performance-only, and never-reused pattern
+   ids make the slot survive bumps. The ≤ 8-char quoting cap holds
+   everywhere checked: report/list/show verbs (§5; T6 checks mechanically
+   that no verb output contains > 8 consecutive chars of a seeded value),
+   evidence carries a span, never the value (§4.2), JWT extraction takes
+   payload key names only (§3.2), url extraction drops userinfo, the cache
+   stores sha256 not values (§6), and §10 bans value propagation into
+   logs. Long strings are head-only scanned with the record stating its own
+   incompleteness (§3.6).
+4. *Licensing/provenance*: caught and fixed (R2) — the spec called gitleaks
+   and trufflehog "both permissively licensed", but trufflehog v3 is
+   AGPL-3.0. The wording now makes copying a regex from either ruleset a
+   stated spec violation (mandatory for AGPL trufflehog, citation
+   discipline even for MIT gitleaks), every pattern must be derivable from
+   its cited vendor doc/RFC alone, and T1 enforces a citation per pattern.
+   Ground-truth values are synthetic/officially-published examples only
+   (§7.3); nothing live is committed.
+5. *Inputs/efficiency*: artifact-only inputs with an explicit spec-10
+   extension-request escape hatch (§1) — no re-derivation. O(total-bytes)
+   scan via combined pre-filter; per-alphabet entropy thresholds are
+   technically correct (hex maxes at 4 bits/char, base64 at 6). All verbs
+   capped in the spec 10 §3.1 style with the truncation-says-so rule and a
+   stated ~2,500-token first-pass budget.
+6. *Implementation plan (§9)*: steps lean-agent-sized and ordered; steps
+   0–2 are pure and unblocked; step 3's dependency on spec-11 impl step 1
+   (`RevisionStore<T>`) is stated and ruling 4 governs a stall (R6
+   cross-ref); step 5 is genuinely cuttable (corroboration affects tiers,
+   not the FP numerator). Step 0 lands the §8 tests verbatim before any
+   scanner code, satisfying tests-before-implementation despite the
+   author's docs-only write scope.
+
+**Rulings on the §11 open questions**
+
+1. **Tag taxonomy: EXTEND spec 11 §1.3 with
+   `endpoint|deeplink|sql|flag|debug|asset`.** Spec 11 defines its taxonomy
+   as closed but extensible by "a reviewed commit"; this gate is that
+   review. Tags are the right weight for surface mapping — info-tier
+   findings would flood the findings lane and muddy the FP metric's
+   secret-findings definition. Conditions (recorded in §4.2 by R5): the
+   spec-11 §1.3 edit lands in the same commit as impl step 3, adds the six
+   values, and extends the tool-may-propose sentence to cover them
+   (provenance-stamped, refutable, like `provably-dead`). The
+   info-findings fallback is dropped.
+2. **FP bars: ACCEPT 5/1k tuning / 8/1k held-out as starting ratchets.**
+   They are admitted folklore, but they are bounds not goals, the reviewed
+   allowlist keeps them meaningful on real bundles, and Decision-8 demands
+   a falsifiable pre-registered bar, not a proven-optimal one. After the
+   first measured landing the measured value becomes the ratchet;
+   loosening ever again requires a review, tightening does not.
+3. **Severity: indexer-as-analyst-of-record SATISFIES spec 11 §1.5.** That
+   rule's point is that the STORE computes nothing — and it still computes
+   nothing: the writer (a tool-analyst stamped `prov.source:"tool"`)
+   assigns severity by a fixed, documented mapping versioned with the
+   pattern set, and any human/LLM supersedes it like any record; spec 11
+   §4.2 already contemplates tool-authored, independently refutable
+   records. Severity-less tool findings would be strictly worse — triage
+   ordering would then be computed at display time, an unversioned,
+   unauditable severity.
+4. **Step-3 stall: WAIT by default; one narrow shim is the only permitted
+   interim.** Raw JSONL appends stay forbidden regardless (§9). If
+   `RevisionStore<T>` has not landed when steps 0–2 complete, the
+   implementer may write through a thin shim over the existing
+   name-overlay revision engine (`src/name-overlay/store.ts` already
+   carries `rid`/`supersedes`/`active` — it IS the RevisionStore-to-be)
+   provided the shim (a) keeps append-only supersede-within-slot
+   semantics, (b) enforces evidence-must-resolve at write via
+   `ArtifactService`, and (c) writes the final §4.2 shapes into the final
+   `project/*.jsonl` locations so the P2.2 landing replaces the shim with
+   zero record migration. If any of (a)–(c) cannot be met, step 3 waits
+   and the QUEUE escalates.
+
+**Edits applied (in place)**
+
+- **R1** (§4.3): refutation suppression store-driven, not cache-driven;
+  survives pattern-set bumps.
+- **R2** (§2.1): trufflehog is AGPL-3.0, not permissive; copying a regex
+  from either ruleset is a stated violation.
+- **R3** (§4.2): `patternId` pinned as the finding-slot discriminator
+  under spec 11 §2.1.
+- **R4** (§7.4): a red T8 during tuning triggers promote-and-replace.
+- **R5** (§4.2): taxonomy extension recorded as ratified with its landing
+  condition; info-findings fallback dropped; §10→§11 cross-ref fixed.
+- **R6** (status line, §9 step 3): gate-passed status; ruling-4 cross-ref.
