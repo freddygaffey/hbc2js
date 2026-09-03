@@ -59,8 +59,13 @@ Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate
 
-`npm test` (this run, 2026-09-03): 1886 tests, 1883 pass, 0 fail, 3 skipped,
-~159s. Typecheck runs first (CONSOLIDATION.md item 29, fixed 2026-08-31).
+`npm test` (this run, 2026-09-03): 1949 tests, 1943 pass, 0 fail, 6 skipped,
+~117s. Typecheck runs first (CONSOLIDATION.md item 29, fixed 2026-08-31).
+Sigdb v3 import step landed 2026-09-03 (docs/specs/15-sigdb-schema.md §3):
+`src/deps/sigdb-sql.ts` (schema/writer) + `tools/pkgsig/sigdb/import-json.mjs`
+(idempotent, resumable, 4-part completeness check) — not yet wired into the
+read path (§4/§10 step 6), and not yet run against the real `deb` 71,300-file
+store (§7 targets 1/3 unmeasured).
 
 ## Open bugs — 24 open / 23 resolved, docs/BUGS.md (triaged 2026-09-01, QUEUE 4; +2 rows 2026-09-02 destructure landing; +1 row 2026-09-02 spread-rest landing)
 
