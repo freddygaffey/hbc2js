@@ -59,9 +59,11 @@ keeps working during the transition (non-goal §8 to delete it).
    rollup columns can be recomputed from base tables at any time
    (`tools/pkgsig/sigdb/rebuild-derived.mjs`, §3.3); they are never the only
    copy of a fact.
-6. **Driver: `node:sqlite`** (built into Node ≥ 22.5; no native npm dep, mac
-   + Linux). Fallback if `deb`'s Node is older: run the importer under a
-   locally-installed Node 22, not a new dependency (§11 Q1).
+6. **Driver: `node:sqlite`** (no native npm dep, mac + Linux). Added in Node
+   22.5 behind `--experimental-sqlite`; unflagged from 22.13 / 23.4 — and this
+   package's `engines` field already requires `node >= 22.18.0`, so the driver
+   adds **no new floor**. Fallback if `deb`'s Node is older: run the importer
+   under a locally-installed Node ≥ 22.18, not a new dependency (§11 Q1).
 
 ## 2. Schema (DDL — normative)
 
@@ -125,7 +127,8 @@ CREATE TABLE fingerprints (          -- one row per legacy JSON file / per build
   -- import bookkeeping
   source_file TEXT, source_sha256 TEXT,  -- NULL for born-in-SQL rows
   imported_at TEXT NOT NULL,
-  UNIQUE (pv_id, hbc_version, variant)
+  UNIQUE (pv_id, hbc_version, variant, is_baseline_file)  -- a package that is both
+  -- a _baselines/ file and a top-level file must not collide on import (review §12)
 );
 
 CREATE TABLE fingerprint_baselines ( -- normalized subtractedBaselines[], order kept
@@ -148,6 +151,10 @@ CREATE TABLE function_shapes (       -- interned: one row per distinct tuple
   env_slot_count INTEGER,
   flags INTEGER,                     -- bitfield: 1 async, 2 generator, 4 strict, 8 hasEnv…
   strings_json TEXT,                 -- JSON array of the literal strings behind string_set_hash
+                                     -- capped per §12 Q2: first 64 strings (first-use order),
+                                     -- each truncated to 1 KiB; string_set_hash stays over the
+                                     -- FULL untruncated set (semantics unchanged)
+  strings_truncated INTEGER,         -- NULL/0 = complete; 1 = strings_json hit a §12 Q2 cap
   UNIQUE (exact_hash, fuzzy_hash, string_set_hash, name,
           param_count, instr_count, string_count)
 );
@@ -239,12 +246,16 @@ CREATE INDEX idx_pkg_tier     ON packages (tier, weekly_downloads);
    `import_log` has this path with the same sha and `status='ok'`, skip
    (re-running after an interrupt or on an unchanged store is a no-op). Parse
    as `SigDbFile`; refuse any `schema !== 2` (fail the file, not the run).
-   Upsert package / package_version (semver split via a small verbatim
-   parser, no dependency); insert the fingerprint row with
+   Validate every hash field as exactly 24 lowercase hex chars before BLOB
+   conversion (else `error:hash-format` — the 12-byte-BLOB round-trip is only
+   lossless under that invariant). Upsert package / package_version (semver
+   split via a small verbatim parser, no dependency); insert the fingerprint row with
    `source_file`/`source_sha256`; intern each function through an in-memory
    `tuple→shape_id` LRU backed by `INSERT OR IGNORE` + select; insert module
    and baseline child rows. One transaction per batch of ~200 files (WAL);
-   `synchronous=NORMAL` during import only. Parse/constraint failures log
+   `synchronous=NORMAL` during import only. Each file's `import_log` row
+   commits in the **same transaction** as its data rows, so a crash can never
+   leave `status='ok'` without the rows (or vice versa). Parse/constraint failures log
    `status='error:<class>'` and continue — target says this set must end
    empty (§7), but the importer never silently drops.
 3. **Derived pass** (`rebuild-derived.mjs`, same code the write path reuses):
@@ -263,13 +274,21 @@ CREATE INDEX idx_pkg_tier     ON packages (tier, weekly_downloads);
    (d) **round-trip sample**: seeded 1% of files + every `_baselines` file
    reconstructed from the DB into schema-2 JSON and deep-compared
    (key-order-insensitive) to the source bytes — zero mismatches allowed.
+   The reconstruction code must be an independent read path (plain SELECTs in
+   the verify module), sharing no serialization helpers with
+   `insertFingerprint`, so a symmetric writer/reader bug cannot self-verify
+   (review §12 item 6).
 
 ## 4. Write-path change going forward (brief item 3 — design only)
 
 One new shared writer, `src/deps/sigdb-sql.ts`, exporting
 `openSigDb(path)`, `insertFingerprint(db, sig: SigDbFile, extras?: CaptureExtras)`,
 `quarantine(db, fpId, reason)`, `rebuildDerived(db)`. `CaptureExtras` carries
-the §2.2 capture-only fields; the fingerprinter (`src/deps/fingerprint`) is
+the §2.2 capture-only fields; when interning hits an existing
+`function_shapes` row whose capture-only columns are NULL and extras are in
+hand, `insertFingerprint` backfills them with an UPDATE (identical 7-tuple ⇒
+identical structure, so this is safe) — otherwise legacy-imported shapes
+would shadow new captures forever. The fingerprinter (`src/deps/fingerprint`) is
 extended to *return* them (it already decodes every instruction — this is
 new outputs, not new passes). Call-site changes:
 
@@ -332,7 +351,9 @@ JOIN fingerprints f           ON f.fp_id = ff.fp_id
 JOIN package_versions pv      ON pv.pv_id = f.pv_id
 JOIN package p                ON p.pkg_id = pv.pkg_id
 LEFT JOIN hash_stats hs       ON hs.kind='exact' AND hs.hash = s.exact_hash
-WHERE coalesce(hs.distinct_packages, 1) < 20              -- ambiguity floor, precomputed
+WHERE coalesce(hs.distinct_packages, 1) < :ambig          -- ambiguity floor, precomputed;
+                                                          -- :ambig bound from match.ts's
+                                                          -- AMBIGUOUS_OWNER_THRESHOLD (§12 Q5)
 GROUP BY f.fp_id, s.exact_hash;
 ```
 
@@ -346,9 +367,9 @@ enumeration, no JSON parsing, and the ambiguity rule costs one indexed
 | # | metric | target | measured how |
 |---|---|---|---|
 | 1 | **Import completeness** | 100% of the enumerated store — 71,300 top-level signature files (measured 2026-09-03; the importer re-counts) + all `_baselines/*.json`; **0 dropped**, 0 `error:*` rows; round-trip sample (§3.4d, seed 1, 1% + all baselines) 0 mismatches; every `index.json` entry reconciled | `import-json.mjs --verify` printout on `deb`, pasted into the landing report |
-| 2 | **Match-lookup latency** | full 43,384-hash probe set (NSW-scale, the DEPS.md benchmark bundle) against the FULL db: ≤ 2 s wall total for all five probe kinds, best-of-3, on `deb`; single-package candidate probe median ≤ 5 ms | `tools/pkgsig/sigdb/bench.mjs` replaying recorded probe sets; compare against the measured JSON-path numbers in DEPS.md (162 ms evidence-directed / 4.4 s exhaustive synthetic) |
+| 2 | **Match-lookup latency** | full 43,384-hash probe set (NSW-scale, the DEPS.md benchmark bundle) against the FULL db: ≤ 2 s wall total for all five probe kinds, best-of-3, on `deb`; single-package candidate probe median ≤ 5 ms | `tools/pkgsig/sigdb/bench.mjs` replaying recorded probe sets; compare against the measured JSON-path numbers in DEPS.md (162 ms evidence-directed / 4.4 s exhaustive synthetic); also record end-to-end `hbc2js deps` wall time on the NSW bundle, SQLite layer vs JSON layers, so a whole-pipeline regression is visible |
 | 3 | **DB size** | full DB ≤ 40% of the JSON store's bytes (≤ 11.2 GB vs 28 GB) after VACUUM+ANALYZE, capture-only columns included | `du -sh` both, on `deb` |
-| 4 | **Tiered-export bound** | `--max-bytes 1G` slice containing ≥ the top-1,000 packages by tier/downloads, final file ≤ 1 GiB (hard; the export iterates until under) | export run + `slice-manifest.json` in the report |
+| 4 | **Tiered-export bound** | `--max-bytes 1G` slice, final file ≤ 1 GiB (**hard**; the export iterates until under). Package-count goal: ≥ 1,000 distinct package names; to reach it the export may first **thin versions** for tier ≥ 1 packages (keep the latest version per semver-major per hbc_version) before dropping whole packages; floor ≥ 500 names (hard), achieved count reported. Rationale in §12: 1,000 full-history packages ≈ half the store's rows and plausibly exceeds 1 GiB, so all-versions-of-top-1,000 must not be a hard bound | export run + `slice-manifest.json` (incl. achieved name count + thinning stats) in the report |
 | H | **Held-out check** | with the SQLite layer substituted for the JSON layers, `hbc2js deps --json` on the real `au.gov.nsw.service.apk` bundle produces an identical DepsReport (same confirmed/guessed sets, same tiers) — a bundle never used to tune this schema; plus one more local-corpus app spot-check, hash-recorded, bundle never in the repo | diff of the two reports, in the landing report |
 
 ## 8. Non-goals (v1)
@@ -446,4 +467,108 @@ store is untouched throughout.
 
 ## 12. Review responses
 
-*(placeholder — filled by the reviewer gate before implementation starts)*
+**Reviewer: Fable (decision-8 gate), 2026-09-03, against commit e5d373a.**
+**Verdict: APPROVED**, with the small in-place edits listed below already
+applied to this file. The import step (implementation steps 0–3) may launch.
+
+### Rulings on §11 open questions
+
+1. **Driver — `node:sqlite`: approved, and moot as a floor question.**
+   `package.json` already declares `engines: node >= 22.18.0`, above the
+   unflagged floor (22.13 / 23.4; 22.5 needed `--experimental-sqlite`). The
+   driver adds no new requirement and no native dependency; `better-sqlite3`
+   is rejected — do not add it. §1.6 wording corrected in place. If `deb`'s
+   Node is older, the spec's own fallback (local Node ≥ 22.18) stands.
+2. **`strings_json` cap: cap it.** First 64 strings per function in
+   first-use order, each string truncated to 1 KiB, plus a
+   `strings_truncated` flag column (added to §2 DDL). `string_set_hash`
+   remains computed over the full untruncated set, so matcher semantics are
+   untouched; the flag tells future partial-overlap scoring the set is
+   incomplete rather than letting it silently under-count. Unbounded capture
+   is rejected: bundles embed multi-KB strings (base64 blobs, inlined JSON)
+   and this column is already the biggest cost of the capture set.
+3. **Interning key: keep `name` in the tuple for v1.** Round-trip fidelity
+   (target 1) is the foundation every other claim rests on; a name
+   side-table buys dedupe only for cross-build minified-name drift, which
+   target 3's 40% bound does not need (the measured redundancy is
+   adjacent-version, where names agree). Revisit only if target 3 misses,
+   with the measurement in hand.
+4. **`variant`: free text, matcher-blind in v1 — author's assumption
+   confirmed.** Preferring the variant that matches detected minification is
+   scoring business for a future spec; baking it in now would change what a
+   hit means (violating §8 non-goal 1). Convention (`''`/`min`/`dev`) is
+   documented; no CHECK constraint, since hermes-flag variants are expected.
+5. **Ambiguity threshold: single source of truth in `match.ts`.** The §6
+   probe now binds `:ambig` from the exported `AMBIGUOUS_OWNER_THRESHOLD`
+   (today 20, `src/deps/match.ts:202`) instead of a literal. `hash_stats`
+   stores counts, never verdicts, so the threshold can move without a
+   derived-table rebuild — that division is correct and is now explicit.
+
+### Soundness of the §7 quadruple
+
+- **T1 (completeness): sound.** The target is phrased against the
+  *re-enumerated* count, not the memorised 71,300, with per-HBC-version
+  reconciliation, zero `error:*` rows, index reconciliation, and a seeded
+  round-trip. Two hardenings applied in place: hash fields are validated as
+  24-lowercase-hex before BLOB conversion (the 12-byte round-trip is only
+  lossless under that invariant), and each file's `import_log` row commits
+  atomically with its data rows, closing the crash window where `ok` exists
+  without rows. With those, the import is genuinely idempotent (sha-keyed
+  skip), resumable (per-file log, batch transactions), and verified.
+- **T2 (latency): sound and generous.** 43,384 probe hashes via a temp-table
+  join over indexed 12-byte BLOBs is well inside 2 s on `deb`. Note the 2 s
+  is not comparable to the JSON path's 162 ms (that was 6 candidate files vs
+  the full 71k-fingerprint DB); method cell now also records end-to-end
+  `hbc2js deps` wall time on NSW, SQLite vs JSON, so a pipeline regression
+  cannot hide behind a passing micro-benchmark.
+- **T3 (≤ 40% of 28 GB): plausible, kept.** Rough audit: ~110M function rows
+  at ~250 JSON bytes each dominate the 28 GB; as 3-int junction rows plus
+  interned shapes (adjacent-version dedupe is the measured pattern) plus
+  halved hash bytes, 8–11 GB is the expected landing zone. If it misses,
+  Q3's name-free interning is the named next lever — measure before using.
+- **T4 (1 GiB slice): was unsound as written, amended.** All-versions-of-
+  top-1,000 packages is roughly half the store's rows; at T3's own density
+  that is several GiB, so "top-1,000 AND ≤ 1 GiB" risked being infeasible by
+  construction. Amended in place: ≤ 1 GiB stays hard; the export may thin
+  tier ≥ 1 packages to the latest version per semver-major per hbc_version
+  before dropping packages; ≥ 500 distinct names is the hard floor, 1,000
+  the goal, achieved count reported in `slice-manifest.json`.
+- **H (held-out): sound.** NSW was never used to tune this schema; identical
+  DepsReport plus one hash-recorded local-corpus spot-check is the right
+  bar, and §8 keeps the JSON store alive until T1+H are green.
+
+### Field completeness (brief item 4)
+
+Verified column-by-column against `src/deps/sigdb-types.ts`: every
+`SigDbFile` field maps — `schema`→`source_schema`, package/version/
+`hbcVersion`, `totalFunctions`/`rawFunctionCount`, `subtractedBaselines`
+(ordered child table), all eight `SigFunction` fields (index preserved in
+the junction), all nine persisted `SigModule` fields incl. nullable
+`localModuleId`/`depIds`/factory hashes and `factoryIsBaseline`,
+`toolchainBaseline`, and all seven `SigProvenance` fields. Nothing lost;
+`nestedFunctionIndices` is correctly identified as schema-2's one
+non-persisted field and captured going forward.
+
+### Coherence and independence (brief items 5–6)
+
+- **Write path / export: coherent.** The `.sqlite`-suffix dispatch keeps
+  every legacy call site working; quarantine-as-column preserves the issue
+  #14 audit trail; copying `hash_stats` from the FULL DB into slices (never
+  recomputing slice-locally) is the load-bearing decision that keeps the
+  ljharb/Babel false-confirm storm dead in small slices — do not weaken it.
+  One gap closed in place: on an intern hit against a legacy shape row with
+  NULL capture columns, `insertFingerprint` backfills them, otherwise
+  legacy rows would shadow new captures indefinitely.
+- **Validator independence: acceptable, tightened.** Ground truth for
+  `--verify` is the JSON store itself, so the DB is never both producer and
+  validator of the completeness claim. §3.4d now additionally requires the
+  round-trip reconstruction to share no serialization code with
+  `insertFingerprint`, so a symmetric writer/reader transform bug cannot
+  self-verify. `hash_stats` stays derived-and-rebuildable with A6 as its
+  independent synthetic check.
+
+### Conditions
+
+None blocking. The A1–A3 acceptance tests must be materialised (step 0, red)
+before step 1 lands, per the testing rules; the T4 thinning behaviour needs
+its assertion added to A7 when step 5 is specified.
