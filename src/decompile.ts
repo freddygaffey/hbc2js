@@ -108,10 +108,36 @@ export function parseForDecompile(bytes: Uint8Array, opts: DecompileOptions = {}
   }
 }
 
+// QUEUE "Perf part 3" (docs/reports/2026-09-03-architecture-sweep.md finding
+// 1): opt-in stage timing, `HBC2JS_TIMINGS=1` — one small block, printed to
+// stderr, `null` (the default) is a single env lookup and changes nothing
+// else about `decompile()`. `structure()` itself runs *inside* `passHook`'s
+// per-function callback (`runPasses`, `src/passes/index.ts`), which
+// `emitModule` invokes once per function alongside `astPassHook`'s stage-B
+// callback — neither stage is a separate top-level call this function makes
+// directly, so "structure+stageA" and "stageB-astPasses" are measured by
+// wrapping those two callbacks and accumulating their own wall time across
+// every function, then treating whatever `emitModule` spent outside both
+// callbacks as "emit" (printing, helper collection, …).
+function timingsEnabled(): boolean {
+  return process.env.HBC2JS_TIMINGS === "1";
+}
+function printTimings(label: string, marks: Record<string, number>): void {
+  const total = Object.values(marks).reduce((a, b) => a + b, 0);
+  const line = Object.entries(marks)
+    .map(([k, v]) => `${k}=${v.toFixed(1)}ms`)
+    .join(" ");
+  process.stderr.write(`[hbc2js timings] ${label}: ${line} total=${total.toFixed(1)}ms\n`);
+}
+
 export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): DecompileResult {
+  const timings = timingsEnabled();
+  const t0 = timings ? performance.now() : 0;
   const { module, forced } = parseForDecompile(bytes, opts);
+  const t1 = timings ? performance.now() : 0;
   const strictEnv = opts.strictEnv ?? true;
   const analysis = analyseModule(module, { strictEnv, ...opts.analysis });
+  const t2 = timings ? performance.now() : 0;
   const diagnostics: Diagnostic[] = [...analysis.diagnostics];
   if (forced) {
     diagnostics.push({
@@ -143,15 +169,45 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
             diagnostics: r.diagnostics,
           };
         };
+  let structureAndStageAMs = 0;
+  let stageBMs = 0;
+  const timedPassesHook = !timings
+    ? passesHook
+    : (fn: StructuredFunction, cfg: FunctionCfg) => {
+        const a = performance.now();
+        const out = passesHook(fn, cfg);
+        structureAndStageAMs += performance.now() - a;
+        return out;
+      };
+  const rawAstPasses = astPassHook(analysis, opts.passes);
+  const timedAstPasses = !timings
+    ? rawAstPasses
+    : (fn: Parameters<typeof rawAstPasses>[0], cfg: FunctionCfg) => {
+        const a = performance.now();
+        const out = rawAstPasses(fn, cfg);
+        stageBMs += performance.now() - a;
+        return out;
+      };
+  const t3 = timings ? performance.now() : 0;
   const result = emitModule(analysis, {
     moduleName: opts.moduleName ?? "input.hbc",
     provenanceComments: false,
     strictEnv,
-    passes: passesHook,
-    astPasses: astPassHook(analysis, opts.passes),
+    passes: timedPassesHook,
+    astPasses: timedAstPasses,
     ...opts.emit,
     ...(structureOpts !== undefined ? { structure: structureOpts } : {}),
   });
+  const t4 = timings ? performance.now() : 0;
+  if (timings) {
+    printTimings("decompile", {
+      parse: t1 - t0,
+      analyse: t2 - t1,
+      "structure+stageA": structureAndStageAMs,
+      "stageB-astPasses": stageBMs,
+      emit: t4 - t3 - structureAndStageAMs - stageBMs,
+    });
+  }
   return {
     code: result.code,
     module,

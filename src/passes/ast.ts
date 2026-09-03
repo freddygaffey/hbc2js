@@ -915,14 +915,15 @@ export interface DefUse {
   readonly reads: number[];
 }
 
-/** `rN` defs/reads only (this is expr-rebuild's register-liveness question,
- *  not a general def/use table) — indexed by the statement's own pre-order
- *  position in `stmts` (nested statements get later indices than the
- *  statement containing them, assigned before recursing into it). A nested
- *  `func`'s own registers belong to a different frame and are not counted. */
-export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
+/** Shared walk behind `defUse` and `incrementalDefUse` (below): identical
+ *  traversal, but the position assigned to each statement comes from
+ *  `nextAt(s)` instead of a hardcoded counter, so a caller that needs
+ *  positions to survive a splice unrenumbered (persistent keys, not plain
+ *  indices) can supply its own generator without duplicating this ~120-line
+ *  switch. `nextAt` is called exactly once per statement, in the same
+ *  pre-order `defUse`'s doc comment describes. */
+function defUseWalk(stmts: readonly Stmt[], nextAt: (s: Stmt) => number): Map<string, DefUse> {
   const out = new Map<string, DefUse>();
-  let index = 0;
   const rec = (name: string, kind: keyof DefUse, at: number): void => {
     if (!isRegisterName(name)) return;
     let e = out.get(name);
@@ -992,7 +993,7 @@ export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
   };
   const visitStmts = (list: readonly Stmt[]): void => {
     for (const s of list) {
-      const at = index++;
+      const at = nextAt(s);
       switch (s.k) {
         case "expr":
           visitExpr(s.expr, at);
@@ -1050,6 +1051,16 @@ export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
   };
   visitStmts(stmts);
   return out;
+}
+
+/** `rN` defs/reads only (this is expr-rebuild's register-liveness question,
+ *  not a general def/use table) — indexed by the statement's own pre-order
+ *  position in `stmts` (nested statements get later indices than the
+ *  statement containing them, assigned before recursing into it). A nested
+ *  `func`'s own registers belong to a different frame and are not counted. */
+export function defUse(stmts: readonly Stmt[]): Map<string, DefUse> {
+  let index = 0;
+  return defUseWalk(stmts, () => index++);
 }
 
 // ---------------------------------------------------------------------------
@@ -1432,6 +1443,229 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
   return out;
 }
 
+// `expressionOnlyCheck`'s read-before-def half only ever asks "is read
+// position A before def position B" — any strictly order-preserving
+// relabelling of statements answers that identically to real pre-order
+// indices, so this private cache keys statements by a *persistent* float
+// instead of `defUse`'s plain index: a statement kept by a rewrite (the
+// reference-equal prefix/suffix below, the same split the effect-sequence
+// half already computes) keeps the exact same key forever; only the
+// handful of statements a splice actually replaces get a fresh key,
+// interpolated strictly between their new neighbours. That turns
+// "recompute def/use for the whole list every applied site" into
+// "recompute it for the changed region, look up the unchanged region's
+// positions from the last time they were computed" — `O(changed region)`
+// amortised, not `O(list length)`, mirroring the effect-sequence half's own
+// prefix/suffix trick one function down, extended with persistent state
+// because (architecture sweep finding 1) unlike effects this check is a
+// genuinely global property: whether a read is "before" a def depends on
+// the *whole* list's order, not just the changed region's own order —
+// hence "needs a global position; needs incremental state" in the QUEUE
+// item this fixes. `defUse` itself (several other passes call it directly
+// for real pre-order indices) is untouched; this cache is private to this
+// one check.
+// A single statement object can be visited by *more than one* independent
+// numbering space: `stmtLists` yields every nested statement list as its
+// own site (a function's top-level body *and* separately an `if`'s `then`
+// body, say), and `defUse`'s positions are only meaningful relative to
+// whichever `stmts` argument started that particular walk — a nested
+// statement gets a different number as part of the enclosing list's walk
+// than it gets when its own containing list is walked on its own. So the
+// persistent key map must be scoped per numbering-space ("lineage"), not
+// global by statement identity — a global `WeakMap<Stmt, number>` here
+// would silently let an unrelated list's numbering clobber this one's the
+// first time the two walks ever shared a statement object, which is
+// exactly what `expression-only-check-differential.test.ts` caught before
+// this fix landed. Each lineage's `posOf` is created once, at that
+// lineage's first ("cold") call, and threaded forward by object identity
+// through `keyedDefUseCache` exactly as `defUseCache`'s `Map<string,
+// DefUse>` already is (`before` at generation *n*+1 is always literally the
+// same array `after` was at generation *n* — `spliceList`'s `root===target`
+// case returns `repl` unchanged — so a `WeakMap` keyed by list identity
+// finds the previous generation's entry every time except the true start
+// of a lineage).
+// A name can be "read before its own first def" in `after` for a reason
+// that has *nothing* to do with the current splice: register reuse (the
+// same `rN` read for one purpose, then redefined later for an unrelated
+// one) is a normal, harmless shape in lowered bytecode, but `defUse`'s
+// "no read before the name's first def *in this list*" rule (deliberately
+// conservative — it has no way to tell "harmless reuse" from "a rewrite
+// broke evaluation order" apart) flags it anyway, every single time the
+// *whole list* is scanned — which the original `defUse(after)` walk did on
+// *every* call, so a name like this stays flagged for the entire lifetime
+// of the list even though no rewrite ever touches either of its two
+// occurrences. An incremental check must reproduce that "still flagged,
+// forever, until something finally touches it" behaviour exactly, not just
+// "is a name violating *because of this splice*" — `violating` below is
+// that persistent set, carried forward by construction (a name's violation
+// status among its own occurrences cannot change unless at least one of
+// those occurrences sits in the touched region — proved in
+// `incrementalReadBeforeDef`'s comment).
+interface KeyedEntry {
+  readonly du: Map<string, DefUse>;
+  readonly posOf: WeakMap<Stmt, number>;
+  readonly violating: ReadonlySet<string>;
+}
+const keyedDefUseCache = new WeakMap<readonly Stmt[], KeyedEntry>();
+const KEY_GAP = 2 ** 20; // interpolation headroom; see the degenerate guard below
+
+function isViolating({ defs, reads }: DefUse): boolean {
+  if (defs.length === 0) return false; // read-only in this list: defined earlier, outside it
+  const firstDef = Math.min(...defs);
+  return reads.some((r) => r < firstDef);
+}
+
+function allViolations(du: Map<string, DefUse>): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const [name, entry] of du) if (isViolating(entry)) out.add(name);
+  return out;
+}
+
+function coldKeyedDefUse(list: readonly Stmt[]): KeyedEntry {
+  const posOf = new WeakMap<Stmt, number>();
+  let k = 0;
+  const du = defUseWalk(list, (s) => {
+    const key = k;
+    k += KEY_GAP;
+    posOf.set(s, key);
+    return key;
+  });
+  const entry: KeyedEntry = { du, posOf, violating: allViolations(du) };
+  keyedDefUseCache.set(list, entry);
+  return entry;
+}
+
+/** Just the presence of each register name in `list` (no positions needed —
+ *  callers only use the key set), for finding which names the *replaced*
+ *  middle region (`before`'s side of the splice) used to touch. Bounded by
+ *  the same "one pass site's own splice touches a small sub-range"
+ *  assumption `expressionOnlyCheck` already relies on for the effect
+ *  sequence, so this is `O(changed region)`, not `O(list length)`. */
+function namesTouching(list: readonly Stmt[]): ReadonlySet<string> {
+  return new Set(defUseWalk(list, () => 0).keys());
+}
+
+/** Incremental version of `for (const [name, {defs, reads}] of
+ *  defUse(after)) …` — returns the first offending register name, or
+ *  `null`. `head`/`tailBefore`/`tailAfter` are the reference-equal split
+ *  points `expressionOnlyCheck` already found for the effect-sequence half. */
+function incrementalReadBeforeDef(before: readonly Stmt[], after: readonly Stmt[], head: number, tailBefore: number, tailAfter: number): string | null {
+  const { du: duBefore, posOf, violating: violatingBefore } = keyedDefUseCache.get(before) ?? coldKeyedDefUse(before);
+
+  // `aKey` is deliberately `posOf(before[head])` — the *old* mid region's
+  // own first statement, about to be discarded — not `posOf(before[head -
+  // 1])` (the last unchanged statement itself). `defUseWalk`'s positions are
+  // full pre-order, recursing into a statement's own nested bodies before
+  // moving to its next sibling, so a top-level statement's *own* key is
+  // smaller than everything in its own subtree; using it as the head/mid
+  // boundary silently dropped every nested def/use inside the last
+  // unchanged statement's own body into neither bucket (the differential
+  // test caught this: a `labeled`/`if` block right before the splice point
+  // lost its own `rN` reads). `before[head]` (old mid's first statement) is
+  // guaranteed a bigger key than *all* of `before[head - 1]`'s subtree (the
+  // walk only reaches it after finishing that whole subtree) and is
+  // strictly less than everything from `before[tailBefore]` on, so it is
+  // exactly the exclusive upper bound "head" needs — regardless of how
+  // deeply nested `before[head - 1]` is. When `head === before.length`
+  // there is no such statement (the splice is a pure append with nothing
+  // after it in `before`); that one rare shape falls back to a full
+  // recompute below rather than inventing a bound.
+  const aKey = head < before.length ? posOf.get(before[head]!) : undefined;
+  const bKey = tailAfter < after.length ? posOf.get(after[tailAfter]!) : undefined;
+  // Every referenced statement is reference-shared with `before`, so its key
+  // was assigned no later than `before` was itself cached (same lineage's
+  // `posOf`). Defensive fallback (should be unreachable) if that invariant
+  // is ever violated, and the honest fallback for the rare pure-append edge
+  // case above.
+  if ((head < before.length && aKey === undefined) || (tailAfter < after.length && bKey === undefined)) {
+    const cold = coldKeyedDefUse(after);
+    return firstOf(cold.violating);
+  }
+
+  let prev = aKey;
+  let degenerate = false;
+  const afterMid = after.slice(head, tailAfter);
+  const midDu = defUseWalk(afterMid, (s) => {
+    const key = bKey === undefined ? (prev ?? -KEY_GAP) + KEY_GAP : prev === undefined ? bKey - KEY_GAP / 2 : (prev + bKey) / 2;
+    if (key === prev || key === bKey) degenerate = true; // float precision exhausted (astronomically rare)
+    prev = key;
+    posOf.set(s, key); // same lineage: append-only, never overwrites an existing statement's key
+    return key;
+  });
+  if (degenerate) {
+    // Thousands of splices landing in the exact same gap: drop the cached
+    // lineage and pay one full recompute, same as a cold call for a fresh
+    // list — always sound, just not `O(changed region)` this one time.
+    const cold = coldKeyedDefUse(after);
+    return firstOf(cold.violating);
+  }
+
+  const touched = new Set<string>(midDu.keys());
+  for (const name of namesTouching(before.slice(head, tailBefore))) touched.add(name);
+
+  const merged = new Map<string, DefUse>(duBefore); // shallow: O(distinct names), not O(list length)
+  for (const name of touched) {
+    const bef = duBefore.get(name);
+    const mid = midDu.get(name);
+    const headDefs = aKey === undefined || bef === undefined ? [] : bef.defs.filter((k) => k < aKey);
+    const headReads = aKey === undefined || bef === undefined ? [] : bef.reads.filter((k) => k < aKey);
+    const tailDefs = bKey === undefined || bef === undefined ? [] : bef.defs.filter((k) => k >= bKey);
+    const tailReads = bKey === undefined || bef === undefined ? [] : bef.reads.filter((k) => k >= bKey);
+    const defs = [...headDefs, ...(mid?.defs ?? []), ...tailDefs];
+    const reads = [...headReads, ...(mid?.reads ?? []), ...tailReads];
+    if (defs.length === 0 && reads.length === 0) merged.delete(name);
+    else merged.set(name, { defs, reads });
+  }
+
+  // `violating(after) = (violating(before) \ touched) ∪ {touched names that
+  // are themselves violating in `merged`}` — a name's violation status
+  // among its own occurrences only depends on the relative order of those
+  // occurrences; an untouched name's occurrences are every one either in
+  // `head` (unchanged, same order as `before`) or in `tail` (unchanged
+  // *and* shifted together, so their order relative to each other and to
+  // `head` is preserved), so its status cannot change. A touched name's
+  // status is recomputed fresh above regardless of what it used to be.
+  const violating = new Set<string>();
+  for (const name of violatingBefore) if (!touched.has(name)) violating.add(name);
+  for (const name of touched) {
+    const entry = merged.get(name);
+    if (entry !== undefined && isViolating(entry)) violating.add(name);
+  }
+  keyedDefUseCache.set(after, { du: merged, posOf, violating }); // same lineage: `posOf` is carried forward, not copied
+  return firstOf(violating);
+}
+
+function firstOf(names: ReadonlySet<string>): string | null {
+  for (const name of names) return name;
+  return null;
+}
+
+/** The naive `defUse(after)` loop `expressionOnlyCheck`'s read-before-def
+ *  half used before this file's incrementalisation (QUEUE "Perf part 3") —
+ *  kept only as `incrementalReadBeforeDef`'s reference implementation for
+ *  `tests/gate/passes/expression-only-check-differential.test.ts`, which
+ *  runs both side by side over the whole construct-fixture corpus (real
+ *  pipeline, real applied sites, `_expressionOnlyCheckDiffProbe` below) and
+ *  asserts identical verdicts. Never called on the hot path. */
+function readBeforeDefBruteForceReference(after: readonly Stmt[]): string | null {
+  for (const [name, { defs, reads }] of defUse(after)) {
+    if (defs.length === 0) continue;
+    const firstDef = Math.min(...defs);
+    if (reads.some((r) => r < firstDef)) return name;
+  }
+  return null;
+}
+
+/** Test-only hook: when set, `expressionOnlyCheck` also runs
+ *  `readBeforeDefBruteForceReference` on every call and reports both
+ *  verdicts here. `null` (the default) costs one pointer check per call and
+ *  changes no behaviour. */
+export let _expressionOnlyCheckDiffProbe: ((before: readonly Stmt[], after: readonly Stmt[], oldVerdict: string | null, newVerdict: string | null) => void) | null = null;
+
+export function _setExpressionOnlyCheckDiffProbeForTests(probe: typeof _expressionOnlyCheckDiffProbe): void {
+  _expressionOnlyCheckDiffProbe = probe;
+}
+
 /** §4.3's expression-only `check`: the effect sequence is unchanged, and no
  *  `rN` in `after` is read before its own first def in `after` (a rewrite
  *  must not read a register earlier than the point it is actually computed). */
@@ -1463,11 +1697,9 @@ export function expressionOnlyCheck(before: readonly Stmt[], after: readonly Stm
   const eb = JSON.stringify(effectSequence(before.slice(head, tailBefore)));
   const ea = JSON.stringify(effectSequence(after.slice(head, tailAfter)));
   if (eb !== ea) return { ok: false, reason: "the rewrite changed the observable effect sequence" };
-  for (const [name, { defs, reads }] of defUse(after)) {
-    if (defs.length === 0) continue; // read-only in this list: defined earlier, outside it
-    const firstDef = Math.min(...defs);
-    if (reads.some((r) => r < firstDef)) return { ok: false, reason: `${name} is read before its first def in the rewrite` };
-  }
+  const violation = incrementalReadBeforeDef(before, after, head, tailBefore, tailAfter);
+  if (_expressionOnlyCheckDiffProbe !== null) _expressionOnlyCheckDiffProbe(before, after, readBeforeDefBruteForceReference(after), violation);
+  if (violation !== null) return { ok: false, reason: `${violation} is read before its first def in the rewrite` };
   return { ok: true };
 }
 
