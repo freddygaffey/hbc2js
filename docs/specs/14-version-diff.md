@@ -1,7 +1,7 @@
 # 14 — Version diff: two decompiles of the SAME app, keyed to stable ids (P2.5)
 
-**Status: SPEC (2026-09-04, Fable). Review gate required before implementation
-(decision 8).**
+**Status: SPEC, REVIEWED (2026-09-04, Fable reviewer gate — §11 APPROVED).
+Implementation may begin at §9 step 0.**
 
 **Stage-2 success criteria apply IN ORDER (docs/QUEUE.md Stage 2): (1) TRUTH,
 then (2) EFFICIENT TO USE.** Concretely for this spec: a function match is
@@ -68,6 +68,11 @@ are served live).
   `diff-manifest.json` records both bundles' `sha256`, both `index.semanticHash`
   values, both producers, both `hbcVersion`s, the diff schema version, and the
   matcher's parameter table (§3.4 weights/thresholds) verbatim.
+- **`diff/` never stales its host artifact** (R4): `<new>/diff/<pairId>/`
+  lives inside a spec-10 artifact directory but is OUTSIDE spec 10's
+  hash/validation coverage — `check-index` and manifest hashing ignore it;
+  step 3 lands the one-line spec-10 amendment registering `diff/` as a
+  tool-owned subdirectory.
 - **Staleness is an error, never a wrong answer** (spec 10 §4.2 inherited):
   every `diff` verb re-checks `diff-manifest.json` against both artifacts'
   current manifests; any mismatch = `E_STALE_DIFF`, exit non-zero, no output,
@@ -284,7 +289,11 @@ spec owns re-attachment:
   same kind/type fields, new target, fresh `ctx` snapshot, provenance
   `{source:"tool", who:"version-diff", run:<pairId>}` (or the confirming
   human/LLM for manual rebinds), plus `rebindOf:<old rid>`. The old record is
-  untouched (append-only holds); it simply stops being orphaned-and-unheard.
+  untouched (append-only holds); it simply stops being orphaned-and-unheard. **R3:**
+  orphan computation (spec 11 §2.5/§3.3 status, and `diff orphans` here)
+  becomes `rebindOf`-aware in step 6: a record named in a later record's
+  `rebindOf` is excluded from orphan lists and counts — live-computed, stored
+  lines untouched — otherwise a rebound orphan would be re-proposed forever.
   Zero-silent-drop: `#orphans_before = #rebound + #flagged + #still-orphaned`,
   printed by `diff rebind` and asserted by T6.
 
@@ -329,7 +338,16 @@ lane's tree; this step lands as a small additive mutation mode):
 - Both sources build through the existing no-Gradle pipeline (spec 09 §2.2)
   into a **pair** of triples; the pair's TRUE fn-map is derived by keying both
   sides' functions through their source maps to `(source file, original
-  name/position)` — perfect ground truth, no human labelling. Pairs live under
+  name/position)`. **Ambiguity is excluded, not scored** (R1): a
+  source key holding more than one bytecode function on either side (generator
+  outer/inner pairs share a source position; default-param/class-field inner
+  closures do too; hermesc inlining/elimination can merge or drop small fns),
+  or a bytecode function with no source-map entry, goes into an `excluded`
+  bucket whose count the report states — matches touching excluded fns count
+  neither as right nor as wrong in target 1. The rest of the map is exact, no
+  human labelling. `measure.ts` also reports the matched tier of every seeded
+  `remove-guard` fn, so a target-2 recall miss is diagnosable (matcher failure
+  vs detector failure). Pairs live under
   `$HBC2JS_APPGEN_DIR/pairs/<id>/` inside spec 09 §2.4's existing disk
   envelope (a pair = 2 triples; the 24-triple cap counts them).
 
@@ -409,7 +427,7 @@ diff-private or synthetic.
 | 0 | `tests/diff/` red harness: T1–T8 skeletons, T3 fixture pair built by a `build.sh` addition | construct-fixture build.sh pattern |
 | 1 | `fnsig.jsonl` in the index builder + checker recount + spec-10 budgets re-measured; T2 green | `src/artifact/{build,semantic-walk,schema}.ts`, opcode tables |
 | 2 | matcher core `src/diff/match.ts` (pure: sig rows in, tiered map out); T1 green | nothing from internals — pure |
-| 3 | `diff build`: materialised pair dir, diff-manifest, staleness, same-app guard; T5, T8 | `ArtifactService` |
+| 3 | `diff build`: materialised pair dir, diff-manifest, staleness, same-app guard + the spec-10 `diff/`-exclusion amendment (R4); T5, T8 | `ArtifactService` |
 | 4 | surface deltas + `diff checks` ranking; T3, T7 | spec-12 classifier, host-global list |
 | 5 | CLI verbs + `DiffService` + caps + `tools/diff/measure.ts`; T4 | `src/cli.ts` query/secrets verb pattern |
 | 6 | rebind: `diff orphans/rebind` + `project rebind`; T6 | `ProjectService`, spec-11 store io |
@@ -438,4 +456,83 @@ edits are additive flags only (no behaviour change to existing triples).
 
 ## 11. Review responses
 
-*(placeholder — filled by the decision-8 review gate before implementation.)*
+## Review responses (2026-09-04, Fable reviewer gate)
+
+**Verdict: APPROVED** (decision-8 gate) with four small reviewer edits
+(R1–R4) applied in place in this commit. No structural change. §9 step 0 may
+launch.
+
+**Findings.**
+
+- **F1 — truth map was overclaimed as "perfect" (fixed, R1 in §6).** Keying
+  both sides by `(source file, original name/position)` is not injective:
+  generator outer/inner bytecode fns share one source position, as do
+  default-param/class-field inner closures; hermesc inlining/elimination can
+  make a source key one-sided for reasons that are not add/remove mutations.
+  Scoring those as wrong would fail target 1 spuriously; scoring them as right
+  would launder guesses. §6 now excludes ambiguous keys (multi-holder on
+  either side, or no source-map entry) from the target-1 denominator into a
+  reported `excluded` bucket — "0 wrong asserted matches" stays meaningful and
+  measurable over the unambiguous majority.
+- **F2 — removed-check recall is NOT a seeder tautology (no change needed).**
+  The detector (§4.3: strong tier + changed + guard-count drop) fires
+  trivially *given the pair matched*; what target 2 really measures is whether
+  the matcher holds the mutated fn at `strong-structural` — the genuine risk
+  is dropping to candidate/unmatched and losing the lead. `guards` is defined
+  recountably (jcond-class instruction count, per-version pinned table), so
+  recall is checkable by a third party. R1 adds per-seeded-removal matched-
+  tier reporting so any recall miss is diagnosable (matcher vs detector).
+- **F3 — rebound orphans would be re-proposed forever (fixed, R3 in §4.4).**
+  Spec 11 computes orphan status live from target resolution; after a rebind
+  the OLD record's target is still absent, so without `rebindOf`-awareness
+  every `diff orphans`/`project orphans` run re-lists it. §4.4 now requires
+  orphan computation to exclude superseded records (live-computed; append-only
+  untouched). T6's accounting must count these as rebound, not
+  still-orphaned, on re-run.
+- **F4 — diff dir must not stale its host (fixed, R4 in §1 + §9 step 3).**
+  `<new>/diff/<pairId>/` writes into a spec-10 directory; if artifact
+  hashing/validation ever walked it, `diff build` would make the artifact look
+  stale. Now explicitly outside coverage, with the spec-10 amendment assigned
+  to step 3.
+- **Conformance verified.** `fnsig.jsonl` budgets cite the POST-renegotiation
+  spec 10 §5 target-3 numbers (build ≤ 25%, `index/` ≤ 70% — renegotiated
+  2026-09-03 from 30%) and §2 rightly forbids re-renegotiating them.
+  Staleness (`E_STALE_DIFF`, no `--force`) matches spec 10 §4.2. Rebind
+  records conform to spec 11: append-only, mandatory tool provenance, fresh
+  write-time `ctx` (E1), zero-silent-drop accounting. Thresholds
+  0.90/0.15/0.60 and the §3.4 weights are pre-registered with the binding
+  retune rule (reviewed data-table commit + §6 quadruple re-measured). §9 is
+  lean-agent-sized and correctly ordered; step 7 is additive-flags-only in
+  the appgen lane and needs orchestrator sequencing with that lane.
+
+**Rulings on §10.**
+
+1. **Reg-level carve-out at equal `opcSeqHash`: NO for v1 — and the carve-out
+   as phrased is unsound anyway.** `opcSeqHash` drops ALL operands including
+   registers, so its equality does not establish equal register layout;
+   "bodyHash differs only on string operands" is a stronger condition no
+   current hash isolates (it would need a third, register-preserving hash).
+   Spec 11's asymmetry decides the policy: a wrong reg-level rebind silently
+   attaches a finding to the wrong variable — strictly worse than a flagged
+   proposal. Auto-rebind stays exact-only; any revisit is a reviewed spec
+   change (§8) and must key on a new strings-normalised/registers-kept hash,
+   not `opcSeqHash`.
+2. **Retune rule suffices; do not freeze.** The diff-manifest records the
+   parameter table verbatim, so past reports stay reproducible across
+   retunes; freezing until the quadruple exists would only force a second
+   review to unfreeze. The §3.4 sentence is the established pre-registered-
+   ratchet pattern and is binding as written.
+3. **Inside-new placement stands**, under R4's condition (outside hash
+   coverage + step-3 spec-10 amendment). The analyst's working artifact
+   staying self-contained beats a sibling `diffs/` root.
+4. **Soft lead-volume ceiling, reported-not-targeted — confirmed.**
+   Truth-first makes recall the hard target; a pre-registered hard precision
+   floor with no measurement basis would create pressure to suppress true
+   leads — exactly the silent-vuln miss. The measured precision/volume
+   numbers later gate `--write-findings` (§8); that is where a precision
+   floor belongs, set from data.
+5. **Held-out (a) alone is acceptable** if no second react-navigation build
+   is obtainable under fetch-once discipline, PROVIDED the landing report
+   states what was attempted and that (b) was unavailable — the spec's
+   "stated, not fudged" wording already requires this. A reported limitation,
+   not a debt row.
