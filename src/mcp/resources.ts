@@ -1,0 +1,398 @@
+// src/mcp/resources.ts — docs/specs/17-mcp-harness.md §1 (as revised §14):
+// the READ resources of the MCP analysis surface. TRANSPORT-AGNOSTIC: this
+// file has no MCP protocol/SDK binding (that is deferred, §6). It is a
+// plain class, `McpResources`, over one already-open `ArtifactService` +
+// `ProjectService` pair (spec 16 §3.2's warm services) — a thin typed
+// re-projection of the shipped query layer, per the spec's own framing
+// ("not a new store or a new set of answers").
+//
+// Every resource below is a "resolves to (verb)" row from §1's table: it
+// calls the existing service method and reshapes the result, honoring that
+// verb's OWN published cap (never a new one, per §1's own rule). Where the
+// verb has no service method yet, that gap is called out in the resource's
+// own doc comment rather than silently invented — see `packageId`, `log`,
+// `history`, `annotatedCalls` below.
+import type { DatabaseSync } from "node:sqlite";
+import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary } from "../artifact/service.ts";
+import { ProjectService, PROJECT_CAPS, type AnnotationRow } from "../project/service.ts";
+import type { ResolvedFinding } from "../project/findings.ts";
+import type { FindingStatus, Severity, Tag } from "../project/schema.ts";
+import { hasProjectDb, openProjectDbReadonly } from "../projdb/artifact-read.ts";
+import { ErrorCode, Hbc2jsError } from "../errors.ts";
+
+/** Light `{fn, name, size}` neighbour metadata inlined into every xref row
+ *  (§14's "kill the N+1" fix — `who-calls` used to force ~12 follow-up
+ *  `fn/{fn}` calls on NSW). `size` is the range's line count when the fn's
+ *  range is known, else `null` (an out-of-scope/native/unresolved callee,
+ *  same cases `Edge.file`/`Edge.line` are already `null` for). */
+export interface NeighborRef {
+  readonly fn: number | string;
+  readonly name: string | null;
+  readonly size: number | null;
+}
+
+export interface XrefEdge extends NeighborRef {
+  readonly file: string | null;
+  readonly line: number | null;
+  readonly kind: string;
+  readonly why?: string;
+}
+
+const SOURCE_LINE_CAP = 400; // fn's own range in practice never exceeds this on real fixtures; see `source`/`disasm` doc comments.
+
+function truncateLines(text: string, cap: number): { readonly text: string; readonly totalLines: number; readonly truncated: boolean } {
+  const lines = text.split("\n");
+  const truncated = lines.length > cap;
+  return { text: truncated ? lines.slice(0, cap).join("\n") : text, totalLines: lines.length, truncated };
+}
+
+export interface McpResourcesOpts {
+  readonly hbc?: string;
+  readonly overlayStorePath?: string;
+}
+
+/** The transport-agnostic business-logic core of spec 17's MCP surface —
+ *  READ resources only, this pass (spec 17 §6 defers the write tools, the
+ *  lead-generators, `recompile_edit`/`generate_documentation`). One
+ *  instance is scoped to one project directory, sharing the warm
+ *  `ArtifactService`/`ProjectService` pair exactly as the CLI does (spec 16
+ *  §3.2). */
+export class McpResources {
+  readonly artifact: ArtifactService;
+  readonly project: ProjectService;
+  private readonly artifactDir: string;
+
+  constructor(artifactDir: string, opts: McpResourcesOpts = {}) {
+    this.artifactDir = artifactDir;
+    this.artifact = new ArtifactService(artifactDir, opts);
+    this.project = new ProjectService(artifactDir, this.artifact);
+  }
+
+  private neighbor(fnRef: number | string): NeighborRef {
+    if (typeof fnRef !== "number") return { fn: fnRef, name: null, size: null };
+    if (!this.artifact.hasFn(fnRef)) return { fn: fnRef, name: null, size: null };
+    const s = this.artifact.fn(fnRef);
+    const size = s.lines !== null ? s.lines[1] - s.lines[0] + 1 : null;
+    return { fn: fnRef, name: s.overlayName ?? s.name, size };
+  }
+
+  private inlineEdges(bounded: Bounded<Edge>): Bounded<XrefEdge> {
+    return {
+      ...bounded,
+      rows: bounded.rows.map((e) => ({ ...this.neighbor(e.fn), file: e.file, line: e.line, kind: e.kind, ...(e.why !== undefined ? { why: e.why } : {}) })),
+    };
+  }
+
+  // -- fn / source / context (§1, §14) -----------------------------------
+
+  /** `fn/{fn}` — minimal preset: `query fn`'s own ≤ 10 lines, unchanged. */
+  fn(fn: number): FnSummary {
+    return this.artifact.fn(fn);
+  }
+
+  /** `source/{fn}` — rendered source, clipped to the fn's own range (spec
+   *  10 §3.1's `query source`) — the ONLY resource besides `context`
+   *  (below, when `source` is included) that emits source text, so no
+   *  resource ever double-fetches it (§14's own requirement). */
+  source(fn: number, opts: { readonly lines?: readonly [number, number] } = {}): { readonly text: string; readonly totalLines: number; readonly truncated: boolean } {
+    const text = this.artifact.source(fn, opts.lines);
+    return truncateLines(text, SOURCE_LINE_CAP);
+  }
+
+  /** `disasm/{fn}` — raw disassembly text for one fn (spec 02 §6.3's
+   *  `hbc2js disasm --function`), capped identically to `source` (task
+   *  brief: "capped like source"). Requires `--hbc` at construction, same
+   *  live-verb constraint as `source`'s CFG-derived siblings. */
+  disasm(fn: number): { readonly text: string; readonly totalLines: number; readonly truncated: boolean } {
+    const text = this.artifact.disasm(fn);
+    return truncateLines(text, SOURCE_LINE_CAP);
+  }
+
+  /** `context/{fn}` — the scoped analysis slice (§1/§14): a COMPOSITION of
+   *  `fn` + `who-calls` + `calls-from` + strings-used, gated by `include`
+   *  (default: all five per §1's original description minus the
+   *  double-fetch rule) and `depth` (default 1 = direct neighbours only;
+   *  `depth > 1` walks callers/callees that many hops, still applying each
+   *  hop's own cap and de-duplicating — never a new answer, just more of
+   *  the same bounded ones). Truncation is reported per component, per the
+   *  spec's "union of the component caps; truncation marked per component". */
+  context(
+    fn: number,
+    opts: { readonly include?: readonly ("metadata" | "source" | "callers" | "callees" | "strings")[]; readonly depth?: number } = {},
+  ): {
+    readonly fn: number;
+    readonly metadata?: FnSummary;
+    readonly source?: { readonly text: string; readonly totalLines: number; readonly truncated: boolean };
+    readonly callers?: Bounded<XrefEdge>;
+    readonly callees?: Bounded<XrefEdge>;
+    readonly strings?: Bounded<{ readonly sid: number; readonly head: string; readonly role: string; readonly n: number }>;
+  } {
+    const include = new Set(opts.include ?? ["metadata", "source", "callers", "callees", "strings"]);
+    const depth = Math.max(1, opts.depth ?? 1);
+    const out: {
+      fn: number;
+      metadata?: FnSummary;
+      source?: { text: string; totalLines: number; truncated: boolean };
+      callers?: Bounded<XrefEdge>;
+      callees?: Bounded<XrefEdge>;
+      strings?: Bounded<{ sid: number; head: string; role: string; n: number }>;
+    } = { fn };
+    if (include.has("metadata")) out.metadata = this.artifact.fn(fn);
+    if (include.has("source")) out.source = this.source(fn) as { text: string; totalLines: number; truncated: boolean };
+    if (include.has("callers")) out.callers = this.walkEdges(fn, "callers", depth) as Bounded<XrefEdge>;
+    if (include.has("callees")) out.callees = this.walkEdges(fn, "callees", depth) as Bounded<XrefEdge>;
+    if (include.has("strings")) out.strings = this.artifact.stringsUsedBy(fn) as Bounded<{ sid: number; head: string; role: string; n: number }>;
+    return out;
+  }
+
+  /** Direct-neighbour edges at depth 1; `depth > 1` BFS-walks further hops,
+   *  merging into one deduplicated (by fn) bounded set, each hop applying
+   *  its own verb cap (`who-calls`/`calls-from`'s existing ≤ 50). */
+  private walkEdges(fn: number, dir: "callers" | "callees", depth: number): Bounded<XrefEdge> {
+    const seen = new Set<number>([fn]);
+    const acc: XrefEdge[] = [];
+    let total = 0;
+    let truncated = false;
+    let frontier = [fn];
+    for (let hop = 0; hop < depth && frontier.length > 0; hop++) {
+      const next: number[] = [];
+      for (const f of frontier) {
+        const bounded = dir === "callers" ? this.artifact.whoCalls(f) : this.artifact.callsFrom(f);
+        const edges = this.inlineEdges(bounded);
+        total += edges.total;
+        truncated = truncated || edges.truncated;
+        for (const e of edges.rows) {
+          if (typeof e.fn === "number") {
+            if (!seen.has(e.fn)) {
+              seen.add(e.fn);
+              next.push(e.fn);
+              acc.push(e);
+            }
+          } else {
+            acc.push(e);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return { rows: acc, total, truncated };
+  }
+
+  // -- xref (§1, §14) ------------------------------------------------------
+
+  /** `xref/who-calls/{fn}` — spec-10 `query who-calls`'s own ≤ 50 + total,
+   *  each row's `{fn, name, size}` inlined per §14. */
+  whoCalls(fn: number, opts: { readonly all?: boolean } = {}): Bounded<XrefEdge> & { readonly unknownInScope: number } {
+    const bounded = this.artifact.whoCalls(fn, opts);
+    return { ...this.inlineEdges(bounded), unknownInScope: bounded.unknownInScope };
+  }
+
+  /** `xref/calls-from/{fn}` — spec-10 `query calls-from`'s own ≤ 50 + total. */
+  callsFrom(fn: number, opts: { readonly all?: boolean } = {}): Bounded<XrefEdge> {
+    return this.inlineEdges(this.artifact.callsFrom(fn, opts));
+  }
+
+  /** `xref/string` — merges the two pre-§14 string endpoints (spec 10
+   *  `query string`/`query string-grep`) behind one `mode`: `exact` reads a
+   *  single sid (`key` must be a number); `substring`/`regex` grep every
+   *  string's head/value (`key` a pattern string — `substring` is escaped
+   *  into a literal regex before reaching `stringGrep`, `regex` passed
+   *  through as-is), each mode keeping its own verb's cap. */
+  xrefString(
+    key: number | string,
+    mode: "exact" | "substring" | "regex" = "exact",
+  ): { readonly value: unknown; readonly uses: Bounded<unknown> } | Bounded<{ readonly sid: number; readonly head: string; readonly uses: number }> {
+    if (mode === "exact") {
+      if (typeof key !== "number") throw new Hbc2jsError(ErrorCode.E_USAGE, "xref/string: mode=exact needs a numeric sid");
+      return this.artifact.string(key);
+    }
+    if (typeof key !== "string") throw new Hbc2jsError(ErrorCode.E_USAGE, `xref/string: mode=${mode} needs a string pattern`);
+    const pattern = mode === "substring" ? key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : key;
+    return this.artifact.stringGrep(pattern);
+  }
+
+  /** `xref/global-uses/{name}` — spec-10 `query global-uses`'s own ≤ 50 + total. */
+  globalUses(name: string, opts: { readonly all?: boolean } = {}) {
+    return this.artifact.globalUses(name, opts);
+  }
+
+  // -- module / package-id / native (§1, §14) ------------------------------
+
+  /** `module/{mod}` — module + DIRECT edges only (§14 cut `module-graph`'s
+   *  whole-graph read; the analyst walks it one `module/{mod}` at a time). */
+  module(id: number) {
+    return this.artifact.module(id);
+  }
+
+  /** `package-id/{mod}` — spec-13's reuse-validation two-key gate over the
+   *  shared spec-15 sigdb. NOT YET IMPLEMENTED ANYWHERE in this codebase
+   *  (no sigdb, no reuse-validation module exists to call) — this is a
+   *  documented stub, not a silent invention: it returns `available:
+   *  false` rather than guessing, honoring §1's "every row cites the
+   *  sigdb match, never a guess". Wiring this up is follow-up work once
+   *  spec 13/15 land. */
+  packageId(_mod: number): { readonly available: false; readonly reason: string } {
+    return { available: false, reason: "spec-13 reuse-validation / spec-15 sigdb not yet implemented in this codebase" };
+  }
+
+  /** `native[/{fn}]` — spec-10 `query native`'s own ≤ 50 + total. */
+  native(opts: { readonly fn?: number; readonly all?: boolean } = {}) {
+    return this.artifact.native(opts);
+  }
+
+  // -- annotations / findings (§1) -----------------------------------------
+
+  /** `annotations/for-fn/{fn}` — spec-11 `project for-fn`'s own ≤ 40 + total. */
+  annotationsForFn(fn: number, opts: { readonly all?: boolean } = {}): Bounded<AnnotationRow> {
+    return this.project.forFn(fn, opts);
+  }
+
+  /** `findings[?tag&severity&status]` — spec-11 `project findings`'s own ≤ 50 + total. */
+  findings(
+    query: { readonly tag?: Tag; readonly severity?: Severity; readonly status?: FindingStatus } = {},
+    opts: { readonly all?: boolean } = {},
+  ): Bounded<ResolvedFinding> {
+    return this.project.findings(query, opts);
+  }
+
+  /** `finding/{id}` — spec-11 `project finding show`'s own ≤ 20 lines. */
+  finding(rid: string): ResolvedFinding | null {
+    return this.project.finding(rid);
+  }
+
+  // -- log / history / annotated-calls (spec 16 §3.2) ----------------------
+  //
+  // None of these three have a `ProjectService`/`ArtifactService` method
+  // yet: §3.2's `log`/`history`/`annotated-calls` are new DB-native verbs
+  // this spec's own reading list cites, but `ProjectService` only ever
+  // loads annotation records into an in-memory `ProjectStore` (see
+  // `src/projdb/project-read.ts`'s header note: it does not carry the `log`
+  // table at all) and keeps no open DB handle to query after construction.
+  // Rather than invent a wrapper class this pass is not scoped to build,
+  // these three read the readonly `.hbcproj` connection directly against
+  // the exact tables/shapes spec 16 §2.2/§3.2 publish, with the same
+  // `LIMIT cap+1` truncation discipline as every other verb here. This is a
+  // known scope gap (not a bug): a follow-up should promote this into
+  // proper `ProjectService` methods so the CLI's own `project log`/
+  // `project history` verbs (also unimplemented) share the same code.
+
+  private openDb(): DatabaseSync {
+    if (!hasProjectDb(this.artifactDir)) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, "log/history/annotated-calls: this project has no project.hbcproj (JSONL-backed projects do not carry a change log, spec 16 §2.2)");
+    }
+    return openProjectDbReadonly(this.artifactDir);
+  }
+
+  /** `log[?since&who]` — spec 16 §3.2, ≤ 50 lines + total, one row per
+   *  `log` table entry (§2.2), newest first. */
+  log(query: { readonly since?: string; readonly who?: string } = {}, opts: { readonly all?: boolean } = {}): Bounded<{
+    readonly seq: number;
+    readonly ts: string;
+    readonly who: string;
+    readonly op: string;
+    readonly detail: string | null;
+  }> {
+    const db = this.openDb();
+    try {
+      const clauses: string[] = [];
+      const params: (string | number)[] = [];
+      if (query.since !== undefined) {
+        clauses.push("ts >= ?");
+        params.push(query.since);
+      }
+      if (query.who !== undefined) {
+        clauses.push("actor_who = ?");
+        params.push(query.who);
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      const total = (db.prepare(`SELECT COUNT(*) AS n FROM log ${where}`).get(...params) as { n: number }).n;
+      const cap = opts.all === true ? total : CAPS_LOG;
+      const rows = db
+        .prepare(`SELECT seq, ts, actor_who AS who, op, detail FROM log ${where} ORDER BY seq DESC LIMIT ?`)
+        .all(...params, cap + 1) as unknown as { seq: number; ts: string; who: string; op: string; detail: string | null }[];
+      return { rows: rows.slice(0, cap), total, truncated: rows.length > cap };
+    } finally {
+      db.close();
+    }
+  }
+
+  /** `history/{target}` — spec 16 §3.2, ≤ 40 lines + total: the full
+   *  `revisions` supersession/revert timeline for one binding-id target,
+   *  newest first. */
+  history(target: string, opts: { readonly all?: boolean } = {}): Bounded<{
+    readonly rid: number;
+    readonly kind: string;
+    readonly ts: string;
+    readonly supersedes: number | null;
+    readonly reactivates: number | null;
+    readonly cleared: boolean;
+    readonly who: string;
+  }> {
+    const db = this.openDb();
+    try {
+      const total = (db.prepare(`SELECT COUNT(*) AS n FROM revisions WHERE target = ?`).get(target) as { n: number }).n;
+      const cap = opts.all === true ? total : CAPS_HISTORY;
+      const rows = db
+        .prepare(
+          `SELECT rid, kind, ts, supersedes, reactivates, cleared, prov_who AS who FROM revisions
+             WHERE target = ? ORDER BY rid DESC LIMIT ?`,
+        )
+        .all(target, cap + 1) as unknown as { rid: number; kind: string; ts: string; supersedes: number | null; reactivates: number | null; cleared: number; who: string }[];
+      return { rows: rows.slice(0, cap).map((r) => ({ ...r, cleared: r.cleared !== 0 })), total, truncated: rows.length > cap };
+    } finally {
+      db.close();
+    }
+  }
+
+  /** `annotated-calls[?tag&status]` — spec 16 §3.2's cross-store join: one
+   *  row per caller edge into a fn holding a matching active FINDING
+   *  (scope note: standalone tags with no finding are not walked this pass
+   *  — `project.findings()` is the filter this composes, per its own
+   *  `tag`/`status` params; a future pass can widen this to plain tags).
+   *  Built from already-loaded `ProjectService`/`ArtifactService` state
+   *  (no raw SQL needed here, unlike `log`/`history` above), so it works
+   *  for both JSONL- and DB-backed projects alike. */
+  annotatedCalls(
+    query: { readonly tag?: Tag; readonly status?: FindingStatus } = {},
+    opts: { readonly all?: boolean } = {},
+  ): Bounded<{ readonly caller: XrefEdge; readonly calleeFn: number; readonly finding: { readonly rid: string; readonly severity: string; readonly status: string } }> {
+    const findings = this.project.findings(query, { all: true }).rows;
+    const targetFns = new Map<number, ResolvedFinding[]>();
+    for (const f of findings) {
+      const m = /^fn:(\d+)$/.exec(f.record.target);
+      if (m === null) continue;
+      const fn = Number(m[1]);
+      const list = targetFns.get(fn) ?? [];
+      list.push(f);
+      targetFns.set(fn, list);
+    }
+    const rows: { caller: XrefEdge; calleeFn: number; finding: { rid: string; severity: string; status: string } }[] = [];
+    for (const [calleeFn, fs] of targetFns) {
+      const callers = this.inlineEdges(this.artifact.whoCalls(calleeFn, { all: true }));
+      for (const caller of callers.rows) {
+        for (const f of fs) {
+          rows.push({ caller, calleeFn, finding: { rid: f.record.rid, severity: f.record.severity, status: f.record.status } });
+        }
+      }
+    }
+    const cap = opts.all === true ? rows.length : CAPS_ANNOTATED_CALLS;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+}
+
+const CAPS_LOG = 50;
+const CAPS_HISTORY = 40;
+const CAPS_ANNOTATED_CALLS = 50;
+
+// Re-export the caps every resource above delegates to, so a test/consumer
+// can assert against the SAME constant this file reads rather than a
+// hand-copied number (kills a whole class of "cap drifted, test didn't"
+// bugs at the source).
+export const RESOURCE_CAPS = {
+  ...CAPS,
+  ...PROJECT_CAPS,
+  log: CAPS_LOG,
+  history: CAPS_HISTORY,
+  annotatedCalls: CAPS_ANNOTATED_CALLS,
+  sourceLines: SOURCE_LINE_CAP,
+} as const;

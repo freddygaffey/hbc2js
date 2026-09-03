@@ -18,8 +18,10 @@ import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { analyseModule } from "../cfg/index.ts";
 import type { ModuleAnalysis } from "../cfg/types.ts";
 import { parseHbc } from "../parse/module.ts";
+import type { HbcModule } from "../parse/types.ts";
 import { rawFrameBodies } from "../name-overlay/frames.ts";
 import { OverlayStore } from "../name-overlay/store.ts";
+import { printModule } from "../disasm/print.ts";
 import { listNameable, contextSites, type NameableRegister as FrameNameableRegister } from "./frame-queries.ts";
 import { sha256Hex } from "./schema.ts";
 import {
@@ -124,6 +126,7 @@ export class ArtifactService {
   private readonly hbcPath: string | undefined;
   private analysis: ModuleAnalysis | undefined;
   private frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> | undefined;
+  private hbcModule: HbcModule | undefined;
   private overlay: OverlayStore | undefined;
 
   /** §4.3 backend selection: `.hbcproj` present → DB-backed; else the
@@ -314,6 +317,24 @@ export class ArtifactService {
     return { value, uses: { rows: rows.slice(0, CAPS.string), total: rows.length, truncated: rows.length > CAPS.string } };
   }
 
+  /** Strings used BY a given fn — not a spec-10 §3.1 CLI verb of its own,
+   *  but the read `context/{fn}` (docs/specs/17-mcp-harness.md §1/§14) needs
+   *  to fill its "strings-used" slice without a new answer: same
+   *  `ix_string_uses`/`stringUses` rows `string(sid)` already serves,
+   *  inverted by fn instead of by sid, capped the same as `string`'s own
+   *  `uses` cap (§3.1's "union of the component caps"). */
+  stringsUsedBy(fn: number, opts: { readonly all?: boolean } = {}): Bounded<{ readonly sid: number; readonly head: string; readonly role: string; readonly n: number }> {
+    const rows = this.stringUses
+      .filter((r) => r.fn === fn)
+      .map((r) => {
+        const s = this.stringsById.get(r.sid);
+        const text = s === undefined ? "" : "v" in s ? s.v : s.head;
+        return { sid: r.sid, head: text.length > 80 ? text.slice(0, 80) : text, role: r.role, n: r.n };
+      });
+    const cap = opts.all === true ? rows.length : CAPS.string;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
   /** §3.1 `query string-grep <regex>`. */
   stringGrep(pattern: string, opts: { readonly all?: boolean } = {}): Bounded<{ readonly sid: number; readonly head: string; readonly uses: number }> {
     const re = new RegExp(pattern);
@@ -391,17 +412,41 @@ export class ArtifactService {
     return fileLines.slice(wantLo - 1, wantHi).join("\n");
   }
 
-  private ensureFrames(): { readonly analysis: ModuleAnalysis; readonly frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> } {
+  /** Lazily parses the raw `.hbc` bytes once, shared by `ensureFrames` (CFG
+   *  analysis) and `disasm` (raw instruction printing) — both are "live"
+   *  verbs needing bytes that never land on disk in the artifact (§3.3). */
+  private ensureModule(verb: string): HbcModule {
     if (this.hbcPath === undefined) {
-      throw new Hbc2jsError(ErrorCode.E_USAGE, `query ${"list/context"}: needs --hbc <input.hbc> (live verb, §3.3 — warm frames are not on disk)`);
+      throw new Hbc2jsError(ErrorCode.E_USAGE, `query ${verb}: needs --hbc <input.hbc> (live verb, §3.3 — warm frames are not on disk)`);
     }
-    if (this.analysis === undefined) {
+    if (this.hbcModule === undefined) {
       const bytes = readFileSync(this.hbcPath);
-      const module = parseHbc(bytes);
+      this.hbcModule = parseHbc(bytes);
+    }
+    return this.hbcModule;
+  }
+
+  private ensureFrames(): { readonly analysis: ModuleAnalysis; readonly frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> } {
+    const module = this.ensureModule("list/context");
+    if (this.analysis === undefined) {
       this.analysis = analyseModule(module, { strictEnv: true });
     }
     if (this.frames === undefined) this.frames = new Map(rawFrameBodies(this.analysis));
     return { analysis: this.analysis, frames: this.frames };
+  }
+
+  /** Raw disassembly text for one function (`hbc2js disasm --function`,
+   *  spec 02 §6.3) — a live verb like `list`/`context`, needing `--hbc`
+   *  since raw bytecode text is never materialised in the artifact. Callers
+   *  cap the returned lines themselves (mirrors `source()`, the other
+   *  verb whose output is a whole text blob rather than a row set). */
+  disasm(fn: number): string {
+    if (!this.hasFn(fn)) throw new Hbc2jsError(ErrorCode.E_USAGE, `query disasm: no such function ${fn} in this artifact`);
+    const module = this.ensureModule("disasm");
+    const chunks: string[] = [];
+    const out = { write: (chunk: string): boolean => (chunks.push(chunk), true) } as NodeJS.WritableStream;
+    printModule(module, out, { mode: "raw", indices: [fn] });
+    return chunks.join("");
   }
 
   /** §3.1 `name list <fn>` (P2.1a(b)) — delegates to the shared live-frame
