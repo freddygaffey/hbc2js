@@ -92,13 +92,8 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 - Device round-trip on a real app — needs a tablet attached.
 
 ## Queue — top of docs/QUEUE.md
-
-1. Metrics scoreboard collector (standing, FIRST — Fred 2026-09-02 night:
-   baseline before the night's changes).
-2. Lane L: reg-split default-on shipped 2026-09-03 (D23 stage-boundary
-   reorder resolved the jsx-recover interaction, docs/BUGS.md 2026-09-02
-   P-11b row now Resolved); next var-naming compound, then non-deobf
-   cleanup rungs.
-3. Lane T: testing-decisions spec (construct-level + app-generation
-   fuzzers, held-out set) -> Fable review -> impl.
+DB MIGRATION (Fred 2026-09-04): sigdb -> SQLite (spec 15; import landed);
+project DB (spec 16, `hbc2js init` — one versioned SQLite over P2.1+P2.2,
+JSON as a generated view). Then MCP-harness business-logic spec, then the
+fix-wave on the 191 real fuzz signatures. Stage-2 lanes S/M + P2.5 remain.
 Numbers are measured, not hoped — every cell cites its source file.
