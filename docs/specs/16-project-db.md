@@ -83,7 +83,10 @@ joins (§6).
   `page_size=8192` (matching spec 15 §2). Services checkpoint + close cleanly
   so the file is single-file at rest (`wal_checkpoint(TRUNCATE)` on service
   shutdown); transient `-wal`/`-shm` sidecars during a session are accepted
-  and documented, never required for reading a quiescent project.
+  and documented, never required for reading a quiescent project. A
+  `.hbcproj` is only handed off / copied / diffed QUIESCED (no live `-wal`):
+  copying the main file out from under an open writer can miss checkpointed-
+  but-unmerged pages, and that rule is stated wherever hand-off is described.
 - **Driver: `node:sqlite`** (built into Node ≥ 22.5; repo runs 25.x). No
   native npm dependency; macOS + Linux (spec 15 principle 6).
 
@@ -467,8 +470,8 @@ same script in the same process style (warm service, same corpus).
 | # | metric | target | measured how |
 |---|---|---|---|
 | 1 | **Truth**: checker (§5.1) — unmarked-wrong index rows on N=200 sampled fns; history-integrity violations; view-fidelity byte diffs; unresolved active annotations | **0, 0, 0, 0** (all derived/asserted data; any disagreement is a bug). `?`-rate and orphan-rate *reported*, not targeted | `tools/projdb/check-db.ts --sample 200 --seed 1` on tuning + held-out projects; one `--all` run on rn-template; numbers in the landing report |
-| 2 | **Query cost**: (a) per-answer bytes/lines over the fixed corpus (every spec-10+11 verb × 20 sampled args) — the TOKEN cost; (b) warm per-query latency vs the JSONL services on the identical corpus; (c) cold start (open DB + first `for-fn`) vs JSONL (load index + store + first `for-fn`) | (a) every answer within its existing §3.1 caps — NO regression, byte-for-byte comparable medians; (b) median warm latency ≤ 1.0× JSONL per verb (SQL with indexes should win; the target only forbids getting slower); (c) cold start ≤ 25% of the JSONL full-load path on the held-out project | `tools/projdb/measure.ts` runs both backends on the same artifact (JSONL via export, §3.3 — same data by construction), emits per-verb median/max for bytes, warm ms, cold ms; best-of-3 |
-| 3 | **The join JSONL cannot do cheaply**: `query annotated-calls --status open` (§3.2) — callers into every fn holding an open finding, with active overlay names and tags: a 4-way join (`ix_calls ⋈ v_active(finding) ⋈ v_active(name) ⋈ v_active(tag)`) | warm ≤ 50 ms and ≤ its 50-line cap on the held-out project; JSONL baseline (full `calls.jsonl` scan + full store scan + in-JS join, implemented once in `measure.ts` as the honest comparator) reported alongside — expected ≥ 10×, but the REPORTED ratio is the deliverable, the 50 ms is the target | same `measure.ts`, best-of-3 |
+| 2 | **Query cost**: (a) per-answer bytes/lines over the fixed corpus (every spec-10+11 verb × 20 sampled args) — the TOKEN cost; (b) warm per-query latency vs the JSONL services on the identical corpus; (c) cold start (open DB + first `for-fn`) vs JSONL (load index + store + first `for-fn`) | (a) every answer within its existing §3.1 caps — NO regression, byte-for-byte comparable medians; (b) median warm latency ≤ 1.0× JSONL per verb OR within 1 ms absolute, whichever is looser (sub-millisecond medians are noise-dominated; SQL with indexes should win — the target only forbids getting materially slower); (c) cold start ≤ 25% of the JSONL full-load path on the held-out project | `tools/projdb/measure.ts` runs both backends on the same artifact (JSONL via export, §3.3 — same data by construction), emits per-verb median/max for bytes, warm ms, cold ms; best-of-3 |
+| 3 | **The join JSONL cannot do cheaply**: `query annotated-calls --status open` (§3.2) — callers into every fn holding an open finding, with active overlay names and tags: a 4-way join (`ix_calls ⋈ v_active(finding) ⋈ v_active(name) ⋈ v_active(tag)`) | warm ≤ 50 ms and ≤ its 50-line cap on the held-out project, against a deterministic seeded annotation set (fixed-seed script in `measure.ts` writing the IDENTICAL records to both backends — ≥ 20 open findings + names + tags spread over indexed fns, counts stated in the report) so the join is non-vacuous; JSONL baseline (full `calls.jsonl` scan + full store scan + in-JS join, implemented once in `measure.ts` as the honest comparator) reported alongside — expected ≥ 10×, but the REPORTED ratio is the deliverable, the 50 ms is the target | same `measure.ts`, best-of-3 |
 | 4 | **DB size + held-out check**: `.hbcproj` bytes vs the total bytes of the JSONL files it replaces (index/ + project/ + overlay), same content; and targets 1–3 re-run unchanged on a project never used while building/tuning | size ≤ 1.0× JSONL total on both tuning and held-out (typed columns + no repeated keys must at least pay for page overhead; report the number); targets 1–3 hold on held-out | tune on `tests/fixtures/bundles/rn-template-0.72` + construct fixtures; **held-out = `tests/fixtures/bundles/react-navigation-example-0.85.3`** (real sample bundle, in-repo); spot-check `expensify-app-0.86.0` (large-bundle sanity, numbers in report) |
 
 `measure.ts` prints one summary block; §7's A10 asserts targets 1–2(a) in
@@ -639,4 +642,93 @@ Step 1 is the single hard prerequisite. Steps 2–3 are independent after 1;
 
 ## 11. Review responses
 
-*(placeholder — reviewer gate appends here; no review yet)*
+### Review responses (2026-09-03, Fable reviewer — decision-8 gate)
+
+**Verdict: APPROVED with the three in-place edits below applied (they are in
+this commit). Implementation step 0 may launch.** The spec is a storage/
+surface consolidation that changes no row semantics, keeps every shipped cap,
+and puts truth first: the independent checker (§5.1) re-derives from the
+decompiled AST via the spec-10 walker on its own raw connection — the DB is
+never both producer and validator. The append-only `revisions`/`log` strata
+with `RAISE(ABORT)` triggers, the derived `v_active` slot rule (mutable
+`active` flag eliminated), query-time orphan computation ("flag, never
+drop"), and rebuilds that never touch the annotation stratum are all
+consistent with spec 11's zero-silent-drop rule. The view layer generates
+JSON from relational truth with honest `LIMIT cap+1` truncation and
+`COUNT(*)` totals — nowhere does a cheaper answer replace a truer one.
+
+**Decision-8 quadruple — sound and measurable as edited.** Baselines exist
+(spec 10/11 are shipped, STATUS P2.1/P2.2 complete); fixtures are named and
+in-repo; the held-out project (react-navigation-example-0.85.3) was not used
+for tuning. Target 1's 0/0/0/0 is right for derived/asserted data, with
+`?`-rate reported not targeted. Two measurability holes were fixed in place:
+(1) §6 target 2(b)'s bare "≤ 1.0× JSONL" would fail on timer noise for
+sub-millisecond verbs — now "≤ 1.0× OR within 1 ms absolute, whichever is
+looser"; (2) §6 target 3 was vacuous on a pristine held-out project (no
+annotations → empty join, trivially ≤ 50 ms) — `measure.ts` now seeds a
+deterministic, identical annotation set into both backends and reports the
+counts. Target 4's ≤ 1.0× size holds only at real-bundle scale (JSONL's
+repeated keys pay for b-tree overhead); on tiny construct-fixture projects
+fixed page overhead will exceed JSONL — fine, because the target is scoped to
+the two named real bundles, and the number is reported either way.
+
+**Rulings on §10:**
+
+1. **Names WRAP→MIGRATE for DB projects: CONFIRMED as proposed.** Spec 11
+   §2.4's WRAP protected a shipped contract; this spec keeps that contract in
+   both senses that matter — JSONL-only projects are untouched, and the
+   `<hbc>.names.json` *format* survives as an export any consumer can request.
+   Dual support (live sidecar beside the DB) is the one wrong answer: it is
+   exactly the two-copies-of-truth drift §4.3 forbids. A consolidation that
+   left the highest-value record type outside the join surface would fail §6
+   target 3 and the spec's own mandate. Condition (already satisfied by
+   §4.3's warning naming ignored files): a leftover `names.json` in a DB
+   project must never be silently readable as live — the warning plus
+   export-on-demand is the sanctioned path.
+2. **WAL: CONFIRMED.** Transient `-wal`/`-shm` with `wal_checkpoint(TRUNCATE)`
+   on close gives single-file-at-rest, which is the property that matters for
+   a distributable `.hbcproj`; `journal_mode=DELETE` buys nothing but slower
+   rebuild transactions. The real portability hazard is copying the main file
+   while a live `-wal` exists — now stated as a hard hand-off rule in §1.1
+   (edit above).
+3. **`ix_*` protected by checker + readonly opens: SUFFICIENT for v1.**
+   Derived data's truth mechanism is recompute-and-diff, not write
+   prevention — the JSONL index had no write protection at all, so this is
+   strictly stronger. A trigger-gated `rebuild_in_progress` flag would itself
+   be mutable state a buggy writer could set, adding moving parts without
+   adding truth. Adopt the author's trigger-only-if-incident stance.
+4. **Merge deferral: CONFIRMED.** rid renumbering across two dense keyspaces
+   is a real design (it interacts with `legacy_rid`, `log.seq`, and conflict
+   records) and rushing it risks the history stratum. v1's refusal message
+   MUST name the export → spec-11 JSONL merge → `init --from` workaround (the
+   spec says so), which loses nothing since the export is lossless (A6/A7).
+5. **Cap parity: CONFIRMED as a hard contract for this spec.** Holding caps
+   fixed is what makes target 2(a) a controlled experiment — change storage
+   OR contract, never both in one commit. Renegotiations (e.g. FTS5-backed
+   string-grep, `project log` at 50) are their own reviewed commits with
+   their own measurements, exactly as spec 10's size renegotiation was.
+
+**Migration: sound.** `init --from` is verbatim-import + byte-round-trip-or-
+fail with partial-`.hbcproj` removal (A7) — a migration that cannot prove
+losslessness does not complete, and it never mutates its inputs. The §4.3
+one-backend rule with a visible warning is the right anti-drift stance. One
+noted weakness, acceptable: the checker's view-fidelity step on *arbitrary*
+projects (export → scratch re-import → dump-compare) proves idempotence, not
+format fidelity; format fidelity is proven on fixtures against a real spec-10
+build (A6), which covers the emitter code paths.
+
+**Implementation plan: lean-sized and correctly ordered** (0→1 serial; 2∥3;
+4 after both; 5–7 after 4; 8 last). Step 4 is the largest (two services'
+statement layers + staleness) but stays one coherent commit. **Orchestrator
+sequencing note — steps that touch other lanes' files:** step 2 edits
+`src/artifact/build.ts`/`write.ts` (artifact lane), step 3 builds against
+`src/project/revision-store.ts` and reuses its tests, step 4 edits both
+services, step 6 edits `src/name-overlay/{gate,service}.ts` (overlay lane).
+No other lane should have those files open concurrently; step 8's checker
+reuses `tools/artifact/check-index.ts`'s walker — reuse, do not fork it.
+
+**Gate decision: step 0 (materialise A1 verbatim + sample SQL, red harness)
+may launch now.** A1 is pre-implementation-runnable as required by
+CONSOLIDATION §B item 8 and asserts the right invariants (identity pragmas,
+append-only aborts, `?`-requires-`why`, revision↔log 1:1, sorted parseable
+views).
