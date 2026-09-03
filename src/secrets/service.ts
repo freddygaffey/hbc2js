@@ -203,21 +203,42 @@ export class SecretsService {
       }
 
       const isTruncated = !("v" in row);
+      // §4.2 "one finding per (sid, patternId)": a pattern may match the
+      // SAME string more than once (e.g. two base64 blobs in one long
+      // string) — group by patternId so every match becomes an extra
+      // `match` evidence ref on ONE finding, never competing writes to the
+      // same (target,patternId) store slot. Before this grouping, two hits
+      // of the same pattern on one string alternately superseded each other
+      // every scan (span [0,36] then [37,74] then back), so `new` was never
+      // 0 on re-scan even with an unchanged bundle — T4's idempotence bug.
+      const byPattern = new Map<string, Hit[]>();
       for (const hit of hits) {
         if (hit.tier === undefined) continue; // tag-only category — deferred (module header).
+        const list = byPattern.get(hit.patternId) ?? [];
+        list.push(hit);
+        byPattern.set(hit.patternId, list);
+      }
+      for (const [patternId, patternHits] of byPattern) {
+        // Tier should be uniform per pattern on one string (the §3.4 proxy
+        // gates on the whole string's own text), but if matches ever
+        // disagree, keep the most confident (A best) — never silently drop
+        // a stronger signal because a later match in the same string was
+        // weaker.
+        const tierRank: Record<Tier, number> = { A: 0, B: 1, C: 2 };
+        const tier = patternHits.reduce<Tier>((best, h) => (tierRank[h.tier!] < tierRank[best] ? h.tier! : best), patternHits[0]!.tier!);
         const target = `sid:${row.sid}`;
         const uses = this.usesBySid.get(row.sid) ?? [];
-        const evidence: EvidenceRef[] = [{ ref: target, role: "match", span: hit.span, patternId: hit.patternId }];
+        const evidence: EvidenceRef[] = patternHits.map((h) => ({ ref: target, role: "match", span: h.span, patternId }));
         if (uses.length === 0) {
           evidence[0] = { ...evidence[0]!, note: "no use sites in xref" };
         } else {
           for (const u of uses) evidence.push({ ref: `fn:${u.fn}`, role: "use-site", useRole: u.role, n: u.n });
         }
-        const claim = `candidate ${CLAIM_LABELS[hit.patternId] ?? hit.patternId} (pattern ${hit.patternId}, tier ${hit.tier})${isTruncated ? " — head-only scan; retrieve via query string <sid> --full" : ""}`;
-        const severity = SEVERITY_BY_TIER[hit.tier];
-        const ctx = { tier: hit.tier, patternSetVersion: PATTERN_SET_VERSION, patternId: hit.patternId } as const;
+        const claim = `candidate ${CLAIM_LABELS[patternId] ?? patternId} (pattern ${patternId}, tier ${tier})${isTruncated ? " — head-only scan; retrieve via query string <sid> --full" : ""}`;
+        const severity = SEVERITY_BY_TIER[tier];
+        const ctx = { tier, patternSetVersion: PATTERN_SET_VERSION, patternId } as const;
 
-        const active = this.store.allFindings().find((f) => f.active && f.target === target && f.patternId === hit.patternId);
+        const active = this.store.allFindings().find((f) => f.active && f.target === target && f.patternId === patternId);
         if (active) {
           if (this.store.statusOf(active.rid) === "refuted") {
             skippedRefuted++;
@@ -234,7 +255,7 @@ export class SecretsService {
             claim,
             severity,
             evidence,
-            patternId: hit.patternId,
+            patternId,
             prov: { source: "tool", who: "secrets-indexer", run: `scan:${this.bundleHash8}:${PATTERN_SET_VERSION}:${this.nextRun}:${scanId}` },
             ctx: ctx as unknown as import("../project/schema.ts").CtxSnapshot,
           },
