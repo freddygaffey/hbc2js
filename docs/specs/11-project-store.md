@@ -152,6 +152,8 @@ Every record, all types, shares the overlay's proven shape (`NameRecord` in
   "ts": "<iso>",
   "supersedes": "<prior rid | null>",
   "active": true,
+  "ctx": { "name?": "<target's overlay/recovered name at write time>",
+           "loc?": "<file:line>", "ownerFn?": "<owning-fn signature>" },
   "…type-specific fields…" }
 ```
 
@@ -202,6 +204,12 @@ sidecar already sits beside:
   `contested` and surfaced by `project conflicts` until an analyst resolves it
   with a new superseding record. Truth over convenience: the tool never guesses
   which analyst was right.
+- **Precondition: both stores' `builtFor.bundleSha256` match** (ruling on §9
+  Q4): the merge is refused otherwise. This is a truth requirement, not
+  tidiness — across different decompiles the same `fn:N` can resolve to a
+  DIFFERENT function, so merged records would not merely orphan, they would
+  silently re-attach to the wrong code, which no orphan check can catch.
+  Cross-version reconciliation is P2.5's job.
 - v1 merge is a batch CLI operation (`project merge <other-store>`), not live.
 
 ### 2.4 DECISION — overlay migrate vs wrap: WRAP (share the engine, keep the data)
@@ -231,10 +239,14 @@ truth rule forbids breaking a shipped contract for tidiness. Therefore:
   a re-decompile is of DIFFERENT bytes, some targets no longer resolve. **Policy:
   orphaned annotations are FLAGGED, never dropped.** On load against an artifact
   whose `builtFor` differs, the store resolves every `target` against the new
-  index; a record whose target is absent is marked `status:"orphaned"` and
-  carries a captured **last-known context** snapshot (the target's old name /
-  file:line / owning-fn signature from the store it was written against) so P2.5
-  can attempt re-binding. Orphaned records:
+  index; a record whose target is absent is reported `orphaned` — a
+  **live-computed** status (§3.3), never a mutation of the stored line
+  (append-only holds; the record itself is untouched). Its **last-known
+  context** is the `ctx` snapshot (§2.1) captured at WRITE time — the target's
+  then-current name / file:line / owning-fn signature — so P2.5 can attempt
+  re-binding without the old artifact. (Reviewer edit E1: the spec previously
+  said the record was "marked", which contradicted §3.3 live-computation and
+  append-only.) Orphaned records:
   - are EXCLUDED from render and from active/`for-fn` queries (they no longer
     describe live code),
   - are RETURNED by `project orphans` and counted in `project stat`,
@@ -339,9 +351,16 @@ distinguishable and independently refutable.
 ### 4.3 Display-layer only
 
 Nothing in the project store ever alters rendered code SEMANTICS. Names
-alpha-rename at render (Design-D §7, unchanged). Comments render as comments;
-tags/bookmarks/findings do not render into code at all (they surface through the
-query layer and any future report format). There is no code path by which a
+alpha-rename at render (Design-D §7, unchanged). Comments surface through the
+query layer by default; rendering them into code is an **opt-in derived view**
+(`hbc2js render --with-comments`) that is never the canonical render — the
+canonical, `ranges.jsonl`/`renderHash`-bearing render (spec 10 §4.2) is a
+function of binary + names overlay ONLY and is byte-identical for every
+project-store record type, comments included. (Reviewer edit E2: comments in
+the canonical render would shift line numbers on every `comment add`, staling
+`ranges.jsonl` outside spec 10's overlayHash staleness model, which has no
+project-store hash.) Tags/bookmarks/findings do not render into code at all
+(they surface through the query layer and any future report format). There is no code path by which a
 project-store record changes what the emitted JS computes — the same
 by-construction guarantee the overlay gives.
 
@@ -352,7 +371,7 @@ by-construction guarantee the overlay gives.
 | 1 | **Annotation integrity**: fraction of active (non-orphaned) records whose target + evidence refs all resolve against the artifact, over a seeded corpus of writes replayed on rn-template | **100%** (a live annotation that doesn't resolve is a truth bug); orphan-rate is *reported*, not targeted, but 100% of orphans must carry last-known context | `tools/project/check-store.ts --seed 1` replays a fixture write-log, then resolves every active record; also asserts 0 findings with `valid:true` but unresolved evidence |
 | 2 | **Read token cost**: bytes/lines per answer over the fixed verb corpus (every verb × 20 sampled args) | every answer within its §3.1 cap; median `for-fn` ≤ 1.5 KB; `finding show` ≤ 20 lines always; NO verb ever emits a whole-store dump | `tools/project/measure.ts` runs the corpus, emits max/median per verb |
 | 3 | **Run cost**: store load+resolve wall-time as a fraction of `ArtifactService` construction (must be a thin add-on to an already-warm index); on-disk store size vs a bounded per-record budget | store load+resolve ≤ 15% of artifact-index load time; ≤ 300 bytes/record median on disk | same `measure.ts`, best-of-3, on rn-template + held-out |
-| 4 | **Held-out check** | targets 1–3 hold on a bundle never used while building the store engine, AND the orphan policy fires correctly across a real version bump | build/tune on rn-template + construct fixtures; **measure on react-navigation (`fetch.sh`)**; for orphans, annotate rn-template v0.72 then load the SAME store against a re-fetched newer rn-template (or a mutated-bytes artifact) and assert every vanished id becomes a flagged orphan with context, zero silent drops |
+| 4 | **Held-out check** | targets 1–3 hold on a bundle never used while building the store engine, AND the orphan policy fires correctly across a real version bump | build/tune on rn-template + construct fixtures; **measure on react-navigation (`fetch.sh`)**; for orphans, annotate rn-template v0.72 then load the SAME store against a re-fetched newer rn-template (or a mutated-bytes artifact; the landing report states which was used) and assert every vanished id becomes a flagged orphan with context, zero silent drops |
 
 `measure.ts` prints one summary block; the acceptance suite (§6) asserts targets
 1–2 in `test:all`; the implementer's landing report states all four numbers plus
@@ -360,8 +379,12 @@ the per-operation token bounds actually observed.
 
 ## 6. Acceptance tests
 
-Ship the pre-implementation-runnable ones (P1–P3) with the spec, as a red harness
-on a hand-written sample store (like spec 10's A1); the rest are precisely
+P1–P3 are the pre-implementation-runnable acceptance tests: precisely
+specified here and committed as impl-plan **step 0** (§7) — a tests-only red
+harness on a hand-written sample store (like spec 10's A1) that lands BEFORE
+any implementation step. (Reviewer edit E5: the spec commit itself, a237fe8,
+was docs-only; step 0 owns shipping them, satisfying the spec-agent-writes-
+acceptance-tests rule since step 0 precedes all code.) The rest are precisely
 specified for the implementer.
 
 - **P1 (pre-impl, hand-written sample): envelope + schema self-consistency**
@@ -389,9 +412,11 @@ specified for the implementer.
 - **A-STATUS** (`tests/project/finding-status.test.ts`): `open→confirmed` refused
   without a dynamic-role evidence ref; accepted with one; `refuted` needs
   counter-evidence; each transition is an append-only record with provenance.
-- **A-DISPLAY** (`tests/project/display.test.ts`): render before/after writing
-  every non-name record type is byte-identical except comments; tags/bookmarks/
-  findings never appear in rendered code.
+- **A-DISPLAY** (`tests/project/display.test.ts`): canonical render
+  before/after writing every non-name record type — comments included — is
+  byte-identical (§4.3, reviewer edit E2); comments appear only in the opt-in
+  `--with-comments` view; tags/bookmarks/findings never appear in rendered
+  code in either view.
 - **A-BOUNDS** (`tests/project/query-bounds.test.ts`): every §3.1 verb on
   rn-template stays within its cap and truncation is announced.
 - **A-PROV** (`tests/project/provenance.test.ts`): a write with no `prov` is
@@ -414,7 +439,7 @@ fixtures — NO exact-output string assertion against a shared
 | 3 | tags + bookmarks + comments record types + their write verbs; A-PROV, A-DISPLAY (non-comment) | step 1/2 | three record modules |
 | 4 | findings + status transitions + evidence resolution against `ArtifactService`; P2, A-STATUS | `ArtifactService` (spec 10), step 2 | finding module + resolver |
 | 5 | `ProjectService` + `hbc2js project <verb>` CLI incl. bounds/truncation + `--help`; A-BOUNDS | `ArtifactService` warm index, CLI pattern | service + verbs |
-| 6 | orphan detection on cross-`builtFor` load + `project orphans`; A-ORPHAN | step 2 resolver | orphan pass |
+| 6 | orphan detection on cross-`builtFor` load + `project orphans`; A-ORPHAN | step 2 io + `ArtifactService` target resolution (reviewer edit E4: the evidence resolver is step 4's; orphan detection needs only id-in-index lookup) | orphan pass |
 | 7 | `project merge` + conflict records + `project conflicts`; A-CONFLICT | step 1 append-only | merge |
 | 8 | `check-store.ts` + `measure.ts`; A-MEASURE; held-out run; landing report with the four numbers | spec 10 measure patterns | two scripts |
 
@@ -456,4 +481,128 @@ hard prerequisite and MUST keep every existing overlay test green.
 
 ## 10. Review responses
 
-_(placeholder — Fable reviewer gate, decision 8, before implementation)_
+### Review responses (2026-09-03, Fable reviewer gate)
+
+**VERDICT: APPROVED.** Implementation may launch at step 0 (§7). Every issue
+found was resolvable by a small in-place reviewer edit (E1–E6, marked in the
+text and enumerated below) plus the four §9 rulings. No CHANGES REQUIRED items
+remain.
+
+**Checklist findings**
+
+1. *Decision-8 quadruples (§5)*: all four metric/target/method/held-out rows
+   present and measurable, scripts named with exact invocations
+   (`tools/project/check-store.ts --seed 1`, `tools/project/measure.ts`).
+   Targets sane: integrity 100%-resolve on active records (orphan-rate
+   reported, not targeted — correct, since orphan count is a property of the
+   version bump, not the store); `for-fn` median ≤ 1.5 KB is consistent with
+   its 40-line cap; store load ≤ 15% of `ArtifactService` index load and
+   ≤ 300 B/record median are consistent with the §2.1 envelope (a tag record
+   is ~200 B; findings pull the mean, not the median, up). Held-out =
+   react-navigation (`fetch.sh`, never used while building the engine) plus a
+   real rn-template version bump for the orphan policy with zero-silent-drop
+   asserted. Edit E6: the landing report must state whether the bump used a
+   re-fetched newer rn-template or a mutated-bytes artifact.
+2. *§9 rulings*: below.
+3. *P2.1-as-landed consistency* (spec written concurrently with the close-out
+   — verified against the tree, not the spec): `src/name-overlay/{store,id,
+   service}.ts` all exist; `bindingKey` is real; the shipped `name` CLI has
+   exactly the §1.1 verb set (set/get/revert/search/list/context,
+   `src/cli.ts`) with default store `<hbc>.names.json`; `ArtifactService`
+   (`src/artifact/service.ts`) is landed with the warm-index pattern and the
+   overlayHash staleness check now wired (null-tolerant per the BUGS row) —
+   the §3 "follows `ArtifactService`/`NameService`" reference holds; spec 10
+   §1 line 77 does reserve `overlay/names.jsonl` as claimed in §2.2. The
+   renegotiated 70% index-size budget (spec 10 §5/§10) is not referenced by
+   this spec — its own target 3 is store-relative and independent — so no
+   stale number to fix. One found-and-fixed staleness interaction: comments
+   in the canonical render (E2, below).
+4. *Truth rules*: evidence resolution is enforced at write (§4.1 resolve-
+   before-accept via the shared `ArtifactService`) AND at read (§3.3 live
+   re-check; invalid findings excluded from active output but visible via
+   `finding show` + `stat` invalid totals — not vanished). Provenance
+   mandatory on all types incl. tool-proposed tags (§4.2). Orphan
+   flag-never-drop path is complete: load-time detection, exclusion from
+   active queries, `project orphans` + `stat`, merge keeps both sides +
+   conflict record, revert is append-only — no route silently drops a
+   record. Two gaps fixed: **E1** — §2.5 said orphans were "marked
+   `status:"orphaned"`", contradicting §3.3 (orphan status is live-computed,
+   never cached) and append-only; and the "captured last-known context" had
+   no defined capture point. Now: `ctx` snapshot captured at WRITE time in
+   the §2.1 envelope; orphan status computed live; stored lines never
+   mutated. **E2** — §4.3 had comments rendering into code, which would
+   shift `ranges.jsonl` line numbers on every `comment add`, outside spec 10
+   §4.2's staleness model (manifest has overlayHash but no project-store
+   hash) and would even stale other site-comments' anchors. Now: canonical
+   render is a function of binary + names overlay only, byte-identical under
+   ALL project-store writes; comments render only in an opt-in
+   `render --with-comments` derived view. A-DISPLAY strengthened to match
+   (E2b). Display-layer-only guarantee is otherwise explicit and
+   by-construction (§4.3).
+5. *Wrap-not-migrate (§2.4)*: sound. Verified `NameRecord` already carries
+   `rid`/`supersedes`/`active` (`src/name-overlay/store.ts`), so
+   `RevisionStore<T>` is a genuine extraction, not a redesign; the
+   byte-identical contract on the shipped CLI + `<hbc>.names.json` is stated
+   in §2.4 and guarded by A-WRAP (existing `tests/name-overlay/*` stay
+   green, test-count floor per project CLAUDE.md). No migration step exists
+   to get wrong.
+6. *Implementation plan (§7)*: steps 0–8 are lean-agent-sized (one
+   construct/file family + its tests each), ordering correct, reuse column
+   pins each step to existing code, 3∥4 and 6∥7 parallelism is real. Fixed
+   **E4**: step 6's reuse cell cited "step 2 resolver" but the evidence
+   resolver is delivered in step 4; orphan detection needs only step-2 io +
+   `ArtifactService` id lookup, so the stated "steps 6–7 depend only on 2"
+   dependency claim now actually holds. Fixed **E5**: §6 said P1–P3 "ship
+   with the spec", but the spec commit (a237fe8) is docs-only and
+   `tests/project/` does not exist — §7 step 0 owns them; §6 now says so.
+   The tests-before-implementation rule is satisfied because step 0 is a
+   tests-only red harness preceding all code.
+
+**Rulings on §9 open questions**
+
+1. **Names location: split stands, permanently; no relocation flag.**
+   Author's proposal accepted. The WRAP ruling (§2.4) exists to protect a
+   shipped contract; an optional relocation is a second code path and a
+   second on-disk location for the same data, with zero truth or efficiency
+   gain. The tidy end-state arrives on its own: spec 10 already reserves
+   `overlay/names.jsonl` inside the artifact directory for artifact-based
+   work, so the legacy sidecar is transitional in practice without any
+   migration code.
+2. **Comment re-anchoring: fn-level fallback + `range-stale` flag in v1.**
+   Author's proposal accepted. Nearest-line re-anchoring is a guess rendered
+   as truth — a subtly wrong anchor on a security note is strictly worse
+   than an honest `range-stale` flag (Stage-2 truth ordering). Line-level
+   re-attachment belongs with P2.5's diff machinery, which will have the
+   evidence to do it honestly.
+3. **Mechanical tag proposers: v1 reserves the tags, does not ship the
+   proposers.** Author's proposal sanity-checked and accepted. The analyses
+   (`provably-dead` = CFG reachability, `attacker-reachable` = source-tagged
+   call-graph traversal) live in Stage-3/P2.4; shipping proposers now would
+   bolt unvetted analysis onto the store and grow v1 beyond
+   lean-agent-sized steps. The taxonomy + `source:"tool"` provenance path
+   (§4.2) is fully specified now, so proposers plug in later with no schema
+   change.
+4. **Merge across different decompiles: REFUSE unless `builtFor` matches.**
+   Author's proposal accepted, with a stronger reason than tidiness, now
+   recorded in §2.3 (E3): across different bytes the same `fn:N` can
+   resolve to a *different* function, so merge-then-orphan-resolve would not
+   merely orphan records — it would silently re-attach annotations to the
+   wrong code, which no orphan check can detect. That is the exact truth
+   failure the store exists to prevent. Cross-version reconciliation is
+   P2.5's.
+
+**Edits applied (all in place, marked "reviewer edit E*n*")**
+
+- **E1** (§2.1, §2.5): `ctx` last-known-context snapshot captured at write
+  time; orphan status live-computed, store never mutated.
+- **E2** (§4.3, §6 A-DISPLAY): comments out of the canonical render; opt-in
+  `--with-comments` view; canonical render byte-identical under all
+  project-store writes.
+- **E3** (§2.3): merge precondition `builtFor` match + wrong-resolve
+  rationale (ruling 4).
+- **E4** (§7 step 6): reuse cell corrected — step-2 io + `ArtifactService`
+  lookup, not the step-4 evidence resolver.
+- **E5** (§6): P1–P3 land as impl step 0 (tests-only), not with the
+  docs-only spec commit.
+- **E6** (§5 target 4): landing report states which version-bump artifact
+  was used.
