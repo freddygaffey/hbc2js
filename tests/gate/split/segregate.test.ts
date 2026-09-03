@@ -699,6 +699,89 @@ void test("segregate: resolves a route whose depmap index is built as two statem
   assert.equal(byId.get(301)!.newPath, "src/screens/LicenceRenewScreen.js", "a route whose Reflect.apply depmap index is built as two statements (literal into a register, then bracket-indexed by that register) should still resolve its target module");
 });
 
+// 2026-09-03 (lazyRequire fix-wave, docs/QUEUE.md "FIX WAVE" finding, appgen
+// triple d4e1aacf818f482d, "tabs" router + "lazyRequire" depStyle): screens
+// loaded through a source-level `function loadFoo() { return
+// require('./Foo').default; } const Foo = loadFoo();` thin-loader IIFE were
+// invisible to §3.2 -- Hermes inlines the trivial IIFE at compile time, so
+// no separate function survives in the decompiled text; instead the
+// require + interop-`.default` hop + closure-capture-slot (`_eNNNN_M`)
+// write land at the very END of the navigator module's own top-level
+// statements, textually AFTER the nested `<Nav.Screen component={Foo} />`
+// -building closure that reads the slot back out. A single left-to-right
+// scan (this file's whole `traceModuleOrigins` design) never sees the
+// write in time. Modelled directly on the appgen triple's own module 440
+// shape (`hbc2js-appgen/triples/d4e1aacf818f482d`, not committed to this
+// repo -- npm-dependency-generated bundles per docs/AGENT-BRIEF.md's
+// appgen convention -- so this fixture hand-derives the same shape,
+// deps-free).
+void test("segregate: resolves a screen loaded through an inlined lazy-require IIFE (env-slot write AFTER the nested JSX-props reader that consumes it)", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 96, moduleCount: 2, entry: null, modules: [
+      { id: 440, file: "module_440.js", factoryFunctionIndex: 4436, deps: [441, 615] },
+      { id: 615, file: "module_615.js", factoryFunctionIndex: 6150, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_440.js');\nrequire('./module_615.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    // Navigator module -- calls `.createBottomTabNavigator` (§3.1 shape),
+    // and its own `AppNavigator` body (`_fn4437`, printed FIRST, mirroring
+    // Hermes's own function-declarations-first ordering) reads the inlined
+    // loader's result through `_e1057_2` BEFORE the outer function's own
+    // require+interop+env-slot-write statements (printed LAST) ever run.
+    [
+      "module_440.js",
+      `// hbc2js --split -- Metro module 440\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r4, r5;\n  let _e1057_0, _e1057_2;\n  function _fn4437() {\n    let r0, r4, r5;\n    r4 = {};\n    r0 = "LyricSignal";\n    r4.name = r0;\n    r0 = _e1057_2;\n    r4.component = r0;\n    r5 = _e1057_0;\n    r5 = r5.createElement;\n    return r5;\n  }\n  r0 = undefined;\n  r1 = require("./module_441.js");\n  r1 = r1.createBottomTabNavigator;\n  _e1057_0 = r1;\n  r1 = require("./module_615.js");\n  r1 = r1["default"];\n  _e1057_2 = r1;\n  return r0;\n}\n\n__d(factory, 440, [441, 615]);\n`,
+    ],
+    ["module_615.js", `// hbc2js --split -- Metro module 615\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 615, []);\n`],
+    // module_441.js (react-navigation's own createBottomTabNavigator) is
+    // not itself a dep this test resolves against -- omitted, matching the
+    // "resolves a screen's .component through..." test's own convention of
+    // only including modules the assertions touch.
+  ]);
+
+  const seg = segregateSplitTree(files, null);
+  const byId = new Map(seg.modules.map((m) => [m.id, m]));
+  assert.equal(byId.get(615)!.newPath, "src/screens/LyricSignalScreen.js", "the inlined-loader screen should resolve even though its env-slot write is textually AFTER the nested JSX-props reader that consumes it");
+  assert.equal(byId.get(615)!.nameSignal, 'screen-route (route "LyricSignal", §3.2)');
+});
+
+// 2026-09-03 (lazyRequire fix-wave, false-positive check found while fixing
+// the above): the env-slot resolution above must NOT persist a stale
+// `moduleOriginByReg` entry for the ordinary register it briefly flows
+// through -- confirmed on react-navigation-example's own module 1621
+// (proprietary bundle's register-reuse hazard, no committed fixture for
+// the real one; modelled here instead): a register read from an env slot
+// for one purpose, then reused for an UNRELATED untracked object literal
+// before it ever reaches a `.name=`/`.component=` pair, must not leak that
+// env slot's origin into the unrelated route.
+void test("segregate: an env-slot read does NOT leak into an unrelated later route assignment through register reuse", () => {
+  const files = new Map<string, string>([
+    ["MODULES.json", JSON.stringify({ hbcVersion: 96, moduleCount: 2, entry: null, modules: [
+      { id: 450, file: "module_450.js", factoryFunctionIndex: 4506, deps: [441, 615] },
+      { id: 615, file: "module_615.js", factoryFunctionIndex: 6150, deps: [] },
+    ] }) ],
+    [
+      "index.js",
+      `require('./module_450.js');\nrequire('./module_615.js');\nvar __hbc_split_Module = require("module");\nvar __hbc_split_origLoad = __hbc_split_Module._load;\n__hbc_split_Module._load = function (request, parent, isMain) {\n  var m = /^\\.\\/module_(\\d+)\\.js$/.exec(request);\n  if (m) return __r(Number(m[1]));\n  return __hbc_split_origLoad.apply(this, arguments);\n};\n`,
+    ],
+    // `r7` is read from `_e1057_2` (module 615's origin) for an unrelated
+    // purpose, then reassigned to an untracked object literal (computed
+    // key, matches none of traceModuleOrigins's tracked shapes) BEFORE it
+    // is used in a `{Chat: null}` registry's `.Chat = r7;` assignment --
+    // the stale `moduleOriginByReg["r7"]` must not resolve that route.
+    [
+      "module_450.js",
+      `// hbc2js --split -- Metro module 450\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n  let r0, r1, r6, r7;\n  let _e1057_2;\n  r0 = undefined;\n  r1 = require("./module_441.js");\n  r1 = r1.createBottomTabNavigator;\n  r1 = require("./module_615.js");\n  r1 = r1["default"];\n  _e1057_2 = r1;\n  r7 = _e1057_2;\n  r7 = ["if"];\n  r6 = {Chat: null};\n  r6.Chat = r7;\n  return r0;\n}\n\n__d(factory, 450, [441, 615]);\n`,
+    ],
+    ["module_615.js", `// hbc2js --split -- Metro module 615\nfunction factory(a1, a2, a3, a4, a5, a6, a7) {\n}\n\n__d(factory, 615, []);\n`],
+  ]);
+
+  const seg = segregateSplitTree(files, null);
+  assert.equal(seg.modules.find((m) => m.id === 615)!.nameSignal, null, "module 615 must not be named/routed as a screen through a stale register-reuse forward");
+});
+
 // Milestone 3's own acceptance fixture (docs/specs/08-segregation.md §5/§6
 // milestone 3, §6.3): react-navigation-example-0.85.3, a real router-heavy
 // app -- rn-template-0.72 (used by every other test in this file) ships no

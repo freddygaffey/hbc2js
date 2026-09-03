@@ -263,6 +263,22 @@ the navigator call-shape gate to recognise `.Navigator`/`.Screen` JSX usage
 needs the same over-matching care, with its own fixture-backed regression
 bar, before it ships.
 
+**Inlined lazy-require loader shape (2026-09-03, fix-wave item, appgen
+triple `d4e1aacf818f482d`):** a source-level thin-loader IIFE (`function
+loadFoo() { return require('./Foo').default; } const Foo = loadFoo();`,
+called immediately — not `React.lazy`) compiles to no separate function at
+all: Hermes inlines it, leaving the require + interop-`.default` hop +
+closure-capture-slot write at the END of the navigator module's own
+top-level statements, textually AFTER the nested `<Nav.Screen
+component={Foo} />`-building closure that reads the slot back out — outside
+`traceModuleOrigins`'s single left-to-right scan's reach. Fixed with a
+self-contained regex resolving the slot's origin independent of text order,
+consumed only when the read and the `.name=`/`.component=` use are the
+immediately-next statement (no persistent forwarding into an ordinary,
+reused-by-name register — see `docs/BUGS.md`, 2026-09-03, for the two unsafe
+approaches tried and reverted first). `d4e1aacf818f482d`: 0/4 → 4/4 screens;
+react-navigation-example-0.85.3's pinned acceptance numbers (§6) unchanged.
+
 ### 3.3 Store/slice detection (confidence 0.9 slice name / 0.4 zustand)
 `createSlice({ name: "foo", … })` (Redux Toolkit) → CUSTOM, filed
 `src/store/fooSlice.js`, confidence 0.9 (2.1 step 5). `configureStore(...)`/

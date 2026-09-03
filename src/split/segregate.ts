@@ -151,7 +151,7 @@ interface RouteKeyAssignment {
 }
 
 const TRACE_STMT_RE =
-  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?:(?<idxNum>\d+)|(?<idxRegRef>[A-Za-z_$][\w$]*))\]\s*;|(?<numLitTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<numLitVal>\d+)\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<reflectTarget>[A-Za-z_$][\w$]*)\s*=\s*Reflect\.apply\(\s*(?<reflectFn>[A-Za-z_$][\w$]*)\s*,\s*[A-Za-z_$][\w$]*\s*,\s*\[\s*(?<reflectArg>[A-Za-z_$][\w$]*)\s*\]\s*\)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget>_e\d+_\d+)\s*=\s*(?<envAliasSrc>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget2>[A-Za-z_$][\w$]*)\s*=\s*(?<envAliasSrc2>_e\d+_\d+)\s*;/g;
+  /(?<reqTarget>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<reqId>\d+)\.js\2\)\s*;|(?<paramAliasTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<paramSrc>a\d+)\s*;|(?<idxTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<idxBase>[A-Za-z_$][\w$]*)\[(?:(?<idxNum>\d+)|(?<idxRegRef>[A-Za-z_$][\w$]*))\]\s*;|(?<numLitTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<numLitVal>\d+)\s*;|(?<objTarget>[A-Za-z_$][\w$]*)\s*=\s*\{(?<objBody>(?:\s*[A-Za-z_$][\w$]*\s*:\s*null\s*,?)+)\}\s*;|(?<emptyObjTarget>[A-Za-z_$][\w$]*)\s*=\s*\{\}\s*;|(?<litTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<litQuote>['"])(?<litVal>[^'"]*)\k<litQuote>\s*;|(?<keyCallObj>[A-Za-z_$][\w$]*)\.(?<keyCallName>component)\s*=\s*(?<keyCallFn>[A-Za-z_$][\w$]*)\((?<keyCallArg>[A-Za-z_$][\w$]*)\)\.(?<keyCallProp>[A-Za-z_$][\w$]*)\s*;|(?<reflectTarget>[A-Za-z_$][\w$]*)\s*=\s*Reflect\.apply\(\s*(?<reflectFn>[A-Za-z_$][\w$]*)\s*,\s*[A-Za-z_$][\w$]*\s*,\s*\[\s*(?<reflectArg>[A-Za-z_$][\w$]*)\s*\]\s*\)\s*;|(?<callTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<callFn>[A-Za-z_$][\w$]*)\((?<callArg>[A-Za-z_$][\w$]*)\)\s*;|(?<keyObj>[A-Za-z_$][\w$]*)\.(?<keyName>[A-Za-z_$][\w$]*)\s*=\s*(?<keyVal>[A-Za-z_$][\w$]*)\s*;|(?<propBracketTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBracketBase>[A-Za-z_$][\w$]*)\[(?<propBracketQuote>['"])default\k<propBracketQuote>\]\s*;|(?<propTarget>[A-Za-z_$][\w$]*)\s*=\s*(?<propBase>[A-Za-z_$][\w$]*)\.(?<propName>[A-Za-z_$][\w$]*)\s*;|(?<adjReg>[A-Za-z_$][\w$]*)\s*=\s*(?<adjSlot>_e\d+_\d+)\s*;\s*(?<adjObj>[A-Za-z_$][\w$]*)\.(?<adjKey>name|component)\s*=\s*\k<adjReg>\s*;|(?<envAliasTarget>_e\d+_\d+)\s*=\s*(?<envAliasSrc>[A-Za-z_$][\w$]*)\s*;|(?<envAliasTarget2>[A-Za-z_$][\w$]*)\s*=\s*(?<envAliasSrc2>_e\d+_\d+)\s*;/g;
 
 /** Single left-to-right pass over `text` tracking, per register, which of
  *  this module's `deps` (in dependencyMap-index order) it currently traces
@@ -221,6 +221,49 @@ function traceModuleOrigins(
   ]);
   const depIndexByReg = new Map<string, number>();
   const moduleOriginByReg = new Map<string, number>();
+  // 2026-09-03 (lazyRequire fix-wave, appgen triple d4e1aacf818f482d,
+  // "tabs" router): resolves a `_eNNNN_M` closure-capture slot straight
+  // from a self-contained `<reg> = require(<dep>); [<reg> = <reg>["default"
+  // ]|.default;] <slot> = <reg>;` statement RUN, independent of this scan's
+  // own left-to-right register tracking. Needed because Hermes inlines a
+  // trivial `function loadFoo() { return require('./Foo').default; } const
+  // Foo = loadFoo();` IIFE at module top level (no separate function
+  // survives at all in the decompiled text), leaving the require + interop-
+  // default hop + env-slot write at the *end* of the outer function body,
+  // textually AFTER the nested `<Nav.Screen component={Foo} />`-building
+  // closure that reads the slot back out -- a single forward pass over the
+  // whole file text (this scan's only mode outside `scanRouteConfigFactory`
+  // 's own warm-up rerun, see below) never sees the write in time to
+  // resolve the read.
+  //
+  // Deliberately NOT a second full rerun of the main scan loop (tried
+  // first, reverted): `scanRouteConfigFactory`'s own warm-up rerun works
+  // because Service NSW's convention is trusted to assign each slot exactly
+  // once, but widening that rerun to every `scanJsxScreenProps` module
+  // reran the WHOLE scan's ordinary <reg>-tracking too, not just env slots
+  // -- carrying `moduleOriginByReg`'s plain-register bindings over from the
+  // warm-up pass let a stale origin, from register reuse a real 2000+-line
+  // navigator module's own doc comment already warns about (no scope/
+  // liveness tracking anywhere in this file), leak into an unrelated route
+  // resolution. Confirmed regression: react-navigation-example's own
+  // `DrawerNavigator.js` (module 1086) picked up a false `Chat` ->
+  // `MaterialTopTabNavigator.js` (module 1611) screen hit, dropping that
+  // fixture's pinned navigator count. This regex instead matches a single,
+  // bounded, self-contained statement run per env slot -- no cross-
+  // statement register-reuse hazard, so no second pass and no shared
+  // mutable state is needed. Gated on `scanJsxScreenProps` (computed only
+  // for a module already carrying §3.1's own navigator-connection
+  // evidence) purely to skip the extra regex pass on modules that could
+  // never use it. `scanRouteConfigFactory`'s own envAlias forwarding below
+  // is untouched by this addition.
+  const ENV_SLOT_ORIGIN_RE =
+    /(?<reg>[A-Za-z_$][\w$]*)\s*=\s*require\((['"])\.\/module_(?<id>\d+)\.js\2\)\s*;\s*(?:\k<reg>\s*=\s*\k<reg>(?:\[(['"])default\4\]|\.default)\s*;\s*)?(?<slot>_e\d+_\d+)\s*=\s*\k<reg>\s*;/g;
+  const envSlotOrigin = new Map<string, number>();
+  if (scanJsxScreenProps) {
+    for (const m of text.matchAll(ENV_SLOT_ORIGIN_RE)) {
+      envSlotOrigin.set(m.groups!.slot!, Number(m.groups!.id));
+    }
+  }
   // 2026-09-02 (Service NSW route-resolution follow-up, docs/BUGS.md's
   // "root, remaining gaps" row): Service NSW compiles some depmap-index
   // brackets as TWO statements -- `r3 = 3; r3 = r20[r3];` (a numeric
@@ -429,6 +472,50 @@ function traceModuleOrigins(
         const origin = moduleOriginByReg.get(src);
         if (origin !== undefined) moduleOriginByReg.set(target, origin);
       }
+    } else if (g.adjReg !== undefined) {
+      // 2026-09-03 (lazyRequire fix-wave, appgen triple d4e1aacf818f482d,
+      // "tabs" router): the two-adjacent-statements shape Hermes actually
+      // produces for an inlined `function loadFoo() { return
+      // require('./Foo').default; } const Foo = loadFoo();` top-level IIFE
+      // -- `<reg> = _eNNNN_M;` immediately followed by `<obj>.name =
+      // <reg>;`/`<obj>.component = <reg>;`, no statement in between.
+      // Resolves straight from `envSlotOrigin` (computed once above), fed
+      // into the SAME `jsxScreenPending` accumulation the `keyObj`/`keyName`
+      // branch below uses for the ordinary (non-env-slot) case.
+      //
+      // Deliberately NOT a general "`<reg> = _eNNNN_M;` sets
+      // `moduleOriginByReg` for `<reg>`, checked wherever `<reg>` is read
+      // later" rule (tried first, reverted): `<reg>` is an ordinary,
+      // reused-by-name register just like every other one this scan's own
+      // doc comment already warns about, and once forwarded its origin has
+      // no way to be invalidated by a later untraceable reassignment of the
+      // same register (an object literal with a computed key, e.g. `r7 =
+      // {["if"]: null, screens: null};`, matches none of this scan's
+      // tracked shapes, so `moduleOriginByReg` for `r7` would keep the
+      // stale forwarded value) -- confirmed regression: react-navigation-
+      // example's own module 1621 reused `r7` for both an env-slot read
+      // (importing the whole `react-native` barrel, module 6, for an
+      // unrelated purpose) and, dozens of statements later, an untracked
+      // object literal that fed a real `.Supported = r7;` route
+      // assignment, which then wrongly inherited module 6's stale origin.
+      // Requiring the read and the `.name=`/`.component=` use to be the
+      // immediately next statement (this alternative's whole point) removes
+      // that staleness window by construction -- no persistent
+      // `moduleOriginByReg` entry for `<reg>` is ever created via an env
+      // slot, so nothing can go stale.
+      if (scanJsxScreenProps) {
+        const origin = envSlotOrigin.get(g.adjSlot!);
+        if (origin !== undefined) {
+          const pending = jsxScreenPending.get(g.adjObj!) ?? {};
+          if (g.adjKey === "name") {
+            const lit = stringLitByReg.get(g.adjReg!);
+            if (lit !== undefined) pending.name = lit;
+          } else {
+            pending.targetId = origin;
+          }
+          jsxScreenPending.set(g.adjObj!, pending);
+        }
+      }
     } else if (g.keyObj !== undefined) {
       // 2026-09-02 (generalization-sweep brief): `keyName` must ALSO look
       // like a route name (uppercase-first, same convention the literal's
@@ -545,6 +632,14 @@ function traceModuleOrigins(
     }
   }
 
+  // 2026-09-03 (lazyRequire fix-wave): NOT widened to `scanJsxScreenProps`
+  // -- the inlined-loader env-slot read/write ordering problem this rerun
+  // exists for is instead handled by the self-contained `envSlotOrigin`
+  // regex above (computed once, no shared-state second pass needed);
+  // widening this particular rerun to every `scanJsxScreenProps` module was
+  // tried and reverted (see `envSlotOrigin`'s own comment) -- it reran this
+  // whole scan's ordinary <reg>-tracking too, not just env slots, and that
+  // is what regressed react-navigation-example's pinned navigator count.
   if (scanRouteConfigFactory) runScan(); // warm-up pass, see comment above -- populates env-slot aliases regardless of text order, discarded below
   routeObjRegs.clear();
   keyAssignments.length = 0;
