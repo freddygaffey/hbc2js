@@ -319,3 +319,11 @@ the architecture without reopening the surface's contract.
 _(placeholder — reviewer fills in on the decision-8 gate, as in spec 16 §11.)_
 
 Co-Authored-By: Claude Fable <noreply@anthropic.com>
+
+## 12. Surface edits (Fred, 2026-09-04)
+
+Reviewed the resource + tool surface. Kept as drafted, with two changes:
+- **`add_comment` confirmed first-class** among the write tools (annotation, logged path, provenance required) — no change, noted explicitly.
+- **NEW read resource `disasm/{fn}`** — exposes the raw Hermes bytecode / disassembly of a function (the `src/disasm` output), distinct from `source/{fn}` (the lifted, decompiled source). Same fnIndex/binding-id keying; token-cap = one function's instruction listing (bounded like `source/{fn}`; a very large function clips with a continuation marker). Rationale: an analyst verifying a subtle lift, or working where recovery is incomplete, needs the ground-truth instructions, not only the rendered source.
+
+Fundamentals (transport, lifecycle, auth, deployment, framework) remain deferred to Fred. My earlier prune-flags (navigate/query redundancy, string vs string-grep, module vs module-graph) are left as reviewer notes, not acted on — Fred approved the surface as-is.
