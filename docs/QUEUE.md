@@ -3,6 +3,8 @@
 One item = one lean agent (Sonnet by default; Fable only where marked hard). When an item lands: merge → gate → push → its report goes to `docs/reports/<date>-<slug>.md` and one line to `docs/AGENT-LOG.md` (the append-only history). Fred sets direction (`docs/LANES.md`); the orchestrator orders this file.
 
 ## Now
+- [SIGDB MIGRATION LANDED 2026-09-04: import 3c0bfbe + write-path 78e8f27; remaining = real-data deb run + export/tiered download]
+- [MCP HARNESS BUSINESS-LOGIC SPEC LANDED 2026-09-04, docs/specs/17-mcp-harness.md; review gate next; FUNDAMENTALS deferred to Fred]
 - [PROJECT DB SPEC LANDED 2026-09-04 c7afe76, docs/specs/16-project-db.md; review gate launched] Fred's unified per-app .hbcproj database (P2.1+P2.2, DB=storage/JSON=view).
 - **RUN CONSTRUCT-FUZZ LOCALLY — deb is GONE, stop waiting for it (Fred 2026-09-03).** Campaign 1 is PARKED "when deb returns" but deb is dead. PROVEN this session it runs on THIS M5: `node tools/fuzz/construct-fuzz.mjs --versions 84 --count 15` = 15 pass / 0 divergent in ~2s (~0.13s/iter); a 10k-iter campaign ≈ 20 min CPU here. LAUNCH the local campaign across VM-capable versions (v84 + v96 have the `hermes` VM; v98/v99 are hermesc-only → mark those matrix cells n/a or obtain a VM). Fills the scoreboard's trace-oracle DIVERGENT column (currently n/a). Only the APP-GEN build matrix (Metro/Expo + npm) really wants a box, and it too runs locally, just slower. Reminder from the M5 benchmark: compute-bound, not storage (12M NSW parse = 0.21s).
 - [LANDED 2026-09-02] Metrics scoreboard — tools/metrics/collect.mjs, one row/day at landings (docs/METRICS.md).

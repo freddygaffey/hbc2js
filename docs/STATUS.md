@@ -77,9 +77,7 @@ By cluster (open only): emit-shape 7, metrics 3, passes 4, real-app 2,
 harness 2, deps 1, toolchain 2. Every open row has a status, cluster and
 verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
 `## Resolved`. Gate: `tests/gate/docs/bugs-ledger.test.ts`.
-
 ## Blocked / needs Fred
-
 - reg-split rung — **RESOLVED 2026-09-03** (D23, docs/DECISIONS.md):
   default-on since the stage-boundary reorder. `jsx-recover` was the real
   blocker (P-11b) — it is a structure-recovery rung that the old registry
@@ -94,7 +92,6 @@ verdict; resolved rows (fixed/wontfix/d14-legit/duplicate) moved to
   ceiling holds; full `npm test` 1753/1753 pass. docs/BUGS.md's P-11b row
   moved to Resolved; docs/PUSHBACK.md's P-11 follow-up closed.
 - Device round-trip on a real app — needs a tablet attached.
-
 ## Queue — top of docs/QUEUE.md
 DB MIGRATION (Fred 2026-09-04): sigdb -> SQLite (spec 15; import landed);
 project DB (spec 16, `hbc2js init` — one versioned SQLite over P2.1+P2.2,
