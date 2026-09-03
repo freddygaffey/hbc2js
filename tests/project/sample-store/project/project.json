@@ -1,0 +1,6 @@
+{
+  "schema": "hbc2js-project/1",
+  "kind": "header",
+  "seq": { "comments": 1, "tags": 3, "bookmarks": 1, "findings": 2 },
+  "builtFor": { "bundleSha256": "6eba29f309d337b8bb87d0c8d1f8df15f90218d3379d613fb4c448c84b86a9d7" }
+}

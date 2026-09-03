@@ -1,0 +1,4 @@
+{"schema":"hbc2js-project/1","kind":"tags"}
+{"rid":"tag-3","kind":"tag","target":"fn:57","tag":"sink","prov":{"source":"tool","who":"reachability-scan","run":"scan-2026-09-01"},"ts":"2026-09-01T10:06:00.000Z","supersedes":null,"active":true,"ctx":{"ownerFn":"evalDynamic"}}
+{"rid":"tag-1","kind":"tag","target":"reg:42:7","tag":"suspicious","prov":{"source":"llm","who":"llm-run-3","run":"llm-run-3"},"ts":"2026-09-01T10:00:00.000Z","supersedes":null,"active":false,"ctx":{"name":"userInput_r7","loc":"src/module.js:130","ownerFn":"handleResponse"}}
+{"rid":"tag-2","kind":"tag","target":"reg:42:7","tag":"source","note":"network response body","prov":{"source":"human","who":"analyst@duck.com"},"ts":"2026-09-01T10:05:00.000Z","supersedes":"tag-1","active":true,"ctx":{"name":"userInput_r7","loc":"src/module.js:130","ownerFn":"handleResponse"}}

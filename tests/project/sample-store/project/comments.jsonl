@@ -1,0 +1,2 @@
+{"schema":"hbc2js-project/1","kind":"comments"}
+{"rid":"cm-1","kind":"comment","target":"fn:42","body":"Confirmed this flows from the network response; see tag-2.","prov":{"source":"human","who":"analyst@duck.com"},"ts":"2026-09-01T10:10:00.000Z","supersedes":null,"active":true,"ctx":{"ownerFn":"handleResponse"}}
