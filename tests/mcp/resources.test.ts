@@ -116,6 +116,12 @@ test("xref/string mode=exact resolves a known sid", () => {
   assert.equal(typeof r.uses.total, "number");
 });
 
+test("xref/string mode=exact inlines each use row with the using function's name/size", () => {
+  const r = res.xrefString(SHARED_SID, "exact") as { uses: { rows: { fn: number; name: string | null; size: number | null }[] } };
+  assert.ok(r.uses.rows.length > 0);
+  for (const row of r.uses.rows) assert.ok("name" in row && "size" in row);
+});
+
 test("xref/string mode=substring matches by literal substring, mode=regex by pattern", () => {
   const sub = res.xrefString("value", "substring") as unknown as { rows: { sid: number; head: string }[]; total: number; truncated: boolean };
   assert.ok(sub.rows.some((r) => r.sid === SHARED_SID));
@@ -127,6 +133,12 @@ test("xref/global-uses returns a bounded row set", () => {
   const g = res.globalUses("AbortController");
   assert.ok(g.rows.length >= 1);
   assert.ok(g.rows.length <= RESOURCE_CAPS.globalUses);
+});
+
+test("xref/global-uses inlines each row with the using function's name/size", () => {
+  const g = res.globalUses("AbortController");
+  assert.ok(g.rows.length >= 1);
+  for (const row of g.rows) assert.ok("name" in row && "size" in row);
 });
 
 test("context/{fn} composes metadata+source+callers+callees+strings, never double-fetching source", () => {

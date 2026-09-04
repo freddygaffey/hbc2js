@@ -259,12 +259,18 @@ export const mockApi: Api = {
   },
   xrefStringUses: (sid): Promise<StringExact> => {
     const value = MOCK_STRINGS.find((s) => s.sid === sid);
-    const rows = MOCK_STRING_USES.filter((u) => u.sid === sid);
+    const rows = MOCK_STRING_USES.filter((u) => u.sid === sid).map((u) => ({
+      ...u, name: FN_BY_ID.get(u.fn)?.name ?? null, size: FN_BY_ID.get(u.fn)?.size ?? null,
+    }));
     return delay({ value, uses: { rows, total: rows.length, truncated: false } });
   },
   xrefGlobal: (name): Promise<GlobalUses> => {
     const rows = name.length === 0 ? [] : MOCK_GLOBALS.map((g) => ({
-      ...g, file: MODULE_BY_ID.get(FN_BY_ID.get(g.fn)?.module ?? 0)?.file ?? null, line: 12,
+      ...g,
+      file: MODULE_BY_ID.get(FN_BY_ID.get(g.fn)?.module ?? 0)?.file ?? null,
+      line: 12,
+      name: FN_BY_ID.get(g.fn)?.name ?? null,
+      size: FN_BY_ID.get(g.fn)?.size ?? null,
     }));
     return delay({ rows, total: rows.length, truncated: false });
   },

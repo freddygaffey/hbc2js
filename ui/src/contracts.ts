@@ -127,14 +127,17 @@ export type StringValue =
   | { readonly sid: number; readonly v: string }
   | { readonly sid: number; readonly len: number; readonly sha256: string; readonly head: string };
 
-/** One row of `xref/string`'s mode=exact `uses` (`string-uses.jsonl`). No
- *  name/file/line — the server does not inline a NeighborRef onto this row
- *  the way `XrefEdge` does (see docs/UI.md, "Strings & globals (xref)"). */
+/** One row of `xref/string`'s mode=exact `uses` (`string-uses.jsonl`), now
+ *  inlined with the using function's `name`/`size` (`NeighborRef`) the same
+ *  way `XrefEdge` is — see docs/UI.md, "Strings & globals (xref)". No
+ *  file/line: a string use is not a call site with its own position. */
 export interface StringUseSite {
   readonly sid: number;
   readonly fn: number;
   readonly role: string;
   readonly n: number;
+  readonly name: string | null;
+  readonly size: number | null;
 }
 
 /** `GET /api/xref/string?mode=exact&key=<sid>`. */
@@ -152,14 +155,17 @@ export interface StringGrepRow {
 
 export type StringGrep = Bounded<StringGrepRow>;
 
-/** One row of `GET /api/xref/global?name=`. Like `StringUseSite`, no name —
- *  `file`/`line` are the OWNING FUNCTION's range, not a per-site position. */
+/** One row of `GET /api/xref/global?name=`, inlined with the using
+ *  function's `name`/`size` like `StringUseSite`. `file`/`line` are the
+ *  OWNING FUNCTION's range, not a per-site position. */
 export interface GlobalUse {
   readonly fn: number;
   readonly access: string;
   readonly n: number;
   readonly file: string | null;
   readonly line: number | null;
+  readonly name: string | null;
+  readonly size: number | null;
 }
 
 export type GlobalUses = Bounded<GlobalUse>;

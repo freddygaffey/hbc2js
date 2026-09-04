@@ -244,6 +244,8 @@ test("GET /api/xref/string mode=exact matches resources.xrefString", async () =>
   const r = await get("/api/xref/string", { key: "69", mode: "exact" });
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, resources.xrefString(69, "exact"));
+  const body = r.json as { uses: { rows: { name: string | null; size: number | null }[] } };
+  for (const row of body.uses.rows) assert.ok("name" in row && "size" in row);
 });
 
 test("GET /api/xref/string mode=substring matches resources.xrefString", async () => {
@@ -256,6 +258,8 @@ test("GET /api/xref/global matches resources.globalUses", async () => {
   const r = await get("/api/xref/global", { name: "require" });
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, resources.globalUses("require"));
+  const body = r.json as { rows: { name: string | null; size: number | null }[] };
+  for (const row of body.rows) assert.ok("name" in row && "size" in row);
 });
 
 test("GET /api/xref/who-calls-by-name (?name=) matches resources.whoCallsByName", async () => {

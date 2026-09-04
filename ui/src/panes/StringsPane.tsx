@@ -6,11 +6,8 @@
 // Xrefs — see docs/UI.md, "Strings & globals (xref)", for why the bottom
 // pane (activity/log only) was the wrong home.
 import { useEffect, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Empty } from "../components/primitives.tsx";
-import {
-  useDebouncedValue, useGlobalUses, useStringGrep, useStringUses, type FunctionCatalogue,
-} from "../hooks.ts";
+import { useDebouncedValue, useGlobalUses, useStringGrep, useStringUses } from "../hooks.ts";
 import type { StringGrepRow, StringUseSite, GlobalUse } from "../contracts.ts";
 import { select } from "../state/selection.ts";
 import { useStringsPrefill } from "./strings-store.ts";
@@ -23,24 +20,16 @@ const modeBtn = (active: boolean): string =>
   `h-7 shrink-0 rounded-ui border px-2 text-xs ${active ? "border-accent bg-surface-2 text-text" : "border-border text-text-muted"}`;
 const rowClass = "flex w-full items-center gap-2 px-3 py-0.5 text-left font-mono text-xs text-text hover:bg-surface-2";
 
-/** Best-effort `fn -> name` lookup off the already-fetched function
- *  catalogue (`["functions-all"]`, `useFunctionCatalogue` in hooks.ts) —
- *  `xref/string`/`xref/global` rows carry only `fn` (see the API gap note
- *  in docs/UI.md), so this is a client-side join, not the server's. It may
- *  miss a function the tree has not paged in yet; the fallback is the bare
- *  `fn:<n>` label every other xref surface in the shell already uses. */
-function useFnName(): (fn: number) => string {
-  const qc = useQueryClient();
-  return (fn: number): string => {
-    const row = qc.getQueryData<FunctionCatalogue>(["functions-all"])?.rows.find((r) => r.fn === fn);
-    return row?.name ?? `fn:${fn}`;
-  };
-}
-
-function UseRow({ fn, detail, nameFor }: { readonly fn: number; readonly detail: string; readonly nameFor: (fn: number) => string }): ReactNode {
+/** `xref/string`'s `exact` uses and `xref/global`'s rows are now inlined
+ *  server-side with the using function's name (`McpResources.neighbor()`,
+ *  same as `who-calls`/`calls-from`) — prefer that; `fn:<n>` is the last
+ *  resort for a row the server cannot name (native/unknown neighbour), same
+ *  as every other xref surface in the shell. No client-side catalogue join
+ *  needed any more (see docs/UI.md, "Strings & globals (xref)"). */
+function UseRow({ fn, name, detail }: { readonly fn: number; readonly name: string | null; readonly detail: string }): ReactNode {
   return (
     <button type="button" data-fn={fn} onClick={() => select({ kind: "fn", fn })} className={rowClass} title={`jump to fn:${fn}`}>
-      <span className="truncate">{nameFor(fn)}</span>
+      <span className="truncate">{name ?? `fn:${fn}`}</span>
       <span className="ml-auto shrink-0 text-text-muted">{detail}</span>
     </button>
   );
@@ -56,8 +45,8 @@ function BoundedLine({ total, shown, truncated }: { readonly total: number; read
 }
 
 function StringHit({
-  row, expanded, onToggle, nameFor,
-}: { readonly row: StringGrepRow; readonly expanded: boolean; readonly onToggle: () => void; readonly nameFor: (fn: number) => string }): ReactNode {
+  row, expanded, onToggle,
+}: { readonly row: StringGrepRow; readonly expanded: boolean; readonly onToggle: () => void }): ReactNode {
   const uses = useStringUses(expanded ? row.sid : undefined);
   return (
     <div className="border-b border-border">
@@ -75,7 +64,7 @@ function StringHit({
           ) : (
             <>
               {uses.data.uses.rows.map((u: StringUseSite) => (
-                <UseRow key={`${u.sid}-${u.fn}-${u.role}`} fn={u.fn} detail={`${u.role} x${u.n}`} nameFor={nameFor} />
+                <UseRow key={`${u.sid}-${u.fn}-${u.role}`} fn={u.fn} name={u.name} detail={`${u.role} x${u.n}`} />
               ))}
               <BoundedLine total={uses.data.uses.total} shown={uses.data.uses.rows.length} truncated={uses.data.uses.truncated} />
             </>
@@ -86,7 +75,7 @@ function StringHit({
   );
 }
 
-function StringsSearch({ nameFor }: { readonly nameFor: (fn: number) => string }): ReactNode {
+function StringsSearch(): ReactNode {
   const prefill = useStringsPrefill();
   const [mode, setMode] = useState<"substring" | "regex">("substring");
   const [pattern, setPattern] = useState("");
@@ -131,7 +120,6 @@ function StringsSearch({ nameFor }: { readonly nameFor: (fn: number) => string }
               row={row}
               expanded={expandedSid === row.sid}
               onToggle={() => setExpandedSid(expandedSid === row.sid ? undefined : row.sid)}
-              nameFor={nameFor}
             />
           ))}
         </>
@@ -140,7 +128,7 @@ function StringsSearch({ nameFor }: { readonly nameFor: (fn: number) => string }
   );
 }
 
-function GlobalsSearch({ nameFor }: { readonly nameFor: (fn: number) => string }): ReactNode {
+function GlobalsSearch(): ReactNode {
   const [name, setName] = useState("");
   const debounced = useDebouncedValue(name, DEBOUNCE_MS);
   const uses = useGlobalUses(debounced);
@@ -169,7 +157,7 @@ function GlobalsSearch({ nameFor }: { readonly nameFor: (fn: number) => string }
         <>
           <BoundedLine total={uses.data.total} shown={uses.data.rows.length} truncated={uses.data.truncated} />
           {uses.data.rows.map((u: GlobalUse) => (
-            <UseRow key={`${u.fn}-${u.access}`} fn={u.fn} detail={`${u.access} x${u.n}${u.file !== null ? ` · ${u.file}:${u.line ?? "?"}` : ""}`} nameFor={nameFor} />
+            <UseRow key={`${u.fn}-${u.access}`} fn={u.fn} name={u.name} detail={`${u.access} x${u.n}${u.file !== null ? ` · ${u.file}:${u.line ?? "?"}` : ""}`} />
           ))}
         </>
       )}
@@ -178,11 +166,10 @@ function GlobalsSearch({ nameFor }: { readonly nameFor: (fn: number) => string }
 }
 
 export function StringsPane(): ReactNode {
-  const nameFor = useFnName();
   return (
     <div>
-      <StringsSearch nameFor={nameFor} />
-      <GlobalsSearch nameFor={nameFor} />
+      <StringsSearch />
+      <GlobalsSearch />
     </div>
   );
 }

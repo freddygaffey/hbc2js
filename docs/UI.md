@@ -394,10 +394,8 @@ and stops no events, so right-clicks reach the annotate track's menu.
   below); no further Playwright smoke gaps known.
 - **Strings & globals xref** landed (see "Strings & globals (xref)" below):
   a Strings tab in the right pane searches the string table and global
-  reads, and jumps to a use. The one remaining gap is server-side: neither
-  route inlines a use's function name (`fn:<n>` unless the client's own
-  function catalogue happens to have it cached) — noted in that section as
-  a queued follow-up, not worked around by changing the route.
+  reads, and jumps to a use. Both routes now inline the using function's
+  name/size server-side (no more client-side catalogue workaround).
 
 ## Actions, keymap, context menu, annotate (wave 2, track 2)
 
@@ -627,14 +625,16 @@ a `"string"`-kind selection, e.g. a clicked string literal, which pre-fills
 the search via `ui/src/panes/strings-store.ts`) and a chord in all three
 keymap presets (`Ctrl-Shift-S` default, `gs` vim, `Ctrl-Alt-S` ghidra).
 
-**API gap.** `StringUseSite` (`xref/string` mode=exact's `uses` rows) and
-`GlobalUse` (`xref/global`'s rows) carry only `fn` — unlike `XrefEdge`,
-neither is enriched with the callee's name/size the way
-`McpResources.inlineEdges` enriches `who-calls`/`calls-from` (`src/mcp/
-resources.ts`). `StringsPane.tsx` works around it client-side (best-effort
-`fn -> name` lookup off the already-fetched function catalogue, falling back
-to `fn:<n>`) rather than blocking on it; a proper fix is inlining a
-`NeighborRef` onto both rows server-side, queued rather than done here.
+**API gap — closed.** `StringUseSite` (`xref/string` mode=exact's `uses`
+rows) and `GlobalUse` (`xref/global`'s rows) now carry `name`/`size` too,
+inlined server-side (`McpResources.xrefString`/`globalUses`, `src/mcp/
+resources.ts`) via the same `neighbor()` helper `inlineEdges` uses for
+`who-calls`/`calls-from` — additive fields only, `fn`/`role`/`n` (and
+`access`/`file`/`line` on the global row) unchanged, the Bounded cap
+unchanged. `StringsPane.tsx` now renders the server-inlined `name` directly
+(`fn:<n>` only as the last resort, when the server itself has no name for
+that fn — e.g. a native/unknown neighbour); the client-side catalogue-lookup
+workaround (`useFnName`) is gone.
 
 ## AI workers (the "AI" tab)
 

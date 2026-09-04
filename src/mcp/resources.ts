@@ -308,23 +308,33 @@ export class McpResources {
    *  single sid (`key` must be a number); `substring`/`regex` grep every
    *  string's head/value (`key` a pattern string — `substring` is escaped
    *  into a literal regex before reaching `stringGrep`, `regex` passed
-   *  through as-is), each mode keeping its own verb's cap. */
+   *  through as-is), each mode keeping its own verb's cap. `exact`'s `uses`
+   *  rows are inlined with `{name,size}` the same way `inlineEdges` inlines
+   *  `who-calls`/`calls-from` (docs/UI.md "Strings & globals (xref)" gap,
+   *  additive fields only — `StringUseSite`'s `fn`/`role`/`n` unchanged). */
   xrefString(
     key: number | string,
     mode: "exact" | "substring" | "regex" = "exact",
   ): { readonly value: unknown; readonly uses: Bounded<unknown> } | Bounded<{ readonly sid: number; readonly head: string; readonly uses: number }> {
     if (mode === "exact") {
       if (typeof key !== "number") throw new Hbc2jsError(ErrorCode.E_USAGE, "xref/string: mode=exact needs a numeric sid");
-      return this.artifact.string(key);
+      const r = this.artifact.string(key);
+      return {
+        value: r.value,
+        uses: { ...r.uses, rows: r.uses.rows.map((row) => ({ ...row, ...this.neighbor(row.fn) })) },
+      };
     }
     if (typeof key !== "string") throw new Hbc2jsError(ErrorCode.E_USAGE, `xref/string: mode=${mode} needs a string pattern`);
     const pattern = mode === "substring" ? key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : key;
     return this.artifact.stringGrep(pattern);
   }
 
-  /** `xref/global-uses/{name}` — spec-10 `query global-uses`'s own ≤ 50 + total. */
+  /** `xref/global-uses/{name}` — spec-10 `query global-uses`'s own ≤ 50 +
+   *  total, rows inlined with `{name,size}` like `xrefString`'s `exact`
+   *  uses (docs/UI.md "Strings & globals (xref)" gap). */
   globalUses(name: string, opts: { readonly all?: boolean } = {}) {
-    return this.artifact.globalUses(name, opts);
+    const r = this.artifact.globalUses(name, opts);
+    return { ...r, rows: r.rows.map((row) => ({ ...row, ...this.neighbor(row.fn) })) };
   }
 
   // -- module / package-id / native (§1, §14) ------------------------------
