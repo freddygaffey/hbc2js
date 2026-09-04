@@ -146,7 +146,12 @@ if ! command -v ninja >/dev/null 2>&1; then
 fi
 
 echo "Configuring ($GENERATOR, Release) -> $BUILD_DIR" >&2
-cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release
+# GCC >= 13 (Ubuntu 24.04) no longer transitively includes <cstdint>; the v94
+# commit's lib/Support/SHA1.h uses uint8_t without it. Force-include it on
+# Linux (harmless where not needed; clang/macOS builds are unaffected).
+EXTRA_CXX_FLAGS=""
+if [ "$(uname -s)" = "Linux" ]; then EXTRA_CXX_FLAGS="-include cstdint"; fi
+cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="$EXTRA_CXX_FLAGS"
 
 # --- build ---------------------------------------------------------------
 JOBS="${HERMES_BUILD_JOBS:-$( (command -v nproc >/dev/null 2>&1 && nproc) || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
