@@ -24,12 +24,16 @@ export const SCHEMA_VERSION = "hbc2js-proj/1";
  *  adds the worker/session operational stratum (`sessions`, `jobs`, `claims`,
  *  `worker_events` — docs/specs/23-ui-workers.md §3/§4.1); minor 3 adds
  *  `revision_tier` (docs/specs/17-mcp-harness.md §15 — the provenance
- *  `tier: "suggested"|"accepted"` follow-up spec 23 §4 recorded). A minor bump is
+ *  `tier: "suggested"|"accepted"` follow-up spec 23 §4 recorded); minor 4 adds
+ *  `seg_modules`/`seg_meta`, the persisted `/api/segregation` cache
+ *  (`src/projdb/seg-cache.ts`, docs/UI.md segregation section) so a
+ *  ui-server restart serves the name-recovery tree from the DB instead of
+ *  recomputing it. A minor bump is
  *  additive BY DEFINITION: it may only create new objects, never alter or drop
  *  an existing one, so an older DB is migrated forward in place (§`migrateProjectDb`)
  *  and a NEWER minor still opens read/write with this build (its extra tables are
  *  simply unused) — unlike a major mismatch, which is refused. */
-export const SCHEMA_MINOR = 3;
+export const SCHEMA_MINOR = 4;
 
 export class ProjectDbVersionError extends Error {}
 

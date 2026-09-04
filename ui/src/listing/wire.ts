@@ -58,7 +58,15 @@ export interface SegregationRow {
 /** `SegregationResult` — src/ui-server/segregation.ts. Counts are disjoint.
  *  `depsApplied`: `false` on the fast deps-less first snapshot the server
  *  warms at startup, `true` once the async deps recompute has landed (even
- *  when it found no deps to apply) — `use-segregation.ts` polls on it. */
+ *  when it found no deps to apply) — `use-segregation.ts` polls on it.
+ *
+ *  `computing`: `true` only on the placeholder the server answers while its
+ *  own off-main-thread compute is in flight (`src/ui-server/
+ *  segregation.ts`, `node:worker_threads`) and no persisted-cache/prior
+ *  result exists yet — `modules`/`counts` are then the empty/zero fallback
+ *  shape, exactly like a `null` page from this route's point of view.
+ *  Omitted (not `false`) on every settled answer. `use-segregation.ts`
+ *  polls on it too, faster than the `depsApplied` interval. */
 export interface SegregationPage {
   readonly modules: readonly SegregationRow[];
   readonly counts: {
@@ -69,6 +77,7 @@ export interface SegregationPage {
     readonly unclassified: number;
   };
   readonly depsApplied: boolean;
+  readonly computing?: boolean;
 }
 
 /** Fetches `/api/segregation`, or `null` when it is not available — the mock

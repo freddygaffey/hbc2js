@@ -417,3 +417,44 @@ CREATE TABLE IF NOT EXISTS revision_tier (
   tier TEXT NOT NULL CHECK (tier IN ('suggested','accepted'))
 );
 -- <<< MIGRATION 3 <<<
+
+-- ===========================================================================
+-- MIGRATION 4 — segregation cache (docs/UI.md's `/api/segregation` route,
+-- `src/ui-server/segregation.ts`, `src/projdb/seg-cache.ts`). Persists the
+-- name-recovery tree so a ui-server restart serves it in sub-millisecond
+-- time instead of re-running `segregateSplitTree` (measured 5 s isolated,
+-- 37-70 s loaded on a 4.5k-module bundle) on every single process start.
+-- Same discipline as MIGRATION 2/3: new tables only, `IF NOT EXISTS` on
+-- every object, never an ALTER on an existing v1/v2/v3 object.
+--
+-- Boundary rule (spec 18 §4, restated at MIGRATION 2 above): this is
+-- OPERATIONAL cache state, not authoritative analysis — `seg_modules`/
+-- `seg_meta` are never exported to `analysis/` shards and never enter the
+-- hash-chained `log/`. It is disposable exactly like `cache.db` (spec 18
+-- §2): losing it loses a few seconds of recompute, nothing authoritative,
+-- and `seg-cache.ts` treats a missing table (pre-migration DB, or a
+-- `--split` artifact with no DB at all) or an invalidation-key mismatch
+-- exactly like a cold cache — recompute and overwrite, never an error.
+--
+-- `seg_meta.value('invalidation_key')` is a hash over the module tree the
+-- cached rows were computed from (`seg-cache.ts`'s `moduleTreeKey`) plus,
+-- once the deps-aware pass has run, an identity for that pass's report —
+-- so a cache hit requires BOTH "the module files haven't changed" and (for
+-- the deps-applied row set) "the same deps answer". `deps_applied` mirrors
+-- `SegregationResult.depsApplied` so a restart can serve the deps-aware
+-- answer immediately without re-running `McpResources.depsReport()`.
+-- >>> MIGRATION 4 >>>
+CREATE TABLE IF NOT EXISTS seg_modules (
+  id              INTEGER PRIMARY KEY,   -- module id (SegregationRow.id)
+  path            TEXT NOT NULL,         -- SegregationRow.path
+  bucket          TEXT NOT NULL,         -- SegregationRow.bucket
+  package         TEXT,                  -- SegregationRow.package
+  name_signal     TEXT,                  -- SegregationRow.nameSignal
+  name_confidence REAL                   -- SegregationRow.nameConfidence
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS seg_meta (
+  key   TEXT PRIMARY KEY,                -- 'invalidation_key' | 'deps_applied'
+  value TEXT NOT NULL
+) WITHOUT ROWID;
+-- <<< MIGRATION 4 <<<

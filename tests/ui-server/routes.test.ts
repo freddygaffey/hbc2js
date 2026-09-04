@@ -9,7 +9,7 @@
 // CLAUDE.md / docs/CONSOLIDATION.md §B testing rules).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openProjectDb } from "../../src/projdb/db.ts";
@@ -64,6 +64,24 @@ function get(path: string, query: Record<string, string> = {}) {
 }
 function post(path: string, body: unknown) {
   return handle({ method: "POST", path, query: {}, body }, ctx);
+}
+
+/** `GET /api/segregation`, polled until the off-main-thread compute
+ *  (`src/ui-server/segregation.ts`'s `computeBase`, `node:worker_threads`)
+ *  settles — the very first call after this ctx's cache is empty answers
+ *  the `computing: true` placeholder rather than blocking (segcache
+ *  brief item 3), so tests that assert on the recovered tree's CONTENT
+ *  must wait for it exactly as the UI's own poll loop does, rather than
+ *  asserting on whichever call happens to land first. */
+async function getSegregationSettled() {
+  for (let i = 0; i < 200; i++) {
+    const r = await get("/api/segregation");
+    if (r.status !== 200) return r;
+    const body = r.json as { computing?: boolean };
+    if (body.computing !== true) return r;
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  throw new Error("segregation did not settle off the main thread in time");
 }
 
 test("GET /api/fn/:fn matches resources.fn", async () => {
@@ -376,7 +394,7 @@ test("GET /api/modules is not truncated below a real app's module count (Service
 // themselves, which belong to segregate.ts's own tests.
 
 test("GET /api/segregation covers every module in /api/modules exactly once", async () => {
-  const r = await get("/api/segregation");
+  const r = await getSegregationSettled();
   assert.equal(r.status, 200);
   const body = r.json as { modules: readonly { id: number; path: string; bucket: string; package: string | null }[]; counts: Record<string, number> };
   const ids = body.modules.map((m) => m.id);
@@ -388,7 +406,7 @@ test("GET /api/segregation covers every module in /api/modules exactly once", as
 });
 
 test("GET /api/segregation rows carry a non-empty path and a known bucket", async () => {
-  const body = (await get("/api/segregation")).json as { modules: readonly { id: number; path: string; bucket: string }[] };
+  const body = (await getSegregationSettled()).json as { modules: readonly { id: number; path: string; bucket: string }[] };
   const buckets = new Set(["src", "node_modules", "unclassified"]);
   for (const m of body.modules) {
     assert.ok(m.path.length > 0, `module ${m.id} has an empty path`);
@@ -398,7 +416,7 @@ test("GET /api/segregation rows carry a non-empty path and a known bucket", asyn
 });
 
 test("GET /api/segregation counts are disjoint and total the module count", async () => {
-  const body = (await get("/api/segregation")).json as {
+  const body = (await getSegregationSettled()).json as {
     modules: readonly { path: string; bucket: string }[];
     counts: { screens: number; navigation: number; src: number; node_modules: number; unclassified: number };
   };
@@ -453,8 +471,18 @@ test("segregation is computed once per ctx and served from cache after that", as
   assert.notEqual(moduleDirOf(outDir), null, "the fixture must hold module_<id>.js files somewhere");
   const fresh: UiServerCtx = { resources, tools, artifactDir: outDir };
   assert.equal(segregationCached(fresh), false, "nothing is computed until the first request");
-  const first = segregation(fresh);
+  let first = segregation(fresh);
   assert.notEqual(first, null);
+  // Settles either straight from the persisted DB cache (sub-ms) or off
+  // the main thread via the worker (segcache brief item 3) — either way
+  // `segregation()` never blocks, so the first call may return the
+  // `computing: true` placeholder; poll rather than assume it lands on the
+  // very first call.
+  for (let i = 0; i < 200 && first?.computing === true; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    first = segregation(fresh);
+  }
+  assert.notEqual(first?.computing, true, "segregation did not settle in time");
   assert.equal(segregationCached(fresh), true);
   assert.equal(segregation(fresh), first, "the second call must return the SAME object, not recompute");
 });
@@ -475,15 +503,97 @@ test("the server warms the segregation cache at startup, so the first tree reque
   const h = await startUiServer({ projectDir: outDir, hbc: RN_TEMPLATE, port: 0, workers: false });
   try {
     assert.equal(typeof h.ctx.artifactDir, "string", "the handle must expose the ctx routes run against");
-    // `setImmediate` fires after the listen callback; one macrotask is enough
-    // to have STARTED it, and `segregation()` is synchronous once entered.
-    await new Promise((r) => setTimeout(r, 0));
-    assert.equal(segregationCached(h.ctx), true, "startup must not leave the first browser request to pay for segregation");
+    // `setImmediate` fires after the listen callback and starts the
+    // compute; by this point in the suite `outDir`'s project DB already
+    // holds a persisted cache from the earlier segregation tests above, so
+    // the warm-up settles from the DB (sub-ms) rather than spawning a
+    // worker — poll briefly rather than assume one macrotask is enough,
+    // since `segregation()` no longer computes synchronously (item 3).
+    let settled = false;
+    for (let i = 0; i < 100 && !settled; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      settled = segregationCached(h.ctx);
+    }
+    assert.equal(settled, true, "startup must not leave the first browser request to pay for segregation");
     const started = Date.now();
     const r = await fetch(`http://${h.host}:${h.port}/api/segregation`);
     assert.equal(r.status, 200);
     assert.ok(Date.now() - started < 1000, `a warmed /api/segregation must answer fast, took ${Date.now() - started}ms`);
   } finally {
     await h.close();
+  }
+});
+
+test("GET /api/segregation reports computing:true while a cold, un-persisted compute is in flight, then settles", async () => {
+  const outDir2 = mkdtempSync(join(tmpdir(), "hbc2js-ui-server-seg2-"));
+  try {
+    const splitResult = splitProject(bytes, { moduleName: "index.android.hbc" });
+    writeSplitResult(splitResult, outDir2);
+    const rows = buildIndexRows({ bytes, splitResult, passes: {}, strictEnv: false, form: "flat" });
+    const db2 = openProjectDb(join(outDir2, "project.hbcproj"));
+    initProjectDb(db2, rows, { actorWho: "test" });
+    db2.close();
+    const mcp2 = new McpContext(outDir2);
+    const fresh: UiServerCtx = { resources: mcp2.resources, tools: mcp2.tools, artifactDir: outDir2 };
+    const first = (await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, fresh)).json as {
+      computing?: boolean;
+      modules: readonly unknown[];
+      depsApplied: boolean;
+    };
+    assert.equal(first.computing, true, "a fresh ctx with no persisted cache must answer computing:true, not block");
+    assert.deepEqual(first.modules, [], "the placeholder carries the empty fallback shape");
+    assert.equal(first.depsApplied, false);
+    let settled: { computing?: boolean } = first;
+    for (let i = 0; i < 200 && settled.computing === true; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      settled = (await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, fresh)).json as { computing?: boolean };
+    }
+    assert.notEqual(settled.computing, true, "the worker compute must eventually settle");
+  } finally {
+    rmSync(outDir2, { recursive: true, force: true });
+  }
+});
+
+test("GET /api/segregation is served from the persisted cache without recomputing on a second ctx over the same project dir", async () => {
+  const { segregation, segregationCached } = await import("../../src/ui-server/segregation.ts");
+  // `outDir` already has a persisted cache from the tests above; a BRAND
+  // NEW ctx over the same directory must load it (reusing the shared
+  // `resources`/`tools` — `segregation()` never needs them to be bound to
+  // `outDir` itself, exactly like the "no module files" test above) and
+  // settle FAST from the DB — `segregation()` is still fire-and-forget on
+  // its very first call for any ctx (never blocks), so poll briefly rather
+  // than assert no `computing:true` window is ever observed.
+  const another: UiServerCtx = { resources, tools, artifactDir: outDir };
+  let r = segregation(another);
+  for (let i = 0; i < 50 && r?.computing === true; i++) {
+    await new Promise((res) => setTimeout(res, 5));
+    r = segregation(another);
+  }
+  assert.notEqual(r, null);
+  assert.notEqual(r?.computing, true, "a persisted cache hit must settle fast, without spawning a worker");
+  assert.equal(segregationCached(another), true);
+});
+
+test("segregation() is a no-op-persistence, never-error path for a --split artifact with no project.hbcproj", async () => {
+  const splitOnly = mkdtempSync(join(tmpdir(), "hbc2js-ui-server-splitonly-"));
+  try {
+    const splitResult = splitProject(bytes, { moduleName: "index.android.hbc" });
+    writeSplitResult(splitResult, splitOnly);
+    assert.ok(!existsSync(join(splitOnly, "project.hbcproj")), "sanity: no project DB here");
+    // Reuses the shared `resources`/`tools` (bound to `outDir`), same trick
+    // as the "no module files" test above — `segregation()` only reads
+    // `ctx.artifactDir` for the module tree/DB path, never `resources`'s
+    // own artifact directory.
+    const fresh: UiServerCtx = { resources, tools, artifactDir: splitOnly };
+    let r = (await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, fresh)).json as
+      | { computing?: boolean }
+      | { reason: string };
+    for (let i = 0; i < 200 && "computing" in r && r.computing === true; i++) {
+      await new Promise((res) => setTimeout(res, 20));
+      r = (await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, fresh)).json as { computing?: boolean } | { reason: string };
+    }
+    assert.ok(!("computing" in r) || r.computing !== true, "must settle even with no DB to persist into");
+  } finally {
+    rmSync(splitOnly, { recursive: true, force: true });
   }
 });

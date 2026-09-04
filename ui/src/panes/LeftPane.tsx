@@ -83,10 +83,16 @@ export function LeftPane(): ReactNode {
   const [openModules, toggleModule] = useOpenSet([]);
   const [cursor, setCursor] = useState(0);
 
-  const segById = useMemo(() => segregationById(seg.data ?? null), [seg.data]);
+  // `seg.data?.computing === true` is the server's placeholder (its own
+  // off-main-thread compute has not landed yet, `modules: []`) — treated
+  // exactly like `null` here so the tree shows the flat fallback grouping
+  // meanwhile instead of an (empty) segregated one; `useSegregation`'s poll
+  // loop re-fetches until it settles.
+  const segData = seg.data?.computing === true ? null : (seg.data ?? null);
+  const segById = useMemo(() => segregationById(segData), [segData]);
   const groups = useMemo(
-    () => groupModulesSegregated(modules.data?.rows ?? [], seg.data ?? null),
-    [modules.data, seg.data],
+    () => groupModulesSegregated(modules.data?.rows ?? [], segData),
+    [modules.data, segData],
   );
   const labelOf = useMemo(() => (m: ModuleEntry): string => moduleLabelSegregated(m, segById.get(m.id)), [segById]);
 
