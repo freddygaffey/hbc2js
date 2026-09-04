@@ -1,0 +1,7 @@
+# 2026-09-04 — live-update + worktrees investigation (lean Fable)
+
+36k tokens, 8 calls. Commit 163036e, docs/specs/21-live-update-and-worktrees.md.
+
+- LIVE UPDATE: append-only hash-chained log/ JSONL = the change feed (mechanism b) + in-process wrote(seq,shardIds) event bus as a zero-latency doorbell (a). Subscriber keeps a lastSeq cursor + apply-by-seq loop refetching exactly the named shards. Buys: ordering (monotonic seq), catch-up = replay (same code path), cross-process for free (it's a file), multi-writer safety inherited from spec-18 §7 (content-hash ids + sharded files; live layer only fans out). Hand edits adopted via §10 appear live tagged provenance: human-file-edit. Rejected file-watch (no order, whole-shard re-reads, can't tell our writes from hand edits) + DB hooks (in-process only, couples to disposable store).
+- WORKTREE VERDICT: FOR speculative source edits / recompile_edit sandboxes (needs the edited src tree isolated) + version-diff/P2.5 (genuinely two working copies). NOT FOR annotations (already contention-free; a worktree there refragments the unified project). Owner note: a scratch temp copy may suffice for single-file recompile patches; full worktrees earn their keep for whole-tree experiments + git diff/teardown.
+- RESERVED FOR OWNER: live-update wire (WebSocket vs SSE — SSE suffices for a one-way doorbell); worktrees adopted at all + git vs scratch + recompile sandbox policy; process/hosting model (design correct under co-hosted OR separate); long-lived-server -wal handoff. Interlocks with spec 19 §5.
