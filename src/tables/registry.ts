@@ -188,7 +188,16 @@ export function verifyTables(): void {
   if (byName(OPCODE_TABLES["hbc99-mar2026"]).get("NewTypedObjectWithBuffer") !== 4) {
     fail("hbc99-mar2026", "NewTypedObjectWithBuffer must be opcode 4");
   }
-  assertBuiltin("hbc99-mar2026", "spawnAsync", 57);
+  // 58, not the 57 the vendored `913d31ac` Builtins.def would give: the v99
+  // compiler this project fetches has an extra private builtin,
+  // `HermesBuiltin.setFunctionName`, at 55, which shifts everything above it by
+  // one. Measured, not assumed — `tools/hermesc/v99/hermesc -dump-bytecode` on
+  // any `async function` prints `GetBuiltinClosure r3,
+  // "HermesBuiltin.spawnAsync"` at raw builtin number 58, and on a computed
+  // method name prints `CallBuiltin ... "HermesBuiltin.setFunctionName", 4` at
+  // 55. See `patchHbc99Mar2026Builtins` in tools/gen-tables/gen.ts.
+  assertBuiltin("hbc99-mar2026", "setFunctionName", 55);
+  assertBuiltin("hbc99-mar2026", "spawnAsync", 58);
 
   verified = true;
 }

@@ -1,0 +1,3 @@
+method: 6 accessor: 20
+descriptor: function function false true
+object literal: from object function

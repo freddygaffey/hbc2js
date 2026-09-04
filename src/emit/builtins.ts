@@ -33,6 +33,7 @@ const INTRINSIC_HELPERS: Readonly<Record<string, string>> = {
   initRegexNamedGroups: "__hbc_b_initRegexNamedGroups",
   makeAsyncIterator: "__hbc_b_makeAsyncIterator",
   requireFast: "__hbc_b_requireFast",
+  setFunctionName: "__hbc_b_setFunctionName",
   silentSetPrototypeOf: "__hbc_b_silentSetPrototypeOf",
   spawnAsync: "__hbc_b_spawnAsync",
   throwReferenceError: "__hbc_b_throwReferenceError",

@@ -18,6 +18,8 @@ vendored under `third_party/hermes/<tableId>/`. See docs/specs/01-parser.md §5.
 
 **hbc98-late opcode 15 is `CacheNewObject(Reg8, Reg8, UInt32, UInt8)`** — a real Hermes opcode (added `89bc5f08e` 2024-12-04, removed `7193d4485` 2026-01-21) absent from the vendored `639e5d6a` source but confirmed via its parent commit `f74f6bbe37ec85a52175c723b366b37717b64605` (BYTECODE_VERSION=98, an ancestor of `639e5d6a`) and independently via `tests/fixtures/constructs/50-this-binding/v98.hbc` function 3, which actually uses it (M1 review Finding 2 — see `patchHbc98Late`'s doc comment in tools/gen-tables/gen.ts for the full story).
 
+**hbc99-mar2026's builtin table is patched too**: builtin 55 is `HermesBuiltin.setFunctionName`, absent from the vendored `913d31ac` `Builtins.def` but present in the v99 compiler this project fetches, which shifts `functionPrototypeApply`/`functionPrototypeCall`/`spawnAsync`/`makeAsyncIterator`/`awaitAsyncGenerator` to 56-60. Confirmed from the compiler's own name table and from `hermesc -dump-bytecode` on a computed method name — see `patchHbc99Mar2026Builtins`'s doc comment in tools/gen-tables/gen.ts, and `tests/fixtures/constructs/62-computed-method-names`.
+
 ## `TypeOfIsTypes` bit order (`TypeOfIs` / `JmpTypeOfIs`)
 
 `Typeof.h`'s `HERMES_TYPEOF_IS_TYPES` macro list, in declaration order — bit `i` of the mask is the `i`-th name. There is no negate flag: a `!==` test compiles to the complement mask (e.g. 507 = all but `String` = `typeof x !== "string"`). Pins with no row have no `Typeof.h` at their commit and no `TypeOfIs` opcode, so a mask there is `E_EMIT_UNSUPPORTED`, not a guess.

@@ -739,7 +739,14 @@ you cannot infer anything from a zero.
 `CallBuiltin <dest>, <builtinNumber>, <argCount>` and
 `GetBuiltinClosure <dest>, <builtinNumber>` index a **version-dependent** table
 generated from `include/hermes/FrontEndDefs/Builtins.def`. Example: `spawnAsync` is
-builtin **52** in v94 but **57** in v99. Generate this table per version alongside the
+builtin **52** in v94 but **58** in v99 as this project's v99 hermesc numbers them
+(57 by a literal read of the vendored `913d31ac` `Builtins.def` — that compiler has
+one extra private builtin, `setFunctionName`, at 55, which shifts everything above
+it by one; see `patchHbc99Mar2026Builtins` in `tools/gen-tables/gen.ts`). **The
+builtin table is not self-describing in the file**: two compilers can share an
+opcode table and still disagree about builtin numbers, so a bundle built by a
+Hermes revision older than `setFunctionName` will be mis-numbered above 54 with no
+way to detect it from the bytecode alone. Generate this table per version alongside the
 opcode table. `CallBuiltin` takes its arguments in reverse order from the end of the
 current frame (registers `frameSize-1` downwards), like `Call`.
 

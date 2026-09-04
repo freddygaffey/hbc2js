@@ -1,0 +1,14 @@
+v84: FAILS - hermesc rejects the `class` keyword entirely ("invalid statement
+     encountered" at the class declaration). Same root cause as
+     32-class-basic: this hermesc build's IRGen has no lowering for
+     ClassDeclaration/ClassExpression at all.
+v94: FAILS - identical "invalid statement encountered" error, same root cause
+     (react-native@0.72.17's bundled hermesc also lacks class lowering).
+v96: FAILS - identical "invalid statement encountered" error, same root cause
+     (react-native@0.73.11's bundled hermesc, classic-Hermes lineage).
+v98: OK - static_h lineage hermesc lowers computed method/accessor names, but
+     without the `HermesBuiltin.setFunctionName` builtin the v99 compiler uses;
+     kept as the control build for this fixture.
+v99: OK - and this is the build the fixture exists for: every computed member
+     here compiles to `CallBuiltin HermesBuiltin.setFunctionName` (builtin 55)
+     immediately before its `DefineOwnByVal`.

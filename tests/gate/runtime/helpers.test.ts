@@ -479,6 +479,30 @@ test("review-M4-H3: __hbc_b_requireFast refuses rather than inventing a module l
   assert.throws(() => h["__hbc_b_requireFast"](12), (e: unknown) => e instanceof TypeError && /require\(12\) is not available outside a Metro host/.test(e.message));
 });
 
+test("review-M4-H3: __hbc_b_setFunctionName applies the ES SetFunctionName prefix for the getter/setter kinds", () => {
+  const h = load("__hbc_b_setFunctionName");
+  const f = (): void => {};
+  h["__hbc_b_setFunctionName"](f, "run1", 0);
+  assert.equal(f.name, "run1");
+  const g = (): void => {};
+  h["__hbc_b_setFunctionName"](g, "value", 1);
+  assert.equal(g.name, "get value");
+  const s = (): void => {};
+  h["__hbc_b_setFunctionName"](s, "value", 2);
+  assert.equal(s.name, "set value");
+  // A symbol key becomes "[description]", an absent description the empty string.
+  const sym = (): void => {};
+  h["__hbc_b_setFunctionName"](sym, Symbol("iterator"), 0);
+  assert.equal(sym.name, "[iterator]");
+  const anon = (): void => {};
+  h["__hbc_b_setFunctionName"](anon, Symbol(), 0);
+  assert.equal(anon.name, "");
+  // `name` stays non-enumerable and configurable, as on any real function.
+  const d = Object.getOwnPropertyDescriptor(f, "name");
+  assert.equal(d?.enumerable, false);
+  assert.equal(d?.configurable, true);
+});
+
 test("review-M4-H3: __hbc_b_functionPrototypeApply and __hbc_b_functionPrototypeCall forward through Function.prototype.apply", () => {
   const h = load("__hbc_b_functionPrototypeApply", "__hbc_b_functionPrototypeCall");
   function f(this: { t: string }, a: number, b: number): string {

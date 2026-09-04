@@ -178,10 +178,55 @@ function renderTypeOfIsTable(t: TypeOfIsTable, constName: string): string {
   return lines.join("\n");
 }
 
+/**
+ * **hbc99-mar2026's builtin table is patched, not a literal parse of its
+ * vendored `Builtins.def`** (same situation as `patchHbc98Late`, and for the
+ * same reason: the real shipping compiler is an internal fork no public commit
+ * reproduces).
+ *
+ * The v99 compiler this project fetches (`tools/get-hermesc.sh 99` ->
+ * `tools/hermesc/v99/hermesc`) has one extra private builtin,
+ * `HermesBuiltin.setFunctionName`, sitting between `initRegexNamedGroups` and
+ * `functionPrototypeApply`; the vendored `913d31ac` `Builtins.def` does not
+ * have it, so every builtin from 55 up was named one slot too early. Evidence,
+ * both reproducible from a clean checkout:
+ *
+ *   (a) the compiler's own name table lists it in that exact position —
+ *       `strings -a tools/hermesc/v99/hermesc | grep '^HermesBuiltin\.'`
+ *       yields `... initRegexNamedGroups, setFunctionName,
+ *       functionPrototypeApply, functionPrototypeCall, spawnAsync,
+ *       makeAsyncIterator, awaitAsyncGenerator`;
+ *   (b) `hermesc -dump-bytecode` on a class with a computed method name
+ *       (`class A { [k]() {} }`) prints
+ *       `CallBuiltin r7, "HermesBuiltin.setFunctionName", 4` at builtin
+ *       number 55, immediately before the method's `DefineOwnByVal` —
+ *       exactly where the unpatched table said `functionPrototypeApply`.
+ *
+ * Mis-naming it was a real decompilation bug, not cosmetics: a computed method
+ * name emitted `fn.apply(key, 0)` and threw `TypeError` at run time, which is
+ * what made the four class fixtures' obfuscated (`.obf`) v99 builds DIVERGENT
+ * in the hardened tier (docs/BUGS.md, 2026-09-05). The regression fixture is
+ * `tests/fixtures/constructs/62-computed-method-names`.
+ *
+ * Only `hbc99-mar2026` is patched. `hbc99-feb2026` is a *different* opcode
+ * table (219 vs 220 opcodes) and no compiler this project can run produces it,
+ * so there is no evidence either way for it and guessing would be worse than
+ * leaving it as its vendored commit says.
+ */
+function patchHbc99Mar2026Builtins(builtins: readonly BuiltinDef[]): readonly BuiltinDef[] {
+  const anchor = builtins.findIndex((b) => b.name === "functionPrototypeApply");
+  if (anchor === -1 || builtins[anchor - 1]?.name !== "initRegexNamedGroups") {
+    throw new Error("gen: hbc99-mar2026 builtin patch anchor (initRegexNamedGroups, functionPrototypeApply) not found — vendored file changed, re-derive the patch");
+  }
+  const patched: BuiltinDef[] = [...builtins.slice(0, anchor), { n: -1, name: "setFunctionName" }, ...builtins.slice(anchor)];
+  return patched.map((b, i) => ({ ...b, n: i }));
+}
+
 function buildBuiltinTable(pin: TablePin): { table: BuiltinTable; sha256: string } {
   const { text, sha256: hash } = readVendored(pin.id, "Builtins.def");
   const commit = readCommit(pin.id);
-  const builtins: readonly BuiltinDef[] = parseBuiltinsDef(text);
+  const parsed: readonly BuiltinDef[] = parseBuiltinsDef(text);
+  const builtins = pin.id === "hbc99-mar2026" ? patchHbc99Mar2026Builtins(parsed) : parsed;
   return { table: { id: pin.id, hermesCommit: commit, builtins }, sha256: hash };
 }
 
@@ -294,6 +339,17 @@ function generateAll(outDir: string): { provenance: string } {
       "`639e5d6a`) and independently via `tests/fixtures/constructs/50-this-binding/" +
       "v98.hbc` function 3, which actually uses it (M1 review Finding 2 — see " +
       "`patchHbc98Late`'s doc comment in tools/gen-tables/gen.ts for the full story).",
+  );
+  provenanceLines.push("");
+  provenanceLines.push(
+    "**hbc99-mar2026's builtin table is patched too**: builtin 55 is " +
+      "`HermesBuiltin.setFunctionName`, absent from the vendored `913d31ac` " +
+      "`Builtins.def` but present in the v99 compiler this project fetches, which " +
+      "shifts `functionPrototypeApply`/`functionPrototypeCall`/`spawnAsync`/" +
+      "`makeAsyncIterator`/`awaitAsyncGenerator` to 56-60. Confirmed from the " +
+      "compiler's own name table and from `hermesc -dump-bytecode` on a computed " +
+      "method name — see `patchHbc99Mar2026Builtins`'s doc comment in " +
+      "tools/gen-tables/gen.ts, and `tests/fixtures/constructs/62-computed-method-names`.",
   );
   provenanceLines.push("");
   provenanceLines.push("## `TypeOfIsTypes` bit order (`TypeOfIs` / `JmpTypeOfIs`)");

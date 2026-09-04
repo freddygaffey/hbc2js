@@ -145,6 +145,7 @@ call directly.
 | `__hbc_b_awaitAsyncGenerator` | `CallBuiltin awaitAsyncGenerator` | async generators | `Promise.resolve` |
 | `__hbc_b_requireFast` | `CallBuiltin requireFast` (Metro's fast require) | Metro-bundled modules | **Refuses**: `require(n)` outside a Metro host has no answer, and inventing one would be a silently wrong decompilation |
 | `__hbc_b_generatorSetDelegated` | `CallBuiltin generatorSetDelegated` | `yield*` at v≤96 | Sets `__hbc_delegated` |
+| `__hbc_b_setFunctionName` | `CallBuiltin setFunctionName` (v99 builtin 55) | ES `SetFunctionName` for a computed method/accessor name | Third argument is the prefix selector: 0 plain, 1 `get`, 2 `set`. Only the v99 compiler emits it; see `patchHbc99Mar2026Builtins` in tools/gen-tables/gen.ts |
 | `__hbc_b_functionPrototypeApply` | `CallBuiltin functionPrototypeApply` | `f.apply(…)` fast path | Goes through the *original* `Function.prototype.apply`, so a shadowed `.apply` on the callee is ignored |
 | `__hbc_b_functionPrototypeCall` | `CallBuiltin functionPrototypeCall` | `f.call(…)` fast path | Same, with the arguments spread |
 | `__hbc_b_applyArguments` | `CallBuiltin applyArguments` | `super(...arguments)` in an implicit derived constructor | Measured on `33-class-inheritance-super` v99 fn#7: constructs when `new.target` is present, applies otherwise |

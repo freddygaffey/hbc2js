@@ -502,6 +502,22 @@ function __hbc_b_generatorSetDelegated() {
     ["__hbc_delegated"],
   ),
   h(
+    "__hbc_b_setFunctionName",
+    `
+function __hbc_b_setFunctionName(fn, name, kind) {
+  // HermesBuiltin.setFunctionName(fn, name, kind) — ES2024 SetFunctionName.
+  // \`kind\` is 0 for a plain method, 1 for a getter, 2 for a setter (measured
+  // on tests/fixtures/constructs/36-class-getters-setters/v99.obf.hbc, whose
+  // two getters pass 1 and whose setter passes 2). A symbol key becomes
+  // "[description]", an absent description the empty string.
+  var text = typeof name === "symbol" ? (name.description === undefined ? "" : "[" + name.description + "]") : String(name);
+  var prefix = kind === 1 ? "get " : kind === 2 ? "set " : "";
+  Object.defineProperty(fn, "name", { value: prefix + text, writable: false, enumerable: false, configurable: true });
+  return undefined;
+}
+`,
+  ),
+  h(
     "__hbc_b_functionPrototypeApply",
     `
 function __hbc_b_functionPrototypeApply(fn, thisArg, args) {
