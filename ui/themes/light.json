@@ -1,0 +1,40 @@
+{
+  "name": "light",
+  "palette": {
+    "bg": "#f4f6fa",
+    "surface": "#ffffff",
+    "surface-2": "#e9edf4",
+    "border": "#c9d3e2",
+    "text": "#16202e",
+    "text-muted": "#5b6b83",
+    "accent": "#1f6fc0",
+    "accent-fg": "#ffffff"
+  },
+  "severity": {
+    "crit": "#c02551",
+    "high": "#a85c14",
+    "med": "#8a7412",
+    "ok": "#1a7f4f"
+  },
+  "fonts": {
+    "sans": "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    "mono": "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace"
+  },
+  "radius": "4px",
+  "spacing": {
+    "0": "0px",
+    "1": "4px",
+    "2": "8px",
+    "3": "12px",
+    "4": "16px",
+    "5": "20px",
+    "6": "24px",
+    "7": "32px",
+    "8": "40px"
+  },
+  "density": "comfortable",
+  "densities": {
+    "comfortable": { "unit": "0.25rem", "fontSize": "14px", "rowHeight": "28px" },
+    "compact": { "unit": "0.2rem", "fontSize": "12.5px", "rowHeight": "22px" }
+  }
+}

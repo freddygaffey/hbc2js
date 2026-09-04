@@ -1,0 +1,36 @@
+{
+  "name": "hbc2js-ui",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "hbc2js Stage-3 UI shell (spec 22) — Vite + React + Tailwind, separate package from the zero-runtime-dep root",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@radix-ui/react-context-menu": "2.2.16",
+    "@radix-ui/react-dropdown-menu": "2.1.16",
+    "@radix-ui/react-separator": "1.1.7",
+    "@radix-ui/react-tabs": "1.1.13",
+    "@radix-ui/react-tooltip": "1.2.8",
+    "@tanstack/react-query": "5.90.2",
+    "clsx": "2.1.1",
+    "cmdk": "1.1.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-resizable-panels": "3.0.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.13",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@vitejs/plugin-react": "5.0.4",
+    "tailwindcss": "4.1.13",
+    "typescript": "5.9.2",
+    "vite": "7.1.7"
+  }
+}

@@ -1,0 +1,59 @@
+/* ui/src/theme/theme.css — the ONLY stylesheet allowed to name raw values
+   (spec 20 §1.2 token rule; tests/gate/ui/tokens.test.ts exempts
+   ui/src/theme/**). Every token here is a `var()` indirection onto the
+   runtime variables written to `:root` by `applyTheme()` from
+   ui/theme.json + ui/themes/<preset>.json — this file invents nothing. */
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-sev-crit: var(--sev-crit);
+  --color-sev-high: var(--sev-high);
+  --color-sev-med: var(--sev-med);
+  --color-sev-ok: var(--sev-ok);
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+  --radius-ui: var(--radius);
+}
+
+/* Density (spec 22 §2's `density` token): the root font-size and Tailwind's
+   own `--spacing` unit are the two dials. Every Tailwind size utility is
+   rem- or `--spacing`-based, so switching density rescales the whole shell
+   without a single per-component override. */
+/* `:root` (not `html`) so this beats Tailwind's own default `--spacing`,
+   which is emitted at `:root` too; the fallbacks cover the single frame
+   before applyTheme() has written the runtime tokens. */
+:root {
+  font-size: var(--font-size, 14px);
+  --spacing: var(--density-unit, 0.25rem);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans-stack);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Flat and bordered, not shadow-heavy (spec 20 §1.2). */
+* {
+  border-color: var(--border);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.hbc-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
