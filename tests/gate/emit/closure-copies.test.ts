@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { parseM4 } from "../../support/m4.ts";
 import type { Op } from "../../support/synth-module.ts";
-import { bucketAFunctions, fakeFunction, graphOf, loopLocalCopyFunctions, mutualRecursionFunctions, realCfg, travelFunctions } from "../../support/synth-module.ts";
+import { bucketAFunctions, fakeFunction, graphOf, joinedChildFunctions, loopLocalCopyFunctions, mutualRecursionFunctions, realCfg, travelFunctions } from "../../support/synth-module.ts";
 import type { ModuleAnalysis } from "../../../src/cfg/types.ts";
 import type { HbcModule } from "../../../src/parse/types.ts";
 import { emitModule } from "../../../src/emit/index.ts";
@@ -261,4 +261,54 @@ test("a joined function is emitted where every one of its creation sites can see
     1,
     "the move is reported: it is a placement decision, not a graph one",
   );
+});
+
+test("a child a joined function creates travels with it when its own names allow", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  // Report §5 leftover 7. fn#3 is joined and re-hosted at the LCA of fn#1/fn#2
+  // (the case above); fn#4 is created ONLY inside fn#3, but over the
+  // environment fn#3 *captured*, so `closureEnvOf(4)` is env 1 — owner fn#1 —
+  // and `parentOf` leaves it at fn#3's old home. Before the fix `_fn4` was
+  // unbound inside the moved body (this is react-navigation's `_fn14790` /
+  // `_fn15473` / `_fn15478` shape). It reads no env slot, so moving it with
+  // its creator binds it.
+  const result = emitSynth(joinedChildFunctions("movable"));
+
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").map((d) => d.message),
+    [],
+    "the moved body references a child left behind at its old home (report §5 leftover 7)",
+  );
+  assert.equal(result.stubbedFunctions, 0);
+  assert.equal(result.diagnostics.filter((d) => d.code === "W_JOINED_REHOSTED").length, 1, "fn#3 still moves to the LCA of its two sites");
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_JOINED_CHILD_MOVED").map((d) => d.context.functionIndex),
+    [4],
+    "exactly the child whose every creation site is inside the moved function travels with it",
+  );
+  assert.match(bodyOf(result.code, "_fn3"), /function _fn4\(/, "…and it is emitted inside its creator, where the reference is");
+  assert.doesNotMatch(bodyOf(result.code, "_fn1"), /function _fn4\(/, "…not at the home `closureEnvOf` gave it");
+});
+
+test("a child that reads the environment its creator's sites disagree about stays where it is", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  // The guard on the rule above. fn#5 reads slot 0 of the environment fn#3
+  // captured — env 1 at one site, env 2 at the other — so no single home can
+  // bind it and moving it into fn#3 only trades one unbound name for another.
+  // Measured on react-navigation: moving these children unconditionally took
+  // the 3 unbound `_fn<n>` to 0 and introduced 4 unbound `_e<env>_<slot>`
+  // (22 -> 23 names). They need per-instance `parentOf` instead — leftover 7.
+  const result = emitSynth(joinedChildFunctions("pinned"));
+
+  assert.deepEqual(result.diagnostics.filter((d) => d.code === "W_JOINED_CHILD_MOVED"), [], "a child whose reads are not visible at the new host must not be moved");
+  assert.equal(result.diagnostics.filter((d) => d.code === "W_JOINED_REHOSTED").length, 1);
+  assert.match(bodyOf(result.code, "_fn1"), /function _fn4\(/, "it stays at the home `closureEnvOf` gave it, where `_e1_0` is declared");
+  const unbound = result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").flatMap((d) => [...d.message.matchAll(/emitted identifier "([^"]+)"/g)].map((m) => m[1]));
+  assert.deepEqual(unbound, ["_fn4"], "the residue is exactly one reference to the pinned child, not an unbound env slot as well");
 });

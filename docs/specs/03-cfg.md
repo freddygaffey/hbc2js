@@ -708,6 +708,17 @@ environment created with an undefined parent has no parent.
   `ownerFunction(closureEnvOf)`, which is only site 0's home. This was reported
   as a lattice/site-map contradiction; measured, the two agree and the bug was
   the placement.
+  **The join's precondition is an under-approximation** (measured, report §5
+  "Landing item 5"): `namesAgreeAcrossSites` walks a `lexicalSubtree` built from
+  `childrenOf`, i.e. from `closureEnvOf`, so a function the joined `f` creates
+  over an environment `f` merely *captured* is not in that subtree and its reads
+  are not counted. On react-navigation three such children (`_fn14790`,
+  `_fn15473`, `_fn15478`) do read the disagreed-about environment, so the join
+  is technically firing where a copy is needed. It is left standing: the
+  emitter's guarded child-move (`W_JOINED_CHILD_MOVED`) refuses to move exactly
+  those children, so the residue is one unbound `_fn<n>` per joined function
+  rather than an unbound env slot, and the real fix is per-instance placement
+  (report §5 leftover 7), not a wider join test.
 * **Unequal chains stay ambiguous, by construction.** The remap is positional,
   so `chainOf(e).length !== chain0.length` abandons duplication for that
   function entirely; it keeps `closureEnvOf === null` and becomes an orphan for

@@ -62,8 +62,14 @@ const MAX_ISOLATED = 10;
  *  sites (report §5 "Landing item 4": `_fn13056` x5, `_fn15251`, `_fn15275`
  *  went to 0; 3 names came back — each rehosted function references one child
  *  created inside it over an environment IT captured, whose own home stayed
- *  behind, which is the "children travel" leftover). Same ratchet
- *  rule as above: it may go down, never up. */
+ *  behind, which is the "children travel" leftover). Still **22** after report
+ *  §5 "Landing item 5": those three children each READ a slot of the very
+ *  environment their creator's sites disagree about, so moving them with their
+ *  creator only trades the 3 `_fn<n>` for 4 `_e<env>_<slot>` (measured 23).
+ *  The rule that landed moves a child only where its own reads stay visible,
+ *  which is none of these three on this bundle — they need per-instance
+ *  `parentOf` (leftover 7). Same ratchet rule as above: it may go down,
+ *  never up. */
 const MAX_UNBOUND_NAMES = 22;
 /** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111 when
  *  every `W_AMBIGUOUS_CLOSURE_ENV` function was an orphan, **13** now that they

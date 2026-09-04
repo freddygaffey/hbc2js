@@ -274,6 +274,102 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
         context: { functionIndex: f },
       });
     }
+
+    // Report §5 leftover 7, "the child that stays behind". Moving `f` leaves
+    // behind any function `g` that `f` creates over an environment `f` merely
+    // CAPTURED: `g`'s own `closureEnvOf` points at an ancestor's environment,
+    // so `parentOf` keeps `g` beside `f`'s OLD home and the moved body's
+    // `_fn<g>` is unbound (`_fn14790` in fn#13056, `_fn15473` in fn#15251,
+    // `_fn15478` in fn#15275 on react-navigation). The narrow rule: a `g`
+    // whose creation sites are ALL inside the travelling set (`f`, then
+    // transitively the children that join it) moves with it, to the lowest
+    // common ancestor of those sites. That is legal for exactly the reason
+    // hosting `f` at its own LCA is — `g` is inside `f`'s lexical subtree, so
+    // the join precondition (`namesAgreeAcrossSites`) says `g` names only
+    // environments every site of `f` shares, whose owners are ancestors of
+    // every site and hence of the LCA. Deliberately narrow: reparenting EVERY
+    // function whose sites lie in a moved subtree was measured worse (report
+    // §5, "reparent inwards": 79 -> 86 isolated), because a function with
+    // sites outside the subtree too loses the ones outside.
+    if (moves.length > 0) {
+      // The guard. `namesAgreeAcrossSites` decides "nothing in the subtree
+      // names an environment the sites disagree about" over a subtree built
+      // from `closureEnvOf` — which is precisely the relation that leaves this
+      // child behind, so the child's own reads were never counted. Measured on
+      // react-navigation: all three real children (`_fn14790`, `_fn15473`,
+      // `_fn15478`) read a slot of the environment their creator captured
+      // *at one particular site* (`_e3141_0`, `_e4472_0/1`, `_e4490_0`), so
+      // moving them unconditionally trades 3 unbound `_fn<n>` for 4 unbound
+      // `_e<env>_<slot>` (22 -> 23). A child therefore only travels when every
+      // environment it reads is declared at or above its new host; the ones
+      // that are genuinely per-site need duplication (leftover 7, per-instance
+      // `parentOf`), not placement.
+      const envsUsedByFn = new Map<number, Set<number>>();
+      for (const slot of envGraph.slots) {
+        for (const access of slot.accesses) {
+          if (access.env === null) continue;
+          const set = envsUsedByFn.get(access.functionIndex);
+          if (set === undefined) envsUsedByFn.set(access.functionIndex, new Set([access.env]));
+          else set.add(access.env);
+        }
+      }
+      const declaringFunction = envDeclaringFunction(envGraph, isAncestor);
+      const visibleFrom = (g: number, host: number | null): boolean => {
+        for (const e of envsUsedByFn.get(g) ?? []) {
+          const d = declaringFunction.get(e);
+          if (d === undefined) return false;
+          if (host === null || (d !== host && !isAncestor(d, host))) return false;
+        }
+        return true;
+      };
+      const creatorsOf = new Map<number, number[]>();
+      const createdBy = new Map<number, number[]>();
+      for (const [g, sites] of envGraph.closureCreationSites) {
+        const creators = [...new Set([...sites.keys()].map((k) => Number(k.slice(0, k.indexOf(":")))))];
+        creatorsOf.set(g, creators);
+        for (const c of creators) {
+          const list = createdBy.get(c);
+          if (list === undefined) createdBy.set(c, [g]);
+          else list.push(g);
+        }
+      }
+      for (const [f] of moves) {
+        const travelling = new Set([f]);
+        const queue = [f];
+        while (queue.length > 0) {
+          const site = queue.shift()!;
+          for (const g of createdBy.get(site) ?? []) {
+            if (travelling.has(g) || g === globalIndex || envGraph.closureCopies.has(g)) continue;
+            const creators = creatorsOf.get(g) ?? [];
+            if (creators.length === 0 || !creators.every((c) => travelling.has(c))) continue;
+            const home = parentOf.get(g) ?? null;
+            // Already inside the moved subtree: it travels for free, but its
+            // own children still have to be considered, hence the queue push.
+            if (home !== null && chainUp(home).includes(f)) {
+              travelling.add(g);
+              queue.push(g);
+              continue;
+            }
+            let common = chainUp(creators[0]!);
+            for (const c of creators.slice(1)) {
+              const up = new Set(chainUp(c));
+              common = common.filter((x) => up.has(x));
+            }
+            const host = common[0] ?? null;
+            if (host === home || !visibleFrom(g, host)) continue;
+            travelling.add(g);
+            queue.push(g);
+            parentOf.set(g, host);
+            diagnostics.push({
+              severity: "info",
+              code: "W_JOINED_CHILD_MOVED",
+              message: `function ${g} is created only inside fn#${f}, which moved to the lowest common ancestor of its own creation sites; emitting it in ${host === null ? "module scope" : `fn#${host}`} so it travels with its creator instead of staying at ${home === null ? "module scope" : `fn#${home}`}`,
+              context: { functionIndex: g },
+            });
+          }
+        }
+      }
+    }
   }
 
   // §6 "Function nesting" (placement, docs/BUGS.md 2026-09-04): an orphan used

@@ -540,6 +540,58 @@ creating functions, a body that reads neither) in
 detached worktree (fn#2 is stubbed, `E_UNBOUND_IDENT` on `_fn3`) and green
 after. Ratchets: `MAX_ISOLATED` 14 -> 10, `MAX_UNBOUND_NAMES` 26 -> 22.
 
+### Landing item 5: the child that stays behind (2026-09-05, later still)
+
+Leftover 7. After item 4 re-hosts a *joined* `f` at the LCA of its creation
+sites, a function `g` that `f` creates over an environment `f` merely
+**captured** keeps its own `closureEnvOf` home beside `f`'s old site, so the
+moved body's `_fn<g>` is unbound: `_fn14790` (in fn#13056), `_fn15473`
+(fn#15251), `_fn15478` (fn#15275).
+
+The narrow fix the leftover named — move a `g` whose creation sites are *all*
+inside `f`, transitively — was implemented and **measured**, unguarded first:
+
+| | isolated | unbound names | `_fn14790`/`15473`/`15478` | new `_e<env>_<slot>` | bytes (`--passes=none`) |
+|---|---|---|---|---|---|
+| item 4 (before) | 10 | **22** | 3 | 0 | 28,977,549 |
+| move every such child | 10 | **23** | 0 | 4 (`_e3141_0`, `_e4472_0`, `_e4472_1`, `_e4490_0`) | 28,973,563 |
+| move only where the child's reads stay visible (landed) | 10 | **22** | 3 | 0 | 28,977,549 |
+
+So the narrow fix *does* bind all 3 names and is still a net **loss**: each of
+those three children reads a slot of the environment at position 0 of its
+creator's chain — env 3141 for fn#13056, 4472 for fn#15251, 4490 for fn#15275 —
+which is exactly the environment the sites **disagree** about (see item 4's
+table). No single home can bind such a child, so moving it only exchanges an
+unbound `_fn<n>` for an unbound `_e<env>_<slot>`.
+
+Why the join fired at all: `namesAgreeAcrossSites` (`src/cfg/env-graph.ts`)
+decides "nothing in `f`'s lexical subtree names an environment the sites
+disagree about" over a subtree built from `childrenOf`, which is the
+`closureEnvOf` relation — the very relation that leaves these children outside
+`f`'s subtree. Their reads were therefore never counted. Fixing *that* (a
+creation-based subtree) would take the three functions out of the join and into
+`closureCopies`, i.e. duplication, which is item 1's per-instance answer under
+another name and a `src/cfg/**` change; it is deliberately not done here.
+
+What landed in `src/emit/index.ts` is the narrow rule **with the visibility
+guard**: a child whose creation sites are all inside the travelling set moves to
+the lowest common ancestor of those sites only when every environment it reads
+is declared at or above that new host (`envDeclaringFunction`), reported as
+`W_JOINED_CHILD_MOVED`. On react-navigation that moves 0 children and the
+decompiled bytes are unchanged (28,977,549 either way); it is correct for the
+child that reads only shared environments, which the synthetic fixture covers.
+Ratchets unchanged: `MAX_UNBOUND_NAMES` stays 22, `MAX_ISOLATED` 10,
+`MAX_STILL_AMBIGUOUS` 18 (no `src/cfg/**` change).
+
+Control: `rn-template-0.72/index.android.hbc` at CLI defaults is `cmp`-identical
+against the same working tree with only the new block removed — **5,000,113
+bytes**. Tests: `joinedChildFunctions("movable")` in
+`tests/gate/emit/closure-copies.test.ts`, verified RED in a detached worktree at
+`bc596e3` (`_fn3` stubbed, `E_UNBOUND_IDENT` on `_fn4`) and green after, plus
+`joinedChildFunctions("pinned")` pinning the guard (the child that reads the
+disagreed-about environment must *not* move, and the residue is one `_fn<n>` and
+no `_e<env>_<slot>`).
+
 ### Remaining work after item 2
 
 0. **(2026-09-05, item 3)** Leftovers 1–3 below are superseded: 3 is fixed, and
@@ -595,12 +647,15 @@ after. Ratchets: `MAX_ISOLATED` 14 -> 10, `MAX_UNBOUND_NAMES` 26 -> 22.
    shared name binds to the wrong one, and this becomes real. See the addendum
    above.
 
-7. **3 `_fn<n>`, the child that stays behind** (item 4): when a *joined* function
-   is re-hosted at the LCA of its creation sites, a function it creates over an
-   environment it merely **captured** keeps its own `closureEnvOf` home beside
-   the old site and is no longer in scope — `_fn14790` (in fn#13056),
-   `_fn15473` (fn#15251), `_fn15478` (fn#15275). The narrow fix is to move a
-   child whose creation sites are *all* inside `f` along with `f`; the general
-   one is item 1's per-instance `parentOf`, since a duplicated `f` needs one
-   such child per copy (the whole-function version of that reparenting measured
-   worse — 79 -> 86 isolated — and is recorded in §5 above).
+7. **3 `_fn<n>`, the child that stays behind** (item 4). **Still open after item
+   5, and now with a measured reason.** The narrow fix (move a child whose
+   creation sites are all inside `f`) landed *with a visibility guard* and moves
+   none of these three: each reads a slot of the environment its creator's sites
+   disagree about, so moving it trades 3 unbound `_fn<n>` for 4 unbound
+   `_e<env>_<slot>` (22 -> 23; see "Landing item 5"). They need one instance per
+   creation context — item 1's per-instance `parentOf` — or, equivalently, a
+   creation-based `lexicalSubtree` in `namesAgreeAcrossSites` so the join never
+   fires for them and they are duplicated instead. Either is a `src/cfg/**` or
+   whole-emitter change and needs its own spec. The guarded rule that did land
+   is live for the case it is sound for (a child that names only environments
+   every site shares) and is covered synthetically.

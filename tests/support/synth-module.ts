@@ -243,3 +243,35 @@ export function loopLocalCopyFunctions(): Map<number, readonly Op[]> {
     [3, [selfEnv(0), loadSlot(1, 0, 0), ret(1)]],
   ]);
 }
+
+/**
+ * Report §5 leftover 7, "the child that stays behind". Bucket A with a body
+ * that reads neither leaf, so fn#3 is JOINED and `src/emit/index.ts` re-hosts
+ * it at the lowest common ancestor of fn#1 and fn#2 — plus the two kinds of
+ * child a joined function can create over the environment it merely CAPTURED
+ * (`selfEnv(0)`, i.e. env 1 / env 2, whose owner is fn#1, so `closureEnvOf`
+ * parks both children beside fn#3's OLD home):
+ *
+ *  * **fn#4 travels.** It reads no environment slot at all, so it is legal
+ *    anywhere fn#3 is legal and moves into fn#3 (`W_JOINED_CHILD_MOVED`).
+ *  * **fn#4 "pinned" must not travel.** It reads slot 0 of the captured environment,
+ *    which is exactly the environment the two sites DISAGREE about, so no
+ *    single home can bind it: it needs one instance per site (per-instance
+ *    `parentOf`), not a move. This is react-navigation's `_fn14790` /
+ *    `_fn15473` / `_fn15478`, and moving it anyway was measured worse
+ *    (22 -> 23 unbound names).
+ *
+ * `pull` picks which child fn#4 is, because a fixture holding both would have
+ * fn#3 isolated for the pinned one and its stub would swallow the moved one's
+ * declaration. (Both are index 4: `emitSynth` indexes its function array by
+ * position, so the indices have to be contiguous.)
+ */
+export function joinedChildFunctions(pull: "movable" | "pinned"): Map<number, readonly Op[]> {
+  return new Map<number, readonly Op[]>([
+    [0, [mkEnv(0), mkClosure(1, 0, 1), mkClosure(2, 0, 2), ret(1)]],
+    [1, [mkEnv(0), mkClosure(1, 0, 3), ret(1)]],
+    [2, [mkEnv(0), mkClosure(1, 0, 3), ret(1)]],
+    [3, [selfEnv(0), mkClosure(1, 0, 4), ret(1)]],
+    [4, pull === "movable" ? [ret(0)] : [selfEnv(0), loadSlot(1, 0, 0), ret(1)]],
+  ]);
+}
