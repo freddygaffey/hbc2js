@@ -10,9 +10,16 @@
 // leave the leftover elements referring to registers the rewrite deleted.
 //
 // v1 scope (see docs/BUGS.md, docs/PUSHBACK.md): this rung recognises
-// *flat* labeled blocks only (no per-element default nesting inside the
-// array scan, no holes-by-shape, no array rest — §8 Q1/Q3 and the
-// PUSHBACK row explain why); object patterns support plain reads,
+// *flat* labeled blocks, PLUS one nested shape — a per-element **default**
+// (§2.2): a 2-level `Lo`/`Ld` pair fused with the prologue for element 0, or
+// a 3-level `Lo`/`Ld`/`Ls` chain for later elements (`parseDefaultedPrologueBlock`
+// / `parseDefaultedElementBlock` below). Only the *direct-commit* variant is
+// recognised (the defaulted element's own value register is the check/commit
+// register with no separate staging register) — the staged-commit-plus-default
+// combination §2.2 mentions (e.g. `37`'s `b = 99`) is still refused
+// (`broken-threading`, since the staged head shape does not parse as a plain
+// reset); holes-by-shape and array rest remain out of scope — §8 Q1/Q3 and
+// the PUSHBACK row explain why. Object patterns support plain reads,
 // defaulted properties (including nested-pattern defaults one level via
 // `target` recursion is NOT implemented — a nested object/array target is
 // refused, `non-register-target`) and the 3-argument rest form.
@@ -75,7 +82,7 @@ function asTailBreakGuard(s: Stmt, label: string): Expr | null {
 
 interface ArrayElement {
   readonly target: string;
-  readonly init?: undefined; // v1: no per-element defaults (documented gap)
+  readonly init?: Expr; // §2.2: a per-element default, direct-commit only
 }
 
 export interface ArrayPatternSite {
@@ -132,6 +139,44 @@ function growEquivSet(body: readonly Stmt[], i: number, set: Set<string>): numbe
   }
   return j;
 }
+/** Shallow structural equality for the two shapes `u` ever takes (a
+ *  register name, or the literal `undefined`) — used to require a defaulted
+ *  element's own `!== U` guard to test the *same* sentinel the iterator
+ *  loop's done-check established, not a coincidentally-named lookalike. */
+function exprEq(a: Expr, b: Expr): boolean {
+  if (a.k !== b.k) return false;
+  if (a.k === "ident" && b.k === "ident") return a.name === b.name;
+  if (a.k === "lit" && b.k === "lit") return a.text === b.text;
+  return false;
+}
+
+/** Removes every `to = from` copy in `stmts` whose `from` is already a
+ *  member of `set` (adding `to` to `set`, whether or not it was already a
+ *  member — a copy that re-affirms an existing equivalence, like `37`'s
+ *  `r4 = r3; r3 = r4;` double-copy, is exactly as much plumbing as one that
+ *  grows the set), wherever in `stmts` it occurs and in any order — the
+ *  register-copy cosmetics §2.6 documents are not always adjacent to the
+ *  comparison that produced them once a default's own tail is involved
+ *  (`sumPair`'s v96 build emits the default assignment *before* its trailing
+ *  flag copy; v94/v84/v96(other block) emit it after). Iterates to a fixed
+ *  point since a copy's `from` may itself only become known via an earlier
+ *  copy removed in a prior pass. Returns the remaining statements in their
+ *  original relative order; mutates `set` in place. */
+function stripFlagCopies(stmts: readonly Stmt[], set: Set<string>): readonly Stmt[] {
+  let remaining = stmts.slice();
+  for (;;) {
+    const idx = remaining.findIndex((s) => {
+      const c = asCopy(s);
+      return c !== null && set.has(c.from);
+    });
+    if (idx === -1) break;
+    const c = asCopy(remaining[idx]!)!;
+    set.add(c.to);
+    remaining = [...remaining.slice(0, idx), ...remaining.slice(idx + 1)];
+  }
+  return remaining;
+}
+
 function resolveViaSet(name: string, set: ReadonlySet<string>, body: readonly Stmt[], from: number, to: number): boolean {
   if (set.has(name)) return true;
   // `name` might be defined by a copy *inside* [from,to) that the caller
@@ -189,6 +234,7 @@ interface ElementResult {
   readonly doneSet: ReadonlySet<string>;
   readonly rIterNew: string;
   readonly u: Expr;
+  readonly init?: Expr;
 }
 function parseElementBlock(body: readonly Stmt[], label: string, rIter: string, rNextFn: string, prevDone: ReadonlySet<string>, prevStage: string): ElementResult | null {
   let i = 0;
@@ -257,6 +303,123 @@ function parsePrologueBlock(body: readonly Stmt[], label: string): (Omit<Element
   return { source, rIter: rIter0, rNextFn, rawTarget, doneSet, rIterNew: tail.rIterNew, u: tail.u };
 }
 
+/** §2.2, element 0 (fused with the prologue): a defaulted array element
+ *  nests one label deeper than `parsePrologueBlock`'s plain shape. Two
+ *  levels only — `Lo` (outer, the "keep" target) wraps a single `Ld` block
+ *  that does `__hbc_iterBegin` + the first `iterNext` step, checks done
+ *  (falling through to `Lo`'s own default tail on done, `break Ld`/self)
+ *  then checks the stepped value against the sentinel (`break Lo`/outer when
+ *  present — "keep"). There is no separate `Ls`: element 0 has no earlier
+ *  element to early-skip for, so the roles `parseDefaultedElementBlock`
+ *  splits across `Ld`/`Ls` collapse into one block here. */
+function parseDefaultedPrologueBlock(body: readonly Stmt[], outerLabel: string): (Omit<ElementResult, "resolvedPrevTarget"> & { readonly source: Expr; readonly rIter: string; readonly rNextFn: string; readonly init: Expr }) | null {
+  if (body.length < 2) return null;
+  const ldStmt = body[0];
+  if (ldStmt === undefined || ldStmt.k !== "labeled") return null;
+  const ldBody = ldStmt.body;
+  // A leading alias copy (`r4 = r0;`, `sumPair`'s own source register handed
+  // to `__hbc_iterBegin` via a copy rather than directly) is deleted along
+  // with the rest of the matched run, so the copy's *target* register
+  // (`r4`) must not survive into the written pattern's `source` — chase the
+  // chain back to the earliest register the copies alias, exactly the
+  // register the pattern is actually being assigned from.
+  const aliasOf = new Map<string, string>();
+  let i = 0;
+  for (;;) {
+    const c = asCopy(ldBody[i] ?? { k: "comment", text: "" });
+    if (c === null) break;
+    aliasOf.set(c.to, aliasOf.get(c.from) ?? c.from);
+    i++;
+  }
+  i = skipResets(ldBody, i);
+  const begin = asCallAssign(ldBody[i]!);
+  if (begin === null || begin.callee !== "__hbc_iterBegin" || begin.args.length !== 1) return null;
+  const rawSource = begin.args[0]!;
+  const source: Expr = isIdent(rawSource) && aliasOf.has(rawSource.name) ? { k: "ident", name: aliasOf.get(rawSource.name)! } : rawSource;
+  const tmp = begin.to;
+  i++;
+  const rIter0 = asTupleRead(ldBody[i]!, tmp, 0);
+  if (rIter0 === null) return null;
+  i++;
+  const rNextFn = asTupleRead(ldBody[i]!, tmp, 1);
+  if (rNextFn === null) return null;
+  i++;
+  const tail = parseTail(ldBody, i, rIter0, rNextFn);
+  if (tail === null) return null;
+  i = tail.next;
+  const doneSet = new Set(tail.doneSet);
+  const guard1 = asTailBreakGuard(ldBody[i]!, ldStmt.label);
+  if (guard1 === null || !isIdent(guard1) || !doneSet.has(guard1.name)) return null; // broken-threading
+  i++;
+  const guard2Stmt = ldBody[i];
+  const guard2 = guard2Stmt === undefined ? null : asTailBreakGuard(guard2Stmt, outerLabel);
+  if (guard2 === null || guard2.k !== "bin" || guard2.op !== "!==" || !isIdent(guard2.left) || guard2.left.name !== tail.value || !exprEq(guard2.right, tail.u)) return null; // not-undefined-guard
+  i++;
+  const finalLd = ldBody[i];
+  if (finalLd === undefined || finalLd.k !== "break" || finalLd.label !== ldStmt.label) return null;
+  if (i + 1 !== ldBody.length) return null;
+  // `Lo`'s own tail: flag-copy plumbing plus the default assignment, ending
+  // in `break Lo`.
+  const loTail = body.slice(1);
+  const stripped = stripFlagCopies(loTail, doneSet);
+  const finalLo = stripped[stripped.length - 1];
+  if (finalLo === undefined || finalLo.k !== "break" || finalLo.label !== outerLabel) return null;
+  const init = collapseDefault(stripped.slice(0, -1), tail.value);
+  if (init === null) return null;
+  return { source, rIter: rIter0, rNextFn, rawTarget: tail.value, doneSet, rIterNew: tail.rIterNew, u: tail.u, init };
+}
+
+/** §2.2, a later (non-first) defaulted element: three nested labels. `Ls`
+ *  (innermost) early-skips the step entirely when the *previous* element was
+ *  already done (`break Ls`/self, landing on `Ld`'s own value-check with the
+ *  element's target still reset to `undefined`) or performs the step and,
+ *  if now done, jumps straight past the value-check to the default
+ *  (`break Ld`); otherwise falls through (`break Ls`/self, unconditional).
+ *  `Ld`'s own tail is the "!== U" value-check (`break Lo`/outer to keep the
+ *  stepped value) with an unconditional `break Ld`/self fallthrough to the
+ *  default on `Lo`'s own tail. Direct-commit only — see the file banner. */
+function parseDefaultedElementBlock(body: readonly Stmt[], outerLabel: string, rIter: string, rNextFn: string, prevDone: ReadonlySet<string>): (Omit<ElementResult, "resolvedPrevTarget"> & { readonly init: Expr }) | null {
+  if (body.length < 2) return null;
+  const ldStmt = body[0];
+  if (ldStmt === undefined || ldStmt.k !== "labeled") return null;
+  const ldBody = ldStmt.body;
+  if (ldBody.length < 1) return null;
+  const lsStmt = ldBody[0];
+  if (lsStmt === undefined || lsStmt.k !== "labeled") return null;
+  const lsBody = lsStmt.body;
+  let i = skipResets(lsBody, 0);
+  const guard1 = asTailBreakGuard(lsBody[i]!, lsStmt.label);
+  if (guard1 === null || !isIdent(guard1) || !prevDone.has(guard1.name)) return null; // broken-threading
+  i++;
+  const tail = parseTail(lsBody, i, rIter, rNextFn);
+  if (tail === null) return null;
+  i = tail.next;
+  const doneSet = new Set(tail.doneSet);
+  const guard2 = asTailBreakGuard(lsBody[i]!, ldStmt.label);
+  if (guard2 === null || !isIdent(guard2) || !doneSet.has(guard2.name)) return null;
+  i++;
+  const finalLs = lsBody[i];
+  if (finalLs === undefined || finalLs.k !== "break" || finalLs.label !== lsStmt.label) return null;
+  if (i + 1 !== lsBody.length) return null;
+
+  const ldTail = ldBody.slice(1);
+  const strippedLd = stripFlagCopies(ldTail, doneSet);
+  if (strippedLd.length !== 2) return null;
+  const valueGuard = asTailBreakGuard(strippedLd[0]!, outerLabel);
+  if (valueGuard === null || valueGuard.k !== "bin" || valueGuard.op !== "!==" || !isIdent(valueGuard.left) || valueGuard.left.name !== tail.value || !exprEq(valueGuard.right, tail.u)) return null; // not-undefined-guard
+  const finalLd = strippedLd[1]!;
+  if (finalLd.k !== "break" || finalLd.label !== ldStmt.label) return null;
+
+  const loTail = body.slice(1);
+  const strippedLo = stripFlagCopies(loTail, doneSet);
+  const finalLo = strippedLo[strippedLo.length - 1];
+  if (finalLo === undefined || finalLo.k !== "break" || finalLo.label !== outerLabel) return null;
+  const init = collapseDefault(strippedLo.slice(0, -1), tail.value);
+  if (init === null) return null;
+
+  return { rawTarget: tail.value, doneSet, rIterNew: tail.rIterNew, u: tail.u, init };
+}
+
 /** `Lc: { if (doneFinal) { break Lc } __hbc_iterClose(rIter, false); break Lc }`. */
 function parseCloseBlock(body: readonly Stmt[], label: string, doneFinal: ReadonlySet<string>): boolean {
   let i = skipResets(body, 0);
@@ -298,14 +461,21 @@ function noPcOrTry(body: readonly Stmt[]): boolean {
 function matchArray(list: readonly Stmt[], startIndex: number, fnBody: readonly Stmt[]): ArrayPatternSite | null {
   const first = list[startIndex]!;
   if (first.k !== "labeled") return null;
-  const pro = parsePrologueBlock(first.body, first.label);
-  if (pro === null) return null;
+  let pro = parsePrologueBlock(first.body, first.label);
+  let proInit: Expr | undefined;
+  if (pro === null) {
+    const dpro = parseDefaultedPrologueBlock(first.body, first.label);
+    if (dpro === null) return null;
+    pro = dpro;
+    proInit = dpro.init;
+  }
   if (!noPcOrTry(first.body)) return null; // pc-tracked-region
   if (!isRegisterName(pro.rawTarget)) return null; // non-register-target
   if (!isUndefinedSentinel(pro.u, fnBody)) return null; // not-undefined-guard
   const elements: ArrayElement[] = [];
   let prevDone = pro.doneSet;
   let prevStage = pro.rawTarget;
+  let prevInit = proInit;
   let idx = startIndex + 1;
   const rIter = pro.rIter;
   const rNextFn = pro.rNextFn;
@@ -313,19 +483,24 @@ function matchArray(list: readonly Stmt[], startIndex: number, fnBody: readonly 
     const s = list[idx];
     if (s === undefined || s.k !== "labeled") break;
     if (!noPcOrTry(s.body)) break;
-    const el = parseElementBlock(s.body, s.label, rIter, rNextFn, prevDone, prevStage);
-    if (el === null) break;
+    let el: ElementResult | null = parseElementBlock(s.body, s.label, rIter, rNextFn, prevDone, prevStage);
+    if (el === null) {
+      const del = parseDefaultedElementBlock(s.body, s.label, rIter, rNextFn, prevDone);
+      if (del === null) break;
+      el = { ...del, resolvedPrevTarget: null };
+    }
     if (!isUndefinedSentinel(el.u, fnBody)) break; // not-undefined-guard
     // Resolve the previous element's real target now that we know whether
     // this block staged it away.
-    elements.push({ target: el.resolvedPrevTarget ?? prevStage });
+    elements.push({ target: el.resolvedPrevTarget ?? prevStage, ...(prevInit !== undefined ? { init: prevInit } : {}) });
     prevDone = el.doneSet;
     prevStage = el.rawTarget;
+    prevInit = el.init;
     idx++;
   }
   // The last block's own raw target is only "resolved" once we know no
   // following block staged it away — since we stopped, it is direct.
-  elements.push({ target: prevStage });
+  elements.push({ target: prevStage, ...(prevInit !== undefined ? { init: prevInit } : {}) });
   if (elements.length === 0) return null;
   for (const el of elements) if (!isRegisterName(el.target)) return null;
   // Close block, required in v1 (no rest support): must immediately follow.
@@ -565,7 +740,7 @@ export function match(list: readonly Stmt[], ctx: PassContext): DestructureMatch
 
 export function buildPattern(site: DestructureSite): Pattern {
   if (site.kind === "array") {
-    const elements: PatternElement[] = site.elements.map((e) => ({ k: "pel", target: { k: "pid", name: e.target } }));
+    const elements: PatternElement[] = site.elements.map((e) => ({ k: "pel", target: { k: "pid", name: e.target }, ...(e.init !== undefined ? { init: e.init } : {}) }));
     return { k: "parr", elements };
   }
   const propsOut: { readonly key: string; readonly value: PatternElement }[] = site.props.map((p) => ({ key: p.key, value: { k: "pel" as const, target: { k: "pid" as const, name: p.target }, ...(p.init !== undefined ? { init: p.init } : {}) } }));

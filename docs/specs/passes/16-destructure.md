@@ -161,6 +161,25 @@ The default guard is the same `!== undefined` idiom `default-params` matches
 (rows 22/24 share the guard, per ladder §2), but against the *staged element
 value*, with labeled breaks instead of an if/else.
 
+**Implementation note (BUGS.md 2026-09-02, closed for the direct-commit
+case).** The matcher accepts a per-element default in the direct-commit style
+(`sumPair([a = 0, b = 0] = [])`, `39-destructuring-params`, function-body
+scope — not wrapped in a `__pc` region at v84/v94/v96): element 0 (fused with
+the prologue) nests two labels (`Lo`/`Ld`, `Ld` doing double duty as the
+step-and-both-checks block since there is no earlier element to early-skip
+for); a later element nests three (`Lo`/`Ld`/`Ls`, `Ls` doing the early
+prevDone-skip-or-step, `Ld`'s own tail the `!== U` check, `Lo`'s own tail the
+default). See `src/passes/destructure/match.ts`'s
+`parseDefaultedPrologueBlock`/`parseDefaultedElementBlock`. The example above
+(`b = 99`, top-level, **staged**-commit) is unreachable in v1 regardless of
+this fix — every top-level site is refused by precondition 6
+(`pc-tracked-region`, §8 Q1) — so the staged-commit-plus-default combination
+stays unimplemented and untested; the matcher refuses it (`broken-threading`,
+since a staged head does not parse as the plain `rV = undefined;` reset the
+direct-commit grammar expects) rather than mis-rewriting it. v98/v99 wrap
+`sumPair`'s own pattern in a `try`/`catch` region (measured directly, not
+predicted by this section) and are refused the same way, correctly.
+
 ### 2.3 Holes and the close block
 
 An elision is a block that advances the iterator and never commits

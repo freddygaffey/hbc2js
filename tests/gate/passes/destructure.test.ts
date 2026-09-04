@@ -83,6 +83,29 @@ function greetBody(): readonly Stmt[] {
   return [{ k: "expr", expr: { k: "assign", target: id("r0"), value: lit('"Hello"') } }, L1, tail, ret(id("r1"))];
 }
 
+/** `[a = 0] = a1` — one defaulted array element, prologue-fused (§2.2's
+ *  2-level nesting for element 0: no earlier element to early-skip for, so
+ *  `Ld`/`Ls` collapse into one block; `sumPair`'s real element-0 shape, minus
+ *  the second, chained element — that combination is covered by the
+ *  fixture-level tests below). */
+function oneDefaultArrayBody(): readonly Stmt[] {
+  const L2 = labeled("L2", [
+    asg(id("__t"), call("__hbc_iterBegin", [id("a1")])),
+    asg(id("r0"), mem(id("__t"), 0)),
+    asg(id("r4"), mem(id("__t"), 1)),
+    asg(id("__t"), call("__hbc_iterNext", [id("r0"), id("r4")])),
+    asg(id("r1"), mem(id("__t"), 0)),
+    asg(id("r0"), mem(id("__t"), 1)),
+    asg(id("r3"), { k: "bin", op: "===", left: id("r0"), right: id("r6") }),
+    ifBreak(id("r3"), "L2"),
+    ifBreak({ k: "bin", op: "!==", left: id("r1"), right: id("r6") }, "L1"),
+    brk("L2"),
+  ]);
+  const L1 = labeled("L1", [L2, asg(id("r1"), lit("0")), brk("L1")]);
+  const L3 = labeled("L3", [ifBreak(id("r3"), "L3"), { k: "expr", expr: call("__hbc_iterClose", [id("r0"), lit("false")]) }, brk("L3")]);
+  return [asg(id("r6"), UNDEF), L1, L3, ret(id("r1"))];
+}
+
 /** `{ x, ...others } = src` — object rest, the 3-arg `copyDataProperties`
  *  form this rung owns (2-arg is `spread-rest`'s object spread, spec §7). */
 function objectRestBody(): readonly Stmt[] {
@@ -115,6 +138,17 @@ test("destructure: object pattern with a leading plain read and a defaulted prop
   const rewritten = destructure.rewrite(m!, ctx);
   const printed = printProgram(rewritten);
   assert.match(printed, /\(\{name: r1, greeting: r2 = r0\} = r2\);/);
+  const res = check(body, rewritten, { ...ctx, fnBody: body });
+  assert.equal(res.ok, true, JSON.stringify(res));
+});
+
+test("destructure: array pattern with a per-element default (BUGS 2026-09-02) -> [r1 = 0] = a1", () => {
+  const body = oneDefaultArrayBody();
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.notEqual(m, null);
+  const rewritten = destructure.rewrite(m!, ctx);
+  const printed = printProgram(rewritten);
+  assert.match(printed, /\[r1 = 0\] = a1;/);
   const res = check(body, rewritten, { ...ctx, fnBody: body });
   assert.equal(res.ok, true, JSON.stringify(res));
 });
@@ -166,6 +200,21 @@ test("destructure: check rejects a mutated rewrite (wrong element order)", () =>
   assert.equal(res.ok, false);
 });
 
+test("destructure: check rejects a mutated rewrite (wrong array-element default)", () => {
+  const body = oneDefaultArrayBody();
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.notEqual(m, null);
+  const rewritten = destructure.rewrite(m!, ctx);
+  const idx = rewritten.findIndex((s) => s.k === "expr" && s.expr.k === "destructure");
+  const stmt = rewritten[idx] as Extract<Stmt, { k: "expr" }>;
+  const d = stmt.expr as Extract<Expr, { k: "destructure" }>;
+  const pattern = d.pattern as Extract<typeof d.pattern, { k: "parr" }>;
+  const elements = pattern.elements.map((e) => (e.k === "pel" && e.init !== undefined ? { ...e, init: lit("99") } : e));
+  const mutated = rewritten.map((s, i) => (i === idx ? { ...stmt, expr: { ...d, pattern: { ...pattern, elements } } } : s));
+  const res = check(body, mutated, { ...ctx, fnBody: body });
+  assert.equal(res.ok, false);
+});
+
 test("destructure: check rejects a mutated rewrite (wrong object key)", () => {
   const body = greetBody();
   const m = match(body, { ...ctx, fnBody: body });
@@ -209,5 +258,30 @@ for (const version of ["v94", "v99"]) {
   test(`destructure: 39-destructuring-params (${version}) — makeUser becomes a destructuring assignment`, () => {
     const code = decompileFixture("39-destructuring-params", version);
     assert.match(code, /\(\{id: \w+, name: \w+ = .*?, tags: \w+ = new Array\(0\)\} = \w+\);/);
+  });
+}
+
+// BUGS.md 2026-09-02: `sumPair([a = 0, b = 0] = [])`'s array-pattern
+// per-element defaults. v84/v94/v96 lower the pattern straight-line (no
+// `__pc`/try region — §6's "Abrupt completion" note, `= 0` cannot throw) so
+// the matcher now accepts it; v98/v99 wrap the same pattern in a `try`/
+// `catch` region instead (measured directly — the matcher's own
+// `pc-tracked-region` precondition already refuses it, correctly: this is a
+// refusal, not a mis-rewrite, and stays a refusal until batch-4 `try-clean`,
+// §8 Q1).
+for (const version of ["v84", "v94", "v96"]) {
+  test(`destructure: 39-destructuring-params (${version}) — sumPair gets per-element array defaults`, () => {
+    const code = decompileFixture("39-destructuring-params", version);
+    assert.match(code, /\[\w+ = 0, \w+ = 0\] = \w+;/);
+    // The helper *definition* (`function __hbc_iterBegin(src) { ... }`)
+    // always prints; only a *call site* (`= __hbc_iterBegin(`) would mean a
+    // raw, unrewritten site survived.
+    assert.doesNotMatch(code, /= __hbc_iterBegin\(/);
+  });
+}
+for (const version of ["v98", "v99"]) {
+  test(`destructure: 39-destructuring-params (${version}) — sumPair's try-wrapped default stays refused`, () => {
+    const code = decompileFixture("39-destructuring-params", version);
+    assert.match(code, /= __hbc_iterBegin\(/);
   });
 }
