@@ -18,9 +18,18 @@ tools/deb/install.sh deb.local  # or any other ssh-reachable host
 ```
 
 This copies `server.mjs` to `~/hbc2js-ci-bin/` on the target, writes a
-`systemd --user` unit (`hbc2js-ci.service`, `Restart=always`), enables
-lingering (so the service survives logout/reboot) and (re)starts it. Re-run
-after editing `server.mjs` to redeploy.
+`systemd --user` unit (`hbc2js-ci.service`, `Restart=always`) with
+`MAX_PARALLEL` set to `nproc/2` (min 1) computed on the target node itself
+(deb's own unit keeps the same value it always had, since deb has 32 cores;
+a second, smaller node gets its own value automatically — see
+`docs/specs/24-compute-node.md` §2), enables lingering (so the service
+survives logout/reboot) and (re)starts it. Also checks (warn-only, never
+fails the install) that `~/hbc2js-dev/tools/{hermesc,hermes-vm}` exist on the
+target — without them, oracle-dependent tests just skip on that node
+(`docs/TOOLCHAIN.md`). Re-run after editing `server.mjs` to redeploy. Note:
+`install.sh` is generalised to any Debian/Ubuntu host reachable over SSH, but
+is only ever run by hand against a named node — never invoked by an agent or
+by this repo's own tests/CI.
 
 ## Use
 
@@ -31,6 +40,7 @@ tools/deb/run.sh --keep -- npm run test:all         # keep the worktree afterwar
 tools/deb/run.sh --status                           # list recent jobs
 tools/deb/run.sh --status <id>                      # one job's status + tail
 tools/deb/run.sh --log <id>                         # full log
+tools/deb/run.sh --host http://deb.local:8787 -- npm test   # pin a host, skip the pick
 ```
 
 `run.sh` with no `--sha` pushes the current local branch to `origin` first
@@ -41,6 +51,28 @@ SHA reachable on GitHub, since the repo is public).
 
 Exit code of `run.sh` is the job's exit code (or 1 if the job errored before
 running the command).
+
+### Multi-node host picking (docs/specs/24-compute-node.md §3)
+
+`HBC2JS_CI_HOSTS` is a space-separated list of candidate compute-node URLs
+(default `http://deb.local:8787`, same as before this spec landed).
+`DEB_CI_URL` still works as a one-host override, for a single-node setup.
+`--host <url>` pins a host outright and skips picking.
+
+With more than one candidate host, `run.sh` polls each host's `GET /jobs`
+(2 s timeout each, via `tools/deb/pick.mjs`) before every POST, skips any
+host that doesn't answer in time, and picks the reachable host with the
+fewest `queued + running` jobs (ties go to list order). The chosen host —
+and any skipped, unreachable host — is printed on stderr. If every
+candidate is unreachable, `run.sh` exits non-zero with one clear line. With
+a single candidate host (the default case today), no picking happens; the
+one host is used directly, same as before this spec.
+
+`tools/deb/pick.mjs` exports a pure `pickHost(hosts, fetchJobs)` (an
+injectable fetcher takes a host URL and resolves with its `/jobs` array) so
+the picking logic is unit-tested without a network in
+`tests/gate/tools/deb-pick.test.ts`; the file also has a CLI entry that
+`run.sh` shells out to with the real `fetch`.
 
 ### Raw HTTP (if you need it directly)
 

@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
-# tools/deb/run.sh — run a command on the `deb` job server, one tool call,
-# tiny output. See docs/DEB-CI.md.
+# tools/deb/run.sh — run a command on a compute-node job server, one tool
+# call, tiny output. See docs/DEB-CI.md and docs/specs/24-compute-node.md.
 #
 # Usage:
-#   tools/deb/run.sh [--ref <branch>] [--sha <sha>] [--timeout <min>] [--keep] -- <cmd...>
-#   tools/deb/run.sh --status [id]      # list recent jobs, or one job's status
-#   tools/deb/run.sh --log <id>         # full log for a job
+#   tools/deb/run.sh [--host <url>] [--ref <branch>] [--sha <sha>] [--timeout <min>] [--keep] -- <cmd...>
+#   tools/deb/run.sh [--host <url>] --status [id]      # list recent jobs, or one job's status
+#   tools/deb/run.sh [--host <url>] --log <id>         # full log for a job
+#
+# Host selection (spec 24 §3): HBC2JS_CI_HOSTS is a space-separated list of
+# candidate host URLs (default "http://deb.local:8787"). DEB_CI_URL is a
+# one-host override (kept for back-compat with single-node setups). --host
+# pins a host and skips the pick entirely. Otherwise every candidate host's
+# GET /jobs is polled (2s timeout each, via tools/deb/pick.mjs) and the host
+# with the fewest queued+running jobs is chosen; unreachable hosts are
+# skipped with a warning on stderr; ties go to list order.
 #
 # Default ref: the current local branch, which is pushed to origin first
 # (`git push -q origin HEAD`) so the server can fetch it. Use --sha to skip
 # the push and run an already-pushed commit.
 set -euo pipefail
 
-URL="${DEB_CI_URL:-http://deb.local:8787}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+HOST_PIN="${DEB_CI_URL:-}"
+HOSTS="${HBC2JS_CI_HOSTS:-http://deb.local:8787}"
 REF=""
 SHA=""
 TIMEOUT_MIN=30
@@ -22,6 +33,7 @@ MODE=run
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --host) HOST_PIN="$2"; shift 2 ;;
     --ref) REF="$2"; shift 2 ;;
     --sha) SHA="$2"; shift 2 ;;
     --timeout) TIMEOUT_MIN="$2"; shift 2 ;;
@@ -33,7 +45,31 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-node_json() { node -e "$1"; }
+# Resolve which URL to use: --host / DEB_CI_URL pin it outright; otherwise
+# pick among HBC2JS_CI_HOSTS by current load. Bash 3.2-compatible (no
+# mapfile, no ${var,,}) — must run on macOS's stock bash and on Linux.
+resolve_url() {
+  if [ -n "$HOST_PIN" ]; then
+    URL="$HOST_PIN"
+    return 0
+  fi
+  # Split HOSTS on whitespace into positional args, then hand them to pick.mjs.
+  set -- $HOSTS
+  if [ "$#" -eq 0 ]; then
+    echo "run.sh: HBC2JS_CI_HOSTS is empty" >&2
+    exit 1
+  fi
+  if [ "$#" -eq 1 ]; then
+    URL="$1"
+    return 0
+  fi
+  if ! URL="$(node "$SCRIPT_DIR/pick.mjs" "$@")"; then
+    exit 1
+  fi
+}
+
+resolve_url
+URL="${URL%/}"
 
 if [ "$MODE" = "status" ]; then
   ID="${CMD[0]:-${1:-}}"
@@ -59,7 +95,7 @@ if [ "$MODE" = "log" ]; then
 fi
 
 if [ ${#CMD[@]} -eq 0 ]; then
-  echo "usage: run.sh [--ref R|--sha S] [--timeout MIN] [--keep] -- <cmd...>" >&2
+  echo "usage: run.sh [--host URL] [--ref R|--sha S] [--timeout MIN] [--keep] -- <cmd...>" >&2
   exit 2
 fi
 
