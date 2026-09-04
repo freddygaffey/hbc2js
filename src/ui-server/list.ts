@@ -73,3 +73,28 @@ export function listFunctions(artifact: ArtifactService, cursor = 0): FunctionLi
   const nextCursor = start + rows.length < all.length ? start + rows.length : null;
   return { rows, total: all.length, truncated: all.length > FUNCTIONS_PAGE_CAP, nextCursor };
 }
+
+/** `/api/module/{id}/source` — the whole module file plus every function
+ *  it owns with its 1-based line range, so the UI can show a FILE view (all
+ *  functions, click a range to focus one) instead of forcing the user down
+ *  to per-function source (`/api/fn/{fn}/source`). Text is the artifact's
+ *  own rendered `module_N.js`, read as-is; nothing is re-emitted here. */
+export interface ModuleSourceResult {
+  readonly module: number;
+  readonly file: string;
+  readonly text: string;
+  readonly functions: readonly { readonly fn: number; readonly name: string | null; readonly lines: readonly [number, number] }[];
+}
+
+export function moduleSource(artifact: ArtifactService, artifactDir: string, id: number): ModuleSourceResult | null {
+  const file = artifact.module(id).file;
+  if (file === null) return null;
+  const functions: { fn: number; name: string | null; lines: readonly [number, number] }[] = [];
+  for (const { fn } of artifact.listFns()) {
+    const s: FnSummary = artifact.fn(fn);
+    if (s.module !== id || s.lines === null) continue;
+    functions.push({ fn, name: s.overlayName ?? s.name, lines: s.lines });
+  }
+  functions.sort((a, b) => a.lines[0] - b.lines[0]);
+  return { module: id, file, text: readFileSync(join(artifactDir, file), "utf8"), functions };
+}

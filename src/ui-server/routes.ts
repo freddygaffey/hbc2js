@@ -13,7 +13,7 @@
 import type { McpResources } from "../mcp/resources.ts";
 import type { McpTools } from "../mcp/tools.ts";
 import { Hbc2jsError } from "../errors.ts";
-import { listModules, listFunctions } from "./list.ts";
+import { listModules, listFunctions, moduleSource } from "./list.ts";
 
 export interface UiRequest {
   readonly method: string;
@@ -28,17 +28,15 @@ export interface UiResponse {
 }
 
 export interface UiServerCtx {
-  // NOT readonly: `McpResources` snapshots the project store into memory at
-  // construction (`ProjectService`'s in-memory `findingStore`/etc, spec
-  // 16 §3.2's "warm services") and `McpTools` builds its OWN separate pair
-  // rather than sharing one (its own doc comment: "deferred to the
-  // transport binding, §6, which decides whether one MCP server process
-  // holds one shared pair or one each") — this IS that transport binding's
-  // decision: `server.ts` rebuilds `ctx.resources` after every write-tool
-  // call that lands a change, so the next read (including the SSE/tail
-  // poll) sees it, rather than serving a stale in-memory snapshot forever.
-  // `handle()` itself never assigns this — only `server.ts` does.
-  resources: McpResources;
+  // `resources`/`tools` share ONE `ArtifactService`/`ProjectService` pair
+  // (docs/specs/17-mcp-harness.md §15's `McpContext`, `src/mcp/context.ts`)
+  // — a write through `tools` reloads that shared `ProjectService`'s own
+  // in-memory caches (`reloadFromDb()`), so `resources`'s next read sees it
+  // immediately. `server.ts` builds `ctx` from one `McpContext` and no
+  // longer rebuilds either field after a write (§15 deleted that
+  // workaround, the old comment here described it); `handle()` itself
+  // never assigns either.
+  readonly resources: McpResources;
   readonly tools: McpTools;
   /** `McpResources`/`ArtifactService` both keep their own `artifactDir`
    *  private (it's an implementation detail of the class, not part of
@@ -174,6 +172,17 @@ const ROUTES: readonly Route[] = [
       const id = parseFn(raw!);
       if (id === null) return badRequest(`module/${raw}: not a module id`);
       return ok(ctx.resources.module(id));
+    },
+  },
+  {
+    method: "GET",
+    re: /^\/api\/module\/([^/]+)\/source$/,
+    handler: ([raw], _req, ctx) => {
+      const id = parseFn(raw!);
+      if (id === null) return badRequest(`module/${raw}/source: not a module id`);
+      const r = moduleSource(ctx.resources.artifact, ctx.artifactDir, id);
+      if (r === null) return { status: 404, json: { reason: `module ${id}: no source file recorded` } };
+      return ok(r);
     },
   },
   {
@@ -356,8 +365,10 @@ export function tailLog(resources: McpResources, since: number): LogTailResult {
 /** Every `/api/tools/*` route that actually mutates project state (mints a
  *  `log`/`revisions` row) — `request-fidelity-check` and
  *  `generate-documentation` are pure reads/computations and are excluded.
- *  `server.ts` uses this to know when `ctx.resources` needs rebuilding
- *  (see `UiServerCtx.resources`'s own doc comment). */
+ *  §15's `McpContext` (`UiServerCtx.resources`'s own doc comment) made the
+ *  "does `server.ts` need to rebuild `ctx.resources` after this?" question
+ *  this set used to answer moot — kept as the still-useful "which tool
+ *  routes are writes" classification (e.g. for a future audit/log use). */
 export const WRITE_TOOL_PATHS: ReadonlySet<string> = new Set([
   "/api/tools/set-name",
   "/api/tools/add-comment",

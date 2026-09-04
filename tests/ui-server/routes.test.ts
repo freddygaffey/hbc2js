@@ -17,8 +17,7 @@ import { initProjectDb } from "../../src/projdb/ix-write.ts";
 import { buildIndexRows } from "../../src/artifact/index-rows.ts";
 import { writeSplitResult } from "../../src/split/write.ts";
 import { dbSetTag } from "../../src/projdb/annotations.ts";
-import { McpResources } from "../../src/mcp/resources.ts";
-import { McpTools } from "../../src/mcp/tools.ts";
+import { McpContext } from "../../src/mcp/context.ts";
 import { handle, tailLog, type UiServerCtx } from "../../src/ui-server/routes.ts";
 import { listModules, listFunctions } from "../../src/ui-server/list.ts";
 import { startUiServer } from "../../src/ui-server/server.ts";
@@ -48,8 +47,15 @@ function buildFixture(): string {
 const outDir = buildFixture();
 test.after(() => rmSync(outDir, { recursive: true, force: true }));
 
-const resources = new McpResources(outDir, { hbc: RN_TEMPLATE });
-const tools = new McpTools(outDir, { hbc: RN_TEMPLATE });
+// docs/specs/17-mcp-harness.md §15: ONE `McpContext` — `resources`/`tools`
+// below share its `ArtifactService`/`ProjectService` pair, exactly as
+// `ctx` (built from the same `McpContext`) does, so a write through
+// `tools`/`ctx.tools` is visible to `resources`/`ctx.resources`'s very
+// next read with no rebuild step (see the write tests below, which used
+// to replicate `server.ts`'s now-deleted rebuild workaround by hand).
+const mcpContext = new McpContext(outDir, { hbc: RN_TEMPLATE });
+const resources = mcpContext.resources;
+const tools = mcpContext.tools;
 const ctx: UiServerCtx = { resources, tools, artifactDir: outDir };
 const human = { source: "human" as const, who: "analyst@duck.com" };
 
@@ -119,6 +125,23 @@ test("GET /api/module/:id matches resources.module", async () => {
   const r = await get(`/api/module/${id}`);
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, resources.module(id));
+});
+
+test("GET /api/module/:id/source returns the whole file + owned fn ranges (file view)", async () => {
+  const mod = resources.fn(CALLEE_FN).module;
+  assert.ok(mod !== null);
+  const r = await get(`/api/module/${mod}/source`);
+  assert.equal(r.status, 200);
+  const body = r.json as { module: number; file: string; text: string; functions: readonly { fn: number; lines: readonly [number, number] }[] };
+  assert.equal(body.module, mod);
+  assert.equal(body.text.split("\n").length >= Math.max(...body.functions.map((f) => f.lines[1])), true);
+  const own = body.functions.find((f) => f.fn === CALLEE_FN);
+  assert.ok(own !== undefined, "the module's function list includes the fixture's callee fn");
+  // the range slice of the file IS the function's own source route
+  const slice = body.text.split("\n").slice(own!.lines[0] - 1, own!.lines[1]).join("\n");
+  assert.equal(slice, ((await get(`/api/fn/${CALLEE_FN}/source`)).json as { text: string }).text);
+  for (let i = 1; i < body.functions.length; i++) assert.ok(body.functions[i]!.lines[0] >= body.functions[i - 1]!.lines[0], "sorted by start line");
+  assert.equal((await get("/api/module/999999/source")).status, 404);
 });
 
 test("GET /api/modules lists every module (own list layer, not resources.ts)", async () => {
@@ -216,18 +239,6 @@ test("GET /api/history/:target matches resources.history", async () => {
   assert.deepEqual(r.json, resources.history(`fn:${CALLEE_FN}`));
 });
 
-// `ctx.resources` is a snapshot taken at construction (`ProjectService`'s
-// in-memory stores, spec 16 §3.2) and `tools` writes through a SEPARATE
-// pair (`McpTools`'s own doc comment on why); `handle()` itself never
-// rebuilds `ctx.resources` (see routes.ts's own doc comment) — only
-// `server.ts` does, after a successful `/api/tools/*` write. These two
-// tests exercise `handle()` directly (no http), so they replicate that
-// same rebuild step by hand, proving out the exact mechanism `server.ts`
-// automates (and that the SSE test below exercises end-to-end).
-function refreshCtxResources(): void {
-  ctx.resources = new McpResources(outDir, { hbc: RN_TEMPLATE });
-}
-
 test("write route (set-name) lands a log row visible via GET /api/log/tail", async () => {
   const before = tailLog(ctx.resources, 0).cursor;
   const target = `fn:${CALLER_FN}`;
@@ -236,7 +247,6 @@ test("write route (set-name) lands a log row visible via GET /api/log/tail", asy
   const body = w.json as { rid: string; line: string };
   assert.ok(body.line.includes("verifyPayload"));
 
-  refreshCtxResources();
   const tail = await get("/api/log/tail", { since: String(before) });
   assert.equal(tail.status, 200);
   const tailBody = tail.json as { rows: readonly { op: string; detail: string | null }[]; cursor: number };
@@ -260,7 +270,6 @@ test("write routes (add-comment, add-tag, record-finding, set-finding-status) ro
   assert.equal(f.status, 200);
   const rid = (f.json as { rid: string }).rid;
 
-  refreshCtxResources();
   const shown = await get(`/api/finding/${rid}`);
   assert.equal(shown.status, 200);
   assert.deepEqual(shown.json, ctx.resources.finding(rid));
@@ -268,7 +277,6 @@ test("write routes (add-comment, add-tag, record-finding, set-finding-status) ro
   const dynamicRef = "fuzz:tests/fixtures/bundles/rn-template-0.72/index.android.hbc";
   const s = await post("/api/tools/set-finding-status", { findingRid: rid, to: "confirmed", evidence: [{ ref: dynamicRef, role: "dynamic" }], prov: human });
   assert.equal(s.status, 200);
-  refreshCtxResources();
 });
 
 test("POST /api/tools/record-finding 400s on truth-rule violation (no resolving evidence)", async () => {

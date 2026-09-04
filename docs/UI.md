@@ -50,6 +50,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/fn/{fn}/callers` | `WhoCalls` |
   | GET | `/api/fn/{fn}/callees` | `CallsFrom` |
   | GET | `/api/module/{id}` | `ModuleInfo` |
+  | GET | `/api/module/{id}/source` | `ModuleSource` — whole file text + every owned fn `{fn,name,lines}`; the FILE view (select a module, see all its functions; per-function focus is optional, not forced) |
   | GET | `/api/findings` | `Bounded<ResolvedFinding>` |
   | GET | `/api/leads` | `LeadsResult` |
   | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
