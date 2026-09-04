@@ -691,6 +691,24 @@ environment created with an undefined parent has no parent.
   homes as that host has instances. The graph only records this; placing a copy
   per instance is the emitter's job (docs/specs/05-emitter.md §6, report §5
   "Landing item 2").
+* **`closureCreationSites` is a superset of what the lattice conflicts on, and
+  the difference is a known bug.** Copies are built from `closureEnvConflict`
+  only. On react-navigation-example fn#13056 has six recorded sites capturing
+  six distinct environments with *aligned* chains (`[3141, 1939]`,
+  `[3142, 1939]`, `[4511, …]`, …) and `closureEnvOf` is nonetheless the single
+  value 3141, so the function is not flagged ambiguous, gets no copies, and the
+  five non-chosen sites emit a `_fn13056` that copy 0's home does not have in
+  scope. fn#15251 and fn#15275 are the same shape. Anything reading
+  `closureEnvOf` to mean "this function has one creation environment" must treat
+  that as unproven until the two agree (report §5, "What the 26 remaining
+  unbound names actually are").
+* **Unequal chains stay ambiguous, by construction.** The remap is positional,
+  so `chainOf(e).length !== chain0.length` abandons duplication for that
+  function entirely; it keeps `closureEnvOf === null` and becomes an orphan for
+  `src/emit/placement.ts` to host by cost. That is the whole of this bundle's
+  18-function residual, and the 19 unbound names it produces are not a placement
+  defect: no single home can satisfy sites whose environments have no
+  correspondence.
 * Merge at joins: equal values meet to themselves, everything else to `unknown`.
 * Iterate to a fixed point over RPO. Loops converge in ≤ 2 passes with this
   lattice; cap at `blocks.length` and bail to `unknown` if not.

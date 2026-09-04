@@ -394,7 +394,92 @@ which needed `instructions()` to grow real `jump`/`condJump` terminators so
 detached worktree (`_e2_0` is not declared in any enclosing scope, `_fn3__c1`
 stubbed) and green after.
 
+### What the 26 remaining unbound names actually are (2026-09-05, measured)
+
+Item 3's brief asked for a diagnosis of "the 20 `_fn<n>` + 6 `_e4551_*` orphans:
+is the graph wrong or is `src/emit/placement.ts`'s cost rule wrong?". Measured
+on react-navigation-example-0.85.3 (`strictEnv:false`), the answer is **neither**:
+19 of the 26 are the *unaligned residual* (leftover 4 below, Fred's item) seen
+from the emitter side, and the other 7 are a **new, separate defect** in the env
+graph. Nothing here is a placement-rule bug — the cost rule is choosing the best
+home available for a function that genuinely has several incompatible ones.
+
+`analyseModule`'s diagnostics carry exactly 18 `W_AMBIGUOUS_CLOSURE_ENV`
+function indices: 12754, 13838–13844, 13914–13917, 14001, 14002, 14983–14986.
+(`decompile()`'s `result.diagnostics` show 0 of them — they are cfg-level and do
+not propagate; the sweep ratchet reads `analysis.diagnostics`, which is why
+`MAX_STILL_AMBIGUOUS` still measures 18.)
+
+* **19 names are those 18 functions.** `_fn13838`…`_fn13844` (7),
+  `_fn13914`…`_fn13917` (4), `_fn14001`/`_fn14002` (2) are referenced from the
+  creation site the cost rule did *not* host them at; the 6 `_e4551_*` are
+  14984/14985/14986 emitted at module level while reading env 4551's slots,
+  which fn#14983 declares. Their chains are unequal, e.g. fn#13838's two sites
+  capture env 3639 (chain `[3639, 652]`) and env 4391 (chain `[4391]`), and
+  fn#14983's four sites capture `[4551]`, `[4552]`, `[4553]` and
+  `[4613, 3454, 2174]`. `src/cfg/env-graph.ts` refuses a positional remap for
+  unequal chains (`c.length !== chain0.length` -> "stays ambiguous"), so these
+  never become copies, `closureEnvOf` stays `null`, and every one of them is an
+  orphan placed by cost. **That is leftover 4, verbatim** — the 18 unaligned
+  chains — and it needs Fred, not a placement fix.
+* **7 names are a different bug**: `_fn13056` (5 sites) and `_fn15251` /
+  `_fn15275` (1 each). These are *not* in the ambiguous 18 and have no copies,
+  yet `closureCreationSites` records several distinct environments for each,
+  with **aligned** chains: fn#13056 has six sites capturing envs 3141
+  (`[3141, 1939]`), 3142 (`[3142, 1939]`), 4511, 4512, 4595, 4596 — every chain
+  length 2, identical above the leaf — and `closureEnvOf` is nonetheless the
+  single value 3141. fn#15251's two sites capture `[4472, 1403]` and
+  `[4621, 1403]`, again aligned, and `closureEnvOf` is 4472. So the copy
+  machinery never runs (it iterates `closureEnvConflict`), the five non-chosen
+  sites emit the plain `_fn13056`, and copy 0 is not in their scope. The
+  contradiction is inside `src/cfg/env-graph.ts`: `closureCreationSites`
+  disagrees with the `closureEnvOf` lattice about how many environments these
+  functions are created with. **These three should be duplicated and are not.**
+  That is the cheapest actionable next fix on this bundle (7 of 26 names) and it
+  is a *graph* fix, not an emitter one; the next agent should start by finding
+  why a recorded site does not reach the join for these three.
+
+### Landing item 3 addendum: `closureNameAt` keyed by instance (not landed)
+
+Leftover 5 asked for `closureNameAt` to be keyed by creation site *and*
+instance. Working through it on `mutualRecursionFunctions` (the only shape that
+exhibits it), the collapse it describes turns out not to be observable in the
+copies the graph can build, for a structural reason worth recording before
+anyone spends a day on it:
+
+* A site inside instance *I* of `f` that creates a closure over an environment
+  *I* owns emits `closureNameAt[site]`, the same `_fn<n>__c<i>` in every
+  instance. Since "Landing item 2" emits that copy *inside every instance of its
+  host*, under that instance's composed remap, the name resolves lexically to
+  the copy declared in *I* — JS shadowing already does the instance keying for
+  the binding.
+* The composed remap is what would make the instances' bodies differ, and it
+  cannot: a copy hosted inside its own recursion group captures an environment
+  the host *owns* (env id fixed, not remapped), and the group only exists at all
+  because every chain has the same length — which, in the react-navigation
+  shape, is true precisely because the group's environments hang off the
+  *grandparent* (`GetEnvironment r, 1`), not off the captured environment. So
+  composing the instance's remap with the copy's leaves the copy's remap
+  unchanged, and the inner instance is textually identical to the outer one.
+
+The residue is therefore about *depth*, not naming: the `hosted` set stops the
+nesting at the first repeat, so recursion levels beyond that reuse an enclosing
+instance's body. Since the bodies are identical text, that is currently sound;
+it stops being sound the moment a group appears whose inner copies compose to a
+*different* remap. No input produces one, so there is nothing to assert on and
+nothing to fix — a trace test written today would pass before and after any
+change. Recorded as leftover 6 with the exact precondition to watch for, rather
+than implemented speculatively.
+
 ### Remaining work after item 2
+
+0. **(2026-09-05, item 3)** Leftovers 1–3 below are superseded: 3 is fixed, and
+   1 + 2 are *not* a placement defect — see "What the 26 remaining unbound names
+   actually are" above. The live list is: leftover 4 (the 18 unaligned chains,
+   19 of the 26 names, needs Fred), the new graph bug (7 names: fn#13056,
+   fn#15251, fn#15275 are created with several aligned environments but the
+   lattice resolves a single one, so they are never duplicated), and leftover 6
+   (`closureNameAt` instance keying, unobservable today).
 
 1. **20 `_fn<n>`** — unchanged, and not a duplication defect: functions with no
    resolved creation environment at all (`_fn13056`, `_fn13838`…`_fn13844`,
@@ -429,3 +514,10 @@ stubbed) and green after.
    recursion levels of a group collapse onto the outermost one. No unbound name
    reports it, so it needs a trace/equivalence test on such a function rather
    than a ratchet.
+
+6. `closureNameAt` instance keying (was leftover 5): not observable while every
+   recursion group's inner copies compose to the same remap as the outer one.
+   Watch for a group whose copies capture an environment that is itself
+   *remapped* by the enclosing instance — then the instances' bodies differ, the
+   shared name binds to the wrong one, and this becomes real. See the addendum
+   above.
