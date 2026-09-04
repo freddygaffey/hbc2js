@@ -110,6 +110,28 @@ test("GET /api/fn/:fn/disasm matches resources.disasm", async () => {
   assert.deepEqual(r.json, resources.disasm(CALLEE_FN));
 });
 
+test("GET /api/fn/:fn/linemap agrees with the served source and names real instructions", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}/linemap`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, JSON.parse(JSON.stringify(resources.lineMap(CALLEE_FN))));
+  const body = r.json as { fn: number; fnStartLine: number | null; lines: [number, number, number, number][] };
+  assert.equal(body.fn, CALLEE_FN);
+  // docs/specs/05-emitter.md §16: every row lands inside the text `source`
+  // serves for the same function, and the disassembly of the function the row
+  // names really has a line starting at that byte offset.
+  const sourceLines = resources.source(CALLEE_FN).text.split("\n");
+  assert.ok(body.lines.length > 0, "the rn-template fixture function should map at least one line");
+  for (const [line, fn, start] of body.lines) {
+    assert.ok(line >= 1 && line <= sourceLines.length, `line ${line} outside the ${sourceLines.length}-line source`);
+    assert.ok(resources.disasm(fn).text.includes(`[@ ${start}]`), `fn ${fn} disasm has no instruction at @${start}`);
+  }
+});
+
+test("GET /api/fn/:fn/linemap rejects a non-numeric fn", async () => {
+  const r = await get("/api/fn/nope/linemap");
+  assert.equal(r.status, 400);
+});
+
 test("GET /api/fn/:fn/context forwards include/depth", async () => {
   const r = await get(`/api/fn/${CALLEE_FN}/context`, { include: "metadata,callers", depth: "2" });
   assert.equal(r.status, 200);

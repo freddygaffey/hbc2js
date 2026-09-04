@@ -1,6 +1,7 @@
 // docs/specs/05-emitter.md §2 — the in-house printer. Byte-stable output, no
 // dependency, explicit precedence so parentheses are added exactly where needed.
-import type { Expr, Param, Pattern, PatternElement, Stmt } from "./ast.ts";
+import type { Expr, Origin, Param, Pattern, PatternElement, Stmt } from "./ast.ts";
+import { originOf } from "./origin.ts";
 import { jsxToCall } from "./ast.ts";
 
 /** F16 §3: render a pattern. `hole` prints as an empty slot (a run of them
@@ -139,6 +140,16 @@ export interface PrintOptions {
    * not — `ranges.jsonl` only ever states what was actually observed.
    */
   readonly onFunctionRange?: (name: string, startLine: number, endLine: number) => void;
+  /**
+   * §16 source<->disasm alignment: called once per printed statement that
+   * carries a bytecode origin (`src/emit/origin.ts`), with the 1-based line —
+   * within this `printProgram` call's own returned text — on which that
+   * statement's first character sits. Statements without an origin are simply
+   * not reported; the map is honest-partial by design, never inferred.
+   * Purely observational: the returned text is byte-identical with and
+   * without this hook (asserted in `tests/gate/emit/line-map.test.ts`).
+   */
+  readonly onStmtLine?: (line: number, origin: Origin) => void;
 }
 
 /** `PrintOptions.jsx` for the `printProgram` call in flight — expressions
@@ -152,6 +163,11 @@ let jsxOutput = false;
  *  rescan per function in bundles with thousands of them, e.g. rn-template). */
 let funcMarks: Array<{ readonly name: string; readonly startIdx: number; readonly endIdxExclusive: number }> | undefined;
 
+/** §16 statement-origin marks for the `printProgram` call in flight, as an
+ *  index into that call's own `out` array (converted to a physical line by the
+ *  same prefix-sum post-pass `funcMarks` uses). */
+let originMarks: Array<{ readonly idx: number; readonly origin: Origin }> | undefined;
+
 function countNewlines(s: string): number {
   let n = 0;
   for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
@@ -162,21 +178,25 @@ export function printProgram(body: readonly Stmt[], opts: PrintOptions = { inden
   const out: string[] = [];
   const savedJsx = jsxOutput;
   const savedMarks = funcMarks;
+  const savedOrigins = originMarks;
   jsxOutput = opts.jsx === true;
   funcMarks = opts.onFunctionRange !== undefined ? [] : undefined;
+  originMarks = opts.onStmtLine !== undefined ? [] : undefined;
   try {
     for (const s of body) printStmt(s, 0, out, opts);
-    if (funcMarks !== undefined && opts.onFunctionRange !== undefined) {
+    if ((funcMarks !== undefined && opts.onFunctionRange !== undefined) || (originMarks !== undefined && opts.onStmtLine !== undefined)) {
       // Prefix sum: `lineStart[i]` = 1-based physical line of `out[i]`'s
       // first character (§2.7's line-tracking hook, see `PrintOptions` doc).
       const lineStart: number[] = new Array(out.length + 1);
       lineStart[0] = 1;
       for (let i = 0; i < out.length; i++) lineStart[i + 1] = lineStart[i]! + 1 + countNewlines(out[i]!);
-      for (const m of funcMarks) opts.onFunctionRange(m.name, lineStart[m.startIdx]!, lineStart[m.endIdxExclusive - 1]!);
+      if (funcMarks !== undefined && opts.onFunctionRange !== undefined) for (const m of funcMarks) opts.onFunctionRange(m.name, lineStart[m.startIdx]!, lineStart[m.endIdxExclusive - 1]!);
+      if (originMarks !== undefined && opts.onStmtLine !== undefined) for (const m of originMarks) if (m.idx < out.length) opts.onStmtLine(lineStart[m.idx]!, m.origin);
     }
   } finally {
     jsxOutput = savedJsx;
     funcMarks = savedMarks;
+    originMarks = savedOrigins;
   }
   return out.join("\n") + "\n";
 }
@@ -231,6 +251,12 @@ function printBody(body: readonly Stmt[], depth: number, out: string[], opts: Pr
 
 function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): void {
   const p = pad(depth, opts);
+  if (originMarks !== undefined) {
+    // `out.length` is the index of the entry this statement is about to push
+    // first, i.e. the entry its first character lands in.
+    const o = originOf(s);
+    if (o !== undefined) originMarks.push({ idx: out.length, origin: o });
+  }
   switch (s.k) {
     case "expr":
       // F16: an object-pattern destructuring assignment in statement
@@ -425,7 +451,22 @@ function render(e: Expr): string {
       return jsxOutput ? renderJsx(e) : render(jsxToCall(e));
     case "func": {
       const out: string[] = [];
-      printBody(e.body, 1, out, { indent: "  " });
+      // §16: this body prints into a SEPARATE array, so a statement mark taken
+      // here would index the wrong buffer entirely. Suppress collection for the
+      // duration — the inline function-expression form is unmapped, exactly the
+      // gap `onFunctionRange` documents above and for the same reason (its start
+      // line depends on how much of the enclosing expression printed first,
+      // which this printer does not track). An empty row beats a wrong one.
+      const savedOrigins = originMarks;
+      const savedFuncs = funcMarks;
+      originMarks = undefined;
+      funcMarks = undefined;
+      try {
+        printBody(e.body, 1, out, { indent: "  " });
+      } finally {
+        originMarks = savedOrigins;
+        funcMarks = savedFuncs;
+      }
       return `function ${e.name ?? ""}(${paramList(e.params)}) {\n${out.join("\n")}\n}`;
     }
   }

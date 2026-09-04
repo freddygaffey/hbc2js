@@ -24,6 +24,7 @@ import { renderFrame, renderedRegisterNames, type ActiveNames, type CollisionFla
 import { astPassHook, enabledPasses, type AstPassHook, type PassPipelineOptions } from "../passes/index.ts";
 import { OverlayStore } from "../name-overlay/store.ts";
 import { printModule } from "../disasm/print.ts";
+import type { LineMapEntry } from "../emit/origin.ts";
 import { listNameable, contextSites, type NameableRegister as FrameNameableRegister } from "./frame-queries.ts";
 import { sha256Hex } from "./schema.ts";
 import {
@@ -139,7 +140,7 @@ export class ArtifactService {
    *  for one function, read live from `d_names`. Absent = no external names,
    *  and every render path below is exactly what it was before. */
   private activeNames: ((fn: number) => ActiveNames) | undefined;
-  private readonly renderCache = new Map<number, { readonly code: string; readonly collisions: readonly CollisionFlag[] }>();
+  private readonly renderCache = new Map<number, { readonly code: string; readonly collisions: readonly CollisionFlag[]; readonly lineMap: readonly LineMapEntry[] }>();
   private hbcModule: HbcModule | undefined;
   private overlay: OverlayStore | undefined;
   private warmPromise: Promise<void> | undefined;
@@ -619,7 +620,7 @@ export class ArtifactService {
    *  module. `null` when this service has no `--hbc` (live-verb constraint) or
    *  the function has no emitted frame. Memoised per fn; `invalidateRender`
    *  clears it. */
-  renderFn(fn: number): { readonly code: string; readonly collisions: readonly CollisionFlag[] } | null {
+  renderFn(fn: number): { readonly code: string; readonly collisions: readonly CollisionFlag[]; readonly lineMap: readonly LineMapEntry[] } | null {
     if (this.hbcPath === undefined) return null;
     const hit = this.renderCache.get(fn);
     if (hit !== undefined) return hit;
@@ -628,9 +629,30 @@ export class ArtifactService {
     if (frame === undefined) return null;
     if (this.astHook === undefined) this.astHook = astPassHook(analysis, this.renderPassOpts());
     const r = renderFrame(this.astHook, frame.node, frame.cfg, this.activeNamesFor(fn));
-    const out = { code: r.code, collisions: r.collisions };
+    const out = { code: r.code, collisions: r.collisions, lineMap: r.lineMap };
     this.renderCache.set(fn, out);
     return out;
+  }
+
+  /**
+   * §16 source<->disasm alignment: which line of `source(fn)` came from which
+   * instruction. `lines` is `[line, start, end]` with `line` 1-based inside the
+   * FUNCTION's own text (what `source(fn)` returns with no `--lines`) and
+   * `[start, end)` the function-relative byte range `disasm(fn)` prints as
+   * `[@ start]`. `fnStartLine` is that text's first line in the module file, so
+   * a caller showing the whole file can rebase.
+   *
+   * Honest-partial by construction (docs/specs/05-emitter.md §16): only
+   * statements that kept a bytecode origin appear, and the map is built from
+   * the SAME memoised render `source()` serves, so the numbers cannot drift.
+   * Empty — never an error — when this service has no `--hbc` (the render is a
+   * live verb) or the function has no emitted frame.
+   */
+  lineMap(fn: number): { readonly fn: number; readonly fnStartLine: number | null; readonly lines: readonly LineMapEntry[] } {
+    if (!this.hasFn(fn)) throw new Hbc2jsError(ErrorCode.E_USAGE, `query linemap: no such function ${fn} in this artifact`);
+    const fnStartLine = this.range(fn)?.lines[0] ?? null;
+    const rendered = this.hbcPath === undefined ? null : this.renderFn(fn);
+    return { fn, fnStartLine, lines: rendered?.lineMap ?? [] };
   }
 
   /** §3.1 `name list <fn>` (P2.1a(b)) — delegates to the shared live-frame

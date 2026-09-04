@@ -242,26 +242,45 @@ export type BinaryOp =
   | "instanceof"
   | "in";
 
+/**
+ * Bytecode origin of an emitted statement (docs/specs/05-emitter.md §16):
+ * the half-open byte range `[start, end)`, relative to function `fn`, of the
+ * ONE instruction the statement was lowered from — the same number
+ * `src/disasm/print.ts` prints as `[@ N]`. Optional everywhere and never
+ * inferred: a statement a later pass synthesised, or one that stands for
+ * several blocks, has none. Set and read through `src/emit/origin.ts`'s
+ * helpers (`withOrigin`/`originOf`), never written by hand.
+ */
+export interface Origin {
+  /** The Hermes function the instruction belongs to. NOT always the function
+   *  being printed: `emitModule` nests a child closure's body inside its
+   *  parent's, and every function's offsets restart at 0, so a row without
+   *  this field would silently point at the wrong instruction. */
+  readonly fn: number;
+  readonly start: number;
+  readonly end: number;
+}
+
 export type Stmt =
-  | { readonly k: "expr"; readonly expr: Expr }
-  | { readonly k: "decl"; readonly kind: "let" | "const" | "var"; readonly names: readonly string[] }
-  | { readonly k: "init"; readonly kind: "let" | "const" | "var"; readonly name: string; readonly value: Expr }
+  | { readonly k: "expr"; readonly expr: Expr; readonly origin?: Origin }
+  | { readonly k: "decl"; readonly kind: "let" | "const" | "var"; readonly names: readonly string[]; readonly origin?: Origin }
+  | { readonly k: "init"; readonly kind: "let" | "const" | "var"; readonly name: string; readonly value: Expr; readonly origin?: Origin }
   /** `elseIf` (spec 09 F11, src/passes/if-chain): the `else` arm was a chain
    *  link; print.ts renders `} else if (…) {` only when it is exactly one `if`. */
-  | { readonly k: "if"; readonly test: Expr; readonly then: readonly Stmt[]; readonly else: readonly Stmt[]; readonly elseIf?: boolean }
+  | { readonly k: "if"; readonly test: Expr; readonly then: readonly Stmt[]; readonly else: readonly Stmt[]; readonly elseIf?: boolean; readonly origin?: Origin }
   /** `label: while (test) { … }`; `test` absent is `while (true)` (the M4 baseline, spec 04 §2). */
-  | { readonly k: "while"; readonly label: string | null; readonly test?: Expr; readonly body: readonly Stmt[] }
+  | { readonly k: "while"; readonly label: string | null; readonly test?: Expr; readonly body: readonly Stmt[]; readonly origin?: Origin }
   /** `label: do { … } while (test);` — spec 07 loop-cond. */
-  | { readonly k: "do-while"; readonly label: string | null; readonly test: Expr; readonly body: readonly Stmt[] }
+  | { readonly k: "do-while"; readonly label: string | null; readonly test: Expr; readonly body: readonly Stmt[]; readonly origin?: Origin }
   /** `label: for (init; test; update) { … }` — spec 07 for-header. */
-  | { readonly k: "for"; readonly label: string | null; readonly init: Expr | null; readonly test: Expr; readonly update: Expr | null; readonly body: readonly Stmt[] }
+  | { readonly k: "for"; readonly label: string | null; readonly init: Expr | null; readonly test: Expr; readonly update: Expr | null; readonly body: readonly Stmt[]; readonly origin?: Origin }
   | { readonly k: "labeled"; readonly label: string; readonly body: readonly Stmt[] }
-  | { readonly k: "break"; readonly label: string | null }
-  | { readonly k: "continue"; readonly label: string | null }
-  | { readonly k: "return"; readonly arg: Expr | null }
-  | { readonly k: "throw"; readonly arg: Expr }
+  | { readonly k: "break"; readonly label: string | null; readonly origin?: Origin }
+  | { readonly k: "continue"; readonly label: string | null; readonly origin?: Origin }
+  | { readonly k: "return"; readonly arg: Expr | null; readonly origin?: Origin }
+  | { readonly k: "throw"; readonly arg: Expr; readonly origin?: Origin }
   | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string; readonly handler: readonly Stmt[] }
-  | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[] }
+  | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[]; readonly origin?: Origin }
   | { readonly k: "func"; readonly name: string; readonly params: readonly Param[]; readonly body: readonly Stmt[] }
   | { readonly k: "directive"; readonly text: string }
   /**

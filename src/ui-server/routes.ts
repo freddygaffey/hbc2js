@@ -141,6 +141,17 @@ const BASE_ROUTES: readonly Route[] = [
     },
   },
   {
+    // §16 source<->disasm alignment: `[line, start, end]` rows tying the served
+    // source text to the instructions behind it (docs/specs/05-emitter.md §16).
+    method: "GET",
+    re: /^\/api\/fn\/([^/]+)\/linemap$/,
+    handler: ([raw], _req, ctx) => {
+      const fn = parseFn(raw!);
+      if (fn === null) return badRequest(`fn/${raw}/linemap: not a function index`);
+      return ok(ctx.resources.lineMap(fn));
+    },
+  },
+  {
     method: "GET",
     re: /^\/api\/fn\/([^/]+)\/context$/,
     handler: ([raw], req, ctx) => {

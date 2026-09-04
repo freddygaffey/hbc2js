@@ -11,9 +11,10 @@ import { typeOfIsTableFor } from "./typeofis.ts";
 import type { LabelId, Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
 import type { Expr, Param, Stmt } from "./ast.ts";
 import { assign, bin, call, id, lit, num, p, un, UNDEF } from "./ast.ts";
-import { conditionFor } from "./conds.ts";
+import { conditionFor, isConditionalJump } from "./conds.ts";
 import { resolveBuiltin } from "./builtins.ts";
 import { lowerInstruction, planBlock, prop } from "./lower.ts";
+import { originOfInsn, stampFrom, withOrigin, type Origin } from "./origin.ts";
 import { EXC_VALUE, envSlot, excName, fnName, GEN_DONE, GEN_STATE, labelName, PC_VAR, quote, reg, SCRATCH, stateVar } from "./names.ts";
 import { argSlotBase } from "./semantics.ts";
 
@@ -286,13 +287,36 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     const plan = planBlock(aug.block, fn.instructions);
     for (const [i, insn] of aug.block.instructions.entries()) {
       if (i < from || i >= to) continue;
+      const before = out.length;
       lowerInstruction(f, insn, i, plan, out);
+      // §16: every statement this instruction produced points back at it.
+      stampFrom(out, before, originOfInsn(fn.index, insn));
       // Keep the object-shape map honest: a register written by anything other
       // than a `NewObjectWithBuffer` no longer holds that shape.
       if (!insn.name.startsWith("NewObjectWithBuffer")) for (const r of writtenRegisters(insn)) shapes.delete(r);
     }
     return out;
   };
+
+  /**
+   * §16: the origin of the instruction that ends `blockId` — the conditional
+   * jump behind an `if`/loop test, the `Ret`/`Throw`, the `Switch`. `undefined`
+   * for a synthetic block that owns no bytes, and — the point of `ok` —
+   * whenever the terminator is not the opcode the statement claims to stand
+   * for. A generator's resume dispatcher, an irreducible-loop rewrite or a
+   * structurer-split block can leave a `return` sitting after a `JmpTrue`; that
+   * instruction did not produce the `return` line, so the honest answer is no
+   * row at all rather than a plausible-looking wrong one.
+   */
+  const terminatorOrigin = (blockId: BlockId, ok: (name: string) => boolean): Origin | undefined => {
+    if (blockId < 0) return undefined;
+    const block = structured.graph.blocks[blockId]?.block;
+    const last = block?.instructions[block.instructions.length - 1];
+    return last === undefined || !ok(last.name) ? undefined : originOfInsn(fn.index, last);
+  };
+  const isRet = (n: string): boolean => n.startsWith("Ret");
+  const isThrow = (n: string): boolean => n.startsWith("Throw");
+  const isSwitch = (n: string): boolean => n.startsWith("Switch");
 
   const conditionOf = (blockId: BlockId): Expr => {
     const block = structured.graph.blocks[blockId]!.block!;
@@ -395,9 +419,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       update = asExprs(stmts);
       if (update === null) body.push(...stmts);
     }
-    if (form.kind === "do-while") out.push({ k: "do-while", label, test, body });
-    else if (init !== null || update !== null) out.push({ k: "for", label, init, test, update, body });
-    else out.push({ k: "while", label, test, body });
+    const loopOrigin = terminatorOrigin(form.cond, isConditionalJump);
+    if (form.kind === "do-while") out.push(withOrigin({ k: "do-while", label, test, body } as Stmt, loopOrigin));
+    else if (init !== null || update !== null) out.push(withOrigin({ k: "for", label, init, test, update, body } as Stmt, loopOrigin));
+    else out.push(withOrigin({ k: "while", label, test, body } as Stmt, loopOrigin));
     return true;
   };
 
@@ -456,7 +481,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         lowerTree(node.else, els);
         // spec 09 F11: carry if-chain's `elseIf` annotation through to the AST
         // (only when set, so the `--passes=none` AST is byte-identical).
-        out.push({ k: "if", test: conditionOf(node.cfgBlock), then, else: els, ...(node.elseIf === true ? { elseIf: true } : {}) });
+        out.push(withOrigin({ k: "if", test: conditionOf(node.cfgBlock), then, else: els, ...(node.elseIf === true ? { elseIf: true } : {}) } as Stmt, terminatorOrigin(node.cfgBlock, isConditionalJump)));
         return;
       }
       case "break":
@@ -467,11 +492,11 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       case "return":
         out.push(...lowerBlock(node.cfgBlock));
-        out.push({ k: "return", arg: isOpcodeGeneratorBody ? { k: "array", elements: [returnValueOf(node.cfgBlock), id(GEN_DONE)] } : returnValueOf(node.cfgBlock) });
+        out.push(withOrigin({ k: "return", arg: isOpcodeGeneratorBody ? { k: "array", elements: [returnValueOf(node.cfgBlock), id(GEN_DONE)] } : returnValueOf(node.cfgBlock) } as Stmt, terminatorOrigin(node.cfgBlock, isRet)));
         return;
       case "throw":
         out.push(...lowerBlock(node.cfgBlock));
-        out.push({ k: "throw", arg: throwValueOf(node.cfgBlock) });
+        out.push(withOrigin({ k: "throw", arg: throwValueOf(node.cfgBlock) } as Stmt, terminatorOrigin(node.cfgBlock, isThrow)));
         return;
       case "unreachable":
         // EM-08: never an empty statement. The Hermes opcode traps, and a silent
@@ -495,7 +520,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         const dflt: Stmt[] = [];
         lowerTree(node.default, dflt);
         dflt.push({ k: "break", label: null });
-        out.push({ k: "switch", disc: scrutineeOf(node), cases: [...cases, { test: null, body: dflt }] });
+        out.push(withOrigin({ k: "switch", disc: scrutineeOf(node), cases: [...cases, { test: null, body: dflt }] } as Stmt, terminatorOrigin(node.cfgBlock, isSwitch)));
         return;
       }
       case "try": {

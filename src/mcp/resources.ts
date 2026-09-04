@@ -13,6 +13,7 @@
 // own doc comment rather than silently invented — see `packageId`, `log`,
 // `history`, `annotatedCalls` below.
 import type { DatabaseSync } from "node:sqlite";
+import type { LineMapEntry } from "../emit/origin.ts";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary } from "../artifact/service.ts";
@@ -192,6 +193,15 @@ export class McpResources {
   disasm(fn: number): { readonly text: string; readonly totalLines: number; readonly truncated: boolean } {
     const text = this.artifact.disasm(fn);
     return truncateLines(text, SOURCE_LINE_CAP);
+  }
+
+  /** `linemap/{fn}` — which line of `source/{fn}` came from which instruction
+   *  (docs/specs/05-emitter.md §16). Uncapped: one small tuple per mapped
+   *  line, and a partial map would be a *wrong* map for the lines it dropped,
+   *  which the artifact truth rule forbids. Never throws for a missing render
+   *  (no `--hbc`, no emitted frame) — `lines: []` is the honest answer. */
+  lineMap(fn: number): { readonly fn: number; readonly fnStartLine: number | null; readonly lines: readonly LineMapEntry[] } {
+    return this.artifact.lineMap(fn);
   }
 
   /** `context/{fn}` — the scoped analysis slice (§1/§14): a COMPOSITION of

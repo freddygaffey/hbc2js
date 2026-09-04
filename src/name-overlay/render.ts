@@ -16,6 +16,7 @@ import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import type { Stmt } from "../emit/ast.ts";
 import { emitModule } from "../emit/index.ts";
 import { printProgram } from "../emit/print.ts";
+import { lineMapCollector, type LineMapEntry } from "../emit/origin.ts";
 import { freeNames } from "../passes/ast.ts";
 import { astPassHook, passHook } from "../passes/index.ts";
 import type { AstPassHook, PassPipelineOptions } from "../passes/index.ts";
@@ -115,11 +116,15 @@ export function renderFrame(
   cfg: FunctionCfg,
   names: ActiveNames,
   opts: { readonly indent?: string } = {},
-): { readonly code: string; readonly collisions: readonly CollisionFlag[]; readonly mapping: ReadonlyMap<string, string> } {
-  if (node.k !== "func") return { code: "", collisions: [], mapping: new Map() };
+): { readonly code: string; readonly collisions: readonly CollisionFlag[]; readonly mapping: ReadonlyMap<string, string>; readonly lineMap: readonly LineMapEntry[] } {
+  if (node.k !== "func") return { code: "", collisions: [], mapping: new Map(), lineMap: [] };
   const applied = applyOverlayNames(cfg.functionIndex, node.body, names);
   const out = hook({ ...node, body: applied.body }, cfg);
-  return { code: printProgram([out.fn], { indent: opts.indent ?? "  " }), collisions: applied.collisions, mapping: applied.mapping };
+  // §16: the line map is collected from the SAME print that produces `code`,
+  // so its line numbers are the served text's own by construction.
+  const collector = lineMapCollector();
+  const code = printProgram([out.fn], { indent: opts.indent ?? "  ", onStmtLine: collector.onStmtLine });
+  return { code, collisions: applied.collisions, mapping: applied.mapping, lineMap: collector.rows() };
 }
 
 /** The ident each nameable register of `body` ends up as in the rendered

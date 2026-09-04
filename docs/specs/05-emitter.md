@@ -730,3 +730,107 @@ review (`docs/TOOLCHAIN.md`): it is layout class C with v94's opcode numbering
 apart from `DirectEval`'s third operand, so every v94 rule here applies to it
 verbatim, and the `era: "opcode"` generator path now spans 84/94/96. Fixture
 counts in §11–§12 were re-derived (249 gate binaries, 241 obfuscated).
+
+## 16. Bytecode origin: the source↔disasm line map
+
+The UI shows decompiled source over the raw disassembly of the same function
+(`docs/UI.md`). Selecting a source line should scroll the disassembly to the
+instruction that produced it. That needs a **line → instruction** map, which
+the emitter is the only stage able to produce honestly.
+
+**The one hard rule** is the artifact truth rule (`docs/specs/10-artifact-
+format.md` §0): *a mapped line must point at an instruction that really
+contributed to it*. Coverage is therefore explicitly partial — a wrong row is
+worse than a missing one — and the design says no wherever the answer would be
+a guess.
+
+### 16.1 `Origin`, and where it is set
+
+`src/emit/ast.ts` declares
+
+```ts
+export interface Origin { readonly fn: number; readonly start: number; readonly end: number }
+```
+
+— the half-open byte range of ONE instruction, plus the Hermes function index
+it belongs to. `fn` is not redundant: `emitModule` nests a child closure's body
+inside its parent's, and every function's offsets restart at 0, so a row
+without it would silently point at the wrong instruction.
+
+It is an optional field on the statement kinds that can come straight from an
+instruction (`expr`, `decl`, `init`, `if`, `while`, `do-while`, `for`, `break`,
+`continue`, `return`, `throw`, `switch`). It is never read or written directly:
+`src/emit/origin.ts` owns `originOfInsn`, `originOf`, `withOrigin` and
+`stampFrom`, so the carrier can change without touching call sites.
+
+Two places set it, both in `src/emit/function.ts`:
+
+1. **Per instruction.** `lowerBlock` records `out.length` before
+   `lowerInstruction` and stamps every statement that call appended. One
+   instruction may produce several statements; they all point back at it.
+2. **Per block terminator**, for the statements the *structurer* builds rather
+   than the lowerer: an `if`/`while`/`do-while`/`for` header takes the
+   conditional jump that ends its condition block, a `return` takes the `Ret*`,
+   a `throw` the `Throw*`, a `switch` the `Switch*`. `terminatorOrigin` takes
+   an opcode predicate and returns `undefined` when the terminator is not of
+   that class — a generator's resume dispatcher or an irreducible-loop rewrite
+   can leave a `return` sitting after a `JmpTrue`, and that instruction did not
+   produce the `return` line.
+
+Statements a stage-B pass rebuilds with object spread keep their origin for
+free. Statements a pass *synthesises* have none, and nothing tries to invent
+one for them.
+
+### 16.2 The printer hook
+
+`PrintOptions.onStmtLine?: (line, origin) => void` is called once per printed
+statement that carries an origin, with the 1-based line **within that
+`printProgram` call's own returned text**. It reuses the prefix-sum post-pass
+`onFunctionRange` already had, so it costs one extra pass over the output
+array and nothing per statement.
+
+It is **purely observational**: the returned text is byte-identical with and
+without the hook. `tests/gate/emit/line-map.test.ts` asserts exactly that over
+the whole v96 construct corpus, so no golden, no `expected.txt` and no
+equivalence verdict can move because the map exists.
+
+One documented gap: statements inside an **inline function expression** are not
+mapped. That form prints into a separate buffer (`render()`'s own `"func"`
+case), so a mark taken there would index the wrong array; collection is
+suppressed for its duration. Same gap, same reason, as `onFunctionRange`'s.
+
+### 16.3 Serving it
+
+`src/name-overlay/render.ts`'s `renderFrame` collects the rows from the SAME
+print that produces the served text (`lineMapCollector`), so the line numbers
+are that text's own by construction rather than by agreement. One row per line,
+owned by the first statement printed on it.
+
+`ArtifactService.lineMap(fn)` reads the memoised per-function render `source()`
+serves and returns
+
+```ts
+{ fn, fnStartLine: number | null, lines: readonly [line, fn, start, end][] }
+```
+
+`line` is 1-based inside the function's own text; `fnStartLine` is that text's
+first line in the module file, so a caller showing the whole file can rebase.
+`lines: []` — never an error — when the service has no `--hbc` (the render is a
+live verb) or the function has no emitted frame. `McpResources.lineMap` and
+`GET /api/fn/:fn/linemap` expose it unchanged; the rows are uncapped, because a
+truncated map would be a *wrong* map for the lines it dropped.
+
+### 16.4 The coverage ratchet
+
+`tests/gate/emit/line-map.test.ts` measures mapped rows over non-blank rendered
+lines and fails if it drops below a floor. Measured when this section landed
+(2026-09-04): **0.6408** over the whole `rn-template-0.72` bundle, 0.6286 over
+the first 600 functions (the sample the gate uses, for speed), 0.6761 over
+`02-while-loop`, 0.7667 over `04-for-loop-basic`. Floors are 0.60 and 0.65.
+They are **raised** as coverage improves and never lowered.
+
+What is unmapped today, and why: closing braces and `else`/`} while` joins (no
+statement starts there); `let`/`var` hoisting blocks the emitter synthesises;
+runtime-helper preludes and the module IIFE; the generator resume dispatcher's
+own scaffolding; every statement inside an inline function expression (§16.2);
+and any statement a stage-B pass built from scratch.
