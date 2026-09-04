@@ -13,12 +13,24 @@
 // own doc comment rather than silently invented — see `packageId`, `log`,
 // `history`, `annotatedCalls` below.
 import type { DatabaseSync } from "node:sqlite";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary } from "../artifact/service.ts";
 import { ProjectService, PROJECT_CAPS, type AnnotationRow } from "../project/service.ts";
 import type { ResolvedFinding } from "../project/findings.ts";
 import type { FindingStatus, Severity, Tag } from "../project/schema.ts";
 import { hasProjectDb, openProjectDbReadonly } from "../projdb/artifact-read.ts";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import { computeLeads, searchFunctions, searchSource, LEADS_CAPS, type LeadsResult, type SearchPage, type FunctionMatch, type SourceMatch } from "./leads.ts";
+import { buildInventory } from "../deps/inventory.ts";
+import { resolveDbLayers, loadSignatures } from "../deps/db.ts";
+import { deriveCandidatePackages } from "../deps/candidates.ts";
+import { matchInventory, type MatchReport } from "../deps/match.ts";
+import { guessModules, type ModuleGuess } from "../deps/guess.ts";
+import { buildReport, type DepsReport } from "../deps/report.ts";
+import { gateDependency, type IdentityBasis, type VersionBasis } from "../security/osv-gate.ts";
+import { loadOsvSlice, matchOsv, type OsvMatch } from "../security/osv-adapter.ts";
+import { SecretsService, type FindingRow as SecretFindingRow } from "../secrets/service.ts";
 
 /** Light `{fn, name, size}` neighbour metadata inlined into every xref row
  *  (§14's "kill the N+1" fix — `who-calls` used to force ~12 follow-up
@@ -61,9 +73,12 @@ export class McpResources {
   readonly artifact: ArtifactService;
   readonly project: ProjectService;
   private readonly artifactDir: string;
+  private readonly hbcPath: string | undefined;
+  private depsCache: Promise<{ readonly report: DepsReport; readonly matchReport: MatchReport; readonly guesses: readonly ModuleGuess[] } | null> | undefined;
 
   constructor(artifactDir: string, opts: McpResourcesOpts = {}) {
     this.artifactDir = artifactDir;
+    this.hbcPath = opts.hbc;
     this.artifact = new ArtifactService(artifactDir, opts);
     this.project = new ProjectService(artifactDir, this.artifact);
   }
@@ -224,20 +239,154 @@ export class McpResources {
     return this.artifact.module(id);
   }
 
-  /** `package-id/{mod}` — spec-13's reuse-validation two-key gate over the
-   *  shared spec-15 sigdb. NOT YET IMPLEMENTED ANYWHERE in this codebase
-   *  (no sigdb, no reuse-validation module exists to call) — this is a
-   *  documented stub, not a silent invention: it returns `available:
-   *  false` rather than guessing, honoring §1's "every row cites the
-   *  sigdb match, never a guess". Wiring this up is follow-up work once
-   *  spec 13/15 land. */
-  packageId(_mod: number): { readonly available: false; readonly reason: string } {
-    return { available: false, reason: "spec-13 reuse-validation / spec-15 sigdb not yet implemented in this codebase" };
+  /** Lazily builds the module inventory + match/guess stages (`src/deps`)
+   *  from the `--hbc` bundle this instance was constructed with, cached for
+   *  the instance's lifetime (parsing the bundle + scoring every signature
+   *  DB entry is expensive; `package-id`/`scan/deps` both need the same
+   *  `DepsReport` and must never redo it per call). `offline: true`
+   *  unconditionally — an MCP READ resource must never make an outbound
+   *  network call (no `npm` search, no confirm stage); a caller who wants
+   *  the deeper `--confirm` identification still has the `hbc2js deps`
+   *  CLI. Returns `null` when this instance has no `--hbc` bundle
+   *  configured (the identification needs the module inventory, which only
+   *  the raw bytes carry — the derived artifact index does not). */
+  private computeDeps(): Promise<{ readonly report: DepsReport; readonly matchReport: MatchReport; readonly guesses: readonly ModuleGuess[] } | null> {
+    if (this.depsCache !== undefined) return this.depsCache;
+    if (this.hbcPath === undefined) {
+      this.depsCache = Promise.resolve(null);
+      return this.depsCache;
+    }
+    const hbcPath = this.hbcPath;
+    this.depsCache = (async () => {
+      const bytes = readFileSync(hbcPath);
+      const { inventory } = buildInventory(bytes);
+      const layers = resolveDbLayers({ outDir: this.artifactDir });
+      const dbs = loadSignatures(layers, { candidates: deriveCandidatePackages(layers, inventory) });
+      const matchReport = matchInventory(inventory, dbs);
+      const knownPackages = new Set(dbs.map((d) => d.file.package));
+      const guesses = await guessModules(inventory, matchReport, { offline: true, knownPackages });
+      const report = buildReport(hbcPath, matchReport, guesses, [], null);
+      return { report, matchReport, guesses };
+    })();
+    return this.depsCache;
+  }
+
+  /** `package-id/{mod}` — spec-13's reuse-validation two-key gate (`src/
+   *  security/osv-gate.ts`'s `gateDependency`) over the module the shared
+   *  signature DB (spec 15) attributes `mod` to. Every row cites the sigdb
+   *  match/guess that produced it (§1's "never a guess") — a module with no
+   *  attribution, or whose only lead fails the two-key gate (no identity,
+   *  or identity but no direct version), comes back `available: false`
+   *  with a reason, not a fabricated identification. */
+  async packageId(mod: number): Promise<PackageIdResult> {
+    const computed = await this.computeDeps();
+    if (computed === null) {
+      return { available: false, mod, reason: "package-id: no --hbc bundle configured for this project (module-inventory identification needs the raw bytes)" };
+    }
+    const { report, matchReport, guesses } = computed;
+    const attribution = [...matchReport.moduleAttributions, ...matchReport.unattributedModules].find((a) => a.localModuleId === mod);
+    const guess = guesses.find((g) => g.localModuleId === mod);
+    const pkgName = attribution?.owners[0] ?? guess?.candidates[0]?.package;
+    if (pkgName === undefined) {
+      return { available: false, mod, reason: `package-id: module ${mod} has no signature-DB match and no guess evidence` };
+    }
+    const gate = gateDependency(report, pkgName);
+    if (!gate.hasIdentity) {
+      return { available: false, mod, reason: `package-id: candidate package "${pkgName}" for module ${mod} did not clear the identification gate (spec 13 two-key)` };
+    }
+    return {
+      available: true,
+      mod,
+      package: gate.package,
+      version: gate.version,
+      tier: gate.tier as "claim" | "candidate",
+      identityBasis: gate.identityBasis,
+      versionBasis: gate.versionBasis,
+      evidence: `mod:${mod}`,
+    };
   }
 
   /** `native[/{fn}]` — spec-10 `query native`'s own ≤ 50 + total. */
   native(opts: { readonly fn?: number; readonly all?: boolean } = {}) {
     return this.artifact.native(opts);
+  }
+
+  // -- leads / search (§14 additions 1 + 3) --------------------------------
+
+  /** `leads` / `security-sinks` — spec 17 §14 addition 1: every security-
+   *  decision call site the artifact already knows about (native surface +
+   *  string xrefs + global reads), grouped by class. See `src/mcp/
+   *  leads.ts`'s `computeLeads` for the derivation. */
+  leads(): LeadsResult {
+    return computeLeads(this.artifact);
+  }
+
+  /** Alias — §14 names this resource both ways (`leads` / `security-
+   *  sinks`); same answer, same cap. */
+  securitySinks(): LeadsResult {
+    return this.leads();
+  }
+
+  /** `search/functions` — name substring/regex search over every function,
+   *  paginated (§14 addition 3, the typed replacement for the cut
+   *  `query`). */
+  searchFunctions(query: string, opts: { readonly regex?: boolean; readonly cursor?: number } = {}): SearchPage<FunctionMatch> {
+    return searchFunctions(this.artifact, query, opts);
+  }
+
+  /** `search/source` — bounded grep over rendered source, paginated (§14
+   *  addition 3). */
+  searchSource(query: string, opts: { readonly regex?: boolean; readonly cursor?: number } = {}): SearchPage<SourceMatch> {
+    return searchSource(this.artifact, query, opts);
+  }
+
+  // -- scan/{secrets|deps|semgrep} (§14 addition 2) ------------------------
+
+  /** `scan/secrets` — runs the existing secrets scanner (`src/secrets/
+   *  service.ts`, the same idempotent R3-slotted pass the `secrets scan`
+   *  CLI verb runs) and returns its capped findings. Idempotent: re-scanning
+   *  an unchanged bundle writes nothing new (§6 of that module's own
+   *  header) — this is the SAME write path the CLI already ships and
+   *  tests, called here rather than reinvented, per §14 addition 2 ("the
+   *  cheap lead generators, callable"). Honest `available: false` (not a
+   *  crash) when the project is `.hbcproj`-backed: `SecretsService` reads
+   *  `index/strings.json`/`string-uses.jsonl` off disk directly and does
+   *  not yet know about the DB stratum (docs/BUGS.md — filed alongside this
+   *  change, not silently swallowed). */
+  scanSecrets(): (Bounded<SecretFindingRow> & { readonly available: true }) | { readonly available: false; readonly reason: string; readonly rows: readonly SecretFindingRow[]; readonly total: 0; readonly truncated: false } {
+    if (!existsSync(join(this.artifactDir, "index", "strings.json"))) {
+      return { available: false, reason: "scan/secrets: this project is .hbcproj-backed; src/secrets/service.ts reads index/*.jsonl directly and does not yet support DB-backed artifacts (docs/BUGS.md)", rows: [], total: 0, truncated: false };
+    }
+    const svc = new SecretsService({ artifactDir: this.artifactDir });
+    svc.scan();
+    const rows = svc.list();
+    const cap = CAPS_SCAN_SECRETS;
+    return { available: true, rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  /** `scan/deps` — OSV advisory matches for this bundle's identified
+   *  dependencies (`src/security/osv-adapter.ts`'s pure `matchOsv`, against
+   *  the committed offline slice — no network). Unlike `scan/secrets`,
+   *  read-only: it does NOT write findings (that would need a `DepsReport`-
+   *  specific `reportHash`/`runId` this read path has no reason to mint) —
+   *  a caller who wants the match recorded runs `tools/security/measure-
+   *  osv.ts` (or a future `record_finding` off this same evidence). */
+  async scanDeps(): Promise<Bounded<OsvMatch> & { readonly available: boolean; readonly reason?: string }> {
+    const computed = await this.computeDeps();
+    if (computed === null) {
+      return { available: false, reason: "scan/deps: no --hbc bundle configured for this project", rows: [], total: 0, truncated: false };
+    }
+    const slice = loadOsvSlice();
+    const matches = matchOsv(computed.report, slice);
+    const cap = CAPS_SCAN_DEPS;
+    return { available: true, rows: matches.slice(0, cap), total: matches.length, truncated: matches.length > cap };
+  }
+
+  /** `scan/semgrep` — Lane S (semgrep-based static rules) is not built in
+   *  this codebase yet. Honest stub, not a fabricated empty result — same
+   *  discipline `package-id` used to follow before this task wired it up. */
+  scanSemgrep(): { readonly available: false; readonly reason: string } {
+    return { available: false, reason: "Lane S not built" };
   }
 
   // -- annotations / findings (§1) -----------------------------------------
@@ -383,6 +532,26 @@ export class McpResources {
 const CAPS_LOG = 50;
 const CAPS_HISTORY = 40;
 const CAPS_ANNOTATED_CALLS = 50;
+const CAPS_SCAN_SECRETS = 50;
+const CAPS_SCAN_DEPS = 50;
+
+/** `package-id/{mod}` result — spec-13's two-key gate output for one
+ *  module, or an honest `available: false` (never a guess, §1's own
+ *  wording). `tier`/`identityBasis`/`versionBasis` are `gateDependency`'s
+ *  own vocabulary (`src/security/osv-gate.ts`) — re-exported here rather
+ *  than restated. */
+export type PackageIdResult =
+  | { readonly available: false; readonly mod: number; readonly reason: string }
+  | {
+      readonly available: true;
+      readonly mod: number;
+      readonly package: string;
+      readonly version: string | null;
+      readonly tier: "claim" | "candidate";
+      readonly identityBasis: IdentityBasis;
+      readonly versionBasis: VersionBasis;
+      readonly evidence: string;
+    };
 
 // Re-export the caps every resource above delegates to, so a test/consumer
 // can assert against the SAME constant this file reads rather than a
@@ -395,4 +564,7 @@ export const RESOURCE_CAPS = {
   history: CAPS_HISTORY,
   annotatedCalls: CAPS_ANNOTATED_CALLS,
   sourceLines: SOURCE_LINE_CAP,
+  scanSecrets: CAPS_SCAN_SECRETS,
+  scanDeps: CAPS_SCAN_DEPS,
+  ...LEADS_CAPS,
 } as const;

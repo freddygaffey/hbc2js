@@ -166,10 +166,15 @@ test("module/{mod} returns direct edges only, a bounded shape, and owns the disc
   assert.ok(Array.isArray(m.dependents));
 });
 
-test("package-id/{mod} is a documented stub (spec-13/15 not implemented anywhere yet)", () => {
-  const p = res.packageId(5);
-  assert.equal(p.available, false);
-  assert.ok(p.reason.length > 0);
+test("package-id/{mod} runs the real spec-13 identification (or returns an honest not-found)", async () => {
+  const p = await res.packageId(5);
+  assert.equal(typeof p.available, "boolean");
+  if (p.available) {
+    assert.equal(typeof p.package, "string");
+    assert.ok(p.tier === "claim" || p.tier === "candidate");
+  } else {
+    assert.ok(p.reason.length > 0);
+  }
 });
 
 test("native returns a bounded row set", () => {

@@ -390,6 +390,17 @@ export class ArtifactService {
     return this.modulesIndex.modules.some((m) => m.id === id);
   }
 
+  /** Every function's `{fn, name}` — a bare, uncapped name-only projection
+   *  (no source/edges/anything else `fn()` computes). Not a spec-10 §3.1
+   *  CLI verb of its own: it exists so callers that must WALK every
+   *  function once (spec 17 §14's `search/functions`, `search/source`) can
+   *  do it without an unbounded catalogue of made-up fn indices — the
+   *  caller applies its own cap on the RESULT, this just gives the raw
+   *  list to filter. */
+  listFns(): readonly { readonly fn: number; readonly name: string | null }[] {
+    return [...this.functionsByFn.entries()].map(([fn, row]) => ({ fn, name: row.name }));
+  }
+
   /** §3.1 `query module <id>`. */
   module(id: number): { readonly deps: readonly number[]; readonly dependents: readonly number[]; readonly ownedFnCount: number; readonly file: string | null } {
     const m = this.modulesIndex.modules.find((x) => x.id === id);
