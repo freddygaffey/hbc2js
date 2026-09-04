@@ -168,3 +168,13 @@ cadence. Rules in force: cap 2 agents, FOREGROUND gates only, never edit
 `23-ui-workers.md` (server-initiated work: Agent-SDK / `claude -p` workers,
 jobs rail, presence, sampling/elicitation as optional MCP capabilities) —
 outlined to Fred 2026-09-04, not yet written.
+
+## 3.6 Owner additions (2026-09-04, after seeing the wave-1 shell)
+
+- **Add finding button** in the Findings panel, plus registry action
+  `annotate.finding` (context menu + palette, default chord `Ctrl-Shift-N`,
+  vim `cf`). Opens a small form pre-filled from the selection (target fn or
+  module), fields: title, severity (crit/high/med/ok), evidence ref
+  (optional), note. Posts to `POST /api/tools/record-finding`; the result is
+  a *candidate* finding until its evidence resolves (spec 17 §14), shown
+  immediately in the Findings panel via the log tail.
