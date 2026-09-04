@@ -458,3 +458,10 @@ export type PackageIdResult =
       readonly versionBasis: string;
       readonly evidence: string;
     };
+
+/** `GET /api/screens` (docs/specs/26-ui-full-ide.md L4) — the hierarchical
+ *  screens tree with its navigation edges. The shapes are declared next to
+ *  the pure model that consumes them (`./listing/screens.ts`, which the gate
+ *  imports without a browser) and re-exported here so the contract surface
+ *  stays one file. */
+export type { NavConfidence, ScreenKind, ScreenNavEdge, ScreenRow, ScreensPage } from "./listing/screens.ts";

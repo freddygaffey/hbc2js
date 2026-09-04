@@ -221,6 +221,17 @@ the existing renderer), `ui/src/contracts.ts`.
 
 **Depends on:** L1 (so a rename from anywhere refreshes the tree).
 
+**Landed 2026-09-05** (Claude Opus 5, lean worker). `src/ui-server/screens.ts`
+holds both the computation and the route table row; per the shared-tree rule
+it does not edit `routes.ts` itself, so L1's owner adds exactly one line
+there: `const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES,
+...SCREENS_ROUTES];` plus the matching import. Until that line lands the route
+404s and the left pane stays on the flat grouping (the deliberate fallback).
+Client side: `ui/src/listing/screens.ts` (pure model), `use-screens.ts`
+(query + fetch), `ui/src/listing/modules.ts` (`flattenTree` gained an
+optional `extras` hook and a `nav` row kind), `ui/src/panes/LeftPane.tsx`,
+`ui/src/graph/model.ts` (`buildScreensModel`), `ui/src/contracts.ts`.
+
 ---
 
 ### L5 — Virtualised, sortable result tables everywhere · Sonnet
@@ -452,6 +463,7 @@ Four items. Everything else specs 19–21 reserved is decided by D29.
 | 4.2 | **Visual-baseline approval** (spec 19 §5.4 + CLAUDE.md golden rule) | Baselines are golden artifacts; the rule already says regeneration is Fred-approved and reviewed as a batch. The *first* commit of them is the same decision | "Yes, land baselines for these N views" once, at L7; regenerations queue as a batch thereafter |
 | 4.3 | **Whether `recompile_edit` may be driven from the UI at all**, and worktree vs scratch-copy for its sandbox (spec 17 §13 fenced this to the owner; spec 21 §5.2) | It is the one operation that produces a modified binary. Its sandboxing policy was explicitly reserved, twice | "UI may run it, attended, in a git worktree" / "…in a temp copy" / "not from the UI at all" |
 | 4.4 | **First-run information hierarchy** (spec 20 §1.6) — which panes are open on opening a project, and what is one click vs three | Product judgment, not styling; tokens do not touch it and no test can decide it | One sentence, or a screenshot of the layout you want as the default |
+| 4.5 | **How a navigation arrow should look in the tree** (spec 26 L4, landed) — arrows currently render as an indented `-> TargetScreen` row under an open screen, with `resolved` / `by-name` (italic, dashed marker) as the provenance label | Structure and provenance are decided by the data; whether an arrow is a row, a badge on the screen row, or only a graph-pane affordance is art direction | "rows are fine" / "make it a badge" / a screenshot |
 
 Explicitly **not** on this list, because D29 decides them: framework/component
 stack (ratified as built, §3.2's two substitutions included), the wire

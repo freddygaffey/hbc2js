@@ -236,7 +236,29 @@ export function filterGroups(
 export type TreeRow =
   | { readonly kind: "group"; readonly key: string; readonly label: string; readonly count: number; readonly open: boolean }
   | { readonly kind: "module"; readonly key: string; readonly module: ModuleEntry; readonly count: number; readonly open: boolean; readonly depth: number }
-  | { readonly kind: "fn"; readonly key: string; readonly row: ModuleSourceFn; readonly depth: number };
+  | { readonly kind: "fn"; readonly key: string; readonly row: ModuleSourceFn; readonly depth: number }
+  /** A screen -> screen navigation arrow (spec 26 L4), emitted under an open
+   *  screen module by `flattenTree`'s `extras.rowsAfter`. `confidence` is the
+   *  server's own provenance: `"by-name"` edges are drawn dashed, exactly as
+   *  the by-name xref candidates are. */
+  | {
+      readonly kind: "nav";
+      readonly key: string;
+      readonly from: number;
+      readonly to: number;
+      readonly label: string;
+      readonly confidence: "points-to" | "by-name";
+      readonly depth: number;
+    };
+
+/** Optional per-module hooks the screens tree (`./screens.ts`) supplies: an
+ *  indentation depth (a sub-screen sits under its parent screen) and extra
+ *  rows to emit inside an open module (its navigation arrows). Absent = the
+ *  flat behaviour every other group has always had. */
+export interface TreeExtras {
+  readonly depthOf?: (m: ModuleEntry) => number | undefined;
+  readonly rowsAfter?: (m: ModuleEntry) => readonly TreeRow[];
+}
 
 /** `groups` (already the source of truth for what filtering/segregation
  *  produced — `filterGroups`'s output is a legal input here, same shape)
@@ -249,6 +271,7 @@ export function flattenTree(
   openGroups: ReadonlySet<string>,
   openModules: ReadonlySet<string>,
   functionsOf: (moduleId: number) => readonly ModuleSourceFn[],
+  extras: TreeExtras = {},
 ): readonly TreeRow[] {
   const out: TreeRow[] = [];
   for (const g of groups) {
@@ -259,9 +282,11 @@ export function flattenTree(
       const key = `m:${m.id}`;
       const moduleOpen = openModules.has(key);
       const fns = functionsOf(m.id);
-      out.push({ kind: "module", key, module: m, count: fns.length, open: moduleOpen, depth: 1 });
+      const depth = extras.depthOf?.(m) ?? 1;
+      out.push({ kind: "module", key, module: m, count: fns.length, open: moduleOpen, depth });
       if (!moduleOpen) continue;
-      for (const r of fns) out.push({ kind: "fn", key: `f:${r.fn}`, row: r, depth: 2 });
+      for (const r of extras.rowsAfter?.(m) ?? []) out.push(r);
+      for (const r of fns) out.push({ kind: "fn", key: `f:${r.fn}`, row: r, depth: depth + 1 });
     }
   }
   return out;

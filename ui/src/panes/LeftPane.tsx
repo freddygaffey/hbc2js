@@ -24,6 +24,8 @@ import {
   moduleLabelSegregated, segregationById, type TreeRow,
 } from "../listing/modules.ts";
 import { useSegregation } from "../listing/use-segregation.ts";
+import { useScreens } from "../listing/use-screens.ts";
+import { orderScreenGroups, screenDepths, screenEdges, screensByMod, screensTree } from "../listing/screens.ts";
 import { useQueryText } from "../listing/search-store.ts";
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleEntry } from "../listing/wire.ts";
@@ -100,6 +102,10 @@ export function LeftPane(): ReactNode {
   const hits = useSearchFunctions(query);
 
   const seg = useSegregation();
+  // Spec 26 L4: the hierarchy and the navigation arrows. A server without
+  // `GET /api/screens` (or a project it 404s for) answers `null` and the
+  // Screens group stays exactly the flat list it was.
+  const screens = useScreens();
   const [openGroups, toggleGroup] = useOpenSet(["app"]);
   const [openModules, toggleModule] = useOpenSet([]);
   const [cursor, setCursor] = useState(0);
@@ -116,6 +122,17 @@ export function LeftPane(): ReactNode {
     [modules.data, segData],
   );
   const labelOf = useMemo(() => (m: ModuleEntry): string => moduleLabelSegregated(m, segById.get(m.id)), [segById]);
+
+  // The screens forest, and the two projections the tree needs from it: how
+  // deep each screen sits, and which arrows hang under it. Both are pure
+  // (`ui/src/listing/screens.ts`) and both drop anything the answer cannot
+  // also show as a row.
+  const screenData = screens.data?.computing === true ? null : (screens.data ?? null);
+  const screenNodes = useMemo(() => screensTree(screenData), [screenData]);
+  const screenRowByMod = useMemo(() => screensByMod(screenData), [screenData]);
+  const screenDepthOf = useMemo(() => screenDepths(screenNodes), [screenNodes]);
+  const screenEdgeOf = useMemo(() => screenEdges(screenNodes), [screenNodes]);
+  const screenLabelOf = (mod: number): string => screenRowByMod.get(mod)?.label ?? `module_${mod}`;
 
   // Screens and Navigation open themselves once, when segregation arrives —
   // not on every render, so a group the analyst closed by hand stays closed.
@@ -141,8 +158,22 @@ export function LeftPane(): ReactNode {
   const searching = query.trim() !== "";
 
   const rows = useMemo<readonly TreeRow[]>(
-    () => flattenTree(groups, openGroups, openModules, (id) => sources.get(id)?.functions ?? []),
-    [groups, openGroups, openModules, sources],
+    () => flattenTree(orderScreenGroups(groups, screenNodes), openGroups, openModules, (id) => sources.get(id)?.functions ?? [], {
+      depthOf: (m) => screenDepthOf.get(m.id),
+      rowsAfter: (m) =>
+        (screenEdgeOf.get(m.id) ?? []).map((e) => ({
+          kind: "nav" as const,
+          key: `n:${m.id}>${e.mod}:${e.via}`,
+          from: m.id,
+          to: e.mod,
+          label: screenLabelOf(e.mod),
+          confidence: e.confidence,
+          depth: (screenDepthOf.get(m.id) ?? 1) + 1,
+        })),
+    }),
+    // `screenLabelOf` reads `screenRowByMod`, which is in the dep list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, openGroups, openModules, sources, screenNodes, screenDepthOf, screenEdgeOf, screenRowByMod],
   );
 
   // Virtualised: only the rows the viewport can show are ever mounted (spec
@@ -224,6 +255,11 @@ export function LeftPane(): ReactNode {
     else if (row.kind === "module") {
       toggleModule(row.key);
       select({ kind: "module", moduleId: String(row.module.id) });
+    } else if (row.kind === "nav") {
+      // Following an arrow opens the TARGET screen in the centre pane, and
+      // opens its own row in the tree so its arrows are one step away.
+      toggleModule(`m:${row.to}`, true);
+      select({ kind: "module", moduleId: String(row.to) });
     } else select({ kind: "fn", fn: row.row.fn, name: fnLabel(row.row) });
   };
 
@@ -344,10 +380,27 @@ export function LeftPane(): ReactNode {
           >
             <span className="font-mono text-text-muted">{row.open ? "v" : ">"}</span>
             <span className="truncate">{labelOf(row.module)}</span>
-            <span className="shrink-0 font-mono text-[0.9em] text-text-muted opacity-60">module_{row.module.id}</span>
+            <span className="shrink-0 font-mono text-xs text-text-muted opacity-60">module_{row.module.id}</span>
             <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.count}</span>
           </div>
         </RowMenu>
+      );
+    }
+    if (row.kind === "nav") {
+      return (
+        <div
+          data-nav-from={row.from}
+          data-nav-to={row.to}
+          data-nav-confidence={row.confidence}
+          className={clsx(rowClass(false, active), row.confidence === "by-name" && "italic opacity-70")}
+          style={{ paddingLeft: `calc(0.5rem + ${row.depth} * 0.75rem)` }}
+          onClick={() => { setCursor(i); activate(row); }}
+          title={row.confidence === "by-name" ? `navigates to ${row.label} (by-name candidate, not a proven edge)` : `navigates to ${row.label} (resolved by the points-to index)`}
+        >
+          <span className={clsx("font-mono text-text-muted", row.confidence === "by-name" && "border-b border-dashed border-current")}>-&gt;</span>
+          <span className="truncate">{row.label}</span>
+          <span className="ml-auto shrink-0 font-mono text-xs text-text-muted opacity-60">{row.confidence === "by-name" ? "by-name" : "resolved"}</span>
+        </div>
       );
     }
     const selected = sel.fn === row.row.fn && sel.kind !== "module";

@@ -274,6 +274,54 @@ export function buildModuleModel(input: ModuleModelInput): GraphModel {
   return b.build();
 }
 
+/** Spec 26 L4 — the screens mode: one screen and the screens it navigates
+ *  to, drawn with the SAME renderer as mode 2 (`kind: "module"` nodes: a
+ *  screen IS a module, so clicking one opens that module exactly as a
+ *  dependency node does). `byName` marks a by-name candidate edge, which the
+ *  renderer already draws dashed — spec 25 §3's rule, applied to navigation
+ *  edges without a second convention. */
+export interface ScreensModelInput {
+  readonly focus: number;
+  readonly labelOf: (mod: number) => string | null;
+  /** The focus screen's edges, server-provided (`GET /api/screens`). */
+  readonly navigatesTo: readonly { readonly mod: number; readonly confidence: "points-to" | "by-name" }[];
+  /** Edges INTO the focus, if the caller has them; drawn as incoming. */
+  readonly navigatedFrom?: readonly { readonly mod: number; readonly confidence: "points-to" | "by-name" }[];
+}
+
+export function buildScreensModel(input: ScreensModelInput): GraphModel {
+  const b = new Builder();
+  const node = (mod: number, isFocus: boolean, byName: boolean): string | null => {
+    const id = `mod:${mod}`;
+    const ok = b.add({
+      id,
+      kind: "module",
+      ref: mod,
+      label: input.labelOf(mod) ?? `module ${mod}`,
+      size: null,
+      module: mod,
+      severity: null,
+      isFocus,
+      byName,
+      expanded: isFocus,
+    });
+    return ok ? id : null;
+  };
+  const focusId = node(input.focus, true, false);
+  if (focusId === null) return b.build();
+  for (const e of input.navigatedFrom ?? []) {
+    if (e.mod === input.focus) continue;
+    const id = node(e.mod, false, e.confidence === "by-name");
+    if (id !== null) b.link(id, focusId, e.confidence === "by-name");
+  }
+  for (const e of input.navigatesTo) {
+    if (e.mod === input.focus) continue;
+    const id = node(e.mod, false, e.confidence === "by-name");
+    if (id !== null) b.link(focusId, id, e.confidence === "by-name");
+  }
+  return b.build();
+}
+
 // -- Semantic zoom / level of detail (spec 25 §5b, bur 9) -------------------
 //
 // Fred's ask: "it should have a level of recursion view ... kind of like a
