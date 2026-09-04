@@ -20,7 +20,7 @@ import type { DecodedFunction, Instruction } from "../disasm/decode.ts";
 import type { HbcModule } from "../parse/types.ts";
 import { writtenRegisters } from "./reg-effects.ts";
 import { siteKey } from "./types.ts";
-import type { BlockId, EnvAccess, EnvGraph, EnvNode, EnvNodeId, EnvSlot, FunctionCfg } from "./types.ts";
+import type { BlockId, ClosureCopy, EnvAccess, EnvGraph, EnvNode, EnvNodeId, EnvSlot, FunctionCfg } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Opcode groups (§6.1)
@@ -460,7 +460,136 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
     else if (closureEnvOf.get(f) !== null) closureEnvConflict.add(f);
   }
 
+  // ---- Per-creation-context copies (report 2026-09-05 §4) -------------------
+  // A function created with two different environments has two lexical
+  // identities, not an unknowable one. When every site resolved to a real
+  // environment and every site's chain is rooted and the same length, the
+  // function is emitted once per environment (`src/emit/index.ts`) with its
+  // env-slot names rewritten through a positional remap of copy 0's chain.
+  // Anything else — a site with the *undefined* environment operand, an
+  // unrooted chain, chains of different length — has no such rewrite and stays
+  // `W_AMBIGUOUS_CLOSURE_ENV` with today's behaviour.
+  const closureCopies = new Map<number, readonly ClosureCopy[]>();
+  const conflictResolved = new Set<number>();
+  {
+    /** Leaf-first chain up to the root, or `null` when it is not rooted. */
+    const chainOf = (leaf: EnvNodeId): EnvNodeId[] | null => {
+      const out: EnvNodeId[] = [];
+      const seen = new Set<EnvNodeId>();
+      let cur: EnvNodeId | null | undefined = leaf;
+      while (cur !== null && cur !== undefined) {
+        if (seen.has(cur)) return null; // cyclic chain: not a lexical identity
+        seen.add(cur);
+        out.push(cur);
+        cur = drafts[cur]!.parent;
+      }
+      return cur === null ? out : null; // `undefined` parent = unknown, not root
+    };
+
+    // Accesses were collected with `selfEnv = closureEnvOf(f)`, i.e. against
+    // copy 0's chain, so this is "which of copy 0's environments does the body
+    // actually name".
+    const envsUsedBy = new Map<number, Set<EnvNodeId>>();
+    for (const a of collected.accesses) {
+      if (a.env === null) continue;
+      const s = envsUsedBy.get(a.functionIndex);
+      if (s === undefined) envsUsedBy.set(a.functionIndex, new Set([a.env]));
+      else s.add(a.env);
+    }
+    const childrenOf = new Map<number, number[]>();
+    for (const [g, env] of closureEnvOf) {
+      if (env === null || g === mod.header.globalCodeIndex) continue;
+      const owner = drafts[env]!.ownerFunction;
+      const list = childrenOf.get(owner);
+      if (list === undefined) childrenOf.set(owner, [g]);
+      else list.push(g);
+    }
+    /** `f` and every function nested inside it: a copy takes all of them. */
+    const lexicalSubtree = (root: number): Set<number> => {
+      const out = new Set<number>();
+      const stack = [root];
+      while (stack.length > 0) {
+        const n = stack.pop()!;
+        if (out.has(n)) continue;
+        out.add(n);
+        for (const c of childrenOf.get(n) ?? []) stack.push(c);
+      }
+      return out;
+    };
+
+    for (const f of [...closureEnvConflict].sort((a, b) => a - b)) {
+      const sites = closureCreationSites.get(f);
+      const env0 = closureEnvOf.get(f);
+      if (sites === undefined || env0 === undefined || env0 === null) continue;
+      const byEnv = new Map<EnvNodeId, string[]>();
+      let hasNone = false;
+      for (const [key, env] of sites) {
+        if (env === null) {
+          hasNone = true;
+          break;
+        }
+        const l = byEnv.get(env);
+        if (l === undefined) byEnv.set(env, [key]);
+        else l.push(key);
+      }
+      // "created with a real environment here and with none there" has no remap:
+      // there is no chain to align against.
+      if (hasNone || byEnv.size < 2 || !byEnv.has(env0)) continue;
+      const chain0 = chainOf(env0);
+      if (chain0 === null) continue;
+      const order: EnvNodeId[] = [env0, ...[...byEnv.keys()].filter((e) => e !== env0).sort((a, b) => a - b)];
+      const chains: EnvNodeId[][] = [];
+      for (const e of order) {
+        const c = e === env0 ? chain0 : chainOf(e);
+        if (c === null || c.length !== chain0.length) {
+          chains.length = 0;
+          break;
+        }
+        chains.push(c);
+      }
+      if (chains.length === 0) continue; // unequal or unrooted: stays ambiguous
+      const differing = new Set<EnvNodeId>();
+      for (let k = 0; k < chain0.length; k++) {
+        for (let i = 1; i < chains.length; i++) if (chains[i]![k] !== chain0[k]) differing.add(chain0[k]!);
+      }
+      conflictResolved.add(f);
+
+      // Report §3's `namesAgreeAcrossSites` join. Nothing in the lexical subtree
+      // names an environment the sites disagree about, so every copy would be
+      // the same text: emit one body, in its (now unambiguous) lexical home.
+      let touches = false;
+      for (const g of lexicalSubtree(f)) {
+        for (const e of envsUsedBy.get(g) ?? []) {
+          if (differing.has(e)) {
+            touches = true;
+            break;
+          }
+        }
+        if (touches) break;
+      }
+      if (!touches) continue;
+
+      const copies: ClosureCopy[] = [];
+      for (let i = 0; i < order.length; i++) {
+        const remap = new Map<EnvNodeId, EnvNodeId>();
+        for (let k = 0; k < chain0.length; k++) {
+          const from = chain0[k]!;
+          const to = chains[i]![k]!;
+          if (from === to) continue;
+          remap.set(from, to);
+          // The copy names `_e<to>_<slot>` for every slot copy 0 names of
+          // `from`; the declaration comes from the node's own size, so the
+          // target must be at least as large as the source.
+          if (drafts[to]!.size < drafts[from]!.size) drafts[to]!.size = drafts[from]!.size;
+        }
+        copies.push({ index: i, env: order[i]!, sites: [...byEnv.get(order[i]!)!].sort(), envRemap: remap });
+      }
+      closureCopies.set(f, copies);
+    }
+  }
+
   for (const f of closureEnvConflict) {
+    if (conflictResolved.has(f)) continue;
     diagnostics.push({
       severity: "warn",
       code: "W_AMBIGUOUS_CLOSURE_ENV",
@@ -555,6 +684,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
     },
     closureEnvOf,
     closureCreationSites,
+    closureCopies,
     envsCreatedIn,
     resolvedAt: collected.resolvedAt,
     envInSlot: new Map([...slotEnv].filter((e): e is [string, EnvNodeId] => e[1] !== "conflict")),

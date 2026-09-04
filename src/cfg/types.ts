@@ -167,6 +167,25 @@ export interface EnvSlot {
   readonly strategy: "lexical" | "materialised";
 }
 
+/**
+ * One creation context of a function created with more than one environment
+ * (docs/reports/2026-09-05-ambiguous-closure-env.md §4). `envRemap` rewrites
+ * copy 0's environment chain into this copy's, positionally: for the aligned
+ * majority that is the single substitution `leaf0 -> leafI`, and for an
+ * equal-length unaligned chain it is the whole chain node for node. Every
+ * `_e<env>_<slot>` name the copy's lexical subtree emits goes through it.
+ */
+export interface ClosureCopy {
+  /** 0-based; copy 0 captures `closureEnvOf(f)` and keeps the plain `_fn<f>` name. */
+  readonly index: number;
+  /** The environment this copy captures; the copy is emitted in its owner. */
+  readonly env: EnvNodeId;
+  /** `siteKey(creatingFunction, offset)` of every site that captured `env`. */
+  readonly sites: readonly string[];
+  /** copy 0's env node -> this copy's, for the whole captured chain. */
+  readonly envRemap: ReadonlyMap<EnvNodeId, EnvNodeId>;
+}
+
 export interface EnvGraph {
   readonly nodes: readonly EnvNode[];
   readonly slots: readonly EnvSlot[];
@@ -181,6 +200,17 @@ export interface EnvGraph {
    * every site at once (docs/BUGS.md 2026-09-04 cause (a)).
    */
   readonly closureCreationSites: ReadonlyMap<number, ReadonlyMap<string, EnvNodeId | null>>;
+  /**
+   * Per-creation-context bodies (docs/reports/2026-09-05-ambiguous-closure-env.md
+   * §4). A function whose `closureCreationSites` hold more than one *distinct*
+   * environment has one lexical identity per environment, so it is emitted once
+   * per environment instead of once. Present only when every site resolved to a
+   * real environment and every site's chain is rooted and of the same length;
+   * otherwise the function stays `W_AMBIGUOUS_CLOSURE_ENV` and this map has no
+   * entry for it. Copy 0 always captures `closureEnvOf(f)`, which is the chain
+   * every recorded `EnvAccess` of the subtree was resolved against.
+   */
+  readonly closureCopies: ReadonlyMap<number, readonly ClosureCopy[]>;
   readonly envsCreatedIn: ReadonlyMap<number, readonly EnvNodeId[]>;
   /** (functionIndex, offset) -> the resolved env for that access site. */
   readonly resolvedAt: ReadonlyMap<string, EnvNodeId>;
