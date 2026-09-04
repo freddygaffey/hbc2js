@@ -642,22 +642,22 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
         // the top of the enclosing function.
         return set(V(insn, 0), { k: "func", name: inline.name, params: inline.params, body: inline.body });
       }
-      return set(V(insn, 0), id(fnName(V(insn, 2))));
+      return set(V(insn, 0), id(f.closureName(V(insn, 2), insn.offset)));
     }
     case "CreateGenerator":
     case "CreateGeneratorLongIndex": {
       const inner = V(insn, 2);
       if (f.version >= 97) {
         f.useHelper("__hbc_makeGeneratorLowered");
-        return set(V(insn, 0), call(id("__hbc_makeGeneratorLowered"), [id(fnName(inner))]));
+        return set(V(insn, 0), call(id("__hbc_makeGeneratorLowered"), [id(f.closureName(inner, insn.offset))]));
       }
       f.useHelper("__hbc_makeGenerator");
-      return set(V(insn, 0), call(id("__hbc_makeGenerator"), [id(fnName(inner)), f.thisExpr, f.argsExpr]));
+      return set(V(insn, 0), call(id("__hbc_makeGenerator"), [id(f.closureName(inner, insn.offset)), f.thisExpr, f.argsExpr]));
     }
     case "CreateBaseClass":
     case "CreateBaseClassLongIndex": {
       const fnId = V(insn, 3);
-      set(V(insn, 0), id(fnName(fnId)));
+      set(V(insn, 0), id(f.closureName(fnId, insn.offset)));
       set(V(insn, 1), prop(R(V(insn, 0)), "prototype"));
       return;
     }
@@ -665,7 +665,7 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
     case "CreateDerivedClassLongIndex": {
       const fnId = V(insn, 4);
       const superReg = RG(insn, 3);
-      set(V(insn, 0), id(fnName(fnId)));
+      set(V(insn, 0), id(f.closureName(fnId, insn.offset)));
       out.push({ k: "expr", expr: call(prop(id("Object"), "setPrototypeOf"), [R(V(insn, 0)), superReg]) });
       set(V(insn, 1), prop(R(V(insn, 0)), "prototype"));
       out.push({

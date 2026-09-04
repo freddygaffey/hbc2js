@@ -33,6 +33,11 @@ export interface FunctionEmitter {
   /** The env node an environment access resolves to, or `null` under
    *  `--lenient-env` when spec 03 §6 could not resolve it (strict aborts). */
   resolveEnv(insn: Instruction): number | null;
+  /** The binding name a `Create*Closure`/`Create*Class` at `offset` must use for
+   *  function `functionIndex`: `_fn<n>` normally, `_fn<n>__c<i>` when that
+   *  function has per-creation-context copies and this site captured copy i's
+   *  environment (report 2026-09-05 §4). */
+  closureName(functionIndex: number, offset: number): string;
   recordShape(register: number, keys: readonly string[]): void;
   /** The env node created at `offset`, when its slots are declared inline. */
   loopLocalSlotsAt(offset: number): readonly string[] | undefined;
@@ -63,6 +68,14 @@ export interface EmitFunctionInput {
   /** Spec 03 §6.4's R3 rule. False = `--lenient-env`: an unresolvable access
    *  becomes a loud `__hbc_unresolved_env(...)` marker instead of aborting. */
   readonly strictEnv: boolean;
+  /** The name this body is emitted under. Defaults to `_fn<index>`; a
+   *  per-creation-context copy i>0 passes `_fn<index>__c<i>` (report §4). */
+  readonly emitName?: string;
+  /** Rewrites every resolved environment node before it becomes an
+   *  `_e<env>_<slot>` name: copy 0's chain -> this copy's (report §4). */
+  readonly envRemap?: ReadonlyMap<number, number>;
+  /** `siteKey(thisFunction, offset)` -> the `_fn…` name that site must emit. */
+  readonly closureNameAt?: ReadonlyMap<string, string>;
 }
 
 /** Blocks whose bytes lie outside `region.bodyBlocks` but inside its try body. */
@@ -215,7 +228,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         input.diagnostic({ severity: "warn", code: "W_ENV_UNRESOLVED", message: `${insn.name} at offset ${insn.offset} has no statically resolved environment; emitted as a __hbc_unresolved_env marker (--lenient-env)`, context: { functionIndex: fn.index, offset: insn.offset, section: "emit" } });
         return null;
       }
-      return env;
+      return input.envRemap?.get(env) ?? env;
+    },
+    closureName(functionIndex: number, offset: number): string {
+      return input.closureNameAt?.get(siteKey(fn.index, offset)) ?? fnName(functionIndex);
     },
     recordShape(register: number, keys: readonly string[]): void {
       shapes.set(register, keys);
@@ -532,7 +548,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   }
   prologue.push(...input.children);
 
-  const name = fnName(fn.index);
+  const name = input.emitName ?? fnName(fn.index);
   // EM-07: the whole file is pure ASCII, comments included — a function name
   // can legitimately contain any code unit.
   const label: Stmt = { k: "comment", text: `fn#${fn.index} ${quote(fn.name)}${isGlobal ? " (global)" : ""}` };

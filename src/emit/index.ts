@@ -1,7 +1,7 @@
 // docs/specs/05-emitter.md §2, §6, §9, §10 — module emission.
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { Diagnostic } from "../errors.ts";
-import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
+import type { ClosureCopy, FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import { structure } from "../structure/index.ts";
 import type { StructureOptions, StructuredFunction } from "../structure/index.ts";
 import { getBuiltinTable } from "../tables/registry.ts";
@@ -280,6 +280,41 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     }
   }
 
+  // §4 of docs/reports/2026-09-05-ambiguous-closure-env.md — per-creation-context
+  // bodies. A function created with more than one environment has one lexical
+  // identity per environment; `envGraph.closureCopies` carries them, each with
+  // the env remap that turns copy 0's `_e<env>_<slot>` names into that copy's.
+  // Copy 0 keeps the plain `_fn<n>` name and its ordinary `parentOf` home, so
+  // any reference the env graph did not record (a `CallDirect`, say) still
+  // resolves exactly as it does today; copy i>0 is `_fn<n>__c<i>`, emitted
+  // inside the owner of the environment *it* captured. Every recorded
+  // `Create*Closure` site names its own copy, so no site is left referring to a
+  // body it cannot see.
+  const copyNameOf = (fn: number, copy: number): string => (copy === 0 ? fnName(fn) : `${fnName(fn)}__c${copy}`);
+  /** siteKey(creator, offset) -> the `_fn…` name that site must emit. */
+  const closureNameAt = new Map<string, string>();
+  /** host function -> the extra copies (i>0) emitted inside it. */
+  const extraCopies = new Map<number, { fn: number; copy: ClosureCopy }[]>();
+  for (const [fn, copies] of envGraph.closureCopies) {
+    for (const copy of copies) {
+      for (const site of copy.sites) closureNameAt.set(site, copyNameOf(fn, copy.index));
+      if (copy.index === 0) continue;
+      const host = envGraph.nodes[copy.env]!.ownerFunction;
+      const list = extraCopies.get(host);
+      if (list === undefined) extraCopies.set(host, [{ fn, copy }]);
+      else list.push({ fn, copy });
+    }
+  }
+  for (const list of extraCopies.values()) list.sort((a, b) => a.fn - b.fn || a.copy.index - b.copy.index);
+
+  /** `outer ∘ inner`: a copy nested inside another copy's subtree. */
+  const composeRemap = (outer: ReadonlyMap<number, number> | undefined, inner: ReadonlyMap<number, number>): ReadonlyMap<number, number> => {
+    if (outer === undefined) return inner;
+    const out = new Map<number, number>(outer);
+    for (const [from, to] of inner) out.set(from, outer.get(to) ?? to);
+    return out;
+  };
+
   // Break any cycle (never observed, but a cycle would be an infinite emission).
   for (const [child] of parentOf) {
     const seen = new Set<number>([child]);
@@ -382,12 +417,34 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
   }
 
   const emitted = new Set<number>();
+  /** One key per *instance*: a copy's subtree is emitted once per copy. */
+  const emittedInstances = new Set<string>();
+  const pendingCopies = new Set<string>();
+  for (const [fn, copies] of envGraph.closureCopies) for (const c of copies) if (c.index > 0) pendingCopies.add(`${fn}#${c.index}`);
   let stubbedFunctions = 0;
-  const emitOne = (index: number): Stmt => {
-    if (emitted.has(index)) {
+  interface CopyCtx {
+    /** Distinguishes the instances of one function index; "" is the original. */
+    readonly path: string;
+    readonly remap: ReadonlyMap<number, number> | undefined;
+    readonly name?: string;
+  }
+  const ROOT_CTX: CopyCtx = { path: "", remap: undefined };
+  const active = new Set<number>();
+  const emitOne = (index: number, ctx: CopyCtx = ROOT_CTX): Stmt => {
+    const instance = `${ctx.path}/${index}`;
+    if (emittedInstances.has(instance)) {
       throw new Hbc2jsError(ErrorCode.E_INTERNAL, `function ${index} emitted twice`, { functionIndex: index, section: "emit" });
     }
+    emittedInstances.add(instance);
     emitted.add(index);
+    active.add(index);
+    try {
+      return emitBody(index, ctx);
+    } finally {
+      active.delete(index);
+    }
+  };
+  const emitBody = (index: number, ctx: CopyCtx): Stmt => {
     let cfg: FunctionCfg | undefined;
     // Per-function isolation (docs/BUGS.md integration/E_EMIT_UNSUPPORTED):
     // any `Hbc2jsError` here — cfg build, structure, a pass, `emitFunction`,
@@ -408,9 +465,23 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       const hoisted: Stmt[] = [];
       const inlined = new Map<number, Stmt>();
       for (const child of kids) {
-        const body = emitOne(child);
+        const body = emitOne(child, ctx);
         if (inlineFunctions.has(child)) inlined.set(child, body);
         else hoisted.push(body);
+      }
+      // The extra creation-context copies whose captured environment this
+      // function owns. They travel with their whole lexical subtree, under the
+      // composed remap, and are hoisted like any other child.
+      for (const extra of extraCopies.get(index) ?? []) {
+        if (active.has(extra.fn)) continue; // a copy hosted inside its own subtree
+        pendingCopies.delete(`${extra.fn}#${extra.copy.index}`);
+        hoisted.push(
+          emitOne(extra.fn, {
+            path: `${ctx.path}/${index}c${extra.fn}_${extra.copy.index}`,
+            remap: composeRemap(ctx.remap, extra.copy.envRemap),
+            name: copyNameOf(extra.fn, extra.copy.index),
+          }),
+        );
       }
       let out = emitFunction({
         analysis,
@@ -427,6 +498,9 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
         diagnostic: (d) => diagnostics.push(d),
         provenanceComments,
         strictEnv,
+        ...(ctx.name !== undefined ? { emitName: ctx.name } : {}),
+        ...(ctx.remap !== undefined ? { envRemap: ctx.remap } : {}),
+        closureNameAt,
       });
       if (opts.astPasses !== undefined) {
         const passed = opts.astPasses(out, cfg);
@@ -443,6 +517,7 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       if (e.code === ErrorCode.E_ENV_UNRESOLVED) throw e;
       stubbedFunctions++;
       const stub = stubFor(analysis, index, e);
+      if (ctx.name !== undefined) (stub as { name: string }).name = ctx.name;
       diagnostics.push({
         severity: "warn",
         code: "W_FUNCTION_STUBBED",
@@ -476,6 +551,23 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     if (parentOf.get(i) !== null) continue;
     orphans.push({ k: "comment", text: `orphan: no closure creation site was found for fn#${i}` });
     orphans.push(emitOne(i));
+  }
+  // A copy whose host was never reached (its owner is itself unemitted, or the
+  // copy is hosted inside its own subtree) would leave its creation sites naming
+  // a body that does not exist. Emit it at module level, exactly where an
+  // unplaceable orphan goes today.
+  for (const [fn, copies] of envGraph.closureCopies) {
+    for (const c of copies) {
+      if (c.index === 0 || !pendingCopies.has(`${fn}#${c.index}`)) continue;
+      pendingCopies.delete(`${fn}#${c.index}`);
+      diagnostics.push({
+        severity: "warn",
+        code: "W_ORPHAN_FUNCTION",
+        message: `copy ${c.index} of function ${fn} could not be emitted inside fn#${envGraph.nodes[c.env]!.ownerFunction}, which owns the environment it captures; emitting it at module level`,
+        context: { functionIndex: fn },
+      });
+      orphans.push(emitOne(fn, { path: `/module_c${fn}_${c.index}`, remap: c.envRemap, name: copyNameOf(fn, c.index) }));
+    }
   }
   for (let i = 0; i < mod.functions.length; i++) {
     if (emitted.has(i)) continue;
