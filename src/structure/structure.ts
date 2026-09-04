@@ -86,16 +86,29 @@ export function ramsey(graph: AugmentedCfg, opts: CoreOptions): CoreResult {
     return { k: "block", cfgBlock: b.id };
   };
 
-  const doTree = (node: BlockId, ctx: readonly Frame[]): Stmt => {
+  // A `doTree` frame is spent on *nesting*, never on length. A flat chain of
+  // blocks (`jump`/`fallthrough` terminators with nothing to nest under them)
+  // is walked iteratively in the loop below, so a chain of any length costs one
+  // native frame and one unit of `depth`, and `maxDepth` measures what it says
+  // it measures. Genuine nesting -- branch arms, switch arms, try bodies, merge
+  // kids, loop bodies -- still recurses, and is still what `maxDepth` guards.
+  // See docs/DECISIONS.md (D-STRUCT-CHAIN). Output is unchanged: `seq` flattens
+  // nested `seq` nodes, so accumulating the chain's leaves into one list builds
+  // exactly the tree the nested form built.
+  const doTree = (start: BlockId, ctx: readonly Frame[]): Stmt => {
     enter();
+    const entered: BlockId[] = [];
     try {
-      if (onPath.has(node)) {
-        // Only reachable through §4.4's `duplicate` resolution; a second copy of
-        // a node already on the path would not terminate.
-        throw new NeedDispatch(`duplication re-entered block ${node}`);
-      }
-      onPath.add(node);
-      try {
+      const parts: Stmt[] = [];
+      let node = start;
+      for (;;) {
+        if (onPath.has(node)) {
+          // Only reachable through §4.4's `duplicate` resolution; a second copy of
+          // a node already on the path would not terminate.
+          throw new NeedDispatch(`duplication re-entered block ${node}`);
+        }
+        onPath.add(node);
+        entered.push(node);
         const kids = graph.domChildren[node]!; // already sorted descending by RPO (§4.3)
         const mergeKids = kids.filter((k) => graph.mergePoints.has(k));
         // The `loop` wrapper goes *outside* the merge-kid nesting, and the loop
@@ -109,13 +122,34 @@ export function ramsey(graph: AugmentedCfg, opts: CoreOptions): CoreResult {
         if (graph.loopHeaders.has(node)) {
           const label = labelFor(node, "loop");
           const inner = ctx.concat([{ kind: "loop", header: node, label }]);
-          return { k: "loop", label, body: nodeWithin(node, mergeKids, 0, inner) };
+          parts.push({ k: "loop", label, body: nodeWithin(node, mergeKids, 0, inner) });
+          break;
         }
-        return nodeWithin(node, mergeKids, 0, ctx);
-      } finally {
-        onPath.delete(node);
+        if (mergeKids.length > 0) {
+          parts.push(nodeWithin(node, mergeKids, 0, ctx));
+          break;
+        }
+        const block = graph.blocks[node]!;
+        const t = block.terminator;
+        if (t.kind === "jump" || t.kind === "fallthrough") {
+          // `bodyOf`'s jump case, unrolled: leaf first (its `emitted`/budget
+          // side effects keep their order), then the successor — and when the
+          // successor is another plain subtree, stay in this frame.
+          parts.push(blockLeaf(block));
+          const next = resolveBranch(block.id, block.succs[0]!.to, ctx);
+          if (typeof next === "number") {
+            node = next;
+            continue;
+          }
+          parts.push(next);
+          break;
+        }
+        parts.push(bodyOf(block, ctx));
+        break;
       }
+      return seq(parts);
     } finally {
+      for (const n of entered) onPath.delete(n);
       leave();
     }
   };
@@ -172,7 +206,12 @@ export function ramsey(graph: AugmentedCfg, opts: CoreOptions): CoreResult {
     }
   };
 
-  const doBranch = (from: BlockId, to: BlockId, ctx: readonly Frame[]): Stmt => {
+  /**
+   * Where a branch to `to` goes: a finished `Stmt` (`continue`/`break`), or the
+   * block id of a subtree still to be built. Returning the id rather than
+   * building it lets `doTree` continue a flat chain without recursing.
+   */
+  const resolveBranch = (from: BlockId, to: BlockId, ctx: readonly Frame[]): Stmt | BlockId => {
     if (graph.backEdges.has(edgeKey(from, to))) {
       const frame = [...ctx].reverse().find((f) => f.header === to && f.kind === "loop");
       if (frame === undefined) throw new NeedDispatch(`back edge ${from}->${to} has no enclosing loop label`);
@@ -188,12 +227,32 @@ export function ramsey(graph: AugmentedCfg, opts: CoreOptions): CoreResult {
       // §4.4 — irreducible. Discovered here, by a failed label lookup, and
       // nowhere else. `duplicate` resolves it by splitting the node.
       duplicated.add(to);
-      return doTree(to, ctx);
     }
-    return doTree(to, ctx);
+    return to;
   };
 
-  const root = doTree(graph.entry, []);
+  const doBranch = (from: BlockId, to: BlockId, ctx: readonly Frame[]): Stmt => {
+    const r = resolveBranch(from, to, ctx);
+    return typeof r === "number" ? doTree(r, ctx) : r;
+  };
+
+  // The only place a host stack overflow is converted. Genuine nesting is
+  // guarded by `maxDepth`, but the number of native frames one nesting level
+  // costs is a property of the host, not of this code, so on a small or
+  // already-deep stack V8 can run out first. Anywhere else this catch would be
+  // unsound (it could swallow an overflow raised by unrelated code and leave a
+  // half-built tree in play); at the entry point the stack is fully unwound and
+  // nothing of the failed attempt survives.
+  let root: Stmt;
+  try {
+    root = doTree(graph.entry, []);
+  } catch (e) {
+    if (e instanceof RangeError && e.message.includes("Maximum call stack size exceeded")) {
+      throw new Hbc2jsError(ErrorCode.E_TOO_COMPLEX, "structurer exhausted the host call stack before the recursion guard fired", { functionIndex: graph.cfg.functionIndex, section: "structure" });
+    }
+    throw e;
+  }
+
 
   const labels: LabelInfo[] = [];
   for (const [header, id] of labelOfHeader) {
