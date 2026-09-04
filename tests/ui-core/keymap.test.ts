@@ -38,7 +38,7 @@ test("multi-key chord resolves after both keys, single-key chord resolves immedi
 test("dead-end sequence returns none and clears pending", () => {
   const km = createKeymap({ preset: loadPreset("vim") });
   assert.equal(km.feed(key("g"), 0), "pending");
-  assert.equal(km.feed(key("z"), 10), "none");
+  assert.equal(km.feed(key("q"), 10), "none"); // g z is graph.lodCycle since 245330a; g q is unbound in every preset
   assert.equal(km.isPending(), false);
   // g is usable again afterwards
   assert.equal(km.feed(key("g"), 20), "pending");
