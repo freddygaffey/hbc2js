@@ -1,0 +1,6 @@
+3 6 p2
+counter 6 7 7
+0,1,10,len 3 2 2 3
+8 9
+5 8 7
+first=11 second=undefined 11 12

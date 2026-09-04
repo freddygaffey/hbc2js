@@ -1,0 +1,236 @@
+; hbc2js disassembly of 63-object-literal/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=11 strings=34 globalCodeIndex=0
+function #0 "global"  params=1 frame=19 env=1 flags=dbg  @0x0000029c size=518
+  0000  DeclareGlobalVar     s15 "point"
+  0005  DeclareGlobalVar     s30 "makeCounter"
+  000a  DeclareGlobalVar     s20 "table"
+  000f  DeclareGlobalVar     s23 "selfRead"
+  0014  DeclareGlobalVar     s32 "withGetter"
+  0019  DeclareGlobalVar     s22 "escapes"
+  001e  CreateEnvironment    r0
+  0020  CreateClosure        r2, r0, f1 "point"
+  0025  GetGlobalObject      r1
+  0027  PutById              r1, r2, #c1, s15 "point"
+  002d  CreateClosure        r2, r0, f2 "makeCounter"
+  0032  PutById              r1, r2, #c2, s30 "makeCounter"
+  0038  CreateClosure        r2, r0, f5 "table"
+  003d  PutById              r1, r2, #c3, s20 "table"
+  0043  CreateClosure        r2, r0, f6 "selfRead"
+  0048  PutById              r1, r2, #c4, s23 "selfRead"
+  004e  CreateClosure        r2, r0, f7 "withGetter"
+  0053  PutById              r1, r2, #c5, s32 "withGetter"
+  0059  CreateClosure        r2, r0, f9 "escapes"
+  005e  PutById              r1, r2, #c6, s22 "escapes"
+  0064  GetByIdShort         r4, r1, #c1, s15 "point"
+  0069  LoadConstUndefined   r2
+  006b  LoadConstUInt8       r5, 2
+  006e  LoadConstUInt8       r3, 3
+  0071  Call3                r7, r4, r2, r5, r3
+  0077  TryGetById           r6, r1, #c2, s31 "print"
+  007d  GetByIdShort         r3, r7, #c3, s33 "x"
+  0082  LoadConstString      r4, s1 " "
+  0086  Add                  r8, r3, r4
+  008a  GetByIdShort         r3, r7, #c4, s29 "y"
+  008f  Add                  r3, r8, r3
+  0093  GetByIdShort         r7, r7, #c5, s16 "tag"
+  0098  Add                  r3, r3, r4
+  009c  Add                  r3, r3, r7
+  00a0  Call2                r3, r6, r2, r3
+  00a5  GetByIdShort         r6, r1, #c6, s30 "makeCounter"
+  00aa  LoadConstUInt8       r3, 5
+  00ad  Call2                r8, r6, r2, r3
+  00b2  TryGetById           r6, r1, #c2, s31 "print"
+  00b8  GetByIdShort         r3, r8, #c7, s25 "name"
+  00bd  Add                  r7, r3, r4
+  00c1  GetByIdShort         r3, r8, #c8, s12 "inc"
+  00c6  Call1                r3, r3, r8
+  00ca  Add                  r3, r7, r3
+  00ce  GetByIdShort         r7, r8, #c8, s12 "inc"
+  00d3  Call1                r7, r7, r8
+  00d7  Add                  r3, r3, r4
+  00db  Add                  r3, r3, r7
+  00df  GetByIdShort         r7, r8, #c9, s13 "read"
+  00e4  Call1                r7, r7, r8
+  00e8  Add                  r3, r3, r4
+  00ec  Add                  r3, r3, r7
+  00f0  Call2                r3, r6, r2, r3
+  00f5  GetByIdShort         r3, r1, #c10, s20 "table"
+  00fa  LoadConstUInt8       r6, 1
+  00fd  Call3                r7, r3, r2, r6, r5
+  0103  TryGetById           r5, r1, #c2, s31 "print"
+  0109  TryGetById           r8, r1, #c11, s19 "Object"
+  010f  GetByIdShort         r3, r8, #c12, s28 "keys"
+  0114  Call2                r9, r3, r8, r7
+  0119  GetByIdShort         r8, r9, #c13, s11 "join"
+  011e  LoadConstString      r3, s3 ","
+  0122  Call2                r3, r8, r9, r3
+  0127  Add                  r8, r3, r4
+  012b  LoadConstZero        r3
+  012d  GetByVal             r3, r7, r3
+  0131  Add                  r3, r8, r3
+  0135  GetByVal             r6, r7, r6
+  0139  Add                  r3, r3, r4
+  013d  Add                  r3, r3, r6
+  0141  LoadConstUInt8       r6, 10
+  0144  GetByVal             r8, r7, r6
+  0148  Add                  r3, r3, r4
+  014c  Add                  r3, r3, r8
+  0150  GetByIdShort         r7, r7, #c14, s21 "len"
+  0155  Add                  r3, r3, r4
+  0159  Add                  r3, r3, r7
+  015d  Call2                r3, r5, r2, r3
+  0162  GetByIdShort         r5, r1, #c15, s23 "selfRead"
+  0167  LoadConstUInt8       r3, 7
+  016a  Call2                r3, r5, r2, r3
+  016f  TryGetById           r5, r1, #c2, s31 "print"
+  0175  GetByIdShort         r7, r3, #c16, s18 "a"
+  017a  Add                  r7, r7, r4
+  017e  GetByIdShort         r3, r3, #c17, s27 "b"
+  0183  Add                  r3, r7, r3
+  0187  Call2                r3, r5, r2, r3
+  018c  GetByIdShort         r5, r1, #c18, s32 "withGetter"
+  0191  LoadConstUInt8       r3, 4
+  0194  Call2                r7, r5, r2, r3
+  0199  TryGetById           r5, r1, #c2, s31 "print"
+  019f  GetByIdShort         r3, r7, #c19, s24 "plain"
+  01a4  Add                  r8, r3, r4
+  01a8  GetByIdShort         r3, r7, #c20, s17 "doubled"
+  01ad  Add                  r3, r8, r3
+  01b1  GetByIdShort         r7, r7, #c21, s26 "after"
+  01b6  Add                  r3, r3, r4
+  01ba  Add                  r3, r3, r7
+  01be  Call2                r3, r5, r2, r3
+  01c3  LoadConstString      r3, s8 "none"
+  01c7  StoreToEnvironment   r0, 0, r3
+  01cb  GetByIdShort         r5, r1, #c22, s22 "escapes"
+  01d0  CreateClosure        r3, r0, f10 ""
+  01d5  Call3                r3, r5, r2, r3, r6
+  01db  TryGetById           r1, r1, #c2, s31 "print"
+  01e1  LoadFromEnvironment  r0, r0, 0
+  01e5  Add                  r5, r0, r4
+  01e9  GetByIdShort         r0, r3, #c23, s14 "first"
+  01ee  Add                  r0, r5, r0
+  01f2  GetByIdShort         r3, r3, #c24, s10 "second"
+  01f7  Add                  r0, r0, r4
+  01fb  Add                  r0, r0, r3
+  01ff  Call2                r0, r1, r2, r0
+  0204  Ret                  r0
+
+function #1 "point"  params=3 frame=4 env=0 flags=dbg  @0x000004a2 size=44
+  0000  LoadParam            r1, 1
+  0003  LoadConstUInt8       r0, 1
+  0006  Add                  r3, r1, r0
+  000a  LoadParam            r2, 2
+  000d  LoadConstUInt8       r0, 2
+  0010  Mul                  r2, r2, r0
+  0014  LoadConstString      r0, s9 "p"
+  0018  Add                  r1, r0, r1
+  001c  NewObject            r0
+  001e  PutNewOwnByIdShort   r0, r3, s33 "x"
+  0022  PutNewOwnByIdShort   r0, r2, s29 "y"
+  0026  PutNewOwnByIdShort   r0, r1, s16 "tag"
+  002a  Ret                  r0
+
+function #2 "makeCounter"  params=2 frame=3 env=1 flags=dbg  @0x000004ce size=39
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r0, 1
+  0005  StoreToEnvironment   r1, 0, r0
+  0009  NewObject            r0
+  000b  LoadConstString      r2, s4 "counter"
+  000f  PutNewOwnByIdShort   r0, r2, s25 "name"
+  0013  CreateClosure        r2, r1, f3 "inc"
+  0018  PutNewOwnByIdShort   r0, r2, s12 "inc"
+  001c  CreateClosure        r1, r1, f4 "read"
+  0021  PutNewOwnByIdShort   r0, r1, s13 "read"
+  0025  Ret                  r0
+
+function #3 "inc"  params=1 frame=3 env=0 flags=dbg  @0x000004f5 size=20
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r2, r1, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  Add                  r0, r2, r0
+  000e  StoreToEnvironment   r1, 0, r0
+  0012  Ret                  r0
+
+function #4 "read"  params=1 frame=1 env=0 flags=none  @0x00000509 size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  Ret                  r0
+
+function #5 "table"  params=3 frame=5 env=0 flags=dbg  @0x00000512 size=45
+  0000  LoadParam            r1, 1
+  0003  LoadParam            r0, 2
+  0006  LoadConstUInt8       r2, 1
+  0009  Add                  r4, r1, r2
+  000d  Add                  r3, r0, r2
+  0011  Mul                  r2, r1, r0
+  0015  Add                  r1, r1, r0
+  0019  NewObject            r0
+  001b  PutOwnByIndex        r0, r4, 1
+  001f  PutOwnByIndex        r0, r3, 0
+  0023  PutOwnByIndex        r0, r2, 10
+  0027  PutNewOwnByIdShort   r0, r1, s21 "len"
+  002b  Ret                  r0
+
+function #6 "selfRead"  params=2 frame=3 env=0 flags=dbg  @0x0000053f size=35
+  0000  NewObject            r0
+  0002  LoadParam            r1, 1
+  0005  LoadConstUInt8       r2, 1
+  0008  Add                  r1, r1, r2
+  000c  PutById              r0, r1, #c1, s18 "a"
+  0012  GetByIdShort         r1, r0, #c1, s18 "a"
+  0017  Add                  r1, r1, r2
+  001b  PutById              r0, r1, #c2, s27 "b"
+  0021  Ret                  r0
+
+function #7 "withGetter"  params=2 frame=5 env=1 flags=dbg  @0x00000562 size=52
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r2, 1
+  0005  StoreToEnvironment   r1, 0, r2
+  0009  NewObject            r0
+  000b  LoadConstUInt8       r3, 1
+  000e  Add                  r3, r2, r3
+  0012  PutNewOwnByIdShort   r0, r3, s24 "plain"
+  0016  CreateClosure        r4, r1, f8 "get doubled"
+  001b  LoadConstUndefined   r3
+  001d  LoadConstString      r1, s17 "doubled"
+  0021  PutOwnGetterSetterByVal r0, r1, r4, r3, 1
+  0027  LoadConstUInt8       r1, 3
+  002a  Add                  r1, r2, r1
+  002e  PutNewOwnByIdShort   r0, r1, s26 "after"
+  0032  Ret                  r0
+
+function #8 "get doubled"  params=1 frame=2 env=0 flags=dbg  @0x00000596 size=16
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadConstUInt8       r0, 2
+  000a  Mul                  r0, r1, r0
+  000e  Ret                  r0
+
+function #9 "escapes"  params=3 frame=12 env=0 flags=dbg  @0x000005a6 size=43
+  0000  LoadParam            r2, 2
+  0003  NewObject            r0
+  0005  LoadConstUInt8       r1, 1
+  0008  Add                  r1, r2, r1
+  000c  PutById              r0, r1, #c1, s14 "first"
+  0012  LoadParam            r3, 1
+  0015  LoadConstUndefined   r1
+  0017  Call2                r1, r3, r1, r0
+  001c  LoadConstUInt8       r1, 2
+  001f  Add                  r1, r2, r1
+  0023  PutById              r0, r1, #c2, s10 "second"
+  0029  Ret                  r0
+
+function #10 ""  params=2 frame=3 env=0 flags=dbg  @0x000005d1 size=44
+  0000  LoadParam            r0, 1
+  0003  GetByIdShort         r2, r0, #c1, s14 "first"
+  0008  LoadConstString      r1, s5 "first="
+  000c  Add                  r2, r1, r2
+  0010  GetByIdShort         r1, r0, #c2, s10 "second"
+  0015  LoadConstString      r0, s2 " second="
+  0019  Add                  r0, r2, r0
+  001d  Add                  r1, r0, r1
+  0021  GetEnvironment       r0, 0
+  0024  StoreToEnvironment   r0, 0, r1
+  0028  LoadConstUndefined   r0
+  002a  Ret                  r0

@@ -165,8 +165,14 @@ for (const version of [94, 99]) {
     const bytes = new Uint8Array(readFileSync(file));
     const plain = decompile(bytes, { moduleName: "59.hbc" }).code;
     assert.doesNotMatch(plain, /<_e0_\d+/);
-    const plainStores = (plain.match(/\.children = /g) ?? []).length;
-    assert.ok(plainStores >= 6, `expected the element calls' children stores in the default output, got ${plainStores}`);
+    // The `children` prop of every element-creation call is still an ordinary
+    // JS property in the default pipeline — either a store (`o.children = x`)
+    // or, since M5 rung 20 `object-literal` rebuilt the props object it
+    // belongs to, a literal key (`{children: x}`). Both spellings count: this
+    // assertion owns "the default output is plain JS with the element calls",
+    // not the shape of the props object, which `object-literal` owns.
+    const plainStores = (plain.match(/\bchildren(?: = |: )/g) ?? []).length;
+    assert.ok(plainStores >= 6, `expected the element calls' children props in the default output, got ${plainStores}`);
     const jsx = decompile(bytes, { moduleName: "59.hbc", passes: { optIn: ["jsx-recover"] }, emit: { jsx: true } }).code;
     assert.match(jsx, /<_e0_\d+ style=\{r\d+\}>hello<\/_e0_\d+>/);
     assert.match(jsx, /<div className=(?:\{r\d+\}|"x")>\{r\d+\}<\/div>/, "v94 spills the string to a register, v99 keeps it inline");

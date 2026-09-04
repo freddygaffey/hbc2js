@@ -111,10 +111,17 @@ mirrors `--emit-tree`.
 read-only visitor and two rebuilding maps), `stmtLists`/`spliceList` (site
 enumeration and splice), `freeNames`/`parses`, `identUses`/`identUsesMany`/`registerUses` (one name; many names in one walk; every register, memoised per list — P-1), `defUse` (`rN`
 def/use by pre-order statement index), `isPure`/`isPureStmt`,
-`isHelperCall`, `isSafeIdentifier`, and `effectSequence`/
+`isHelperCall`, `isSafeIdentifier`, `effectSequence`/
 `expressionOnlyCheck` — §4.3's ordered-effects comparison, the whole guard an
 expression-only rewrite (one that only changes *how* a value is computed,
-never *what is observable while computing it*) needs.
+never *what is observable while computing it*) needs — and `originOf`/
+`opcodeAt` (spec `docs/specs/passes/20-object-literal.md` §3): the emitter's
+per-statement bytecode `Origin` stamp, plus a memoised offset->opcode index
+over `ctx.cfg`, for the rungs that must tell two opcodes apart *after* the
+emitter has lowered both to the same JS node (`PutNewOwnById` — an own-
+property define — and `PutById` — a full `[[Set]]` — both print `o.k = v`).
+`ast.ts` may therefore import `src/emit/ast.ts`, `src/emit/print.ts`,
+`src/emit/origin.ts` and `src/cfg/types.ts`; a pass still may not.
 
 ## The import boundary (D12a, enforced by `tests/gate/passes/imports.test.ts`)
 

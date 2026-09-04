@@ -1794,3 +1794,37 @@ function firstAstMatch(fnBody: readonly Stmt[], pass: StmtListPass, ctx: PassCon
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Bytecode provenance for a stage-B statement (spec
+// `docs/specs/passes/20-object-literal.md` §4). Two Hermes opcodes with
+// different semantics can lower to the *same* JS AST node — `PutNewOwnById`
+// (an own-property define) and `PutById` (a full [[Set]] that walks the
+// prototype chain) both print as `o.k = v` — so a rung that may only fire on
+// one of them has to ask which instruction the statement came from. That
+// answer lives in the emitter's `Origin` stamp plus the function's CFG, both
+// of which are framework, not pass, territory (D12a).
+import type { FunctionCfg } from "../cfg/types.ts";
+import { originOf as emitOriginOf } from "../emit/origin.ts";
+export type { Origin } from "../emit/ast.ts";
+export type { ObjectProp, SpreadProp } from "../emit/ast.ts";
+
+/** The bytecode origin recorded on a statement by the emitter, if any.
+ *  Absent for a statement no single instruction produced (spec 05 §16). */
+export const originOf = emitOriginOf;
+
+const OPCODE_INDEX = new WeakMap<FunctionCfg, ReadonlyMap<number, string>>();
+
+/** Opcode name of the instruction at function-relative byte `offset`, or
+ *  `null` when no instruction starts there. Memoised per `FunctionCfg`: the
+ *  index is built once and reused by every site of every rung. */
+export function opcodeAt(cfg: FunctionCfg, offset: number): string | null {
+  let index = OPCODE_INDEX.get(cfg);
+  if (index === undefined) {
+    const m = new Map<number, string>();
+    for (const b of cfg.blocks) for (const insn of b.instructions) m.set(insn.offset, insn.name);
+    index = m;
+    OPCODE_INDEX.set(cfg, index);
+  }
+  return index.get(offset) ?? null;
+}

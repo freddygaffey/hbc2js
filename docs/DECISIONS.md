@@ -227,3 +227,47 @@ level-of-detail and node collapsing — both specified in spec 25 §5 — before
 reaching for a different renderer. A whole-graph view would reopen this
 decision, and would need its own spec first.
 
+
+## D29 — The Stage-3 UI is built to specs 19–21, not to the MVP spec; their recommendations are ratified (2026-09-05, Fred)
+
+Fred, 2026-09-05 07:20: *"Why are you using the MVP spec? I meant the final
+one. The MVP was just because I didn't have lots of usage. Now I've got lots of
+usage — use the real one from now on."*
+
+That instruction ratifies the **recommendations** of the three investigations
+that spec 22 had only defaulted past for the MVP:
+
+- **spec 19 §3 Option A** — a local web app served by one Node process over a
+  thin HTTP/JSON projection of `McpResources`/`McpTools`, with the six-layer
+  test stack of §2. The wire is **HTTP/JSON**, not MCP (Option D); `ui/src/api.ts`
+  is one table, so the MCP-as-wire option stays swappable. Co-hosting the MCP
+  binding in the same process is deferred, not adopted.
+- **spec 20 §3 stack** — React 19 + Vite, Radix, Tailwind-as-token-plumbing,
+  CodeMirror 6, React Flow + dagre (D28), TanStack Table + Virtual,
+  react-resizable-panels, Playwright. Two substitutions made during the MVP are
+  ratified as built rather than reversed: **no shadcn/ui** (Radix primitives
+  plus a hand-rolled `ui/src/components/primitives.tsx`, which already is
+  "components as source you own"), and **no react-arborist** (TanStack Virtual
+  plus own tree state, which spec 20 §2.5 itself allows). Token format is
+  `ui/theme.json` → preset JSON → CSS vars → Tailwind `@theme inline` — a
+  superset of spec 20 §4.4's "Tailwind config is the token layer", because it
+  is runtime-switchable and gate-lintable. The token lint is a **hard** gate
+  failure, as it already is.
+- **spec 21 §3** — the append-only `log/` is the change feed and the in-process
+  `wrote(seq, shardIds)` bus is a zero-latency doorbell over it (never a
+  replacement); worktrees (or scratch copies) for `recompile_edit` sandboxes and
+  version comparison only, never for annotations/findings, which spec 18 §7
+  already made contention-free.
+
+What this decision does **not** decide, because it needs Fred's own eye: the
+art-direction seed and reference set (spec 20 §1.5/§1.4), visual-baseline
+approval (the existing golden rule), whether `recompile_edit` may be driven from
+the UI and with which sandbox (spec 17 §13 fenced it to the owner twice), and
+the first-run information hierarchy (spec 20 §1.6). Those four, and only those
+four, are `docs/specs/26-ui-full-ide.md` §4.
+
+The build plan that executes this decision is **`docs/specs/26-ui-full-ide.md`**
+(ten landings; contract-affecting first, then the token layer, then
+user-visible value, then the missing test layers, then the heavy/risky, then
+workspace polish). Spec 22's §1 table of MVP defaults is retired by it row by
+row (spec 26 §1).
