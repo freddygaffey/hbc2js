@@ -4,6 +4,7 @@
   "Ctrl-Shift-N": "annotate.finding",
   "F12": "navigate.definition",
   "Shift-F12": "navigate.xrefs",
+  "Ctrl-Shift-S": "navigate.strings",
   "Ctrl-P": "project.palette",
   "Ctrl-F": "project.search",
   "Alt-Left": "navigate.back",

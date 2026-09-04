@@ -120,6 +120,50 @@ export type WhoCalls = Bounded<XrefEdge> & { readonly unknownInScope: number };
 /** `xref/calls-from/{fn}`. */
 export type CallsFrom = Bounded<XrefEdge>;
 
+/** A `strings.json` entry, verbatim (`src/artifact/schema.ts`'s
+ *  `StringRow`) — either the literal value or, for a string over 4 KB, a
+ *  head + hash instead of a silent truncation (§2.3a). */
+export type StringValue =
+  | { readonly sid: number; readonly v: string }
+  | { readonly sid: number; readonly len: number; readonly sha256: string; readonly head: string };
+
+/** One row of `xref/string`'s mode=exact `uses` (`string-uses.jsonl`). No
+ *  name/file/line — the server does not inline a NeighborRef onto this row
+ *  the way `XrefEdge` does (see docs/UI.md, "Strings & globals (xref)"). */
+export interface StringUseSite {
+  readonly sid: number;
+  readonly fn: number;
+  readonly role: string;
+  readonly n: number;
+}
+
+/** `GET /api/xref/string?mode=exact&key=<sid>`. */
+export interface StringExact {
+  readonly value: StringValue | undefined;
+  readonly uses: Bounded<StringUseSite>;
+}
+
+/** One row of `GET /api/xref/string?mode=substring|regex&key=`. */
+export interface StringGrepRow {
+  readonly sid: number;
+  readonly head: string;
+  readonly uses: number;
+}
+
+export type StringGrep = Bounded<StringGrepRow>;
+
+/** One row of `GET /api/xref/global?name=`. Like `StringUseSite`, no name —
+ *  `file`/`line` are the OWNING FUNCTION's range, not a per-site position. */
+export interface GlobalUse {
+  readonly fn: number;
+  readonly access: string;
+  readonly n: number;
+  readonly file: string | null;
+  readonly line: number | null;
+}
+
+export type GlobalUses = Bounded<GlobalUse>;
+
 /** `module/{id}` — McpResources.module(). */
 export interface ModuleInfo {
   readonly deps: readonly number[];

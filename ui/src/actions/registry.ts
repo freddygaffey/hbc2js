@@ -21,6 +21,7 @@ import { api } from "../api.ts";
 import type { FnSummary } from "../contracts.ts";
 import { foldActive, unfoldActive } from "../listing/fold-store.ts";
 import { openDisasm } from "../panes/disasm-store.ts";
+import { setStringsPrefill } from "../panes/strings-store.ts";
 
 export const registry = createStandardRegistry();
 
@@ -158,6 +159,10 @@ export const actionApi: ActionApi = {
   showXrefs: (target) => {
     if (target.fn !== undefined) select({ kind: "fn", fn: target.fn });
     setRightPanel("xrefs");
+  },
+  showStrings: (target) => {
+    if (target.kind === "string" && target.name !== undefined) setStringsPrefill(target.name);
+    setRightPanel("strings");
   },
   search: () => focusSearch(),
   openPalette: () => setPaletteOpen(true),

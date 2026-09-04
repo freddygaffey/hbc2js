@@ -326,4 +326,43 @@ test.describe("hbc2js UI shell smoke", () => {
     });
     expect(maxLineSeen).toBeGreaterThan(totalLines - 50);
   });
+
+  // Spec 22 §3 "xref panels … strings/globals" (ui/src/panes/StringsPane.tsx):
+  // reach the Strings tab via the palette (proving `navigate.strings` is a
+  // real registry action, not a hard-coded button), search, expand a hit to
+  // its uses, jump to one, and confirm the centre pane followed the jump.
+  // "e" is a single common letter, robust across both the fixture bundle
+  // and the live rig's real app code — the same trick the function-search
+  // smoke test uses (some string somewhere has an "e" in it).
+  test("Strings tab: search, expand a hit, jump to a use, centre pane follows", async ({ page }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+
+    await page.keyboard.press((process.platform === "darwin" ? "Meta" : "Control") + "+k");
+    await expect(page.getByPlaceholder("Run a command")).toBeVisible({ timeout: SHORT_WAIT });
+    await page.getByPlaceholder("Run a command").fill("string uses");
+    await page.getByText("Find string uses…", { exact: true }).click();
+
+    const search = page.getByTestId("search-strings");
+    await expect(search).toBeVisible({ timeout: WAIT });
+    await search.fill("e");
+
+    const hit = page.locator("[data-sid]").first();
+    await expect(hit).toBeVisible({ timeout: WAIT });
+    await hit.click();
+
+    const use = page.locator("[data-fn]").first();
+    await expect(use).toBeVisible({ timeout: WAIT });
+    const fnId = await use.getAttribute("data-fn");
+    expect(fnId).not.toBeNull();
+    await use.click();
+
+    // Confirm the jump landed: the Context tab (same fn selection every
+    // other navigation surface uses) reports the fn we clicked.
+    await page.getByRole("tab", { name: "Context" }).click();
+    const fnLabel = page.locator("span.w-28", { hasText: /^fn$/ });
+    await expect(fnLabel).toBeVisible({ timeout: WAIT });
+    const fnValue = fnLabel.locator("xpath=following-sibling::span[1]");
+    await expect(fnValue).toHaveText(String(fnId), { timeout: WAIT });
+  });
 });

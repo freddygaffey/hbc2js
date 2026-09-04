@@ -39,6 +39,10 @@ export interface ActionApi {
   recordFinding(target: Selection): void | Promise<void>;
   gotoFn(fn: number): void | Promise<void>;
   showXrefs(target: Selection): void | Promise<void>;
+  /** Spec 22 §3: switch the right pane to the Strings/Globals xref window,
+   *  pre-filling its search from `target` when it is a `"string"` selection
+   *  (a clicked string literal) — otherwise just opens the window empty. */
+  showStrings(target: Selection): void | Promise<void>;
   search(query?: string): void | Promise<void>;
   openPalette(): void | Promise<void>;
   markReviewed(target: Selection): void | Promise<void>;
@@ -134,6 +138,12 @@ export function standardActions(): Action[] {
       group: "navigate",
       when: hasIdentifierTarget,
       run: (ctx) => ctx.api.showXrefs(ctx.selection),
+    },
+    {
+      id: "navigate.strings",
+      title: "Find string uses…",
+      group: "navigate",
+      run: (ctx) => ctx.api.showStrings(ctx.selection),
     },
     {
       id: "navigate.nextFn",

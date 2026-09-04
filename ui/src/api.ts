@@ -7,7 +7,7 @@
 import type {
   CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
-  SourceText, WhoCalls, Bounded, LocalsListing, LineMap,
+  SourceText, WhoCalls, Bounded, LocalsListing, LineMap, StringExact, StringGrep, GlobalUses,
 } from "./contracts.ts";
 import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
@@ -44,6 +44,14 @@ export interface Api {
   logTail(since: number): Promise<LogTail>;
   searchFunctions(query: string, cursor?: number): Promise<SearchPage<FunctionMatch>>;
   searchSource(query: string, cursor?: number): Promise<SearchPage<SourceMatch>>;
+  /** `GET /api/xref/string?mode=substring|regex&key=` — the Strings window's
+   *  search (spec 22 §3, docs/UI.md "Strings & globals (xref)"). */
+  xrefStringSearch(mode: "substring" | "regex", pattern: string): Promise<StringGrep>;
+  /** `GET /api/xref/string?mode=exact&key=<sid>` — expanding one search hit
+   *  to its uses. */
+  xrefStringUses(sid: number): Promise<StringExact>;
+  /** `GET /api/xref/global?name=` — the Globals sub-view. */
+  xrefGlobal(name: string): Promise<GlobalUses>;
 }
 
 export class ApiError extends Error {
@@ -89,6 +97,9 @@ export const httpApi: Api = {
   logTail: (since) => get(`/log/tail`, { since }),
   searchFunctions: (query, cursor) => get(`/search/functions`, { q: query, cursor }),
   searchSource: (query, cursor) => get(`/search/source`, { q: query, cursor }),
+  xrefStringSearch: (mode, pattern) => get(`/xref/string`, { mode, key: pattern }),
+  xrefStringUses: (sid) => get(`/xref/string`, { mode: "exact", key: sid }),
+  xrefGlobal: (name) => get(`/xref/global`, { name }),
 };
 
 export const api: Api = USING_MOCK ? mockApi : httpApi;

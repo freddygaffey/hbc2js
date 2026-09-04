@@ -11,6 +11,7 @@ import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../
 import { keymap } from "../actions/registry.ts";
 import { select, useSelection } from "../state/selection.ts";
 import { WorkersPane } from "./WorkersPane.tsx";
+import { StringsPane } from "./StringsPane.tsx";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -86,6 +87,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
         <Tabs.List className="flex w-full gap-1">
           <Tabs.Trigger value="context" className={tabClass}>Context</Tabs.Trigger>
           <Tabs.Trigger value="xrefs" className={tabClass}>Xrefs</Tabs.Trigger>
+          <Tabs.Trigger value="strings" className={tabClass}>Strings</Tabs.Trigger>
           <Tabs.Trigger value="findings" className={tabClass}>Findings</Tabs.Trigger>
           <Tabs.Trigger value="package" className={tabClass}>Package</Tabs.Trigger>
           <Tabs.Trigger value="workers" className={tabClass}>AI</Tabs.Trigger>
@@ -133,6 +135,13 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
             {(callees.data?.rows ?? []).map((e) => <XrefRow key={`out-${e.fn}`} edge={e} dir="out" />)}
           </>
         )}
+      </Tabs.Content>
+
+      {/* spec 22 §3: strings/globals xref window — not gated on `hasFn`,
+          unlike Xrefs/Package, since a string/global search is not about
+          the currently-selected function. */}
+      <Tabs.Content value="strings" className={bodyClass}>
+        <StringsPane />
       </Tabs.Content>
 
       <Tabs.Content value="findings" className={bodyClass}>

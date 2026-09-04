@@ -392,6 +392,12 @@ and stops no events, so right-clicks reach the annotate track's menu.
   honest truncation bar beyond that. No graph view, no worker/jobs rail
   bullet applies here (the AI tab landed separately, see "AI workers"
   below); no further Playwright smoke gaps known.
+- **Strings & globals xref** landed (see "Strings & globals (xref)" below):
+  a Strings tab in the right pane searches the string table and global
+  reads, and jumps to a use. The one remaining gap is server-side: neither
+  route inlines a use's function name (`fn:<n>` unless the client's own
+  function catalogue happens to have it cached) — noted in that section as
+  a queued follow-up, not worked around by changing the route.
 
 ## Actions, keymap, context menu, annotate (wave 2, track 2)
 
@@ -585,6 +591,50 @@ Anything unrecognised falls back to the raw `op` and JSON `detail` rather
 than throwing — verified directly against the live Service NSW project
 server (`seq 1`–`4`: `init`, `rebuild-index {functions:43384,...}`,
 `annotate {kind:"name"}`, `annotate {kind:"comment"}`).
+
+## Strings & globals (xref)
+
+Spec 22 §3's "xref panels … strings/globals": a **Strings** tab in the right
+pane (`ui/src/panes/RightPane.tsx`, `ui/src/panes/StringsPane.tsx`), next to
+Xrefs — not the bottom pane. The bottom pane is the activity/log feed (one
+kind of content, a live append-only stream); a string/global search is a
+query surface like Xrefs and Context, and it needs the same jump-to-function
+navigation those already have, so it lives where they live rather than
+introducing a second navigation surface in a different part of the layout.
+
+**Strings.** A search box (`aria-label="search strings"`,
+`data-testid="search-strings"`) with a substring/regex mode toggle
+(substring default), debounced 250ms (`useDebouncedValue`, `ui/src/hooks.ts`)
+against `GET /api/xref/string?mode=substring|regex&key=` (`useStringGrep`).
+Each result row (`sid · head · uses`, `data-sid` on the row) is honest about
+the API's cap: a `"N of TOTAL rows (truncated)"` line, same pattern the
+Xrefs tab uses for `callers`/`callees`. Clicking a row expands it in place —
+`mode=exact` (`useStringUses`) lists its uses (function, role, count); a use
+row (`data-fn` on the row, same attribute the module tree puts on every
+function row) jumps to that function via `select({kind:"fn", fn})`
+(`ui/src/state/selection.ts`), the same navigation call `RightPane.tsx`'s
+`XrefRow` already uses — the jump list (back/forward) picks it up for free,
+no separate "navigation action" needed beyond calling `select`.
+
+**Globals.** A second, smaller search under the same tab: a global's name
+against `GET /api/xref/global?name=` (`useGlobalUses`), same row/jump
+treatment, plus `file:line` (the owning function's range — spec 17 §1/§14:
+site-level global positions are not materialised).
+
+**Reachable everywhere.** `navigate.strings` ("Find string uses…") is an
+ordinary `src/ui-core/actions.ts` registry action — palette, context menu (on
+a `"string"`-kind selection, e.g. a clicked string literal, which pre-fills
+the search via `ui/src/panes/strings-store.ts`) and a chord in all three
+keymap presets (`Ctrl-Shift-S` default, `gs` vim, `Ctrl-Alt-S` ghidra).
+
+**API gap.** `StringUseSite` (`xref/string` mode=exact's `uses` rows) and
+`GlobalUse` (`xref/global`'s rows) carry only `fn` — unlike `XrefEdge`,
+neither is enriched with the callee's name/size the way
+`McpResources.inlineEdges` enriches `who-calls`/`calls-from` (`src/mcp/
+resources.ts`). `StringsPane.tsx` works around it client-side (best-effort
+`fn -> name` lookup off the already-fetched function catalogue, falling back
+to `fn:<n>`) rather than blocking on it; a proper fix is inlining a
+`NeighborRef` onto both rows server-side, queued rather than done here.
 
 ## AI workers (the "AI" tab)
 

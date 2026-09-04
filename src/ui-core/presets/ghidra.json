@@ -2,5 +2,6 @@
   "L": "annotate.rename",
   "G": "project.search",
   ";": "annotate.comment",
-  "Ctrl-Shift-F": "navigate.xrefs"
+  "Ctrl-Shift-F": "navigate.xrefs",
+  "Ctrl-Alt-S": "navigate.strings"
 }

@@ -14,6 +14,7 @@ function stubApi(): ActionApi {
     recordFinding: noop,
     gotoFn: noop,
     showXrefs: noop,
+    showStrings: noop,
     search: noop,
     openPalette: noop,
     markReviewed: noop,

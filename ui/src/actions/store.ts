@@ -15,7 +15,7 @@ export interface DialogState {
   readonly selection: Selection;
 }
 
-export type RightPanel = "context" | "xrefs" | "findings" | "package" | "workers";
+export type RightPanel = "context" | "xrefs" | "strings" | "findings" | "package" | "workers";
 
 export interface ActionsState {
   readonly dialog: DialogState;

@@ -1,6 +1,7 @@
 {
   "gd": "navigate.definition",
   "gr": "navigate.xrefs",
+  "gs": "navigate.strings",
   "gc": "annotate.comment",
   "cr": "annotate.rename",
   "cf": "annotate.finding",

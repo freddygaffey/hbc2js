@@ -9,7 +9,20 @@ import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listin
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
   LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
+  StringExact, StringGrep, GlobalUses,
 } from "./contracts.ts";
+
+/** Delays echoing `value` by `ms` of no further change — the Strings/Globals
+ *  search inputs (spec 22 §3) use this so every keystroke does not fire an
+ *  `/api/xref/*` request. */
+export function useDebouncedValue<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
 
 export const LOG_POLL_MS = 1000;
 
@@ -70,6 +83,27 @@ export const useFindings = (): UseQueryResult<Bounded<ResolvedFinding>> =>
 
 export const useLeads = (): UseQueryResult<LeadsResult> =>
   useQuery({ queryKey: ["leads"], queryFn: () => api.leads() });
+
+/** `xref/string` mode=substring|regex — the Strings tab's search. Skipped
+ *  when `pattern` is empty, same gate `useSearchFunctions` uses. */
+export const useStringGrep = (mode: "substring" | "regex", pattern: string): UseQueryResult<StringGrep> =>
+  useQuery({
+    queryKey: ["xref-string-grep", mode, pattern],
+    queryFn: () => api.xrefStringSearch(mode, pattern),
+    enabled: pattern.length > 0,
+  });
+
+/** `xref/string` mode=exact — expanding one Strings-tab hit to its uses. */
+export const useStringUses = (sid: number | undefined): UseQueryResult<StringExact> =>
+  useQuery({
+    queryKey: ["xref-string-exact", sid],
+    queryFn: () => api.xrefStringUses(sid as number),
+    enabled: sid !== undefined,
+  });
+
+/** `xref/global` — the Globals sub-view. */
+export const useGlobalUses = (name: string): UseQueryResult<GlobalUses> =>
+  useQuery({ queryKey: ["xref-global", name], queryFn: () => api.xrefGlobal(name), enabled: name.length > 0 });
 
 /** Rows kept in memory by {@link useLog} — the bottom pane never needs the
  *  full session history, and an unbounded array under a live feed is a

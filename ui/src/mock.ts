@@ -6,7 +6,7 @@ import type { Api } from "./api.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
-  SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry,
+  SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry, StringExact, StringGrep, GlobalUses,
 } from "./contracts.ts";
 import type { ModuleSource } from "./contracts.ts";
 import type { FunctionListPage, FunctionListRow, ModuleEntry, ModuleListPage } from "./listing/wire.ts";
@@ -131,6 +131,30 @@ const FINDING: ResolvedFinding = {
   status: "open", valid: true, refs: [{ ref: { ref: "fn:7", role: "sink" }, resolved: true }],
 };
 
+/** A handful of fake strings.json entries — enough for a substring/regex
+ *  search to have something to find, and for two of them to have more than
+ *  one use so the "expand a hit" flow has a real list to show. */
+const MOCK_STRINGS: readonly { sid: number; v: string }[] = [
+  { sid: 100, v: "licence.pub" },
+  { sid: 101, v: "https://api.example.com/v1/licence" },
+  { sid: 102, v: "AsyncStorage" },
+  { sid: 103, v: "token" },
+  { sid: 104, v: "verifySignature failed" },
+];
+
+const MOCK_STRING_USES: readonly { sid: number; fn: number; role: string; n: number }[] = [
+  { sid: 100, fn: 0, role: "literal", n: 2 },
+  { sid: 100, fn: 3, role: "property-get", n: 1 },
+  { sid: 101, fn: 5, role: "call-arg-literal", n: 1 },
+  { sid: 103, fn: 3, role: "literal", n: 3 },
+  { sid: 103, fn: 11, role: "property-put", n: 1 },
+];
+
+const MOCK_GLOBALS: readonly { fn: number; access: string; n: number }[] = [
+  { fn: 0, access: "get", n: 3 },
+  { fn: 5, access: "set", n: 1 },
+];
+
 /** The file view: every function of a module concatenated, with the line
  *  ranges the real `/api/module/{id}/source` reports. */
 function moduleSourceFor(id: number): ModuleSource {
@@ -226,4 +250,22 @@ export const mockApi: Api = {
     rows: [{ fn: 0, name: "validateLicence", file: "mod0/index.js", line: 3, text: `  // match for ${query}` }],
     total: 1, truncated: false, nextCursor: null,
   }),
+  xrefStringSearch: (mode, pattern): Promise<StringGrep> => {
+    const re = mode === "regex" ? new RegExp(pattern) : new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const uses = new Map<number, number>();
+    for (const u of MOCK_STRING_USES) uses.set(u.sid, (uses.get(u.sid) ?? 0) + u.n);
+    const hits = MOCK_STRINGS.filter((s) => re.test(s.v)).map((s) => ({ sid: s.sid, head: s.v, uses: uses.get(s.sid) ?? 0 }));
+    return delay({ rows: hits, total: hits.length, truncated: false });
+  },
+  xrefStringUses: (sid): Promise<StringExact> => {
+    const value = MOCK_STRINGS.find((s) => s.sid === sid);
+    const rows = MOCK_STRING_USES.filter((u) => u.sid === sid);
+    return delay({ value, uses: { rows, total: rows.length, truncated: false } });
+  },
+  xrefGlobal: (name): Promise<GlobalUses> => {
+    const rows = name.length === 0 ? [] : MOCK_GLOBALS.map((g) => ({
+      ...g, file: MODULE_BY_ID.get(FN_BY_ID.get(g.fn)?.module ?? 0)?.file ?? null, line: 12,
+    }));
+    return delay({ rows, total: rows.length, truncated: false });
+  },
 };
