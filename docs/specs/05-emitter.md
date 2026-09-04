@@ -794,10 +794,53 @@ without the hook. `tests/gate/emit/line-map.test.ts` asserts exactly that over
 the whole v96 construct corpus, so no golden, no `expected.txt` and no
 equivalence verdict can move because the map exists.
 
-One documented gap: statements inside an **inline function expression** are not
-mapped. That form prints into a separate buffer (`render()`'s own `"func"`
-case), so a mark taken there would index the wrong array; collection is
-suppressed for its duration. Same gap, same reason, as `onFunctionRange`'s.
+**Inline function expressions** (`useEffect(function(){…})`,
+`module.exports = function(){…}`, a generator's resume dispatcher — the
+dominant React Native idiom) need one more step, because `render()`'s own
+`"func"` case prints its body into a *separate* array whose text is then
+spliced into the middle of an enclosing `out` entry: a mark taken there would
+index the wrong array, and the line the function's `{` lands on depends on how
+much of the enclosing expression printed before it, which no local computation
+can know. Until 2026-09-04 those statements were simply unmapped.
+
+The mechanism that maps them, without guessing:
+
+1. While a hook is live, the inline `func` case collects its body's marks
+   against its **own** array and converts them to lines *relative to its own
+   text* (line 1 is the `function … (…) {` header, so `out[0]` starts on line
+   2). It pushes them as one record and returns its text prefixed with
+   `\uE000<record id, base 36>\uE001` — a private-use **sentinel** containing
+   no newline, so it shifts no line count and no other measurement.
+2. `printProgram`'s post-pass already walks `out` once to build the prefix sum.
+   The same walk finds each sentinel, reads off the absolute line it is sitting
+   on (`lineStart[i]` plus the newlines seen so far inside that entry),
+   **removes** it, and rebases the record's rows onto that line.
+3. The returned text is therefore byte-identical with and without the hook —
+   the property `tests/gate/emit/line-map.test.ts` asserts over the whole v96
+   construct corpus, and the reason the sentinel is stripped rather than chosen
+   to be invisible.
+
+Nested inline functions compose for free: a child's sentinel travels upwards
+*inside* its parent's text and is resolved by the same single top-level scan,
+so an inline function inside an inline function inside a statement needs no
+recursion and no parent-relative arithmetic. Each row keeps the `fn` its
+statement's origin already carried — the **inner** function's Hermes index,
+whose offsets restart at 0 (§16.1) — so no row is ever attributed to the
+enclosing function by accident. A record whose sentinel is found twice, or not
+at all (a rendered string the printer discarded), is dropped rather than
+guessed at.
+
+Cost when no hook is set: none. No sentinel is inserted (`inlineRecords` is
+`undefined`, and the inline `func` case takes exactly the code path it had
+before the sentinel existed) and no scan is done.
+
+`onFunctionRange` falls out of the same record: an inline function expression
+now reports its own range (when `emitModule` gave it the `_fnN` name
+`ranges.jsonl` keys on — an anonymous one gets no row, since a range naming
+nothing is not a usable fact) and so does every statement-level `function`
+declaration nested inside its body. Its end line is the line its closing brace
+is on, which for an inline function is shared with the rest of the enclosing
+statement (`});`).
 
 ### 16.3 Serving it
 
@@ -824,13 +867,24 @@ truncated map would be a *wrong* map for the lines it dropped.
 
 `tests/gate/emit/line-map.test.ts` measures mapped rows over non-blank rendered
 lines and fails if it drops below a floor. Measured when this section landed
-(2026-09-04): **0.6408** over the whole `rn-template-0.72` bundle, 0.6286 over
-the first 600 functions (the sample the gate uses, for speed), 0.6761 over
-`02-while-loop`, 0.7667 over `04-for-loop-basic`. Floors are 0.60 and 0.65.
-They are **raised** as coverage improves and never lowered.
+(2026-09-04, after §16.2's inline-function mapping landed the same day):
+**0.6432** over the whole `rn-template-0.72` bundle, 0.6286 over the first 600
+functions (the sample the gate uses, for speed), 0.5481 over the whole v96
+construct corpus, 0.6761 over `02-while-loop`, 0.7667 over
+`04-for-loop-basic`, 0.4650 over `23-generator-basic`. Floors are 0.61, 0.66,
+0.53 and 0.44. They are **raised** as coverage improves and never lowered.
+
+Inline-function mapping is what separates the two measurements taken that day:
+the construct corpus went 0.3832 → 0.5481 and `23-generator-basic` 0.1306 →
+0.4650, because a generator's whole state machine prints inside the resume-
+dispatcher closure, an inline function expression. `rn-template` moved only
+0.6408 → 0.6432: the UI renders one function per frame, and at that granularity
+most React Native closures are hoisted `function _fnN` siblings, already mapped.
 
 What is unmapped today, and why: closing braces and `else`/`} while` joins (no
 statement starts there); `let`/`var` hoisting blocks the emitter synthesises;
 runtime-helper preludes and the module IIFE; the generator resume dispatcher's
-own scaffolding; every statement inside an inline function expression (§16.2);
+own scaffolding; the header and closing brace of an inline function expression
+(no statement starts on either — its *body* is mapped, §16.2); an anonymous
+inline function's `onFunctionRange` row (§16.2);
 and any statement a stage-B pass built from scratch.

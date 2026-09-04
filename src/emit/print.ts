@@ -130,14 +130,16 @@ export interface PrintOptions {
    * start/end line *within this `printProgram` call's own returned text*
    * (the caller adds whatever header lines it prepends before the text it
    * writes to disk, e.g. `src/split/index.ts`'s module-comment line).
-   * Deliberately NOT invoked for the rarer inline function-*expression* form
-   * (loop-local closures, `src/emit/index.ts`'s `inlineFunctions` — printed
-   * via `render()`'s own `"func"` case, a separate, un-indexed text build):
-   * that form's start line depends on how much of its enclosing expression
-   * printed before it did, which this printer does not track today. Emitting
-   * a wrong range would violate the artifact format's truth rule (docs/specs/
-   * 10-artifact-format.md §0); omitting the row for those few functions does
-   * not — `ranges.jsonl` only ever states what was actually observed.
+   * Since §16.2's sentinel landed it is ALSO invoked for the inline
+   * function-*expression* form (loop-local closures, `src/emit/index.ts`'s
+   * `inlineFunctions` — printed via `render()`'s own `"func"` case, a
+   * separate text build spliced into the middle of an enclosing line), whose
+   * start line is recovered honestly from where that splice actually landed;
+   * its end line is the line its closing brace is on, shared with the rest of
+   * the enclosing statement (`});`). An ANONYMOUS inline function still gets
+   * no row: `ranges.jsonl` keys on the `_fnN` name, and a range naming nothing
+   * is not a fact a caller can use. `ranges.jsonl` only ever states what was
+   * actually observed (docs/specs/10-artifact-format.md §0's truth rule).
    */
   readonly onFunctionRange?: (name: string, startLine: number, endLine: number) => void;
   /**
@@ -168,6 +170,31 @@ let funcMarks: Array<{ readonly name: string; readonly startIdx: number; readonl
  *  same prefix-sum post-pass `funcMarks` uses). */
 let originMarks: Array<{ readonly idx: number; readonly origin: Origin }> | undefined;
 
+/** §16.2 — the inline-function-expression sentinel. An expression-level
+ *  `k:"func"` prints its body into its OWN array and is then spliced into the
+ *  middle of an enclosing `out` entry, so at collection time it cannot know
+ *  which physical line its `{` will land on. It therefore records its inner
+ *  marks as lines *relative to its own text* and prefixes that text with
+ *  `\uE000<id base-36>\uE001` — a private-use marker containing no newline, so
+ *  it perturbs no line count. `printProgram`'s post-pass finds each sentinel,
+ *  reads off the absolute line it sits on, rebases that record's marks onto it,
+ *  and STRIPS the sentinels before the text is returned. Nested inline
+ *  functions compose for free: a child's sentinel travels up inside its
+ *  parent's text and is resolved by the same single top-level scan. Inserted
+ *  only while a hook is live (`inlineRecords !== undefined`), so a hookless
+ *  print pays nothing and returns byte-identical text. */
+const SENTINEL_OPEN = "\uE000";
+const SENTINEL_CLOSE = "\uE001";
+
+interface InlineRecord {
+  readonly marks: ReadonlyArray<{ readonly relLine: number; readonly origin: Origin }>;
+  readonly ranges: ReadonlyArray<{ readonly name: string; readonly relStart: number; readonly relEnd: number }>;
+}
+
+/** Inline-function records for the `printProgram` call in flight, indexed by
+ *  the id written into the sentinel. `undefined` when no hook is set. */
+let inlineRecords: InlineRecord[] | undefined;
+
 function countNewlines(s: string): number {
   let n = 0;
   for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
@@ -179,24 +206,70 @@ export function printProgram(body: readonly Stmt[], opts: PrintOptions = { inden
   const savedJsx = jsxOutput;
   const savedMarks = funcMarks;
   const savedOrigins = originMarks;
+  const savedInline = inlineRecords;
+  const collecting = opts.onFunctionRange !== undefined || opts.onStmtLine !== undefined;
   jsxOutput = opts.jsx === true;
   funcMarks = opts.onFunctionRange !== undefined ? [] : undefined;
   originMarks = opts.onStmtLine !== undefined ? [] : undefined;
+  inlineRecords = collecting ? [] : undefined;
   try {
     for (const s of body) printStmt(s, 0, out, opts);
-    if ((funcMarks !== undefined && opts.onFunctionRange !== undefined) || (originMarks !== undefined && opts.onStmtLine !== undefined)) {
+    if (collecting) {
       // Prefix sum: `lineStart[i]` = 1-based physical line of `out[i]`'s
       // first character (§2.7's line-tracking hook, see `PrintOptions` doc).
+      // The same single scan resolves — and removes — every inline-function
+      // sentinel (§16.2), so the returned text is unchanged by the hook.
+      const records = inlineRecords!;
+      const sentinelLine: number[] = new Array(records.length).fill(0);
       const lineStart: number[] = new Array(out.length + 1);
       lineStart[0] = 1;
-      for (let i = 0; i < out.length; i++) lineStart[i + 1] = lineStart[i]! + 1 + countNewlines(out[i]!);
+      for (let i = 0; i < out.length; i++) {
+        const s = out[i]!;
+        let newlines: number;
+        if (records.length > 0 && s.indexOf(SENTINEL_OPEN) >= 0) {
+          const parts: string[] = [];
+          let pos = 0;
+          newlines = 0;
+          for (;;) {
+            const at = s.indexOf(SENTINEL_OPEN, pos);
+            if (at < 0) break;
+            const close = s.indexOf(SENTINEL_CLOSE, at + 1);
+            if (close < 0) break; // cannot happen: the pair is written together
+            const head = s.slice(pos, at);
+            parts.push(head);
+            newlines += countNewlines(head);
+            const id = Number.parseInt(s.slice(at + 1, close), 36);
+            // A record whose text was printed twice (or not at all) cannot be
+            // tied to one line: `-1` drops it rather than guess (truth rule).
+            sentinelLine[id] = sentinelLine[id] === 0 ? lineStart[i]! + newlines : -1;
+            pos = close + 1;
+          }
+          const tail = s.slice(pos);
+          parts.push(tail);
+          newlines += countNewlines(tail);
+          out[i] = parts.join("");
+        } else {
+          newlines = countNewlines(s);
+        }
+        lineStart[i + 1] = lineStart[i]! + 1 + newlines;
+      }
       if (funcMarks !== undefined && opts.onFunctionRange !== undefined) for (const m of funcMarks) opts.onFunctionRange(m.name, lineStart[m.startIdx]!, lineStart[m.endIdxExclusive - 1]!);
       if (originMarks !== undefined && opts.onStmtLine !== undefined) for (const m of originMarks) if (m.idx < out.length) opts.onStmtLine(lineStart[m.idx]!, m.origin);
+      // Inline-function rows last: a record's own lines are relative to its
+      // text, whose first line is the line its sentinel was found on.
+      for (let id = 0; id < records.length; id++) {
+        const base = sentinelLine[id]!;
+        if (base <= 0) continue;
+        const r = records[id]!;
+        if (opts.onStmtLine !== undefined) for (const m of r.marks) opts.onStmtLine(base + m.relLine - 1, m.origin);
+        if (opts.onFunctionRange !== undefined) for (const g of r.ranges) opts.onFunctionRange(g.name, base + g.relStart - 1, base + g.relEnd - 1);
+      }
     }
   } finally {
     jsxOutput = savedJsx;
     funcMarks = savedMarks;
     originMarks = savedOrigins;
+    inlineRecords = savedInline;
   }
   return out.join("\n") + "\n";
 }
@@ -451,23 +524,44 @@ function render(e: Expr): string {
       return jsxOutput ? renderJsx(e) : render(jsxToCall(e));
     case "func": {
       const out: string[] = [];
-      // §16: this body prints into a SEPARATE array, so a statement mark taken
-      // here would index the wrong buffer entirely. Suppress collection for the
-      // duration — the inline function-expression form is unmapped, exactly the
-      // gap `onFunctionRange` documents above and for the same reason (its start
-      // line depends on how much of the enclosing expression printed first,
-      // which this printer does not track). An empty row beats a wrong one.
+      const header = `function ${e.name ?? ""}(${paramList(e.params)}) {`;
+      // §16.2: this body prints into a SEPARATE array whose text is then
+      // spliced into the middle of an enclosing `out` entry, so a mark taken
+      // here cannot name a physical line. With no hook live there is nothing
+      // to collect and nothing to insert — the hookless path below is exactly
+      // the code that shipped before the sentinel existed.
+      if (inlineRecords === undefined) {
+        printBody(e.body, 1, out, { indent: "  " });
+        return `${header}\n${out.join("\n")}\n}`;
+      }
+      // With a hook live: collect this body's marks against its OWN array,
+      // convert them to lines relative to this function's own text (line 1 is
+      // `header`, so `out[0]` starts on line 2) and hand them to
+      // `printProgram`'s post-pass through a sentinel it can locate.
       const savedOrigins = originMarks;
       const savedFuncs = funcMarks;
-      originMarks = undefined;
-      funcMarks = undefined;
+      const mine: typeof originMarks = savedOrigins !== undefined ? [] : undefined;
+      const mineFuncs: typeof funcMarks = savedFuncs !== undefined ? [] : undefined;
+      originMarks = mine;
+      funcMarks = mineFuncs;
       try {
         printBody(e.body, 1, out, { indent: "  " });
       } finally {
         originMarks = savedOrigins;
         funcMarks = savedFuncs;
       }
-      return `function ${e.name ?? ""}(${paramList(e.params)}) {\n${out.join("\n")}\n}`;
+      const relStart: number[] = new Array(out.length + 1);
+      relStart[0] = 2;
+      for (let i = 0; i < out.length; i++) relStart[i + 1] = relStart[i]! + 1 + countNewlines(out[i]!);
+      const marks = (mine ?? []).filter((m) => m.idx < out.length).map((m) => ({ relLine: relStart[m.idx]!, origin: m.origin }));
+      const ranges = (mineFuncs ?? []).map((m) => ({ name: m.name, relStart: relStart[m.startIdx]!, relEnd: relStart[m.endIdxExclusive - 1]! }));
+      // …and this function's own range, when `emitModule` gave it the `_fnN`
+      // name `ranges.jsonl` keys on. An anonymous one gets no row: a range
+      // that names nothing is not a fact anybody can use.
+      if (typeof e.name === "string" && e.name.length > 0) ranges.push({ name: e.name, relStart: 1, relEnd: relStart[out.length]! });
+      const id = inlineRecords.length;
+      inlineRecords.push({ marks, ranges });
+      return `${SENTINEL_OPEN}${id.toString(36)}${SENTINEL_CLOSE}${header}\n${out.join("\n")}\n}`;
     }
   }
 }
