@@ -471,15 +471,88 @@ nothing to fix — a trace test written today would pass before and after any
 change. Recorded as leftover 6 with the exact precondition to watch for, rather
 than implemented speculatively.
 
+### Landing item 4: where a *joined* function goes (2026-09-05, later still)
+
+The 7 names above (`_fn13056` x5, `_fn15251`, `_fn15275`) were reported as a
+contradiction inside `src/cfg/env-graph.ts` — "`closureCreationSites` disagrees
+with the `closureEnvOf` lattice". Measured, it is not: the lattice and the site
+map agree, and neither is wrong. All three functions **are** in
+`closureEnvConflict`; they reach the copy builder, their chains align, and they
+are then taken by the `!touches` branch — report §3's `namesAgreeAcrossSites`
+join. `conflictResolved.add(f)` runs *before* that branch, so they leave the
+graph non-ambiguous, with a real `closureEnvOf`, and with no `closureCopies`
+entry. Measured on react-navigation-example-0.85.3 (`strictEnv:false`), exactly
+four functions take that branch:
+
+| fn | envs (chains) | env owners = creating functions | `closureEnvOf` |
+|---|---|---|---|
+| 11914 | `[2837]`, `[2838]` | 7872 | 2837 |
+| 13056 | `[3141,1939]`, `[3142,1939]`, `[4511,1939]`, `[4512,1939]`, `[4595,1939]`, `[4596,1939]` | 9235, 9244, 14791, 14793, 15338, 15340 | 3141 |
+| 15251 | `[4472,1403]`, `[4621,1403]` | 14225, 15474 | 4472 |
+| 15275 | `[4490,4042,2943,1511]`, `[4622,4042,2943,1511]` | 14397, 15479 | 4490 |
+
+So the defect is **placement, not duplication**. The join is sound about the
+*body* — nothing in the subtree names an environment the sites disagree about,
+so one body really is enough — but `src/emit/index.ts` then hosts that one body
+in `ownerFunction(closureEnvOf)`, i.e. beside whichever site the fixed point
+recorded first. fn#11914's sites are all in one function (7872), so it was
+already right; fn#13056's six sites are in six different functions, and the five
+that are not fn#9235 emit a `_fn13056` that fn#9235's declaration does not
+reach.
+
+The fix is one block in `src/emit/index.ts`, before orphan placement: a function
+with two or more distinct creation environments and no `closureCopies` entry is
+re-hosted at the **lowest common ancestor of its creating functions** (module
+level if there is none), reported as `W_JOINED_REHOSTED`. That host is legal for
+the body's own names for the same reason the join is legal: the only
+environments the body can name are the ones every chain shares, and each shared
+environment's owner is an ancestor of every site, hence of their LCA.
+Deliberately *not* done: giving these three copies like a genuine conflict.
+Their copies would be textually identical (that is what `!touches` means), so it
+would be six bodies where one does — and it would invert the standing assertion
+in `tests/gate/cfg/closure-copies.test.ts` that a joined function has no copies.
+
+| | isolated | unbound names | `_fn13056`/`15251`/`15275` | `_e4551_*` | 18-unaligned `_fn<n>` | new `_fn<n>` | bytes |
+|---|---|---|---|---|---|---|---|
+| item 3 above | 14 | 26 | 7 | 6 | 13 | 0 | 20,241,172 |
+| + LCA hosting | **10** | **22** | **0** | 6 | 13 | **3** | 20,247,457 |
+
+(Bytes rise because four bodies that were throwing stubs are now real bodies.)
+`MAX_STILL_AMBIGUOUS` is untouched at 18 — nothing in `src/cfg/**` changed.
+
+The 3 new names are the *same* residue item 1 recorded and its "reparent
+inwards" attempt failed on: `_fn15473`, `_fn15478`, `_fn14790` are each created
+inside the re-hosted function over an environment that function itself
+**captured**, so `closureEnvOf` parents them beside the old home and they do not
+travel with it. Each re-hosted function therefore trades *n* unbound site
+references for exactly one unbound child reference (5 -> 1 for fn#13056, 1 -> 1
+for fn#15251 and fn#15275). It is a net win here and never a loss on this
+bundle, but the rule is not cost-aware; leftover 7 below is to make a child
+whose every creation site is inside `f` travel with `f`, which needs the
+per-instance `parentOf` that item 1 already asks for.
+
+Control: `rn-template-0.72/index.android.hbc` (0 ambiguous, no joined function)
+at CLI defaults is `cmp`-identical against the same working tree with only the
+`src/emit/index.ts` block removed — **5,000,113 bytes**. Regression test:
+`bucketAFunctions(false)` (two sibling environments with the same parent, two
+creating functions, a body that reads neither) in
+`tests/gate/emit/closure-copies.test.ts`, verified RED at `0952e04` in a
+detached worktree (fn#2 is stubbed, `E_UNBOUND_IDENT` on `_fn3`) and green
+after. Ratchets: `MAX_ISOLATED` 14 -> 10, `MAX_UNBOUND_NAMES` 26 -> 22.
+
 ### Remaining work after item 2
 
 0. **(2026-09-05, item 3)** Leftovers 1–3 below are superseded: 3 is fixed, and
    1 + 2 are *not* a placement defect — see "What the 26 remaining unbound names
    actually are" above. The live list is: leftover 4 (the 18 unaligned chains,
-   19 of the 26 names, needs Fred), the new graph bug (7 names: fn#13056,
-   fn#15251, fn#15275 are created with several aligned environments but the
-   lattice resolves a single one, so they are never duplicated), and leftover 6
-   (`closureNameAt` instance keying, unobservable today).
+   19 of the 26 names, needs Fred), leftover 6
+   (`closureNameAt` instance keying, unobservable today), and leftover 7. The
+   "new graph bug" (7 names: fn#13056, fn#15251, fn#15275, said to be created
+   with several aligned environments the lattice resolves to one) is neither new
+   nor a graph bug: they are report §3's *joined* functions and the bug was
+   where the emitter put the single body. Fixed — see "Landing item 4" above,
+   which leaves **leftover 7**: the one child per re-hosted function that stays
+   behind (3 names, `_fn14790`/`_fn15473`/`_fn15478`).
 
 1. **20 `_fn<n>`** — unchanged, and not a duplication defect: functions with no
    resolved creation environment at all (`_fn13056`, `_fn13838`…`_fn13844`,
@@ -521,3 +594,13 @@ than implemented speculatively.
    *remapped* by the enclosing instance — then the instances' bodies differ, the
    shared name binds to the wrong one, and this becomes real. See the addendum
    above.
+
+7. **3 `_fn<n>`, the child that stays behind** (item 4): when a *joined* function
+   is re-hosted at the LCA of its creation sites, a function it creates over an
+   environment it merely **captured** keeps its own `closureEnvOf` home beside
+   the old site and is no longer in scope — `_fn14790` (in fn#13056),
+   `_fn15473` (fn#15251), `_fn15478` (fn#15275). The narrow fix is to move a
+   child whose creation sites are *all* inside `f` along with `f`; the general
+   one is item 1's per-instance `parentOf`, since a duplicated `f` needs one
+   such child per copy (the whole-function version of that reparenting measured
+   worse — 79 -> 86 isolated — and is recorded in §5 above).

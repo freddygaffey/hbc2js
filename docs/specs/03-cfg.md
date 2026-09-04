@@ -691,17 +691,23 @@ environment created with an undefined parent has no parent.
   homes as that host has instances. The graph only records this; placing a copy
   per instance is the emitter's job (docs/specs/05-emitter.md §6, report §5
   "Landing item 2").
-* **`closureCreationSites` is a superset of what the lattice conflicts on, and
-  the difference is a known bug.** Copies are built from `closureEnvConflict`
-  only. On react-navigation-example fn#13056 has six recorded sites capturing
-  six distinct environments with *aligned* chains (`[3141, 1939]`,
-  `[3142, 1939]`, `[4511, …]`, …) and `closureEnvOf` is nonetheless the single
-  value 3141, so the function is not flagged ambiguous, gets no copies, and the
-  five non-chosen sites emit a `_fn13056` that copy 0's home does not have in
-  scope. fn#15251 and fn#15275 are the same shape. Anything reading
-  `closureEnvOf` to mean "this function has one creation environment" must treat
-  that as unproven until the two agree (report §5, "What the 26 remaining
-  unbound names actually are").
+* **A *joined* function has several creation environments and no copies, and
+  `closureEnvOf` names only one of them.** When every chain aligns but nothing
+  in the function's lexical subtree names an environment the sites disagree
+  about (`!touches`), the copies would be identical text, so the function is
+  resolved out of `closureEnvConflict` (`conflictResolved`) with one body,
+  `closureEnvOf` set to site 0's environment and **no `closureCopies` entry**.
+  On react-navigation-example that is fn#11914, fn#13056 (six sites, envs
+  `[3141, 1939]`, `[3142, 1939]`, `[4511, 1939]`, …), fn#15251 and fn#15275.
+  Consumers must therefore not read `closureEnvOf` as "the only environment this
+  function is created with" — `closureCreationSites` is the authority, and a
+  function with two or more distinct values there has one body that has to live
+  where *all* of them can see it. Placement is the emitter's job: it hosts a
+  joined function at the lowest common ancestor of its creating functions
+  (`W_JOINED_REHOSTED`, report §5 "Landing item 4"), not in
+  `ownerFunction(closureEnvOf)`, which is only site 0's home. This was reported
+  as a lattice/site-map contradiction; measured, the two agree and the bug was
+  the placement.
 * **Unequal chains stay ambiguous, by construction.** The remap is positional,
   so `chainOf(e).length !== chain0.length` abandons duplication for that
   function entirely; it keeps `closureEnvOf === null` and becomes an orphan for

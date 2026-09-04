@@ -217,6 +217,64 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     }
     return false;
   };
+  /** Ancestor-or-self chain of `f`, self first and outermost last; cycle-safe. */
+  const chainUp = (f: number): number[] => {
+    const out: number[] = [];
+    const seen = new Set<number>();
+    let cur: number | null = f;
+    while (cur !== null && !seen.has(cur)) {
+      seen.add(cur);
+      out.push(cur);
+      cur = parentOf.get(cur) ?? null;
+    }
+    return out;
+  };
+
+  // docs/reports/2026-09-05-ambiguous-closure-env.md §5 "Landing item 4" — a
+  // *joined* function's home. When several creation sites capture different but
+  // aligned environments and nothing in the function's lexical subtree can tell
+  // those environments apart, the env graph joins the sites instead of
+  // duplicating: one body, `closureEnvOf` kept, no `closureCopies` entry
+  // (`namesAgreeAcrossSites`, src/cfg/env-graph.ts). That single body went into
+  // the owner of `closureEnvOf`, i.e. beside whichever site the fixed point
+  // recorded first — so every OTHER site is a different function, which cannot
+  // see the declaration. On react-navigation that is `_fn13056` (six sites in
+  // six different creating functions), `_fn15251` and `_fn15275`: 7 of the 26
+  // remaining unbound names, and not a duplication defect but a placement one.
+  //
+  // The body names nothing the sites disagree about — that is exactly the
+  // precondition of the join — so it is correct at any host all the sites can
+  // see. The lowest common ancestor of the creating functions is the deepest
+  // such host, and it is never above the declarer of an environment the body
+  // does name: every site's chain contains those shared environments, so their
+  // owners are ancestors of every site and therefore of the LCA too.
+  {
+    const moves: [number, number | null][] = [];
+    for (const [f, sites] of envGraph.closureCreationSites) {
+      if (f === globalIndex || envGraph.closureCopies.has(f)) continue;
+      const home = parentOf.get(f) ?? null;
+      if (home === null) continue; // an orphan: the cost rule below owns it
+      if (new Set(sites.values()).size < 2) continue;
+      // Sites inside `f` itself see the declaration wherever it goes.
+      const creators = [...new Set([...sites.keys()].map((k) => Number(k.slice(0, k.indexOf(":")))))].filter((c) => c !== f && !isAncestor(f, c));
+      if (creators.length === 0 || creators.every((c) => isAncestor(home, c))) continue;
+      let common = chainUp(creators[0]!);
+      for (const c of creators.slice(1)) {
+        const up = new Set(chainUp(c));
+        common = common.filter((x) => up.has(x));
+      }
+      moves.push([f, common[0] ?? null]);
+    }
+    for (const [f, host] of moves) {
+      parentOf.set(f, host);
+      diagnostics.push({
+        severity: "info",
+        code: "W_JOINED_REHOSTED",
+        message: `function ${f} is created at sites in several functions over environments its body cannot tell apart; emitting it in ${host === null ? "module scope" : `fn#${host}`}, the lowest common ancestor of those sites`,
+        context: { functionIndex: f },
+      });
+    }
+  }
 
   // §6 "Function nesting" (placement, docs/BUGS.md 2026-09-04): an orphan used
   // to be emitted at MODULE level, outside the global function, where nothing

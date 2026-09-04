@@ -221,3 +221,44 @@ test("a copy that captured a loop-local environment is emitted at its creation s
   assert.match(bodyOf(code, "_fn3"), /_e1_0/, "copy 0 reads env 1's slot");
   assert.doesNotMatch(bodyOf(code, "_fn3"), /_e2_0/);
 });
+
+test("a joined function is emitted where every one of its creation sites can see it", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  // Report §5 "Landing item 4". fn#1 and fn#2 are siblings, each makes its own
+  // environment under the global one and creates fn#3 with it — aligned chains,
+  // two distinct environments — but fn#3's body reads no slot at all, so
+  // nothing in its subtree can tell the two apart and `src/cfg/env-graph.ts`
+  // JOINS the sites: one body, `closureEnvOf === 1`, no `closureCopies` entry
+  // (asserted in tests/gate/cfg/closure-copies.test.ts). That body used to be
+  // emitted inside fn#1, the owner of env 1, where fn#2's `_fn3` reference is
+  // unbound. On react-navigation that shape is `_fn13056` (six sites in six
+  // different functions), `_fn15251` and `_fn15275`.
+  const result = emitSynth(bucketAFunctions(false));
+  const code = result.code;
+
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").map((d) => d.message),
+    [],
+    "the site in fn#2 references a body hosted in fn#1, which fn#2 cannot see (report §5 item 4)",
+  );
+  assert.equal(result.stubbedFunctions, 0);
+
+  // Still ONE body — the join is not duplication.
+  assert.equal((code.match(/function _fn3\(/g) ?? []).length, 1, "a joined function is emitted once, not once per site");
+  assert.doesNotMatch(code, /_fn3__c/, "…and it has no per-creation-context copies to name");
+
+  // …hosted at the lowest common ancestor of the two creating functions, which
+  // here is the global function, and referenced from both sites.
+  assert.doesNotMatch(bodyOf(code, "_fn1"), /function _fn3\(/, "fn#1 is only one of the two sites; its body is not a home both can see");
+  assert.doesNotMatch(bodyOf(code, "_fn2"), /function _fn3\(/);
+  assert.match(bodyOf(code, "_fn1"), /=\s*_fn3;/, "fn#1's creation site still references it");
+  assert.match(bodyOf(code, "_fn2"), /=\s*_fn3;/, "and so does fn#2's");
+  assert.equal(
+    result.diagnostics.filter((d) => d.code === "W_JOINED_REHOSTED").length,
+    1,
+    "the move is reported: it is a placement decision, not a graph one",
+  );
+});
