@@ -39,7 +39,7 @@ TARGET=10000
 WALL_CAP_MIN=480   # whole-runner safety net; each driver invocation is also
                     # bounded by its own hard cap (spec §1.6, 2h/run)
 MIN_FREE_GB=15
-MAX_FINDS=200       # per-campaign raw-find cap (spec §1.4 step 3), enforced
+MAX_FINDS="${MAX_FINDS:-200}"  # per-campaign raw-find cap (env-overridable for long deb runs) (spec §1.4 step 3), enforced
                      # here since finds are relocated out of the repo tree
 
 while [ $# -gt 0 ]; do
