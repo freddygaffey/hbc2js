@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { parseM4 } from "../../support/m4.ts";
 import type { Op } from "../../support/synth-module.ts";
-import { bucketAFunctions, fakeFunction, graphOf, realCfg, travelFunctions } from "../../support/synth-module.ts";
+import { bucketAFunctions, fakeFunction, graphOf, mutualRecursionFunctions, realCfg, travelFunctions } from "../../support/synth-module.ts";
 import type { ModuleAnalysis } from "../../../src/cfg/types.ts";
 import type { HbcModule } from "../../../src/parse/types.ts";
 import { emitModule } from "../../../src/emit/index.ts";
@@ -145,4 +145,40 @@ test("a copy's children keep their own names — the copy's name renames the ins
   assert.ok(copy1.includes("function _fn5("), "fn#5's instance inside copy 1 was emitted under the wrong name");
   assert.doesNotMatch(copy1, /function _fn3__c1\(/, "a child of copy 1 was named after the copy, shadowing it inside its own body");
   assert.ok(bodyOf(result.code, "_fn3").includes("function _fn5("), "copy 0 must keep its own child too");
+});
+
+// ---------------------------------------------------------------------------
+// Report §5 "Landing item 2" — recursion GROUPS. `synth-module.ts`'s
+// `mutualRecursionFunctions` is react-navigation's `_fn12406`/`_fn12407` in
+// miniature: fn#3 and fn#4 create each other *and* themselves over an
+// environment one of them owns, so two of each function's four copies are
+// hosted *inside a member of the group*. Hosting those once, beside copy 0,
+// leaves them invisible to every other instance of the group — the 35 unbound
+// `_fn<n>__c<i>` names item 1 left behind.
+
+test("a copy hosted inside its own recursion group is emitted in every instance of that host", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  const result = emitSynth(mutualRecursionFunctions());
+  const code = result.code;
+
+  // fn#4's copy over env 2 lives in fn#2, far from copy 0 of fn#3/fn#4 (both in
+  // fn#1). Its body creates fn#3 and fn#4 over the environment IT owns, i.e.
+  // the copies hosted in fn#4 — which must therefore travel into this instance.
+  const inFn2 = bodyOf(code, "_fn4__c1");
+  assert.ok(inFn2.includes("function _fn3__c3("), "the OTHER group member's copy hosted in fn#4 is not inside this instance of fn#4, so its reference is unbound (report §5 item 2)");
+  assert.ok(inFn2.includes("function _fn4__c3("), "fn#4's own copy hosted in fn#4 is not inside this instance either");
+
+  // …and the recursion stops: a copy is never nested inside itself. The site
+  // that would do it is the self-reference its own declaration already binds.
+  assert.doesNotMatch(bodyOf(code, "_fn3__c2"), /function _fn3__c2\(/, "a copy hosted inside its own group nested inside itself; the `hosted` set is what must stop that");
+  assert.doesNotMatch(bodyOf(code, "_fn4__c3"), /function _fn4__c3\(/);
+
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED" || d.code === "W_AMBIGUOUS_CLOSURE_ENV" || d.code === "W_ORPHAN_FUNCTION").map((d) => `${d.code}: ${d.message}`),
+    [],
+  );
+  assert.equal(result.stubbedFunctions, 0);
 });

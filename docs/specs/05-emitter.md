@@ -230,6 +230,21 @@ instance exactly where it is. For the same reason a copy's `emitName` renames
 only that instance — never its children, which keep their own `_fn<n>` names.
 See docs/reports/2026-09-05-ambiguous-closure-env.md §5.
 
+**A copy hosted inside its own recursion group goes in every instance of that
+host.** Duplicated functions that create each other (or themselves) form a
+**recursion group**: the strongly connected components of the "creates" relation
+restricted to functions with copies (spec 03 §6.2). When a copy's environment is
+owned by a member of its own group, that host is itself multi-instance, and
+hosting the copy once — beside copy 0 — leaves every other instance of the group
+referring to a body it cannot see. Such a copy is therefore emitted inside
+*every* instance of its host, under that instance's composed remap. The
+recursion terminates on the set of group-copy names an enclosing instance
+already hoisted, which includes the instance's own name: the copy that would
+nest inside itself finds its own function declaration, and that is the right
+binding, because the site that would create it there is exactly the
+self-reference. Depth is bounded by the number of copies in the group. See the
+report's "Landing item 2".
+
 **`materialised` slots.** `const _env<id> = { s0: undefined, … };` in the owner,
 accesses become `_env<id>.s<slot>`, and any closure created with that env
 captures the object. Correct, uglier, and rare.

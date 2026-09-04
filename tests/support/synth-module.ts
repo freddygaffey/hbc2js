@@ -167,3 +167,38 @@ export function travelFunctions(): Map<number, readonly Op[]> {
 export function travel(): EnvGraph {
   return graphOf(travelFunctions());
 }
+
+/** `GetEnvironment rD, levels` — `levels` steps up from the closure's own
+ *  environment (v<=96 two-operand form). `selfEnv` is `levels = 0`. */
+export const outerEnv = (r: number, levels: number): Op => ({ name: "GetEnvironment", ops: [["reg", r], ["imm", levels]] });
+/** `CreateEnvironment rD, rParent, size` — the v>=97 form with an EXPLICIT
+ *  parent register, so the new environment need not hang off the creating
+ *  closure's own one. */
+export const mkEnvUnder = (dst: number, parent: number, size: number): Op => ({ name: "CreateEnvironment", ops: [["reg", dst], ["reg", parent], ["imm", size]] });
+
+/**
+ * A **recursion group** (report §5 "Landing item 2"): fn#3 and fn#4 create each
+ * other *and* themselves, so their copies are mutually referring. This is the
+ * shape of react-navigation's `_fn12406`/`_fn12407`, down to the environment:
+ * each of them creates an environment whose parent is its own *grandparent*
+ * (`GetEnvironment r, 1`), not the environment it captured, which is what keeps
+ * every copy's chain the same length — without that the group's inner copies
+ * would be unaligned and never duplicated at all.
+ *
+ * So fn#3 and fn#4 each have four creation contexts: env 1 (fn#1), env 2
+ * (fn#2), env 3 (owned by fn#3) and env 4 (owned by fn#4). The last two are
+ * hosted *inside a member of the group itself*, so they must be emitted inside
+ * every instance of that member — a copy hosted only beside copy 0 is invisible
+ * to every other copy, which is exactly the 35 unbound `_fn<n>__c<i>` names the
+ * report's item 1 left behind.
+ */
+export function mutualRecursionFunctions(): Map<number, readonly Op[]> {
+  const groupMember = (): readonly Op[] => [outerEnv(5, 1), mkEnvUnder(0, 5, 2), mkClosure(1, 0, 3), mkClosure(2, 0, 4), selfEnv(6), loadSlot(7, 6, 0), ret(7)];
+  return new Map<number, readonly Op[]>([
+    [0, [mkEnv(0), mkClosure(1, 0, 1), mkClosure(2, 0, 2), ret(1)]],
+    [1, [mkEnv(0), mkClosure(1, 0, 3), mkClosure(2, 0, 4), ret(1)]],
+    [2, [mkEnv(0), mkClosure(1, 0, 3), mkClosure(2, 0, 4), ret(1)]],
+    [3, groupMember()],
+    [4, groupMember()],
+  ]);
+}

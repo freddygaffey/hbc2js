@@ -331,6 +331,70 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
   }
   for (const l of createdIn.values()) l.sort((a, b) => a.fn - b.fn || (a.key < b.key ? -1 : 1));
 
+  // Report §5 "Landing item 2" — recursion GROUPS. Two duplicated functions are
+  // in the same group when each reaches the other through creation sites
+  // (Tarjan's SCCs over the "creates" relation restricted to duplicated
+  // functions; a function that creates itself is a group of one). react-navigation's
+  // `_fn12406`/`_fn12407` create each other AND themselves over an environment
+  // one of them owns, so the copy captured there is hosted *inside the group*:
+  // hosting it once, beside copy 0, leaves it invisible to every other instance
+  // of the group. `emitBody` hosts such a copy inside every instance instead.
+  const recursionGroupOf = new Map<number, number>();
+  {
+    const members = [...envGraph.closureCopies.keys()].sort((a, b) => a - b);
+    const duplicated = new Set(members);
+    const edgesOf = new Map<number, number[]>();
+    for (const f of members) {
+      const out = new Set<number>();
+      for (const site of createdIn.get(f) ?? []) if (duplicated.has(site.fn)) out.add(site.fn);
+      edgesOf.set(f, [...out].sort((a, b) => a - b));
+    }
+    const idx = new Map<number, number>();
+    const low = new Map<number, number>();
+    const onStack = new Set<number>();
+    const stack: number[] = [];
+    let counter = 0;
+    let nextGroup = 0;
+    // Iterative Tarjan: the recursion depth of the recursive form is the
+    // creation-site chain, which on a real bundle is thousands deep.
+    const run = (root: number): void => {
+      const work: { v: number; i: number }[] = [{ v: root, i: 0 }];
+      idx.set(root, counter), low.set(root, counter), counter++, stack.push(root), onStack.add(root);
+      while (work.length > 0) {
+        const frame = work[work.length - 1]!;
+        const succs = edgesOf.get(frame.v) ?? [];
+        if (frame.i < succs.length) {
+          const w = succs[frame.i++]!;
+          if (!idx.has(w)) {
+            idx.set(w, counter), low.set(w, counter), counter++, stack.push(w), onStack.add(w);
+            work.push({ v: w, i: 0 });
+          } else if (onStack.has(w)) low.set(frame.v, Math.min(low.get(frame.v)!, idx.get(w)!));
+          continue;
+        }
+        work.pop();
+        if (work.length > 0) {
+          const parent = work[work.length - 1]!.v;
+          low.set(parent, Math.min(low.get(parent)!, low.get(frame.v)!));
+        }
+        if (low.get(frame.v) === idx.get(frame.v)) {
+          const scc: number[] = [];
+          for (;;) {
+            const w = stack.pop()!;
+            onStack.delete(w);
+            scc.push(w);
+            if (w === frame.v) break;
+          }
+          // A one-member SCC is a group only when the member creates itself.
+          if (scc.length > 1 || (edgesOf.get(frame.v) ?? []).includes(frame.v)) {
+            const g = nextGroup++;
+            for (const m of scc) recursionGroupOf.set(m, g);
+          }
+        }
+      }
+    };
+    for (const f of members) if (!idx.has(f)) run(f);
+  }
+
   /** `outer ∘ inner`: a copy nested inside another copy's subtree. */
   const composeRemap = (outer: ReadonlyMap<number, number> | undefined, inner: ReadonlyMap<number, number>): ReadonlyMap<number, number> => {
     if (outer === undefined) return inner;
@@ -453,9 +517,12 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     /** The name of THIS instance only. It must never reach a child: a copy's
      *  children keep their own `_fn<n>` names (see `childCtx`). */
     readonly name?: string;
-    /** This instance lies inside a named copy's subtree (it is not itself the
-     *  copy). Carries the one thing `name` used to be read for downstream. */
-    readonly inCopy?: true;
+    /** The `_fn<n>__c<i>` names an ENCLOSING instance already hoisted for this
+     *  instance's recursion group (report §5 "Landing item 2"). A group copy in
+     *  here is in scope already and is not emitted again; for the copy that
+     *  hosts itself the set contains its own name, which is what terminates
+     *  the recursion — that self-reference is bound by its own declaration. */
+    readonly hosted?: ReadonlySet<string>;
   }
   const ROOT_CTX: CopyCtx = { path: "", remap: undefined };
   const active = new Set<number>();
@@ -494,8 +561,32 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       // a child emitted `function _fn<f>__c<i>()` for the child too, so every
       // reference to the child inside the copy stayed `_fn<child>` and was
       // unbound (and, worse, shadowed the copy's own name inside its body).
-      const childCtx: CopyCtx = ctx.name === undefined ? ctx : { path: ctx.path, remap: ctx.remap, inCopy: true };
-      const inCopySubtree = ctx.name !== undefined || ctx.inCopy === true;
+      // The extra creation-context copies whose captured environment this
+      // function owns, chosen BEFORE anything is emitted because the children
+      // below are hoisted into the same body and must see them.
+      const inherited = new Set<string>(ctx.hosted ?? []);
+      if (ctx.name !== undefined) inherited.add(ctx.name);
+      const extrasHere: { readonly fn: number; readonly copy: ClosureCopy; readonly name: string }[] = [];
+      for (const extra of extraCopies.get(index) ?? []) {
+        const name = copyNameOf(extra.fn, extra.copy.index);
+        const group = recursionGroupOf.get(index);
+        const sameGroup = extra.fn === index || (group !== undefined && group === recursionGroupOf.get(extra.fn));
+        if (sameGroup) {
+          // Report §5 "Landing item 2": a copy whose host is a member of its
+          // own recursion group is hosted inside EVERY instance of that host,
+          // not once beside copy 0 — the other instances (and the group's other
+          // members' instances) reference it too and copy 0's body is not in
+          // their scope. `inherited` stops it: once the name is in scope the
+          // reference resolves, and the copy that would nest inside itself
+          // finds its own declaration.
+          if (inherited.has(name)) continue;
+        } else if (active.has(extra.fn)) continue;
+        extrasHere.push({ fn: extra.fn, copy: extra.copy, name });
+      }
+      const hosted: ReadonlySet<string> = new Set([...inherited, ...extrasHere.map((e) => e.name)]);
+      // `name` renames the *instance*, not its subtree: passing `ctx` itself to
+      // a child emitted `function _fn<f>__c<i>()` for the child too (below).
+      const childCtx: CopyCtx = { path: ctx.path, remap: ctx.remap, hosted };
       const kids = childrenOf.get(index) ?? [];
       const hoisted: Stmt[] = [];
       const inlined = new Map<number, Stmt>();
@@ -504,22 +595,16 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
         if (inlineFunctions.has(child)) inlined.set(child, body);
         else hoisted.push(body);
       }
-      // The extra creation-context copies whose captured environment this
-      // function owns. They travel with their whole lexical subtree, under the
-      // composed remap, and are hoisted like any other child.
-      for (const extra of extraCopies.get(index) ?? []) {
-        // A self-recursive closure (`f` creates `f` again over an environment
-        // `f` itself owns) hosts its own copies. They go inside the copy-0
-        // instance, as siblings, so every copy can see every other; emitting
-        // them again inside each copy would not terminate.
-        const selfHosted = extra.fn === index && !inCopySubtree;
-        if (active.has(extra.fn) && !selfHosted) continue;
+      // They travel with their whole lexical subtree, under the composed
+      // remap, and are hoisted like any other child.
+      for (const extra of extrasHere) {
         pendingCopies.delete(`${extra.fn}#${extra.copy.index}`);
         hoisted.push(
           emitOne(extra.fn, {
             path: `${ctx.path}/${index}c${extra.fn}_${extra.copy.index}`,
             remap: composeRemap(ctx.remap, extra.copy.envRemap),
-            name: copyNameOf(extra.fn, extra.copy.index),
+            name: extra.name,
+            hosted,
           }),
         );
       }
@@ -535,7 +620,9 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       // — that is exactly what the reverted "reparent the function index
       // inward" attempt (report §5) got wrong.
       if (ctx.path !== "") {
-        const travelled = new Set<string>();
+        // Seeded with the copies hoisted just above: travelling one again at
+        // the same level is a pure duplicate declaration, not a shadow.
+        const travelled = new Set<string>(extrasHere.map((e) => e.name));
         for (const site of createdIn.get(index) ?? []) {
           const g = site.fn;
           if (g === index || active.has(g)) continue;
@@ -553,7 +640,8 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
             emitOne(g, {
               path: `${ctx.path}/${index}t${g}_${copy?.index ?? 0}`,
               remap: isExtra ? composeRemap(ctx.remap, copy.envRemap) : ctx.remap,
-              ...(name !== fnName(g) ? { name } : { inCopy: true as const }),
+              hosted,
+              ...(name !== fnName(g) ? { name } : {}),
             }),
           );
         }

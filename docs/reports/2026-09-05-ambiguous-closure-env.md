@@ -265,3 +265,113 @@ Remaining work, in order:
    the copy-0 instance, which is in scope for all of them; if a case ever
    appears where copy 0 is not emitted, those copies are lost. There is no
    test for that path because no input produces it.
+
+### Landing item 2: recursion groups (2026-09-05, later still)
+
+Item 1's largest residual family, the 35 `_fn<n>__c<i>`, is one shape — and it
+is not only the mutually recursive pair. Measured on the same bundle and options
+(`strictEnv: false`), macOS / node 25:
+
+| | isolated | unbound names | `_fn<n>` | `_fn<n>__c<i>` | `_e<env>_<slot>` | bytes |
+|---|---|---|---|---|---|---|
+| item 1 above | 32 | 63 | 20 | 35 | 8 | 17,923,866 |
+| + recursion groups | **16** | **28** | 20 | **0** | 8 | 20,240,933 |
+
+(Item 1's table records 17,923,967 for the same tree; the 101-byte difference is
+another agent's `src/runtime/helpers.ts` edit in the shared working tree, not
+this change. The control below is what rules out a byte effect from this one.)
+
+**The shape.** A duplicated function's copies are hosted in the owner of the
+environment each captured. When that owner is the duplicated function *itself*,
+or another duplicated function that creates it, the host has many instances and
+the copy was emitted inside only one of them:
+
+```
+fn 12406  copy 0 env 2973 @ fn 8486    copy 1..3 env 2975..2977 @ fn 8492
+          copy 4 env 4090 @ fn 12406   copy 5 env 4091 @ fn 12407
+fn 12407  the same six environments, the same six hosts
+```
+
+`_fn12406`'s body creates `_fn12406`, `_fn12407` and `_fn12408` over an
+environment it makes itself (env 4090) — and, critically, makes it with its
+*grandparent* as the parent (`GetEnvironment r, 1`), not with the environment it
+captured, which is the only reason all six chains have the same length and the
+copies exist at all. So copies 4 and 5 of both functions are hosted *inside the
+group*, and all the other instances (`_fn12406__c1`, `_fn12407__c4`, …)
+reference a copy sitting in a body they cannot see. The same shape with a single
+function is `_fn13523` (copy 3 hosted in fn#13523), `_fn15373` (copy 2),
+`_fn13078` (copy 3) and `_fn11751` (copies 2 and 3): §5 item 3's self-recursion
+rule was meant to cover those, but it fired only for the copy-0 instance and
+only when that instance was not itself inside some other copy, so on this bundle
+it fired for none of them.
+
+**The rule.** `src/emit/index.ts` computes the **recursion groups**: Tarjan's
+SCCs over the "creates" relation (`closureCreationSites` inverted by creating
+function) restricted to duplicated functions, a self-loop making a group of one.
+A copy whose host is a member of its own group is emitted inside **every
+instance** of that host, under that instance's composed remap, instead of once
+beside copy 0. What makes that terminate is the `hosted` set threaded down
+`CopyCtx`: the group-copy names an enclosing instance already hoisted, plus the
+instance's own name. A copy is skipped when its name is already in that set, so
+the copy that would nest inside itself finds its own function declaration
+instead — the correct binding, since the site that would create it there is the
+self-reference. Depth is bounded by the group's copy count (3 levels for
+12406/12407). The same set seeds the per-copy travel loop's `travelled`, which
+had been emitting a second, identical declaration of a copy already hoisted at
+the same level.
+
+Copy 0 and every non-duplicated function are untouched. Control: a bundle with
+no ambiguity at all, `rn-template-0.72/index.android.hbc` (4,199 functions,
+0 ambiguous), is **`cmp`-identical**, 5,000,434 bytes at CLI defaults, against
+the same tree with only `src/emit/index.ts` reverted — measured in a detached
+worktree at `83f1863` so the other agents' uncommitted edits sit on both sides.
+With `closureCopies` empty, `extraCopies` is empty, so no group is ever formed
+and no instance carries a `hosted` set.
+
+Sweep ratchets moved down: `MAX_ISOLATED` 32 -> 16 and `MAX_UNBOUND_NAMES`
+63 -> 28. No other floor moved. Bytes grow 13% because a group's inner copies
+are now emitted once per instance of their host; that is the cost of giving
+every instance the bodies it references.
+
+Regression test: `tests/support/synth-module.ts`'s `mutualRecursionFunctions`
+(fn#3 and fn#4 create each other *and* themselves over an environment made under
+the grandparent — 12406/12407 in miniature) plus the emit test named for it in
+`tests/gate/emit/closure-copies.test.ts`. Verified RED at `83f1863` in a
+detached worktree (the other group member's copy is missing from every instance
+of its host, and four functions are stubbed `E_UNBOUND_IDENT`) and green after.
+
+### Remaining work after item 2
+
+1. **20 `_fn<n>`** — unchanged, and not a duplication defect: functions with no
+   resolved creation environment at all (`_fn13056`, `_fn13838`…`_fn13844`,
+   `_fn13914`…`_fn14002`, `_fn15251`, `_fn15275`), hosted by
+   `src/emit/placement.ts`'s cost rule where the referencing site cannot see
+   them.
+2. **6 `_e4551_*`** — the same family seen from the environment side, and not
+   the "8 `_e2192_0`" item 1 recorded (the count was right, the name was not:
+   it is 2 × `_e2192_0` + 3 × `_e4551_0` + 2 × `_e4551_1` + 1 × `_e4551_2`).
+   fn#14984, fn#14985 and fn#14986 have `closureEnvOf === null` — the graph says
+   they capture nothing — yet their bodies read slots of envs 4551/4552/4553,
+   owned by fn#14983/14984/14986. They are orphans, placed by cost, and the cost
+   rule cannot make all of those reads visible at once.
+3. **2 `_e2192_0`** — `_fn10396__c1` / `_fn10397__c1`. These *are* copies: copy 1
+   captures env 2192 (owner fn#3497) and its remap `2190 -> 2192` turns the
+   body's `_e2190_0` read into `_e2192_0`. Env 2192's slot 0 exists in the graph
+   with **one writer and no readers** (env 2190's slot 0 has two readers), so
+   the `let _e2192_0` is never emitted: `ownedEnvSlots` / `envDeclaringFunction`
+   choose where an environment's declaration goes from the *recorded* accesses,
+   every one of which resolved against copy 0's chain. The fix is to push each
+   copy's `envRemap` through the access set before choosing declaration sites,
+   so a remapped read declares its variable.
+4. The 18 unaligned residual (item 2 of the previous list): chains of different
+   length have no positional remap. They need either chain alignment by *owner
+   function* rather than by position, or an explicit decision to leave them as
+   `W_AMBIGUOUS_CLOSURE_ENV` forever, recorded in `docs/DECISIONS.md`. **This
+   one needs Fred**, not an implementer.
+5. Inside a copy, `closureNameAt` is still keyed by creation *site*, not by
+   instance: a site creating a closure over an environment the instance *owns*
+   names the same copy in every instance. Scope-wise that now always resolves
+   (the group rule puts the named copy in scope); semantically the inner
+   recursion levels of a group collapse onto the outermost one. No unbound name
+   reports it, so it needs a trace/equivalence test on such a function rather
+   than a ratchet.

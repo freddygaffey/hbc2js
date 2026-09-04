@@ -683,6 +683,14 @@ environment created with an undefined parent has no parent.
   creating function and offset in the key and why it must stay exported even
   though `closureEnvOf` is enough for ordinary placement
   (docs/specs/05-emitter.md §6, report §5 item 1).
+* **Copies can create each other.** Restricted to the functions that have
+  copies, the "creates" relation (`closureCreationSites` inverted by creating
+  function) has strongly connected components: two duplicated functions that
+  create each other, or one that creates itself. A copy captured over an
+  environment such a group *owns* is hosted inside the group, so it has as many
+  homes as that host has instances. The graph only records this; placing a copy
+  per instance is the emitter's job (docs/specs/05-emitter.md §6, report §5
+  "Landing item 2").
 * Merge at joins: equal values meet to themselves, everything else to `unknown`.
 * Iterate to a fixed point over RPO. Loops converge in ≤ 2 passes with this
   lattice; cap at `blocks.length` and bail to `unknown` if not.
