@@ -107,6 +107,35 @@ centre pane says "analysing the bundle (first request after start is slow)"
 instead of a bare "loading listing…" (`ui/src/panes/CenterPane.tsx`'s
 `useSlowLoading`).
 
+## First paint (what the load path may cost)
+
+Measured 2026-09-05 against the live Service NSW rig, written up in
+`docs/reports/2026-09-05-ui-first-paint.md`: a refresh showed nothing for
+42 s. The server is ONE single-threaded Node process, so **any route that
+blocks for seconds blocks every other route behind it** — `/api/segregation`,
+`/api/findings` and `/api/log/tail` each cost 0–3 ms of server time and still
+landed 41 s late, queued behind one `/api/leads`. Two rules follow, and they
+are what the perf regression test (`ui/e2e/perf.spec.ts`) enforces:
+
+* **The load path is `modules` + `segregation` + `findings` + `log/tail`, and
+  nothing else.** A pane that wants an expensive resource asks for it when
+  the analyst opens it, not on mount: `useLeads(enabled)` is fetched only
+  once the left pane's Leads tab has been opened (`ui/src/panes/
+  LeftPane.tsx`), exactly as `useWhoCallsByName(fn, enabled)` already was for
+  the Xrefs tab. Adding an unconditional `useX()` to a mounted pane is how
+  this bug happens again.
+* **A whole-bundle scan is computed once per artifact, in this layer.**
+  `/api/modules` reads `ix_modules`/`ix_module_deps` alone (not
+  `loadIndexRowsFromDb`, which materialises every index to return one:
+  3.15 s → 17 ms on NSW) and caches per artifact `mtime:size`; `/api/leads`
+  and `/api/leads/security-sinks` go through `listLeads`, memoised per
+  `ArtifactService` (`src/ui-server/list.ts`). Both are safe because the
+  artifact indices are `renderIndependent` — no annotation a write tool
+  records can change them.
+
+The HTTP contract is unchanged by all of this: same routes, same bodies,
+byte for byte.
+
 ## Theme: one config, tokens only
 
 `ui/theme.json` is the single config:

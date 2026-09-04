@@ -88,7 +88,13 @@ function useOpenSet(initial: readonly string[]): [ReadonlySet<string>, (key: str
 
 export function LeftPane(): ReactNode {
   const modules = useModules();
-  const leads = useLeads();
+  // The Leads tab's data is the single most expensive read the server has
+  // (see `useLeads`), so the tab is what asks for it: `leadsWanted` latches
+  // true the first time the analyst opens the tab and stays true, so
+  // switching back to Modules does not throw the answer away.
+  const [tab, setTab] = useState<string>("modules");
+  const [leadsWanted, setLeadsWanted] = useState(false);
+  const leads = useLeads(leadsWanted);
   const sel = useSelection();
   const query = useQueryText();
   const hits = useSearchFunctions(query);
@@ -400,7 +406,14 @@ export function LeftPane(): ReactNode {
     ));
 
   return (
-    <Tabs.Root defaultValue="modules" className="flex h-full min-w-0 flex-col bg-surface">
+    <Tabs.Root
+      value={tab}
+      onValueChange={(v) => {
+        setTab(v);
+        if (v === "leads") setLeadsWanted(true);
+      }}
+      className="flex h-full min-w-0 flex-col bg-surface"
+    >
       <PaneHeader>
         <Tabs.List className="flex w-full gap-1">
           <Tabs.Trigger value="modules" className={tabClass}>Modules</Tabs.Trigger>
@@ -443,7 +456,7 @@ export function LeftPane(): ReactNode {
             ))}
           </div>
         ))}
-        {leads.data === undefined && <Empty>loading leads…</Empty>}
+        {leads.data === undefined && <Empty>scanning the bundle for leads…</Empty>}
       </Tabs.Content>
     </Tabs.Root>
   );

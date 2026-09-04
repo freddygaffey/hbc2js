@@ -93,8 +93,16 @@ export const usePackageId = (mod: number): UseQueryResult<PackageIdResult> =>
 export const useFindings = (): UseQueryResult<Bounded<ResolvedFinding>> =>
   useQuery({ queryKey: ["findings"], queryFn: () => api.findings() });
 
-export const useLeads = (): UseQueryResult<LeadsResult> =>
-  useQuery({ queryKey: ["leads"], queryFn: () => api.leads() });
+/** `GET /api/leads` is a whole-bundle scan — 37.7 s cold on Service NSW,
+ *  and (Node being single-threaded) it head-of-line-blocks every other
+ *  route while it runs, which is what made a page refresh show nothing for
+ *  41 s (docs/reports/2026-09-05-ui-first-paint.md). It is therefore *not*
+ *  fetched on mount: the left pane passes `enabled` only once the analyst
+ *  opens the Leads tab. `staleTime: Infinity` because leads are derived
+ *  from the artifact, which does not change while the server runs — one
+ *  scan per session at most, never a refetch on remount. */
+export const useLeads = (enabled = true): UseQueryResult<LeadsResult> =>
+  useQuery({ queryKey: ["leads"], queryFn: () => api.leads(), enabled, staleTime: Infinity });
 
 /** `xref/string` mode=substring|regex — the Strings tab's search. Skipped
  *  when `pattern` is empty, same gate `useSearchFunctions` uses. */

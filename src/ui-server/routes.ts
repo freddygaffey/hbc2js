@@ -13,7 +13,7 @@
 import type { McpResources } from "../mcp/resources.ts";
 import type { McpTools } from "../mcp/tools.ts";
 import { Hbc2jsError } from "../errors.ts";
-import { listModules, listFunctions, moduleSource, invalidateModuleSourceCache } from "./list.ts";
+import { listModules, listFunctions, listLeads, moduleSource, invalidateModuleSourceCache } from "./list.ts";
 import { segregation } from "./segregation.ts";
 import { WORKER_ROUTES, type WorkersCtx } from "./workers-routes.ts";
 
@@ -362,8 +362,11 @@ const BASE_ROUTES: readonly Route[] = [
       return ok(ctx.resources.native({ ...(fn !== undefined ? { fn } : {}), ...(all !== undefined ? { all } : {}) }));
     },
   },
-  { method: "GET", re: /^\/api\/leads$/, handler: (_p, _req, ctx) => ok(ctx.resources.leads()) },
-  { method: "GET", re: /^\/api\/leads\/security-sinks$/, handler: (_p, _req, ctx) => ok(ctx.resources.securitySinks()) },
+  // `listLeads`, not `ctx.resources.leads()`: the scan is 37.7 s cold on
+  // Service NSW and blocks every other route while it runs, so this layer
+  // caches it per artifact (see `list.ts`). Same answer, computed once.
+  { method: "GET", re: /^\/api\/leads$/, handler: (_p, _req, ctx) => ok(listLeads(ctx.resources)) },
+  { method: "GET", re: /^\/api\/leads\/security-sinks$/, handler: (_p, _req, ctx) => ok(listLeads(ctx.resources)) },
   {
     method: "GET",
     re: /^\/api\/findings$/,

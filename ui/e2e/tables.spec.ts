@@ -10,7 +10,7 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
 const WAIT = process.env["PW_BASE_URL"] !== undefined ? 90_000 : 10_000;
-const API = process.env["PW_API_BASE"] ?? "http://127.0.0.1:7341";
+const API = process.env["PW_API_BASE"] ?? `http://127.0.0.1:${process.env["HBC2JS_E2E_PORT_BASE"] ?? "7341"}`;
 
 interface ObjectTablesResult {
   readonly tables: readonly {

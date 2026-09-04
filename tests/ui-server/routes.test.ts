@@ -19,7 +19,8 @@ import { writeSplitResult } from "../../src/split/write.ts";
 import { dbSetTag } from "../../src/projdb/annotations.ts";
 import { McpContext } from "../../src/mcp/context.ts";
 import { handle, tailLog, type UiServerCtx } from "../../src/ui-server/routes.ts";
-import { listModules, listFunctions } from "../../src/ui-server/list.ts";
+import { listModules, listFunctions, listLeads } from "../../src/ui-server/list.ts";
+import { openProjectDbReadonly, loadIndexRowsFromDb } from "../../src/projdb/artifact-read.ts";
 import { startUiServer } from "../../src/ui-server/server.ts";
 import { repoRoot } from "../support/paths.ts";
 import { cachedSplitProject as splitProject } from "../support/decompiled.ts";
@@ -191,6 +192,38 @@ test("GET /api/modules lists every module (own list layer, not resources.ts)", a
   const body = r.json as { rows: readonly unknown[]; total: number };
   assert.ok(body.rows.length > 0);
   assert.equal(body.total, body.rows.length);
+});
+
+// -- UI bur 1 (first paint): the two reads the shell's load path pays for --
+//
+// `/api/modules` used to go through `loadIndexRowsFromDb`, which materialises
+// every index (functions, calls, strings, string uses, globals, native,
+// ranges) to hand back one of them: 3.15 s per request on Service NSW, on
+// the critical path of the first paint (docs/reports/
+// 2026-09-05-ui-first-paint.md). `listModules` now queries `ix_modules` /
+// `ix_module_deps` directly and caches per artifact stamp. This test pins
+// the rewrite to the loader it replaced — if the two ever disagree, the
+// narrow query dropped or reshaped a row.
+test("listModules's narrow module query equals loadIndexRowsFromDb's modulesIndex (bur 1)", () => {
+  const db = openProjectDbReadonly(outDir);
+  let viaFullIndex;
+  try {
+    viaFullIndex = loadIndexRowsFromDb(db).modulesIndex.modules;
+  } finally {
+    db.close();
+  }
+  assert.deepEqual(listModules(outDir).rows, viaFullIndex);
+  // Cached (same artifact, unchanged on disk) — the second call returns the
+  // very object the first one built, not a re-read.
+  assert.equal(listModules(outDir), listModules(outDir));
+});
+
+test("listLeads answers resources.leads() once per artifact (bur 1)", () => {
+  const first = listLeads(resources);
+  assert.deepEqual(first, resources.leads());
+  // Identity, not just equality: the whole-bundle scan (37.7 s cold on
+  // Service NSW) must not run twice for one artifact.
+  assert.equal(listLeads(resources), first);
 });
 
 test("GET /api/functions pages {fn,name,size,module}", async () => {

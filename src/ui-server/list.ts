@@ -7,14 +7,16 @@
 // "add a small list method to your own layer, NOT to resources.ts"). Both
 // stay honest about the two artifact backings (`.hbcproj` DB vs `index/
 // *.jsonl`) the same way `ArtifactService`'s own constructor does, without
-// duplicating its private parsing: DB-backed reuses `loadIndexRowsFromDb`
-// (already exported by `src/projdb/artifact-read.ts`), JSONL-backed reads
-// the same `index/modules.json` file `ArtifactService` reads.
-import { readFileSync } from "node:fs";
+// duplicating its private parsing: DB-backed queries the same `ix_modules`/
+// `ix_module_deps` tables `loadIndexRowsFromDb` (`src/projdb/artifact-read.ts`)
+// builds its `modulesIndex` from, JSONL-backed reads the same
+// `index/modules.json` file `ArtifactService` reads.
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ArtifactService, FnSummary } from "../artifact/service.ts";
+import type { McpResources } from "../mcp/resources.ts";
 import type { ModuleEntry, ModulesIndex } from "../artifact/schema.ts";
-import { hasProjectDb, openProjectDbReadonly, loadIndexRowsFromDb } from "../projdb/artifact-read.ts";
+import { hasProjectDb, openProjectDbReadonly, dbPath } from "../projdb/artifact-read.ts";
 import type { ProjectService } from "../project/service.ts";
 
 /** Every module the artifact knows about — own cap (never widens anything
@@ -30,20 +32,100 @@ export interface ModuleListResult {
   readonly truncated: boolean;
 }
 
-export function listModules(artifactDir: string): ModuleListResult {
-  let modules: readonly ModuleEntry[];
-  if (hasProjectDb(artifactDir)) {
-    const db = openProjectDbReadonly(artifactDir);
-    try {
-      modules = loadIndexRowsFromDb(db).modulesIndex.modules;
-    } finally {
-      db.close();
-    }
-  } else {
-    const raw = JSON.parse(readFileSync(join(artifactDir, "index", "modules.json"), "utf8")) as ModulesIndex;
-    modules = raw.modules;
+/** Cache entry for {@link listModules}, stamped with the artifact file it was
+ *  read from so a re-decompiled (or written-to) project is never served from
+ *  a stale answer — see {@link listModules}'s own note. */
+interface ModuleListCacheEntry {
+  readonly stamp: string;
+  readonly result: ModuleListResult;
+}
+
+const modulesCache = new Map<string, ModuleListCacheEntry>();
+
+/** `mtime:size` of the file the module list comes from — cheap enough to
+ *  `stat` on every request, and it changes whenever the artifact does.
+ *  A file we cannot stat stamps as `"none"`, which is stable, so a missing
+ *  file still errors in the read below rather than here. */
+function fileStamp(file: string): string {
+  try {
+    const s = statSync(file);
+    return `${s.mtimeMs}:${s.size}`;
+  } catch {
+    return "none";
   }
-  return { rows: modules.slice(0, CAP_MODULES), total: modules.length, truncated: modules.length > CAP_MODULES };
+}
+
+/** Only `ix_modules` + `ix_module_deps`. `loadIndexRowsFromDb` (the obvious
+ *  reuse, and what this used to call) materialises EVERY index — functions,
+ *  calls, strings, string uses, globals, native, ranges — to hand back one
+ *  of them; on Service NSW that is 3.15 s per `/api/modules`, on the
+ *  critical path of the shell's first paint (docs/reports/
+ *  2026-09-05-ui-first-paint.md). The two queries below are the module half
+ *  of that function, verbatim in shape, so the rows are identical. */
+function modulesFromDb(artifactDir: string): readonly ModuleEntry[] {
+  const db = openProjectDbReadonly(artifactDir);
+  try {
+    const rows = db.prepare("SELECT id, file, factory_fn, segment FROM ix_modules ORDER BY id").all() as {
+      id: number;
+      file: string;
+      factory_fn: number | null;
+      segment: number;
+    }[];
+    const depsById = new Map<number, number[]>();
+    for (const d of db.prepare("SELECT id, dep FROM ix_module_deps ORDER BY id, ord").all() as { id: number; dep: number }[]) {
+      const list = depsById.get(d.id);
+      if (list === undefined) depsById.set(d.id, [d.dep]);
+      else list.push(d.dep);
+    }
+    return rows.map((m) => ({ id: m.id, file: m.file, factoryFn: m.factory_fn, deps: depsById.get(m.id) ?? [], segment: m.segment }));
+  } finally {
+    db.close();
+  }
+}
+
+/** The module catalogue, cached for as long as the artifact file it was read
+ *  from is untouched. `ModulesIndex` is `renderIndependent: true` — no name,
+ *  comment, tag or finding a write tool records can change a row here — so
+ *  the only thing that can invalidate it is the artifact itself changing,
+ *  which the `mtime:size` stamp catches (a write to `project.hbcproj` bumps
+ *  its mtime, so a rename over-invalidates rather than under-invalidates;
+ *  the re-read is two small queries now, not the whole index). */
+export function listModules(artifactDir: string): ModuleListResult {
+  const fromDb = hasProjectDb(artifactDir);
+  const file = fromDb ? dbPath(artifactDir) : join(artifactDir, "index", "modules.json");
+  const stamp = fileStamp(file);
+  const hit = modulesCache.get(artifactDir);
+  if (hit !== undefined && hit.stamp === stamp) return hit.result;
+  const modules: readonly ModuleEntry[] = fromDb
+    ? modulesFromDb(artifactDir)
+    : (JSON.parse(readFileSync(file, "utf8")) as ModulesIndex).modules;
+  const result: ModuleListResult = {
+    rows: modules.slice(0, CAP_MODULES),
+    total: modules.length,
+    truncated: modules.length > CAP_MODULES,
+  };
+  modulesCache.set(artifactDir, { stamp, result });
+  return result;
+}
+
+/** `/api/leads` — `computeLeads` is a whole-bundle scan (37.7 s cold, 9.4 s
+ *  warm on Service NSW) and Node's server is single-threaded, so one call
+ *  head-of-line-blocks every other route behind it: on the rig it was the
+ *  reason `/api/segregation`, `/api/findings` and `/api/log/tail` all landed
+ *  41 s after the page asked for them. The answer depends only on the
+ *  artifact (no project annotation feeds it), and the server holds one
+ *  `ArtifactService` for its whole life, so computing it once per artifact
+ *  is sound. The left pane no longer asks for it until the Leads tab is
+ *  opened (`ui/src/panes/LeftPane.tsx`), so the first call is now paid by an
+ *  analyst who asked for leads, not by every page load. */
+const leadsCache = new WeakMap<ArtifactService, ReturnType<McpResources["leads"]>>();
+
+export function listLeads(resources: McpResources): ReturnType<McpResources["leads"]> {
+  const hit = leadsCache.get(resources.artifact);
+  if (hit !== undefined) return hit;
+  const result = resources.leads();
+  leadsCache.set(resources.artifact, result);
+  return result;
 }
 
 /** `/api/functions?cursor=&limit=` — every function `{fn, name, size,
