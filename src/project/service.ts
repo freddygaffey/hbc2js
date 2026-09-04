@@ -26,6 +26,7 @@ import { loadProjectStore, saveProjectStore, type ProjectStore } from "./io.ts";
 import { dbPath } from "../projdb/artifact-read.ts";
 import { openProjectDb } from "../projdb/db.ts";
 import { loadProjectStoreFromDb } from "../projdb/project-read.ts";
+import { exportWriteEffect } from "../projdb/export.ts";
 import {
   dbAddComment,
   dbSetBookmark,
@@ -173,6 +174,13 @@ export class ProjectService {
    *  its own handles either. */
   private readonly db: DatabaseSync | null;
 
+  /** `.hbcproj`'s own directory (== `artifactDir`, `dbPath`'s convention,
+   *  `src/projdb/artifact-read.ts`) — where `analysis/`+`log/` live (§3).
+   *  Only meaningful when `db !== null`; passed to `exportWriteEffect`
+   *  (`src/projdb/export.ts`, §6 step 3 / §R4 step 2) by every DB-backed
+   *  write verb below, right after its own write commits. */
+  private readonly projectDir: string;
+
   /** `artifactDir` is the SAME directory `artifact` was built from (its
    *  `project/` subdirectory is this store, §2.2); `artifact` is the shared
    *  warm index (§3.2's "shares the warm index"). Bootstraps an empty store
@@ -186,6 +194,7 @@ export class ProjectService {
    *  refusal, never a silent drop. */
   constructor(artifactDir: string, artifact: ArtifactService) {
     this.artifact = artifact;
+    this.projectDir = artifactDir;
     this.storeDir = join(artifactDir, "project");
     const bundleSha256 = artifact.manifest.bundle.sha256;
     // §4.3 backend selection, same rule as `ArtifactService`: `artifact`
@@ -251,6 +260,19 @@ export class ProjectService {
   private reloadFromDb(): void {
     if (this.db === null) return;
     this.applyStore(loadProjectStoreFromDb(this.db, this.storeDir, this.artifact.manifest.bundle.sha256));
+  }
+
+  /** §6 step 3 / §R4 step 2: called right after EVERY DB-backed write verb's
+   *  own `db*`/`DbRevisionStore` call commits, with the `rid` it just
+   *  minted — materialises that write's affected shard(s) and appends one
+   *  chained `log/` entry for it (`exportWriteEffect`), so the durable
+   *  `analysis/`+`log/` tree stays live-synced with `cache.db` write for
+   *  write, not just at the next one-shot `hbcproj export` (§8's "file is
+   *  the durable authority" model). No-op for a JSONL-backed project (no
+   *  `db`, nothing to export). */
+  private exportWrite(rid: string): void {
+    if (this.db === null) return;
+    exportWriteEffect(this.db, this.projectDir, Number(rid));
   }
 
   /** Persist every record-type file + `project.json` back to `<artifact>/
@@ -480,6 +502,7 @@ export class ProjectService {
       throw new Hbc2jsError(ErrorCode.E_USAGE, `set_name: ${target} does not resolve against the live artifact index (spec 11 §3.2)`);
     }
     const { record } = dbSetName(this.db, target, name, toDbProv(prov), { ctx: toDbCtx(this.captureCtx(target)) });
+    this.exportWrite(record.rid);
     this.reloadFromDb();
     return { rid: record.rid, line: `named ${target} "${name}" [${provLine(prov)}]` };
   }
@@ -488,6 +511,7 @@ export class ProjectService {
   setTag(target: string, tag: Tag, prov: Provenance, opts?: { readonly note?: string }): SetResult {
     if (this.db !== null) {
       const { record } = dbSetTag(this.db, target, tag, toDbProv(prov), { ...(opts?.note !== undefined ? { note: opts.note } : {}), ctx: toDbCtx(this.captureCtx(target)) });
+      this.exportWrite(record.rid);
       this.reloadFromDb();
       return { rid: record.rid, line: `tagged ${target} ${tag} [${provLine(prov)}]` };
     }
@@ -500,6 +524,7 @@ export class ProjectService {
   addComment(target: string, body: string, prov: Provenance, opts?: { readonly range?: CommentRange }): SetResult {
     if (this.db !== null) {
       const { record } = dbAddComment(this.db, target, body, toDbProv(prov), { ...(opts?.range !== undefined ? { range: opts.range } : {}), ctx: toDbCtx(this.captureCtx(target)) });
+      this.exportWrite(record.rid);
       this.reloadFromDb();
       return { rid: record.rid, line: `commented ${target}${opts?.range !== undefined ? ` L${opts.range.line}` : ""} [${provLine(prov)}]` };
     }
@@ -531,6 +556,7 @@ export class ProjectService {
         ...(input.patternId !== undefined ? { patternId: input.patternId } : {}),
         ctx: toDbCtx(input.ctx ?? this.captureCtx(input.target)),
       });
+      this.exportWrite(record.rid);
       this.reloadFromDb();
       return { rid: record.rid, line: `finding#${findingNo} ${input.severity} open ${input.target} [${provLine(input.prov)}]` };
     }
@@ -572,6 +598,7 @@ export class ProjectService {
         evidence: [...current.value.evidence, ...evidence.map((e) => ({ ref: e.ref, role: e.role }))],
       };
       const { record } = store.set(row.slot, row.target, value, toDbProv(prov), { ctx: toDbCtx(this.captureCtx(row.target)) });
+      this.exportWrite(record.rid);
       this.reloadFromDb();
       return { rid: record.rid, line: `finding#${current.value.findingNo} -> ${to} [${provLine(prov)}]` };
     }
@@ -587,6 +614,7 @@ export class ProjectService {
   addBookmark(target: string, prov: Provenance, opts?: { readonly label?: string }): SetResult {
     if (this.db !== null) {
       const { record } = dbSetBookmark(this.db, target, toDbProv(prov), { ...(opts?.label !== undefined ? { label: opts.label } : {}), ctx: toDbCtx(this.captureCtx(target)) });
+      this.exportWrite(record.rid);
       this.reloadFromDb();
       return { rid: record.rid, line: `bookmarked ${target}${opts?.label !== undefined ? ` "${opts.label}"` : ""} [${provLine(prov)}]` };
     }

@@ -44,7 +44,7 @@
 // step-2 concern (they require hooking the write path itself, not a
 // stand-alone export).
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseKey } from "../name-overlay/id.ts";
@@ -164,6 +164,85 @@ function writeShard(path: string, obj: Record<string, unknown>, binding: StateBi
   return contentHash;
 }
 
+/** The `revisions.kind` -> `DetailAdapter` map for every kind the annotation
+ *  write verbs (`annotations.ts`) actually mint. Shared by the bulk log pass
+ *  below and the write-path incremental exporter (`exportWriteEffect`) so
+ *  both read a written record's value the SAME way `rebuild.ts` does. */
+const detailAdapters = { name: nameAdapter, tag: tagAdapter, comment: commentAdapter, bookmark: bookmarkAdapter, finding: findingAdapter } as const;
+
+const byTargetRid = (a: { target: string; rid: string }, b: { target: string; rid: string }): number => a.target.localeCompare(b.target) || Number(a.rid) - Number(b.rid);
+
+/** Builds (never writes) the `names/<module>.json` shard's content for a
+ *  single module — every ACTIVE name record whose target resolves to `mod`.
+ *  Factored out of `exportProject`'s bulk pass so the write-path incremental
+ *  exporter (`exportWriteEffect`) can rebuild the ONE affected module shard
+ *  using identical logic, guaranteeing byte-identical output either way. */
+function namesShardContent(db: DatabaseSync, mod: string): Record<string, unknown> {
+  const entries: Record<string, unknown> = {};
+  for (const r of new DbRevisionStore(db, nameAdapter).allRecords()) {
+    if (!r.active || moduleShardName(db, r.target) !== mod) continue;
+    entries[r.target] = { name: r.value.name, rid: r.rid, ts: r.ts, prov: r.prov };
+  }
+  return { shard: `names/${mod}`, module: mod, entries };
+}
+
+function writeNamesShard(db: DatabaseSync, analysisDir: string, binding: StateBinding, mod: string, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } {
+  const shardId = `names/${mod}`;
+  const hash = writeShard(join(analysisDir, "names", `${mod}.json`), namesShardContent(db, mod), binding, result);
+  return { shardId, hash };
+}
+
+/** Same idea as `namesShardContent`, for the combined tags/comments/bookmarks
+ *  `annotations/<module>.json` shard. */
+function annotationsShardContent(db: DatabaseSync, mod: string): Record<string, unknown> {
+  const tags: Record<string, unknown>[] = [];
+  const comments: Record<string, unknown>[] = [];
+  const bookmarks: Record<string, unknown>[] = [];
+  for (const r of new DbRevisionStore(db, tagAdapter).allRecords()) {
+    if (!r.active || moduleShardName(db, r.target) !== mod) continue;
+    tags.push({ target: r.target, tag: r.value.tag, ...(r.value.note !== undefined ? { note: r.value.note } : {}), rid: r.rid, ts: r.ts, prov: r.prov });
+  }
+  for (const r of new DbRevisionStore(db, commentAdapter).allRecords()) {
+    if (!r.active || moduleShardName(db, r.target) !== mod) continue;
+    comments.push({ target: r.target, body: r.value.body, ...(r.value.range !== undefined ? { range: r.value.range } : {}), rid: r.rid, ts: r.ts, prov: r.prov });
+  }
+  for (const r of new DbRevisionStore(db, bookmarkAdapter).allRecords()) {
+    if (!r.active || moduleShardName(db, r.target) !== mod) continue;
+    bookmarks.push({ target: r.target, ...(r.value.label !== undefined ? { label: r.value.label } : {}), rid: r.rid, ts: r.ts, prov: r.prov });
+  }
+  return {
+    shard: `annotations/${mod}`,
+    module: mod,
+    tags: [...tags].sort(byTargetRid as (a: Record<string, unknown>, b: Record<string, unknown>) => number),
+    comments: [...comments].sort(byTargetRid as (a: Record<string, unknown>, b: Record<string, unknown>) => number),
+    bookmarks: [...bookmarks].sort(byTargetRid as (a: Record<string, unknown>, b: Record<string, unknown>) => number),
+  };
+}
+
+function writeAnnotationsShard(db: DatabaseSync, analysisDir: string, binding: StateBinding, mod: string, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } {
+  const shardId = `annotations/${mod}`;
+  const hash = writeShard(join(analysisDir, "annotations", `${mod}.json`), annotationsShardContent(db, mod), binding, result);
+  return { shardId, hash };
+}
+
+/** Writes the `findings/<id>.json` shard for the CURRENTLY ACTIVE finding
+ *  record whose rid is `rid` — a no-op (returns `null`) if `rid` is not the
+ *  live head of its slot (e.g. it has since been superseded), matching the
+ *  bulk pass's own `if (!r.active) continue` skip. */
+function writeFindingShardForRid(db: DatabaseSync, analysisDir: string, binding: StateBinding, rid: number, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } | null {
+  const r = new DbRevisionStore(db, findingAdapter).allRecords().find((rec) => Number(rec.rid) === rid);
+  if (r === undefined || !r.active) return null;
+  const id = findingContentId(r.target, r.value.evidence);
+  const shardId = `findings/${id}`;
+  const hash = writeShard(
+    join(analysisDir, "findings", `${id}.json`),
+    { shard: shardId, id, target: r.target, kind: "finding", findingNo: r.value.findingNo, severity: r.value.severity, status: r.value.status, claim: r.value.claim, evidence: r.value.evidence, rid: r.rid, ts: r.ts, prov: r.prov },
+    binding,
+    result,
+  );
+  return { shardId, hash };
+}
+
 /** Materialises `<projectDir>/analysis/**` + `<projectDir>/log/*.jsonl` from
  *  `db` — the `hbcproj export` verb (§9). `db` must already be open
  *  (`openProjectDb`); this function never touches `cache.db` itself, only
@@ -180,98 +259,44 @@ export function exportProject(db: DatabaseSync, projectDir: string): ExportResul
 
   // A path (relative to `analysisDir`, no extension) -> post-export content
   // hash, for the `log/` pass below (module header's "known step-0
-  // simplification").
+  // simplification" — still true for the SHARD-hash-of-current-state field;
+  // `value`, added below, closes the actual history-recovery gap instead).
   const shardHash = new Map<string, string>();
 
   // --- names, one file per module -------------------------------------
-  const namesByModule = new Map<string, Record<string, unknown>>();
+  const modulesWithNames = new Set<string>();
   for (const r of new DbRevisionStore(db, nameAdapter).allRecords()) {
-    if (!r.active) continue;
-    const mod = moduleShardName(db, r.target);
-    const entries = namesByModule.get(mod) ?? {};
-    entries[r.target] = { name: r.value.name, rid: r.rid, ts: r.ts, prov: r.prov };
-    namesByModule.set(mod, entries);
+    if (r.active) modulesWithNames.add(moduleShardName(db, r.target));
   }
-  for (const mod of [...namesByModule.keys()].sort()) {
-    const shardId = `names/${mod}`;
-    const hash = writeShard(join(analysisDir, "names", `${mod}.json`), { shard: shardId, module: mod, entries: namesByModule.get(mod) }, binding, result);
-    shardHash.set(shardId, hash);
+  for (const mod of [...modulesWithNames].sort()) {
+    const w = writeNamesShard(db, analysisDir, binding, mod, result);
+    shardHash.set(w.shardId, w.hash);
   }
 
   // --- annotations (tags/comments/bookmarks), one file per module -----
-  interface AnnBucket {
-    tags: Record<string, unknown>[];
-    comments: Record<string, unknown>[];
-    bookmarks: Record<string, unknown>[];
-  }
-  const annByModule = new Map<string, AnnBucket>();
-  const bucket = (mod: string): AnnBucket => {
-    let b = annByModule.get(mod);
-    if (b === undefined) {
-      b = { tags: [], comments: [], bookmarks: [] };
-      annByModule.set(mod, b);
-    }
-    return b;
-  };
+  const modulesWithAnn = new Set<string>();
   for (const r of new DbRevisionStore(db, tagAdapter).allRecords()) {
-    if (!r.active) continue;
-    bucket(moduleShardName(db, r.target)).tags.push({ target: r.target, tag: r.value.tag, ...(r.value.note !== undefined ? { note: r.value.note } : {}), rid: r.rid, ts: r.ts, prov: r.prov });
+    if (r.active) modulesWithAnn.add(moduleShardName(db, r.target));
   }
   for (const r of new DbRevisionStore(db, commentAdapter).allRecords()) {
-    if (!r.active) continue;
-    bucket(moduleShardName(db, r.target)).comments.push({ target: r.target, body: r.value.body, ...(r.value.range !== undefined ? { range: r.value.range } : {}), rid: r.rid, ts: r.ts, prov: r.prov });
+    if (r.active) modulesWithAnn.add(moduleShardName(db, r.target));
   }
   for (const r of new DbRevisionStore(db, bookmarkAdapter).allRecords()) {
-    if (!r.active) continue;
-    bucket(moduleShardName(db, r.target)).bookmarks.push({ target: r.target, ...(r.value.label !== undefined ? { label: r.value.label } : {}), rid: r.rid, ts: r.ts, prov: r.prov });
+    if (r.active) modulesWithAnn.add(moduleShardName(db, r.target));
   }
-  const byTargetRid = (a: { target: string; rid: string }, b: { target: string; rid: string }): number => a.target.localeCompare(b.target) || Number(a.rid) - Number(b.rid);
-  for (const mod of [...annByModule.keys()].sort()) {
-    const b = annByModule.get(mod);
-    if (b === undefined) continue;
-    const shardId = `annotations/${mod}`;
-    const hash = writeShard(
-      join(analysisDir, "annotations", `${mod}.json`),
-      {
-        shard: shardId,
-        module: mod,
-        tags: [...b.tags].sort(byTargetRid as (a: Record<string, unknown>, b: Record<string, unknown>) => number),
-        comments: [...b.comments].sort(byTargetRid as (a: Record<string, unknown>, b: Record<string, unknown>) => number),
-        bookmarks: [...b.bookmarks].sort(byTargetRid as (a: Record<string, unknown>, b: Record<string, unknown>) => number),
-      },
-      binding,
-      result,
-    );
-    shardHash.set(shardId, hash);
+  for (const mod of [...modulesWithAnn].sort()) {
+    const w = writeAnnotationsShard(db, analysisDir, binding, mod, result);
+    shardHash.set(w.shardId, w.hash);
   }
 
   // --- findings, one file per content-hash id --------------------------
   const findingShardOf = new Map<string, string>(); // rid -> shard id, for the log pass
   for (const r of new DbRevisionStore(db, findingAdapter).allRecords()) {
     const id = findingContentId(r.target, r.value.evidence);
-    const shardId = `findings/${id}`;
-    findingShardOf.set(r.rid, shardId);
+    findingShardOf.set(r.rid, `findings/${id}`);
     if (!r.active) continue;
-    const hash = writeShard(
-      join(analysisDir, "findings", `${id}.json`),
-      {
-        shard: shardId,
-        id,
-        target: r.target,
-        kind: "finding",
-        findingNo: r.value.findingNo,
-        severity: r.value.severity,
-        status: r.value.status,
-        claim: r.value.claim,
-        evidence: r.value.evidence,
-        rid: r.rid,
-        ts: r.ts,
-        prov: r.prov,
-      },
-      binding,
-      result,
-    );
-    shardHash.set(shardId, hash);
+    const w = writeFindingShardForRid(db, analysisDir, binding, Number(r.rid), result);
+    if (w !== null) shardHash.set(w.shardId, w.hash);
   }
 
   // --- log/<date>.jsonl, day-sharded, hash-chained (§5) ----------------
@@ -293,6 +318,21 @@ interface LogRow {
 interface RevTargetRow {
   readonly target: string;
   readonly kind: string;
+  readonly slot: string;
+  readonly reactivates: number | null;
+}
+
+/** Reads back the value a content-bearing (`op='annotate'`) row minted, by
+ *  `rid` — works for a superseded row exactly as well as the currently
+ *  active one, since `revisions`/`d_*` rows are immutable (never updated or
+ *  deleted, schema.sql §2.5's append-only triggers). This is what closes
+ *  the step-0 "known simplification": a `log/` entry now carries the WRITE'S
+ *  OWN value, not just a reference to whatever the shard currently holds, so
+ *  `rebuild.ts` can reconstruct a superseded record's real content instead
+ *  of an inert placeholder (§R4 step 2). */
+function readWrittenValue(db: DatabaseSync, kind: string, rid: number): unknown {
+  const adapter = (detailAdapters as Record<string, { readDetail(db: DatabaseSync, rid: number): unknown }>)[kind];
+  return adapter?.readDetail(db, rid);
 }
 
 function dayOf(ts: string): string {
@@ -318,7 +358,7 @@ function exportLog(
   const byDay = new Map<string, Record<string, unknown>[]>();
   let prevHash = "genesis";
   for (const row of rows) {
-    const revRow = db.prepare(`SELECT target, kind FROM revisions WHERE rid = ?`).get(row.rid) as unknown as RevTargetRow | undefined;
+    const revRow = db.prepare(`SELECT target, kind, slot, reactivates FROM revisions WHERE rid = ?`).get(row.rid) as unknown as RevTargetRow | undefined;
     const shards: { path: string; contentHash: string }[] = [];
     if (revRow !== undefined) {
       const shardId =
@@ -334,14 +374,17 @@ function exportLog(
         if (hash !== undefined) shards.push({ path: shardId, contentHash: hash });
       }
     }
+    const value = revRow !== undefined && row.op === "annotate" ? readWrittenValue(db, revRow.kind, row.rid) : undefined;
     const entry = {
       seq: row.rid,
       ts: row.ts,
       op: row.op,
       actor: { source: row.actor_source, who: row.actor_who, ...(row.actor_run !== null ? { run: row.actor_run } : {}) },
-      ...(revRow !== undefined ? { kind: revRow.kind, target: revRow.target } : {}),
+      ...(revRow !== undefined ? { kind: revRow.kind, target: revRow.target, slot: revRow.slot } : {}),
       rid: String(row.rid),
       shards,
+      ...(value !== undefined ? { value } : {}),
+      ...(revRow !== undefined && row.op === "revert" ? { reactivates: revRow.reactivates === null ? null : String(revRow.reactivates) } : {}),
       prevHash,
     };
     const hash = sha256Hex(canonicalJson(entry));
@@ -366,4 +409,147 @@ function exportLog(
       result.written.push(path);
     }
   }
+}
+
+// ===========================================================================
+// Write-path export (§6 step 3 / §R4 step 2): one hook, called right after
+// EACH `DbRevisionStore.set`/`.revert` commits (`ProjectService`'s DB write
+// verbs, `src/project/service.ts`), instead of only the one-shot bulk
+// `exportProject` above. Materialises just the ONE shard the write touched
+// (`writeNamesShard`/`writeAnnotationsShard`/`writeFindingShardForRid`, the
+// SAME functions the bulk pass uses — guarantees byte-identical shard
+// content either way) and appends exactly ONE chained `log/` entry for that
+// write, carrying the write's own value (`readWrittenValue`) so a later
+// `rebuild` can reconstruct a superseded/reverted-from record's real
+// content, not the step-0 inert placeholder.
+// ===========================================================================
+
+/** The last entry's `hash` across every `log/*.jsonl` file (day files sort
+ *  lexicographically, chain is append-order within a file — same walk
+ *  `verify.ts`'s `checkLogChain` does) — the chain's current tip, or
+ *  `"genesis"` for an empty/absent log dir. */
+function tipHash(logDir: string): string {
+  if (!existsSync(logDir)) return "genesis";
+  const files = readdirSync(logDir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .sort();
+  for (let i = files.length - 1; i >= 0; i--) {
+    const lines = readFileSync(join(logDir, files[i]!), "utf8")
+      .split("\n")
+      .filter((l) => l.trim() !== "");
+    const last = lines[lines.length - 1];
+    if (last !== undefined) {
+      const parsed = JSON.parse(last) as { hash?: unknown };
+      if (typeof parsed.hash === "string") return parsed.hash;
+    }
+  }
+  return "genesis";
+}
+
+/** Appends one hash-chained entry (§5) to `log/<date>.jsonl` (creating it if
+ *  today's file doesn't exist yet), chaining from the CURRENT tip
+ *  (`tipHash`) — the true per-write counterpart of the bulk `exportLog`
+ *  pass's from-genesis recompute. `partial` is the entry minus `prevHash`/
+ *  `hash`, which this function computes and adds. */
+function appendLogEntry(logDir: string, partial: Record<string, unknown>, result: { written: string[]; unchanged: string[] }): { path: string; hash: string } {
+  const prevHash = tipHash(logDir);
+  const withPrev = { ...partial, prevHash };
+  const hash = sha256Hex(canonicalJson(withPrev));
+  const full = { ...withPrev, hash };
+  const day = dayOf(String(partial.ts));
+  const path = join(logDir, `${day}.jsonl`);
+  mkdirSync(dirname(path), { recursive: true });
+  const prior = existsSync(path) ? readFileSync(path, "utf8") : "";
+  writeFileSync(path, `${prior}${canonicalJson(full)}\n`, "utf8");
+  result.written.push(path);
+  return { path, hash };
+}
+
+export interface WriteEffect {
+  /** The shard(s) this ONE write's log entry records — empty for a `revert`
+   *  that cleared a slot to nothing (no live shard left to point at), same
+   *  as the bulk pass's own "no live shard" case. */
+  readonly shards: readonly { path: string; contentHash: string }[];
+  readonly logPath: string;
+}
+
+/** The write-path hook: given the `rid` `DbRevisionStore.set`/`.revert` just
+ *  minted (already committed — this function only reads `db`, never writes
+ *  it), materialises the ONE affected shard and appends ONE chained `log/`
+ *  entry for it. Call this immediately after each DB-backed write verb
+ *  (`src/project/service.ts`), the moment its own transaction has committed
+ *  — mirrors §6 step 3's "commit to `cache.db`, then export the affected
+ *  shard(s) + append to the log" in the SAME granularity as the write
+ *  itself, not batched. Idempotent to call twice for the SAME rid is NOT
+ *  guaranteed (the log append is not itself hash-locked/no-op like a shard
+ *  write) — callers must call it exactly once per write, which is what
+ *  every write verb below does. */
+export function exportWriteEffect(db: DatabaseSync, projectDir: string, rid: number): WriteEffect {
+  const analysisDir = join(projectDir, "analysis");
+  const logDir = join(projectDir, "log");
+  mkdirSync(analysisDir, { recursive: true });
+  mkdirSync(logDir, { recursive: true });
+  const binding = stateBindingOf(db);
+  const result = { written: [] as string[], unchanged: [] as string[] };
+
+  const logRow = db.prepare(`SELECT rid, ts, op, actor_source, actor_who, actor_run FROM log WHERE rid = ?`).get(rid) as
+    | { rid: number; ts: string; op: string; actor_source: string; actor_who: string; actor_run: string | null }
+    | undefined;
+  if (logRow === undefined) throw new Error(`exportWriteEffect: no log row for rid ${rid} — call this only right after a DB write committed`);
+  const revRow = db.prepare(`SELECT kind, target, slot, reactivates FROM revisions WHERE rid = ?`).get(rid) as unknown as RevTargetRow | undefined;
+  if (revRow === undefined) throw new Error(`exportWriteEffect: no revisions row for rid ${rid}`);
+
+  const shards: { path: string; contentHash: string }[] = [];
+  let value: unknown;
+  if (logRow.op === "annotate") {
+    value = readWrittenValue(db, revRow.kind, rid);
+    if (revRow.kind === "name") {
+      const w = writeNamesShard(db, analysisDir, binding, moduleShardName(db, revRow.target), result);
+      shards.push({ path: w.shardId, contentHash: w.hash });
+    } else if (revRow.kind === "tag" || revRow.kind === "comment" || revRow.kind === "bookmark") {
+      const w = writeAnnotationsShard(db, analysisDir, binding, moduleShardName(db, revRow.target), result);
+      shards.push({ path: w.shardId, contentHash: w.hash });
+    } else if (revRow.kind === "finding") {
+      const w = writeFindingShardForRid(db, analysisDir, binding, rid, result);
+      if (w !== null) shards.push({ path: w.shardId, contentHash: w.hash });
+    }
+  } else if (logRow.op === "revert") {
+    // A revert that reactivated a PRIOR record makes that prior rid's slot
+    // live again — the shard it belongs to needs re-materialising too (it
+    // may have been dropped from the shard on the superseding write and
+    // must reappear now). A revert-to-nothing (reactivates === null)
+    // clears the slot; the shard write below simply omits it (same "only
+    // active state" rule every shard write follows) — `shards` stays empty,
+    // matching the bulk pass's "no live shard" case.
+    if (revRow.kind === "name") {
+      const w = writeNamesShard(db, analysisDir, binding, moduleShardName(db, revRow.target), result);
+      shards.push({ path: w.shardId, contentHash: w.hash });
+    } else if (revRow.kind === "tag" || revRow.kind === "comment" || revRow.kind === "bookmark") {
+      const w = writeAnnotationsShard(db, analysisDir, binding, moduleShardName(db, revRow.target), result);
+      shards.push({ path: w.shardId, contentHash: w.hash });
+    } else if (revRow.kind === "finding" && revRow.reactivates !== null) {
+      const w = writeFindingShardForRid(db, analysisDir, binding, revRow.reactivates, result);
+      if (w !== null) shards.push({ path: w.shardId, contentHash: w.hash });
+    }
+  }
+
+  const { path: logPath } = appendLogEntry(
+    logDir,
+    {
+      seq: rid,
+      ts: logRow.ts,
+      op: logRow.op,
+      actor: { source: logRow.actor_source, who: logRow.actor_who, ...(logRow.actor_run !== null ? { run: logRow.actor_run } : {}) },
+      kind: revRow.kind,
+      target: revRow.target,
+      slot: revRow.slot,
+      rid: String(rid),
+      shards,
+      ...(value !== undefined ? { value } : {}),
+      ...(logRow.op === "revert" ? { reactivates: revRow.reactivates === null ? null : String(revRow.reactivates) } : {}),
+    },
+    result,
+  );
+
+  return { shards, logPath };
 }

@@ -66,6 +66,23 @@ interface LogEntry {
   readonly kind?: RevisionKind;
   readonly target?: string;
   readonly rid: string;
+  /** §R4 step 2 (write-path export): the record's own written value, present
+   *  on every `op:'annotate'` entry from a step-2-or-later exporter — this is
+   *  what lets a SUPERSEDED write be reconstructed with its real content
+   *  below, instead of the step-0 inert placeholder. Absent on entries from
+   *  an older (step-0/1) bulk export, which only ever recorded the shard's
+   *  final-state reference — those still fall back to the placeholder path. */
+  readonly value?: unknown;
+  /** The write's own supersession slot (kind+target[+discriminator], §2.1)
+   *  — present alongside `value`/on `op:'revert'` entries; lets rebuild
+   *  reinsert the row under the EXACT slot it was written to without
+   *  re-deriving it (`slotFor` below is only a fallback for entries that
+   *  predate this field). */
+  readonly slot?: string;
+  /** `op:'revert'` only: the rid this revert reactivated, or `null` for a
+   *  revert-to-nothing (clears the slot). Absent on older exporters' entries
+   *  (those fall back to always treating a revert as a clear). */
+  readonly reactivates?: string | null;
 }
 
 export interface RebuildResult {
@@ -185,13 +202,15 @@ function insertRevisionRow(
   prov: ShardProv,
   ts: string,
   cleared: 0 | 1,
+  supersedes: number | null = null,
+  reactivates: number | null = null,
 ): void {
   db.prepare(
     `INSERT INTO revisions
        (rid, kind, target, slot, prov_source, prov_who, prov_run, ts,
         supersedes, reactivates, cleared, ctx_name, ctx_loc, ctx_owner, legacy_rid)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)`,
-  ).run(rid, kind, target, slot, prov.source, prov.who, prov.run ?? null, ts, cleared);
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)`,
+  ).run(rid, kind, target, slot, prov.source, prov.who, prov.run ?? null, ts, supersedes, reactivates, cleared);
 }
 
 function insertLogRow(db: DatabaseSync, rid: number, ts: string, actor: ShardProv, op: string, kind: RevisionKind | undefined): void {
@@ -223,14 +242,55 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
   const warnings: string[] = [];
   const seenRid = new Set<number>();
 
+  // Tracks, per reconstructed slot, the rid of the row just inserted for it
+  // — lets a fresh row's `supersedes` point at its true predecessor even
+  // though a superseded write's own `revisions` row is now reconstructed
+  // too (§R4 step 2), not skipped as an inert placeholder.
+  const lastRidForSlot = new Map<string, number>();
+
   db.exec("BEGIN;");
   try {
     for (const entry of logEntries) {
       const rid = Number(entry.rid);
       seenRid.add(rid);
       const activeRec = active.get(rid);
-      const isActive = entry.op === "annotate" && activeRec !== undefined;
-      if (isActive) {
+
+      if (entry.op === "annotate" && entry.value !== undefined && entry.kind !== undefined && entry.target !== undefined) {
+        // §R4 step 2: the entry carries the write's own value (a step-2+
+        // exporter, live write-path OR bulk) — reconstruct a REAL
+        // content-bearing row whether it is still active or has since been
+        // superseded. This is what closes the step-0/1 placeholder gap:
+        // `history()` on this slot now returns every write, not just the
+        // live head.
+        if (activeRec !== undefined) {
+          if (entry.kind !== activeRec.kind) warnings.push(`rid ${rid}: log kind '${entry.kind}' != shard kind '${activeRec.kind}'`);
+          if (entry.target !== activeRec.target) warnings.push(`rid ${rid}: log target '${entry.target}' != shard target '${activeRec.target}'`);
+        }
+        const slot = entry.slot ?? slotFor(entry.kind, entry.target, entry.value);
+        const supersedes = lastRidForSlot.get(slot) ?? null;
+        insertRevisionRow(db, rid, entry.kind, entry.target, slot, entry.actor, entry.ts, 0, supersedes);
+        (detailAdapters[entry.kind as keyof typeof detailAdapters].writeDetail as (db: DatabaseSync, rid: number, value: unknown) => void)(db, rid, entry.value);
+        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind);
+        lastRidForSlot.set(slot, rid);
+      } else if (entry.op === "revert" && entry.reactivates !== undefined && entry.kind !== undefined && entry.target !== undefined) {
+        // Likewise for a revert (step-2+ entry): `reactivates` says exactly
+        // which prior rid (if any) it restored, so the bookkeeping row's
+        // `cleared`/`reactivates` columns are reconstructed EXACTLY as the
+        // live engine wrote them (`revision-store.ts`'s `revert`), not
+        // always-cleared as the step-0/1 placeholder assumed.
+        const kind = entry.kind;
+        const target = entry.target;
+        const slot = entry.slot ?? `hist:${kind}:${rid}`;
+        const reactivatesRid = entry.reactivates === null ? null : Number(entry.reactivates);
+        const cleared: 0 | 1 = reactivatesRid === null ? 1 : 0;
+        const supersedes = lastRidForSlot.get(slot) ?? null;
+        insertRevisionRow(db, rid, kind, target, slot, entry.actor, entry.ts, cleared, supersedes, reactivatesRid);
+        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind);
+        lastRidForSlot.set(slot, rid);
+      } else if (entry.op === "annotate" && activeRec !== undefined) {
+        // Legacy (pre-step-2) bulk-export entry with no embedded `value`:
+        // fall back to the step-0/1 behaviour — reconstruct it ONLY when
+        // the shard says it is still the active head for its slot.
         const rec = activeRec;
         if (entry.kind !== undefined && entry.kind !== rec.kind) warnings.push(`rid ${rid}: log kind '${entry.kind}' != shard kind '${rec.kind}'`);
         if (entry.target !== undefined && entry.target !== rec.target) warnings.push(`rid ${rid}: log target '${entry.target}' != shard target '${rec.target}'`);
@@ -238,10 +298,16 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
         insertRevisionRow(db, rid, rec.kind, rec.target, slot, rec.prov, rec.ts, 0);
         (detailAdapters[rec.kind as keyof typeof detailAdapters].writeDetail as (db: DatabaseSync, rid: number, value: unknown) => void)(db, rid, rec.value);
         insertLogRow(db, rid, entry.ts, entry.actor, entry.op, rec.kind);
+        lastRidForSlot.set(slot, rid);
       } else {
+        // Legacy inert placeholder: a pre-step-2 entry for a write whose
+        // value is not recoverable from `analysis/**` (superseded, or a
+        // revert whose `reactivates` field is absent) — exists only so
+        // `log.rid` still has a `revisions` row to join against (§6 header
+        // note on `rebuild.ts`).
         const kind = entry.kind ?? "name";
         const target = entry.target ?? "";
-        insertRevisionRow(db, rid, kind, target, `hist:${kind}:${rid}`, entry.actor, entry.ts, 1);
+        insertRevisionRow(db, rid, kind, target, entry.slot ?? `hist:${kind}:${rid}`, entry.actor, entry.ts, 1);
         insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind);
       }
     }
