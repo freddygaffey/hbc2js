@@ -659,6 +659,21 @@ environment created with an undefined parent has no parent.
   measured numbers in `docs/reports/2026-09-05-ambiguous-closure-env.md`
   (178 such functions on react-navigation-example-0.85.3, 160 of them differing
   only in the directly captured environment).
+* **The conflict is data, not a dead end.** `closureCopies` maps such a function
+  to one `ClosureCopy` per distinct captured environment, each carrying the
+  siteKeys that captured it and the positional `envRemap` from copy 0's
+  environment chain to its own. It is populated only when every site resolved to
+  a *real* environment (a site with the undefined operand has no chain to align)
+  and every site's chain is rooted and of the same length; copy 0 always
+  captures `closureEnvOf(f)`, which is the chain every recorded `EnvAccess` was
+  resolved against, so copy 0's names are unchanged and only the other copies
+  are rewritten. Two consequences: a function with copies is **not** reported
+  `W_AMBIGUOUS_CLOSURE_ENV` and keeps a real `closureEnvOf`, and a function
+  whose chains do not align keeps exactly the old behaviour (`closureEnvOf =
+  null`, an orphan for the emitter). Where nothing in the function's lexical
+  subtree ever names an environment the sites disagree about, the copies would
+  be identical text: it is joined instead - one body, one lexical home, no
+  warning. See docs/specs/05-emitter.md §6 for what the emitter does with it.
 * Merge at joins: equal values meet to themselves, everything else to `unknown`.
 * Iterate to a fixed point over RPO. Loops converge in ≤ 2 passes with this
   lattice; cap at `blocks.length` and bail to `unknown` if not.

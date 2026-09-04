@@ -149,3 +149,64 @@ deduplicated function index under hermesc v96/v99), so the regression tests are
 per-site remap, and (b) the react-navigation ratchets in
 `tests/sweep/emit/unbound-env-slots.test.ts`, which should go to 0 isolated /
 0 unbound for the aligned buckets (expected residual: the 18 unaligned).
+
+
+## 5. What landing §4 actually did, and what is left
+
+Landed 2026-09-05 (`cfg: one creation context per environment…` +
+`emit: one body per creation context…`). Measured on the same bundle, same
+options (`strictEnv: false`), on macOS / node 25. The `.hbc` was rebuilt locally
+with `tools/hermesc/v98` from the committed `index.android.bundle`; it is 7
+bytes smaller than the artefact `BUILD.md` records, so the byte totals below are
+comparable to each other but not to §3's table.
+
+| | ambiguous | duplicated fns | extra bodies | isolated | unbound names | orphans hosted | W_ORPHAN_FUNCTION |
+|---|---|---|---|---|---|---|---|
+| before | 178 | 0 | 0 | 103 | 158 | 111 | 0 |
+| after | 18 | 156 | 335 | 79 | 155 | 13 | 0 |
+
+The split of the 178 is exactly the one §2 predicted: **156** get per-creation-context
+bodies, **4** are joined by §3's `namesAgreeAcrossSites` rule (which lands here,
+where it is correct), and **18** — the unaligned chains — keep today's
+behaviour. `--passes=none` gives the same 79 / 155. Bytes 16,332,150 ->
+17,728,320 with passes on (the 335 extra bodies). A bundle with no ambiguity at
+all is byte-identical before and after: `rn-template-0.72/index.android.hbc`
+(4,199 functions, 0 ambiguous) decompiles to the same 6,649,289 bytes.
+
+§4 predicted 0 isolated / 0 unbound for the aligned buckets. It is 79 / 155, and
+the reason is a second level of the same defect, one step down the tree:
+
+* **123 of the 155 are `_fn<n>`**, and 29 are `_e<env>_<slot>`. The shape is
+  `_fn10156__c1` referencing `_fn13573`, or `_fn10396__c1` reading `_e2192_0`.
+  Both are functions/environments that belong to the duplicated function's
+  *lexical subtree* by creation but not by `closureEnvOf`: a child created
+  inside `f` over an environment `f` itself captured has `closureEnvOf` pointing
+  at an ancestor's environment, so `parentOf` puts it beside copy 0 and no other
+  copy can see it. §4's "nested functions travel with their copy" covers this
+  case in words; the implementation only moves the `closureEnvOf`-children.
+* The obvious fix — reparent every function whose creation sites all lie inside
+  the subtree under the duplicated root — was implemented and **measured worse**
+  (79 -> 86 isolated, 155 -> 166 unbound), because moving such a function
+  *inwards* takes it out of scope of the other, non-duplicated sites that also
+  see it today. It is reverted; the numbers are recorded here so the next
+  attempt does not repeat it. The right version has to reparent per copy (a
+  child that travels gets one instance per copy, like the root does) rather than
+  once for the whole function, and that needs `parentOf` to become
+  per-instance — the same generalisation the emitter already makes for
+  `emitOne`'s `CopyCtx`.
+
+Remaining work, in order:
+
+1. Per-copy travel for creation-site-only children (the 123 `_fn` names above):
+   make the child's placement a property of the *instance* being emitted, not of
+   the function index. Expect it to subsume the 29 `_e` names too, since those
+   are the same functions reading through the same chain.
+2. The 18 unaligned residual: chains of different length have no positional
+   remap. They need either a chain-alignment by *owner function* rather than by
+   position, or an explicit decision to leave them as `W_AMBIGUOUS_CLOSURE_ENV`
+   forever, recorded in `docs/DECISIONS.md`.
+3. A self-recursive closure that creates itself over an environment it owns
+   hosts its own copies (9 on this bundle). They are emitted as siblings inside
+   the copy-0 instance, which is in scope for all of them; if a case ever
+   appears where copy 0 is not emitted, those copies are lost. There is no
+   test for that path because no input produces it.

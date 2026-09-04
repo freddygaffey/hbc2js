@@ -473,7 +473,12 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       // function owns. They travel with their whole lexical subtree, under the
       // composed remap, and are hoisted like any other child.
       for (const extra of extraCopies.get(index) ?? []) {
-        if (active.has(extra.fn)) continue; // a copy hosted inside its own subtree
+        // A self-recursive closure (`f` creates `f` again over an environment
+        // `f` itself owns) hosts its own copies. They go inside the copy-0
+        // instance, as siblings, so every copy can see every other; emitting
+        // them again inside each copy would not terminate.
+        const selfHosted = extra.fn === index && ctx.name === undefined;
+        if (active.has(extra.fn) && !selfHosted) continue;
         pendingCopies.delete(`${extra.fn}#${extra.copy.index}`);
         hoisted.push(
           emitOne(extra.fn, {

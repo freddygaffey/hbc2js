@@ -200,6 +200,21 @@ difference between readable output and hermes-dec's dangling names.
 function is the outermost. A function with no known creation site (orphan,
 `W_ORPHAN_FUNCTION`) is emitted at top level with a comment saying so.
 
+**One body per creation context.** A function whose `closureCopies` (spec 03
+§6.2) hold more than one environment has more than one lexical identity, so it
+is emitted **once per environment**. Copy `i` goes in the owner of the
+environment *it* captured — the same rule every other function follows — and
+every `Create*Closure` / `Create*Class` site emits the name of the copy that
+captured the environment that site passed, so no site is ever left referring to
+a body it cannot see. The copy's whole lexical subtree is emitted with it, under
+that copy's `envRemap`, which rewrites every `_e<env>_<slot>` the subtree emits
+into the environment the copy really captured; copies nested inside another
+copy's subtree compose the two remaps. Copy 0 keeps the plain `_fn<n>` name and
+its ordinary home so that any reference the env graph did not record as a
+creation site (a `CallDirect`, say) still resolves; copies `i > 0` are
+`_fn<n>__c<i>`. Orphan placement (below) is therefore left with only the
+functions that have no resolved creation site at all.
+
 **`materialised` slots.** `const _env<id> = { s0: undefined, … };` in the owner,
 accesses become `_env<id>.s<slot>`, and any closure created with that env
 captures the object. Correct, uglier, and rare.

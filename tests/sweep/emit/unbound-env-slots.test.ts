@@ -40,11 +40,16 @@ const HBC = join(repoRoot(), "tests", "fixtures", "bundles", "react-navigation-e
  *  (`src/emit/placement.ts`) — 541 unbound names down to 158, and 176 -> 106
  *  isolated with `--passes=none`. Ratchet: lower is fine, a rise is a
  *  regression. */
-const MAX_ISOLATED = 103;
-/** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111.
- *  A floor, so losing the placement rule fails here and not only on the count
- *  above (which passes and structuring also move). */
-const MIN_HOSTED = 100;
+const MAX_ISOLATED = 79;
+/** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111 when
+ *  every `W_AMBIGUOUS_CLOSURE_ENV` function was an orphan, **13** now that they
+ *  are not. That drop is the point of per-creation-context bodies
+ *  (docs/reports/2026-09-05-ambiguous-closure-env.md §4): a function created
+ *  with two environments is emitted once per environment, each copy in the
+ *  owner of the environment it captured, so placement has nothing to choose and
+ *  is left with only the functions that have no resolved creation site at all.
+ *  Still a floor, so losing the placement rule for *those* fails here. */
+const MIN_HOSTED = 10;
 
 test("react-navigation-example-0.85.3: a loop-local env captured from a sibling block is declared, and the rest are isolated", (t) => {
   if (!requireSweep(t)) return;
@@ -89,6 +94,14 @@ const MAX_ORPHAN_FUNCTIONS = 0;
  *  (4,009 undefined-operand closures + the 178 W_AMBIGUOUS_CLOSURE_ENV ones +
  *  the global function). */
 const MIN_KNOWN_EMPTY_ENV = 4000;
+/** Functions emitted once per creation context, and the ambiguous residual.
+ *  Measured: 178 ambiguous -> 156 duplicated (335 extra bodies) + 4 joined by
+ *  report §3 + **18** left ambiguous, which are exactly the ones whose creation
+ *  sites have environment chains of *different length*, where no positional
+ *  remap is defined. Ratchets in both directions: duplication must not silently
+ *  stop happening, and the unaligned residual must not grow. */
+const MIN_DUPLICATED = 150;
+const MAX_STILL_AMBIGUOUS = 18;
 
 test("react-navigation-example-0.85.3: a closure created with an undefined environment operand is not an orphan", (t) => {
   if (!requireSweep(t)) return;
@@ -110,4 +123,19 @@ test("react-navigation-example-0.85.3: a closure created with an undefined envir
     knownEmpty >= MIN_KNOWN_EMPTY_ENV,
     `only ${knownEmpty} functions are recorded as capturing nothing, expected at least ${MIN_KNOWN_EMPTY_ENV} (src/cfg/env-graph.ts)`,
   );
+
+  const duplicated = graph.closureCopies.size;
+  const stillAmbiguous = analysis.diagnostics.filter((d) => d.code === "W_AMBIGUOUS_CLOSURE_ENV").length;
+  assert.ok(
+    duplicated >= MIN_DUPLICATED,
+    `only ${duplicated} functions got per-creation-context bodies, expected at least ${MIN_DUPLICATED} (src/cfg/env-graph.ts \`closureCopies\`)`,
+  );
+  assert.ok(
+    stillAmbiguous <= MAX_STILL_AMBIGUOUS,
+    `${stillAmbiguous} functions are still W_AMBIGUOUS_CLOSURE_ENV, was ${MAX_STILL_AMBIGUOUS} (the unaligned residual) — that number must only go down (docs/reports/2026-09-05-ambiguous-closure-env.md §4)`,
+  );
+  for (const copies of graph.closureCopies.values()) {
+    assert.ok(copies.length >= 2, "a function with per-creation-context copies must have at least two: one copy is not a duplication");
+    assert.equal(copies[0]!.envRemap.size, 0, "copy 0 is the chain every recorded EnvAccess was resolved against; it renames nothing");
+  }
 });

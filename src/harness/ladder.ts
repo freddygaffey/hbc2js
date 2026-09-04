@@ -21,7 +21,8 @@ import { runProgram } from "./runner.ts";
 import type { RunOptions } from "./runner.ts";
 import { compareTraces, TRACE_VERDICT } from "./compare.ts";
 import type { TraceComparison } from "./compare.ts";
-import { printProjection, isResourceCeilingRecord, normaliseEngineMessages } from "./trace.ts";
+import { printProjection, isComparable, isResourceCeilingRecord, normaliseEngineMessages } from "./trace.ts";
+import type { TraceRecord } from "./trace.ts";
 import { runHermesAsync, hermesPrintProjection } from "./hermes-vm.ts";
 import { syntaxOk } from "./mutate.ts";
 import { findHermesc, compileWithHermesc, roundTripFromBytes } from "./roundtrip.ts";
@@ -139,6 +140,38 @@ function toDivergence(cmp: TraceComparison): Divergence | undefined {
 /** Runs the whole oracle ladder for one (fixture, candidate) pair and returns
  *  a `CheckResult`. Stops running further oracles once a DIVERGENT (not
  *  caveated) or ERROR is seen, per §2. */
+/** A Hermes VM that stopped because it hit an engine resource ceiling, read
+ *  off its stderr. Two shapes: an `LLVM ERROR: OOM: ... Max heap size was
+ *  exceeded` abort (no `Uncaught` line at all, so `hermesPrintProjection`
+ *  cannot see it), and an uncaught RangeError for the same limits
+ *  `trace.ts`'s `RESOURCE_CEILING_MESSAGES` lists on the V8 side, in
+ *  Hermes's own wording. Like `isResourceCeilingRecord` this is only a shape
+ *  test: the caller must add the context that makes it a budget marker (the
+ *  other side must still be inside its own budget too). */
+const VM_RESOURCE_CEILING =
+  /\bOOM\b|Max heap size was exceeded|out of memory|Requested an array size that fails to allocate|Maximum call stack size exceeded|Invalid array length|Invalid string length|String length exceeds limit/i;
+
+/** Fuzz fix-wave 4 (docs/BUGS.md 2026-09-05). `cmp.divergence.index` indexes
+ *  the *comparable* records of the candidate's trace; this maps it back to a
+ *  position in the candidate's own record list and asks how many print lines
+ *  the candidate had emitted by then. Returns that count when the divergence
+ *  is an output record whose text lies wholly inside the first `cap` lines —
+ *  the ones a real Hermes VM run just reproduced byte-for-byte — and null
+ *  otherwise (no divergence, a non-output divergence, or one past anything
+ *  the VM was observed to do). Never widens a verdict: the caller only ever
+ *  uses a non-null result to weaken DIVERGENT to INCONCLUSIVE. */
+function vmRefutedDivergence(ta: { readonly records: readonly TraceRecord[] }, cmp: TraceComparison, mainPhase: readonly TraceRecord[], cap: number): number | null {
+  if (cmp.divergence === null || cap <= 0) return null;
+  const rec = ta.records.filter(isComparable)[cmp.divergence.index];
+  if (rec === undefined || rec.k !== "out") return null;
+  const pos = mainPhase.indexOf(rec);
+  if (pos < 0) return null;
+  const lines = printProjection(mainPhase.slice(0, pos + 1));
+  if (lines.length === 0) return null;
+  const n = lines.join("\n").split("\n").length;
+  return n <= cap ? n : null;
+}
+
 export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult> {
   const wanted = new Set(opts.oracles ?? DEFAULT_ORACLES);
   const started = Date.now();
@@ -303,9 +336,26 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
         const candidateCeiling = mainPhase.some((r) => r.k === "err" && r.phase === "main" && isResourceCeilingRecord(r));
         const candidateLines = printProjection(mainPhase).map(normaliseEngineMessages).join("\n").split("\n");
         const candidateOut = candidateCeiling ? candidateLines.slice(0, -1) : candidateLines;
-        const vmOut = hermesPrintProjection(hermesResult).map(normaliseEngineMessages).join("\n").split("\n");
+        // The VM's own resource ceiling, the mirror image of
+        // `candidateCeiling` (docs/BUGS.md 2026-09-05, fuzz fix-wave 4).
+        // Hermes reaches the same array/string/stack/heap limits Node does,
+        // but words them differently (`Requested an array size that fails to
+        // allocate` for V8's `Invalid array length`) and reports a heap
+        // exhaustion as an `LLVM ERROR: OOM` abort with no `Uncaught` line
+        // at all, so neither `isResourceCeilingRecord` nor `timedOut` sees
+        // it. Left unrecognised, the candidate's ceiling line was stripped
+        // while the VM's identical one was not, which manufactured a
+        // divergence out of two engines hitting the same wall after
+        // identical output (`v99-seed777142`); and whether the abort beats
+        // `timeoutMs` is a property of the machine, so the same find flipped
+        // between DIVERGENT and INCONCLUSIVE from run to run. Treated
+        // exactly as the candidate's ceiling is: the marker line comes off
+        // and the side counts as budget-limited.
+        const vmCeiling = VM_RESOURCE_CEILING.test(hermesResult.stderr);
+        const vmLines = hermesPrintProjection(hermesResult).map(normaliseEngineMessages).join("\n").split("\n");
+        const vmOut = vmCeiling && (vmLines[vmLines.length - 1] ?? "").startsWith("uncaught ") ? vmLines.slice(0, -1) : vmLines;
         const candidateBudgetHit = ta.timedOut === true || ta.records.some((r) => r.k === "limit") || candidateCeiling;
-        const vmBudgetHit = hermesResult.timedOut || vmOut.length > (runOpts.maxRecords ?? 20000);
+        const vmBudgetHit = hermesResult.timedOut || vmCeiling || vmOut.length > (runOpts.maxRecords ?? 20000);
         // *Both* sides must have been cut off, not either: a candidate that
         // hung with no output while the VM ran to completion inside the same
         // budget is a real behaviour difference (that is exactly what
@@ -314,7 +364,23 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
         // while the VM kept going. Only when neither side was allowed to
         // finish is an equal prefix evidence-free.
         const budgetHit = candidateBudgetHit && vmBudgetHit;
-        const cap = budgetHit ? Math.max(0, Math.min(candidateOut.length, vmOut.length) - 1) : Math.max(candidateOut.length, vmOut.length);
+        // Which trailing line is actually suspect (docs/BUGS.md 2026-09-05,
+        // fuzz fix-wave 4). The old rule dropped one line off the *shared*
+        // cap whenever both sides were cut off, which for a program that
+        // prints once and then loops forever leaves `cap === 0` - nothing
+        // verified at all, so the one line the VM did print (the D14 ground
+        // truth for the only observable such a program has) was thrown away.
+        // Drop a line only where a mid-line cut is actually possible: the
+        // VM's stdout is a raw stream a kill can cut mid-line, but only when
+        // it does not end in a newline - a newline-terminated stream has no
+        // partial last line. The candidate's side is built from whole trace
+        // records, which a record cap or a timeout can only truncate
+        // *between* records, never inside one (its one genuinely suspect
+        // trailing line, the engine-resource `uncaught ...`, is already
+        // sliced off above). Both sides are still capped to the shorter one,
+        // so a side that ran longer never counts as a difference.
+        const vmTrusted = budgetHit && !hermesResult.stdout.endsWith("\n") ? Math.max(0, vmOut.length - 1) : vmOut.length;
+        const cap = budgetHit ? Math.min(candidateOut.length, vmTrusted) : Math.max(candidateOut.length, vmOut.length);
         const candidatePrint = candidateOut.slice(0, cap).join("\n");
         const hermesPrint = vmOut.slice(0, cap).join("\n");
         if (candidatePrint === hermesPrint && budgetHit) {
@@ -323,11 +389,31 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
           // ever weaken a verdict, and a candidate-vs-Node divergence found
           // inside the prefix (cmp already DIVERGENT) is real evidence and
           // is left alone.
+          // Fix-wave 4 addition (docs/BUGS.md 2026-09-05): when `cmp` IS
+          // divergent the divergence can still be one the VM has already
+          // refuted. `cmp` compares the candidate against *source.js under
+          // Node*; if the record the two disagree on printed inside the
+          // `cap` lines the VM just confirmed byte-for-byte, then the D14
+          // ground truth sided with the candidate at exactly that point
+          // (Hermes shares one `let` binding across loop iterations, so the
+          // bytecode prints `16,16,...` where the source under Node prints
+          // `0,1,2,...` - finds `v94-seed780867`, `v96-seed781844`,
+          // `v96-seed782973`). That is evidence *against* the divergence,
+          // not for it, so it must not stand as DIVERGENT; but neither side
+          // ran to completion, so it is INCONCLUSIVE, never PASS (HA-01). A
+          // divergence the VM never observed (past `cap`, or on a
+          // non-output record) is untouched and stays DIVERGENT.
+          const refutedAt = vmRefutedDivergence(ta, cmp, mainPhase, cap);
           caveats.push(
-            `${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} cross-check hit a budget (candidate ${candidateOut.length} line(s), ${candidateCeiling ? "engine resource ceiling (resource)" : "record cap/timeout"}; VM ${vmOut.length} line(s), timeout/over the candidate's record budget); the ${cap}-line common prefix is identical, so this is a budget cut-off, not a divergence (P-16) — INCONCLUSIVE, not DIVERGENT`,
+            `${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} cross-check hit a budget (candidate ${candidateOut.length} line(s), ${candidateCeiling ? "engine resource ceiling (resource)" : "record cap/timeout"}; VM ${vmOut.length} line(s), ${vmCeiling ? "engine resource ceiling (resource)" : "timeout/over the candidate's record budget"}); the ${cap}-line common prefix is identical, so this is a budget cut-off, not a divergence (P-16) — INCONCLUSIVE, not DIVERGENT`,
           );
-          if (cmp.verdict !== TRACE_VERDICT.DIVERGENT) {
-            cmp = { verdict: TRACE_VERDICT.INCONCLUSIVE, why: `${candidateCeiling ? "resource: the candidate hit an engine resource ceiling while the VM kept running; " : ""}Hermes VM cross-check truncated by a budget after ${cap} identical line(s); the rest was never observed`, evidence: cmp.evidence, records: cmp.records, divergence: null, context: null, maskedMatches: cmp.maskedMatches };
+          if (refutedAt !== null) {
+            caveats.push(
+              `${opts.fixture.name}: the candidate-vs-source.js divergence at record ${cmp.divergence?.index} printed within the first ${refutedAt} line(s), which Hermes VM v${opts.reference.vm.hbcVersion} reproduced identically to the candidate — the D14 ground truth refutes this divergence rather than confirming it (fuzz fix-wave 4)`,
+            );
+          }
+          if (cmp.verdict !== TRACE_VERDICT.DIVERGENT || refutedAt !== null) {
+            cmp = { verdict: TRACE_VERDICT.INCONCLUSIVE, why: `${candidateCeiling ? "resource: the candidate hit an engine resource ceiling while the VM kept running; " : ""}${refutedAt !== null ? `the candidate-vs-source.js divergence is refuted by the Hermes VM inside the observed prefix (D14); ` : ""}Hermes VM cross-check truncated by a budget after ${cap} identical line(s); the rest was never observed`, evidence: cmp.evidence, records: cmp.records, divergence: null, context: null, maskedMatches: cmp.maskedMatches };
           }
         } else if (candidatePrint !== hermesPrint) {
           // The candidate itself disagrees with the real Hermes VM's own
