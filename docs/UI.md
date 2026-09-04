@@ -393,21 +393,31 @@ same guarded frame-local alpha-rename `var-naming` uses, so renaming can never
 change what the code does, and it stops at function boundaries: an inner
 function's own `r3` is a different binding and is left alone.
 
+**Whole-module file view honours renames too.** `GET /api/module/{id}/source`
+(`src/ui-server/list.ts`'s `moduleSource`) splices every owned function that
+has an accepted `reg:F:R` name with `ArtifactService.renderFn(fn)`'s re-emit
+— the same text `/api/fn/{fn}/source` serves — indented to the original
+range's own leading whitespace, and every `functions[].lines` tuple after the
+splice point is remapped by the line-count delta so click-to-select and
+scroll-to-range (`ui/src/panes/CenterPane.tsx`) stay correct. A module with no
+accepted names anywhere returns the on-disk text byte-for-byte (no re-render
+cost); the response's own `renderedFns` lists which owned fns were spliced.
+The result is cached per module and invalidated on the next `set_name` inside
+it (`invalidateModuleSourceCache`, hooked next to `renderFn`'s own
+`invalidateRender`); the UI's `invalidateFn` (`ui/src/actions/registry.ts`)
+drops the same module's `["module-source", id]` query key after a rename so
+the file view refetches. The per-function re-render uses this build's live
+decompile defaults, and stage-B passes only when the manifest recorded some
+(`src/split/index.ts` runs none unless `--passes` was given), so a spliced
+function can differ cosmetically from the rest of the on-disk file — this was
+already true of `/api/fn/{fn}/source` and is unchanged here.
+
 **Still rough here.** String targets (`sid:N`) are not wired — renaming a
 string literal is a contract change, not a binding rename, and has no store.
-The whole-module view (`GET /api/module/{id}/source`) serves the rendered file
-from disk and is NOT overlay-aware: a renamed local shows in the function
-source pane and in `/api/fn/{fn}/context`, but the module file still shows the
-old identifier until the artifact is re-rendered. The per-function re-render
-also uses this build's live decompile defaults, and stage-B passes only when
-the manifest recorded some (`src/split/index.ts` runs none unless `--passes`
-was given), so a re-rendered function can differ cosmetically from the on-disk
-text — its line numbers are its own, not the module file's. `list`'s
-`rendered` column is exact for a named register and best-effort for a
+`list`'s `rendered` column is exact for a named register and best-effort for a
 var-named one (it classifies the same raw frame body `var-naming` classifies).
-`view.fold` / `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs;
-`view.copyDisasmOffset` copies `fn:<n>`, not a byte offset. The Package panel
-reads the real `GET /api/package-id/{mod}` (wave 4a).
+`view.fold` / `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs.
+The Package panel reads the real `GET /api/package-id/{mod}` (wave 4a).
 
 ## Activity feed (wave 2, track 3)
 

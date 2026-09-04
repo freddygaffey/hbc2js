@@ -15,6 +15,7 @@ import { join } from "node:path";
 import type { ArtifactService, FnSummary } from "../artifact/service.ts";
 import type { ModuleEntry, ModulesIndex } from "../artifact/schema.ts";
 import { hasProjectDb, openProjectDbReadonly, loadIndexRowsFromDb } from "../projdb/artifact-read.ts";
+import type { ProjectService } from "../project/service.ts";
 
 /** Every module the artifact knows about — own cap (never widens anything
  *  `resources.ts` publishes; this is a new list this layer owns). The UI's
@@ -97,19 +98,96 @@ export function listFunctions(artifact: ArtifactService, cursor = 0, limit = FUN
  *  it owns with its 1-based line range, so the UI can show a FILE view (all
  *  functions, click a range to focus one) instead of forcing the user down
  *  to per-function source (`/api/fn/{fn}/source`). Text is the artifact's
- *  own rendered `module_N.js`, read as-is; nothing is re-emitted here. */
+ *  own rendered `module_N.js` UNLESS a function in it has an accepted
+ *  `reg:F:R` name (docs/UI.md "Still rough here" used to say this view was
+ *  never overlay-aware) — that function's line range is then spliced with
+ *  `ArtifactService.renderFn(fn)`'s re-emit, same source `/api/fn/{fn}/
+ *  source` already serves, so the two views agree. `renderedFns` lists
+ *  which owned functions were spliced. */
 export interface ModuleSourceResult {
   readonly module: number;
   readonly file: string;
   readonly text: string;
   readonly functions: readonly { readonly fn: number; readonly name: string | null; readonly lines: readonly [number, number] }[];
+  readonly renderedFns: readonly number[];
 }
 
-export function moduleSource(artifact: ArtifactService, id: number): ModuleSourceResult | null {
+/** Per-module spliced result, keyed by the `ArtifactService` instance (one
+ *  per project ctx, same identity `renderFn`'s own memoisation relies on) so
+ *  a splice with no active names anywhere never recomputes on repeat reads,
+ *  and a rename invalidates only the ONE module it lands in
+ *  (`invalidateModuleSourceCache` below, called next to
+ *  `ProjectService.invalidateRenderFor`'s own `artifact.invalidateRender`). */
+const moduleSourceCache = new WeakMap<ArtifactService, Map<number, ModuleSourceResult>>();
+
+/** Drops the cached `/api/module/{id}/source` splice for the module that
+ *  owns `fn` (looked up live — `ArtifactService.fn` — so this stays correct
+ *  even if a function moves module between builds). Called by the
+ *  `set-name` route right after a write, mirroring `renderFn`'s own
+ *  invalidation so the two caches never disagree about staleness. */
+export function invalidateModuleSourceCache(artifact: ArtifactService, fn: number): void {
+  const cache = moduleSourceCache.get(artifact);
+  if (cache === undefined) return;
+  const mod = artifact.fn(fn).module;
+  if (mod !== null) cache.delete(mod);
+}
+
+export function moduleSource(artifact: ArtifactService, project: ProjectService, id: number): ModuleSourceResult | null {
+  let cache = moduleSourceCache.get(artifact);
+  if (cache === undefined) {
+    cache = new Map();
+    moduleSourceCache.set(artifact, cache);
+  }
+  const cached = cache.get(id);
+  if (cached !== undefined) return cached;
+
   const file = artifact.module(id).file;
   if (file === null) return null;
   const functions: { fn: number; name: string | null; lines: readonly [number, number] }[] = [];
   for (const f of artifact.ownedFns(id)) if (f.lines !== null) functions.push({ fn: f.fn, name: f.name, lines: f.lines });
   functions.sort((a, b) => a.lines[0] - b.lines[0]);
-  return { module: id, file, text: readFileSync(artifact.modulePath(file), "utf8"), functions };
+
+  const diskText = readFileSync(artifact.modulePath(file), "utf8");
+  const hasActive = functions.some((f) => project.activeRegNames(f.fn).size > 0);
+  if (!hasActive) {
+    // Untouched path stays byte-identical to disk — no split/join, no
+    // render call — per this module's own doc comment above.
+    const result: ModuleSourceResult = { module: id, file, text: diskText, functions, renderedFns: [] };
+    cache.set(id, result);
+    return result;
+  }
+
+  const workingLines = diskText.split("\n");
+  let delta = 0;
+  const renderedFns: number[] = [];
+  const outFunctions: { fn: number; name: string | null; lines: [number, number] }[] = [];
+  for (const f of functions) {
+    const adjLo = f.lines[0] + delta;
+    const adjHi = f.lines[1] + delta;
+    const names = project.activeRegNames(f.fn);
+    const rendered = names.size > 0 ? artifact.renderFn(f.fn) : null;
+    if (rendered === null) {
+      outFunctions.push({ fn: f.fn, name: f.name, lines: [adjLo, adjHi] });
+      continue;
+    }
+    // Indent every rendered line to the original range's own leading
+    // whitespace (the module file's function statements may be nested,
+    // e.g. inside the `__d(function(...) {` wrapper); rendered.code itself
+    // has no baseline indentation, so this is a straight prepend, and
+    // trailing-empty lines are trimmed rather than indented.
+    const leading = /^[ \t]*/.exec(workingLines[adjLo - 1] ?? "")?.[0] ?? "";
+    const renderedLines = rendered.code
+      .replace(/\n+$/, "")
+      .split("\n")
+      .map((l) => (l.length === 0 ? l : leading + l));
+    workingLines.splice(adjLo - 1, adjHi - adjLo + 1, ...renderedLines);
+    const newHi = adjLo + renderedLines.length - 1;
+    outFunctions.push({ fn: f.fn, name: f.name, lines: [adjLo, newHi] });
+    renderedFns.push(f.fn);
+    delta += renderedLines.length - (adjHi - adjLo + 1);
+  }
+
+  const result: ModuleSourceResult = { module: id, file, text: workingLines.join("\n"), functions: outFunctions, renderedFns };
+  cache.set(id, result);
+  return result;
 }

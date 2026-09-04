@@ -13,7 +13,7 @@
 import type { McpResources } from "../mcp/resources.ts";
 import type { McpTools } from "../mcp/tools.ts";
 import { Hbc2jsError } from "../errors.ts";
-import { listModules, listFunctions, moduleSource } from "./list.ts";
+import { listModules, listFunctions, moduleSource, invalidateModuleSourceCache } from "./list.ts";
 import { segregation } from "./segregation.ts";
 import { WORKER_ROUTES, type WorkersCtx } from "./workers-routes.ts";
 
@@ -197,7 +197,7 @@ const BASE_ROUTES: readonly Route[] = [
     handler: ([raw], _req, ctx) => {
       const id = parseFn(raw!);
       if (id === null) return badRequest(`module/${raw}/source: not a module id`);
-      const r = moduleSource(ctx.resources.artifact, id);
+      const r = moduleSource(ctx.resources.artifact, ctx.resources.project, id);
       if (r === null) return { status: 404, json: { reason: `module ${id}: no source file recorded` } };
       return ok(r);
     },
@@ -348,7 +348,20 @@ const BASE_ROUTES: readonly Route[] = [
     },
   },
   // -- write tools (spec 17 §2/§14, POST body = the tool's Input interface) --
-  { method: "POST", re: /^\/api\/tools\/set-name$/, handler: (_p, req, ctx) => ok(ctx.tools.setName(req.body as Parameters<McpTools["setName"]>[0])) },
+  {
+    method: "POST",
+    re: /^\/api\/tools\/set-name$/,
+    handler: (_p, req, ctx) => {
+      const input = req.body as Parameters<McpTools["setName"]>[0];
+      const result = ctx.tools.setName(input);
+      // Same target shapes `ProjectService.invalidateRenderFor` matches to
+      // invalidate `renderFn`'s cache — the module-source splice cache
+      // (`list.ts`) needs the same fn to drop the module it lives in.
+      const m = /^reg:(\d+):\d+$/.exec(input.target) ?? /^fn:(\d+)$/.exec(input.target);
+      if (m !== null) invalidateModuleSourceCache(ctx.resources.artifact, Number(m[1]));
+      return ok(result);
+    },
+  },
   { method: "POST", re: /^\/api\/tools\/add-comment$/, handler: (_p, req, ctx) => ok(ctx.tools.addComment(req.body as Parameters<McpTools["addComment"]>[0])) },
   { method: "POST", re: /^\/api\/tools\/add-tag$/, handler: (_p, req, ctx) => ok(ctx.tools.addTag(req.body as Parameters<McpTools["addTag"]>[0])) },
   { method: "POST", re: /^\/api\/tools\/record-finding$/, handler: (_p, req, ctx) => ok(ctx.tools.recordFinding(req.body as Parameters<McpTools["recordFinding"]>[0])) },

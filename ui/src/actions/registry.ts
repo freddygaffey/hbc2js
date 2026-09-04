@@ -36,12 +36,23 @@ export function setQueryClient(qc: QueryClient): void {
 
 /** Everything a write to `fn` invalidates: its summary, its rendered source
  *  and disasm, its context/xrefs, the catalogue the tree renders from, the
- *  findings list and the log tail (so the write shows up in the log pane). */
+ *  findings list and the log tail (so the write shows up in the log pane).
+ *  Also drops the owning module's whole-file view (`["module-source", id]`,
+ *  `useModuleSource`/`useModuleSourceUpdates` in `hooks.ts`) — the server
+ *  now splices accepted `reg:F:R` renders into that view too, so a rename
+ *  must refetch it the same way it refetches `source` (docs/UI.md, "Still
+ *  rough here" used to note the module view never picked renames up). The
+ *  module id comes from the already-cached function catalogue, never a
+ *  fresh request. */
 export function invalidateFn(fn: number | undefined): void {
   const qc = queryClient;
   if (qc === null) return;
   const keys = ["fn", "source", "disasm", "context", "who-calls", "calls-from", "locals"] as const;
-  if (fn !== undefined) for (const k of keys) void qc.invalidateQueries({ queryKey: [k, fn] });
+  if (fn !== undefined) {
+    for (const k of keys) void qc.invalidateQueries({ queryKey: [k, fn] });
+    const module = catalogue()?.rows.find((r) => r.fn === fn)?.module;
+    if (module !== null && module !== undefined) void qc.invalidateQueries({ queryKey: ["module-source", module] });
+  }
   void qc.invalidateQueries({ queryKey: ["functions-all"] });
   void qc.invalidateQueries({ queryKey: ["findings"] });
   void qc.invalidateQueries({ queryKey: ["log-tail"] });
