@@ -198,6 +198,29 @@ L2: {
 When the pattern ends in a rest element there is no close block (the rest loop
 exhausts the iterator).
 
+**Implementation note (BUGS.md 2026-09-02, hole-by-shape closed 2026-09-05).**
+Measured on `65-destructure-hole-rest`'s `skipMiddle` (function-body scope,
+plain-assignment form — a `const`/`let [..] =` *declaration* form hits an
+unrelated v84 TDZ-init quirk that fuses `__hbc_empty` bookkeeping into the
+array pattern's own prologue block): a hole is *structurally* indistinguishable
+from a kept staged-commit element (both stage into a shared register and end
+in an unconditional `break`); the matcher (`match.ts`'s `resolvePending`)
+disambiguates only by *use* — a following block's `real = stage;` header
+commits it (kept), the stage register is read again before being redefined
+even with no such header (kept, direct-commit style — `firstTwo`'s `p`/`q`),
+or the stage is provably dead from that point on (`isDeadFrom`, a defUse
+reachability check) — a hole. This also required recognising that **the
+close block itself may carry the pattern's last position's commit at its own
+head** (`parseCloseBlock` extended to accept an optional leading
+`real = stage;`), a shape no previously-measured fixture needed (`firstTwo`'s
+last element always committed directly). v84/v94/v96 accept the hole this
+way; v98/v99 lower the same hole through a genuinely different shape (an
+early-guard flag-copy whose *target* is itself aliased again to feed the
+`iterNext` call's `rNextFn` argument directly, and no stage write at all) that
+this rung does not parse — refused (`broken-threading`), not mis-rewritten.
+See `docs/lowering/destructuring.md`'s "Holes and rest at function-body
+scope" section for the measured IR.
+
 ### 2.4 The rest element (this rung owns it — see §7)
 
 `...rest` is an **inline index-append loop**, not a helper call:
@@ -227,6 +250,21 @@ machinery; §4's `pc-tracked-region` refusal applies (v1 scope, §8 Q1).
 `__hbc_b_arraySpread` never appears in a destructuring — the helper-call
 spreads belong to `spread-rest` (spec 17), and the two rungs' shapes are
 disjoint (§7).
+
+**Implementation note (BUGS.md 2026-09-02, measured 2026-09-05, confirms §8
+Q1 rather than narrowing it).** `65-destructure-hole-rest`'s `headAndTail`
+puts `[h, ...t] = xs` at **function-body** scope, not top level, and it is
+*still* refused: `__pc` writes appear inside the rest loop's own printed
+body at every version (13 at v84/v94/v96, 3 at v98/v99, never zero) —
+confirmed by direct grep, not inferred from the top-level case. The `try`/
+`catch` this section documents is inherent to the rest lowering's own abrupt
+-completion handling (`IteratorClose(it, true)` on a throw from the append),
+not an artifact of the module wrapper's exception machinery as the original
+§8 Q1 wording implied. Array rest therefore has **no reachable v1 site at
+all** — the sound extension is exactly what §8 Q1 already names (matching
+the region including its handler against the canonical abrupt-close
+expansion, after batch-4 `try-clean`), now with direct evidence instead of
+an inference from the top-level case alone.
 
 ### 2.5 Object patterns
 

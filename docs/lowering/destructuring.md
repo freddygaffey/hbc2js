@@ -100,3 +100,57 @@ ordinary property access).
 ### v99 re-check (rung 16 implementation, docs/specs/passes/16-destructure.md §0)
 
 Confirmed at v99 (`npx tsx src/cli.ts tests/fixtures/constructs/{37,38,39}-*/v99.hbc --no-pass var-naming --no-pass fn-naming`): the stage-B shape is **identical** to v94's — one labeled block per bound array element / defaulted object property, tail `break`, `GetById` fan-out for plain properties, 3-arg `copyDataProperties` for object rest. The only differences are cosmetic register-copy ones already generalised in spec 16 §2.6: the done-flag recompute is sometimes threaded through an extra `ident = ident` copy before *and* after the comparison that establishes it (handled by the matcher's `growEquivSet` — an equivalence *set*, not a single tracked name, since a later guard may legally test any name in it), and the `undefined`-sentinel operand's register number differs (never its shape). `default-params` does **not** fire on `38`'s/`39`'s `= {}` object-pattern parameter default at *either* version (see docs/BUGS.md's `destructure-v94-default-params-no-fire` row — spec 16 §2.6's v94 column claiming it already fired was measured wrong); this rung's object rule is unaffected either way, since it keys on the observed source register, not on how that register came to hold the value. Catalogue row 22 confidence promoted to ✅ verified on this basis.
+
+### Holes and rest at function-body scope (rung 16 implementation, BUGS.md 2026-09-02)
+
+Measured on a fresh fixture (`tests/fixtures/constructs/65-destructure-hole-rest`,
+`skipMiddle(xs) { let a, c; [a, , c] = xs; return a + ':' + c; }` /
+`headAndTail(xs) { let h, t; [h, ...t] = xs; return h + ':' + t.join(','); }`)
+because `37-destructuring-array`'s own hole/rest positions are top-level and
+already refused by `pc-tracked-region` before either shape can be observed
+in isolation. Plain-assignment form (not `const`/`let [..] =`) is
+deliberate: a *declaration*-form pattern at v84 fuses a TDZ init
+(`r0 = __hbc_empty; r4 = r0; r3 = r0;`) into the array pattern's own
+prologue block, which `parsePrologueBlock` does not parse — an unrelated,
+pre-existing v84 `let`/`const` quirk this fixture sidesteps rather than
+fixes.
+
+**Hole** (`skipMiddle`'s `[a, , c]`): at v84/v94/v96 the elided middle
+position is a labeled block indistinguishable in *shape* from a normal
+element block — it stages its raw stepped value into a shared register and
+ends with an unconditional `break`, exactly like a kept element in
+staged-commit style (§2.1(b)). The only distinguishing fact is *use*: the
+following block never reads that stage (it resets the same register fresh
+instead of committing it), and the register is never read again anywhere
+in the function. Two things this fixture is the first to exercise:
+
+1. **A leading flag-copy before an element's own early guard**
+   (`r7 = r2; if (r7) { break L1; }` — the element under test copies the
+   previous block's done flag into a fresh register before testing it,
+   where every previously-measured fixture tested the flag register
+   directly). Cosmetic, the same family of register-copy noise §2.6
+   documents elsewhere, just not previously observed at this position.
+2. **The close block can itself carry the pattern's last position's
+   commit** (`L3: { r3 = r5; r5 = r2; if (r5) { break L3; } … }` — `r3 = r5`
+   commits the last kept element's staged value before the close block's
+   own done-guard). `firstTwo`'s last element always committed directly
+   inside its own block, so no fixture needed this before.
+
+v98/v99 lower the *same* hole through a shape this rung does not parse: the
+early guard's flag-copy target is *itself* aliased again to feed the
+`iterNext` call's second argument directly (`r0 = r2; if (r0) …; r3 = r5;
+__hbc_iterNext(r1, r3); …` — `r3`, not `r5`, is passed where the matcher
+requires the tracked `rNextFn` register by name), and the stepped value is
+never staged into any register at all before being overwritten by the next
+comparison. The site stays refused (`broken-threading`), correctly.
+
+**Rest** (`headAndTail`'s `[h, ...t]`): refused at **every** version,
+including function-body scope — confirmed by counting `__pc` writes inside
+`headAndTail`'s own printed body: 13 at v84/v94/v96, 3 at v98/v99, never
+zero. Spec §2.4/§8 Q1 framed the rest loop's `try`/`catch` as a top-level-
+module-wrapper artifact; this measurement shows it is inherent to the rest
+lowering itself (the append loop's own `IteratorClose(it, true)` abrupt-path
+handler), present regardless of nesting depth. Array rest therefore has no
+reachable v1 site at all, not merely a top-level one — it stays exactly
+where spec §8 Q1 already put it, a batch-4 `try-clean` follow-up, now with
+direct evidence rather than an inference from the top-level case alone.

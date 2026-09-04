@@ -112,6 +112,78 @@ function objectRestBody(): readonly Stmt[] {
   return [asg(id("r2"), { k: "member", obj: id("r5"), prop: lit('"x"'), computed: false }), asg(id("r4"), { k: "object", props: [] }), asg({ k: "member", obj: id("r4"), prop: lit('"x"'), computed: false }, lit("0")), asg(id("r6"), call("__hbc_b_copyDataProperties", [{ k: "object", props: [] }, id("r5"), id("r4")])), ret(id("r2"))];
 }
 
+/** `skipMiddle(xs) { let a, c; [a, , c] = xs; return a + ':' + c; }` — a
+ *  middle hole (§2.3, BUGS.md 2026-09-02), staged-commit throughout:
+ *  transcribed verbatim (register names included) from the real v94 lowering
+ *  of `65-destructure-hole-rest`'s `skipMiddle`, measured with `--no-pass
+ *  var-naming --no-pass fn-naming --no-pass destructure`. `L1` (the middle
+ *  position) stages its own value into `r5` but is never committed by `L2`
+ *  (which resets `r5` fresh instead of reading it) — the elision. `L3`, the
+ *  close block, carries the *final* position's commit at its own head
+ *  (`r3 = r5;`), the shape that previously had no fixture (`firstTwo`'s last
+ *  element always committed directly inside its own block). */
+function skipMiddleBody(): readonly Stmt[] {
+  const L0 = labeled("L0", [
+    asg(id("r8"), UNDEF),
+    asg(id("r4"), UNDEF),
+    asg(id("r3"), UNDEF),
+    asg(id("__t"), call("__hbc_iterBegin", [id("a1")])),
+    asg(id("r1"), mem(id("__t"), 0)),
+    asg(id("r6"), mem(id("__t"), 1)),
+    asg(id("r5"), UNDEF),
+    asg(id("__t"), call("__hbc_iterNext", [id("r1"), id("r6")])),
+    asg(id("r7"), mem(id("__t"), 0)),
+    asg(id("r1"), mem(id("__t"), 1)),
+    asg(id("r9"), { k: "bin", op: "===", left: id("r1"), right: id("r8") }),
+    asg(id("r2"), id("r9")),
+    ifBreak(id("r9"), "L0"),
+    asg(id("r5"), id("r7")),
+    brk("L0"),
+  ]);
+  // L1: the elided middle position -- stages `r5` but the value is never
+  // read by L2 (dead: §2.3's "no following commit read").
+  const L1 = labeled("L1", [
+    asg(id("r4"), id("r5")), // commit of L0's own stage into 'a's real register
+    asg(id("r5"), UNDEF),
+    asg(id("r7"), id("r2")), // §2.6 flag-copy before the early guard
+    ifBreak(id("r7"), "L1"),
+    asg(id("__t"), call("__hbc_iterNext", [id("r1"), id("r6")])),
+    asg(id("r7"), mem(id("__t"), 0)),
+    asg(id("r1"), mem(id("__t"), 1)),
+    asg(id("r9"), id("r1")),
+    asg(id("r9"), { k: "bin", op: "===", left: id("r9"), right: id("r8") }),
+    asg(id("r2"), id("r9")),
+    ifBreak(id("r9"), "L1"),
+    asg(id("r5"), id("r7")), // hole's own raw value, staged, never committed
+    brk("L1"),
+  ]);
+  const L2 = labeled("L2", [
+    asg(id("r5"), UNDEF),
+    asg(id("r7"), id("r2")),
+    ifBreak(id("r7"), "L2"),
+    asg(id("__t"), call("__hbc_iterNext", [id("r1"), id("r6")])),
+    asg(id("r6"), mem(id("__t"), 0)),
+    asg(id("r1"), mem(id("__t"), 1)),
+    asg(id("r7"), id("r1")),
+    asg(id("r7"), { k: "bin", op: "===", left: id("r7"), right: id("r8") }),
+    asg(id("r2"), id("r7")),
+    ifBreak(id("r7"), "L2"),
+    asg(id("r5"), id("r6")),
+    brk("L2"),
+  ]);
+  const L3 = labeled("L3", [
+    asg(id("r3"), id("r5")), // close block carries the final position's commit
+    asg(id("r5"), id("r2")),
+    ifBreak(id("r5"), "L3"),
+    { k: "expr", expr: call("__hbc_iterClose", [id("r1"), lit("false")]) },
+    brk("L3"),
+  ]);
+  const tail1 = asg(id("r5"), id("r4"));
+  const tail2 = asg(id("r4"), { k: "bin", op: "+", left: id("r5"), right: lit('":"') });
+  const tail3 = asg(id("r3"), { k: "bin", op: "+", left: id("r4"), right: id("r3") });
+  return [L0, L1, L2, L3, tail1, tail2, tail3, ret(id("r3"))];
+}
+
 // ---------------------------------------------------------------------------
 // Positives.
 // ---------------------------------------------------------------------------
@@ -160,6 +232,17 @@ test("destructure: object rest (3-arg copyDataProperties)", () => {
   const rewritten = destructure.rewrite(m!, ctx);
   const printed = printProgram(rewritten);
   assert.match(printed, /\.\.\.r6/);
+  const res = check(body, rewritten, { ...ctx, fnBody: body });
+  assert.equal(res.ok, true, JSON.stringify(res));
+});
+
+test("destructure: array pattern with a middle hole (BUGS 2026-09-02) -> [r4, , r3] = a1", () => {
+  const body = skipMiddleBody();
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.notEqual(m, null);
+  const rewritten = destructure.rewrite(m!, ctx);
+  const printed = printProgram(rewritten);
+  assert.match(printed, /\[r4, , r3\] = a1;/);
   const res = check(body, rewritten, { ...ctx, fnBody: body });
   assert.equal(res.ok, true, JSON.stringify(res));
 });
@@ -282,6 +365,49 @@ for (const version of ["v84", "v94", "v96"]) {
 for (const version of ["v98", "v99"]) {
   test(`destructure: 39-destructuring-params (${version}) — sumPair's try-wrapped default stays refused`, () => {
     const code = decompileFixture("39-destructuring-params", version);
+    assert.match(code, /= __hbc_iterBegin\(/);
+  });
+}
+
+// BUGS.md 2026-09-02, "still open" part: a hole-by-shape and array rest at
+// a function-body-scope site (not `pc-tracked-region`). Measured directly
+// (`65-destructure-hole-rest`, `--no-pass var-naming --no-pass fn-naming
+// --no-pass destructure` at every version): `skipMiddle`'s `[a, , c] = xs;`
+// middle hole lowers straight-line (no `__pc`/try) at v84/v94/v96 -- the
+// matcher now accepts it. v98/v99 lower the *same* hole through a
+// genuinely different shape (an early-guard flag copy PLUS an `rNextFn`
+// alias copy feeding the `iterNext` call directly, never observed on any
+// previously-measured fixture) that this rung does not parse; the site
+// stays refused (`broken-threading`), not mis-rewritten. `headAndTail`'s
+// `[h, ...t] = xs;` rest is refused at *every* version, including function-
+// body scope: the append loop's own `try`/`catch` (§2.4) is inherent to the
+// rest lowering itself, not a top-level-only artifact of the module
+// wrapper's exception machinery as §8 Q1 originally framed it -- confirmed
+// by grepping `__pc` inside `headAndTail`'s own printed body at all five
+// versions (13 occurrences at v84/v94/v96, 3 at v98/v99, zero of which is
+// ever absent). `docs/lowering/destructuring.md` and the BUGS row record
+// both measurements.
+for (const version of ["v84", "v94", "v96"]) {
+  test(`destructure: 65-destructure-hole-rest (${version}) — skipMiddle's middle hole is preserved`, () => {
+    const code = decompileFixture("65-destructure-hole-rest", version);
+    assert.match(code, /\[\w+, , \w+\] = \w+;/);
+  });
+}
+for (const version of ["v98", "v99"]) {
+  test(`destructure: 65-destructure-hole-rest (${version}) — skipMiddle's hole stays refused (different, unhandled shape)`, () => {
+    const code = decompileFixture("65-destructure-hole-rest", version);
+    assert.doesNotMatch(code, /\[\w+, , \w+\] = \w+;/);
+    assert.match(code, /= __hbc_iterBegin\(/);
+  });
+}
+for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
+  test(`destructure: 65-destructure-hole-rest (${version}) — headAndTail's rest stays refused (pc-tracked-region, inherent to the append loop)`, () => {
+    const code = decompileFixture("65-destructure-hole-rest", version);
+    // Never a mis-rewrite: no `...ident] = ` array-rest pattern is ever
+    // written, and a raw, unrewritten `__hbc_iterBegin` call site survives
+    // (from `headAndTail`; `skipMiddle`'s own call is rewritten away at
+    // v84/v94/v96, so this is not double-counting that one).
+    assert.doesNotMatch(code, /\.\.\.\w+\] = /);
     assert.match(code, /= __hbc_iterBegin\(/);
   });
 }

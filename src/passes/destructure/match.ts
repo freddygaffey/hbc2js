@@ -18,8 +18,16 @@
 // register with no separate staging register) — the staged-commit-plus-default
 // combination §2.2 mentions (e.g. `37`'s `b = 99`) is still refused
 // (`broken-threading`, since the staged head shape does not parse as a plain
-// reset); holes-by-shape and array rest remain out of scope — §8 Q1/Q3 and
-// the PUSHBACK row explain why. Object patterns support plain reads,
+// reset). Holes-by-shape (§2.3, BUGS.md 2026-09-02) are recognised at
+// v84/v94/v96 via `resolvePending`'s three-way dataflow split (a commit
+// header found -> real target; no header but the stage register is read
+// again before redefinition -> direct-commit target; no header and the
+// stage is provably dead (`isDeadFrom`) -> hole) — v98/v99 lower the same
+// hole through an unhandled shape and stay refused. Array rest (§2.4)
+// remains out of scope at *every* version — measured to be structurally
+// unreachable (the append loop's own `try`/`catch` is inherent to the
+// lowering, not a top-level-only artifact), see §8 Q1 and
+// `docs/lowering/destructuring.md`. Object patterns support plain reads,
 // defaulted properties (including nested-pattern defaults one level via
 // `target` recursion is NOT implemented — a nested object/array target is
 // refused, `non-register-target`) and the 3-argument rest form.
@@ -81,7 +89,12 @@ function asTailBreakGuard(s: Stmt, label: string): Expr | null {
 // ---------------------------------------------------------------------------
 
 interface ArrayElement {
-  readonly target: string;
+  /** Present iff this is a hole (§2.3, BUGS.md 2026-09-02) — an elided
+   *  position (`[a, , c]`'s middle slot): the iterator was still advanced
+   *  (an observable step happened) but nothing was ever bound to it, and
+   *  `target`/`init` are absent. */
+  readonly hole?: true;
+  readonly target?: string; // absent iff `hole`
   readonly init?: Expr; // §2.2: a per-element default, direct-commit only
 }
 
@@ -245,8 +258,17 @@ function parseElementBlock(body: readonly Stmt[], label: string, rIter: string, 
     i = 2;
   }
   i = skipResets(body, i);
+  // A leading flag-copy before the early guard (`r7 = r2; if (r7) break …`,
+  // measured on `65-destructure-hole-rest`'s `skipMiddle` at v84/94/96 — the
+  // presence of a hole shifts register allocation enough to introduce this
+  // copy where the previously-measured fixtures never needed one) is the
+  // same §2.6 cosmetic `growEquivSet` already tolerates after a comparison;
+  // tolerate it here too, against a local copy so `prevDone` itself is
+  // never mutated.
+  const prevDoneLocal = new Set(prevDone);
+  i = growEquivSet(body, i, prevDoneLocal);
   const guard = asTailBreakGuard(body[i]!, label);
-  if (guard === null || !isIdent(guard) || !prevDone.has(guard.name)) return null; // broken-threading
+  if (guard === null || !isIdent(guard) || !prevDoneLocal.has(guard.name)) return null; // broken-threading
   i++;
   const tail = parseTail(body, i, rIter, rNextFn);
   if (tail === null) return null;
@@ -420,22 +442,88 @@ function parseDefaultedElementBlock(body: readonly Stmt[], outerLabel: string, r
   return { rawTarget: tail.value, doneSet, rIterNew: tail.rIterNew, u: tail.u, init };
 }
 
-/** `Lc: { if (doneFinal) { break Lc } __hbc_iterClose(rIter, false); break Lc }`. */
-function parseCloseBlock(body: readonly Stmt[], label: string, doneFinal: ReadonlySet<string>): boolean {
-  let i = skipResets(body, 0);
-  const guard = asTailBreakGuard(body[i]!, label);
-  if (guard === null || !isIdent(guard) || !doneFinal.has(guard.name)) return false;
+/** `Lc: { [target = prevStage;] if (doneFinal) { break Lc } __hbc_iterClose(rIter,
+ *  false); break Lc }`. The optional leading commit (measured on
+ *  `65-destructure-hole-rest`'s `skipMiddle`/`skipFirst`, BUGS.md
+ *  2026-09-02): when the pattern's last position uses the staged-commit
+ *  style §2.1(b) describes for an *inner* element, the close block is
+ *  "block N" and carries that position's commit at its own head, exactly
+ *  like any other element block would — this was previously unhandled
+ *  (`firstTwo`'s last element always committed directly, so no fixture
+ *  needed it until this rung's hole/rest measurement). Returns the resolved
+ *  name if a commit header was found, `null` otherwise (meaning `prevStage`
+ *  itself is either already the real target, or a hole — the caller
+ *  disambiguates via `resolvePending`). */
+function parseCloseBlock(body: readonly Stmt[], label: string, doneFinal: ReadonlySet<string>, prevStage: string): { readonly resolvedPrevTarget: string | null } | null {
+  let i = 0;
+  let resolvedPrevTarget: string | null = null;
+  const head = asIdentAssign(body[0] ?? { k: "comment", text: "" });
+  if (head !== null && isIdent(head.value) && head.value.name === prevStage) {
+    resolvedPrevTarget = head.name;
+    i = 1;
+  }
+  i = skipResets(body, i);
+  const doneLocal = new Set(doneFinal);
+  i = growEquivSet(body, i, doneLocal);
+  const guard = asTailBreakGuard(body[i] ?? { k: "comment", text: "" }, label);
+  if (guard === null || !isIdent(guard) || !doneLocal.has(guard.name)) return null;
   i++;
-  const close = asCallAssign(body[i]! /* also matches a bare `expr` call stmt below */);
+  const st = body[i];
+  if (st === undefined) return null;
+  const close = asCallAssign(st /* also matches a bare `expr` call stmt below */);
   // `__hbc_iterClose` is called for effect only; it may be a bare call
   // statement, not an assignment — handle both.
-  const st = body[i]!;
   const isCloseCall = (close !== null && close.callee === "__hbc_iterClose") || (st.k === "expr" && st.expr.k === "call" && st.expr.callee.k === "ident" && st.expr.callee.name === "__hbc_iterClose");
-  if (!isCloseCall) return false;
+  if (!isCloseCall) return null;
   i++;
   const brk = body[i];
-  if (brk === undefined || brk.k !== "break" || brk.label !== label) return false;
-  return i + 1 === body.length;
+  if (brk === undefined || brk.k !== "break" || brk.label !== label) return null;
+  if (i + 1 !== body.length) return null;
+  return { resolvedPrevTarget };
+}
+
+/** True if `reg` is not read anywhere in `list` from index `fromIdx` onward
+ *  before it is next redefined (or is never redefined again at all) — i.e.
+ *  the value most recently written to `reg` (just before `fromIdx`) is
+ *  provably dead. Same defUse-based reasoning as the §4 precondition 7
+ *  state-escapes check below, scoped to one register instead of the whole
+ *  state-registers set: the load-bearing distinction (BUGS.md 2026-09-02)
+ *  between a hole (§2.3, dead) and a direct-commit element whose own raw
+ *  register *is* the real, later-read target (`firstTwo`'s `p`/`q`). */
+function isDeadFrom(list: readonly Stmt[], fromIdx: number, reg: string): boolean {
+  const du = defUse(list.slice(fromIdx));
+  const info = du.get(reg);
+  if (info === undefined) return true;
+  const firstDef = info.defs.length === 0 ? Infinity : Math.min(...info.defs);
+  // `<=`, not `<`: `defUse` assigns one position per *statement*, so a
+  // self-referential update (`sumPair`'s own tail, `r0 = r1 + r0;`, reusing
+  // `b`'s own register as the sum's target) records the RHS read and the
+  // target def at the *same* position — a real, load-bearing use (the
+  // read happens first, per JS evaluation order) that a strict `<` would
+  // wrongly call dead.
+  return !info.reads.some((r) => r <= firstDef);
+}
+
+/** Resolves the *previous* iteration's staged raw value (`prevStage`, from
+ *  block `k`) now that we know whether the *current* position's own block —
+ *  or, once the element scan is over, the close block — committed it via a
+ *  leading `real = prevStage;` header (`resolvedHead`, from `parseElementBlock`
+ *  / `parseCloseBlock`). Three-way, per BUGS.md 2026-09-02's measurement:
+ *  a header match means a real target bound later (staged-commit, §2.1(b));
+ *  no header match but `prevStage` is read again before being redefined
+ *  means the direct-commit style (§2.1(a)) — the raw register itself *is*
+ *  the real target (`firstTwo`'s `p`/`q`); no header match and `prevStage`
+ *  is provably dead (`isDeadFrom`) means the position was elided (§2.3, a
+ *  hole) — a defaulted element can never be a hole (there is nothing to
+ *  default a discarded position to), so that combination is an
+ *  unrecognised shape and refuses the whole unit. */
+function resolvePending(list: readonly Stmt[], fromIdx: number, prevStage: string, resolvedHead: string | null, prevInit: Expr | undefined): ArrayElement | null {
+  if (resolvedHead !== null) return { target: resolvedHead, ...(prevInit !== undefined ? { init: prevInit } : {}) };
+  if (isDeadFrom(list, fromIdx, prevStage)) {
+    if (prevInit !== undefined) return null; // broken-threading: a defaulted element is never a hole
+    return { hole: true };
+  }
+  return { target: prevStage, ...(prevInit !== undefined ? { init: prevInit } : {}) };
 }
 
 /** §4 precondition 2: `u` is the literal `undefined`, or a register whose
@@ -490,23 +578,30 @@ function matchArray(list: readonly Stmt[], startIndex: number, fnBody: readonly 
       el = { ...del, resolvedPrevTarget: null };
     }
     if (!isUndefinedSentinel(el.u, fnBody)) break; // not-undefined-guard
-    // Resolve the previous element's real target now that we know whether
-    // this block staged it away.
-    elements.push({ target: el.resolvedPrevTarget ?? prevStage, ...(prevInit !== undefined ? { init: prevInit } : {}) });
+    // Resolve the previous position now that we know whether this block's
+    // own head committed it, is a hole, or is a direct-commit target
+    // (`resolvePending`, BUGS.md 2026-09-02).
+    const pending = resolvePending(list, idx, prevStage, el.resolvedPrevTarget, prevInit);
+    if (pending === null) return null; // broken-threading
+    elements.push(pending);
     prevDone = el.doneSet;
     prevStage = el.rawTarget;
     prevInit = el.init;
     idx++;
   }
-  // The last block's own raw target is only "resolved" once we know no
-  // following block staged it away — since we stopped, it is direct.
-  elements.push({ target: prevStage, ...(prevInit !== undefined ? { init: prevInit } : {}) });
-  if (elements.length === 0) return null;
-  for (const el of elements) if (!isRegisterName(el.target)) return null;
   // Close block, required in v1 (no rest support): must immediately follow.
+  // It may itself carry the final position's commit at its own head — the
+  // last block's own raw target is only resolved once we know whether the
+  // close block staged it away, is a hole, or is direct (`resolvePending`).
   const closeStmt = list[idx];
-  if (closeStmt === undefined || closeStmt.k !== "labeled" || !parseCloseBlock(closeStmt.body, closeStmt.label, prevDone)) return null; // close-shape
+  if (closeStmt === undefined || closeStmt.k !== "labeled") return null; // close-shape
+  const closeParse = parseCloseBlock(closeStmt.body, closeStmt.label, prevDone, prevStage);
+  if (closeParse === null) return null; // close-shape
   if (!noPcOrTry(closeStmt.body)) return null;
+  const finalPending = resolvePending(list, idx, prevStage, closeParse.resolvedPrevTarget, prevInit);
+  if (finalPending === null) return null; // broken-threading
+  elements.push(finalPending);
+  for (const el of elements) if (el.hole !== true && (el.target === undefined || !isRegisterName(el.target))) return null; // non-register-target
   const endIndex = idx + 1;
   // state-escapes: none of the internal state registers may be *read* after
   // the whole unit *before being freshly redefined* — registers are
@@ -740,7 +835,7 @@ export function match(list: readonly Stmt[], ctx: PassContext): DestructureMatch
 
 export function buildPattern(site: DestructureSite): Pattern {
   if (site.kind === "array") {
-    const elements: PatternElement[] = site.elements.map((e) => ({ k: "pel", target: { k: "pid", name: e.target }, ...(e.init !== undefined ? { init: e.init } : {}) }));
+    const elements: PatternElement[] = site.elements.map((e) => (e.hole === true ? { k: "hole" } : { k: "pel", target: { k: "pid", name: e.target! }, ...(e.init !== undefined ? { init: e.init } : {}) }));
     return { k: "parr", elements };
   }
   const propsOut: { readonly key: string; readonly value: PatternElement }[] = site.props.map((p) => ({ key: p.key, value: { k: "pel" as const, target: { k: "pid" as const, name: p.target }, ...(p.init !== undefined ? { init: p.init } : {}) } }));

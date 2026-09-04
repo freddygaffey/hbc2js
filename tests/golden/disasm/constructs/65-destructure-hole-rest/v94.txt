@@ -1,0 +1,119 @@
+; hbc2js disassembly of 65-destructure-hole-rest/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=3 strings=7 globalCodeIndex=0
+function #0 "global"  params=1 frame=13 env=0 flags=dbg  @0x00000128 size=98
+  0000  DeclareGlobalVar     s6 "skipMiddle"
+  0005  DeclareGlobalVar     s3 "headAndTail"
+  000a  CreateEnvironment    r1
+  000c  CreateClosure        r2, r1, f1 "skipMiddle"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r2, #c1, s6 "skipMiddle"
+  0019  CreateClosure        r1, r1, f2 "headAndTail"
+  001e  PutById              r0, r1, #c2, s3 "headAndTail"
+  0024  TryGetById           r3, r0, #c1, s5 "print"
+  002a  GetByIdShort         r4, r0, #c2, s6 "skipMiddle"
+  002f  LoadConstUndefined   r2
+  0031  NewArrayWithBuffer   r1, 3, 3, lit@0x0000
+  0039  Call2                r1, r4, r2, r1
+  003e  Call2                r1, r3, r2, r1
+  0043  TryGetById           r1, r0, #c1, s5 "print"
+  0049  GetByIdShort         r3, r0, #c3, s3 "headAndTail"
+  004e  NewArrayWithBuffer   r0, 3, 3, lit@0x000d
+  0056  Call2                r0, r3, r2, r0
+  005b  Call2                r0, r1, r2, r0
+  0060  Ret                  r0
+
+function #1 "skipMiddle"  params=2 frame=11 env=0 flags=dbg  @0x0000018a size=134
+  0000  LoadConstUndefined   r8
+  0002  LoadConstUndefined   r4
+  0004  LoadConstUndefined   r3
+  0006  LoadParam            r6, 1
+  0009  IteratorBegin        r1, r6
+  000c  LoadConstUndefined   r2
+  000e  LoadConstUndefined   r5
+  0010  IteratorNext         r7, r1, r6
+  0014  Mov                  r9, r1
+  0017  StrictEq             r9, r9, r8
+  001b  Mov                  r2, r9
+  001e  JmpTrue              L1, r9
+  0021  Mov                  r5, r7
+L1:
+  0024  Mov                  r4, r5
+  0027  LoadConstUndefined   r5
+  0029  Mov                  r7, r2
+  002c  JmpTrue              L2, r7
+  002f  IteratorNext         r7, r1, r6
+  0033  Mov                  r9, r1
+  0036  StrictEq             r9, r9, r8
+  003a  Mov                  r2, r9
+  003d  JmpTrue              L2, r9
+  0040  Mov                  r5, r7
+L2:
+  0043  LoadConstUndefined   r5
+  0045  Mov                  r7, r2
+  0048  JmpTrue              L3, r7
+  004b  IteratorNext         r6, r1, r6
+  004f  Mov                  r7, r1
+  0052  StrictEq             r7, r7, r8
+  0056  Mov                  r2, r7
+  0059  JmpTrue              L3, r7
+  005c  Mov                  r5, r6
+L3:
+  005f  Mov                  r3, r5
+  0062  Mov                  r5, r2
+  0065  JmpTrue              L4, r5
+  0068  IteratorClose        r1, 0
+L4:
+  006b  Mov                  r5, r4
+  006e  LoadConstString      r4, s1 ":"
+  0072  Add                  r4, r5, r4
+  0076  Add                  r3, r4, r3
+  007a  Ret                  r3
+  007c  Catch                r0
+  007e  JmpTrue              L5, r2
+  0081  IteratorClose        r1, 1
+L5:
+  0084  Throw                r0
+
+function #2 "headAndTail"  params=2 frame=20 env=0 flags=exc,dbg  @0x00000210 size=115
+  .try T1..T2 -> L3 ; handler 0
+  0000  LoadConstUndefined   r8
+  0002  LoadConstUInt8       r7, 1
+  0005  LoadParam            r6, 1
+  0008  IteratorBegin        r2, r6
+  000b  LoadConstUndefined   r4
+  000d  IteratorNext         r3, r2, r6
+  0011  Mov                  r1, r2
+  0014  StrictEq             r5, r1, r8
+  0018  Mov                  r4, r5
+  001b  LoadConstUndefined   r1
+  001d  JmpTrue              L1, r5
+  0020  Mov                  r1, r3
+L1:
+  0023  NewArray             r3, 0
+  0027  LoadConstZero        r5
+  0029  Mov                  r9, r4
+  002c  JmpTrue              L5, r9
+L2:
+  002f  IteratorNext         r10, r2, r6
+  0033  Mov                  r9, r2
+  0036  StrictEq             r9, r9, r8
+  003a  Mov                  r4, r9
+  003d  JmpTrue              L5, r9
+  0040  Mov                  r9, r5
+  0043  PutByVal             r3, r9, r10
+  0047  AddN                 r5, r9, r7
+  004b  Jmp                  L2
+L3:
+  004d  Catch                r0
+  004f  JmpTrue              L4, r4
+  0052  IteratorClose        r2, 1
+L4:
+  0055  Throw                r0
+L5:
+  0057  LoadConstString      r0, s1 ":"
+  005b  Add                  r1, r1, r0
+  005f  GetByIdShort         r2, r3, #c1, s4 "join"
+  0064  LoadConstString      r0, s0 ","
+  0068  Call2                r0, r2, r3, r0
+  006d  Add                  r0, r1, r0
+  0071  Ret                  r0

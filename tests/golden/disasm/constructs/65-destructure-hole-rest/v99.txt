@@ -1,0 +1,108 @@
+; hbc2js disassembly of 65-destructure-hole-rest/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=3 strings=7 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x0000011c size=96
+  0000  DeclareGlobalVar     s6 "skipMiddle"
+  0005  DeclareGlobalVar     s3 "headAndTail"
+  000a  GetGlobalObject      r1
+  000c  LoadConstUndefined   r0
+  000e  CreateClosure        r2, r0, f1 "skipMiddle"
+  0013  PutByIdLoose         r1, r2, #c0, s6 "skipMiddle"
+  0019  CreateClosure        r2, r0, f2 "headAndTail"
+  001e  PutByIdLoose         r1, r2, #c1, s3 "headAndTail"
+  0024  TryGetById           r3, r1, #c0, s5 "print"
+  002a  GetByIdShort         r4, r1, #c1, s6 "skipMiddle"
+  002f  NewArrayWithBuffer   r2, 3, 3, lit@0x0000
+  0037  Call2                r2, r4, r0, r2
+  003c  Call2                r2, r3, r0, r2
+  0041  TryGetById           r2, r1, #c0, s5 "print"
+  0047  GetByIdShort         r3, r1, #c2, s3 "headAndTail"
+  004c  NewArrayWithBuffer   r1, 3, 3, lit@0x000d
+  0054  Call2                r1, r3, r0, r1
+  0059  Call2                r1, r2, r0, r1
+  005e  Ret                  r1
+
+function #1 "skipMiddle"  params=2 frame=8 env=0 flags=dbg,overflowed  @0x0000017c size=113
+  0000  LoadParam            r5, 1
+  0003  IteratorBegin        r1, r5
+  0006  Mov                  r0, r5
+  0009  IteratorNext         r0, r1, r0
+  000d  Mov                  r2, r1
+  0010  LoadConstUndefined   r7
+  0012  StrictEq             r2, r2, r7
+  0016  LoadConstUndefined   r4
+  0018  JmpTrue              L1, r2
+  001b  Mov                  r4, r0
+L1:
+  001e  Mov                  r0, r2
+  0021  JmpTrue              L2, r0
+  0024  Mov                  r3, r5
+  0027  IteratorNext         r3, r1, r3
+  002b  Mov                  r3, r1
+  002e  StrictEq             r0, r3, r7
+L2:
+  0032  LoadConstUndefined   r3
+  0034  JmpTrue              L3, r0
+  0037  IteratorNext         r6, r1, r5
+  003b  Mov                  r5, r1
+  003e  StrictEq             r5, r5, r7
+  0042  LoadConstUndefined   r3
+  0044  Mov                  r0, r5
+  0047  JmpTrue              L3, r5
+  004a  Mov                  r3, r6
+  004d  Mov                  r0, r5
+L3:
+  0050  JmpTrue              L4, r0
+  0053  Mov                  r0, r1
+  0056  IteratorClose        r0, 0
+L4:
+  0059  LoadConstString      r0, s1 ":"
+  005d  Add                  r0, r4, r0
+  0061  Add                  r0, r0, r3
+  0065  Ret                  r0
+  0067  Catch                r0
+  0069  JmpTrue              L5, r2
+  006c  IteratorClose        r1, 1
+L5:
+  006f  Throw                r0
+
+function #2 "headAndTail"  params=2 frame=19 env=0 flags=exc,dbg,overflowed  @0x000001ed size=110
+  .try T1..T2 -> L3 ; handler 0
+  0000  LoadParam            r7, 1
+  0003  IteratorBegin        r2, r7
+  0006  Mov                  r0, r7
+  0009  IteratorNext         r0, r2, r0
+  000d  Mov                  r1, r2
+  0010  LoadConstUndefined   r6
+  0012  StrictEq             r4, r1, r6
+  0016  LoadConstUndefined   r1
+  0018  JmpTrue              L1, r4
+  001b  Mov                  r1, r0
+L1:
+  001e  NewArray             r3, 0
+  0022  LoadConstUInt8       r0, 1
+  0025  LoadConstZero        r5
+  0027  JmpTrue              L5, r4
+L2:
+  002a  Mov                  r4, r7
+  002d  IteratorNext         r9, r2, r4
+  0031  Mov                  r4, r2
+  0034  StrictEq             r4, r4, r6
+  0038  Mov                  r8, r5
+  003b  JmpTrue              L5, r4
+  003e  PutByValLoose        r3, r8, r9
+  0042  AddN                 r5, r8, r0
+  0046  Jmp                  L2
+L3:
+  0048  Catch                r0
+  004a  JmpTrue              L4, r4
+  004d  IteratorClose        r2, 1
+L4:
+  0050  Throw                r0
+L5:
+  0052  LoadConstString      r0, s1 ":"
+  0056  Add                  r1, r1, r0
+  005a  GetByIdShort         r2, r3, #c0, s4 "join"
+  005f  LoadConstString      r0, s0 ","
+  0063  Call2                r0, r2, r3, r0
+  0068  Add                  r0, r1, r0
+  006c  Ret                  r0
