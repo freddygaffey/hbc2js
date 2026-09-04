@@ -106,3 +106,28 @@ test("run() rejects a disabled action and an unknown id", () => {
   assert.throws(() => registry.run("ai.explain", ctx));
   assert.throws(() => registry.run("nope.nope", ctx));
 });
+
+test("view.fold/view.unfold need a listing on screen (a module, or any selection carrying an fn)", () => {
+  // Previously a UI-only override in ui/src/actions/registry.ts
+  // (registry.register() overwriting by id); now the shared definition
+  // itself, so every shell — not just the browser one — gets the gate.
+  const registry = createStandardRegistry();
+  const onModule: ActionContext = { selection: { kind: "module", moduleId: "m1" }, focusPane: "tree", api: stubApi() };
+  const onFn: ActionContext = { selection: { kind: "fn", fn: 1 }, focusPane: "editor", api: stubApi() };
+  const onIdentifierInFn: ActionContext = { selection: { kind: "identifier", fn: 1, name: "r3" }, focusPane: "editor", api: stubApi() };
+  const onNothing: ActionContext = { selection: { kind: "none" }, focusPane: "editor", api: stubApi() };
+  const onIdentifierNoFn: ActionContext = { selection: { kind: "identifier", name: "r3" }, focusPane: "editor", api: stubApi() };
+  for (const id of ["view.fold", "view.unfold"] as const) {
+    assert.ok(registry.enabledFor(onModule).map((a) => a.id).includes(id), `${id} should be enabled on a module selection`);
+    assert.ok(registry.enabledFor(onFn).map((a) => a.id).includes(id), `${id} should be enabled on an fn selection`);
+    assert.ok(
+      registry.enabledFor(onIdentifierInFn).map((a) => a.id).includes(id),
+      `${id} should be enabled on an identifier selection that carries an fn`,
+    );
+    assert.ok(!registry.enabledFor(onNothing).map((a) => a.id).includes(id), `${id} should be disabled with no selection`);
+    assert.ok(
+      !registry.enabledFor(onIdentifierNoFn).map((a) => a.id).includes(id),
+      `${id} should be disabled for an identifier selection with no fn (no listing to fold)`,
+    );
+  }
+});

@@ -95,6 +95,16 @@ function hasFnTarget(ctx: ActionContext): boolean {
   return ctx.selection.kind === "fn" && ctx.selection.fn !== undefined;
 }
 
+/** `view.fold`/`view.unfold` need a listing on screen: a module selection,
+ *  or any selection that carries an `fn` (a plain `"fn"` selection, but also
+ *  `"identifier"`/`"string"`/`"finding"` selections inside a function —
+ *  those still have a listing under them). Previously a UI-only override in
+ *  `ui/src/actions/registry.ts` (`registry.register()` overwrote the shared
+ *  definition's `when`); moved here so every shell shares the same gate. */
+function hasListingTarget(ctx: ActionContext): boolean {
+  return ctx.selection.kind === "module" || ctx.selection.fn !== undefined;
+}
+
 function alwaysFalse(): boolean {
   return false;
 }
@@ -215,12 +225,14 @@ export function standardActions(): Action[] {
       id: "view.fold",
       title: "Fold",
       group: "view",
+      when: hasListingTarget,
       run: (ctx) => ctx.api.fold(),
     },
     {
       id: "view.unfold",
       title: "Unfold",
       group: "view",
+      when: hasListingTarget,
       run: (ctx) => ctx.api.unfold(),
     },
     {

@@ -29,13 +29,29 @@ test("the registry no longer stubs fold/unfold/rawHermes with a bare status line
 });
 
 test("fold/unfold are gated on a fn-or-module selection, not always enabled", () => {
+  // The gate used to be a UI-only override in registry.ts (registry.register()
+  // overwriting by id); it now lives in the shared src/ui-core/actions.ts
+  // definition itself, so every shell gets it — see tests/ui-core/actions.test.ts
+  // for the behavioural assertion (enabled on module/fn/identifier-with-fn,
+  // disabled on none/identifier-without-fn).
   const registry = read("src", "actions", "registry.ts");
-  assert.match(
+  assert.doesNotMatch(
     registry,
     /registry\.register\(\{ \.\.\.action, when:/,
-    "registry.ts must override view.fold/view.unfold's `when` (register() overwrites by id, src/ui-core/actions.ts)",
+    "the view.fold/view.unfold when-gate moved into src/ui-core/actions.ts; registry.ts must not re-override it",
   );
-  assert.match(registry, /"view\.fold", "view\.unfold"/, "the when-override must name both view.fold and view.unfold");
+  const coreActions = readFileSync(join(repoRoot(), "src", "ui-core", "actions.ts"), "utf8");
+  assert.match(coreActions, /function hasListingTarget/, "src/ui-core/actions.ts must define the shared listing-target gate");
+  assert.match(
+    coreActions,
+    /id: "view\.fold"[\s\S]{0,80}when: hasListingTarget/,
+    "view.fold must be gated by hasListingTarget",
+  );
+  assert.match(
+    coreActions,
+    /id: "view\.unfold"[\s\S]{0,80}when: hasListingTarget/,
+    "view.unfold must be gated by hasListingTarget",
+  );
 });
 
 test("CodeView wires CodeMirror's fold gutter and registers with fold-store", () => {

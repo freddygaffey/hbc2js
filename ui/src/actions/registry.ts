@@ -24,18 +24,6 @@ import { openDisasm } from "../panes/disasm-store.ts";
 
 export const registry = createStandardRegistry();
 
-// `view.fold` / `view.unfold` need a listing on screen: gate on the same
-// selection shape CenterPane requires to render one (a module, or anything
-// carrying an `fn`). `register()` overwrites by id (src/ui-core/actions.ts),
-// so this only touches the `when` the browser shell uses — the shared
-// `standardActions()` definition (outside this UI-only track) is untouched.
-for (const id of ["view.fold", "view.unfold"] as const) {
-  const action = registry.get(id);
-  if (action !== undefined) {
-    registry.register({ ...action, when: (ctx) => ctx.selection.kind === "module" || ctx.selection.fn !== undefined });
-  }
-}
-
 /** The active keymap: `ui/keymap.json`'s preset plus its overrides,
  *  validated against `registry` (an override naming an unknown action id
  *  throws here, at startup, rather than dying silently at keypress). */
