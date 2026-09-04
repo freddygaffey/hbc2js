@@ -5,7 +5,7 @@
 // one hop from the focus, and one more per node the analyst expands.
 import { ReactFlow, Background, Controls, MarkerType, type Edge, type ReactFlowInstance } from "@xyflow/react";
 import { useQueries } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "@xyflow/react/dist/style.css";
 import "./graph.css";
 import { api } from "../api.ts";
@@ -18,12 +18,17 @@ import {
   LOD_NOMINAL_ZOOM, modelForLevel, neighbourSet,
   type CallHop, type GraphModel, type NeighbourSet,
 } from "./model.ts";
-import { layoutModel, NODE_H_NEAR } from "./layout.ts";
+import { layoutGraph, NODE_H_NEAR, type Size } from "./layout.ts";
 import { nodeTypes, type HbcFlowNode } from "./nodes.tsx";
 import {
   cycleGraphLod, expandGraphNode, focusGraphNode, graphBack, originKey, resetGraphView, rootGraph, setGraphFollow,
   setGraphLodFromZoom, setGraphMaximised, setHoverNode, setNodePosition, targetForSelection, useGraphState,
 } from "./store.ts";
+
+/** How much slack `fitView` leaves around the neighbourhood. Small, because
+ *  bur 11's layout already sizes the graph for the frame - a large padding
+ *  would spend the legibility the wrapped grid just bought back. */
+const FIT_PADDING = 0.08;
 
 /** Same idiom and wording shape as the listing's truncation bar
  *  (ui/src/panes/CenterPane.tsx): say exactly how many are not drawn. */
@@ -143,10 +148,46 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
   // fetched (near only changes how the focus node renders). Pure derivation,
   // no extra fetch: zooming never loads the bundle.
   const drawn = useMemo(() => modelForLevel(model, gs.lod), [model, gs.lod]);
-  const positions = useMemo(
-    () => layoutModel(drawn, gs.lod === "near" ? { focusHeight: NODE_H_NEAR } : {}),
-    [drawn, gs.lod],
+
+  // Bur 11 / spec 25 §5c: lay out FOR THE FRAME. The canvas element is
+  // measured with a ResizeObserver (the pane is ~280 px wide docked and the
+  // whole window maximised, and the right answer differs) and handed to
+  // `layoutGraph`, which wraps each rank into rows that fit. Rounded to whole
+  // pixels so a sub-pixel resize cannot re-run the layout forever.
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [frame, setFrame] = useState<Size | null>(null);
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    const apply = (w: number, h: number): void => {
+      setFrame((prev) => (prev !== null && prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+    };
+    apply(Math.round(el.clientWidth), Math.round(el.clientHeight));
+    const ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box !== undefined) apply(Math.round(box.width), Math.round(box.height));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [target, gs.maximised]);
+
+  const layout = useMemo(
+    () => layoutGraph(drawn, { frame, ...(gs.lod === "near" ? { focusHeight: NODE_H_NEAR } : {}) }),
+    [drawn, gs.lod, frame],
   );
+  const positions = layout.positions;
+
+  // A frame change that actually changes the GRID (not every pixel of a
+  // resize) re-fits, so the analyst sees the new arrangement whole. Skipped
+  // while manual drag offsets exist: bur 8's positions are the analyst's, and
+  // a resize must not yank the view out from under them.
+  const grid = `${layout.columns}:${layout.nodeWidth}`;
+  const hasDrags = gs.dragPositions.size > 0;
+  useEffect(() => {
+    if (hasDrags) return;
+    const id = requestAnimationFrame(() => rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 1.1 }));
+    return () => cancelAnimationFrame(id);
+  }, [grid, hasDrags]);
   const focusId = useMemo(() => drawn.nodes.find((n) => n.isFocus)?.id ?? null, [drawn]);
   const focusCard = useMemo(
     () => (gs.lod === "near" && focusId !== null ? lodCard(drawn, focusId) : null),
@@ -176,9 +217,10 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
           dimmed: active !== null && !active.nodes.has(n.id),
           level: gs.lod,
           card: n.isFocus ? focusCard : null,
+          width: layout.nodeWidth,
         },
       })),
-    [drawn, positions, gs.dragPositions, active, gs.lod, focusCard],
+    [drawn, positions, gs.dragPositions, active, gs.lod, focusCard, layout.nodeWidth],
   );
 
   const flowEdges: Edge[] = useMemo(
@@ -209,18 +251,23 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
   );
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col" data-graph-nodes={drawn.shown}>
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      data-graph-nodes={drawn.shown}
+      data-graph-columns={layout.columns}
+      data-graph-node-width={layout.nodeWidth}
+    >
       {target === null ? (
         <div className="p-3 text-xs text-text-muted">select a function or a module to graph its neighbourhood</div>
       ) : (
-        <div className="min-h-0 flex-1">
+        <div ref={canvasRef} className="min-h-0 flex-1">
           <ReactFlow
             key={`${target.kind}:${target.ref}`}
             nodes={flowNodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
             fitView
-            fitViewOptions={{ padding: 0.2, maxZoom: 1.1 }}
+            fitViewOptions={{ padding: FIT_PADDING, maxZoom: 1.1 }}
             minZoom={0.15}
             nodesConnectable={false}
             edgesFocusable={false}
@@ -311,7 +358,7 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
           const level = gs.rootLod;
           resetGraphView();
           requestAnimationFrame(() =>
-            rfInstance.current?.fitView({ padding: 0.2, minZoom: LOD_NOMINAL_ZOOM[level], maxZoom: LOD_NOMINAL_ZOOM[level] }));
+            rfInstance.current?.fitView({ padding: FIT_PADDING, minZoom: LOD_NOMINAL_ZOOM[level], maxZoom: LOD_NOMINAL_ZOOM[level] }));
         }}
         className="shrink-0 rounded-ui px-1 hover:bg-surface-2 disabled:opacity-40"
         title="reset the graph to the default layout and fit it to view"

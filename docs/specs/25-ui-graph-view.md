@@ -308,6 +308,116 @@ shell without a graph pane implements as no-ops. Neither inverts
 3. **The `near` card's contents once L9 lands**: blocks only, or blocks plus
    the callers/callees `lodCard` shows today.
 
+## 5c. Layout for the frame — bur 11 (2026-09-05)
+
+Fred, verbatim: *"The graph view is starting to come together, but it needs to
+be improved. Right now, you can't see everything when zoomed out because it is
+too wide for the small frame that you have. So making it arrange to be more
+space efficient would be better."*
+
+The docked pane is ~280 px wide and much taller than wide. Plain dagre lays a
+rank of eight callees out as one ~1600 px row, so `fitView` scaled the whole
+neighbourhood to ~0.17 and nothing was legible — the graph was arranged for a
+frame it does not have. §5c makes the layout a function of the **measured**
+frame.
+
+### The algorithm (`ui/src/graph/layout.ts`, pure)
+
+`layoutGraph(model, { focusHeight?, frame? })` runs in two stages:
+
+1. **Rank with dagre, keep only its ordering.** `rankdir: "TB"` as before, so
+   callers stay above the focus and callees below it (§5's reading direction
+   is unchanged, and a unit test asserts it survives wrapping). All nodes of
+   one dagre rank share one centre `y`, which is what groups them; inside a
+   rank they keep dagre's left-to-right order, i.e. its crossing
+   minimisation — the part of dagre worth keeping.
+2. **Re-pack each rank into rows that fit the frame.** A rank of `n` nodes
+   becomes `ceil(n / columns)` rows, each row centred in the content box,
+   rows separated by `ROW_GAP = 10` and ranks by `RANK_GAP = 34` (the larger,
+   so a wrapped rank still reads as one rank). The bounding box is
+   `columns * nodeWidth + (columns - 1) * GAP_X + 2 * MARGIN` wide, which is
+   `<= frame.width` by construction.
+
+### Choosing `columns` and `nodeWidth` (`chooseGrid`)
+
+The objective is the only thing that matters for this bur: **how wide a node
+is on screen after `fitView`**, i.e. `nodeWidth * scale` where
+`scale = min(1, frameW / boxW, frameH / boxH)`. `chooseGrid` evaluates every
+column count from 1 up to the most the frame can hold at `NODE_W_MIN = 104`
+(the narrowest a mono label stays readable) and takes the best; ties go to the
+fewest wrapped rows (an unwrapped rank reads as a rank, so wrapping is only
+paid for when it buys legibility), then to the box aspect closest to the
+frame's. `nodeWidth` is the frame's width divided by the chosen columns,
+clamped to `[NODE_W_MIN, NODE_W]` — never wider than the preferred 176, never
+narrower than legible.
+
+This is what makes one code path serve both frames. Focus with two callers and
+eight callees:
+
+| frame | columns | node width | box | fit scale | node on screen |
+|---|---|---|---|---|---|
+| 280 x 700 (docked) | 1 | 176 | 192 x 648 | 1.00 | 176 px |
+| 1280 x 760 (maximised) | 4 | 176 | 756 x 270 | 1.00 | 176 px |
+
+The tall narrow pane gets a single legible column; the window gets a compact
+grid. Before this section both were one 1616 px row.
+
+### Measuring, and what happens without a measurement
+
+`GraphPane` observes the canvas element with a `ResizeObserver` and rounds to
+whole pixels (a sub-pixel resize must not re-run the layout forever). Until it
+reports — the first render — `frame` is `null` and `layoutGraph` returns
+**exactly the pre-bur-11 dagre placement**, with `columns: 0` to say so; a
+degenerate frame (zero or `NaN` width) degrades the same way rather than
+producing `NaN` positions. A frame change that actually changes the grid
+(`columns:nodeWidth`, not every pixel of a drag) re-runs `fitView`, and is
+skipped while §5a drag offsets exist — those positions are the analyst's and a
+resize must not yank the view out from under them.
+
+`fitView` padding drops from `0.2` to `0.08` (`FIT_PADDING`): the layout now
+sizes itself for the frame, so a large padding would spend the legibility the
+wrapped grid just bought back.
+
+### What it must not break, and does not
+
+- **LOD (§5b)** — the level still picks the model; `near`'s taller focus card
+  is passed through as `focusHeight` and the rank packer reserves its height
+  (unit test: no node overlaps the card's band).
+- **Drag / Reset (§5a)** — `dragPositions` still overlay the computed
+  positions; Reset still drops them and re-fits.
+- **Follow (§5a)** and the hover highlight are untouched: they key off node
+  ids, not geometry.
+- Node **counts** are untouched — the layout moves boxes, it never adds or
+  drops one, which is why every existing acceptance test still holds.
+
+### Acceptance tests (by name)
+
+`tests/ui-core/graph-layout.test.ts` (pure, no browser): a wide rank wraps to
+fit the docked pane; nodes never go below `NODE_W_MIN`; a roomy frame keeps
+`NODE_W` and does not wrap; callers stay above and callees below after
+wrapping; no two boxes overlap; the `near` card's band is clear; no frame
+reproduces the old dagre layout; a degenerate frame never yields `NaN`;
+positions stay inside the reported box; the layout is deterministic; every
+frame width produces a layout that fits it.
+
+`ui/e2e/graph.spec.ts` ("Graph tab: layout for the frame (bur 11)"): with a
+stubbed eight-callee rank, every node's rendered box sits inside the **docked**
+pane's box at fit-to-view and the flow-space x-extent is `<=` the pane width;
+and maximising re-measures the frame and takes more columns than the docked
+pane did (proof the `ResizeObserver` drives the layout).
+
+### Needs Fred (art direction, defaults picked here)
+
+- **Orientation stays top-down in every frame.** A very wide frame could flow
+  left-to-right instead, but §5 fixes callers-above-focus-above-callees as the
+  reading direction and an implementation task does not quietly invert it.
+- `NODE_W_MIN = 104`, `GAP_X = 12`, `ROW_GAP = 10`, `RANK_GAP = 34`,
+  `MARGIN = 8`, `FIT_PADDING = 0.08` — sensible defaults, not measured against
+  a designer's grid.
+- Wrapped rows are **centred**, not left-aligned, and are not drawn as
+  swimlanes (no rank label, no separator). A rank of eight over two rows reads
+  as one group today only by proximity.
+
 ## 6. Acceptance tests
 
 **Model (`tests/ui-core/graph-model.test.ts`, node:test, runs in the root

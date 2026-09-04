@@ -1193,8 +1193,20 @@ jumps the listing and re-roots the graph there. **+** on a node expands one
 more hop into the existing drawing. **⛶** maximises the pane over the window
 (a call neighbourhood does not read at 280 px) and back.
 
-Scale rules, both visible in the UI:
+Scale rules, all visible in the UI:
 
+- **Layout for the frame** (bur 11, spec 25 §5c) — the pane measures itself
+  with a `ResizeObserver` and lays the neighbourhood out for that box: dagre
+  still ranks the nodes (callers above, focus, callees below) and orders each
+  rank, then each rank is re-packed into rows that wrap at the widest grid the
+  frame holds at a legible node width (`NODE_W_MIN = 104`, preferred
+  `NODE_W = 176`). `chooseGrid` picks the column count that maximises the node
+  width *after* `fitView` scaling, so the 280 px docked panel gets one full-
+  width column and the maximised window gets a compact grid, from one code
+  path. The laid-out box is never wider than the frame. Before this the pane
+  drew a rank of eight callees as one ~1600 px row and fit-to-view shrank it
+  to illegibility. Without a measurement yet (first render) the layout is
+  exactly the old dagre placement, reported as `columns: 0`.
 - **Level of detail** — below zoom 0.55 labels come off and nodes render as
   token-coloured boxes (`data-lod="min"`).
 - **Cap** — at most `GRAPH_NODE_CAP = 300` nodes; the overflow is dropped and a

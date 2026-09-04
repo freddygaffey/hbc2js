@@ -435,3 +435,87 @@ test.describe("Graph tab: semantic zoom (bur 9)", () => {
     await expect(page.locator("[data-graph-pane]")).toHaveAttribute("data-graph-lod-level", "mid");
   });
 });
+
+// Bur 11 (docs/UI-BURS.md #11; spec 25 §5c): "you can't see everything when
+// zoomed out because it is too wide for the small frame that you have." The
+// layout is now computed FOR the measured frame, so the whole neighbourhood
+// has to sit inside the pane at fit-to-view instead of spilling out of it.
+test.describe("Graph tab: layout for the frame (bur 11)", () => {
+  /** A deterministic WIDE rank: eight callees, which plain dagre would lay
+   *  out as one ~1600 px row inside a ~280 px pane. */
+  const CALLEES = [901, 902, 903, 904, 905, 906, 907, 908];
+
+  async function stubWideRank(page: Page): Promise<void> {
+    await page.route("**/api/fn/*/callers*", (route) =>
+      route.fulfill({ json: { rows: [], total: 0, truncated: false, unknownInScope: 0 } }));
+    await page.route("**/api/xref/who-calls-by-name*", (route) =>
+      route.fulfill({ json: { rows: [], names: [], excludedModule: null } }));
+    await page.route("**/api/fn/*/callees*", (route) => {
+      const rows = CALLEES.map((n, i) => ({ fn: n, name: `stub${n}`, size: 10, module: 100 + i, file: null, line: null, kind: "call" }));
+      return route.fulfill({ json: { rows, total: rows.length, truncated: false } });
+    });
+  }
+
+  test("every node sits inside the pane's own box at fit-to-view", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row } = await pickFnWithNeighbours(page, request);
+    await stubWideRank(page);
+    await openGraphFor(page, row);
+
+    const nodes = page.locator("[data-graph-node]");
+    await expect(nodes).toHaveCount(CALLEES.length + 1, { timeout: WAIT });
+    // The pane is the docked side panel here, NOT maximised: the frame bur
+    // 11 is about.
+    await expect(page.locator("[data-graph-pane]")).toHaveAttribute("data-graph-maximised", "false");
+    // `0` = the pre-measurement dagre placement; wait for the frame-aware one.
+    await expect.poll(async () => Number(await page.locator("[data-graph-columns]").getAttribute("data-graph-columns")),
+      { timeout: WAIT }).toBeGreaterThanOrEqual(1);
+
+    const pane = await page.locator("[data-graph-pane]").boundingBox();
+    expect(pane).not.toBeNull();
+    const paneBox = pane!;
+
+    // `fitView` runs on the next frame after the layout, so poll rather than
+    // race it.
+    await expect
+      .poll(
+        async () => {
+          const boxes = await Promise.all((await nodes.all()).map((n) => n.boundingBox()));
+          return boxes.every(
+            (b) => b !== null && b.x >= paneBox.x - 1 && b.x + b.width <= paneBox.x + paneBox.width + 1,
+          );
+        },
+        { timeout: WAIT, message: "every graph node must be inside the pane's width at fit-to-view" },
+      )
+      .toBe(true);
+
+    // ... and the laid-out box itself (flow space, before any zoom) is no
+    // wider than the pane, which is the property the unit tests assert.
+    const width = Number(await page.locator("[data-graph-node-width]").getAttribute("data-graph-node-width"));
+    const xs = await nodes.evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-graph-x"))));
+    const extent = Math.max(...xs) + width - Math.min(...xs);
+    expect(extent).toBeLessThanOrEqual(paneBox.width);
+  });
+
+  test("maximising re-measures the frame and re-wraps the ranks", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row } = await pickFnWithNeighbours(page, request);
+    await stubWideRank(page);
+    await openGraphFor(page, row);
+
+    const grid = page.locator("[data-graph-columns]");
+    await expect(page.locator("[data-graph-node]")).toHaveCount(CALLEES.length + 1, { timeout: WAIT });
+    await expect.poll(async () => Number(await grid.getAttribute("data-graph-columns")), { timeout: WAIT })
+      .toBeGreaterThanOrEqual(1);
+    const docked = Number(await grid.getAttribute("data-graph-columns"));
+
+    await page.locator("[data-graph-maximise]").click();
+    await expect(page.locator("[data-graph-pane]")).toHaveAttribute("data-graph-maximised", "true");
+    // A whole window is wider than a 280 px panel, so the same rank is
+    // allowed more columns — proof the ResizeObserver drives the layout.
+    await expect.poll(async () => Number(await grid.getAttribute("data-graph-columns")), { timeout: WAIT })
+      .toBeGreaterThan(docked);
+  });
+});
