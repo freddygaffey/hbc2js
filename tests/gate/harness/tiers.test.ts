@@ -13,6 +13,7 @@ import { mutants } from "../../../src/harness/mutate.ts";
 import { repoRoot } from "../../support/paths.ts";
 import { findHermesc } from "../../support/hermesc.ts";
 import { requireOracles, timeScale } from "../../support/tiers.ts";
+import { KNOWN_AMBIGUOUS_V98 } from "../../support/known-issues.ts";
 
 // A subset chosen for speed and for being outside every documented gap
 // (no known-divergence construct, no v98 layout ambiguity, compiles at every
@@ -102,7 +103,8 @@ test("full gate tier, identity decompiler: DIVERGENT count is zero (perf budget:
   // milestone inherited (src/parse/**'s v98 opcode-table ambiguity — see
   // tests/support/known-issues.ts's KNOWN_AMBIGUOUS_V98 list, and this
   // milestone's report). Any other ERROR is a real harness bug.
-  const KNOWN_AMBIGUOUS_V98 = ["20-let-const-tdz", "22-nested-closures-counters", "33-class-inheritance-super", "34-class-static-members", "40-spread-array", "41-spread-object", "43-template-literals", "47-typeof-instanceof-in"];
+  // (The list lives in tests/support/known-issues.ts so a fixture added there
+  // — 64-computed-method-names, 2026-09-05 — is attributed here too.)
   const errors = report.results.filter((r) => r.verdict === VERDICT.ERROR);
   const unexplained = errors.filter((r) => !KNOWN_AMBIGUOUS_V98.some((name) => r.fixture.name === name || r.fixture.name === `${name}.min`));
   assert.equal(unexplained.length, 0, `unexplained ERROR(s), not attributable to the known v98 layout ambiguity: ${JSON.stringify(unexplained.map((r) => ({ name: r.fixture.name, oracles: r.oracles })))}`);

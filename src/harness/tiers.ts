@@ -77,7 +77,7 @@ export const identityDecompiler: DecompilerFn = (input) => {
  * `hbc2js sweep`, and the gate's own equivalence test.
  *
  * `resolveV98Ambiguity` is the caller making D8's choice explicitly for the
- * eight `KNOWN_AMBIGUOUS_V98` fixtures; it is reported as
+ * `KNOWN_AMBIGUOUS_V98` fixtures (tests/support/known-issues.ts); it is reported as
  * `W_FORCED_OPCODE_TABLE`, never guessed by the parser.
  */
 export const hbc2jsDecompiler: DecompilerFn = (input) => decompile(input.hbcBytes, { resolveV98Ambiguity: true, moduleName: input.fixtureName }).code;
