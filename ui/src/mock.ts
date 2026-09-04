@@ -6,7 +6,7 @@ import type { Api } from "./api.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
-  SourceText, WhoCalls, XrefEdge,
+  SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry,
 } from "./contracts.ts";
 import type { ModuleSource } from "./contracts.ts";
 import type { FunctionListPage, FunctionListRow, ModuleEntry, ModuleListPage } from "./listing/wire.ts";
@@ -93,14 +93,29 @@ const SOURCE = `function ${"validateLicence"}(token, now) {
   return claims.tier === "pro";
 }`;
 
+// The real `GET /api/fn/:fn/disasm` prints one line per instruction as
+// `[@ <byte offset>] Opcode …` (src/disasm/print.ts). The mock's opcodes are
+// invented, but the SHAPE is the real one, because the source<->disasm
+// alignment (docs/specs/05-emitter.md §16) finds its line by that prefix and a
+// mock in a different format would make the feature untestable in mock mode.
 const DISASM = `L0:
-  0x0000  LoadParam         r2, 1
-  0x0004  GetByIdShort      r3, r2, "decodePayload"
-  0x000a  Call2             r1, r3, r2, r0
-  0x0010  JmpFalse          L2, r1
+  [@ 0] LoadParam r2<Reg8>, 1<UInt8>
+  [@ 4] GetByIdShort r3<Reg8>, r2<Reg8>, "decodePayload"
+  [@ 10] Call2 r1<Reg8>, r3<Reg8>, r2<Reg8>, r0<Reg8>
+  [@ 16] JmpFalse L2<Addr8>, r1<Reg8>
 L1:
-  0x0016  LoadConstUInt8    r4, 1
-  0x001a  Ret               r4`;
+  [@ 22] LoadConstUInt8 r4<Reg8>, 1<UInt8>
+  [@ 26] Ret r4<Reg8>`;
+
+/** Mock `linemap`: the fake SOURCE's five body lines against the fake DISASM's
+ *  six instructions, in the same partial spirit as the real thing (line 1, the
+ *  `function` header, and line 6, the closing brace, are unmapped). */
+const LINE_MAP: readonly LineMapEntry[] = [
+  [2, 0, 0, 4],
+  [3, 0, 4, 10],
+  [4, 0, 16, 22],
+  [5, 0, 22, 26],
+];
 
 const edge = (fn: number, kind: string): XrefEdge => ({
   fn, name: fnName(fn), size: 24, file: `mod${fn % 4}/index.js`, line: 12, kind,
@@ -135,6 +150,7 @@ export const mockApi: Api = {
   fn: (fn) => delay(summary(fn)),
   source: (fn): Promise<SourceText> => delay(sourceFor(fn)),
   disasm: (): Promise<SourceText> => delay({ text: DISASM, totalLines: DISASM.split("\n").length, truncated: false }),
+  lineMap: (fn): Promise<LineMap> => delay({ fn, fnStartLine: 1, lines: fn === BIG_FN ? [] : LINE_MAP.map((r) => [r[0], fn, r[2], r[3]] as LineMapEntry) }),
   locals: (fn): Promise<LocalsListing> => {
     // The mock source is fixed text; derive its registers from it so the
     // identifier -> `reg:F:R` join has something real to resolve against.

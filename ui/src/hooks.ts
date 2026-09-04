@@ -8,7 +8,7 @@ import { API_BASE, USING_MOCK, api, ApiError } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
-  LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
+  LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
 } from "./contracts.ts";
 
 export const LOG_POLL_MS = 1000;
@@ -39,6 +39,11 @@ export const useSource = (fn: number): UseQueryResult<SourceText> =>
 
 export const useDisasm = (fn: number): UseQueryResult<SourceText> =>
   useQuery({ queryKey: ["disasm", fn], queryFn: () => api.disasm(fn), ...perFn(fn) });
+
+/** The source<->disasm line map for a function (docs/specs/05-emitter.md §16).
+ *  Same cache policy as the source and disassembly it aligns. */
+export const useLineMap = (fn: number): UseQueryResult<LineMap> =>
+  useQuery({ queryKey: ["linemap", fn], queryFn: () => api.lineMap(fn), ...perFn(fn) });
 
 /** The fn's nameable registers — what a clicked identifier is resolved
  *  against (`src/ui-core/rename-target.ts`). */

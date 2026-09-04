@@ -43,6 +43,24 @@ export interface FnSummary {
 }
 
 /** `source/{fn}` and `disasm/{fn}` — both return this shape. */
+/** One row of `GET /api/fn/{fn}/linemap` (docs/specs/05-emitter.md §16):
+ *  `[line, fn, start, end]` — a 1-based line of the served source text, and
+ *  the instruction behind it as a Hermes function index plus a half-open byte
+ *  range within THAT function (`start` is what the disassembly prints as
+ *  `[@ start]`). `fn` is usually the function being rendered but not always:
+ *  a nested closure printed inside its parent contributes rows of its own. */
+export type LineMapEntry = readonly [line: number, fn: number, start: number, end: number];
+
+/** `GET /api/fn/{fn}/linemap` — the honest-partial source<->disasm map.
+ *  `lines` is sorted by `line` and holds at most one row per line; it is empty,
+ *  never an error, when the server cannot render the function.
+ *  `fnStartLine` is the function text's first line in the module file. */
+export interface LineMap {
+  readonly fn: number;
+  readonly fnStartLine: number | null;
+  readonly lines: readonly LineMapEntry[];
+}
+
 export interface SourceText {
   readonly text: string;
   readonly totalLines: number;

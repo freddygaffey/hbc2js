@@ -46,6 +46,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/fn/{fn}` | `FnSummary` |
   | GET | `/api/fn/{fn}/source` | `SourceText` |
   | GET | `/api/fn/{fn}/disasm` | `SourceText` |
+  | GET | `/api/fn/{fn}/linemap` | `LineMap` — `{fn, fnStartLine, lines: [[line, fn, start, end], …]}`, the honest-partial source↔disasm map (`docs/specs/05-emitter.md` §16). `line` is 1-based inside the function's own served text, `fnStartLine` that text's first line in the module file, and `[start, end)` the byte range of the ONE instruction behind the line, within function `fn` — usually the function being rendered, but a nested closure printed inside its parent contributes rows of its own. Sorted, at most one row per line, uncapped (a truncated map would be a *wrong* map for the lines it dropped). `lines: []` — never a 404 — when the server has no `--hbc` or the function has no emitted frame |
   | GET | `/api/fn/{fn}/locals` | `{rows:[{reg,rendered,named,role,uses}],total}` |
   | GET | `/api/fn/{fn}/context` | `FnContext` |
   | GET | `/api/fn/{fn}/callers` | `WhoCalls` |
@@ -214,6 +215,42 @@ back to `GET /api/fn/:fn/source`. `GET /api/fn/:fn/disasm` fills the lower
 half of the vertical split, which folds away entirely from the bar at the
 bottom of the pane.
 
+### Source↔disasm alignment
+
+`GET /api/fn/:fn/linemap` (above) says which line of the served source came
+from which instruction. `ui/src/listing/line-map.ts` turns that into the line
+of the disassembly to highlight — three pure functions, no React and no
+CodeMirror, so the root gate imports them directly with no `ui/node_modules`
+present (`tests/gate/ui/line-map-align.test.ts`):
+
+- `fnLocalLine` rebases the editor's line onto the function's own numbering
+  (the centre pane usually shows the WHOLE module file, so it subtracts
+  `fnStartLine`); `null` above the function's first line or with no range;
+- `rowForLine` takes the exact row for that line, else the nearest mapped line
+  **above** it — the last instruction known to precede the cursor. Rows whose
+  `fn` is not the selected function (a nested closure's) are ignored: their
+  offsets index a different listing;
+- `disasmLineForOffset` finds the line by its `[@ <offset>]` prefix, which is
+  exactly what `src/disasm/print.ts` writes.
+
+`CenterPane.tsx` feeds the result to the disasm `CodeView` as its
+`highlightLine`, so the existing `hbc-selected-line` decoration and its
+scroll-into-view are reused — no new theme token, no new CodeMirror extension.
+`null` (nothing honest to point at: an unmapped line near the top of a
+function, an empty map, a truncated listing) leaves the disassembly pane
+exactly where it was, and the alignment never opens or closes the fold.
+
+Coverage is **partial by design** and the emitter side (`docs/specs/05-
+emitter.md` §16) owns the ratchet: about 64% of non-blank rendered lines on
+`rn-template-0.72` today. Closing braces, hoisted `let` blocks, helper
+preludes, generator scaffolding and anything a stage-B pass synthesised carry
+no origin, and the map says nothing about them rather than guessing.
+
+`ui/src/mock.ts`'s `DISASM` uses the real `[@ N] Opcode …` shape (its opcodes
+are still obviously fake) because the alignment finds its line by that prefix;
+a mock in another format would make the feature untestable in mock mode. A gate
+test asserts the shape so it cannot drift back.
+
 **Selection** lives in `ui/src/state/selection.ts`: a `useSyncExternalStore`
 store (no new dependency, no context provider, so keymap handlers and the
 action registry can read it from outside React) whose `Selection` is a
@@ -327,9 +364,9 @@ and stops no events, so right-clicks reach the annotate track's menu.
 
 ## What is stubbed (landing 1 is the shell, not the app)
 
-- **Source↔disasm alignment**: the two blocks are independent editors; the
-  disasm is not scrolled to the source line (no line→offset map in the UI
-  yet).
+- ~~**Source↔disasm alignment**~~ FIXED: clicking a source line highlights and
+  scrolls the disassembly to the instruction that produced it (see
+  "Source↔disasm alignment" below).
 - ~~The command palette lists hard-coded items~~ FIXED: `CommandPalette.tsx`
   builds its list from `paletteItems(ctx, registry)` (see "Actions, keymap,
   context menu, annotate" below) — every registry action is reachable by

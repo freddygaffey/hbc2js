@@ -7,7 +7,7 @@
 import type {
   CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
-  SourceText, WhoCalls, Bounded, LocalsListing,
+  SourceText, WhoCalls, Bounded, LocalsListing, LineMap,
 } from "./contracts.ts";
 import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
@@ -19,6 +19,10 @@ export interface Api {
   fn(fn: number): Promise<FnSummary>;
   source(fn: number): Promise<SourceText>;
   disasm(fn: number): Promise<SourceText>;
+  /** `GET /api/fn/:fn/linemap` — which source line came from which
+   *  instruction (docs/specs/05-emitter.md §16); drives the centre pane's
+   *  source<->disasm alignment. */
+  lineMap(fn: number): Promise<LineMap>;
   /** `GET /api/fn/:fn/locals` — the fn's nameable registers, for the
    *  identifier -> `reg:F:R` rename join. */
   locals(fn: number): Promise<LocalsListing>;
@@ -70,6 +74,7 @@ export const httpApi: Api = {
   fn: (fn) => get(`/fn/${fn}`),
   source: (fn) => get(`/fn/${fn}/source`),
   disasm: (fn) => get(`/fn/${fn}/disasm`),
+  lineMap: (fn) => get(`/fn/${fn}/linemap`),
   locals: (fn) => get(`/fn/${fn}/locals`),
   context: (fn) => get(`/fn/${fn}/context`),
   whoCalls: (fn) => get(`/fn/${fn}/callers`),

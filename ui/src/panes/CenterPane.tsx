@@ -17,7 +17,7 @@ import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PaneHeader } from "../components/primitives.tsx";
 import {
-  isMissingResource, useContextResource, useDisasm, useFn, useModule, useModuleSource, useSource,
+  isMissingResource, useContextResource, useDisasm, useFn, useLineMap, useModule, useModuleSource, useSource,
 } from "../hooks.ts";
 import { CodeView } from "../listing/CodeView.tsx";
 import { displayName } from "../listing/names.ts";
@@ -25,6 +25,7 @@ import { clampLines, MAX_RENDER_LINES, MAX_RENDER_LINES_MODULE } from "../listin
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleSourceFn } from "../contracts.ts";
 import { setDisasmOpen, useDisasmOpen } from "./disasm-store.ts";
+import { alignedDisasmLine } from "../listing/line-map.ts";
 
 function TruncationBar({ hidden, shown, cap }: { readonly hidden: number; readonly shown: number; readonly cap: number }): ReactNode {
   return (
@@ -87,6 +88,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const useFileView = file.data !== undefined;
   const fnSource = useSource(useFileView || !hasFn ? -1 : fnId);
   const disasm = useDisasm(hasFn ? fnId : -1);
+  const lineMap = useLineMap(hasFn ? fnId : -1);
   const disasmOpen = useDisasmOpen();
   const disasmPanel = useRef<ImperativePanelHandle | null>(null);
   const disasmBody = useRef<HTMLDivElement | null>(null);
@@ -131,6 +133,23 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const line = sel.line !== undefined && (sel.fn === fnId || sel.kind === "module")
     ? sel.line
     : range?.lines[0] ?? null;
+
+  // Source -> disasm alignment (docs/specs/05-emitter.md §16): the cursor line
+  // maps to the instruction behind it, and the disassembly pane highlights and
+  // scrolls to that instruction's own line. `null` whenever the map has nothing
+  // honest for this line, in which case the pane keeps its own scroll position.
+  const disasmLine = useMemo(
+    () =>
+      alignedDisasmLine({
+        rows: lineMap.data?.lines ?? [],
+        fn: fnId,
+        editorLine: line,
+        fileView: useFileView,
+        fnStartLine: lineMap.data?.fnStartLine ?? null,
+        disasmText: dis.text,
+      }),
+    [lineMap.data, fnId, line, useFileView, dis.text],
+  );
 
   const name = displayName(fnId, ctx.data?.metadata, meta.data);
   const sourceMissing = !useFileView && hasFn && fnSource.isError && isMissingResource(fnSource.error);
@@ -201,7 +220,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
               ) : disasm.isError ? (
                 <Notice>{isMissingResource(disasm.error) ? `no disassembly for fn ${fnId}` : "could not load the disassembly"}</Notice>
               ) : (
-                <CodeView text={dis.text} language="plain" highlightLine={null} ariaLabel={`disassembly of function ${fnId}`} />
+                <CodeView text={dis.text} language="plain" highlightLine={disasmLine} ariaLabel={`disassembly of function ${fnId}`} />
               )}
             </div>
             {dis.hidden !== null && dis.hidden > 0 && <TruncationBar hidden={dis.hidden} shown={dis.shown} cap={MAX_RENDER_LINES} />}
