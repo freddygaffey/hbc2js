@@ -1,22 +1,22 @@
 {
-  "name": "dark",
+  "name": "solarized-dark",
   "mode": "dark",
-  "family": "default",
+  "family": "solarized",
   "palette": {
-    "bg": "#0e1520",
-    "surface": "#141d2b",
-    "surface-2": "#1b2637",
-    "border": "#27354a",
-    "text": "#dbe4f0",
-    "text-muted": "#8ea0ba",
-    "accent": "#4c9be8",
-    "accent-fg": "#08111c"
+    "bg": "#002b36",
+    "surface": "#073642",
+    "surface-2": "#0b3d4a",
+    "border": "#586e75",
+    "text": "#839496",
+    "text-muted": "#586e75",
+    "accent": "#268bd2",
+    "accent-fg": "#002b36"
   },
   "severity": {
-    "crit": "#e2557b",
-    "high": "#e08a4c",
-    "med": "#d8c25a",
-    "ok": "#5bc98f"
+    "crit": "#dc322f",
+    "high": "#cb4b16",
+    "med": "#b58900",
+    "ok": "#859900"
   },
   "fonts": {
     "sans": "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",

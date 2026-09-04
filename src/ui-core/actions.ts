@@ -69,6 +69,13 @@ export interface ActionApi {
   openShortcuts(): void | Promise<void>;
   /** The Settings dialog (theme preset, density, keymap preset + bindings). */
   openSettings(): void | Promise<void>;
+  /** Bur 5 (docs/UI-BURS.md #5): opens the command palette prefilled with
+   *  ":" — vim-style command mode (`:fn 74`, `:mod 3`, `:goto name`, `:q`,
+   *  `:set theme/keymap <preset>`, or `:<action-id>` fuzzy-matched). */
+  openCommandMode(): void | Promise<void>;
+  /** Bur 6 (docs/UI-BURS.md #6): flips the active theme preset to its
+   *  dark/light partner (docs/UI.md "Theme"). */
+  toggleTheme(): void | Promise<void>;
 }
 
 export interface ActionContext {
@@ -310,6 +317,18 @@ export function standardActions(): Action[] {
       title: "Settings",
       group: "project",
       run: (ctx) => ctx.api.openSettings(),
+    },
+    {
+      id: "project.commandMode",
+      title: "Open command line",
+      group: "project",
+      run: (ctx) => ctx.api.openCommandMode(),
+    },
+    {
+      id: "view.themeToggle",
+      title: "Toggle light/dark theme",
+      group: "view",
+      run: (ctx) => ctx.api.toggleTheme(),
     },
   ];
 }

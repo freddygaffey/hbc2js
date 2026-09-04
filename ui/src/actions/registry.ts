@@ -12,10 +12,14 @@ import { createKeymap, type Keymap } from "@ui-core/keymap.ts";
 import { mergeBindings, resolveKeymapConfigWith, type KeymapConfig } from "@ui-core/keymap-resolve.ts";
 import { useSyncExternalStore } from "react";
 import { formatDisasmOffset } from "@ui-core/disasm-offset.ts";
+import { parseCommand } from "@ui-core/commands.ts";
 import { PRESETS, keymapConfig } from "../keymap-config.ts";
 import type { FunctionCatalogue } from "../hooks.ts";
 import { back, forward, getSelection, select, type Selection } from "../state/selection.ts";
-import { openDialog, setOverlay, setPaletteOpen, setRightPanel, setStatus } from "./store.ts";
+import { setThemePreset, toggleTheme as toggleThemeStore } from "../theme/store.ts";
+import {
+  closeDialog, getActionsState, openDialog, setOverlay, setPaletteOpen, setRightPanel, setStatus,
+} from "./store.ts";
 import { addTag, fnTarget } from "./writes.ts";
 import { workersApi } from "../workers/wire.ts";
 import { api } from "../api.ts";
@@ -258,6 +262,62 @@ function stepModule(delta: number): void {
   if (first !== undefined) select({ kind: "fn", fn: first.fn });
 }
 
+/** Bur 5 (docs/UI-BURS.md #5): executes a ":"-mode CommandPalette query.
+ *  `query` may include or omit the leading ":" (`src/ui-core/commands.ts`
+ *  strips it). The catalogue/theme/keymap lookups all live here because this
+ *  is the one place that already has the query client, the theme store and
+ *  the keymap store in scope — `commands.ts` stays a pure parser. */
+export function runCommand(query: string): void {
+  const cmd = parseCommand(query);
+  switch (cmd.kind) {
+    case "fn": {
+      const rows = catalogue()?.rows ?? [];
+      if (!rows.some((r) => r.fn === cmd.n)) return setStatus(`no such function: fn ${cmd.n}`);
+      select({ kind: "fn", fn: cmd.n });
+      return;
+    }
+    case "mod": {
+      const rows = catalogue()?.rows ?? [];
+      const first = rows.find((r) => r.module === cmd.id);
+      if (first === undefined) return setStatus(`no such module: ${cmd.id}`);
+      select({ kind: "fn", fn: first.fn });
+      return;
+    }
+    case "goto": {
+      const rows = catalogue()?.rows ?? [];
+      const needle = cmd.name.toLowerCase();
+      const hit = rows.find((r) => (r.name ?? "").toLowerCase().includes(needle));
+      if (hit === undefined) return setStatus(`no function found matching "${cmd.name}"`);
+      select({ kind: "fn", fn: hit.fn });
+      return;
+    }
+    case "quit": {
+      const s = getActionsState();
+      if (s.dialog.kind !== "none") return closeDialog();
+      if (s.overlay !== "none") return setOverlay("none");
+      setRightPanel("context");
+      return;
+    }
+    case "set": {
+      try {
+        if (cmd.what === "theme") setThemePreset(cmd.value);
+        else setKeymapConfig({ preset: cmd.value, overrides: getKeymapConfig().overrides ?? {} });
+      } catch (e) {
+        setStatus(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+    case "action": {
+      if (cmd.query === "") return;
+      // `runAction` already reports a "not available" status when the id is
+      // real but gated off by `when()` — only add a message for a query
+      // that never matched a real action id at all.
+      if (registry.get(cmd.query) === undefined) return setStatus(`no action "${cmd.query}"`);
+      runAction(cmd.query);
+    }
+  }
+}
+
 function focusSearch(): void {
   const el = document.querySelector<HTMLInputElement>('input[aria-label="search functions"]');
   if (el === null) return setStatus("no search box on screen");
@@ -336,6 +396,8 @@ export const actionApi: ActionApi = {
   },
   search: () => focusSearch(),
   openPalette: () => setPaletteOpen(true),
+  openCommandMode: () => setPaletteOpen(true, "command"),
+  toggleTheme: () => toggleThemeStore(),
   openShortcuts: () => setOverlay("shortcuts"),
   openSettings: () => setOverlay("settings"),
   markReviewed: (target) => tag(target, "reviewed"),

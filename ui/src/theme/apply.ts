@@ -1,19 +1,22 @@
 // ui/src/theme/apply.ts — startup token load (spec 22 §3.4): ui/theme.json
-// names a preset (ui/themes/dark.json | light.json) and may override any
-// token; the merge is written to `:root` as CSS custom properties
-// (`--bg`, `--accent`, `--sev-crit`, `--space-3`, ...). Nothing else in
-// ui/src may name a colour — tests/gate/ui/tokens.test.ts enforces it.
-import darkPreset from "../../themes/dark.json";
-import lightPreset from "../../themes/light.json";
+// names a preset (any file in ui/themes/*.json) and may override any token;
+// the merge is written to `:root` as CSS custom properties (`--bg`,
+// `--accent`, `--sev-crit`, `--space-3`, ...). Nothing else in ui/src may
+// name a colour — tests/gate/ui/tokens.test.ts enforces it.
+//
+// bur 3 (docs/UI-BURS.md #3): the preset list is every `ui/themes/*.json`
+// file, loaded with `import.meta.glob` so adding an nvim/VS Code-common
+// preset is "drop a JSON file in ui/themes/", not a code change here.
 import themeConfig from "../../theme.json";
 import type { Density, ThemeConfig, ThemePreset } from "./tokens.ts";
 
-const PRESETS: Readonly<Record<string, ThemePreset>> = {
-  dark: darkPreset as ThemePreset,
-  light: lightPreset as ThemePreset,
-};
+const presetModules = import.meta.glob<{ default: ThemePreset }>("../../themes/*.json", { eager: true });
 
-export const PRESET_NAMES = Object.keys(PRESETS);
+const PRESETS: Readonly<Record<string, ThemePreset>> = Object.fromEntries(
+  Object.entries(presetModules).map(([path, mod]) => [path.replace(/^.*\//, "").replace(/\.json$/, ""), mod.default]),
+);
+
+export const PRESET_NAMES = Object.keys(PRESETS).sort();
 
 const config = themeConfig as ThemeConfig;
 
@@ -40,6 +43,47 @@ export function resolveTheme(name: string = config.preset): ThemePreset {
 }
 
 export const DEFAULT_PRESET = config.preset;
+
+/** bur 3/6: the distinct `family` values across every shipped preset, in
+ *  `PRESET_NAMES` order, each listed once — what the Settings "theme
+ *  family" dropdown offers (the family's dark/light variant, if any, is
+ *  then picked by the mode toggle, never by this list). */
+export function families(): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const name of PRESET_NAMES) {
+    const f = presetOf(name).family;
+    if (!seen.has(f)) {
+      seen.add(f);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+/** The preset in `family` matching `mode`; if the family has no such variant
+ *  (a dark-only preset like "one-dark"), whichever preset the family does
+ *  have; if the family is unknown, the base `mode` preset ("dark"/"light",
+ *  which always exist). */
+export function presetForFamily(family: string, mode: "dark" | "light"): string {
+  const exact = Object.entries(PRESETS).find(([, p]) => p.family === family && p.mode === mode);
+  if (exact !== undefined) return exact[0];
+  const any = Object.entries(PRESETS).find(([, p]) => p.family === family);
+  if (any !== undefined) return any[0];
+  return mode;
+}
+
+/** bur 6 (docs/UI-BURS.md #6): the dark/light "partner" of `name` — the
+ *  theme.toggle action and Settings' mode switch both flip to this. Same
+ *  family, opposite mode, when one exists; otherwise the base `dark`/`light`
+ *  preset for the opposite mode (every preset ships one of the two modes, so
+ *  this is always defined). */
+export function partnerPreset(name: string): string {
+  const p = presetOf(name);
+  const wantMode: "dark" | "light" = p.mode === "dark" ? "light" : "dark";
+  const sibling = Object.entries(PRESETS).find(([, q]) => q.family === p.family && q.mode === wantMode);
+  return sibling !== undefined ? sibling[0] : wantMode;
+}
 
 /** Writes one resolved theme + density to `:root`. Inline custom properties
  *  on the document element beat any stylesheet `:root` rule, so this also

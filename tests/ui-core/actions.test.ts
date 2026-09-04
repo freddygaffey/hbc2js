@@ -35,6 +35,8 @@ function stubApi(): ActionApi {
     unfold: noop,
     openShortcuts: noop,
     openSettings: noop,
+    openCommandMode: noop,
+    toggleTheme: noop,
   };
 }
 

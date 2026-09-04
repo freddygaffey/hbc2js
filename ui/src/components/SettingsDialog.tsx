@@ -17,6 +17,7 @@ import {
   activeBindings, getKeymapConfig, registry, resetKeymapConfig, setKeymapConfig, useKeymapConfig,
 } from "../actions/registry.ts";
 import { PRESETS } from "../keymap-config.ts";
+import { families, partnerPreset, presetForFamily, presetOf } from "../theme/apply.ts";
 import { useTheme } from "../theme/ThemeProvider.tsx";
 import { chordLabel } from "./KeymapHelp.tsx";
 import themeConfig from "../../theme.json";
@@ -169,6 +170,32 @@ function Bindings(): ReactNode {
   );
 }
 
+/** Bur 6 (docs/UI-BURS.md #6): light/dark is a SWITCH, not a dropdown entry
+ *  — the dropdown (`Choice` above, "theme family") only picks the palette
+ *  family (bur 3); this flips within it. Same `partnerPreset` the
+ *  `view.themeToggle` keymap action and the `:set theme` command use, so
+ *  all three ways to change it can never disagree. */
+function ModeToggle({ preset, setPreset }: { readonly preset: string; readonly setPreset: (p: string) => void }): ReactNode {
+  const mode = presetOf(preset).mode;
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <span className="w-32 shrink-0 text-text-muted">mode</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={mode === "light"}
+        aria-label="Toggle light/dark theme"
+        data-testid="theme-mode-toggle"
+        data-mode={mode}
+        className={rowBtn}
+        onClick={() => setPreset(partnerPreset(preset))}
+      >
+        {mode} (click to toggle)
+      </button>
+    </div>
+  );
+}
+
 function TokenOverrides(): ReactNode {
   const cfg = themeConfig as { preset?: string; overrides?: Record<string, unknown> };
   const rows = Object.entries(cfg.overrides ?? {});
@@ -189,7 +216,7 @@ function TokenOverrides(): ReactNode {
 }
 
 export function SettingsDialog({ onClose }: { readonly onClose: () => void }): ReactNode {
-  const { preset, presets, density, setPreset, setDensity } = useTheme();
+  const { preset, density, setPreset, setDensity } = useTheme();
   const keymapCfg = useKeymapConfig();
   const [tab, setTab] = useState<"appearance" | "keys">("appearance");
 
@@ -204,7 +231,14 @@ export function SettingsDialog({ onClose }: { readonly onClose: () => void }): R
       </div>
       {tab === "appearance" ? (
         <div>
-          <Choice label="theme preset" testid="theme-preset" options={presets as readonly string[]} value={preset} onChange={setPreset} />
+          <Choice
+            label="theme family"
+            testid="theme-family"
+            options={families() as readonly string[]}
+            value={presetOf(preset).family}
+            onChange={(f) => setPreset(presetForFamily(f, presetOf(preset).mode))}
+          />
+          <ModeToggle preset={preset} setPreset={setPreset} />
           <Choice label="density" testid="theme-density" options={["comfortable", "compact"] as const} value={density} onChange={setDensity} />
           <Choice
             label="keymap preset"

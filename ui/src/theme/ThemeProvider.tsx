@@ -1,7 +1,14 @@
 // ui/src/theme/ThemeProvider.tsx — runtime theme + density switching
 // (spec 22 §2: density is a toggle, not a rebuild).
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { applyTheme, DEFAULT_PRESET, PRESET_NAMES, resolveTheme } from "./apply.ts";
+//
+// The state itself lives in ./store.ts (a vanilla useSyncExternalStore
+// store, like ui/src/actions/store.ts) so code OUTSIDE React — the
+// `view.themeToggle` keymap action and the `:set theme <preset>` command
+// (docs/UI-BURS.md #5/#6) — read and change the SAME theme the Settings
+// dialog does. This component is now a thin React view over that store.
+import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { PRESET_NAMES } from "./apply.ts";
+import { getThemeState, setThemeDensity, setThemePreset, subscribeTheme } from "./store.ts";
 import type { Density } from "./tokens.ts";
 
 interface ThemeCtx {
@@ -14,58 +21,20 @@ interface ThemeCtx {
 
 const Ctx = createContext<ThemeCtx | null>(null);
 
-// Density polish (wave-2 activity landing): both dials persist across a
-// reload. Every localStorage call is wrapped — a private-browsing tab (or
-// any other reason `Storage` throws) degrades to the `ui/theme.json`
-// default, never to a crash.
-const PRESET_KEY = "hbc2js.theme.preset";
-const DENSITY_KEY = "hbc2js.theme.density";
-
-function loadPreset(): string {
-  try {
-    const v = window.localStorage.getItem(PRESET_KEY);
-    return v !== null && PRESET_NAMES.includes(v) ? v : DEFAULT_PRESET;
-  } catch {
-    return DEFAULT_PRESET;
-  }
-}
-
-function loadDensity(fallback: Density): Density {
-  try {
-    const v = window.localStorage.getItem(DENSITY_KEY);
-    return v === "compact" || v === "comfortable" ? v : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function save(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // ignore — best-effort persistence only.
-  }
-}
-
 export function ThemeProvider({ children }: { readonly children: ReactNode }): ReactNode {
-  const [preset, setPresetState] = useState<string>(loadPreset);
-  // Comfortable is the MVP default: the shell must not feel cramped.
-  const [density, setDensityState] = useState<Density>(() => loadDensity(resolveTheme(loadPreset()).density));
+  const state = useSyncExternalStore(subscribeTheme, getThemeState, getThemeState);
 
-  useEffect(() => {
-    applyTheme(resolveTheme(preset), density);
-  }, [preset, density]);
+  const value = useMemo<ThemeCtx>(
+    () => ({
+      preset: state.preset,
+      presets: PRESET_NAMES,
+      density: state.density,
+      setPreset: setThemePreset,
+      setDensity: setThemeDensity,
+    }),
+    [state],
+  );
 
-  const setPreset = (name: string): void => {
-    setPresetState(name);
-    save(PRESET_KEY, name);
-  };
-  const setDensity = (d: Density): void => {
-    setDensityState(d);
-    save(DENSITY_KEY, d);
-  };
-
-  const value = useMemo<ThemeCtx>(() => ({ preset, presets: PRESET_NAMES, density, setPreset, setDensity }), [preset, density]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

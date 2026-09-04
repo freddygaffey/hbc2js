@@ -85,8 +85,40 @@ test.describe("keymap", () => {
   });
 });
 
+test.describe("command mode (bur 4/5)", () => {
+  test("bare '/' outside an input focuses the search box", async ({ page }) => {
+    await page.goto("/");
+    await openFirstFn(page);
+    const codeView = page.getByTestId("code-view").first();
+    await expect(codeView).toBeVisible({ timeout: WAIT });
+    await codeView.click();
+    await page.keyboard.press("/");
+    await expect(page.locator('input[aria-label="search functions"]')).toBeFocused({ timeout: SHORT });
+    await page.locator('input[aria-label="search functions"]').blur();
+  });
+
+  test("':' opens the palette prefilled with ':', and ':fn 74' navigates to fn 74", async ({ page }) => {
+    await page.goto("/");
+    await openFirstFn(page);
+
+    await page.keyboard.press(":");
+    const input = page.getByPlaceholder(/Type a command/);
+    await expect(input).toBeVisible({ timeout: SHORT });
+    await expect(input).toHaveValue(":");
+
+    // One `.fill()` (never an intermediate empty value): the placeholder
+    // itself depends on whether the query starts with ":", so clearing it
+    // first would make `getByPlaceholder(/Type a command/)` go stale mid-test.
+    await input.fill(":fn 74");
+    await expect(input).toHaveValue(":fn 74");
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByTestId("breadcrumbs")).toContainText("fn 74", { timeout: WAIT });
+  });
+});
+
 test.describe("settings", () => {
-  test("theme preset switches live and survives a reload", async ({ page }) => {
+  test("theme mode toggle switches live and survives a reload (bur 6)", async ({ page }) => {
     await page.goto("/");
     await page.keyboard.press(`${MOD}+,`);
     const dialog = page.getByRole("dialog", { name: "Settings" });
@@ -95,7 +127,13 @@ test.describe("settings", () => {
     const bg = async (): Promise<string> =>
       page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
     const before = await bg();
-    await dialog.locator('[data-testid="theme-preset"] [data-value="light"]').click();
+    // bur 6: light/dark is a switch, not a dropdown entry — the family
+    // dropdown (bur 3) is left on its default ("default": ui/themes/dark.json
+    // + light.json) and only the mode toggle flips.
+    const modeToggle = dialog.locator('[data-testid="theme-mode-toggle"]');
+    await expect(modeToggle).toHaveAttribute("data-mode", "dark");
+    await modeToggle.click();
+    await expect(modeToggle).toHaveAttribute("data-mode", "light");
     await expect.poll(bg, { timeout: SHORT }).not.toBe(before);
     const after = await bg();
 
@@ -104,7 +142,7 @@ test.describe("settings", () => {
 
     // Put it back so the next test starts from the shipped preset.
     await page.keyboard.press(`${MOD}+,`);
-    await page.getByRole("dialog", { name: "Settings" }).locator('[data-testid="theme-preset"] [data-value="dark"]').click();
+    await page.getByRole("dialog", { name: "Settings" }).locator('[data-testid="theme-mode-toggle"]').click();
     await expect.poll(bg, { timeout: SHORT }).toBe(before);
   });
 

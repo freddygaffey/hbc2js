@@ -14,10 +14,11 @@
   "Ctrl-o": "navigate.back",
   "Ctrl-i": "navigate.forward",
   "/": "project.search",
-  ":": "project.palette",
+  ":": "project.commandMode",
   "zc": "view.fold",
   "zo": "view.unfold",
   "<leader>r": "annotate.rename",
+  "<leader>t": "view.themeToggle",
   "?": "project.shortcuts",
   "Ctrl-,": "project.settings"
 }

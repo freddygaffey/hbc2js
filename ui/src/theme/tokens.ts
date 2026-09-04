@@ -13,6 +13,15 @@ export interface DensitySpec {
 
 export interface ThemePreset {
   readonly name: string;
+  /** bur 6 (docs/UI-BURS.md #6): which half of the light/dark toggle this
+   *  preset is. */
+  readonly mode: "dark" | "light";
+  /** bur 3/6: presets that are two variants of the same palette (e.g.
+   *  "gruvbox-dark"/"gruvbox-light") share a `family`; the theme.toggle
+   *  action flips to the sibling in the same family with the opposite
+   *  `mode`, falling back to the base dark/light preset when the family has
+   *  no such sibling (a dark-only nvim theme like "one-dark"). */
+  readonly family: string;
   readonly palette: {
     readonly bg: string;
     readonly surface: string;

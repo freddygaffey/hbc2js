@@ -1,22 +1,22 @@
 {
-  "name": "dark",
+  "name": "catppuccin-mocha",
   "mode": "dark",
-  "family": "default",
+  "family": "catppuccin",
   "palette": {
-    "bg": "#0e1520",
-    "surface": "#141d2b",
-    "surface-2": "#1b2637",
-    "border": "#27354a",
-    "text": "#dbe4f0",
-    "text-muted": "#8ea0ba",
-    "accent": "#4c9be8",
-    "accent-fg": "#08111c"
+    "bg": "#1e1e2e",
+    "surface": "#313244",
+    "surface-2": "#45475a",
+    "border": "#585b70",
+    "text": "#cdd6f4",
+    "text-muted": "#a6adc8",
+    "accent": "#89b4fa",
+    "accent-fg": "#1e1e2e"
   },
   "severity": {
-    "crit": "#e2557b",
-    "high": "#e08a4c",
-    "med": "#d8c25a",
-    "ok": "#5bc98f"
+    "crit": "#f38ba8",
+    "high": "#fab387",
+    "med": "#f9e2af",
+    "ok": "#a6e3a1"
   },
   "fonts": {
     "sans": "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",

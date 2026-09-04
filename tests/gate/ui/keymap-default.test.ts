@@ -38,3 +38,34 @@ test("every chord in every shipped preset fires its action for a real browser ke
     }
   }
 });
+
+// -- bur 4 (docs/UI-BURS.md #4): "/" should open search --------------------
+test('every shipped preset binds "/" to project.search', () => {
+  for (const name of PRESET_NAMES) {
+    const preset = loadPreset(name);
+    assert.equal(preset["/"], "project.search", `${name}: "/" is not bound to project.search`);
+  }
+});
+
+// -- bur 5 (docs/UI-BURS.md #5): ":" opens the command palette in command
+// mode (project.commandMode, not the plain project.palette — the palette
+// itself tells the two apart by whether the query starts with ":").
+test('every shipped preset binds ":" to project.commandMode', () => {
+  for (const name of PRESET_NAMES) {
+    const preset = loadPreset(name);
+    assert.equal(preset[":"], "project.commandMode", `${name}: ":" is not bound to project.commandMode`);
+  }
+});
+
+// -- bur 6 (docs/UI-BURS.md #6): light/dark is a keymap-reachable toggle,
+// not just a Settings dropdown, in every preset.
+test("every shipped preset binds a chord to view.themeToggle", () => {
+  const registry = createStandardRegistry();
+  for (const name of PRESET_NAMES) {
+    const preset = loadPreset(name);
+    const km = createKeymap({ preset });
+    const chord = km.chordFor("view.themeToggle");
+    assert.notEqual(chord, undefined, `${name}: no chord bound to view.themeToggle`);
+    assert.notEqual(registry.get("view.themeToggle"), undefined);
+  }
+});

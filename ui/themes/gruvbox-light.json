@@ -1,22 +1,22 @@
 {
-  "name": "dark",
-  "mode": "dark",
-  "family": "default",
+  "name": "gruvbox-light",
+  "mode": "light",
+  "family": "gruvbox",
   "palette": {
-    "bg": "#0e1520",
-    "surface": "#141d2b",
-    "surface-2": "#1b2637",
-    "border": "#27354a",
-    "text": "#dbe4f0",
-    "text-muted": "#8ea0ba",
-    "accent": "#4c9be8",
-    "accent-fg": "#08111c"
+    "bg": "#fbf1c7",
+    "surface": "#ebdbb2",
+    "surface-2": "#d5c4a1",
+    "border": "#bdae93",
+    "text": "#3c3836",
+    "text-muted": "#7c6f64",
+    "accent": "#076678",
+    "accent-fg": "#fbf1c7"
   },
   "severity": {
-    "crit": "#e2557b",
-    "high": "#e08a4c",
-    "med": "#d8c25a",
-    "ok": "#5bc98f"
+    "crit": "#9d0006",
+    "high": "#af3a03",
+    "med": "#b57614",
+    "ok": "#79740e"
   },
   "fonts": {
     "sans": "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",

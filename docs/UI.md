@@ -144,9 +144,10 @@ byte for byte.
 { "preset": "dark", "overrides": {} }
 ```
 
-It names a preset in `ui/themes/` (`dark.json`, `light.json`) and may
-override any token path (`palette.accent`, `densities.compact.fontSize`, …).
-A preset carries:
+It names a preset — any file in `ui/themes/*.json`, loaded with
+`import.meta.glob` (`ui/src/theme/apply.ts`), so adding a preset is "drop a
+JSON file in `ui/themes/`", not a code change — and may override any token
+path (`palette.accent`, `densities.compact.fontSize`, …). A preset carries:
 
 | Group | Tokens | CSS variable |
 |---|---|---|
@@ -156,12 +157,15 @@ A preset carries:
 | `radius` | one radius | `--radius` |
 | `spacing` | the `0..8` scale | `--space-0` … `--space-8` |
 | `densities` | `compact` / `comfortable` → `unit`, `fontSize`, `rowHeight` | `--density-unit`, `--font-size`, `--row-height` |
+| `mode` | `"dark"` \| `"light"` — which half of the light/dark toggle (bur 6) | — |
+| `family` | e.g. `"gruvbox"` — groups a palette's dark/light variants (bur 6) | — |
 
 `ui/src/theme/apply.ts` merges preset + overrides and writes them to `:root`
-at startup (before the first React render). `ui/src/theme/theme.css` maps
-each runtime variable onto a Tailwind theme key (`@theme inline`), so
-components write `bg-surface`, `text-sev-crit`, `rounded-ui`, `font-mono` and
-never a raw value.
+at startup (before the first React render, via `ui/src/theme/store.ts`'s
+module-load side effect — see "One state, three ways to change it" below).
+`ui/src/theme/theme.css` maps each runtime variable onto a Tailwind theme key
+(`@theme inline`), so components write `bg-surface`, `text-sev-crit`,
+`rounded-ui`, `font-mono` and never a raw value.
 
 **Density** (`comfortable` by default — the shell must not feel cramped) is a
 runtime toggle in the top bar and in the command palette. It sets the root
@@ -172,8 +176,8 @@ were widened for the "feels scrunched" pass — `comfortable`'s unit moved off
 Tailwind's own 0.25rem default (which made "comfortable" indistinguishable
 from stock) to 0.3rem, `compact` to 0.22rem — and `ui/src/theme/theme.css`'s
 `body` sets `line-height: 1.5` (>= the 1.45 floor at both densities). The
-preset (dark/light) and density both persist to `localStorage`
-(`ui/src/theme/ThemeProvider.tsx`, keys `hbc2js.theme.preset`/
+preset and density both persist to `localStorage`
+(`ui/src/theme/store.ts`, keys `hbc2js.theme.preset`/
 `hbc2js.theme.density`), wrapped in try/catch like every other localStorage
 use in the shell.
 
@@ -181,6 +185,62 @@ use in the shell.
 `--accent #4c9be8`, IBM Plex Sans/Mono loaded from Google Fonts in
 `ui/index.html` with full local fallback stacks. Fred's seed replaces the
 preset values, not the structure.
+
+### Editor theme presets (bur 3, docs/UI-BURS.md #3)
+
+Ten presets modelled on themes common to neovim and VS Code, alongside the
+shipped `dark`/`light`. Colour VALUES are not copyrightable; nobody's CSS or
+source was copied — each `ui/themes/*.json` was written from scratch,
+deriving hex values from the project's own published palette (a couple of
+extra "surface"/"border" shades were interpolated where the source palette
+does not have that many tiers — `gruvbox`, `solarized`, `dracula`, `one-dark`
+namely). Attribution and upstream licence, per preset:
+
+| Preset file(s) | Family | Upstream project | Licence |
+|---|---|---|---|
+| `gruvbox-dark.json` / `gruvbox-light.json` | `gruvbox` | [morhetz/gruvbox](https://github.com/morhetz/gruvbox) | MIT |
+| `catppuccin-mocha.json` (dark) / `catppuccin-latte.json` (light) | `catppuccin` | [catppuccin/catppuccin](https://github.com/catppuccin/catppuccin) | MIT |
+| `tokyonight.json` (dark) | `tokyonight` | [folke/tokyonight.nvim](https://github.com/folke/tokyonight.nvim) | Apache-2.0 |
+| `nord.json` (dark) | `nord` | [arcticicestudio/nord](https://github.com/arcticicestudio/nord) | MIT |
+| `dracula.json` (dark) | `dracula` | [dracula/dracula-theme](https://github.com/dracula/dracula-theme) | MIT |
+| `one-dark.json` (dark) | `one-dark` | Atom's One Dark (e.g. [atom/atom](https://github.com/atom/atom), [one-dark.vim](https://github.com/joshdick/onedark.vim)) | MIT |
+| `solarized-dark.json` / `solarized-light.json` | `solarized` | [altercation/solarized](https://github.com/altercation/solarized) | MIT |
+
+Every file carries exactly `dark.json`'s token key set
+(`tests/gate/ui/tokens.test.ts`, "every file in ui/themes/ carries exactly
+dark.json's token key set") — the gate fails a new preset that is missing a
+token dark.json has, or that adds one it doesn't.
+
+### One state, three ways to change it (theme family, mode, `:set theme`)
+
+The theme's runtime state is `ui/src/theme/store.ts` — a vanilla
+`useSyncExternalStore` store (the same pattern as `ui/src/actions/store.ts`),
+not React state, precisely so it has exactly one persistence path
+(`localStorage`, wrapped) and can be read/changed from OUTSIDE React:
+
+- **Settings → Theme** (bur 3 + bur 6): a "theme family" dropdown
+  (`ui/src/theme/apply.ts`'s `families()` — the distinct `family` values
+  across every preset, e.g. `default`, `gruvbox`, `catppuccin`, …) and a
+  separate light/dark **switch** (`data-testid="theme-mode-toggle"`). The
+  dropdown only ever picks the family; the switch flips `mode` within it
+  (`presetForFamily(family, mode)`). A family with only one mode (the four
+  dark-only nvim presets) keeps that preset selected regardless of the
+  switch's position until another family restores a real choice.
+- **The `view.themeToggle` keymap action** (bur 6): flips the active preset
+  to its `partnerPreset` — same `family`, opposite `mode`, when one exists;
+  otherwise the base `dark`/`light` preset for the opposite mode (every
+  preset ships one of the two, so this is always defined). Bound in every
+  preset (see "Keyboard shortcuts" below).
+- **`:set theme <preset>`** (bur 5, command mode) — sets the preset by name
+  directly, e.g. `:set theme dracula`.
+
+`ThemeProvider.tsx` is now a thin React view over the store (`useSyncExternalStore`); `main.tsx` no longer applies a hardcoded default at
+startup — the store's own module-load side effect applies the PERSISTED
+theme before React renders, so there is nothing left for `main.tsx` to do
+(applying a second, hardcoded default there used to be needed only because
+the old `ThemeProvider` corrected it later, in a post-mount effect; doing
+both now would make every load flash back to the shipped default, which is
+exactly what regressed and was fixed while landing bur 6).
 
 ### The token lint gate
 
@@ -193,6 +253,10 @@ present) fails on:
   `ui/src/**/*.{ts,tsx,css}` or `ui/index.html`, **outside** the token layer
   `ui/src/theme/**` (and `ui/themes/*.json`, which is where colours live);
 - a token present in `dark.json` but not `light.json` or vice versa;
+- any `ui/themes/*.json` file whose token key set differs from `dark.json`'s
+  (bur 3 — every new editor preset must carry every token the shipped ones
+  do, no more, no less);
+- a preset with no `mode` of `"dark"`/`"light"`, or no `family` (bur 6);
 - a `ui/theme.json` whose `preset` does not exist, or whose `overrides` name
   a token path the preset does not have;
 - a preset missing a full `compact`/`comfortable` density spec.
@@ -595,15 +659,80 @@ browser event for every chord in every shipped preset;
 binding algebra; `ui/e2e/keys.spec.ts` drives the chords through Chromium,
 including with focus inside CodeMirror.
 
+### `/` search, `:` command mode, `theme.toggle` (burs 4/5/6)
+
+**`/` opens search** (bur 4, docs/UI-BURS.md #4). Every shipped preset binds
+`/` to `project.search` (vim already had it; `default` and `ghidra` gained
+it). The action (`ActionApi.search`) focuses and selects the function search
+box (`input[aria-label="search functions"]`) exactly like `Ctrl-F` always
+did — `/` is simply another chord on the same action, so there is only one
+code path to keep working. `tests/gate/ui/keymap-default.test.ts` asserts
+every preset's `/` binding; `ui/e2e/keys.spec.ts` presses a bare `/` with
+focus inside CodeMirror and checks the search box gets focus.
+
+**`:` opens the command palette in command mode** (bur 5, docs/UI-BURS.md
+#5). Every preset binds `:` to a new action, `project.commandMode`
+(`ActionApi.openCommandMode`), which opens the SAME `CommandPalette`
+component the `Ctrl-K`/`Ctrl-P` chords do, but tags the open with
+`paletteMode: "command"` (`ui/src/actions/store.ts`) so `CommandPalette.tsx`
+prefills its query with `":"` instead of leaving it blank. No new component,
+per the brief — the palette already had one item list and one input; command
+mode is a second interpretation of that same input's value.
+
+While the query starts with `":"`, `src/ui-core/commands.ts` (a pure,
+node-testable parser — no DOM, no registry) turns it into one of:
+
+| Query | Effect |
+|---|---|
+| `:<action-id>` | fuzzy-matched (`fuzzyMatchIds`, case-insensitive subsequence) against every registered action id; the palette shows the filtered list and Enter runs the selected one |
+| `:fn <n>` | opens function `n` |
+| `:mod <id>` | opens the first function in module `id` |
+| `:goto <name>` | opens the first function whose name contains `<name>` (case-insensitive) |
+| `:q` | closes the active dialog, else the active overlay, else resets the right panel |
+| `:set theme <preset>` | switches the theme preset |
+| `:set keymap <preset>` | switches the keymap preset |
+
+`ui/src/actions/registry.ts`'s `runCommand(query)` executes a parsed
+command — it is the one place with the query client, the theme store and the
+keymap store all in scope, so `commands.ts` stays a pure parser and
+`CommandPalette.tsx` stays a thin view: while a verb is recognised it renders
+one synthetic row (`describeCommand`) that Enter runs; otherwise it disables
+cmdk's own filtering (`shouldFilter`) and renders the action list filtered by
+`fuzzyMatchIds` itself. `tests/ui-core/commands.test.ts` covers the parser
+and the fuzzy matcher; `ui/e2e/keys.spec.ts` drives `:` → `:fn 74` end to end
+against the e2e fixture (`rn-template-0.72`, which has an fn 74).
+
+**`view.themeToggle`** (bur 6, docs/UI-BURS.md #6) flips the active theme
+preset to its dark/light partner (see "One state, three ways to change it"
+above) — bound in every preset so switching modes never requires opening
+Settings:
+
+| Preset | Chord |
+|---|---|
+| `default` | `Ctrl-Shift-L` |
+| `ghidra` | `Ctrl-Alt-L` |
+| `vim` | `<leader>t` |
+
+`tests/gate/ui/keymap-default.test.ts` asserts every preset binds a chord to
+`view.themeToggle`; `ui/e2e/keys.spec.ts` drives the Settings switch
+(`data-testid="theme-mode-toggle"`) and checks `--bg` changes and persists
+across a reload.
+
 ### Settings dialog
 
 `ui/src/components/SettingsDialog.tsx` (`project.settings`, `Ctrl-,`, gear in
 the top bar) is the in-app config the shell was missing — the layout is
 untouched, art direction stays Fred's. Two tabs:
 
-- **appearance** — theme preset (`dark`/`light`), density
+- **appearance** — a "theme family" dropdown (bur 3: `default`, `gruvbox`,
+  `catppuccin`, `tokyonight`, `nord`, `dracula`, `one-dark`, `solarized`,
+  `ui/src/theme/apply.ts`'s `families()`) plus a light/dark **switch** (bur
+  6, `data-testid="theme-mode-toggle"`, `role="switch"`) that flips `mode`
+  within the chosen family (`presetForFamily`) — the dropdown never lists
+  `dark`/`light` themselves any more, only families, precisely so it cannot
+  regress back into being "a dropdown with light and dark in it"; density
   (`comfortable`/`compact`) and keymap preset (`default`/`vim`/`ghidra`),
-  each applied live through the existing `ThemeProvider` / live keymap and
+  each applied live through `ui/src/theme/store.ts` / the live keymap and
   persisted to `localStorage` the same wrapped way; plus a READ-ONLY view of
   `ui/theme.json`'s resolved token overrides (tokens are edited in the file,
   not in the app — the token lint gate is what keeps them honest).

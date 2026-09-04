@@ -21,9 +21,15 @@ export type Overlay = "none" | "shortcuts" | "settings";
 
 export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | "findings" | "package" | "workers";
 
+/** Bur 5 (docs/UI-BURS.md #5): "command" is the vim-style ":" mode —
+ *  CommandPalette prefills its query with ":" and interprets it as
+ *  `src/ui-core/commands.ts` describes, instead of the plain action list. */
+export type PaletteMode = "normal" | "command";
+
 export interface ActionsState {
   readonly dialog: DialogState;
   readonly paletteOpen: boolean;
+  readonly paletteMode: PaletteMode;
   readonly overlay: Overlay;
   readonly rightPanel: RightPanel;
   /** Last write result / hint, shown in the status toast. `null` = nothing. */
@@ -34,7 +40,15 @@ export interface ActionsState {
 
 const CLOSED: DialogState = { kind: "none", selection: { kind: "none" } };
 
-const INITIAL: ActionsState = { dialog: CLOSED, paletteOpen: false, overlay: "none", rightPanel: "context", status: null, pendingChord: "" };
+const INITIAL: ActionsState = {
+  dialog: CLOSED,
+  paletteOpen: false,
+  paletteMode: "normal",
+  overlay: "none",
+  rightPanel: "context",
+  status: null,
+  pendingChord: "",
+};
 
 let state: ActionsState = INITIAL;
 
@@ -68,8 +82,11 @@ export function closeDialog(): void {
   set({ dialog: CLOSED });
 }
 
-export function setPaletteOpen(open: boolean): void {
-  set({ paletteOpen: open });
+/** `mode` only matters while opening (`open: true`) — it tells
+ *  CommandPalette whether to prefill its query with ":" (bur 5). Closing
+ *  never needs a mode, so callers may omit it. */
+export function setPaletteOpen(open: boolean, mode: PaletteMode = "normal"): void {
+  set(open ? { paletteOpen: true, paletteMode: mode } : { paletteOpen: false });
 }
 
 export function setOverlay(overlay: Overlay): void {

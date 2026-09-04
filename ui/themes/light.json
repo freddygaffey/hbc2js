@@ -1,5 +1,7 @@
 {
   "name": "light",
+  "mode": "light",
+  "family": "default",
   "palette": {
     "bg": "#f4f6fa",
     "surface": "#ffffff",

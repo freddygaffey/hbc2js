@@ -134,6 +134,37 @@ test("dark and light presets carry exactly the same tokens", () => {
   assert.ok(dark.includes("palette.accent") && dark.includes("severity.crit"), "presets must carry palette + severity tokens");
 });
 
+// -- bur 3 (docs/UI-BURS.md #3): nvim/VS Code-common editor theme presets --
+test("every file in ui/themes/ carries exactly dark.json's token key set", () => {
+  const darkKeys = tokenPaths(readJson(join(themesDir, "dark.json"))).sort();
+  const files = readdirSync(themesDir).filter((f) => f.endsWith(".json"));
+  assert.ok(files.length >= 12, `expected at least the 2 base + 10 bur-3 presets, found ${files.length}`);
+  for (const file of files) {
+    const keys = tokenPaths(readJson(join(themesDir, file))).sort();
+    const missing = darkKeys.filter((k) => !keys.includes(k));
+    const extra = keys.filter((k) => !darkKeys.includes(k));
+    assert.deepEqual(missing, [], `${file} is missing tokens dark.json has: ${missing.join(", ")}`);
+    assert.deepEqual(extra, [], `${file} has tokens dark.json does not: ${extra.join(", ")}`);
+  }
+});
+
+test("every ui/themes/ preset declares a valid mode and family, every family has a resolvable partner", () => {
+  const files = readdirSync(themesDir).filter((f) => f.endsWith(".json"));
+  const byName = new Map<string, { mode: string; family: string }>();
+  for (const file of files) {
+    const preset = readJson(join(themesDir, file)) as { readonly mode?: Json; readonly family?: Json; readonly name?: Json };
+    assert.ok(preset.mode === "dark" || preset.mode === "light", `${file}: mode must be "dark" or "light"`);
+    assert.equal(typeof preset.family, "string", `${file}: family must be a string`);
+    assert.equal(typeof preset.name, "string", `${file}: name must be a string`);
+    byName.set(String(preset.name), { mode: String(preset.mode), family: String(preset.family) });
+  }
+  // Every family that ships only one mode must be able to fall back to a
+  // base dark/light preset (apply.ts's `presetForFamily`/`partnerPreset`) —
+  // i.e. the base "dark"/"light" presets always exist.
+  assert.ok(byName.has("dark") && byName.get("dark")?.mode === "dark");
+  assert.ok(byName.has("light") && byName.get("light")?.mode === "light");
+});
+
 test("ui/theme.json resolves to a preset, and overrides only known tokens", () => {
   const cfg = readJson(join(uiDir, "theme.json"));
   assert.ok(isObject(cfg), "ui/theme.json must be an object");

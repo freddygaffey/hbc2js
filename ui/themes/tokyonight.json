@@ -1,22 +1,22 @@
 {
-  "name": "dark",
+  "name": "tokyonight",
   "mode": "dark",
-  "family": "default",
+  "family": "tokyonight",
   "palette": {
-    "bg": "#0e1520",
-    "surface": "#141d2b",
-    "surface-2": "#1b2637",
-    "border": "#27354a",
-    "text": "#dbe4f0",
-    "text-muted": "#8ea0ba",
-    "accent": "#4c9be8",
-    "accent-fg": "#08111c"
+    "bg": "#1a1b26",
+    "surface": "#24283b",
+    "surface-2": "#292e42",
+    "border": "#414868",
+    "text": "#c0caf5",
+    "text-muted": "#565f89",
+    "accent": "#7aa2f7",
+    "accent-fg": "#1a1b26"
   },
   "severity": {
-    "crit": "#e2557b",
-    "high": "#e08a4c",
-    "med": "#d8c25a",
-    "ok": "#5bc98f"
+    "crit": "#f7768e",
+    "high": "#ff9e64",
+    "med": "#e0af68",
+    "ok": "#9ece6a"
   },
   "fonts": {
     "sans": "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",

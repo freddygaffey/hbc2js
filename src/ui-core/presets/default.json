@@ -11,6 +11,9 @@
   "Alt-Left": "navigate.back",
   "Alt-Right": "navigate.forward",
   "Ctrl-K": "project.palette",
+  "/": "project.search",
+  ":": "project.commandMode",
+  "Ctrl-Shift-L": "view.themeToggle",
   "?": "project.shortcuts",
   "Ctrl-,": "project.settings"
 }
