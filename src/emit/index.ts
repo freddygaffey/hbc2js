@@ -10,6 +10,7 @@ import type { Param, Stmt } from "./ast.ts";
 import { id, lit, p } from "./ast.ts";
 import { emitFunction, envDeclaringFunction, ownedEnvSlots } from "./function.ts";
 import { closureFunctionId } from "./lower.ts";
+import { resolveOrphanHosts } from "./placement.ts";
 import { fnName, quote } from "./names.ts";
 import { checkBindings, collectUnbound, unboundMessage } from "./scope-check.ts";
 import { printProgram } from "./print.ts";
@@ -206,6 +207,79 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     }
     parentOf.set(i, envGraph.nodes[env]!.ownerFunction);
   }
+  const isAncestor = (candidate: number, of: number): boolean => {
+    let cur: number | null = of;
+    const seen = new Set<number>();
+    while (cur !== null && !seen.has(cur)) {
+      if (cur === candidate) return true;
+      seen.add(cur);
+      cur = parentOf.get(cur) ?? null;
+    }
+    return false;
+  };
+
+  // §6 "Function nesting" (placement, docs/BUGS.md 2026-09-04): an orphan used
+  // to be emitted at MODULE level, outside the global function, where nothing
+  // any function body declares is in scope — so every `_e<env>_<slot>` its body
+  // reads was unbound (481 of them on react-navigation-example). `resolveOrphanHosts`
+  // moves each orphan into the function that leaves the fewest names unbound;
+  // module level is always in the running, so this can only ever bind more.
+  {
+    const envsUsedIn = new Map<number, Set<number>>();
+    for (const slot of envGraph.slots) {
+      for (const access of slot.accesses) {
+        if (access.env === null) continue;
+        const set = envsUsedIn.get(access.functionIndex);
+        if (set === undefined) envsUsedIn.set(access.functionIndex, new Set([access.env]));
+        else set.add(access.env);
+      }
+    }
+    let anyOrphanUsesEnv = false;
+    for (const [child, parent] of parentOf) {
+      if (parent !== null || child === globalIndex) continue;
+      if ((envsUsedIn.get(child)?.size ?? 0) > 0) anyOrphanUsesEnv = true;
+    }
+    if (anyOrphanUsesEnv) {
+      // The `_fn<n>` half of the cost needs the creation sites the env graph
+      // could not resolve, which only the instruction stream has.
+      const creationSitesOf = new Map<number, Set<number>>();
+      for (let i = 0; i < mod.functions.length; i++) {
+        let cfg;
+        try {
+          cfg = analysis.cfg(i);
+        } catch {
+          continue;
+        }
+        for (const b of cfg.blocks) {
+          for (const insn of b.instructions) {
+            const child = closureFunctionId(insn);
+            if (child === undefined) continue;
+            const set = creationSitesOf.get(child);
+            if (set === undefined) creationSitesOf.set(child, new Set([i]));
+            else set.add(i);
+          }
+        }
+      }
+      const placements = resolveOrphanHosts({
+        functionCount: mod.functions.length,
+        globalIndex,
+        parentOf,
+        envsUsedIn,
+        declaringFunction: envDeclaringFunction(envGraph, isAncestor),
+        creationSitesOf,
+      });
+      for (const pl of placements) {
+        parentOf.set(pl.orphan, pl.host);
+        diagnostics.push({
+          severity: "info",
+          code: "W_ORPHAN_HOSTED",
+          message: `function ${pl.orphan} has no resolved closure creation environment; emitting it inside fn#${pl.host}, which declares the environment slots it reads (${pl.unboundAtModule} name(s) would be unbound at module level, ${pl.unboundAtHost} here)`,
+          context: { functionIndex: pl.orphan },
+        });
+      }
+    }
+  }
+
   // Break any cycle (never observed, but a cycle would be an infinite emission).
   for (const [child] of parentOf) {
     const seen = new Set<number>([child]);
@@ -230,16 +304,6 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
   }
   for (const l of childrenOf.values()) l.sort((a, b) => a - b);
 
-  const isAncestor = (candidate: number, of: number): boolean => {
-    let cur: number | null = of;
-    const seen = new Set<number>();
-    while (cur !== null && !seen.has(cur)) {
-      if (cur === candidate) return true;
-      seen.add(cur);
-      cur = parentOf.get(cur) ?? null;
-    }
-    return false;
-  };
   const declaringFunction = envDeclaringFunction(envGraph, isAncestor);
 
   const usedHelpers = new Set<string>();

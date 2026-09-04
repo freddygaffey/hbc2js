@@ -14,6 +14,8 @@ import { Hbc2jsError, ErrorCode } from "../../../src/errors.ts";
 import { checkBindings, collectUnbound, unboundMessage } from "../../../src/emit/scope-check.ts";
 import { id, lit, p } from "../../../src/emit/ast.ts";
 import type { Stmt } from "../../../src/emit/ast.ts";
+import { resolveOrphanHosts } from "../../../src/emit/placement.ts";
+import type { OrphanPlacementInput } from "../../../src/emit/placement.ts";
 
 /** `_fn0` (the global function) with one nested function that reads an env
  *  slot nobody declares, and one that is fine. */
@@ -70,4 +72,166 @@ test("a stub body (comment + throw new Error) never trips the scope check", () =
     },
   ];
   assert.deepEqual(collectUnbound(stubbed, [], 0), []);
+});
+
+// ---------------------------------------------------------------------------
+// Orphan PLACEMENT (docs/BUGS.md 2026-09-04, the `_fn13838`/`_e652_0` family).
+// Isolation above keeps the module emitting; placement is what stops the names
+// being unbound in the first place. `resolveOrphanHosts` is the pure rule:
+// module level is always a candidate, so a host is only ever chosen when it
+// leaves strictly fewer names unbound.
+// ---------------------------------------------------------------------------
+
+/** Lexical tree `0 -> 1 -> 2`, plus orphans (parent `null`) the cases add. */
+function placementInput(over: Partial<OrphanPlacementInput> & { readonly parentOf: ReadonlyMap<number, number | null> }): OrphanPlacementInput {
+  return {
+    functionCount: over.functionCount ?? 8,
+    globalIndex: 0,
+    envsUsedIn: new Map(),
+    declaringFunction: new Map(),
+    creationSitesOf: new Map(),
+    ...over,
+  };
+}
+
+test("an orphan that reads an env slot declared inside a function is hosted there, not left at module level", () => {
+  // fn#5 reads env 9, whose `_e9_*` names are declared in fn#2's body. Module
+  // level is OUTSIDE the global function, so the read is unbound there.
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [2, 1], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9])]]),
+      declaringFunction: new Map([[9, 2]]),
+    }),
+  );
+  assert.deepEqual(placements.map((p) => ({ orphan: p.orphan, host: p.host })), [{ orphan: 5, host: 2 }]);
+  assert.equal(placements[0]!.unboundAtModule, 1);
+  assert.equal(placements[0]!.unboundAtHost, 0);
+});
+
+test("the orphan's whole subtree travels with it: a child's env reads pick the host", () => {
+  // fn#5 itself reads nothing; its child fn#6 reads env 9 (declared in fn#2).
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [2, 1], [5, null], [6, 5]]),
+      envsUsedIn: new Map([[6, new Set([9])]]),
+      declaringFunction: new Map([[9, 2]]),
+    }),
+  );
+  assert.deepEqual(placements.map((p) => p.host), [2]);
+});
+
+test("an env declared inside the orphan's own subtree never drags it anywhere", () => {
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [5, null], [6, 5]]),
+      envsUsedIn: new Map([[5, new Set([9])], [6, new Set([9])]]),
+      declaringFunction: new Map([[9, 5]]),
+    }),
+  );
+  assert.deepEqual(placements, []);
+});
+
+test("the deepest function that declares every env read wins; a shallower one that misses some does not", () => {
+  // env 9 is declared in fn#1, env 10 in fn#2 (nested inside fn#1). Only fn#2
+  // (or deeper) sees both.
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [2, 1], [3, 2], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9, 10])]]),
+      declaringFunction: new Map([[9, 1], [10, 2]]),
+    }),
+  );
+  assert.deepEqual(placements.map((p) => ({ host: p.host, unboundAtHost: p.unboundAtHost })), [{ host: 2, unboundAtHost: 0 }]);
+});
+
+test("env declarations on two unrelated branches: the placement that binds the most wins, and it is never worse than module level", () => {
+  // fn#5 reads env 9 (declared in fn#1) and env 10 (declared in fn#2), and
+  // fn#1/fn#2 are siblings — no function sees both. Module level binds neither
+  // (2 unbound); either sibling binds one, so a host is still an improvement.
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [2, 0], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9, 10])]]),
+      declaringFunction: new Map([[9, 1], [10, 2]]),
+    }),
+  );
+  assert.equal(placements.length, 1);
+  assert.equal(placements[0]!.unboundAtModule, 2);
+  assert.equal(placements[0]!.unboundAtHost, 1);
+  assert.ok(placements[0]!.host === 1 || placements[0]!.host === 2);
+});
+
+test("a function created at two unrelated sites (W_AMBIGUOUS_CLOSURE_ENV) stays at module level when hosting would break more `_fn` references than it binds", () => {
+  // fn#5 is created in fn#2 and in fn#3 (siblings) and reads one env declared
+  // in fn#2. Hosting it in fn#2 binds that read but leaves the `_fn5`
+  // reference in fn#3 unbound — a wash, so the placement must not move it.
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [2, 1], [3, 1], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9])]]),
+      declaringFunction: new Map([[9, 2]]),
+      creationSitesOf: new Map([[5, new Set([2, 3])]]),
+    }),
+  );
+  assert.deepEqual(placements, []);
+});
+
+test("a `_fn` reference from a site nested inside the host still resolves, so that orphan does move", () => {
+  // Both creation sites are inside fn#2 (fn#3 is nested in it), so hosting in
+  // fn#2 keeps both references in scope and binds the env read.
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [2, 1], [3, 2], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9])]]),
+      declaringFunction: new Map([[9, 2]]),
+      creationSitesOf: new Map([[5, new Set([2, 3])]]),
+    }),
+  );
+  assert.deepEqual(placements.map((p) => p.host), [2]);
+});
+
+test("an orphan that reads nothing is left alone (module level costs it nothing)", () => {
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [5, null]]),
+      creationSitesOf: new Map([[5, new Set([1])]]),
+    }),
+  );
+  assert.deepEqual(placements, []);
+});
+
+test("the global function is a legitimate host: an env declared in it is not in scope at module level", () => {
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9])]]),
+      declaringFunction: new Map([[9, 0]]),
+    }),
+  );
+  assert.deepEqual(placements.map((p) => p.host), [0]);
+});
+
+test("a host is never chosen inside the orphan's own subtree (that would be a cycle)", () => {
+  // The only declarer of env 9 is fn#6, which is the orphan's own child.
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 0], [5, null], [6, 5], [7, 6]]),
+      envsUsedIn: new Map([[7, new Set([9])]]),
+      declaringFunction: new Map([[9, 6]]),
+    }),
+  );
+  assert.deepEqual(placements, []);
+});
+
+test("a cyclic parent chain in the input cannot hang the placement walk", () => {
+  const placements = resolveOrphanHosts(
+    placementInput({
+      parentOf: new Map([[0, null], [1, 2], [2, 1], [5, null]]),
+      envsUsedIn: new Map([[5, new Set([9])]]),
+      declaringFunction: new Map([[9, 1]]),
+    }),
+  );
+  assert.equal(placements.length, 1);
+  assert.equal(placements[0]!.host, 1);
 });
