@@ -381,8 +381,15 @@ and the write targets `reg:<fn>:<reg>`. The context menu names the token
 (`Rename "r3"`) and the dialog's subtitle always states the exact target plus
 the number of references in the frame. A token that is NOT a nameable local
 (a property, a keyword, a global) still renames the enclosing function, and the
-subtitle says why. After the write, `invalidateFn` refetches `source`,
-`context` and `locals`, so the new name is on screen immediately.
+subtitle says why — and so does a fn whose `GET /api/fn/{fn}/locals` 400s (no
+`--hbc`, spec 17's live-verb constraint): the dialog waits for that request to
+SETTLE (`locals.isPending`, not `locals.data === undefined` — a bug that once
+left the dialog stuck "pending" forever and unable to submit, since an errored
+query never gets `data`), then falls back the same way. Any submit failure —
+no target, a server refusal — renders as an `ErrorNote` inside the dialog
+itself, never only as the one-line status toast, so a failed rename is never
+silent. After the write, `invalidateFn` refetches `source`, `context` and
+`locals`, so the new name is on screen immediately.
 
 Server side, the accepted `reg:F:R` names live in the project DB's `d_names`
 (the same slot every `set_name` writes). `ProjectService` injects a lookup into

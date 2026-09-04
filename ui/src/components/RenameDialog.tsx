@@ -29,10 +29,16 @@ export function RenameDialog({ fn, ident }: { readonly fn: number; readonly iden
   const locals = useLocals(fn);
   const resolved = renameTargetFor(fn, ident, locals.data?.rows);
   const fnName = displayName(ctx.data?.metadata) ?? `fn${fn}`;
-  // The locals listing is a second request; until it answers, a clicked token
-  // is neither confirmed a local nor confirmed not one — show the token and
-  // say nothing about a fallback (which would flicker and then be wrong).
-  const pending = ident !== undefined && locals.data === undefined;
+  // The locals listing is a second request; until it SETTLES, a clicked
+  // token is neither confirmed a local nor confirmed not one — show the
+  // token and say nothing about a fallback (which would flicker and then be
+  // wrong). `locals.isPending` (not `locals.data === undefined`) is what
+  // actually settles: a fn whose locals 400 (no `--hbc`, spec 17's
+  // live-verb constraint) never gets `data`, so checking `data === undefined`
+  // left this stuck "pending" forever and the dialog could never submit —
+  // an errored query still falls back to renaming the enclosing function,
+  // same as "not a nameable local".
+  const pending = ident !== undefined && locals.isPending;
   const current = resolved.kind === "reg" || pending ? (ident ?? fnName) : fnName;
   // `null` until the field is edited, so the suggested name follows `current`
   // once the listing lands rather than freezing at the first render's guess.
