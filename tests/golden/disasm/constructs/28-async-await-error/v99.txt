@@ -44,7 +44,7 @@ function #2 "guarded"  params=1 frame=16 env=0 flags=dbg,overflowed,nc  @0x00000
   0002  LoadConstUndefined   r1
   0004  ReifyArgumentsLoose  r1
   0006  Mov                  r4, r1
-  0009  GetBuiltinClosure    r3, b58 "makeAsyncIterator"
+  0009  GetBuiltinClosure    r3, b58 "spawnAsync"
   000c  GetParentEnvironment r1, 0
   000f  CreateClosure        r2, r1, f7 "?anon_0_guarded"
   0014  LoadThisNS           r1
@@ -56,7 +56,7 @@ function #3 "unguarded"  params=1 frame=16 env=0 flags=dbg,overflowed,nc  @0x000
   0002  LoadConstUndefined   r1
   0004  ReifyArgumentsLoose  r1
   0006  Mov                  r4, r1
-  0009  GetBuiltinClosure    r3, b58 "makeAsyncIterator"
+  0009  GetBuiltinClosure    r3, b58 "spawnAsync"
   000c  CreateClosure        r2, r0, f8 "?anon_0_unguarded"
   0011  LoadThisNS           r1
   0013  Call4                r1, r3, r0, r2, r1, r4

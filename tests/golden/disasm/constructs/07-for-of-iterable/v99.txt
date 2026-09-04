@@ -107,7 +107,7 @@ L9:
   015e  LoadConstZero        r13
   0160  Mov                  r15, r1
   0163  Mov                  r14, r2
-  0166  CallBuiltin          r5, b55 "functionPrototypeApply", 4
+  0166  CallBuiltin          r5, b55 "setFunctionName", 4
   016a  DefineOwnByVal       r6, r1, r2, 1
   016f  NewArray             r1, 0
   0173  Mov                  r2, r6

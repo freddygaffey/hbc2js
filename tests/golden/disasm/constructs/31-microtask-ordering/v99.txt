@@ -57,7 +57,7 @@ function #1 "asyncFn"  params=1 frame=16 env=0 flags=dbg,overflowed,nc  @0x00000
   0002  LoadConstUndefined   r1
   0004  ReifyArgumentsLoose  r1
   0006  Mov                  r4, r1
-  0009  GetBuiltinClosure    r3, b58 "makeAsyncIterator"
+  0009  GetBuiltinClosure    r3, b58 "spawnAsync"
   000c  GetParentEnvironment r1, 0
   000f  CreateClosure        r2, r1, f8 "?anon_0_asyncFn"
   0014  LoadThisNS           r1

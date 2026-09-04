@@ -53,7 +53,7 @@ function #1 "testx"  params=2 frame=16 env=0 flags=dbg,overflowed,nc  @0x0000044
   0002  LoadConstUndefined   r1
   0004  ReifyArgumentsLoose  r1
   0006  Mov                  r4, r1
-  0009  GetBuiltinClosure    r3, b58 "makeAsyncIterator"
+  0009  GetBuiltinClosure    r3, b58 "spawnAsync"
   000c  GetParentEnvironment r1, 0
   000f  CreateClosure        r2, r1, f4 "?anon_0_testx"
   0014  LoadThisNS           r1
