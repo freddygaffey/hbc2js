@@ -505,7 +505,7 @@ function __hbc_b_generatorSetDelegated() {
     "__hbc_b_setFunctionName",
     `
 function __hbc_b_setFunctionName(fn, name, kind) {
-  // HermesBuiltin.setFunctionName(fn, name, kind) — ES2024 SetFunctionName.
+  // HermesBuiltin.setFunctionName(fn, name, kind) -- ES2024 SetFunctionName.
   // \`kind\` is 0 for a plain method, 1 for a getter, 2 for a setter (measured
   // on tests/fixtures/constructs/36-class-getters-setters/v99.obf.hbc, whose
   // two getters pass 1 and whose setter passes 2). A symbol key becomes
