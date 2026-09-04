@@ -11,6 +11,7 @@ function stubApi(): ActionApi {
   return {
     setName: noop,
     addComment: noop,
+    recordFinding: noop,
     gotoFn: noop,
     showXrefs: noop,
     search: noop,

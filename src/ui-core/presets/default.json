@@ -1,6 +1,7 @@
 {
   "F2": "annotate.rename",
   "Ctrl-/": "annotate.comment",
+  "Ctrl-Shift-N": "annotate.finding",
   "F12": "navigate.definition",
   "Shift-F12": "navigate.xrefs",
   "Ctrl-P": "project.palette",

@@ -3,6 +3,7 @@
   "gr": "navigate.xrefs",
   "gc": "annotate.comment",
   "cr": "annotate.rename",
+  "cf": "annotate.finding",
   "K": "ai.explain",
   "]f": "navigate.nextFn",
   "[f": "navigate.prevFn",

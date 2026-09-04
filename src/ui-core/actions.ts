@@ -34,6 +34,9 @@ export type FocusPane = "editor" | "tree" | "search" | "palette" | "graph" | "fi
 export interface ActionApi {
   setName(target: Selection, name: string): void | Promise<void>;
   addComment(target: Selection, text: string): void | Promise<void>;
+  /** Spec 22 §3.6: open the "add finding" form pre-filled from `target`
+   *  (a function or module selection) and POST it to `record_finding`. */
+  recordFinding(target: Selection): void | Promise<void>;
   gotoFn(fn: number): void | Promise<void>;
   showXrefs(target: Selection): void | Promise<void>;
   search(query?: string): void | Promise<void>;
@@ -166,6 +169,13 @@ export function standardActions(): Action[] {
       group: "annotate",
       when: hasIdentifierTarget,
       run: (ctx) => ctx.api.addComment(ctx.selection, ""),
+    },
+    {
+      id: "annotate.finding",
+      title: "Add finding",
+      group: "annotate",
+      when: (ctx) => ctx.selection.kind !== "none",
+      run: (ctx) => ctx.api.recordFinding(ctx.selection),
     },
     {
       id: "review.markReviewed",
