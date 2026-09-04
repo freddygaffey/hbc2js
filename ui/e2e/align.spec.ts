@@ -64,9 +64,7 @@ test.describe("source <-> disasm alignment", () => {
     // The centre pane may be showing the whole module file; rebase if so.
     const source = page.getByTestId("code-view").first();
     const fileLine = (map.fnStartLine ?? 1) + localLine - 1;
-    const target = source.locator(".cm-line").nth(fileLine - 1);
-    await target.scrollIntoViewIfNeeded();
-    await target.click();
+    await clickWordOnLine(source, fileLine);
 
     const highlighted = disasm.locator(".hbc-selected-line");
     await expect(highlighted).toHaveCount(1, { timeout: WAIT });
