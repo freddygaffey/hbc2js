@@ -47,6 +47,7 @@ import type { AnnotationRow } from "./project/service.ts";
 import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
 import type { ResolvedFinding } from "./project/findings.ts";
 import { SecretsService } from "./secrets/service.ts";
+import { startUiServer } from "./ui-server/server.ts";
 import type { Tier as SecretTier } from "./secrets/patterns.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
@@ -78,6 +79,8 @@ Usage:
   hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
   hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the git pre-commit hook (§11); \`init\` does this best-effort already
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
+  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>]   serve the Stage-3 UI's JSON API (+ static ui/dist/,
+                                              docs/specs/22-ui-mvp.md §1/§3) over that project directory, localhost only
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -693,6 +696,37 @@ function writeGitignore(outDir: string): void {
       "scans/\n",
     "utf8",
   );
+}
+
+/** `hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>]` — spec
+ *  22 §1/§3: starts the localhost-only JSON server over `src/ui-server/`
+ *  and blocks forever (Ctrl-C / SIGTERM to stop), same shape `gate`/`sweep`
+ *  give an async subcommand its own exit-code promise. */
+async function runUiServer(argv: readonly string[]): Promise<number> {
+  const projectDir = argv.find((a) => !a.startsWith("-"));
+  if (argv.includes("--help") || projectDir === undefined) {
+    process.stdout.write(USAGE);
+    return argv.includes("--help") ? 0 : 2;
+  }
+  const portRaw = flagValue(argv, "--port");
+  let port: number | undefined;
+  if (portRaw !== undefined) {
+    port = Number(portRaw);
+    if (!Number.isInteger(port)) {
+      process.stderr.write(`hbc2js ui-server: --port must be an integer, got ${portRaw}\n`);
+      return 2;
+    }
+  }
+  const hbc = flagValue(argv, "--hbc");
+  try {
+    const handle = await startUiServer({ projectDir, ...(hbc !== undefined ? { hbc } : {}), ...(port !== undefined ? { port } : {}) });
+    process.stdout.write(`hbc2js ui-server: listening on http://${handle.host}:${handle.port} (project ${projectDir})\n`);
+    await new Promise<void>(() => {}); // serve forever; Ctrl-C/SIGTERM stops it (no --detach in this MVP, spec 22 §1)
+    return 0;
+  } catch (e) {
+    process.stderr.write(`hbc2js ui-server: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 1;
+  }
 }
 
 function runInit(argv: readonly string[]): number {
@@ -1816,6 +1850,12 @@ function main(): void {
   }
   if (argv[0] === "hbcproj") {
     process.exitCode = runHbcproj(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "ui-server") {
+    void runUiServer(argv.slice(1)).then((code) => {
+      process.exitCode = code;
+    });
     return;
   }
   if (argv[0] === "disasm") {

@@ -1,0 +1,350 @@
+// tests/ui-server/routes.test.ts — docs/specs/22-ui-mvp.md §3 `src/ui-
+// server/` (landing 1's own acceptance: "curl every route against
+// tests/fixtures/security/vuln-app project"; this rung uses the same
+// rn-template-0.72 fixture recipe `tests/mcp/resources.test.ts` and
+// `tests/mcp/tools.test.ts` already use, since it is the one with real
+// module ranges — see that file's own fixture note). Asserts route
+// response shapes equal the direct `McpResources`/`McpTools` call (never a
+// literal-string compare against a shared fixture's decompiled output,
+// CLAUDE.md / docs/CONSOLIDATION.md §B testing rules).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openProjectDb } from "../../src/projdb/db.ts";
+import { initProjectDb } from "../../src/projdb/ix-write.ts";
+import { buildIndexRows } from "../../src/artifact/index-rows.ts";
+import { writeSplitResult } from "../../src/split/write.ts";
+import { dbSetTag } from "../../src/projdb/annotations.ts";
+import { McpResources } from "../../src/mcp/resources.ts";
+import { McpTools } from "../../src/mcp/tools.ts";
+import { handle, tailLog, type UiServerCtx } from "../../src/ui-server/routes.ts";
+import { listModules, listFunctions } from "../../src/ui-server/list.ts";
+import { startUiServer } from "../../src/ui-server/server.ts";
+import { repoRoot } from "../support/paths.ts";
+import { cachedSplitProject as splitProject } from "../support/decompiled.ts";
+
+const RN_TEMPLATE = join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc");
+const bytes = readFileSync(RN_TEMPLATE);
+const CALLER_FN = 188;
+const CALLEE_FN = 190;
+
+function buildFixture(): string {
+  const outDir = mkdtempSync(join(tmpdir(), "hbc2js-ui-server-"));
+  const splitResult = splitProject(bytes, { moduleName: "index.android.hbc" });
+  writeSplitResult(splitResult, outDir);
+  const rows = buildIndexRows({ bytes, splitResult, passes: {}, strictEnv: false, form: "flat" });
+  const db = openProjectDb(join(outDir, "project.hbcproj"));
+  try {
+    initProjectDb(db, rows, { actorWho: "test" });
+    dbSetTag(db, `fn:${CALLEE_FN}`, "network", { source: "tool", who: "seed" });
+  } finally {
+    db.close();
+  }
+  return outDir;
+}
+
+const outDir = buildFixture();
+test.after(() => rmSync(outDir, { recursive: true, force: true }));
+
+const resources = new McpResources(outDir, { hbc: RN_TEMPLATE });
+const tools = new McpTools(outDir, { hbc: RN_TEMPLATE });
+const ctx: UiServerCtx = { resources, tools, artifactDir: outDir };
+const human = { source: "human" as const, who: "analyst@duck.com" };
+
+function get(path: string, query: Record<string, string> = {}) {
+  return handle({ method: "GET", path, query, body: undefined }, ctx);
+}
+function post(path: string, body: unknown) {
+  return handle({ method: "POST", path, query: {}, body }, ctx);
+}
+
+test("GET /api/fn/:fn matches resources.fn", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.fn(CALLEE_FN));
+});
+
+test("GET /api/fn/:fn 400s on a non-numeric fn", async () => {
+  const r = await get("/api/fn/not-a-number");
+  assert.equal(r.status, 400);
+  assert.ok((r.json as { reason: string }).reason.length > 0);
+});
+
+test("GET /api/fn/:fn/source matches resources.source, ?lines= forwarded", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}/source`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.source(CALLEE_FN));
+  const withLines = await get(`/api/fn/${CALLEE_FN}/source`, { lines: "1,2" });
+  assert.deepEqual(withLines.json, resources.source(CALLEE_FN, { lines: [1, 2] }));
+});
+
+test("GET /api/fn/:fn/disasm matches resources.disasm", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}/disasm`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.disasm(CALLEE_FN));
+});
+
+test("GET /api/fn/:fn/context forwards include/depth", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}/context`, { include: "metadata,callers", depth: "2" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.context(CALLEE_FN, { include: ["metadata", "callers"], depth: 2 }));
+});
+
+test("GET /api/fn/:fn/callers matches resources.whoCalls and inlines {fn,name,size}", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}/callers`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.whoCalls(CALLEE_FN));
+  const rows = (r.json as { rows: readonly { fn: number }[] }).rows;
+  assert.ok(rows.some((row) => row.fn === CALLER_FN));
+});
+
+test("GET /api/fn/:fn/callees matches resources.callsFrom", async () => {
+  const r = await get(`/api/fn/${CALLER_FN}/callees`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.callsFrom(CALLER_FN));
+});
+
+test("GET /api/fn/:fn/annotations matches resources.annotationsForFn", async () => {
+  const r = await get(`/api/fn/${CALLEE_FN}/annotations`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.annotationsForFn(CALLEE_FN));
+});
+
+test("GET /api/module/:id matches resources.module", async () => {
+  const modules = listModules(outDir);
+  assert.ok(modules.rows.length > 0);
+  const id = modules.rows[0]!.id;
+  const r = await get(`/api/module/${id}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.module(id));
+});
+
+test("GET /api/modules lists every module (own list layer, not resources.ts)", async () => {
+  const r = await get("/api/modules");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, listModules(outDir));
+  const body = r.json as { rows: readonly unknown[]; total: number };
+  assert.ok(body.rows.length > 0);
+  assert.equal(body.total, body.rows.length);
+});
+
+test("GET /api/functions pages {fn,name,size,module}", async () => {
+  const r = await get("/api/functions");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, listFunctions(resources.artifact, 0));
+  const body = r.json as { rows: readonly { fn: number; name: unknown; size: unknown; module: unknown }[] };
+  assert.ok(body.rows.length > 0);
+  for (const row of body.rows) assert.ok("fn" in row && "name" in row && "size" in row && "module" in row);
+});
+
+test("GET /api/search/functions matches resources.searchFunctions", async () => {
+  const r = await get("/api/search/functions", { q: "e" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.searchFunctions("e"));
+});
+
+test("GET /api/search/functions 400s with no ?q=", async () => {
+  const r = await get("/api/search/functions");
+  assert.equal(r.status, 400);
+});
+
+test("GET /api/search/source matches resources.searchSource", async () => {
+  const r = await get("/api/search/source", { q: "function" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.searchSource("function"));
+});
+
+test("GET /api/xref/string mode=exact matches resources.xrefString", async () => {
+  const r = await get("/api/xref/string", { key: "69", mode: "exact" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.xrefString(69, "exact"));
+});
+
+test("GET /api/xref/string mode=substring matches resources.xrefString", async () => {
+  const r = await get("/api/xref/string", { key: "value", mode: "substring" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.xrefString("value", "substring"));
+});
+
+test("GET /api/xref/global matches resources.globalUses", async () => {
+  const r = await get("/api/xref/global", { name: "require" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.globalUses("require"));
+});
+
+test("GET /api/native matches resources.native", async () => {
+  const r = await get("/api/native");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.native());
+});
+
+test("GET /api/leads and /api/leads/security-sinks match resources", async () => {
+  const r1 = await get("/api/leads");
+  assert.deepEqual(r1.json, resources.leads());
+  const r2 = await get("/api/leads/security-sinks");
+  assert.deepEqual(r2.json, resources.securitySinks());
+});
+
+test("GET /api/findings matches resources.findings", async () => {
+  const r = await get("/api/findings");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.findings());
+});
+
+test("GET /api/finding/:rid 404s on an unknown rid", async () => {
+  const r = await get("/api/finding/no-such-rid");
+  assert.equal(r.status, 404);
+});
+
+test("GET /api/scan/secrets matches resources.scanSecrets", async () => {
+  const r = await get("/api/scan/secrets");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.scanSecrets());
+});
+
+test("GET /api/log matches resources.log", async () => {
+  const r = await get("/api/log");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.log());
+});
+
+test("GET /api/history/:target matches resources.history", async () => {
+  const r = await get(`/api/history/fn:${CALLEE_FN}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.history(`fn:${CALLEE_FN}`));
+});
+
+// `ctx.resources` is a snapshot taken at construction (`ProjectService`'s
+// in-memory stores, spec 16 §3.2) and `tools` writes through a SEPARATE
+// pair (`McpTools`'s own doc comment on why); `handle()` itself never
+// rebuilds `ctx.resources` (see routes.ts's own doc comment) — only
+// `server.ts` does, after a successful `/api/tools/*` write. These two
+// tests exercise `handle()` directly (no http), so they replicate that
+// same rebuild step by hand, proving out the exact mechanism `server.ts`
+// automates (and that the SSE test below exercises end-to-end).
+function refreshCtxResources(): void {
+  ctx.resources = new McpResources(outDir, { hbc: RN_TEMPLATE });
+}
+
+test("write route (set-name) lands a log row visible via GET /api/log/tail", async () => {
+  const before = tailLog(ctx.resources, 0).cursor;
+  const target = `fn:${CALLER_FN}`;
+  const w = await post("/api/tools/set-name", { target, name: "verifyPayload", prov: human });
+  assert.equal(w.status, 200);
+  const body = w.json as { rid: string; line: string };
+  assert.ok(body.line.includes("verifyPayload"));
+
+  refreshCtxResources();
+  const tail = await get("/api/log/tail", { since: String(before) });
+  assert.equal(tail.status, 200);
+  const tailBody = tail.json as { rows: readonly { op: string; detail: string | null }[]; cursor: number };
+  assert.ok(tailBody.cursor > before);
+  assert.ok(tailBody.rows.some((row) => row.op === "annotate" && row.detail !== null && JSON.parse(row.detail).kind === "name"));
+});
+
+test("write routes (add-comment, add-tag, record-finding, set-finding-status) round-trip", async () => {
+  const target = `fn:${CALLEE_FN}`;
+  const c = await post("/api/tools/add-comment", { target, body: "looks suspicious", prov: human });
+  assert.equal(c.status, 200);
+  const t = await post("/api/tools/add-tag", { target, tag: "suspicious", prov: human });
+  assert.equal(t.status, 200);
+  const f = await post("/api/tools/record-finding", {
+    class: "high",
+    location: { fn: CALLEE_FN },
+    claim: "ui-server route test finding",
+    evidence: [{ ref: target, role: "primary" }],
+    prov: human,
+  });
+  assert.equal(f.status, 200);
+  const rid = (f.json as { rid: string }).rid;
+
+  refreshCtxResources();
+  const shown = await get(`/api/finding/${rid}`);
+  assert.equal(shown.status, 200);
+  assert.deepEqual(shown.json, ctx.resources.finding(rid));
+
+  const dynamicRef = "fuzz:tests/fixtures/bundles/rn-template-0.72/index.android.hbc";
+  const s = await post("/api/tools/set-finding-status", { findingRid: rid, to: "confirmed", evidence: [{ ref: dynamicRef, role: "dynamic" }], prov: human });
+  assert.equal(s.status, 200);
+  refreshCtxResources();
+});
+
+test("POST /api/tools/record-finding 400s on truth-rule violation (no resolving evidence)", async () => {
+  const r = await post("/api/tools/record-finding", {
+    class: "low",
+    location: { fn: CALLEE_FN },
+    claim: "no evidence at all",
+    evidence: [],
+    prov: human,
+  });
+  assert.equal(r.status, 400);
+  assert.ok(/evidence/i.test((r.json as { reason: string }).reason));
+});
+
+test("POST /api/tools/request-fidelity-check and /api/tools/generate-documentation route through", async () => {
+  const fc = await post("/api/tools/request-fidelity-check", { fn: CALLEE_FN, oracles: ["syntax"] });
+  assert.equal(fc.status, 200);
+  assert.ok(typeof (fc.json as { verdict: string }).verdict === "string");
+  const doc = await post("/api/tools/generate-documentation", {});
+  assert.equal(doc.status, 200);
+  assert.ok(typeof (doc.json as { report: string }).report === "string");
+});
+
+test("POST /api/tools/recompile-edit returns the warning verbatim + watermark", async () => {
+  const source = "function patched(a, b) { return a + b; }\nprint(patched(1, 2));\n";
+  const r = await post("/api/tools/recompile-edit", { fn: CALLER_FN, source, prov: human });
+  assert.equal(r.status, 200);
+  const body = r.json as { warning: string; watermark: { kind: string } };
+  assert.ok(body.warning.length > 0);
+  assert.equal(body.watermark.kind, "edited-and-recompiled");
+});
+
+test("unknown route 404s", async () => {
+  const r = await get("/api/no-such-thing");
+  assert.equal(r.status, 404);
+});
+
+// -- SSE: a real listening server (spec 22 §1's own default: localhost,
+// one process) on port 0, receiving a `log` event after a write --------
+test("GET /api/events forwards a log event after a set-name write", async () => {
+  const ssOutDir = buildFixture();
+  try {
+    const handle2 = await startUiServer({ projectDir: ssOutDir, hbc: RN_TEMPLATE, port: 0, host: "127.0.0.1" });
+    try {
+      const es = await fetch(`http://127.0.0.1:${handle2.port}/api/events`);
+      assert.equal(es.status, 200);
+      const reader = es.body!.getReader();
+      const decoder = new TextDecoder();
+
+      const gotLogEvent = (async () => {
+        let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return false;
+          buf += decoder.decode(value, { stream: true });
+          if (buf.includes("event: log")) return true;
+        }
+      })();
+
+      // give the SSE connection a moment to be established, then write.
+      await new Promise((r) => setTimeout(r, 100));
+      const wr = await fetch(`http://127.0.0.1:${handle2.port}/api/tools/set-name`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: `fn:${CALLER_FN}`, name: "sseProbe", prov: human }),
+      });
+      assert.equal(wr.status, 200);
+
+      const timeout = new Promise<boolean>((resolvePromise) => setTimeout(() => resolvePromise(false), 5000));
+      const got = await Promise.race([gotLogEvent, timeout]);
+      await reader.cancel().catch(() => {});
+      assert.equal(got, true, "expected a `log` SSE event within 5s of a write");
+    } finally {
+      await handle2.close();
+    }
+  } finally {
+    rmSync(ssOutDir, { recursive: true, force: true });
+  }
+});
