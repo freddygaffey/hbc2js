@@ -156,6 +156,58 @@ test("optional-chain: an elided base guard keys the base link on `.`, not `?.` (
 });
 
 // ---------------------------------------------------------------------------
+// Precondition 1, position-aware (docs/BUGS.md, isNullSentinel/nullWriteCount
+// follow-up, 2026-09-05): the reaching-write proof, not the old whole-
+// function "only write is literal null" rule.
+// ---------------------------------------------------------------------------
+
+/** v99 one-link shape whose sentinel test reads `r2`, split across three
+ *  sibling labeled blocks in `fnBody` the way real functions actually lay
+ *  chains out (48-optional-chaining-nullish's own shape): the null write
+ *  lives in an earlier sibling, the chain's guard reads it in the middle
+ *  sibling (the one `match` is given as `list`), and a *later* sibling may
+ *  reuse the same register for something else entirely. */
+function chainBodyReadingR2(): readonly Stmt[] {
+  return [
+    asg(id("r3"), { k: "bin", op: "==", left: id("r13"), right: id("r2") }),
+    asg(id("r6"), lit("undefined")),
+    iff(id("r3"), [brk("L1")]),
+    asg(id("r6"), mem(id("r13"), "name")),
+    brk("L1"),
+  ];
+}
+
+test("optional-chain: the sentinel register may be reused for something else LATER in the function (docs/BUGS.md, isNullSentinel follow-up)", () => {
+  const nullDef: Stmt[] = [asg(id("r2"), lit("null"))];
+  const chainBody = chainBodyReadingR2();
+  const laterReuse: Stmt[] = [asg(id("r2"), lit("false"))]; // a later, unrelated write to the SAME register
+  const fnBody: readonly Stmt[] = [
+    { k: "labeled", label: "L0", body: nullDef },
+    { k: "labeled", label: "L1", body: chainBody },
+    { k: "labeled", label: "L9", body: laterReuse },
+  ];
+  const m = match(chainBody, { ...ctx, fnBody });
+  assert.ok(m !== null, "the later, unrelated reuse of r2 must not defeat a guard that reads r2 strictly before it");
+  assert.equal(m!.data.kind, "chain");
+  const after = rewrite(m!);
+  const res = check(chainBody, after, { ...ctx, fnBody });
+  assert.equal(res.ok, true, res.reason);
+});
+
+test("optional-chain: refuses when a write to the sentinel register sits BETWEEN the null write and the guard (docs/BUGS.md, isNullSentinel follow-up)", () => {
+  const nullDef: Stmt[] = [asg(id("r2"), lit("null"))];
+  const clobber: Stmt[] = [asg(id("r2"), lit("false"))]; // a write BETWEEN the null write and the read
+  const chainBody = chainBodyReadingR2();
+  const fnBody: readonly Stmt[] = [
+    { k: "labeled", label: "L0", body: nullDef },
+    { k: "labeled", label: "Lmid", body: clobber },
+    { k: "labeled", label: "L1", body: chainBody },
+  ];
+  const m = match(chainBody, { ...ctx, fnBody });
+  assert.equal(m, null, "a write to the sentinel register between the null write and the guard's read must refuse (not-null-guard)");
+});
+
+// ---------------------------------------------------------------------------
 // N-rule positives.
 // ---------------------------------------------------------------------------
 
@@ -291,23 +343,37 @@ test("optional-chain: 48-optional-chaining-nullish (v94) — ?./?? recovered, gu
   assert.equal(nullGuardCount(code), 0);
 });
 
-// v99: the base-guard-elision gap this test used to record (docs/BUGS.md,
-// row dated 2026-09-02) is fixed at the matcher level — see the "elided
-// base guard" unit tests above, which reproduce this fixture's own
-// `user?.profile?.contacts?.email` shape directly and pass. On the real
-// compiled fixture, though, every v99 chain (elided-base or not) is still
-// left unrewritten, for a *different*, newly-identified reason: this
-// binary's register allocator reuses the null-sentinel register (`r2`)
-// for unrelated values later in the same function (a later chain's own
-// spilled-compare destination, and an unrelated `0 ?? 'fallback'`-style
-// literal at the end of the function) — `isNullSentinel`'s "only write in
-// the function is literal null" precondition (spec 18 §4 precondition 1)
-// is whole-function-scoped, so it now sees more than one write to `r2`
-// and refuses every guard that tests against it, even ones with their own
-// base guard intact. Tracked as a new, separate `docs/BUGS.md` row (this
-// row's fix did not regress it — it was already 0 chains recovered at v99
-// before this change too, confirmed by re-running the pre-fix decompiler).
-test("optional-chain: 48-optional-chaining-nullish (v99) — elided-base-guard chains now match in isolation; full-fixture recovery blocked by a separate null-sentinel-reuse gap (docs/BUGS.md)", () => {
+// v99, second follow-up (docs/BUGS.md, `isNullSentinel`/`nullWriteCount`
+// row): `isNullSentinelAt`'s reaching-write proof replaces the old whole-
+// function "only write is literal null" rule, which this fixture's real
+// v99 binary defeated for *every* chain (elided-base or not) by reusing the
+// null-sentinel register (`r2`) later in the same function — confirmed 0
+// chains recovered at v99 both before the base-guard-elision fix and after
+// it, right up until this row's own fix. Measured (`tools/perf` not
+// needed — plain substring counts on this fixture's own decompiled code):
+// 0 `?.`/`??` occurrences and 0 chains before -> 9 `?.` + 3 `??`
+// occurrences after, matching v94's shape 1:1 except one site.
+function countMatches(code: string, re: RegExp): number {
+  return (code.match(re) ?? []).length;
+}
+test("optional-chain: 48-optional-chaining-nullish (v99) — the null-sentinel-reuse gap is fixed, chains recover (docs/BUGS.md)", () => {
   const code = decompileFixture("48-optional-chaining-nullish", "v99");
-  assert.ok(code.length > 0);
+  assert.match(code, /\?\./);
+  assert.match(code, /\?\?/);
+  // Real measured counts on this fixture post-fix: 9 `?.` occurrences
+  // (L1/L2/L3 3-link chains, `.fetch?.()`/`.missingMethod?.()`, `?.property`)
+  // and 3 `??` occurrences (the three nullish-coalescing sites) — assert
+  // with headroom rather than pinning the exact numbers (CLAUDE.md: no
+  // exact-output comparison against a shared fixture).
+  assert.ok(countMatches(code, /\?\./g) >= 6, `expected >=6 ?. occurrences after the fix, got ${countMatches(code, /\?\./g)}`);
+  assert.ok(countMatches(code, /\?\?/g) >= 3, `expected >=3 ?? occurrences after the fix, got ${countMatches(code, /\?\?/g)}`);
+  assert.equal(nullGuardCount(code), 0); // no residual v94-shape inline `==`/`!=` guard
+  // The v99 spilled-compare shape's residual guard (`if (rX) { break L; }`,
+  // never matched by `nullGuardCount` above since it has no inline `==`/
+  // `!=`) is now down to at most 1 — `user?.profile?.name` (L0), left
+  // unrewritten for an unrelated, separately-tracked reason (a dead
+  // `r1 = undefined` store interleaved between its own compare and its
+  // guard, unrelated to `isNullSentinel` — not this row's fix to make).
+  const bareGuardCount = countMatches(code, /if \(\w+\) \{\s*break \w+;\s*\}/g);
+  assert.ok(bareGuardCount <= 1, `expected <=1 residual bare guard (L0's own, separately-tracked gap), got ${bareGuardCount}`);
 });

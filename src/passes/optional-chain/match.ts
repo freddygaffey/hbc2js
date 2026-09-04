@@ -107,6 +107,200 @@ function isNullSentinel(e: Expr, fnBody: readonly Stmt[]): boolean {
   return nullWrites === 1 && otherWrites === 0;
 }
 
+// ---------------------------------------------------------------------------
+// Precondition 1, position-aware (2026-09-05, docs/BUGS.md follow-up to the
+// base-guard-elision fix): a reaching-definitions check over the AST the
+// pass already has, replacing `isNullSentinel`'s whole-function "only write
+// is literal null" rule with "the *reaching* write at this specific read is
+// literal null". Same "prefix writes in flow order, from the read's own
+// list outward to fnBody" pattern `global-access/match.ts`'s §4 condition 6
+// (`hasPreGuardClobber`, docs/BUGS.md T14 follow-up) established for a
+// structurally identical whole-function-proof bug — reimplemented locally
+// (not imported: a rung may not reach into a sibling rung's matcher
+// internals, D12a), same two-function split (`prefixWrites`/`prefixWritesIn`
+// there, `prefixSentinelWrites`/`prefixSentinelWritesIn` here) and the same
+// documented limits: no pre-read write found at all is NOT a refusal (falls
+// back to the old whole-function rule — ambiguous, refuse-as-before, never
+// a new acceptance), and a write on a branch that cannot actually reach the
+// read still counts as a possible clobber (flow-order, not path-sensitive —
+// the safe direction, since it can only make this refuse more, never accept
+// something unsound).
+
+/** Every `expr`-statement store `rX = value` reachable from `stmts`
+ *  (recursively, including nested statement lists, excluding a nested
+ *  `func`'s own frame — same frame boundary `nullWriteCount`/`identUses`
+ *  already use), for `rX === reg`. */
+function registerWriteValues(stmts: readonly Stmt[], reg: string): readonly Expr[] {
+  const out: Expr[] = [];
+  const visit = (list: readonly Stmt[]): void => {
+    for (const s of list) {
+      if (s.k === "expr" && s.expr.k === "assign" && s.expr.target.k === "ident" && s.expr.target.name === reg) out.push(s.expr.value);
+      switch (s.k) {
+        case "if":
+          visit(s.then);
+          visit(s.else);
+          break;
+        case "while":
+        case "do-while":
+        case "for":
+        case "labeled":
+        case "iife":
+          visit(s.body);
+          break;
+        case "try":
+          visit(s.block);
+          visit(s.handler);
+          break;
+        case "switch":
+          for (const c of s.cases) visit(c.body);
+          break;
+        default:
+          break; // decl, break, continue, return, throw (no sub-list), func (separate frame)
+      }
+    }
+  };
+  visit(stmts);
+  return out;
+}
+
+/** Writes to `reg` in every statement list that *precedes* `target` in flow
+ *  order, from `list` outward-in — `list`'s own statements before the one
+ *  containing `target`, then (recursively) the same inside that statement,
+ *  down to `target`'s immediately enclosing list. `null` when `target` is
+ *  not reachable from `list` at all (compared by identity). Writes are
+ *  returned in flow order, at any nesting depth. */
+function prefixSentinelWrites(list: readonly Stmt[], target: readonly Stmt[], reg: string): readonly Expr[] | null {
+  if (list === target) return [];
+  const prefix: Expr[] = [];
+  for (const s of list) {
+    const inner = prefixSentinelWritesIn(s, target, reg);
+    if (inner !== null) return [...prefix, ...inner];
+    prefix.push(...registerWriteValues([s], reg));
+  }
+  return null;
+}
+
+/** `prefixSentinelWrites` for the sub-lists of one statement — an `if`'s
+ *  `then`/`else` are alternatives (entering one never inherits the other's
+ *  writes); a `try`'s `block` runs before its `handler`. */
+function prefixSentinelWritesIn(s: Stmt, target: readonly Stmt[], reg: string): readonly Expr[] | null {
+  switch (s.k) {
+    case "if":
+      return prefixSentinelWrites(s.then, target, reg) ?? prefixSentinelWrites(s.else, target, reg);
+    case "while":
+    case "do-while":
+    case "for":
+    case "labeled":
+    case "iife":
+      return prefixSentinelWrites(s.body, target, reg);
+    case "try": {
+      const inBlock = prefixSentinelWrites(s.block, target, reg);
+      if (inBlock !== null) return inBlock;
+      const inHandler = prefixSentinelWrites(s.handler, target, reg);
+      return inHandler === null ? null : [...registerWriteValues(s.block, reg), ...inHandler];
+    }
+    case "switch": {
+      for (const c of s.cases) {
+        const hit = prefixSentinelWrites(c.body, target, reg);
+        if (hit !== null) return hit;
+      }
+      return null;
+    }
+    default:
+      return null; // decl, break, continue, return, throw, expr, func, directive, comment, raw
+  }
+}
+
+/** The outermost loop body (`while`/`do-while`/`for`, labelled or not) that
+ *  transitively contains the statement list `target`, or `null` when
+ *  `target` is not inside a loop — same helper `global-access/match.ts`'s
+ *  §4 condition 5 (`hasLoopReentryClobber`) established, reimplemented
+ *  locally. `labeled`/`iife` bodies are transparent (run once, not loops
+ *  themselves); a `func` body is a separate frame and never entered. */
+function outermostLoopBodyContaining(fnBody: readonly Stmt[], target: readonly Stmt[]): readonly Stmt[] | null {
+  const visit = (list: readonly Stmt[], loop: readonly Stmt[] | null): { readonly loop: readonly Stmt[] | null } | null => {
+    if (list === target) return { loop };
+    for (const s of list) {
+      let hit: { readonly loop: readonly Stmt[] | null } | null = null;
+      switch (s.k) {
+        case "if":
+          hit = visit(s.then, loop) ?? visit(s.else, loop);
+          break;
+        case "while":
+        case "do-while":
+        case "for":
+          hit = visit(s.body, loop ?? s.body);
+          break;
+        case "labeled":
+        case "iife":
+          hit = visit(s.body, loop);
+          break;
+        case "try":
+          hit = visit(s.block, loop) ?? visit(s.handler, loop);
+          break;
+        case "switch":
+          for (const c of s.cases) {
+            hit = visit(c.body, loop);
+            if (hit !== null) break;
+          }
+          break;
+        default:
+          break;
+      }
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+  return visit(fnBody, null)?.loop ?? null;
+}
+
+/** Repeat-visit soundness (mirrors `global-access`'s §4 condition 5): when
+ *  a guard testing `reg` sits inside a loop, a write positioned *after* the
+ *  read in program text still runs *before* it on every repeat visit, so
+ *  the forward-only reaching-write proof below is not enough on its own —
+ *  take the outermost enclosing loop body and refuse if it contains *any*
+ *  write to `reg` whose value is not literally `null`, wherever it sits
+ *  relative to the read. Not exercised by any known fixture (the idiom's
+ *  guards are not observed inside loops), included for the same soundness
+ *  reason `global-access`'s T14 fix was — a whole-function or forward-only
+ *  proof about a register's value is unsound inside a loop without it. */
+function sentinelLoopReentryClobber(fnBody: readonly Stmt[], list: readonly Stmt[], reg: string): boolean {
+  const loopBody = outermostLoopBodyContaining(fnBody, list);
+  if (loopBody === null) return false;
+  return registerWriteValues(loopBody, reg).some((w) => !(w.k === "lit" && w.text === "null"));
+}
+
+/** Precondition 1 (`not-null-guard`), position-aware: `e` is literal `null`,
+ *  or a register whose *reaching* write at `list[idx]`'s read is literal
+ *  `null` — the last write found walking `list[0..idx-1]` plus every
+ *  enclosing list's statements before the one containing `list` (outward to
+ *  `fnBody`). No reaching write found at all (list unreachable from
+ *  `fnBody`, or nothing precedes this read in the scanned prefix) falls
+ *  back to `isNullSentinel`'s old whole-function rule — see the block
+ *  comment above. This is what lets `48-optional-chaining-nullish`'s v99
+ *  binary recover: a later chain's own spilled-compare destination and an
+ *  unrelated literal both reuse the null-sentinel register *after* every
+ *  guard that actually reads it as a sentinel, so neither ever appears as
+ *  the reaching write for any real guard — only the original `null` write
+ *  does (docs/lowering/optional-chaining.md §7). */
+function isNullSentinelAt(e: Expr, fnBody: readonly Stmt[], list: readonly Stmt[], idx: number): boolean {
+  if (e.k === "lit" && e.text === "null") return true;
+  if (e.k !== "ident" || !isRegisterName(e.name)) return false;
+  const reg = e.name;
+
+  const outer = prefixSentinelWrites(fnBody, list, reg);
+  if (outer !== null) {
+    const local = registerWriteValues(list.slice(0, idx), reg);
+    const writes = [...outer, ...local];
+    const last = writes[writes.length - 1];
+    if (last !== undefined) {
+      if (!(last.k === "lit" && last.text === "null")) return false; // reaching write is not null: unsound to accept
+      return !sentinelLoopReentryClobber(fnBody, list, reg);
+    }
+  }
+  return isNullSentinel(e, fnBody); // no positional evidence: fall back to the old whole-function rule
+}
+
 function sameRegOrExpr(a: Expr, b: Expr): boolean {
   return a === b || (a.k === "ident" && b.k === "ident" && a.name === b.name) || JSON.stringify(a) === JSON.stringify(b);
 }
@@ -219,7 +413,7 @@ function matchChainGuard(list: readonly Stmt[], idx: number, fnBody: readonly St
     const g = matchGuardIf(list[idx + 1], expectedLabel);
     if (g !== null) {
       const eq = looseEqNull(g.test, "==");
-      if (eq !== null && isNullSentinel(eq.right, fnBody) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
+      if (eq !== null && isNullSentinelAt(eq.right, fnBody, list, idx) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
         return { rRes: reset0.reg, tested: eq.left, label: g.label, consumed: 2 };
       }
     }
@@ -228,7 +422,7 @@ function matchChainGuard(list: readonly Stmt[], idx: number, fnBody: readonly St
   const s0 = list[idx];
   if (s0 !== undefined && s0.k === "expr" && s0.expr.k === "assign" && s0.expr.target.k === "ident" && isRegisterName(s0.expr.target.name)) {
     const eq = looseEqNull(s0.expr.value, "==");
-    if (eq !== null && isNullSentinel(eq.right, fnBody) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
+    if (eq !== null && isNullSentinelAt(eq.right, fnBody, list, idx) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
       const rC = s0.expr.target.name;
       const reset1 = matchReset(list[idx + 1]);
       if (reset1 !== null && (expectedRRes === null || reset1.reg === expectedRRes)) {
@@ -334,7 +528,7 @@ function parseNullishAt(list: readonly Stmt[], start: number, fnBody: readonly S
   const g = matchGuardIf(list[start], null);
   if (g === null) return null;
   const eq = looseEqNull(g.test, "!=");
-  if (eq === null || eq.left.k !== "ident" || !isRegisterName(eq.left.name) || !isNullSentinel(eq.right, fnBody)) return null;
+  if (eq === null || eq.left.k !== "ident" || !isRegisterName(eq.left.name) || !isNullSentinelAt(eq.right, fnBody, list, start)) return null;
   const label = g.label;
   const rX = eq.left.name;
 

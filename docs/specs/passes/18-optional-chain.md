@@ -214,8 +214,27 @@ is unknown, so no link read can ever satisfy the commit condition, and the
 run simply exhausts its link statements and refuses. Preconditions, all
 recomputed in `check`:
 
-1. `N` is literal `null` or a register whose only write in the function is
-   literal `null`, `nested === 0` (`not-null-guard`).
+1. `N` is literal `null`, or a register whose *reaching write* at this
+   specific guard's read is literal `null` (`not-null-guard`) — a
+   reaching-definitions check over the AST the pass already has
+   (`isNullSentinelAt`, `src/passes/optional-chain/match.ts`, 2026-09-05,
+   `docs/BUGS.md` follow-up): walk `list[0..idx-1]` (the statements before
+   this read in the same statement list) plus every enclosing list's
+   statements before the one containing `list` (outward to `fnBody`), at
+   any nesting depth, in flow order; the *last* write to the register found
+   this way must be literal `null`. No write found at all (the list is
+   unreachable from `fnBody` by identity, or nothing precedes the read in
+   the scanned prefix) falls back to the old whole-function rule (`N`'s
+   only write anywhere in the function is literal `null`) — ambiguous,
+   refuse exactly as before, never a new acceptance. A read inside a loop
+   additionally requires the whole enclosing loop body carry no non-null
+   write to the register at any position (repeat-visit soundness, mirroring
+   `global-access`'s §4 condition 5). This replaces the old, strictly
+   whole-function "only write in the function is literal `null`" rule,
+   which a same-function *later*, unrelated reuse of the sentinel register
+   used to defeat even though it can never reach an earlier read — see
+   `docs/lowering/optional-chaining.md` §7 for the measured fixture
+   evidence.
 2. Every guard `break`s to the *same* label `L`, and `L` is the innermost
    enclosing labeled block of the run; no other statement in `L`'s body
    `break`s to `L` except the run's own tail `break` (`label-shared` — this

@@ -108,15 +108,32 @@ open with a base guard — each link is keyed strictly on the presence of
 plain `.` on the unguarded link(s) and `?.` on the rest (verified directly
 against this fixture's own v99 shape, `tests/gate/passes/optional-chain.test.ts`).
 
-**Separate, newly-identified gap** (new `docs/BUGS.md` row, 2026-09-04): on
-the actual compiled `48-optional-chaining-nullish` v99 binary, *no* chain
-recovers yet, elided-base or not — `48`'s hermesc build reuses the
-null-sentinel register (`r2`) for unrelated values later in the same
-function (a later chain's own spilled-compare destination reuses `r2` as
-its `rC`, and an unrelated `0 ?? 'fallback'`-style literal near the end of
-the function also lands in `r2`), which trips `isNullSentinel`'s
-whole-function "only write in the function is literal `null`" precondition
-(spec 18 §4 precondition 1) for every guard testing against `r2`, not just
-the elided-base ones. This is unrelated to base-guard elision and predates
-this fix (confirmed: 0 chains recovered at v99 before this fix too) — it is
-a distinct, position-blind-precondition bug in its own right.
+**Second gap, found and fixed 2026-09-05** (`docs/BUGS.md` row dated
+2026-09-04): on the actual compiled `48-optional-chaining-nullish` v99
+binary, *no* chain recovered even after the base-guard-elision fix above —
+`48`'s hermesc build reuses the null-sentinel register (`r2`) for unrelated
+values later in the same function (a later chain's own spilled-compare
+destination reuses `r2` as its `rC`, and an unrelated `0 ?? 'fallback'`-
+style literal near the end of the function also lands in `r2`), which
+tripped `isNullSentinel`'s whole-function "only write in the function is
+literal `null`" precondition (spec 18 §4 precondition 1) for every guard
+testing against `r2`, not just the elided-base ones — a distinct,
+position-blind-precondition bug, unrelated to base-guard elision. **Fixed**:
+`isNullSentinel` replaced by `isNullSentinelAt`, a reaching-definitions
+check over the statement-list AST the pass already has (spec 18 §4
+precondition 1's new text) — the *reaching* write to the sentinel register
+at each specific guard's read must be literal `null`, not "the only write
+anywhere in the function". Neither of `48`'s two clobbers (the later
+chain's own `rC` reuse, the trailing `0 ?? 'fallback'`-style literal) can
+ever be the reaching write for an *earlier* guard's read, so every chain
+whose own guard shape is otherwise intact now recovers. Measured on this
+fixture's real v99 binary: 0 `?.`/`??` occurrences before → 9 `?.` + 3 `??`
+occurrences after (`tests/gate/passes/optional-chain.test.ts`), matching
+v94's shape for every site except one — `user?.profile?.name` stays
+unrewritten, for a third, unrelated, separately-tracked reason (a dead
+`r1 = undefined` store interleaved between that one guard's own compare
+and its `if`, not a null-sentinel or base-guard-elision issue — a new
+`docs/BUGS.md` row (2026-09-05, `src/passes/expr-rebuild/match.ts`), since
+it is a readability-only gap on a fixture whose trace-oracle verdict is
+already correct either way, same class as the destructure row's
+orphan-closure gap.
