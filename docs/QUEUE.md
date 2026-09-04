@@ -94,6 +94,27 @@ Concrete, non-overlapping. Model: **Opus** = design/hard/checker-critical or sem
 
 ---
 
+## SPEC 26 — FULL STAGE-3 IDE (the MVP defaults are retired)
+
+Spec: `docs/specs/26-ui-full-ide.md`. Decision: **D29** (Fred 2026-09-05: *"use the real one from now on"* — specs 19/20/21 recommendations ratified). Ten landings, one lean agent each, ordered so contract-affecting work lands before anything is written against it. NOT re-planned there and not listed here: the key-bindings/settings landing and the spec-25 graph view (both in flight) and spec 23's workers rail (partly shipped).
+
+| # | Landing | Model | Depends on | Spec §2 |
+|---|---|---|---|---|
+| 26.1 | Live update: in-process `wrote(seq, targets)` bus + shard-addressed delta apply (today an agent's write reaches the Activity feed and no pane) | Sonnet | — | L1 |
+| 26.2 | Loopback auth: per-run token, kernel-assigned port, `--no-auth` for the e2e rigs | Sonnet | — | L2 |
+| 26.3 | Token layer completion (type ramp, elevation, borders, shared syntax palette) + `docs/ui-refs/` + lint extended to spacing/type | Sonnet | — | L3 |
+| 26.4 | listing-2: hierarchical screens tree + navigation arrows, over a new `GET /api/screens` | **Opus** | 26.1 | L4 |
+| 26.5 | Virtualised sortable result tables everywhere; delete `LeftPane.tsx`'s silent `slice(0,100/200)` caps | Sonnet | 26.3 | L5 |
+| 26.6 | Findings/leads full workflow: status transitions, evidence state, lead→finding promotion, per-target history | Sonnet | 26.1, 26.5 | L6 |
+| 26.7 | The two missing test layers: DOM tests + visual baselines + kitchen-sink route (**baselines need Fred**) | Sonnet | 26.3–26.6 | L7 |
+| 26.8 | Worktree/scratch sandbox for `recompile_edit` + the attended UI flow (**needs Fred**) | **Opus** | 26.2 | L8 |
+| 26.9 | Graph CFG mode + `GET /api/fn/{fn}/cfg` (spec 25 §7's named follow-up) | **Opus** | graph landing | L9 |
+| 26.10 | Workspace: URL-addressed selection (kills the `fn ?? 0` console error), multi-panel docking, saved layouts | Sonnet | 26.5, 26.6 | L10 |
+
+Each landing names its acceptance test files and exact test titles in spec 26 §2; the implementer creates the file and bumps `docs/test-count-baseline.json` once, re-derived from committed HEAD.
+
+---
+
 ## NEEDS FRED (morning decisions)
 
 1. **Golden/snapshot regeneration batch.** The orchestrator queues regenerations; regen needs Fred's approval, reviewed as a batch (CLAUDE.md testing rules). Nothing regenerated inside an impl task.
@@ -109,6 +130,10 @@ Concrete, non-overlapping. Model: **Opus** = design/hard/checker-critical or sem
 11. **Nested-closure disasm-follow default.** `894a8e2` makes the disasm pane follow the cursor into a nested closure (spec 05 §16.2). Confirm this is the default behaviour (vs opt-in) for the shipped UI.
 12. **Static-proof finding confirmation** (carried from spec 17 / spec 11 §4.1): `open→confirmed` currently requires a DYNAMIC evidence ref, so a statically-provable finding (parsed-but-never-checked signature, hardcoded key) can't reach `confirmed`. Decide whether to allow confirmation via a fidelity-checked STATIC proof — touches spec 11's finding-status model.
 13. **Delete-or-keep deprecated `tools/equiv/`** (128K, provably unimported since M3 `baf9972`; 2026-09-03 sweep finding 5). Deletion requires rewording `docs/EQUIVALENCE.md`'s reproducibility claim.
+14. **UI art-direction seed** (spec 26 §4.1, spec 20 §1.5) — the one input the whole aesthetics playbook rests on. Any ONE of: edit `ui/themes/dark.json`'s ~20 values, name a theme ("Darcula-like"), or drop 2–3 reference screenshots into `docs/ui-refs/`. Blocks landing 26.3's values (not its structure).
+15. **Visual-baseline approval** (spec 26 §4.2) — landing 26.7 wants the FIRST commit of Playwright screenshot baselines; golden artifacts, so Fred approves the batch (CLAUDE.md testing rules).
+16. **`recompile_edit` from the UI** (spec 26 §4.3, spec 17 §13, spec 21 §5.2) — may the UI drive the one operation that produces a modified binary, and is its sandbox a git worktree or a temp copy? Blocks landing 26.8.
+17. **First-run information hierarchy** (spec 26 §4.4, spec 20 §1.6) — which panes are open on opening a project, what is one click vs three. One sentence or one screenshot; landing 26.10 implements whatever it says.
 
 ---
 
