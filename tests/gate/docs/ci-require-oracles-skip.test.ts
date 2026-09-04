@@ -66,14 +66,22 @@ test("t7/t8 report skip (not fail) under HBC2JS_REQUIRE_ORACLES=1, since their a
     if (rel.includes("t7")) assert.ok(!existsSync(join(repoRoot(), "tools", "security", "semgrep")), "tools/security/semgrep unexpectedly exists — Lane S must have landed; update this test");
     if (rel.includes("t8")) assert.ok(!existsSync(join(repoRoot(), "tests", "fixtures", "security", "vuln-app", "apk")), "the fixture APK unexpectedly exists — Lane M must have landed; update this test");
 
-    const res = spawnSync(process.execPath, ["--test", abs], {
+    // --test-reporter=tap pins the summary format: node --test's *default*
+    // reporter depends on whether its own stdout is a TTY, and (CI red-run
+    // 2026-09-05) that default ALSO changed between node 22.18 (tap when
+    // piped, as spawnSync always pipes) and node 24/25 (spec regardless of
+    // TTY) — so asserting on the spec reporter's "ℹ ..." lines is flaky
+    // across node versions even though spawnSync's stdio is identically a
+    // pipe on both. Force tap explicitly so this test means the same thing
+    // on every node version/OS.
+    const res = spawnSync(process.execPath, ["--test", "--test-reporter=tap", abs], {
       cwd: repoRoot(),
       encoding: "utf8",
       env: childEnv({ HBC2JS_REQUIRE_ORACLES: "1" }),
     });
     assert.equal(res.status, 0, `${rel} exited ${res.status} under REQUIRE_ORACLES=1 (expected 0, i.e. skip not fail):\n${res.stdout}\n${res.stderr}`);
-    assert.match(res.stdout, /ℹ skipped [1-9]/, `${rel}: expected the reporter summary to report a skip under REQUIRE_ORACLES=1:\n${res.stdout}`);
-    assert.match(res.stdout, /ℹ fail 0/, `${rel}: a subtest failed under REQUIRE_ORACLES=1:\n${res.stdout}`);
+    assert.match(res.stdout, /^# skipped [1-9]/m, `${rel}: expected the reporter summary to report a skip under REQUIRE_ORACLES=1:\n${res.stdout}`);
+    assert.match(res.stdout, /^# fail 0/m, `${rel}: a subtest failed under REQUIRE_ORACLES=1:\n${res.stdout}`);
   }
 });
 
@@ -84,9 +92,9 @@ test("47-spread-non-iterable-message's dedicated regression test moved out of te
 
   // Under the default (gate) tier it must skip, not run its body — same
   // convention as every other sweep-tier file (requireSweep).
-  const gateRun = spawnSync(process.execPath, ["--test", dest], { cwd: repoRoot(), encoding: "utf8", env: childEnv({}) });
+  const gateRun = spawnSync(process.execPath, ["--test", "--test-reporter=tap", dest], { cwd: repoRoot(), encoding: "utf8", env: childEnv({}) });
   assert.equal(gateRun.status, 0);
-  assert.match(gateRun.stdout, /ℹ skipped 1/, gateRun.stdout);
+  assert.match(gateRun.stdout, /^# skipped 1/m, gateRun.stdout);
 
   // A missing Hermes VM must skip, not fail, even under REQUIRE_ORACLES=1
   // (tests/support/hermesvm.ts's convention) — this repro only proves
@@ -98,11 +106,11 @@ test("47-spread-non-iterable-message's dedicated regression test moved out of te
   });
   if (hasAnyVm) return; // this machine has a VM: the body runs for real, nothing to prove about the skip path here
 
-  const sweepRun = spawnSync(process.execPath, ["--test", dest], {
+  const sweepRun = spawnSync(process.execPath, ["--test", "--test-reporter=tap", dest], {
     cwd: repoRoot(),
     encoding: "utf8",
     env: childEnv({ HBC2JS_TIER: "sweep", HBC2JS_REQUIRE_ORACLES: "1" }),
   });
   assert.equal(sweepRun.status, 0, `expected a missing-VM skip, not a failure:\n${sweepRun.stdout}`);
-  assert.match(sweepRun.stdout, /ℹ skipped 1/, sweepRun.stdout);
+  assert.match(sweepRun.stdout, /^# skipped 1/m, sweepRun.stdout);
 });
