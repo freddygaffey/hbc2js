@@ -947,6 +947,21 @@ an implementation task does not invert an existing test — but its `openGraph`
 binding now opens this pane, so enabling it later is a one-line change plus
 that test's update.
 
+**Drag, highlight, reset, follow** (spec 25 §5a, burs 8/10, 2026-09-05):
+nodes are draggable (`nodesDraggable`); the offset is kept in
+`ui/src/graph/store.ts` until either the neighbourhood changes (a new focus
+clears it — it would be meaningless for nodes that are no longer drawn) or
+the toolbar's **reset view** button is clicked, which drops it and re-runs
+`fitView`. Hovering a node (or, with **follow** on, selecting a call site
+whose callee the graph already drew) highlights it and its direct
+neighbours (an `accent` ring) and dims everything else — the pure
+neighbour-set computation is `neighbourSet` in `ui/src/graph/model.ts`, so
+hover and follow share one mechanism. The **follow** toggle
+(`data-graph-follow`, persisted in `localStorage`, **default ON**) makes the
+graph track the listing selection: a different function re-focuses the
+graph exactly as clicking `graph.focus` would; turning it off freezes the
+graph where it is regardless of what gets selected.
+
 ## Smoke test (Playwright)
 
 `ui/e2e/` (`@playwright/test`, pinned exact, a `ui/`-only devDependency —

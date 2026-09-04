@@ -3,9 +3,9 @@
 // routes the Xrefs pane uses (`/api/fn/{fn}/callers`, `/callees`,
 // `/api/xref/who-calls-by-name`, `/api/module/{id}`). Never the whole graph:
 // one hop from the focus, and one more per node the analyst expands.
-import { ReactFlow, Background, Controls, MarkerType, type Edge } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MarkerType, type Edge, type ReactFlowInstance } from "@xyflow/react";
 import { useQueries } from "@tanstack/react-query";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import "@xyflow/react/dist/style.css";
 import "./graph.css";
 import { api } from "../api.ts";
@@ -13,11 +13,15 @@ import type { CallsFrom, Severity, WhoCalls, WhoCallsByName } from "../contracts
 import { useFindings, useFn, useModule } from "../hooks.ts";
 import { displayName } from "../listing/names.ts";
 import { select, useSelection } from "../state/selection.ts";
-import { buildCallModel, buildModuleModel, EMPTY_MODEL, GRAPH_NODE_CAP, type CallHop, type GraphModel } from "./model.ts";
+import {
+  buildCallModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, neighbourSet,
+  type CallHop, type GraphModel, type NeighbourSet,
+} from "./model.ts";
 import { layoutModel } from "./layout.ts";
 import { nodeTypes, type HbcFlowNode } from "./nodes.tsx";
 import {
-  expandGraphNode, focusGraphNode, graphBack, originKey, rootGraph, setGraphMaximised, targetForSelection, useGraphState,
+  expandGraphNode, focusGraphNode, graphBack, originKey, resetGraphView, rootGraph, setGraphFollow, setGraphMaximised,
+  setHoverNode, setNodePosition, targetForSelection, useGraphState,
 } from "./store.ts";
 
 /** Same idiom and wording shape as the listing's truncation bar
@@ -84,16 +88,19 @@ function useCallHops(fns: readonly number[], enabled: boolean): readonly CallHop
 export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode {
   const sel = useSelection();
   const gs = useGraphState();
+  const rfInstance = useRef<ReactFlowInstance<HbcFlowNode, Edge> | null>(null);
 
   // Follow the selection: a NEW selection re-roots the graph, but an
   // in-graph focus change (which never touches the selection store) does
-  // not (spec 25 §3).
+  // not (spec 25 §3). Bur 10: this whole effect is the "follow" behaviour —
+  // gated on the toggle, so turning it off freezes the graph where it is,
+  // and turning it back on catches up on the next selection change.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !gs.follow) return;
     const t = targetForSelection(sel);
     const key = originKey(t);
     if (key !== gs.origin) rootGraph(t, key);
-  }, [visible, sel, gs.origin]);
+  }, [visible, sel, gs.origin, gs.follow]);
 
   const target = gs.target;
   const callMode = target?.kind === "fn";
@@ -132,29 +139,51 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
 
   const positions = useMemo(() => layoutModel(model), [model]);
 
+  // Bur 8: hovering a node highlights it. Bur 10: with `follow` on, so does
+  // a listing selection that resolves to one of the graph's own drawn
+  // neighbours (a call site whose callee is in the neighbourhood). Hover
+  // always wins when both are present — it is the more immediate signal.
+  const highlightId = gs.hoverNode ?? (gs.follow ? calleeNodeForSelection(model, sel) : null);
+  const active: NeighbourSet | null = useMemo(
+    () => (highlightId !== null ? neighbourSet(model, highlightId) : null),
+    [model, highlightId],
+  );
+
   const flowNodes: HbcFlowNode[] = useMemo(
     () =>
       model.nodes.map((n) => ({
         id: n.id,
         type: "hbc" as const,
-        position: positions.get(n.id) ?? { x: 0, y: 0 },
-        data: { model: n, onExpand: expandGraphNode },
+        position: gs.dragPositions.get(n.id) ?? positions.get(n.id) ?? { x: 0, y: 0 },
+        data: {
+          model: n,
+          onExpand: expandGraphNode,
+          highlighted: active !== null && active.nodes.has(n.id),
+          dimmed: active !== null && !active.nodes.has(n.id),
+        },
       })),
-    [model, positions],
+    [model, positions, gs.dragPositions, active],
   );
 
   const flowEdges: Edge[] = useMemo(
     () =>
-      model.edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        style: e.byName
-          ? { stroke: "var(--text-muted)", strokeDasharray: "4 3" }
-          : { stroke: "var(--border)" },
-        markerEnd: { type: MarkerType.ArrowClosed, color: e.byName ? "var(--text-muted)" : "var(--border)" },
-      })),
-    [model],
+      model.edges.map((e) => {
+        const isActive = active !== null && active.edges.has(e.id);
+        const stroke = isActive ? "var(--accent)" : e.byName ? "var(--text-muted)" : "var(--border)";
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          style: {
+            stroke,
+            strokeDasharray: e.byName ? "4 3" : undefined,
+            strokeWidth: isActive ? 2 : 1,
+            opacity: active !== null && !isActive ? 0.35 : 1,
+          },
+          markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+        };
+      }),
+    [model, active],
   );
 
   const body = (
@@ -173,6 +202,17 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
             minZoom={0.15}
             nodesConnectable={false}
             edgesFocusable={false}
+            nodesDraggable
+            onInit={(inst) => {
+              rfInstance.current = inst;
+            }}
+            onNodesChange={(changes) => {
+              for (const c of changes) {
+                if (c.type === "position" && c.position) setNodePosition(c.id, c.position);
+              }
+            }}
+            onNodeMouseEnter={(_e, node) => setHoverNode(node.id)}
+            onNodeMouseLeave={() => setHoverNode(null)}
             onNodeClick={(_e, node) => {
               const m = node.data.model;
               if (m.ref >= 0 && !m.isFocus) focusGraphNode({ kind: m.kind, ref: m.ref });
@@ -209,6 +249,29 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
         {gs.trail.map((t) => `${t.kind === "fn" ? "fn" : "mod"}:${t.ref}`).join(" › ") || "—"}
       </span>
       <span className="ml-auto shrink-0">{model.shown} nodes</span>
+      <button
+        type="button"
+        data-graph-follow={gs.follow ? "true" : "false"}
+        aria-pressed={gs.follow}
+        onClick={() => setGraphFollow(!gs.follow)}
+        className={`shrink-0 rounded-ui px-1 hover:bg-surface-2 ${gs.follow ? "text-accent" : "text-text-muted"}`}
+        title={gs.follow ? "following the listing selection — click to stop" : "not following the listing selection — click to follow"}
+      >
+        follow
+      </button>
+      <button
+        type="button"
+        data-graph-reset
+        disabled={target === null}
+        onClick={() => {
+          resetGraphView();
+          requestAnimationFrame(() => rfInstance.current?.fitView({ padding: 0.2, maxZoom: 1.1 }));
+        }}
+        className="shrink-0 rounded-ui px-1 hover:bg-surface-2 disabled:opacity-40"
+        title="reset the graph to the default layout and fit it to view"
+      >
+        reset view
+      </button>
       <button
         type="button"
         data-graph-maximise

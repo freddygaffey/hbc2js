@@ -241,3 +241,106 @@ test.describe("Graph tab: call neighbourhood (spec 25)", () => {
     await expect(pane).toHaveAttribute("data-graph-maximised", "false");
   });
 });
+
+// Bur 8 (2026-09-05): draggable nodes, hover/selection highlight, reset view.
+// Bur 10 (2026-09-05): the follow toggle.
+test.describe("Graph tab: drag, highlight, reset, follow (burs 8, 10)", () => {
+  async function stubTwoHops(page: Page, fn: number): Promise<void> {
+    await page.route("**/api/fn/*/callers*", (route) =>
+      route.fulfill({ json: { rows: [], total: 0, truncated: false, unknownInScope: 0 } }));
+    await page.route("**/api/xref/who-calls-by-name*", (route) =>
+      route.fulfill({ json: { rows: [], names: [], excludedModule: null } }));
+    const callees = new Map([[fn, [901, 902]], [901, [911, 912]]]);
+    await page.route("**/api/fn/*/callees*", (route) => {
+      const target = Number(new URL(route.request().url()).pathname.split("/")[3]);
+      const rows = (callees.get(target) ?? []).map((n) => ({ fn: n, name: `stub${n}`, size: 10, file: null, line: null, kind: "call" }));
+      return route.fulfill({ json: { rows, total: rows.length, truncated: false } });
+    });
+  }
+
+  test("nodes are draggable, and Reset view puts them back exactly", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row, fn } = await pickFnWithNeighbours(page, request, SMALL);
+    await openGraphFor(page, row);
+    await zoomToFullDetail(page);
+    // zoomToFullDetail zooms toward the viewport centre, which can push a
+    // small neighbourhood's edge nodes off screen; re-fit at the current
+    // zoom so every node is clickable again.
+    await page.locator(".react-flow__controls-fitview").click();
+
+    // Any drawn node on screen does — fitView already fit the whole (small)
+    // neighbourhood, but a zoom-in step centres on the viewport middle, so a
+    // node at the edge of a wide-ish neighbourhood can still end up
+    // off-screen; pick one that Playwright can actually click, same idiom
+    // as the cap/expand tests above.
+    const target = await firstNodeInViewport(page, "[data-graph-node]");
+    if (target === null) throw new Error("no graph node is on screen to drag");
+    const before = { x: await target.getAttribute("data-graph-x"), y: await target.getAttribute("data-graph-y") };
+
+    const box = (await target.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 90, cy + 60, { steps: 8 });
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => `${await target.getAttribute("data-graph-x")},${await target.getAttribute("data-graph-y")}`)
+      .not.toBe(`${before.x},${before.y}`);
+
+    await page.locator("[data-graph-reset]").click();
+    await expect(target).toHaveAttribute("data-graph-x", before.x ?? "", { timeout: WAIT });
+    await expect(target).toHaveAttribute("data-graph-y", before.y ?? "", { timeout: WAIT });
+  });
+
+  test("hovering a node highlights its neighbours and dims the rest", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row, fn } = await pickFnWithNeighbours(page, request);
+    await stubTwoHops(page, fn);
+    await openGraphFor(page, row);
+    await expect(page.locator("[data-graph-node]")).toHaveCount(3, { timeout: WAIT });
+    await zoomToFullDetail(page);
+    await page.locator('[data-graph-node="fn:901"] [data-graph-expand]').click();
+    await expect(page.locator("[data-graph-node]")).toHaveCount(5, { timeout: WAIT });
+
+    await page.locator('[data-graph-node="fn:901"]').hover();
+    await expect(page.locator('[data-graph-node="fn:901"]')).toHaveAttribute("data-graph-highlighted", "true");
+    await expect(page.locator(`[data-graph-node="fn:${fn}"]`)).toHaveAttribute("data-graph-highlighted", "true");
+    await expect(page.locator('[data-graph-node="fn:911"]')).toHaveAttribute("data-graph-highlighted", "true");
+    await expect(page.locator('[data-graph-node="fn:912"]')).toHaveAttribute("data-graph-highlighted", "true");
+    await expect(page.locator('[data-graph-node="fn:902"]')).toHaveAttribute("data-graph-dimmed", "true");
+  });
+
+  test("follow ON (default): a new listing selection re-focuses the graph", async ({ page }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const rows = page.locator("[data-fn]");
+    test.skip((await rows.count()) < 2, "fixture needs at least two functions to prove re-focus");
+    const fn0 = Number(await rows.nth(0).getAttribute("data-fn"));
+    const fn1 = Number(await rows.nth(1).getAttribute("data-fn"));
+    await openGraphFor(page, rows.nth(0));
+    await expect(page.locator("[data-graph-follow]")).toHaveAttribute("data-graph-follow", "true");
+    await expect(page.locator('[data-graph-focus="true"]')).toHaveAttribute("data-graph-node", `fn:${fn0}`);
+
+    await rows.nth(1).click();
+    await expect(page.locator('[data-graph-focus="true"]')).toHaveAttribute("data-graph-node", `fn:${fn1}`, { timeout: WAIT });
+  });
+
+  test("follow OFF: a new listing selection leaves the graph where it is", async ({ page }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const rows = page.locator("[data-fn]");
+    test.skip((await rows.count()) < 2, "fixture needs at least two functions to prove the graph stays put");
+    const fn0 = Number(await rows.nth(0).getAttribute("data-fn"));
+    await openGraphFor(page, rows.nth(0));
+    await page.locator("[data-graph-follow]").click();
+    await expect(page.locator("[data-graph-follow]")).toHaveAttribute("data-graph-follow", "false");
+
+    await rows.nth(1).click();
+    await page.waitForTimeout(200);
+    await expect(page.locator('[data-graph-focus="true"]')).toHaveAttribute("data-graph-node", `fn:${fn0}`);
+  });
+});

@@ -184,6 +184,46 @@ export function buildCallModel(input: CallModelInput): GraphModel {
   return b.build();
 }
 
+/** The result of `neighbourSet`: which nodes and edges should read as
+ *  "highlighted" — everything else in the pane dims (bur 8). */
+export interface NeighbourSet {
+  readonly nodes: ReadonlySet<string>;
+  readonly edges: ReadonlySet<string>;
+}
+
+/** `id` plus every node one edge away from it, and the ids of those edges.
+ *  Pure and cheap (linear scan of the already-capped edge list) — used for
+ *  BOTH hover/selection highlight (bur 8) and the follow-toggle's call-site
+ *  highlight (bur 10), which is the same "light up a neighbourhood" idea. */
+export function neighbourSet(model: GraphModel, id: string): NeighbourSet {
+  const nodes = new Set<string>([id]);
+  const edges = new Set<string>();
+  for (const e of model.edges) {
+    if (e.source !== id && e.target !== id) continue;
+    edges.add(e.id);
+    nodes.add(e.source);
+    nodes.add(e.target);
+  }
+  return { nodes, edges };
+}
+
+/** Bur 10: does the listing `selection` point at one of the graph's already
+ *  drawn neighbours? True only for an identifier selected INSIDE the
+ *  graph's own focus function (a call site's callee, spec 25 §3) whose text
+ *  matches a drawn neighbour's label — never the focus itself, never a
+ *  selection in an unrelated function. Returns that neighbour's node id, or
+ *  `null` when nothing in the drawn neighbourhood matches. */
+export function calleeNodeForSelection(
+  model: GraphModel,
+  selection: { readonly kind: string; readonly fn?: number; readonly name?: string },
+): string | null {
+  if (selection.kind !== "identifier" || selection.name === undefined) return null;
+  const focus = model.nodes.find((n) => n.isFocus);
+  if (focus === undefined || focus.kind !== "fn" || focus.ref !== selection.fn) return null;
+  const hit = model.nodes.find((n) => !n.isFocus && n.label === selection.name);
+  return hit?.id ?? null;
+}
+
 export interface ModuleModelInput {
   readonly focus: number;
   readonly deps: readonly number[];

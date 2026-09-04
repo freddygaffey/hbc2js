@@ -18,6 +18,12 @@ export const LOD_ZOOM = 0.55;
 export type HbcNodeData = {
   readonly model: GraphNodeModel;
   readonly onExpand: (fn: number) => void;
+  /** Bur 8/10: this node is in the active highlight's neighbour set (hover,
+   *  or the follow-toggle's call-site match) — an accent ring, never a new
+   *  colour. `dimmed` is the complement: something else is highlighted and
+   *  this node is not part of it. Both false when nothing is highlighted. */
+  readonly highlighted: boolean;
+  readonly dimmed: boolean;
 };
 
 export type HbcFlowNode = Node<HbcNodeData, "hbc">;
@@ -31,20 +37,26 @@ const SEVERITY_CLASS: Readonly<Record<string, string>> = {
 
 const handleClass = "!h-1 !w-1 !border-0 !bg-border";
 
-export function HbcNode({ data }: NodeProps<HbcFlowNode>): ReactNode {
+export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProps<HbcFlowNode>): ReactNode {
   const zoom = useStore((s) => s.transform[2]);
   const lod = zoom < LOD_ZOOM ? "min" : "full";
   const m = data.model;
   const border = m.isFocus ? "border-accent" : m.byName ? "border-dashed border-border" : "border-border";
   const text = m.byName ? "text-text-muted" : "text-text";
+  const ring = data.highlighted && !m.isFocus ? "ring-2 ring-accent" : "";
+  const fade = data.dimmed ? "opacity-40" : "";
   return (
     <div
       data-graph-node={m.id}
       data-graph-focus={m.isFocus ? "true" : "false"}
       data-graph-byname={m.byName ? "true" : "false"}
+      data-graph-highlighted={data.highlighted ? "true" : "false"}
+      data-graph-dimmed={data.dimmed ? "true" : "false"}
+      data-graph-x={Math.round(positionAbsoluteX)}
+      data-graph-y={Math.round(positionAbsoluteY)}
       data-lod={lod}
       style={{ width: NODE_W, height: NODE_H }}
-      className={`flex flex-col justify-center gap-0.5 overflow-hidden rounded-ui border bg-surface px-2 ${border}`}
+      className={`flex flex-col justify-center gap-0.5 overflow-hidden rounded-ui border bg-surface px-2 ${border} ${ring} ${fade}`}
       title={m.byName ? `${m.label} — heuristic by-name candidate, not a proven edge` : m.label}
     >
       <Handle type="target" position={Position.Top} className={handleClass} />

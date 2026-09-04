@@ -89,6 +89,74 @@ selects the function/module in the selection store, which jumps the code pane
   drawn. Never a silent trim.
 - Pan/zoom/fit come from React Flow (`fitView`, `Controls`), themed by tokens.
 
+## 5a. Interaction: drag, highlight, reset, follow (burs 8, 10 — 2026-09-05)
+
+**Drag.** `nodesDraggable` is on. A drag writes the node's new absolute
+position into `ui/src/graph/store.ts`'s `dragPositions` (a
+`ReadonlyMap<string, Point>`), which `GraphPane` overlays on top of
+`layoutModel`'s pure dagre positions when placing each React Flow node. The
+map is scoped to the CURRENT neighbourhood: `rootGraph`, `focusGraphNode` and
+`graphBack` all clear it, because an offset for a node that is no longer even
+drawn is meaningless. It is not otherwise persisted (no localStorage, no
+server round-trip) — "until reset" per the bur, not "forever".
+
+**Reset view.** A toolbar button (`data-graph-reset`) calls
+`resetGraphView()` (drops every drag offset, so the pane falls back to the
+pure dagre layout on the next render) and then re-runs React Flow's own
+`fitView`. The two are sequenced with a `requestAnimationFrame` so `fitView`
+sees the DOM after the drag offsets are gone, not before.
+
+**Highlight.** `ui/src/graph/model.ts` exports a pure `neighbourSet(model,
+id)`: the node's id plus every node one edge away, and the ids of those
+edges — used identically for two triggers:
+
+- **Hover** (bur 8): `onNodeMouseEnter`/`onNodeMouseLeave` write
+  `store.ts`'s `hoverNode`.
+- **Follow** (bur 10, below): a resolved call-site match, when hovering is
+  not active. Hover always wins when both fire.
+
+Whichever id is active, every node/edge in its `neighbourSet` gets a
+`highlighted` flag (an `accent` ring, `ring-2 ring-accent` — a token, not a
+new colour) and everything else gets `dimmed` (`opacity-40` / a reduced edge
+`opacity`, never a colour change — `tests/gate/ui/tokens.test.ts` only
+forbids literal colours, not opacity). Nothing is highlighted when no id is
+active — the pane looks exactly as it did before this bur.
+
+**Follow toggle (bur 10).** A toolbar toggle (`data-graph-follow`, persisted
+to `localStorage` under `hbc2js.graph.follow` with the same try/catch idiom
+as `ui/src/activity/store.ts` — a private-browsing tab degrades to
+session-only, never a crash). **Default: ON.** Reasoning: (1) Fred asked for
+the feature directly ("the section of code the user has selected should be
+visible ... in the graph view") — an opt-in default would ship the bur as
+invisible; (2) ON is exactly the re-root effect `GraphPane` already had
+before this bur (any selection with an `fn` re-roots the graph) — defaulting
+ON changes no existing behaviour, only adds the ability to turn it off and
+the call-site highlight.
+
+With `follow` on:
+- A NEW listing selection (`ui/src/state/selection.ts`'s `useSelection`,
+  read-only) re-roots the graph on the selected function — `rootGraph`, the
+  same path §3's mode dispatch already used; unchanged by this bur.
+- If the selection is an **identifier inside the graph's own focus
+  function** whose text matches one of the already-drawn neighbours (a call
+  site's callee), `model.ts`'s `calleeNodeForSelection(model, selection)`
+  resolves it to that neighbour's node id, and it gets bur 8's highlight.
+  This is deliberately narrow: it never re-roots on a random identifier
+  (that stays targetForSelection's job, gated on `sel.fn`), and it never
+  fabricates an edge the model does not already draw — a callee outside the
+  one-hop neighbourhood (not expanded) is not highlighted, honestly, rather
+  than guessed at.
+
+With `follow` off, both behaviours stop: the graph stays exactly where it
+is regardless of what the listing selects, until the toggle is switched back
+on (at which point the next selection change re-roots normally).
+
+**Keybinding (not yet registered — `ui/src/actions/registry.ts` is another
+agent's file this task; no `graph.*` action is registered there at all yet,
+per §4). Recommend a `graph.followToggle` action bound to `g f` (mnemonic
+"graph follow"), once that file is free and `graph.open`/`graph.focus`/
+`graph.expand` (§4) are registered alongside it.
+
 ## 6. Acceptance tests
 
 **Model (`tests/ui-core/graph-model.test.ts`, node:test, runs in the root
@@ -117,13 +185,35 @@ owner's live rig:
 5. **level of detail**: at full detail labels are drawn; zooming out past the
    threshold flips every node to `data-lod="min"`.
 6. **maximise** toggles the pane over the window and back.
+7. **drag** (bur 8): a node's `data-graph-x`/`data-graph-y` (its React Flow
+   `positionAbsoluteX`/`Y`, exposed on the node div for exactly this
+   assertion) change after a mouse-down/move/up drag; clicking **Reset view**
+   restores them to their pre-drag values exactly (the pure dagre layout is
+   deterministic for an unchanged model).
+8. **hover highlight** (bur 8): hovering a node sets
+   `data-graph-highlighted="true"` on it and every node one edge away, and
+   `data-graph-dimmed="true"` on a node that is neither — exercised over a
+   stubbed two-hop graph (901's own callees) so there is a node (902) that is
+   provably NOT a neighbour of the hovered one (901).
+9. **follow ON/OFF** (bur 10): selecting a different function in the listing
+   changes the graph's focus node when `data-graph-follow="true"`, and
+   leaves it unchanged when the toggle has been clicked to `"false"`.
 
 Tests 2–4 drive **stubbed** xref responses (`page.route`): the rn-template
 fixture has no resolved `fn -> fn` call edges at all (its callees are
 `require` module refs and `computed-callee` unknowns; its callers are all
 `unknownInScope`), so expansion, re-focus and the cap cannot be exercised
 against it honestly. The routes are the contract; the pane is what is under
-test. Tests 1, 5 and 6 run against the real fixture server.
+test. Tests 1, 5, 6 and 9 run against the real fixture server (test 9 only
+needs two DIFFERENT functions to exist, which the fixture already has); 7 and
+8 run against the real server too (7 only needs a small drawn neighbourhood,
+8 stubs a two-hop graph the same way tests 2–4 do).
+
+**Model.** `neighbourSet` (a node plus its incident edges/neighbours, nothing
+further) and `calleeNodeForSelection` (an identifier inside the focus
+function matching a drawn neighbour's label, `null` for a different
+function/non-identifier/no match/the focus itself) are covered in
+`tests/ui-core/graph-model.test.ts` alongside the original five.
 
 Plus `npm run typecheck` in `ui/` (React Flow and dagre are typed; no `any`).
 
