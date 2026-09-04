@@ -18,9 +18,16 @@ UI (Stage 3) first, THEN these.
    (software RSA key exported to JS + persisted) required BOTH halves.
 2. **`query string-uses <id>` verb.** string-grep returns id+count, not the use SITES;
    data already exists in index/string-uses.jsonl (14MB). Easy, high-value.
-3. **Scoped single-function readable decompile.** Today one function's readable JS
-   costs a whole-module/bundle run (90s timeout). Needed for cheap per-lead context
-   (also the LLM-loop token win, P2.1a).
+3. ~~**Scoped single-function readable decompile.**~~ **LANDED 2026-09-04**
+   (docs/DECISIONS.md D25): `hbc2js decompile <bundle.hbc> --fn N` +
+   `decompileFunction(bytes, N, opts)` (`EmitOptions.onlyFunction` on the same
+   `emitModule`). Renders fn N and its nested closures, placed as the whole-module
+   render would place them, byte-identical to N's slice of the full render
+   (`tests/gate/emit/scoped-decompile.test.ts`). NSW: ~3.4 s (only ~25 ms of it is
+   N's own structure+emit; the rest is the unavoidable global parse+analysis+env
+   graph) vs the whole bundle's minutes/timeout — a >25× win, and the cheap
+   per-lead / LLM-loop context this item wanted. Residue: the fixed ~3.35 s global
+   cost (env graph + placement are inherently whole-module) is not scoped away.
 4. **xref robustness on dynamic dispatch.** who-calls/calls-from return total:0 on
    heavy RN dynamic dispatch (computed-callee). Surface the limitation clearly; longer
    term recover indirect edges via dataflow/taint.

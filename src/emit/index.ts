@@ -46,6 +46,22 @@ export interface EmitOptions {
    * `src/passes/index.ts`'s `astPassHook` builds it; absent, nothing runs.
    */
   readonly astPasses?: (fn: Stmt, cfg: FunctionCfg) => { readonly fn: Stmt; readonly diagnostics: readonly Diagnostic[] };
+  /**
+   * Scoped single-function render (docs/DECISIONS.md D-scoped-render,
+   * hunt-tooling-backlog #3). Emit ONLY this function's primary body and the
+   * closure subtree hosted inside it — placed exactly as the whole-module
+   * render places them — instead of walking the whole module from the global
+   * function. The bundle-wide analyses that placement and naming genuinely
+   * need (the env graph, `parentOf`/`childrenOf`, the copy/recursion-group and
+   * loop-local tables above) are still computed globally, so the emitted text
+   * is byte-identical to fn N's slice of the full render (modulo the top-level
+   * indentation of a fragment vs a nested body): the only thing skipped is
+   * structuring+emitting every OTHER function. Identifiers this function
+   * captures from enclosing scopes are declared by parent functions that are
+   * NOT emitted here, so they appear free and the module scope-check
+   * (`collectUnbound`/`checkBindings`) is intentionally not run.
+   */
+  readonly onlyFunction?: number;
 }
 
 export interface LineMapEntry {
@@ -886,6 +902,50 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       return stub;
     }
   };
+
+  // Scoped single-function render. Reconstruct the exact `hosted` set the
+  // target's PRIMARY (copy-0) emission receives when the whole module is
+  // rendered — accumulated down its ancestor chain from the `extraCopies` each
+  // ancestor hosts — without emitting any sibling, so this is O(chain depth).
+  // With that context, `emitOne(target)` reproduces the target's slice
+  // byte-for-byte (its children hoisted/inlined identically); the ancestors
+  // stay `active` so an ancestor-hosted copy is not re-emitted inside the
+  // subtree, exactly as in the full render.
+  if (opts.onlyFunction !== undefined) {
+    const target = opts.onlyFunction;
+    if (!Number.isInteger(target) || target < 0 || target >= mod.functions.length) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, `scoped render: no such function ${target} (module has ${mod.functions.length} functions)`, { section: "emit" });
+    }
+    const chain = chainUp(target).reverse(); // outermost … target
+    let hosted: ReadonlySet<string> = new Set<string>();
+    for (const a of chain) {
+      if (a === target) break;
+      active.add(a);
+      const inherited = new Set<string>(hosted);
+      const extras: string[] = [];
+      for (const extra of extraCopies.get(a) ?? []) {
+        const name = copyNameOf(extra.fn, extra.copy.index);
+        const group = recursionGroupOf.get(a);
+        const sameGroup = extra.fn === a || (group !== undefined && group === recursionGroupOf.get(extra.fn));
+        if (sameGroup) {
+          if (inherited.has(name)) continue;
+        } else if (active.has(extra.fn)) continue;
+        extras.push(name);
+      }
+      hosted = new Set<string>([...inherited, ...extras]);
+    }
+    const node = emitOne(target, { path: "", remap: undefined, hosted });
+    const prelude = helperPrelude(usedHelpers);
+    const scoped: Stmt[] = [
+      { k: "comment", text: `hbc2js scoped render — function ${target} of ${opts.moduleName ?? "input.hbc"}` },
+      { k: "comment", text: `HBC version ${mod.header.version}, layout ${mod.layout.layoutClass}; nested closures are placed as in the full-module render.` },
+      { k: "comment", text: `identifiers captured from enclosing functions are declared by parents not shown here and appear free.` },
+    ];
+    if (prelude.code.length > 0) scoped.push({ k: "raw", text: prelude.code });
+    scoped.push(node);
+    const code = printProgram(scoped, { indent, jsx: opts.jsx === true });
+    return { code, helpersUsed: prelude.names, lineMap: [], diagnostics, stubbedFunctions };
+  }
 
   const globalFn = emitOne(globalIndex);
   const orphans: Stmt[] = [];

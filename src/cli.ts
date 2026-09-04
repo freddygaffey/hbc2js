@@ -19,7 +19,7 @@ import { runTier, hbc2jsDecompiler } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
-import { decompile, decompileAst, decompileTree, nodeCheck, parseForDecompile } from "./decompile.ts";
+import { decompile, decompileAst, decompileFunction, decompileTree, nodeCheck, parseForDecompile } from "./decompile.ts";
 import { analyseModule } from "./cfg/index.ts";
 import { NameService, OverlayStore, regId, shortForm } from "./name-overlay/index.ts";
 import type { Confidence, NameRecord, Source } from "./name-overlay/index.ts";
@@ -54,6 +54,7 @@ const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompi
 
 Usage:
   hbc2js <input.hbc> [out.js]      decompile to JavaScript (specs 03-05)
+  hbc2js decompile <input.hbc> [--fn N]   decompile (whole bundle, or scoped to fn N)
   hbc2js --info <input.hbc>        print header/layout/section info and exit
   hbc2js disasm <input.hbc> [options]   disassemble to text (spec 02)
   hbc2js equiv <a.js> <b.js>       execution-trace equivalence (spec 06)
@@ -86,6 +87,12 @@ Usage:
   hbc2js --version                 print the version
 
 Options (decompile):
+  --fn N                    scoped readable decompile of ONE function: emit fn N
+                            and its nested closures, placed as the whole-module
+                            render would, in time proportional to that subtree
+                            (not the whole bundle). Also 'hbc2js decompile <hbc>
+                            --fn N'. Output is fn N's slice of the full render;
+                            names it captures from enclosing scopes appear free.
   --function=N              restrict --emit-tree to function index N
   --no-verify               skip the structurer's round-trip isomorphism check
   --emit-tree               print the structurer's tree IR instead of JavaScript
@@ -502,6 +509,11 @@ interface DecompileArgs {
   readonly input: string | undefined;
   readonly outPath: string | undefined;
   readonly functionIndex: number | undefined;
+  /** `--fn N`: scoped single-function readable decompile (docs/DECISIONS.md
+   *  D-scoped-render, hunt-tooling-backlog #3). Emits only function N's body
+   *  and its nested closure subtree, placed as the whole-module render would,
+   *  in time proportional to that subtree — not the whole bundle. */
+  readonly scopedFn: number | undefined;
   readonly verify: boolean;
   readonly emitTree: boolean;
   readonly emitAst: boolean;
@@ -526,6 +538,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   let input: string | undefined;
   let outPath: string | undefined;
   let functionIndex: number | undefined;
+  let scopedFn: number | undefined;
   let verify = true;
   let emitTree = false;
   let emitAst = false;
@@ -548,6 +561,8 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
     else if (a === "--no-pass") skipPasses.push(String(argv[++i]));
     else if (a.startsWith("--no-pass=")) skipPasses.push(a.slice("--no-pass=".length));
     else if (a.startsWith("--function=")) functionIndex = Number(a.slice("--function=".length));
+    else if (a.startsWith("--fn=")) scopedFn = Number(a.slice("--fn=".length));
+    else if (a === "--fn") scopedFn = Number(argv[++i]);
     else if (a === "--no-verify") verify = false;
     else if (a === "--emit-tree") emitTree = true;
     else if (a === "--emit-ast") emitAst = true;
@@ -563,7 +578,7 @@ function parseDecompileArgs(argv: readonly string[]): DecompileArgs {
   }
   input = positional[0];
   if (outPath === undefined) outPath = positional[1];
-  return { help, input, outPath, functionIndex, verify, emitTree, emitAst, nodeCheck: check, split, overwrite, opcodeTable, forceV98, stats, lenientEnv, jsx, passes: { none: passesNone, skip: skipPasses, optIn: jsx ? ["jsx-recover"] : [] } };
+  return { help, input, outPath, functionIndex, scopedFn, verify, emitTree, emitAst, nodeCheck: check, split, overwrite, opcodeTable, forceV98, stats, lenientEnv, jsx, passes: { none: passesNone, skip: skipPasses, optIn: jsx ? ["jsx-recover"] : [] } };
 }
 
 /**
@@ -631,11 +646,23 @@ function runDecompile(argv: readonly string[]): void {
       );
       process.exit(0);
     }
+    if (args.scopedFn !== undefined && !Number.isInteger(args.scopedFn)) {
+      fail(ErrorCode.E_USAGE, `--fn expects an integer function index`, 2, false);
+    }
     let text: string;
     if (args.emitTree) {
       text = decompileTree(bytes, opts);
     } else if (args.emitAst) {
       text = decompileAst(bytes, opts);
+    } else if (args.scopedFn !== undefined) {
+      // Scoped single-function readable decompile (hunt-tooling-backlog #3):
+      // renders fn N and its nested closure subtree in time proportional to
+      // that subtree, not the whole bundle (docs/DECISIONS.md D-scoped-render).
+      const result = decompileFunction(bytes, args.scopedFn, opts);
+      text = result.code;
+      if (result.decompileDiagnostics > 0) {
+        process.stderr.write(`hbc2js: fn#${args.scopedFn} (or a nested closure) could not be decompiled and was stubbed; see the W_FUNCTION_STUBBED diagnostics.\n`);
+      }
     } else {
       const result = decompile(bytes, opts);
       text = result.code;
@@ -1381,11 +1408,22 @@ function runNameOverlay(argv: readonly string[]): void {
 // here are the CLI's own presentation of §3.1's bounds, never a second
 // source of truth for them (the service already slices to the cap).
 // ---------------------------------------------------------------------------
-function edgeLine(e: { readonly fn: number | string; readonly file: string | null; readonly line: number | null; readonly kind: string; readonly why?: string }): string {
+function edgeLine(e: {
+  readonly fn: number | string;
+  readonly file: string | null;
+  readonly line: number | null;
+  readonly kind: string;
+  readonly why?: string;
+  readonly confidence?: "points-to";
+  readonly exportName?: string;
+  readonly module?: number;
+}): string {
   const loc = e.file !== null && e.line !== null ? `${e.file}:${e.line}` : "";
   const target = typeof e.fn === "number" ? `fn:${e.fn}` : e.fn;
   const why = e.why !== undefined ? ` why:${e.why}` : "";
-  return [target, loc, e.kind + why].filter((s) => s.length > 0).join(" ");
+  // §14.4: a points-to edge is marked so it can never read as a direct edge.
+  const pt = e.confidence === undefined ? "" : ` confidence:${e.confidence} via:m:${e.module ?? "-"}.${e.exportName ?? "-"}`;
+  return [target, loc, e.kind + why + pt].filter((s) => s.length > 0).join(" ");
 }
 
 /** `query object-tables` text output shows at most this many members per
@@ -1927,6 +1965,12 @@ function runRender(argv: readonly string[]): void {
 
 function main(): void {
   const argv = process.argv.slice(2);
+  if (argv[0] === "decompile") {
+    // Explicit alias for the default decompile command, so `hbc2js decompile
+    // <input.hbc> [--fn N]` reads as a verb (docs/CLI.md, hunt-tooling #3).
+    runDecompile(argv.slice(1));
+    return;
+  }
   if (argv[0] === "name") {
     runNameOverlay(argv.slice(1));
     return;

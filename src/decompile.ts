@@ -258,6 +258,25 @@ export async function decompileParallel(bytes: Uint8Array, opts: DecompileOption
   return decompile(bytes, { ...opts, ...(forced && module.layout.opcodeTable !== undefined ? { opcodeTable: module.layout.opcodeTable } : {}), stageAResults });
 }
 
+/**
+ * Scoped single-function readable decompile (docs/DECISIONS.md
+ * D-scoped-render, hunt-tooling-backlog #3). Renders function `functionIndex`'s
+ * readable JavaScript — with its nested closures placed inside it exactly as
+ * the whole-module `decompile()` would place them — in time proportional to
+ * that function's own closure subtree plus the bundle-wide analysis
+ * (parse + module analysis + env graph) that its placement and naming
+ * genuinely need, NOT the whole-bundle structure+emit of every function. The
+ * emitted `code` is a `function _fn<N>(){…}` fragment: identifiers it captures
+ * from enclosing scopes are declared by parent functions (not emitted here) and
+ * appear free, so it is not a runnable module on its own — it is fn N's exact
+ * slice of the full render. Reuses `decompile()` wholesale via
+ * `emit.onlyFunction`; every option (`passes`, `strictEnv`, timings, …) behaves
+ * identically.
+ */
+export function decompileFunction(bytes: Uint8Array, functionIndex: number, opts: DecompileOptions = {}): DecompileResult {
+  return decompile(bytes, { ...opts, emit: { ...opts.emit, onlyFunction: functionIndex } });
+}
+
 /** `--emit-tree`: the structurer's tree IR for one function (or all of them). */
 export function decompileTree(bytes: Uint8Array, opts: DecompileOptions = {}): string {
   const { module } = parseForDecompile(bytes, opts);

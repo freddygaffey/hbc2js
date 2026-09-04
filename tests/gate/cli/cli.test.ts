@@ -22,6 +22,20 @@ test("--help prints usage and exits 0", () => {
   assert.match(r.stdout, /Usage:/);
 });
 
+test("decompile --fn N emits a scoped single-function render and exits 0", () => {
+  // Scoped readable decompile (docs/DECISIONS.md D-scoped-render, hunt-tooling #3):
+  // emit ONE function's body + nested closures, marked as a scoped render.
+  const hbc = join(repoRoot(), "tests", "fixtures", "constructs", "22-nested-closures-counters", "v94.hbc");
+  const r = runCli(["decompile", hbc, "--fn", "2"]);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /scoped render — function 2/);
+  assert.match(r.stdout, /function _fn2\s*\(/);
+  // A bad index is an E_USAGE, not a crash.
+  const bad = runCli(["decompile", hbc, "--fn", "not-a-number"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /E_USAGE/);
+});
+
 test("--version prints a version string and exits 0", () => {
   const r = runCli(["--version"]);
   assert.equal(r.status, 0);
