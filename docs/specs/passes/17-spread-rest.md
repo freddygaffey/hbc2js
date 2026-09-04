@@ -378,3 +378,44 @@ framework (`spread` node + printer + `effectSequence`), ~280 lines of tests.
    that the trailing-hole case (`[0, ...a]` where the seed literal was
    `[0, , , ]`) cannot leave observable holes the trim was masking. If it
    can, the trim's `n` must be checked against the rebuilt element count.
+
+## 9. Post-landing corrections
+
+### 9.1 Precondition: the deleted run must not kill a live staging register (2026-09-04)
+
+Added by the fuzz fix-wave (`docs/reports/2026-09-04-fuzz-families.md` family
+F1, 22 of the 64 surviving campaign signatures). §4's precondition list was
+incomplete. `Subst` absorbs every "pure setup" statement (`rX = rY` /
+`rX = <lit>`) of a matched run and §5's writer then deletes the whole
+`[startIndex, endIndex)` range — but Hermes stages a spread's source and
+index registers **once** and reuses them at the *next* spread site, so
+deleting the first site's staging leaves the second site reading a register
+nothing assigns:
+
+```
+r3 = new Array(0); r5 = "abc"; r9 = r3; r8 = r5; r7 = 0;
+r2 = __hbc_b_arraySpread(r9, r8, r7);   <- site 1 deletes r5/r8/r7
+r3 = new Array(0); r9 = r3;
+r0 = __hbc_b_arraySpread(r9, r8, r7);   <- site 2 still reads r8, r7
+```
+
+§6's checker cannot catch it: a deleted register move contributes nothing to
+`effectSequence`, so the run's canonical expansion and the real run still
+agree. The matcher therefore now **refuses** (skips, rather than aborting the
+whole scan) any site whose deleted range writes a register that is still live
+after the run — `siteDeletesLiveRegister`, with a bounded forward liveness
+scan (`LIVENESS_SCAN_LIMIT`, refuse when unresolved). Refusing is always safe:
+the run stays in its `__hbc_b_arraySpread` helper-call form, which is what
+`--passes=none` emits.
+
+### 9.2 Plain elements are resolved through `Subst` (2026-09-04)
+
+Same family. §4's "**every** run compares by resolved identity" applied to
+spread *sources* and object property values, but the array/call rules pushed
+plain elements (`store.value`) raw, so `[0, ...a, 1, ...a, 5]` was written as
+`[0, ...r2, r1, ...r2, 5]` with `r1`'s defining `r1 = 1` deleted as absorbed
+setup. Plain elements and call arguments now go through `subst.resolve` too.
+
+Regression fixture: `tests/fixtures/adversarial/44-fuzz-spread-shared-register`
+(+ four behavioural tests in `tests/gate/passes/spread-rest.test.ts`, one per
+traced version).

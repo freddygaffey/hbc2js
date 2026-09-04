@@ -17,7 +17,7 @@
 // identity checks are built on: **every** run compares by resolved identity,
 // never by raw register name.
 import type { Expr, Param, Stmt } from "../ast.ts";
-import { isSafeIdentifier } from "../ast.ts";
+import { identUses, identUsesMany, isRegisterName, isSafeIdentifier, registerUses } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
 export type Element = { readonly kind: "lit"; readonly expr: Expr } | { readonly kind: "spread"; readonly source: Expr };
@@ -181,7 +181,7 @@ function matchArray(list: readonly Stmt[], seedIndex: number): SpreadRestSite | 
     if (store !== null && store.computed && isHelperCallExpr(store.prop, "__hbc_b_arraySpread") && subst.sameIdent(store.obj, { k: "ident", name: targetName })) {
       const [t, src, idx] = store.prop.args as readonly [Expr, Expr, Expr];
       if (!subst.sameIdent(t, { k: "ident", name: targetName }) || !indexMatches(idx)) break runLoop;
-      elements.push({ kind: "spread", source: subst.resolve(src) }, { kind: "lit", expr: store.value });
+      elements.push({ kind: "spread", source: subst.resolve(src) }, { kind: "lit", expr: subst.resolve(store.value) });
       sawSpread = true;
       j++;
       consumedUpTo = j;
@@ -189,7 +189,7 @@ function matchArray(list: readonly Stmt[], seedIndex: number): SpreadRestSite | 
     }
     // Case C: a plain store consuming the slot the previous spread returned.
     if (store !== null && store.computed && expected.kind === "reg" && subst.sameIdent(store.prop, { k: "ident", name: expected.name }) && subst.sameIdent(store.obj, { k: "ident", name: targetName })) {
-      elements.push({ kind: "lit", expr: store.value });
+      elements.push({ kind: "lit", expr: subst.resolve(store.value) });
       expected = { kind: "regPlus1", name: expected.name };
       j++;
       consumedUpTo = j;
@@ -248,7 +248,7 @@ function matchCall(list: readonly Stmt[], seedIndex: number): SpreadRestSite | n
     }
     const store = memberStore(s);
     if (store !== null && store.computed && subst.sameIdent(store.obj, { k: "ident", name: targetName }) && store.prop.k === "lit") {
-      args.push({ kind: "lit", expr: store.value });
+      args.push({ kind: "lit", expr: subst.resolve(store.value) });
       j++;
       consumedUpTo = j;
       continue;
@@ -498,6 +498,75 @@ function freshRegisterName(F: FuncLike): string {
   return `r${max + 1}`;
 }
 
+// ---------------------------------------------------------------------------
+// Liveness guard (fuzz family F1, docs/reports/2026-09-04-fuzz-families.md).
+// ---------------------------------------------------------------------------
+
+/** How far past a site `deadAfter` will look for the register's next
+ *  mention. Bounds the guard's cost on a bundle's multi-thousand-statement
+ *  global function (docs/PUSHBACK.md P-1: a rung that asks a whole-function
+ *  question per candidate is what made the M5 pipeline 250x slower); a site
+ *  whose staging register is not resolved within the window is refused, so
+ *  the limit can only cost readability, never correctness. */
+const LIVENESS_SCAN_LIMIT = 500;
+
+/** True when every mention of `name` from `from` onward proves the value
+ *  written inside the run is dead: the first statement that mentions it at
+ *  all overwrites it without reading it. A read first (or an unresolved
+ *  scan) means the run's write is still live. */
+function deadAfter(list: readonly Stmt[], from: number, name: string): boolean {
+  const limit = Math.min(list.length, from + LIVENESS_SCAN_LIMIT);
+  for (let i = from; i < limit; i++) {
+    const u = identUses([list[i]!], name);
+    if (u.reads > 0 || u.nested > 0) return false;
+    if (u.writes > 0) return true;
+  }
+  return limit === list.length;
+}
+
+/**
+ * §4's missing precondition: `rewrite` deletes the whole `[startIndex,
+ * endIndex)` run, and `Subst` deliberately swallows every "pure setup"
+ * statement in it — but Hermes stages a spread's source/index registers
+ * *once* and reuses them at the next spread site, so deleting the first
+ * site's staging silently destroys the second site's operands
+ * (`[...r8]` with `r8` never assigned; `copy.push(r0)` with `r0` never
+ * assigned; `{...null, y: r5}` with `r5` never assigned). `check.ts` cannot
+ * see it: a deleted register move has no entry in `effectSequence`.
+ *
+ * So: refuse a site whose deleted range writes a register that is still
+ * live afterwards. Refusing costs only readability — the run stays in its
+ * `__hbc_b_arraySpread` helper-call form, which is what `--passes=none`
+ * emits and is correct.
+ */
+function siteDeletesLiveRegister(list: readonly Stmt[], site: SpreadRestSite, ctx: PassContext): boolean {
+  if (site.rule === "rest") return false; // rewrites a func node in place; deletes nothing
+  const survivorIndex = site.rule === "call" ? site.endIndex - 1 : site.startIndex;
+  const deleted: Stmt[] = [];
+  const written = new Set<string>();
+  for (let i = site.startIndex; i < site.endIndex; i++) {
+    if (i === survivorIndex) continue;
+    const s = list[i]!;
+    deleted.push(s);
+    const a = assignTarget(s);
+    if (a !== null) written.add(a.name);
+  }
+  // The site's own target/result is written by the statement that survives.
+  written.delete(site.rule === "call" ? site.resultName : site.targetName);
+  if (written.size === 0) return false;
+  const fnBody: readonly Stmt[] = ctx.fnBody ?? list;
+  const inRun = identUsesMany(deleted, written);
+  const inFn = registerUses(fnBody);
+  for (const name of written) {
+    if (!isRegisterName(name)) return true; // not a register: no frame-local liveness argument
+    const outside = (inFn.get(name)?.reads ?? 0) - (inRun.get(name)?.reads ?? 0);
+    if (outside <= 0) continue; // read only inside the run being deleted
+    if (list !== fnBody) return true; // nested list: no ordered whole-function scan available here
+    if (!deadAfter(list, site.endIndex, name)) return true;
+  }
+  return false;
+}
+
 function matchRest(list: readonly Stmt[], listIndex: number): SpreadRestSite | null {
   const F = extractFunc(list[listIndex]!);
   if (F === null) return null;
@@ -521,14 +590,18 @@ function matchRest(list: readonly Stmt[], listIndex: number): SpreadRestSite | n
 
 export function match(list: readonly Stmt[], ctx: PassContext): SpreadRestMatch | null {
   for (let i = 0; i < list.length; i++) {
-    const arr = matchArray(list, i);
-    if (arr !== null) return { root: list, nodes: [list], data: arr, at: { functionIndex: ctx.functionIndex, offset: i } };
-    const call = matchCall(list, i);
-    if (call !== null) return { root: list, nodes: [list], data: call, at: { functionIndex: ctx.functionIndex, offset: i } };
-    const obj = matchObject(list, i);
-    if (obj !== null) return { root: list, nodes: [list], data: obj, at: { functionIndex: ctx.functionIndex, offset: i } };
-    const rest = matchRest(list, i);
-    if (rest !== null) return { root: list, nodes: [list], data: rest, at: { functionIndex: ctx.functionIndex, offset: i } };
+    // A site whose deleted run kills a still-live staging register is
+    // *skipped*, not fatal: the scan carries on to the next seed, so the
+    // second of two sites sharing one staged source register is still
+    // recovered (its own run deletes nothing that survives it).
+    // Lazily, in rule order: a later rule is only tried when the earlier one
+    // matched nothing (or matched an unsafe site) — never eagerly, so the
+    // per-index cost is unchanged from the pre-guard `||` chain (P-1).
+    for (const rule of [matchArray, matchCall, matchObject, matchRest]) {
+      const site = rule(list, i);
+      if (site === null || siteDeletesLiveRegister(list, site, ctx)) continue;
+      return { root: list, nodes: [list], data: site, at: { functionIndex: ctx.functionIndex, offset: i } };
+    }
   }
   return null;
 }

@@ -8,7 +8,8 @@
 // output comparison against a shared fixture's whole decompiled text).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decompile } from "../../../src/decompile.ts";
 import type { Expr, Stmt } from "../../../src/emit/ast.ts";
@@ -17,6 +18,8 @@ import { check } from "../../../src/passes/spread-rest/check.ts";
 import { spreadRest } from "../../../src/passes/spread-rest/index.ts";
 import { match } from "../../../src/passes/spread-rest/match.ts";
 import type { PassContext } from "../../../src/passes/types.ts";
+import { runProgram } from "../../../src/harness/runner.ts";
+import { printLines } from "../../../src/harness/trace.ts";
 import { repoRoot } from "../../support/paths.ts";
 
 const id = (name: string): Expr => ({ k: "ident", name });
@@ -311,3 +314,35 @@ test("spread-rest: 42-rest-params (v99) — known orphan-function gap (docs/BUGS
   assert.match(code, /arguments\[0\]/);
   assert.equal(helperCallCount(code), 2); // the two orphaned functions' calls, tracked by the BUGS.md row
 });
+
+// ---------------------------------------------------------------------------
+// Regression: fuzz family F1 (docs/reports/2026-09-04-fuzz-families.md).
+//
+// Hermes stages a spread's source and index registers once and reuses them at
+// the *next* spread site. The matcher used to absorb those staging writes into
+// its `Subst` map and `rewrite` then deleted them with the rest of the run, so
+// the second site read a register nothing ever assigned (`[...r8]`,
+// `copy.push(r0)`), and a plain element stored after a spread kept its raw
+// staging register instead of the resolved value. `check.ts` cannot see it: a
+// deleted register move has no entry in `effectSequence`.
+//
+// Behavioural assertion (not an output-text comparison): the decompiled
+// program must print what the fixture prints. Verified to FAIL on every one of
+// these four versions before the fix and PASS after.
+for (const version of [84, 94, 96, 99]) {
+  test(`spread-rest: a shared staging register survives two spread sites (adversarial 44, v${version})`, async () => {
+    const dir = join(repoRoot(), "tests", "fixtures", "adversarial", "44-fuzz-spread-shared-register");
+    const bytes = new Uint8Array(readFileSync(join(dir, `v${version}.hbc`)));
+    const js = decompile(bytes, { resolveV98Ambiguity: true, moduleName: "44-fuzz-spread-shared-register" }).code;
+    const tmp = mkdtempSync(join(tmpdir(), "hbc2js-spread-rest-"));
+    try {
+      const candidatePath = join(tmp, "candidate.js");
+      writeFileSync(candidatePath, js);
+      const run = await runProgram(candidatePath, { timeout: 10000 });
+      const expected = readFileSync(join(dir, "expected.txt"), "utf8").trimEnd().split("\n");
+      assert.deepEqual(printLines(run.records), expected, `decompiled v${version} diverges from the fixture's own output — a spread site's staging register was deleted while still live`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
