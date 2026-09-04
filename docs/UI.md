@@ -51,7 +51,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/fn/{fn}/callees` | `CallsFrom` |
   | GET | `/api/module/{id}` | `ModuleInfo` |
   | GET | `/api/module/{id}/source` | `ModuleSource` — whole file text + every owned fn `{fn,name,lines}`; the FILE view (select a module, see all its functions; per-function focus is optional, not forced) |
-  | GET | `/api/segregation` | `SegregationResult` — the name-recovered module tree (`src/ui-server/segregation.ts`): one row per module `{id, path, bucket, package, nameSignal, nameConfidence}` sorted by id, plus disjoint `counts {screens, navigation, src, node_modules, unclassified}`. 404 when the project has no `module_<id>.js` files. Computed once per server process (0.5 s read + 4.6 s segregate on a 4 510-module bundle) and cached; restart the server to pick up new modules |
+  | GET | `/api/segregation` | `SegregationResult` — the name-recovered module tree (`src/ui-server/segregation.ts`): one row per module `{id, path, bucket, package, nameSignal, nameConfidence}` sorted by id, plus disjoint `counts {screens, navigation, src, node_modules, unclassified}`. 404 when the project has no `module_<id>.js` files. Computed once per server process (0.5 s read + 4.6 s segregate on a 4 510-module bundle, ~70 s on a loaded box) and cached — `server.ts` warms it in a `setImmediate` right after `listen`, so the first browser request is a map lookup; restart the server to pick up new modules |
   | GET | `/api/findings` | `Bounded<ResolvedFinding>` |
   | GET | `/api/leads` | `LeadsResult` |
   | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
@@ -208,7 +208,10 @@ default, because screens are what an analyst debugs first. A module's label is
 the basename of its recovered path (`HomeScreen.js`) with `module_<id>` kept
 as a dim secondary label so the id is never lost. When `/api/segregation` is
 unavailable (404, or the mock adapter) the tree falls back to `groupModules`
-below — never a blank tree.
+below — never a blank tree. While the request is still in flight the pane says
+"recovering module names…" instead: the fallback is for a server that *cannot*
+segregate, not for one that has not answered yet, and painting the flat tree
+first would reshuffle every row under the analyst's cursor a moment later.
 
 **Bounded by construction.** The left tree lists modules from
 `GET /api/modules` grouped into the app's own `src/` modules and one group
@@ -222,6 +225,13 @@ renders at most `MAX_RENDER_LINES` (5 000) lines and says how many it hid
 top bar's search is `GET /api/search/functions`: a dropdown of at most 50
 hits, `Enter` takes the first, and while a query is present the left pane
 shows the hits as a flat list instead of the tree.
+
+**Back / forward.** The top bar carries the jump list's two arrows, left of
+the breadcrumbs. They dispatch `navigate.back` / `navigate.forward` through
+`runAction` (`ui/src/actions/registry.ts`), never `back()`/`forward()` on the
+store, so the buttons and the keymap are one path; their disabled state comes
+from `useJumpState()` and their tooltips read the chord out of the live keymap
+plus the current "N of M" position in the list.
 
 **Keyboard.** The tree is a roving-focus list: the container holds focus,
 Up/Down move a cursor over the visible rows, Enter opens, Left/Right
@@ -382,3 +392,43 @@ Anything unrecognised falls back to the raw `op` and JSON `detail` rather
 than throwing — verified directly against the live Service NSW project
 server (`seq 1`–`4`: `init`, `rebuild-index {functions:43384,...}`,
 `annotate {kind:"name"}`, `annotate {kind:"comment"}`).
+
+## AI workers (the "AI" tab)
+
+The right pane's third tab is spec 23's surface: what the server-owned
+workers are doing, who else is here, and what they have proposed for the
+selected function. It is deliberately the least magical panel in the shell —
+every AI-produced row says who proposed it and which job run produced it, and
+nothing it shows is truth until a human presses Accept.
+
+**Jobs rail.** Every job with its status (`queued`/`running`/`done`/`failed`/
+`cancelled`), kind, target and elapsed time, newest work visible immediately
+because the rail polls `/api/jobs` once a second. `Cancel` on a queued or
+running job is a guarantee about *writes*, not about processes (spec 23
+§2.3): a job cancelled mid-flight writes nothing at all. The header shows the
+backend id and the concurrency cap the pool runs at.
+
+**Presence.** A chip per live participant from `/api/sessions` — humans,
+the worker pool, and any external MCP client that opened a session. "Live"
+is computed on read against the TTL, so a crashed UI cannot leave a ghost
+sitting in the list.
+
+**Suggestions.** For the selected function, the `tier:"suggested"` names and
+the `[ai-suggested]` comments. `Accept` on a name calls
+`/api/suggestions/promote`, which re-records it through the ordinary
+`set_name` path under **the human's** provenance — that write is logged,
+exported and hash-locked exactly like a rename typed by hand. `Reject`
+writes nothing: the row greys out and the suggestion survives as history
+(the note is kept on the job row, which is operational state and never
+reaches a shard).
+
+**Queuing work.** "Suggest name" and "Explain" enqueue a job for the selected
+function. They are also the `ai.suggestName` / `ai.explain` actions, so the
+command palette, the context menu and any keybinding pointed at them do the
+same thing — enabled as of spec 23, on an fn target only.
+
+The default backend is offline and deterministic (`HeuristicBackend`: names
+from the function's own callees and strings), so the loop works with no API
+key and no network. `hbc2js ui-server … --workers off` turns the pool off
+entirely; the tab then says so instead of drawing an empty rail, because the
+routes answer 503 rather than an empty list.

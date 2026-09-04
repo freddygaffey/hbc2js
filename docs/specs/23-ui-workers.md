@@ -303,3 +303,90 @@ the UI tails.
 ## Review responses
 
 _(none yet — awaiting review)_
+
+---
+
+## 10. HTTP surface (as built, wave 3)
+
+`src/ui-server/workers-routes.ts` implements §6's contract, spliced into
+`src/ui-server/routes.ts`'s single route table (`BASE_ROUTES ++
+WORKER_ROUTES`), so there is still exactly one `handle()` and one place a
+request can 404. Every route answers **503** `{reason}` when the server was
+started with `--workers off` or the project has no `.hbcproj` — an empty
+list would read as "nothing to do", which is a different fact.
+
+| route | in | out |
+|---|---|---|
+| `GET /api/jobs[?status=]` | `status` ∈ queued\|running\|done\|failed\|cancelled | `{rows: JobRow[], total, backend, concurrency}` |
+| `POST /api/jobs` | `{kind, input, idempotencyKey?, createdBy?}` | `EnqueueResult` (`{job, deduped}`) |
+| `POST /api/jobs/{id}/cancel` | — | `{cancelled, job}`; 404 on an unknown id |
+| `GET /api/sessions` | — | `{rows: Session[], total}` — **live only** (`Presence.expire()` runs first, §3's compute-on-read TTL) |
+| `POST /api/sessions` | `{kind, who, meta?}` | the `Session` |
+| `POST /api/sessions/{id}/heartbeat` | — | `{id, live}`; 404 when not open |
+| `GET /api/worker-events?since=` | `since` = last applied `seq` | `{rows, cursor}` — **exactly `/api/log/tail`'s cursor contract**: oldest-first, cap 500, `cursor` = highest seq returned or `since` when nothing was new |
+| `GET /api/suggestions[?fn=]` | — | `{rows: SuggestionRow[], total}` |
+| `POST /api/suggestions/promote` | `{kind:"name", target, rid\|name, prov?}` | `McpTools.promote`'s `ToolResult`; 400 when the rid is not a live suggestion |
+| `POST /api/suggestions/reject` | `{rid}` | `{rid, rejected, recorded, wrote:false}` |
+
+`JobRow` is the stored `Job` plus two server-computed fields, so no client
+re-derives them: `target` (the `fn:N`/`mod:N` the job works on) and
+`elapsedMs` (running-so-far, or the finished duration, or `null` while
+queued).
+
+`SuggestionRow` is `{rid, target, fn, kind:"name"|"comment", text, who, run,
+ts, rejected}`. `kind:"name"` rows come from
+`ProjectService.listSuggestedNames` (`tier:"suggested"` revisions) and are
+promotable by `rid`; `kind:"comment"` rows are the `[ai-suggested]`
+annotations (§4) and are informational — a comment has no truth slot to be
+promoted into.
+
+**Events channel.** `/api/events` (the existing SSE endpoint) now carries a
+**second channel on the same socket**: `event: worker` frames with the same
+`{rows, cursor}` shape, starting from `?workerSince=` or the feed's current
+head. One connection, two feeds; a client that only wants the log ignores
+the frame, and polling `/api/worker-events` remains equivalent.
+
+### 10.1 Rejection: what §4 means operationally
+
+§4 says "Rejection writes nothing; the suggestion comment stays as history",
+and that is implemented literally: `POST /api/suggestions/reject` mints **no
+revision, no annotation, no log row** (`wrote: false` in the response says so
+explicitly). It could not do otherwise even if we wanted it to — `TAGS`
+(`src/project/schema.ts`) is a closed taxonomy with no `rejected` member, and
+`worker_events.type` is closed by a CHECK constraint. The rejection is noted
+on the **job row** (`jobs.result.rejected: string[]`), which §4.1 already
+classifies as operational state: never exported to a shard, never in the
+hash-chained log, disposable with the rest of the DB's cache tables. The UI
+greys the row and hides the Accept button; the suggestion itself survives.
+
+A rejection whose rid belongs to no job (a suggestion written by an external
+MCP client, say) answers 200 with `recorded: false` — nothing to note it on,
+and nothing was written, which is the honest result.
+
+### 10.2 The default backend (§9 item 1, decided)
+
+`src/workers/backends/heuristic.ts`'s **`HeuristicBackend`** ships enabled by
+default. It is not a model: it derives a name from the function's own
+most-used callee (`dispatchEvent` → `dispatchEventHandler`) or, failing that,
+from its string literals, and an explanation from the summary the runner
+already read (params, callees, strings). No key, no network, no spawn, and
+**deterministic** — the same request gives the same text, so it is asserted
+in the gate like a pure function and a human auditing provenance can
+reproduce a suggestion exactly.
+
+That is what makes §9 item 1 answerable "yes, ship it on": the risk the
+question was really about (cost, egress, a key on the server) is zero here,
+and the end-to-end product loop — enqueue → running → done → suggestion →
+promote/reject — is real today. `CliBackend`/`SdkBackend`/`HttpBackend`
+remain drop-in through the same `WorkerBackend` interface with nothing else
+changing. `--workers off` disables the pool entirely.
+
+The runner runs it with `writeSuggestedNames: true` (an opt-in added this
+wave, default off): a `suggest-name` proposal lands as a `tier:"suggested"`
+`set_name` **as well as** the `[ai-suggested]` comment. That is exactly the
+"occupy the name slot greyed out" state §4 described as the proper fix once
+`tier` existed — spec 17 §15 has since added it — and it gives
+`McpTools.promote({kind:"name", target, rid})` an rid to resolve instead of
+making the UI re-type a name out of a comment body. Nothing about §4's rule
+changes: the suggested name is not truth, and promotion under the human's own
+provenance is what makes it so.
