@@ -26,6 +26,10 @@ export interface GraphNodeModel {
    *  match, never a proven caller. Drawn lighter, like the Xrefs pane's. */
   readonly byName: boolean;
   readonly expanded: boolean;
+  /** How many source nodes this node stands for. Always 1 except at the
+   *  `far` LOD level, where `bundleByModule` folds a module's functions into
+   *  one module node and reports the count honestly (spec 25 §5b). */
+  readonly members: number;
 }
 
 export interface GraphEdgeModel {
@@ -34,6 +38,9 @@ export interface GraphEdgeModel {
   readonly target: string;
   /** A dashed `who-calls-by-name` candidate edge, not a resolved edge. */
   readonly byName: boolean;
+  /** How many source edges this edge stands for: 1 everywhere except a
+   *  `far`-level bundle, where parallel module-to-module edges merge. */
+  readonly weight: number;
 }
 
 export interface GraphModel {
@@ -78,7 +85,8 @@ class Builder {
   private readonly edges = new Map<string, GraphEdgeModel>();
   private dropped = 0;
 
-  add(node: GraphNodeModel): boolean {
+  add(input: Omit<GraphNodeModel, "members"> & { readonly members?: number }): boolean {
+    const node: GraphNodeModel = { ...input, members: input.members ?? 1 };
     const existing = this.nodes.get(node.id);
     if (existing !== undefined) {
       // A node first seen as a by-name candidate and later as a real
@@ -97,7 +105,7 @@ class Builder {
   link(source: string, target: string, byName: boolean): void {
     if (!this.nodes.has(source) || !this.nodes.has(target)) return;
     const id = edgeId(source, target, byName);
-    if (!this.edges.has(id)) this.edges.set(id, { id, source, target, byName });
+    if (!this.edges.has(id)) this.edges.set(id, { id, source, target, byName, weight: 1 });
   }
 
   build(): GraphModel {
@@ -264,4 +272,167 @@ export function buildModuleModel(input: ModuleModelInput): GraphModel {
     if (id !== null) b.link(focusId, id, false);
   }
   return b.build();
+}
+
+// -- Semantic zoom / level of detail (spec 25 §5b, bur 9) -------------------
+//
+// Fred's ask: "it should have a level of recursion view ... kind of like a
+// fractal: as you zoom in you see more". Three levels, all derived from data
+// the pane has ALREADY fetched - a level change never walks the bundle:
+//
+//   far  - modules as nodes, function-to-function edges bundled into
+//          module-to-module edges with a weight (`bundleByModule`).
+//   mid  - the function neighbourhood the pane has always drawn.
+//   near - the focus function opened up. Until spec 26 L9 ships
+//          `GET /api/fn/{fn}/cfg` this is the focus's own card with its
+//          callers/callees listed inside it (`lodCard`); L9 swaps that card
+//          body for the block graph and nothing else here moves.
+
+export type LodLevel = "far" | "mid" | "near";
+
+/** Coarse-to-fine, the order `graph.lodCycle` steps through. */
+export const LOD_LEVELS: readonly LodLevel[] = ["far", "mid", "near"];
+
+/** Viewport-zoom boundaries between the levels. */
+export const LOD_THRESHOLDS = { farMid: 0.5, midNear: 1.6 } as const;
+
+/** Half-width of the sticky band around each threshold, as a FRACTION of
+ *  the threshold: a level flips up only past `t * (1 + h)` and back down
+ *  only below `t * (1 - h)`, so a viewport hovering on a boundary keeps the
+ *  level it already had instead of flickering between two layouts. */
+export const LOD_HYSTERESIS = 0.12;
+
+/** The zoom a level is "at home" at - used when the level is set directly
+ *  (the toolbar control, `graph.lodCycle`, "reset view"), so that the next
+ *  `lodLevel()` derived from the viewport agrees with what was set. */
+export const LOD_NOMINAL_ZOOM: Readonly<Record<LodLevel, number>> = { far: 0.35, mid: 0.9, near: 2 };
+
+function stickyAbove(zoom: number, threshold: number, wasAbove: boolean): boolean {
+  if (zoom >= threshold * (1 + LOD_HYSTERESIS)) return true;
+  if (zoom < threshold * (1 - LOD_HYSTERESIS)) return false;
+  return wasAbove;
+}
+
+/** The LOD level a React Flow viewport zoom implies, given the level the
+ *  view is already at. Pure, total, and hysteretic: `lodLevel(z, prev)`
+ *  inside a boundary band returns `prev`. */
+export function lodLevel(zoom: number, prev: LodLevel = "mid"): LodLevel {
+  if (!Number.isFinite(zoom)) return prev;
+  if (!stickyAbove(zoom, LOD_THRESHOLDS.farMid, prev !== "far")) return "far";
+  return stickyAbove(zoom, LOD_THRESHOLDS.midNear, prev === "near") ? "near" : "mid";
+}
+
+/** far -> mid -> near -> far, for the toolbar control and `graph.lodCycle`. */
+export function nextLodLevel(level: LodLevel): LodLevel {
+  const i = LOD_LEVELS.indexOf(level);
+  return LOD_LEVELS[(i + 1) % LOD_LEVELS.length] ?? "mid";
+}
+
+/** Which bundle a node belongs to at the `far` level: its module when it has
+ *  one, itself when it has not. A function whose module the contract did not
+ *  report is NOT guessed into somebody's module - it stays its own node. */
+function bundleIdOf(n: GraphNodeModel): string {
+  if (n.kind === "module") return n.id;
+  return n.module !== null ? `mod:${n.module}` : n.id;
+}
+
+const SEVERITY_ORDER: readonly Severity[] = ["low", "med", "high", "critical"];
+
+function worseSeverity(a: Severity | null, b: Severity | null): Severity | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return SEVERITY_ORDER.indexOf(b) > SEVERITY_ORDER.indexOf(a) ? b : a;
+}
+
+/** Spec 25 §5b `far`: fold every function node into its module and bundle
+ *  the edges between two modules into ONE edge carrying the count. Pure and
+ *  derived - no fetch, no new route, and `hidden` (the cap's honest count)
+ *  carries through untouched. Intra-module edges become self-loops and are
+ *  dropped: they are exactly what the `mid` level draws. */
+export function bundleByModule(model: GraphModel): GraphModel {
+  const nodes = new Map<string, GraphNodeModel>();
+  for (const n of model.nodes) {
+    const id = bundleIdOf(n);
+    const prev = nodes.get(id);
+    if (prev === undefined) {
+      nodes.set(id, id === n.id
+        ? { ...n, members: n.members }
+        : {
+            id,
+            kind: "module",
+            ref: n.module ?? -1,
+            label: `module ${n.module}`,
+            size: n.size,
+            module: n.module,
+            severity: n.severity,
+            isFocus: n.isFocus,
+            byName: n.byName,
+            expanded: true,
+            members: n.members,
+          });
+      continue;
+    }
+    nodes.set(id, {
+      ...prev,
+      size: prev.size === null && n.size === null ? null : (prev.size ?? 0) + (n.size ?? 0),
+      severity: worseSeverity(prev.severity, n.severity),
+      isFocus: prev.isFocus || n.isFocus,
+      byName: prev.byName && n.byName,
+      members: prev.members + n.members,
+    });
+  }
+  const bundleOf = new Map<string, string>(model.nodes.map((n) => [n.id, bundleIdOf(n)]));
+  const edges = new Map<string, GraphEdgeModel>();
+  for (const e of model.edges) {
+    const source = bundleOf.get(e.source) ?? e.source;
+    const target = bundleOf.get(e.target) ?? e.target;
+    if (source === target) continue;
+    const id = `b:${source}->${target}`;
+    const prev = edges.get(id);
+    edges.set(id, prev === undefined
+      ? { id, source, target, byName: e.byName, weight: e.weight }
+      : { ...prev, byName: prev.byName && e.byName, weight: prev.weight + e.weight });
+  }
+  const list = [...nodes.values()];
+  return { nodes: list, edges: [...edges.values()], shown: list.length, hidden: model.hidden, total: list.length + model.hidden };
+}
+
+/** How many callers/callees the `near` card lists before it says "+N more".
+ *  The card is bounded on purpose: the near level opens ONE node up, it
+ *  never pulls the rest of the bundle in behind it. */
+export const LOD_CARD_CAP = 8;
+
+export interface LodCard {
+  readonly callers: readonly string[];
+  readonly callees: readonly string[];
+  readonly moreCallers: number;
+  readonly moreCallees: number;
+}
+
+/** Spec 25 §5b `near`, degraded form: what the focus node's card shows until
+ *  spec 26 L9's CFG route exists - its already-drawn callers and callees, by
+ *  label, capped at `cap`. Reads only the model, so it can never disagree
+ *  with the edges on screen. */
+export function lodCard(model: GraphModel, id: string, cap: number = LOD_CARD_CAP): LodCard {
+  const labelOf = new Map(model.nodes.map((n) => [n.id, n.label]));
+  const callers: string[] = [];
+  const callees: string[] = [];
+  for (const e of model.edges) {
+    if (e.target === id && e.source !== id) callers.push(labelOf.get(e.source) ?? e.source);
+    else if (e.source === id && e.target !== id) callees.push(labelOf.get(e.target) ?? e.target);
+  }
+  return {
+    callers: callers.slice(0, cap),
+    callees: callees.slice(0, cap),
+    moreCallers: Math.max(0, callers.length - cap),
+    moreCallees: Math.max(0, callees.length - cap),
+  };
+}
+
+/** The model actually drawn at `level`. `mid`/`near` draw the fetched
+ *  neighbourhood (near only changes how the FOCUS node renders); `far`
+ *  bundles it by module. One pure entry point, so the pane and the tests
+ *  agree by construction. */
+export function modelForLevel(model: GraphModel, level: LodLevel): GraphModel {
+  return level === "far" ? bundleByModule(model) : model;
 }

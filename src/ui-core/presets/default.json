@@ -15,5 +15,7 @@
   ":": "project.commandMode",
   "Ctrl-Shift-L": "view.themeToggle",
   "?": "project.shortcuts",
-  "Ctrl-,": "project.settings"
+  "Ctrl-,": "project.settings",
+  "gf": "graph.followToggle",
+  "gz": "graph.lodCycle"
 }

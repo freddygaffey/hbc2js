@@ -57,6 +57,13 @@ export interface ActionApi {
   explain(target: Selection): void | Promise<void>;
   suggestName(target: Selection): void | Promise<void>;
   openGraph(target: Selection): void | Promise<void>;
+  /** Bur 9/10 (docs/UI-BURS.md, spec 25 §5a/§5b): the graph pane's two
+   *  view toggles. `toggleGraphFollow` flips "track the listing selection";
+   *  `cycleGraphLod` steps the semantic-zoom level far -> mid -> near. Both
+   *  are pane state, so a shell with no graph pane implements them as
+   *  no-ops. */
+  toggleGraphFollow(): void | Promise<void>;
+  cycleGraphLod(): void | Promise<void>;
   nextFn(): void | Promise<void>;
   prevFn(): void | Promise<void>;
   nextModule(): void | Promise<void>;
@@ -266,6 +273,23 @@ export function standardActions(): Action[] {
       group: "view",
       when: hasListingTarget,
       run: (ctx) => ctx.api.unfold(),
+    },
+    // Spec 25 §5a/§5b (burs 9, 10): the graph pane's own view toggles.
+    // Unlike `view.graph` these are NOT gated off - they are pane state a
+    // shell either has or no-ops, and the shipped presets bind chords to
+    // them (`g f`, `g z`), which `tests/gate/ui/keymap-default.test.ts`
+    // requires to name a real action.
+    {
+      id: "graph.followToggle",
+      title: "Graph: follow the selection (on/off)",
+      group: "view",
+      run: (ctx) => ctx.api.toggleGraphFollow(),
+    },
+    {
+      id: "graph.lodCycle",
+      title: "Graph: cycle zoom level (far/mid/near)",
+      group: "view",
+      run: (ctx) => ctx.api.cycleGraphLod(),
     },
     {
       id: "view.graph",

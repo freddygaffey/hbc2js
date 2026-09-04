@@ -9,5 +9,7 @@
   ":": "project.commandMode",
   "Ctrl-Alt-L": "view.themeToggle",
   "?": "project.shortcuts",
-  "Ctrl-,": "project.settings"
+  "Ctrl-,": "project.settings",
+  "gf": "graph.followToggle",
+  "gz": "graph.lodCycle"
 }

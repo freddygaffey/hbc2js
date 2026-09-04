@@ -14,14 +14,15 @@ import { useFindings, useFn, useModule } from "../hooks.ts";
 import { displayName } from "../listing/names.ts";
 import { select, useSelection } from "../state/selection.ts";
 import {
-  buildCallModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, neighbourSet,
+  buildCallModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, lodCard,
+  LOD_NOMINAL_ZOOM, modelForLevel, neighbourSet,
   type CallHop, type GraphModel, type NeighbourSet,
 } from "./model.ts";
-import { layoutModel } from "./layout.ts";
+import { layoutModel, NODE_H_NEAR } from "./layout.ts";
 import { nodeTypes, type HbcFlowNode } from "./nodes.tsx";
 import {
-  expandGraphNode, focusGraphNode, graphBack, originKey, resetGraphView, rootGraph, setGraphFollow, setGraphMaximised,
-  setHoverNode, setNodePosition, targetForSelection, useGraphState,
+  cycleGraphLod, expandGraphNode, focusGraphNode, graphBack, originKey, resetGraphView, rootGraph, setGraphFollow,
+  setGraphLodFromZoom, setGraphMaximised, setHoverNode, setNodePosition, targetForSelection, useGraphState,
 } from "./store.ts";
 
 /** Same idiom and wording shape as the listing's truncation bar
@@ -137,21 +138,34 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
     });
   }, [target, mod.data, meta.data, hops, expanded, severityOf]);
 
-  const positions = useMemo(() => layoutModel(model), [model]);
+  // Bur 9 / spec 25 §5b: the canvas draws the model AT THE CURRENT LEVEL -
+  // `far` bundles the neighbourhood by module, `mid`/`near` draw it as
+  // fetched (near only changes how the focus node renders). Pure derivation,
+  // no extra fetch: zooming never loads the bundle.
+  const drawn = useMemo(() => modelForLevel(model, gs.lod), [model, gs.lod]);
+  const positions = useMemo(
+    () => layoutModel(drawn, gs.lod === "near" ? { focusHeight: NODE_H_NEAR } : {}),
+    [drawn, gs.lod],
+  );
+  const focusId = useMemo(() => drawn.nodes.find((n) => n.isFocus)?.id ?? null, [drawn]);
+  const focusCard = useMemo(
+    () => (gs.lod === "near" && focusId !== null ? lodCard(drawn, focusId) : null),
+    [gs.lod, drawn, focusId],
+  );
 
   // Bur 8: hovering a node highlights it. Bur 10: with `follow` on, so does
   // a listing selection that resolves to one of the graph's own drawn
   // neighbours (a call site whose callee is in the neighbourhood). Hover
   // always wins when both are present — it is the more immediate signal.
-  const highlightId = gs.hoverNode ?? (gs.follow ? calleeNodeForSelection(model, sel) : null);
+  const highlightId = gs.hoverNode ?? (gs.follow ? calleeNodeForSelection(drawn, sel) : null);
   const active: NeighbourSet | null = useMemo(
-    () => (highlightId !== null ? neighbourSet(model, highlightId) : null),
-    [model, highlightId],
+    () => (highlightId !== null ? neighbourSet(drawn, highlightId) : null),
+    [drawn, highlightId],
   );
 
   const flowNodes: HbcFlowNode[] = useMemo(
     () =>
-      model.nodes.map((n) => ({
+      drawn.nodes.map((n) => ({
         id: n.id,
         type: "hbc" as const,
         position: gs.dragPositions.get(n.id) ?? positions.get(n.id) ?? { x: 0, y: 0 },
@@ -160,34 +174,42 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
           onExpand: expandGraphNode,
           highlighted: active !== null && active.nodes.has(n.id),
           dimmed: active !== null && !active.nodes.has(n.id),
+          level: gs.lod,
+          card: n.isFocus ? focusCard : null,
         },
       })),
-    [model, positions, gs.dragPositions, active],
+    [drawn, positions, gs.dragPositions, active, gs.lod, focusCard],
   );
 
   const flowEdges: Edge[] = useMemo(
     () =>
-      model.edges.map((e) => {
+      drawn.edges.map((e) => {
         const isActive = active !== null && active.edges.has(e.id);
         const stroke = isActive ? "var(--accent)" : e.byName ? "var(--text-muted)" : "var(--border)";
+        // A far-level bundle carries how many edges it stands for: shown as
+        // a label and a (bounded) thicker stroke, never a silent merge.
+        const bundled = e.weight > 1;
         return {
           id: e.id,
           source: e.source,
           target: e.target,
+          label: bundled ? String(e.weight) : undefined,
+          labelStyle: { fill: "var(--text-muted)", fontSize: 9 },
+          labelBgStyle: { fill: "var(--surface)" },
           style: {
             stroke,
             strokeDasharray: e.byName ? "4 3" : undefined,
-            strokeWidth: isActive ? 2 : 1,
+            strokeWidth: isActive ? 2 : Math.min(1 + (bundled ? Math.log2(e.weight) : 0), 4),
             opacity: active !== null && !isActive ? 0.35 : 1,
           },
           markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
         };
       }),
-    [model, active],
+    [drawn, active],
   );
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col" data-graph-nodes={model.shown}>
+    <div className="flex min-h-0 flex-1 flex-col" data-graph-nodes={drawn.shown}>
       {target === null ? (
         <div className="p-3 text-xs text-text-muted">select a function or a module to graph its neighbourhood</div>
       ) : (
@@ -205,6 +227,13 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
             nodesDraggable
             onInit={(inst) => {
               rfInstance.current = inst;
+            }}
+            onMove={(event, viewport) => {
+              // Bur 9: only a USER gesture (wheel/pinch/zoom-drag) moves the
+              // level. React Flow passes `null` for its own programmatic
+              // moves (`fitView`, the Controls buttons), and the pane fitting
+              // itself must never change the level under the analyst.
+              if (event !== null) setGraphLodFromZoom(viewport.zoom);
             }}
             onNodesChange={(changes) => {
               for (const c of changes) {
@@ -230,7 +259,7 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
           </ReactFlow>
         </div>
       )}
-      {model.hidden > 0 ? <GraphTruncationBar shown={model.shown} hidden={model.hidden} /> : null}
+      {drawn.hidden > 0 ? <GraphTruncationBar shown={drawn.shown} hidden={drawn.hidden} /> : null}
     </div>
   );
 
@@ -248,7 +277,19 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
       <span data-graph-trail={gs.trail.length} className="truncate font-mono">
         {gs.trail.map((t) => `${t.kind === "fn" ? "fn" : "mod"}:${t.ref}`).join(" › ") || "—"}
       </span>
-      <span className="ml-auto shrink-0">{model.shown} nodes</span>
+      <span className="ml-auto shrink-0">{drawn.shown} nodes</span>
+      <button
+        type="button"
+        data-graph-lod={gs.lod}
+        onClick={() => {
+          const next = cycleGraphLod();
+          requestAnimationFrame(() => rfInstance.current?.zoomTo(LOD_NOMINAL_ZOOM[next]));
+        }}
+        className="shrink-0 rounded-ui px-1 font-mono hover:bg-surface-2"
+        title="semantic zoom: far (modules) - mid (functions) - near (the focus opened up). Zooming with the wheel does the same."
+      >
+        lod:{gs.lod}
+      </button>
       <button
         type="button"
         data-graph-follow={gs.follow ? "true" : "false"}
@@ -264,8 +305,13 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
         data-graph-reset
         disabled={target === null}
         onClick={() => {
+          // Spec 25 §5b: reset returns to the level the neighbourhood was
+          // rooted at, and fits at that level's nominal zoom, so the level
+          // the pane reports and the zoom it is at cannot disagree.
+          const level = gs.rootLod;
           resetGraphView();
-          requestAnimationFrame(() => rfInstance.current?.fitView({ padding: 0.2, maxZoom: 1.1 }));
+          requestAnimationFrame(() =>
+            rfInstance.current?.fitView({ padding: 0.2, minZoom: LOD_NOMINAL_ZOOM[level], maxZoom: LOD_NOMINAL_ZOOM[level] }));
         }}
         className="shrink-0 rounded-ui px-1 hover:bg-surface-2 disabled:opacity-40"
         title="reset the graph to the default layout and fit it to view"
@@ -288,6 +334,7 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
     <div
       data-graph-pane
       data-graph-maximised={gs.maximised ? "true" : "false"}
+      data-graph-lod-level={gs.lod}
       className={gs.maximised ? "fixed inset-0 z-50 flex flex-col bg-bg" : "flex h-full min-h-0 flex-col"}
     >
       {header}

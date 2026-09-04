@@ -42,5 +42,14 @@
 }
 
 .react-flow__attribution {
-  font-size: 9px;
+  font-size: var(--type-xs);
+}
+
+/* Bur 9 (spec 25 §5b): the semantic-zoom level change is a re-layout, so the
+ * node box settles rather than snapping - the focus node grows into its
+ * `near` card and back. Geometry and opacity only; the transition's ART
+ * DIRECTION (a real fold/unfold between a module and its functions) is a
+ * Needs-Fred item in the spec, not something guessed here. */
+.react-flow__node-hbc > [data-graph-node] {
+  transition: height 120ms ease, opacity 120ms ease;
 }

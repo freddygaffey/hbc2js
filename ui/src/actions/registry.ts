@@ -29,8 +29,8 @@ import { openDisasm } from "../panes/disasm-store.ts";
 import { setStringsPrefill } from "../panes/strings-store.ts";
 import { setTablesPrefill } from "../panes/tables-store.ts";
 import {
-  expandGraphNode, focusGraphNode, originKey as graphOriginKey, rootGraph,
-  targetForSelection as graphTargetFor,
+  cycleGraphLod, expandGraphNode, focusGraphNode, getGraphState, originKey as graphOriginKey, rootGraph,
+  setGraphFollow, targetForSelection as graphTargetFor,
 } from "../graph/store.ts";
 
 export const registry = createStandardRegistry();
@@ -412,6 +412,19 @@ export const actionApi: ActionApi = {
   // spec 25: the shared registry's `view.graph` is still gated off, but
   // its binding is real now — see the `graph.*` registrations above.
   openGraph: (target) => openGraphOn(target as Selection),
+  // Burs 9/10 (spec 25 §5a/§5b). Both raise the Graph tab first: a toggle
+  // the analyst cannot see the effect of would be a silent action.
+  toggleGraphFollow: () => {
+    const next = !getGraphState().follow;
+    setGraphFollow(next);
+    setRightPanel("graph");
+    setStatus(next ? "graph: following the selection" : "graph: not following the selection");
+  },
+  cycleGraphLod: () => {
+    const level = cycleGraphLod();
+    setRightPanel("graph");
+    setStatus(`graph: ${level} level`);
+  },
   nextFn: () => stepFn(1),
   prevFn: () => stepFn(-1),
   nextModule: () => stepModule(1),

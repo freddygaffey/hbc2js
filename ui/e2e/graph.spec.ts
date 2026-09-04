@@ -344,3 +344,94 @@ test.describe("Graph tab: drag, highlight, reset, follow (burs 8, 10)", () => {
     await expect(page.locator('[data-graph-focus="true"]')).toHaveAttribute("data-graph-node", `fn:${fn0}`);
   });
 });
+
+// Bur 9 (docs/UI-BURS.md #9; spec 25 §5b): semantic zoom - "as you zoom in
+// you see more". far = modules with bundled edges, mid = the functions,
+// near = the focus opened into a card (the CFG's stand-in until spec 26 L9).
+test.describe("Graph tab: semantic zoom (bur 9)", () => {
+  /** Two callees that share ONE module, so the `far` level provably folds
+   *  them into a single module node with a weight-2 bundled edge. The module
+   *  id is deliberately far outside the fixture's own range. */
+  const BUNDLE_MOD = 4242;
+
+  async function stubOneModule(page: Page): Promise<void> {
+    await page.route("**/api/fn/*/callers*", (route) =>
+      route.fulfill({ json: { rows: [], total: 0, truncated: false, unknownInScope: 0 } }));
+    await page.route("**/api/xref/who-calls-by-name*", (route) =>
+      route.fulfill({ json: { rows: [], names: [], excludedModule: null } }));
+    await page.route("**/api/fn/*/callees*", (route) => {
+      const rows = [901, 902].map((n) => ({ fn: n, name: `stub${n}`, size: 10, module: BUNDLE_MOD, file: null, line: null, kind: "call" }));
+      return route.fulfill({ json: { rows, total: rows.length, truncated: false } });
+    });
+  }
+
+  test("cycling the level folds the neighbourhood into module bundles and back", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row } = await pickFnWithNeighbours(page, request);
+    await stubOneModule(page);
+    await openGraphFor(page, row);
+    const pane = page.locator("[data-graph-pane]");
+    const lod = page.locator("[data-graph-lod]");
+
+    // The pane opens at `mid`: the functions, as spec 25 has always drawn.
+    await expect(pane).toHaveAttribute("data-graph-lod-level", "mid");
+    await expect(page.locator("[data-graph-node]")).toHaveCount(3, { timeout: WAIT });
+    await expect(page.locator('[data-graph-node="fn:901"]')).toHaveCount(1);
+
+    // A programmatic fit must NOT move the level (spec 25 §5b): the pane
+    // fitting itself is not the analyst zooming.
+    await page.locator(".react-flow__controls-fitview").click();
+    await expect(pane).toHaveAttribute("data-graph-lod-level", "mid");
+
+    // mid -> near -> far -> mid.
+    await lod.click();
+    await expect(lod).toHaveAttribute("data-graph-lod", "near");
+    await lod.click();
+    await expect(lod).toHaveAttribute("data-graph-lod", "far");
+    // far: the two functions of one module are ONE node, and it says so.
+    await expect(page.locator(`[data-graph-node="mod:${BUNDLE_MOD}"]`)).toHaveAttribute("data-graph-members", "2", { timeout: WAIT });
+    await expect(page.locator('[data-graph-node="fn:901"]')).toHaveCount(0);
+    await lod.click();
+    await expect(lod).toHaveAttribute("data-graph-lod", "mid");
+    await expect(page.locator('[data-graph-node="fn:901"]')).toHaveCount(1, { timeout: WAIT });
+  });
+
+  test("the near level opens the focus into a card, honest about the missing CFG", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row, fn } = await pickFnWithNeighbours(page, request);
+    await stubOneModule(page);
+    await openGraphFor(page, row);
+    await page.locator("[data-graph-maximise]").click();
+
+    await page.locator("[data-graph-lod]").click();
+    await expect(page.locator("[data-graph-lod]")).toHaveAttribute("data-graph-lod", "near");
+    const focus = page.locator(`[data-graph-node="fn:${fn}"]`);
+    await expect(focus).toHaveAttribute("data-graph-card", "true", { timeout: WAIT });
+    // The card lists the drawn callees and does not pretend to have the CFG
+    // that spec 26 L9 will add.
+    await expect(focus.locator("[data-graph-card-body]")).toContainText("stub901");
+    await expect(focus.locator("[data-graph-card-body]")).toContainText("CFG pending");
+    // No neighbour becomes a card: `near` opens ONE node, it never pulls the
+    // rest of the bundle in behind it.
+    await expect(page.locator('[data-graph-node="fn:901"]')).toHaveAttribute("data-graph-card", "false");
+  });
+
+  test("reset view returns to the level the neighbourhood was rooted at", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row } = await pickFnWithNeighbours(page, request);
+    await stubOneModule(page);
+    await openGraphFor(page, row);
+    const lod = page.locator("[data-graph-lod]");
+    await expect(lod).toHaveAttribute("data-graph-lod", "mid");
+
+    await lod.click();
+    await lod.click();
+    await expect(lod).toHaveAttribute("data-graph-lod", "far");
+    await page.locator("[data-graph-reset]").click();
+    await expect(lod).toHaveAttribute("data-graph-lod", "mid", { timeout: WAIT });
+    await expect(page.locator("[data-graph-pane]")).toHaveAttribute("data-graph-lod-level", "mid");
+  });
+});

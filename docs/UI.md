@@ -1137,7 +1137,10 @@ Scale rules, both visible in the UI:
   truncation bar says how many are not drawn, the same idiom as the listing's.
 
 Actions: `graph.open`, `graph.focus`, `graph.expand`, registered in
-`ui/src/actions/registry.ts` (browser shell only). The shared registry's
+`ui/src/actions/registry.ts` (browser shell only); `graph.followToggle`
+(`g f`) and `graph.lodCycle` (`g z`) live in the SHARED registry
+(`src/ui-core/actions.ts`) and are bound in all three presets, because a
+preset chord must name an action every shell knows. The shared registry's
 `view.graph` stays disabled — `tests/ui-core/actions.test.ts` asserts that, and
 an implementation task does not invert an existing test — but its `openGraph`
 binding now opens this pane, so enabling it later is a one-line change plus
@@ -1157,6 +1160,32 @@ hover and follow share one mechanism. The **follow** toggle
 graph track the listing selection: a different function re-focuses the
 graph exactly as clicking `graph.focus` would; turning it off freezes the
 graph where it is regardless of what gets selected.
+
+**Semantic zoom** (spec 25 §5b, bur 9, 2026-09-05) — "as you zoom in you see
+more". The toolbar's `lod:<level>` button (and `g z`, and a wheel/pinch zoom)
+steps three levels over the SAME fetched neighbourhood; no level fetches
+anything new:
+
+- **far** — the neighbourhood folded into its **modules**, with each pair of
+  modules joined by one bundled edge carrying how many function edges it
+  stands for. A function whose module the contract did not report stays its
+  own node rather than being guessed into someone else's; an intra-module
+  edge is not drawn (it is what `mid` is for).
+- **mid** — the function neighbourhood, exactly as before.
+- **near** — the focus function opens into a card listing its drawn callers
+  and callees (bounded, with an honest `+N more`) and the line
+  `blocks: CFG pending (spec 26 L9)`. This is a **stand-in**: spec 26 L9 adds
+  `GET /api/fn/{fn}/cfg` and swaps the card body for the block graph.
+
+The level is a pure function of the viewport zoom with hysteresis
+(`lodLevel(zoom, prev)`, thresholds 0.5 and 1.6, a 12% sticky band), so a
+zoom resting on a boundary cannot flicker between two layouts; and only a
+USER gesture moves it — React Flow's own `fitView`/Controls moves report a
+null source event and are ignored, because a pane fitting itself must never
+silently re-draw at another level. Going to `far` collapses the extra hops
+(parking at most 8, restored on the way back); `mid`/`near` never
+auto-expand anything. **Reset view** returns to the level the neighbourhood
+was rooted at and re-fits at that level's nominal zoom.
 
 ## Smoke test (Playwright)
 

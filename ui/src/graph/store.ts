@@ -5,7 +5,7 @@
 // outside React and must be able to set it.
 import { useSyncExternalStore } from "react";
 import type { Selection } from "../state/selection.ts";
-import type { GraphKind } from "./model.ts";
+import { lodLevel as lodLevelFor, nextLodLevel, type GraphKind, type LodLevel } from "./model.ts";
 import type { Point } from "./layout.ts";
 
 export interface GraphTarget {
@@ -38,7 +38,23 @@ export interface GraphViewState {
   /** Bur 10: track the listing selection (re-focus + call-site highlight).
    *  Persisted; default ON (see `readFollow`). */
   readonly follow: boolean;
+  /** Bur 9 / spec 25 §5b: the semantic-zoom level the canvas is drawn at.
+   *  Derived from the viewport zoom on a USER gesture (`lodLevel`), or set
+   *  outright by the toolbar control / `graph.lodCycle` / "reset view". */
+  readonly lod: LodLevel;
+  /** The level the CURRENT neighbourhood was rooted at - what "reset view"
+   *  returns to (spec 25 §5a/§5b). */
+  readonly rootLod: LodLevel;
+  /** Expansions parked while the view is at `far` (where a module bundle
+   *  makes a per-function hop meaningless), restored on the way back to
+   *  `mid`. Bounded by `LOD_EXPAND_CAP`: a level change never re-expands
+   *  more than a handful of hops, and never loads the whole bundle. */
+  readonly lodStashed: readonly number[];
 }
+
+/** The most expansions a single level change will ever restore (spec 25
+ *  §5b: bounded expansion, never the whole bundle). */
+export const LOD_EXPAND_CAP = 8;
 
 const FOLLOW_KEY = "hbc2js.graph.follow";
 
@@ -66,6 +82,7 @@ const NO_DRAG: ReadonlyMap<string, Point> = new Map();
 const EMPTY: GraphViewState = {
   target: null, trail: [], expanded: [], origin: null, maximised: false,
   dragPositions: NO_DRAG, hoverNode: null, follow: readFollow(),
+  lod: "mid", rootLod: "mid", lodStashed: [],
 };
 
 let state: GraphViewState = EMPTY;
@@ -110,10 +127,10 @@ export function originKey(t: GraphTarget | null): string | null {
  *  `origin` records the selection this came from (see `GraphViewState`). */
 export function rootGraph(target: GraphTarget | null, origin: string | null): void {
   if (target === null) {
-    set({ target: null, trail: [], expanded: [], origin, dragPositions: NO_DRAG });
+    set({ target: null, trail: [], expanded: [], origin, dragPositions: NO_DRAG, rootLod: state.lod, lodStashed: [] });
     return;
   }
-  set({ target, trail: [target], expanded: [], origin, dragPositions: NO_DRAG });
+  set({ target, trail: [target], expanded: [], origin, dragPositions: NO_DRAG, rootLod: state.lod, lodStashed: [] });
 }
 
 /** Focus a node already on screen: the graph re-centres on it and the
@@ -121,14 +138,14 @@ export function rootGraph(target: GraphTarget | null, origin: string | null): vo
  *  is what double-click does (spec 25 §3). */
 export function focusGraphNode(target: GraphTarget): void {
   if (state.target !== null && state.target.kind === target.kind && state.target.ref === target.ref) return;
-  set({ target, trail: [...state.trail, target], expanded: [], dragPositions: NO_DRAG });
+  set({ target, trail: [...state.trail, target], expanded: [], dragPositions: NO_DRAG, rootLod: state.lod, lodStashed: [] });
 }
 
 /** Step back along the breadcrumb. */
 export function graphBack(): void {
   if (state.trail.length < 2) return;
   const trail = state.trail.slice(0, -1);
-  set({ trail, target: trail[trail.length - 1]!, expanded: [], dragPositions: NO_DRAG });
+  set({ trail, target: trail[trail.length - 1]!, expanded: [], dragPositions: NO_DRAG, rootLod: state.lod, lodStashed: [] });
 }
 
 /** Expand `fn` one hop (idempotent); `graph.expand` with no argument expands
@@ -161,6 +178,7 @@ export function setNodePosition(id: string, pos: Point): void {
  *  `fitView` — that is a React Flow instance method, not state, so it lives
  *  in GraphPane, not here. */
 export function resetGraphView(): void {
+  setGraphLod(state.rootLod);
   set({ dragPositions: NO_DRAG });
 }
 
@@ -179,4 +197,46 @@ export function setGraphFollow(follow: boolean): void {
 export function resetGraphState(): void {
   state = { ...EMPTY, follow: readFollow() };
   for (const l of [...listeners]) l();
+}
+
+// -- Bur 9 / spec 25 §5b: semantic zoom ------------------------------------
+
+/** Move the canvas to `level`, doing the bounded expand/collapse bookkeeping
+ *  the level change implies. Going to `far` COLLAPSES every extra hop (the
+ *  module bundle does not draw them anyway) after parking at most
+ *  `LOD_EXPAND_CAP` of them; coming back from `far` re-expands exactly those,
+ *  through the same `expandGraphNode`/`collapseGraphNode` the "+" button
+ *  uses - so a level change can never fetch more than the analyst had
+ *  already asked for. */
+export function setGraphLod(level: LodLevel): void {
+  if (state.lod === level) return;
+  const leavingFar = state.lod === "far";
+  const stash = level === "far" ? state.expanded.slice(0, LOD_EXPAND_CAP) : [];
+  if (level === "far") {
+    for (const fn of [...state.expanded]) collapseGraphNode(fn);
+    set({ lod: level, lodStashed: stash });
+    return;
+  }
+  if (leavingFar && state.lodStashed.length > 0) {
+    const restore = state.lodStashed.slice(0, LOD_EXPAND_CAP);
+    set({ lod: level, lodStashed: [] });
+    for (const fn of restore) expandGraphNode(fn);
+    return;
+  }
+  set({ lod: level });
+}
+
+/** `graph.lodCycle` (chord `g z`): far -> mid -> near -> far. */
+export function cycleGraphLod(): LodLevel {
+  const next = nextLodLevel(state.lod);
+  setGraphLod(next);
+  return next;
+}
+
+/** A USER zoom gesture reported by React Flow's `onMove`. Programmatic
+ *  viewport moves (`fitView`, the Controls +/- buttons) deliberately do NOT
+ *  come through here: the pane fitting itself must never change the level
+ *  under the analyst (spec 25 §5b). Hysteresis lives in `lodLevel`. */
+export function setGraphLodFromZoom(zoom: number): void {
+  setGraphLod(lodLevelFor(zoom, state.lod));
 }

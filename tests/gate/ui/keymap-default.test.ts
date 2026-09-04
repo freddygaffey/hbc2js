@@ -69,3 +69,26 @@ test("every shipped preset binds a chord to view.themeToggle", () => {
     assert.notEqual(registry.get("view.themeToggle"), undefined);
   }
 });
+
+// -- burs 9 + 10 (docs/UI-BURS.md #9, #10; spec 25 §5a/§5b): the graph
+// pane's two view toggles are keymap-reachable in every preset - `g f`
+// (follow the listing selection) and `g z` (cycle the semantic-zoom level
+// far/mid/near). They are multi-key sequences, so the firing assertion at
+// the top of this file skips them; what matters here is that every preset
+// binds them and that the SHARED registry knows the ids (a chord naming a
+// UI-only action would be dangling in any other shell).
+test("every shipped preset binds graph.followToggle and graph.lodCycle", () => {
+  const registry = createStandardRegistry();
+  for (const id of ["graph.followToggle", "graph.lodCycle"]) {
+    assert.notEqual(registry.get(id), undefined, `${id} is not in the standard registry`);
+  }
+  for (const name of PRESET_NAMES) {
+    const preset = loadPreset(name);
+    const km = createKeymap({ preset });
+    for (const id of ["graph.followToggle", "graph.lodCycle"]) {
+      assert.notEqual(km.chordFor(id), undefined, `${name}: no chord bound to ${id}`);
+    }
+    assert.equal(preset["gf"], "graph.followToggle", `${name}: "gf" is not bound to graph.followToggle`);
+    assert.equal(preset["gz"], "graph.lodCycle", `${name}: "gz" is not bound to graph.lodCycle`);
+  }
+});

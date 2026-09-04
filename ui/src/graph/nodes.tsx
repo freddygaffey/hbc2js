@@ -4,8 +4,8 @@
 // colours, same art direction as every other pane.
 import { Handle, Position, useStore, type Node, type NodeProps } from "@xyflow/react";
 import type { ReactNode } from "react";
-import type { GraphNodeModel } from "./model.ts";
-import { NODE_H, NODE_W } from "./layout.ts";
+import type { GraphNodeModel, LodCard, LodLevel } from "./model.ts";
+import { NODE_H, NODE_H_NEAR, NODE_W } from "./layout.ts";
 
 /** Below this zoom the labels come off and a node is just a token-coloured
  *  box — spec 25 §5's level-of-detail rule, the cheap answer to a wide
@@ -24,6 +24,13 @@ export type HbcNodeData = {
    *  this node is not part of it. Both false when nothing is highlighted. */
   readonly highlighted: boolean;
   readonly dimmed: boolean;
+  /** Bur 9 / spec 25 §5b: the semantic-zoom level the canvas is at. Only the
+   *  FOCUS node renders differently at `near` - it opens into a card. */
+  readonly level: LodLevel;
+  /** The focus card's contents at `near` (`null` for every other node).
+   *  Callers/callees today; spec 26 L9 swaps this body for the CFG blocks
+   *  and nothing else in this file moves. */
+  readonly card: LodCard | null;
 };
 
 export type HbcFlowNode = Node<HbcNodeData, "hbc">;
@@ -45,6 +52,7 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
   const text = m.byName ? "text-text-muted" : "text-text";
   const ring = data.highlighted && !m.isFocus ? "ring-2 ring-accent" : "";
   const fade = data.dimmed ? "opacity-40" : "";
+  const card = data.level === "near" && m.isFocus ? data.card : null;
   return (
     <div
       data-graph-node={m.id}
@@ -55,7 +63,10 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
       data-graph-x={Math.round(positionAbsoluteX)}
       data-graph-y={Math.round(positionAbsoluteY)}
       data-lod={lod}
-      style={{ width: NODE_W, height: NODE_H }}
+      data-graph-level={data.level}
+      data-graph-members={m.members}
+      data-graph-card={card !== null ? "true" : "false"}
+      style={{ width: NODE_W, height: card !== null ? NODE_H_NEAR : NODE_H }}
       className={`flex flex-col justify-center gap-0.5 overflow-hidden rounded-ui border bg-surface px-2 ${border} ${ring} ${fade}`}
       title={m.byName ? `${m.label} — heuristic by-name candidate, not a proven edge` : m.label}
     >
@@ -82,16 +93,41 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
               </button>
             ) : null}
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-text-muted">
+          <div className="flex items-center gap-2 text-xs text-text-muted">
             {m.module !== null ? <span className="truncate rounded-ui bg-surface-2 px-1">mod {m.module}</span> : null}
+            {m.members > 1 ? <span className="shrink-0 rounded-ui bg-surface-2 px-1">{m.members} fns</span> : null}
             {m.size !== null ? <span className="shrink-0">{m.size} B</span> : null}
             {m.byName ? <span className="shrink-0">by-name</span> : null}
           </div>
+          {card !== null ? <FocusCard card={card} /> : null}
         </>
       ) : (
         <div className={`h-2 w-full rounded-ui ${m.isFocus ? "bg-accent" : "bg-surface-2"}`} />
       )}
       <Handle type="source" position={Position.Bottom} className={handleClass} />
+    </div>
+  );
+}
+
+/** The `near` level's focus card, spec 25 §5b's DEGRADED form: the focus
+ *  function's already-drawn callers and callees, bounded by `lodCard`'s cap.
+ *  Spec 26 L9 replaces this body with the function's CFG blocks - same slot,
+ *  same node, no layout change beyond `NODE_H_NEAR`. */
+function FocusCard({ card }: { readonly card: LodCard }): ReactNode {
+  const line = (label: string, names: readonly string[], more: number): ReactNode => (
+    <div className="flex items-start gap-1">
+      <span className="shrink-0 text-text-muted">{label}</span>
+      <span className="truncate text-text">
+        {names.length === 0 ? "none drawn" : names.join(", ")}
+        {more > 0 ? ` +${more} more` : ""}
+      </span>
+    </div>
+  );
+  return (
+    <div data-graph-card-body className="mt-1 flex flex-col gap-0.5 overflow-hidden border-t border-border pt-1 text-xs">
+      {line("callers", card.callers, card.moreCallers)}
+      {line("callees", card.callees, card.moreCallees)}
+      <div className="text-text-muted">blocks: CFG pending (spec 26 L9)</div>
     </div>
   );
 }

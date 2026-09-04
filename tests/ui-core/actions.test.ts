@@ -25,6 +25,8 @@ function stubApi(): ActionApi {
     explain: noop,
     suggestName: noop,
     openGraph: noop,
+    toggleGraphFollow: noop,
+    cycleGraphLod: noop,
     nextFn: noop,
     prevFn: noop,
     nextModule: noop,

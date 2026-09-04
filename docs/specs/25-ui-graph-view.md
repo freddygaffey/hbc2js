@@ -151,11 +151,162 @@ With `follow` off, both behaviours stop: the graph stays exactly where it
 is regardless of what the listing selects, until the toggle is switched back
 on (at which point the next selection change re-roots normally).
 
-**Keybinding (not yet registered — `ui/src/actions/registry.ts` is another
-agent's file this task; no `graph.*` action is registered there at all yet,
-per §4). Recommend a `graph.followToggle` action bound to `g f` (mnemonic
-"graph follow"), once that file is free and `graph.open`/`graph.focus`/
-`graph.expand` (§4) are registered alongside it.
+**Keybinding — shipped with bur 9 (§5b):** `graph.followToggle` is bound to
+`g f` ("graph follow") in all three presets, and lives in the SHARED registry
+so the chord is not dangling in a shell without a graph pane.
+
+## 5b. Semantic zoom (level of detail) — bur 9 (2026-09-05)
+
+Fred, verbatim: *"it should have a level of recursion view - I don't know how
+this would work but I think it should be kind of like a fractal: as you zoom
+in you see more."* The answer is **semantic zoom**: the same neighbourhood,
+re-read at three grains. Nothing here fetches anything new — every level is a
+pure function of the model the pane has already fetched, so "zoom in" can
+never become "load the bundle".
+
+### The three levels
+
+| level | nodes | edges | what it answers |
+|---|---|---|---|
+| `far` | **modules** (`bundleByModule`) | module-to-module **bundles**, one per pair, carrying a `weight` (how many function edges it stands for) and drawn thicker/labelled | where does this neighbourhood live |
+| `mid` | the **functions** of the neighbourhood (today's model, unchanged) | resolved edges + dashed by-name candidates | who calls what |
+| `near` | the same functions, with the **focus opened up** | unchanged | what is inside the one I am on |
+
+`far` is derived, not fetched: every drawn function folds into `mod:<n>` when
+the contract reported its module, and **stays its own node when it did not** —
+a function of unknown module is never guessed into somebody else's box. An
+edge inside one module becomes a self-loop and is dropped: intra-module edges
+are exactly what the `mid` level is for. The bundle node reports `members`
+(the fold count) and the bundled edge reports `weight`, both on screen — the
+same "never a silent trim" rule as the node cap (§5).
+
+`near` is **degraded until spec 26 L9 lands.** Mode 3 (CFG) has no route
+(§3, §7), so `near` renders the focus node as a taller **card**
+(`NODE_H_NEAR`) whose body is `lodCard(model, focusId)`: its already-drawn
+callers and callees by label, capped at `LOD_CARD_CAP = 8` with an honest
+`+N more`, plus the line `blocks: CFG pending (spec 26 L9)`. **What L9 plugs
+into:** `FocusCard` in `ui/src/graph/nodes.tsx` — L9 swaps that component's
+body for the block list/graph fetched from `GET /api/fn/{fn}/cfg`, and
+nothing else moves: the level machinery, the thresholds, the layout hook
+(`layoutModel(model, { focusHeight })`) and the store are already in place.
+`lodCard` stays as the fallback for a function whose CFG the route declines.
+
+### Thresholds, and why they are hysteretic
+
+```ts
+lodLevel(zoom: number, prev: LodLevel = "mid"): "far" | "mid" | "near"
+```
+
+Pure, total, in `ui/src/graph/model.ts`. Boundaries `LOD_THRESHOLDS =
+{ farMid: 0.5, midNear: 1.6 }`; a level flips **up** only past
+`t * (1 + LOD_HYSTERESIS)` and **down** only below `t * (1 - LOD_HYSTERESIS)`
+(`LOD_HYSTERESIS = 0.12`). Inside that band the function returns `prev`, so a
+viewport resting on a boundary — a trackpad, a `fitView`, a nudge — cannot
+oscillate between two layouts. A jump straight past two boundaries still
+lands on the right level: each boundary is evaluated independently, not by
+stepping. `Number.isFinite(zoom) === false` returns `prev` rather than
+guessing.
+
+`LOD_NOMINAL_ZOOM = { far: 0.35, mid: 0.9, near: 2 }` is where each level is
+"at home". Every nominal zoom derives its own level from **any** previous
+level (a gate test asserts it), which is what lets the level be *set*
+directly — the toolbar control, `graph.lodCycle`, "reset view" — and then
+zoom the viewport there without the derived level fighting the set one.
+
+**Only a user gesture moves the level.** `GraphPane` derives the level in
+React Flow's `onMove` **only when the reported source event is non-null**;
+React Flow passes `null` for its own programmatic moves (`fitView`, the
+Controls +/- buttons). That is deliberate and load-bearing: a neighbourhood
+fitted into the 280 px side panel already lands below `0.5` zoom, and a pane
+fitting *itself* must never silently re-draw at a different level. Wheel and
+pinch zoom, `g z`, and the `lod:<level>` toolbar button are the only things
+that change it.
+
+### What auto-expands and collapses
+
+`setGraphLod(level)` (store) does the bookkeeping, through the same
+`expandGraphNode` / `collapseGraphNode` the "+" affordance uses:
+
+- **into `far`**: every extra hop is collapsed (a module bundle does not draw
+  per-function hops anyway) after parking at most `LOD_EXPAND_CAP = 8` of
+  them in `lodStashed`.
+- **out of `far`**: exactly those parked refs are re-expanded, capped again
+  at `LOD_EXPAND_CAP`.
+- **`mid` <-> `near`**: nothing expands. `near` opens the *focus node*, it
+  does not pull neighbours' hops in behind it. This is a deliberate bound:
+  auto-expanding on zoom-in would make the node set a function of the
+  viewport, which breaks both the analyst's mental model and the pane's
+  promise that a hop is fetched only when asked for.
+
+So the ceiling on a level change is: at most `LOD_EXPAND_CAP` restored hops,
+each still subject to `GRAPH_NODE_CAP = 300` and its truncation bar. Never
+the whole bundle.
+
+### Interaction with §5a (drag, follow, reset)
+
+- **Drag offsets** are per node id and survive a level change only where the
+  id does. `far` re-keys function nodes to `mod:<n>`, so a dragged function
+  simply has no offset in the bundled view and the pure dagre layout places
+  the module box; coming back to `mid` restores the offset. Nothing is
+  cleared by a level change — the neighbourhood did not change.
+- **Follow** (bur 10) is orthogonal: a follow-driven re-root keeps the
+  current level and records it as `rootLod`. The level is a property of the
+  viewport (where the analyst is standing), not of the neighbourhood.
+- **Reset view** returns to `rootLod` — the level the neighbourhood was
+  rooted at — drops the drag offsets, and re-fits at
+  `LOD_NOMINAL_ZOOM[rootLod]` (`fitView` with `minZoom === maxZoom`), so the
+  level the toolbar reports and the zoom the viewport is at cannot disagree.
+  `rootGraph` / `focusGraphNode` / `graphBack` all set `rootLod` to the level
+  in force when they ran.
+
+### Actions and keys
+
+`graph.followToggle` (`g f`) and `graph.lodCycle` (`g z`) are registered in
+the SHARED registry (`src/ui-core/actions.ts`) and bound in all three presets
+— unlike `graph.open`/`graph.focus`/`graph.expand`, which stay UI-side (§4),
+because a preset chord must name an action every shell knows. Both are backed
+by new `ActionApi` methods (`toggleGraphFollow`, `cycleGraphLod`) that a
+shell without a graph pane implements as no-ops. Neither inverts
+`view.graph`'s `when: () => false` (§4) — that assertion is untouched.
+
+### Acceptance tests (by name)
+
+`tests/ui-core/graph-model.test.ts` (pure, in the root gate):
+
+- `lodLevel: the three levels, by viewport zoom`
+- `lodLevel: hysteresis - a zoom sitting on a boundary keeps the level it had`
+- `lodLevel: every nominal zoom derives its own level (a set level cannot fight the viewport)`
+- `nextLodLevel cycles far -> mid -> near -> far`
+- `bundleByModule: functions fold into their module, parallel edges bundle with a weight`
+- `bundleByModule: a function with no known module is never guessed into someone else's`
+- `bundleByModule: an intra-module edge is not drawn as a self-loop at far`
+- `modelForLevel: mid and near draw the fetched model, far bundles it`
+- `lodCard: the near level's focus card lists drawn callers/callees, bounded`
+- `lodCard: a node with no drawn edges says so rather than inventing any`
+
+`tests/gate/ui/keymap-default.test.ts`:
+
+- `every shipped preset binds graph.followToggle and graph.lodCycle`
+
+`ui/e2e/graph.spec.ts` (Playwright, fixture rig only):
+
+- `semantic zoom: cycling the level folds the neighbourhood into module bundles and back`
+- `semantic zoom: the near level opens the focus into a card, honest about the missing CFG`
+- `semantic zoom: reset view returns to the level the neighbourhood was rooted at`
+
+### Needs Fred (not guessed here)
+
+1. **Art direction of the level transition.** Today a level change is an
+   instant re-layout (plus the 120 ms height/opacity settle in `graph.css`).
+   A true "fractal" reading would cross-fade the module box into the
+   functions it contains, or grow them out of it. That is animation design,
+   not engineering, and the shell has no motion language yet.
+2. **Whether `far` should re-root on the module** (fetch `/api/module/{id}`
+   deps/dependents, i.e. mode 2) instead of bundling what is already drawn.
+   Bundling is honest and free; re-rooting shows more, but changes what "the
+   neighbourhood" means mid-gesture. Deliberately not guessed.
+3. **The `near` card's contents once L9 lands**: blocks only, or blocks plus
+   the callers/callees `lodCard` shows today.
 
 ## 6. Acceptance tests
 
@@ -220,7 +371,9 @@ Plus `npm run typecheck` in `ui/` (React Flow and dagre are typed; no `any`).
 ## 7. Out of scope / follow-ups
 
 - **CFG mode** — needs a read-only `/api/fn/{fn}/cfg` route over the existing
-  `src/cfg` block graph, with `tests/ui-server/**` coverage. Follow-up.
+  `src/cfg` block graph, with `tests/ui-server/**` coverage. Follow-up
+  (spec 26 L9). §5b's `near` level is its degraded stand-in and names the
+  exact component L9 replaces (`FocusCard` in `ui/src/graph/nodes.tsx`).
 - Whole-bundle map, clustering, force layout, WebGL (sigma.js) — held in
   reserve per spec 20 §2.4; nothing here needs them.
 - Enabling `view.graph` in `src/ui-core/actions.ts` (see §4).
