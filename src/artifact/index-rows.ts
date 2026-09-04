@@ -8,9 +8,10 @@
 // (which stays intentionally trivial so the two call sites cannot diverge in
 // substance, only in what they do with the result).
 import { existsSync, readFileSync } from "node:fs";
+import type { ClassificationReport } from "../deps/classify.ts";
 import type { SplitResult } from "../split/index.ts";
 import { analyseForArtifact, buildFactoryInfo, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
-import { buildNativeIndex } from "./native.ts";
+import { buildNativeIndex, resolveBridgeModuleIds } from "./native.ts";
 import { buildSemanticIndexes } from "./semantic-walk.ts";
 import { sha256Hex, type CallRow, type FunctionRow, type GlobalRow, type Manifest, type ModulesIndex, type NativeRow, type RangeRow, type StringsIndex, type StringUseRow } from "./schema.ts";
 import { buildStringsIndex } from "./strings.ts";
@@ -23,6 +24,10 @@ export interface BuildIndexRowsOptions {
   readonly form: "segregated" | "flat";
   readonly git?: string | null;
   readonly overlayStorePath?: string;
+  /** §2.5 `bridge-module` surface — see `WriteArtifactOptions.classification`
+   *  (`./write.ts`) for the full rationale; identical default (build fresh,
+   *  cheap, in-bundle-only) when omitted. */
+  readonly classification?: ClassificationReport;
 }
 
 export interface IndexRows {
@@ -49,7 +54,8 @@ export function buildIndexRows(opts: BuildIndexRowsOptions): IndexRows {
 
   const { callRows, globalRows, stringUseRows } = buildSemanticIndexes(module, analysis, factoryInfo);
   const stringsIndex = buildStringsIndex(module);
-  const nativeRows = buildNativeIndex(callRows, globalRows);
+  const bridgeModuleIds = resolveBridgeModuleIds(module, opts.classification);
+  const nativeRows = buildNativeIndex(callRows, globalRows, bridgeModuleIds);
   const rangeRows = buildRangesIndex(opts.splitResult.functionRanges);
 
   // Empty on purpose: `manifest.index.semanticHash` (over `index/*.jsonl`

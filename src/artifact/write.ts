@@ -2,10 +2,11 @@
 // files built so far) to disk. §1 layout, §1.3 immutability (E4).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ClassificationReport } from "../deps/classify.ts";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { SplitResult } from "../split/index.ts";
 import { analyseForArtifact, buildFactoryInfo, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
-import { buildNativeIndex } from "./native.ts";
+import { buildNativeIndex, resolveBridgeModuleIds } from "./native.ts";
 import { buildSemanticIndexes } from "./semantic-walk.ts";
 import { indexHeader, rangesHeader, sha256Hex, toJsonl, type Manifest } from "./schema.ts";
 import { buildStringsIndex } from "./strings.ts";
@@ -30,6 +31,13 @@ export interface WriteArtifactOptions {
    *  store was in scope for this render — the honest v1 default before this
    *  option was wired, docs/BUGS.md 2026-09-03 "overlayHash always null"). */
   readonly overlayStorePath?: string;
+  /** §2.5 `bridge-module` surface: a pre-built `ClassificationReport` for
+   *  THIS bundle (e.g. from a `src/deps` run that already had a real
+   *  commonality index), reused as-is rather than re-derived. Omitted ->
+   *  built fresh from a cheap in-bundle-only inventory (`resolveBridgeModuleIds`,
+   *  `./native.ts`) — never re-parses `opts.bytes`, reuses the same
+   *  already-parsed `HbcModule` this function builds below. */
+  readonly classification?: ClassificationReport;
 }
 
 export interface WrittenArtifact {
@@ -70,7 +78,8 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
 
   const { callRows, globalRows, stringUseRows } = buildSemanticIndexes(module, analysis, factoryInfo);
   const stringsIndex = buildStringsIndex(module);
-  const nativeRows = buildNativeIndex(callRows, globalRows);
+  const bridgeModuleIds = resolveBridgeModuleIds(module, opts.classification);
+  const nativeRows = buildNativeIndex(callRows, globalRows, bridgeModuleIds);
 
   const functionsJsonl = toJsonl(indexHeader("functions"), functionRows);
   const modulesJson = JSON.stringify(modulesIndex, null, 2) + "\n";

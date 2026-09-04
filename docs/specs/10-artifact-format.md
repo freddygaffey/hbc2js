@@ -212,7 +212,7 @@ The RE-critical file: where does JS meet the outside world.
 ```json
 {"fn":42,"surface":"builtin","name":"b:HermesInternal.concat","n":1}
 {"fn":42,"surface":"host-global","name":"g:nativeCallSyncHook","n":2}
-{"fn":57,"surface":"bridge-module","name":"m:react-native/NativeModules","n":1}
+{"fn":57,"surface":"bridge-module","name":"m:17","n":1}
 ```
 
 - `builtin`: CallBuiltin/CallDirect targets from the disassembly (exact, from
@@ -227,9 +227,27 @@ The RE-critical file: where does JS meet the outside world.
   evidence; the builder additionally auto-surfaces any *unlisted* global with
   read/call use in ≥ 3 functions as `surface:"host-global?"` — a marked
   candidate, never silently promoted; promotion = editing the data file.
-- `bridge-module`: requires of modules that `src/deps` classified as the
-  native-boundary packages (`react-native`, `expo-modules-core`, …) — reuses
-  the deps evidence, does not re-derive it.
+- `bridge-module`: `calls.jsonl` `kind:"require"` edges (§2.2, `callee`
+  already `"m:<moduleId>"`) whose target module `src/deps/classify.ts`
+  classified `library` with a `libraryPackageHint` naming one of the curated
+  native-boundary packages (`react-native`, `expo-modules-core`, …,
+  `src/artifact/native-boundary-packages.ts`) — `name` re-emits the exact
+  `calls.jsonl` `callee` string (`"m:<moduleId>"`, never a re-derived
+  package/subpath name: `src/deps`'s naming stage is a separate, unconfirmed
+  hint — §6 keeps symbol-level require naming out of v1). Builder
+  (`buildNativeIndex`, `src/artifact/native.ts`): takes a caller-supplied
+  `ClassificationReport` for this bundle when the caller already has one
+  (`WriteArtifactOptions.classification`), else builds one cheaply from the
+  bundle's own inventory with an empty commonality index (D17j's signals need
+  no cross-app corpus). Measured (docs/AGENT-LOG.md 2026-09-04): on the
+  committed `rn-template-0.72` fixture and on a large (12.7 MB, 4,510-module)
+  production bundle, `classify.ts`'s string-evidence signals never fire at
+  all — Metro strips `node_modules/`-shaped require paths from optimised
+  output (`classify.ts`'s own file header) — so `bridge-module` is honest but
+  empty on those bundles today; it fires once a caller supplies a
+  `ClassificationReport` built with real evidence (a populated commonality
+  index, or `src/deps`'s npm-confirm stage). Never a guessed row either way —
+  truth rule.
 - This file is a *projection* of §2.2 + §2.4 for cheap querying; the checker
   (§4.1) verifies it agrees with them.
 
