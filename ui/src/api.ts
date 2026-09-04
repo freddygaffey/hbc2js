@@ -27,8 +27,10 @@ export interface Api {
   moduleSource(id: number): Promise<ModuleSource>;
   /** `GET /api/modules` — the whole module catalogue (server caps at 500). */
   modules(): Promise<ModuleListPage>;
-  /** `GET /api/functions?cursor=` — one 50-row page of the fn catalogue. */
-  functions(cursor?: number): Promise<FunctionListPage>;
+  /** `GET /api/functions?cursor=&limit=` — one page of the fn catalogue,
+   *  50 rows by default, up to `FUNCTIONS_PAGE_MAX` (1000,
+   *  `src/ui-server/list.ts`) when `limit` is given. */
+  functions(cursor?: number, limit?: number): Promise<FunctionListPage>;
   packageId(mod: number): Promise<PackageIdResult>;
   findings(): Promise<Bounded<ResolvedFinding>>;
   leads(): Promise<LeadsResult>;
@@ -71,7 +73,7 @@ export const httpApi: Api = {
   module: (id) => get(`/module/${id}`),
   moduleSource: (id) => get(`/module/${id}/source`),
   modules: () => get(`/modules`),
-  functions: (cursor) => get(`/functions`, { cursor }),
+  functions: (cursor, limit) => get(`/functions`, { cursor, limit }),
   packageId: (mod) => get(`/package-id/${mod}`),
   findings: () => get(`/findings`),
   leads: () => get(`/leads`),

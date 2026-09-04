@@ -51,20 +51,16 @@ test.describe("hbc2js UI shell smoke", () => {
     // Give async data (segregation, modules) a moment to settle before
     // judging the console clean.
     await page.waitForTimeout(1000);
-    // KNOWN, REPORTED (not fixed here): App.tsx defaults the selected `fn`
-    // to 0 (`useSelection().fn ?? 0`) before anything is selected, so
-    // RightPane/CenterPane query `/api/fn/0/context` etc. on first paint;
-    // fn 0 (the global function) has no recorded source range and answers
-    // 400 (LeftPane.tsx's own comment), which the browser logs as a
-    // console error regardless of app code. Fixing it means threading
-    // `fn: number | undefined` through RightPane.tsx (excluded — owned by
-    // the annotate track, mid-edit concurrently) so it can skip the query
-    // instead of collapsing "nothing selected" into fn 0; reported to the
-    // orchestrator rather than edited here. Any OTHER console error still
-    // fails this test.
-    const known = /Failed to load resource: the server responded with a status of 400/;
-    const unexpected = state.errors.filter((e) => !known.test(e));
-    expect(unexpected, unexpected.join("\n")).toEqual([]);
+    // FIXED: App.tsx used to default the selected `fn` to 0
+    // (`useSelection().fn ?? 0`) before anything was selected, so
+    // RightPane queried `/api/fn/0/context` etc. on first paint — fn 0 (the
+    // global function) has no recorded source range and answered 400,
+    // which the browser logs as a console error regardless of app code.
+    // App.tsx now defaults to `-1`, a sentinel RightPane/CenterPane already
+    // treat as "no selection" (`perFn()` in hooks.ts), so no request is
+    // made until something is actually selected. No allowlist needed —
+    // any console error fails this test.
+    expect(state.errors, state.errors.join("\n")).toEqual([]);
   });
 
   test("tree renders groups, expands a group, module click shows file, fn click updates context", async ({ page }) => {
@@ -187,6 +183,44 @@ test.describe("hbc2js UI shell smoke", () => {
     await expect(hit).toBeVisible({ timeout: WAIT });
     await hit.click();
     await expect(search).toHaveValue("e");
+  });
+
+  test("search: selecting a module in Unclassified opens its group and scrolls it into view", async ({ page }) => {
+    await page.goto("/");
+    const search = page.getByTestId("search-functions");
+    await expect(search).toBeVisible({ timeout: WAIT });
+    // "unclassified" matches the GROUP LABEL (filterGroups keeps every
+    // module of a group whose own label matches, ui/src/listing/modules.ts)
+    // — a query that finds a module deep in the tree's largest, closed-by-
+    // default group regardless of what that fixture's modules are named.
+    await search.fill("unclassified");
+    const hit = page.locator("[data-module]").last();
+    await expect(hit).toBeVisible({ timeout: WAIT });
+    const moduleId = await hit.getAttribute("data-module");
+    expect(moduleId).not.toBeNull();
+    await hit.click();
+    await search.fill("");
+    await expect(search).toHaveValue("");
+
+    // The tree is virtualised (ui/src/panes/LeftPane.tsx): a row only
+    // exists in the DOM once the virtualizer has scrolled it into its
+    // rendered window, so the row's mere presence here proves the
+    // selection-changed scroll-into-view effect actually ran, not just
+    // that a row for it exists somewhere off-screen in a fully-rendered
+    // tree.
+    const treeRow = page.locator(`[data-tree="modules"] [data-module="${moduleId}"]`);
+    await expect(treeRow).toBeVisible({ timeout: WAIT });
+    const rowBox = await treeRow.boundingBox();
+    const containerBox = await page.locator('[data-tree="modules"]').boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(containerBox).not.toBeNull();
+    // `align: "auto"` (`virtualizer.scrollToIndex`) puts the row flush
+    // against whichever edge it was nearest, which can be a few sub-pixels
+    // over the container's own fractional height — a slop, not a real
+    // scroll failure.
+    const SLOP_PX = 6;
+    expect(rowBox!.y).toBeGreaterThanOrEqual(containerBox!.y - SLOP_PX);
+    expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(containerBox!.y + containerBox!.height + SLOP_PX);
   });
 
   test("rename via the dialog shows up in Context (acceptedName) and Activity", async ({ page }) => {

@@ -26,7 +26,12 @@ const handleClass =
 export function App(): ReactNode {
   // The listing's selection lives in ui/src/state/selection.ts (wave 2), so
   // the tree, the editor, the palette and the keymap all read one store.
-  const fn = useSelection().fn ?? 0;
+  // `-1` (not `0`) before anything is selected: fn 0 is the bytecode global
+  // function, has no recorded source range, and `/api/fn/0/context` etc.
+  // 400 — RightPane/CenterPane already treat any negative fn as "no
+  // selection" (perFn() in hooks.ts), so this sentinel just has to be one
+  // no real function index ever is.
+  const fn = useSelection().fn ?? -1;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { ref, pct } = usePxMinSize();
 

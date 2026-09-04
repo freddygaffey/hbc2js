@@ -4,6 +4,7 @@
 // the app's own modules, because in a real bundle 90% of the modules are
 // someone else's and collapsing them is the first thing an analyst does.
 import type { FunctionListRow, ModuleEntry, SegregationPage, SegregationRow } from "./wire.ts";
+import type { ModuleSourceFn } from "../contracts.ts";
 
 export type GroupKind = "screens" | "navigation" | "app" | "pkg" | "unclassified" | "other";
 
@@ -217,4 +218,65 @@ export function filterGroups(
     if (modules.length > 0) out.push({ ...g, modules });
   }
   return out;
+}
+
+// -- flattening the tree for the virtualizer (left-pane virtualisation) -----
+// `ui/src/panes/LeftPane.tsx` used to render every open group's modules and
+// every open module's functions as real DOM nodes — fine for a few hundred
+// rows, sluggish past a few thousand (spec 22 §2's known debt; Service NSW's
+// tree has ~4.5k modules and ~15k functions once every group is opened).
+// `@tanstack/react-virtual` needs one flat array of fixed identity so it can
+// window it; these functions turn the grouped tree (groups -> modules ->
+// functions, honouring which groups/modules are open) into that array, and
+// find the index of a row a selection change needs to scroll to. Pure and
+// framework-free so the gate can test them without a browser.
+
+/** One row of the flattened tree — what the keyboard cursor and the
+ *  virtualizer both walk. */
+export type TreeRow =
+  | { readonly kind: "group"; readonly key: string; readonly label: string; readonly count: number; readonly open: boolean }
+  | { readonly kind: "module"; readonly key: string; readonly module: ModuleEntry; readonly count: number; readonly open: boolean; readonly depth: number }
+  | { readonly kind: "fn"; readonly key: string; readonly row: ModuleSourceFn; readonly depth: number };
+
+/** `groups` (already the source of truth for what filtering/segregation
+ *  produced — `filterGroups`'s output is a legal input here, same shape)
+ *  flattened into the rows the virtualizer renders. A group's modules are
+ *  skipped entirely when the group is closed, and a module's functions are
+ *  skipped when the module is closed, so a fully-collapsed 4,500-module tree
+ *  is still only ~a few hundred rows (one per group + top-level module). */
+export function flattenTree(
+  groups: readonly ModuleGroup[],
+  openGroups: ReadonlySet<string>,
+  openModules: ReadonlySet<string>,
+  functionsOf: (moduleId: number) => readonly ModuleSourceFn[],
+): readonly TreeRow[] {
+  const out: TreeRow[] = [];
+  for (const g of groups) {
+    const groupOpen = openGroups.has(g.key);
+    out.push({ kind: "group", key: g.key, label: g.label, count: g.modules.length, open: groupOpen });
+    if (!groupOpen) continue;
+    for (const m of g.modules) {
+      const key = `m:${m.id}`;
+      const moduleOpen = openModules.has(key);
+      const fns = functionsOf(m.id);
+      out.push({ kind: "module", key, module: m, count: fns.length, open: moduleOpen, depth: 1 });
+      if (!moduleOpen) continue;
+      for (const r of fns) out.push({ kind: "fn", key: `f:${r.fn}`, row: r, depth: 2 });
+    }
+  }
+  return out;
+}
+
+/** The row index of a module selection, or -1 when it is not present in the
+ *  flattened rows (its group is closed). `LeftPane` uses this to
+ *  `virtualizer.scrollToIndex` when the selection changes via the jump list
+ *  or the search dropdown. */
+export function indexOfModuleRow(rows: readonly TreeRow[], moduleId: number): number {
+  return rows.findIndex((r) => r.kind === "module" && r.module.id === moduleId);
+}
+
+/** The row index of a function selection, or -1 when it is not present (its
+ *  module, or its module's group, is closed). */
+export function indexOfFnRow(rows: readonly TreeRow[], fn: number): number {
+  return rows.findIndex((r) => r.kind === "fn" && r.row.fn === fn);
 }

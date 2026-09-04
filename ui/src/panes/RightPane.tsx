@@ -57,12 +57,18 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
   // Xrefs from the menu, the palette or a chord (ui/src/actions/store.ts).
   const panel = useActionsState().rightPanel;
   const selection = useSelection();
+  // `fn` is `-1` before anything is selected (App.tsx) — the same sentinel
+  // `perFn()` already uses in hooks.ts to skip a query, so passing it straight
+  // through disables `ctx`/`callers`/`callees`/`pkg` rather than fetching
+  // `/api/fn/0/...` (fn 0 is the bytecode global function, has no recorded
+  // source range and 400s — that was the first-paint console error).
+  const hasFn = fn >= 0;
   const ctx = useContextResource(fn);
   const findingChord = keymap.chordFor("annotate.finding");
   const callers = useWhoCalls(fn);
   const callees = useCallsFrom(fn);
   const findings = useFindings();
-  const pkg = usePackageId(ctx.data?.metadata?.module ?? 0);
+  const pkg = usePackageId(hasFn ? (ctx.data?.metadata?.module ?? 0) : -1);
   const md = ctx.data?.metadata;
   // segregation.ts attributes a module to `node_modules/<pkg>/…` from path
   // shape alone (no two-key gate) — a WEAKER claim than `packageId`'s, so
@@ -87,34 +93,46 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
       </PaneHeader>
 
       <Tabs.Content value="context" className={bodyClass}>
-        <div className="py-2">
-          <KeyVal k="name" v={displayName(md)} />
-          <KeyVal k="fn" v={md?.fn} />
-          <KeyVal k="module" v={md?.module} />
-          <KeyVal k="file" v={md?.file} />
-          <KeyVal k="lines" v={md?.lines === null || md?.lines === undefined ? null : `${md.lines[0]}-${md.lines[1]}`} />
-          <KeyVal k="params" v={md?.params} />
-          <KeyVal k="kind" v={md?.kind} />
-          <KeyVal k="edges in/out" v={md === undefined ? null : `${md.edgesIn} / ${md.edgesOut}`} />
-        </div>
-        <div className="border-t border-border py-2">
-          <div className="px-3 pb-1 text-xs text-text-muted">strings</div>
-          {(ctx.data?.strings?.rows ?? []).map((s) => (
-            <div key={s.sid} className="px-3 py-0.5 font-mono text-xs text-text">
-              sid:{s.sid} <span className="text-text-muted">{s.role} x{s.n}</span> {s.head}
+        {!hasFn ? (
+          <Empty>select a function</Empty>
+        ) : (
+          <>
+            <div className="py-2">
+              <KeyVal k="name" v={displayName(md)} />
+              <KeyVal k="fn" v={md?.fn} />
+              <KeyVal k="module" v={md?.module} />
+              <KeyVal k="file" v={md?.file} />
+              <KeyVal k="lines" v={md?.lines === null || md?.lines === undefined ? null : `${md.lines[0]}-${md.lines[1]}`} />
+              <KeyVal k="params" v={md?.params} />
+              <KeyVal k="kind" v={md?.kind} />
+              <KeyVal k="edges in/out" v={md === undefined ? null : `${md.edgesIn} / ${md.edgesOut}`} />
             </div>
-          ))}
-        </div>
+            <div className="border-t border-border py-2">
+              <div className="px-3 pb-1 text-xs text-text-muted">strings</div>
+              {(ctx.data?.strings?.rows ?? []).map((s) => (
+                <div key={s.sid} className="px-3 py-0.5 font-mono text-xs text-text">
+                  sid:{s.sid} <span className="text-text-muted">{s.role} x{s.n}</span> {s.head}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </Tabs.Content>
 
       <Tabs.Content value="xrefs" className={bodyClass}>
-        <div className="px-3 pt-2 pb-1 text-xs text-text-muted">
-          called by ({callers.data?.total ?? 0})
-          {callers.data !== undefined && callers.data.unknownInScope > 0 && <> · {callers.data.unknownInScope} unknown in scope</>}
-        </div>
-        {(callers.data?.rows ?? []).map((e) => <XrefRow key={`in-${e.fn}`} edge={e} dir="in" />)}
-        <div className="px-3 pt-3 pb-1 text-xs text-text-muted">calls ({callees.data?.total ?? 0})</div>
-        {(callees.data?.rows ?? []).map((e) => <XrefRow key={`out-${e.fn}`} edge={e} dir="out" />)}
+        {!hasFn ? (
+          <Empty>select a function</Empty>
+        ) : (
+          <>
+            <div className="px-3 pt-2 pb-1 text-xs text-text-muted">
+              called by ({callers.data?.total ?? 0})
+              {callers.data !== undefined && callers.data.unknownInScope > 0 && <> · {callers.data.unknownInScope} unknown in scope</>}
+            </div>
+            {(callers.data?.rows ?? []).map((e) => <XrefRow key={`in-${e.fn}`} edge={e} dir="in" />)}
+            <div className="px-3 pt-3 pb-1 text-xs text-text-muted">calls ({callees.data?.total ?? 0})</div>
+            {(callees.data?.rows ?? []).map((e) => <XrefRow key={`out-${e.fn}`} edge={e} dir="out" />)}
+          </>
+        )}
       </Tabs.Content>
 
       <Tabs.Content value="findings" className={bodyClass}>
@@ -124,9 +142,12 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <span className="text-xs text-text-muted">{findings.data?.total ?? 0} finding(s)</span>
           <ToolButton
             className="ml-auto"
-            active
+            active={hasFn || selection.fn !== undefined}
             {...(findingChord !== undefined ? { tip: findingChord } : {})}
-            onClick={() => openDialog("finding", selection.fn === undefined ? { kind: "fn", fn } : selection)}
+            onClick={() => {
+              if (!hasFn && selection.fn === undefined) return;
+              openDialog("finding", selection.fn === undefined ? { kind: "fn", fn } : selection);
+            }}
           >
             Add finding
           </ToolButton>
@@ -150,7 +171,9 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
       </Tabs.Content>
 
       <Tabs.Content value="package" className={bodyClass}>
-        {pkg.data === undefined ? (
+        {!hasFn ? (
+          <Empty>select a function</Empty>
+        ) : pkg.data === undefined ? (
           <Empty>loading...</Empty>
         ) : pkg.data.available ? (
           <div className="py-2">

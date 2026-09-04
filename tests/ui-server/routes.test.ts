@@ -180,6 +180,27 @@ test("GET /api/functions pages {fn,name,size,module}", async () => {
   for (const row of body.rows) assert.ok("fn" in row && "name" in row && "size" in row && "module" in row);
 });
 
+test("GET /api/functions?limit= raises the page size, clamped to FUNCTIONS_PAGE_MAX", async () => {
+  const r = await get("/api/functions", { limit: "1000" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, listFunctions(resources.artifact, 0, 1000));
+  const body = r.json as { rows: readonly unknown[]; total: number };
+  // Proves a big ?limit= does not silently fall back to the 50-row default
+  // (the bug this route change fixes: `ui/src/hooks.ts`'s
+  // useFunctionCatalogue used to walk 50 rows a page, capping the whole
+  // catalogue at 200*50=10,000 — less than Service NSW's ~15,000
+  // functions).
+  assert.equal(body.rows.length, Math.min(1000, body.total));
+  assert.ok(body.rows.length > 50, `expected more than one 50-row default page, saw ${body.rows.length}`);
+
+  const over = await get("/api/functions", { limit: "999999" });
+  assert.equal(over.status, 200);
+  assert.deepEqual(over.json, listFunctions(resources.artifact, 0, 1000), "limit clamps to FUNCTIONS_PAGE_MAX, not a 400");
+
+  const bad = await get("/api/functions", { limit: "not-a-number" });
+  assert.equal(bad.status, 200, "a nonsense limit falls back to the default page size rather than erroring");
+});
+
 test("GET /api/search/functions matches resources.searchFunctions", async () => {
   const r = await get("/api/search/functions", { q: "e" });
   assert.equal(r.status, 200);

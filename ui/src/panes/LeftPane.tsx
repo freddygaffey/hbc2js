@@ -15,15 +15,18 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import clsx from "clsx";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Empty, PaneHeader } from "../components/primitives.tsx";
 import { useLeads, useModuleSources, useModules, useSearchFunctions } from "../hooks.ts";
-import { defaultOpenGroups, filterGroups, fnLabel, groupModulesSegregated, moduleLabelSegregated, segregationById } from "../listing/modules.ts";
+import {
+  defaultOpenGroups, filterGroups, flattenTree, fnLabel, groupModulesSegregated, indexOfFnRow, indexOfModuleRow,
+  moduleLabelSegregated, segregationById, type TreeRow,
+} from "../listing/modules.ts";
 import { useSegregation } from "../listing/use-segregation.ts";
 import { useQueryText } from "../listing/search-store.ts";
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleEntry } from "../listing/wire.ts";
-import type { ModuleSourceFn } from "../contracts.ts";
 
 const MENU_ITEMS: readonly string[] = ["Rename", "Add comment", "Go to definition", "Find xrefs", "Mark reviewed", "Copy disasm offset"];
 
@@ -51,11 +54,23 @@ function RowMenu({ children }: { readonly children: ReactNode }): ReactNode {
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
 
-/** One row of the flattened tree — what the keyboard cursor walks. */
-type TreeRow =
-  | { readonly kind: "group"; readonly key: string; readonly label: string; readonly count: number; readonly open: boolean }
-  | { readonly kind: "module"; readonly key: string; readonly module: ModuleEntry; readonly count: number; readonly open: boolean; readonly depth: number }
-  | { readonly kind: "fn"; readonly key: string; readonly row: ModuleSourceFn; readonly depth: number };
+// `TreeRow` and the flatten/index-lookup helpers live in
+// ../listing/modules.ts — pure and framework-free, so tests/gate/ui can
+// exercise them without a browser (see flattenTree's own comment there).
+
+/** Row height, read once from the `--row-height` token (`ui/themes/*.json`,
+ *  set on `:root` before the first render — see `ui/src/theme/apply.ts`) so
+ *  the virtualizer's initial estimate matches the real row instead of
+ *  under/over-shooting the scrollbar before the first row is measured.
+ *  `useVirtualizer`'s `measureElement` corrects it exactly after that, so
+ *  this only has to be close, not exact — and a density toggle mid-session
+ *  is caught by the next real measurement, not by re-reading the token. */
+function readRowHeightPx(): number {
+  if (typeof window === "undefined") return 32;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--row-height").trim();
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) && n > 0 ? n : 32;
+}
 
 function useOpenSet(initial: readonly string[]): [ReadonlySet<string>, (key: string, force?: boolean) => void] {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(initial));
@@ -119,23 +134,56 @@ export function LeftPane(): ReactNode {
   const sources = useModuleSources(openIds);
   const searching = query.trim() !== "";
 
-  const rows = useMemo<readonly TreeRow[]>(() => {
-    const out: TreeRow[] = [];
-    for (const g of groups) {
-      const groupOpen = openGroups.has(g.key);
-      out.push({ kind: "group", key: g.key, label: g.label, count: g.modules.length, open: groupOpen });
-      if (!groupOpen) continue;
-      for (const m of g.modules) {
-        const key = `m:${m.id}`;
-        const moduleOpen = openModules.has(key);
-        const fns = sources.get(m.id)?.functions ?? [];
-        out.push({ kind: "module", key, module: m, count: fns.length, open: moduleOpen, depth: 1 });
-        if (!moduleOpen) continue;
-        for (const r of fns) out.push({ kind: "fn", key: `f:${r.fn}`, row: r, depth: 2 });
-      }
-    }
-    return out;
-  }, [groups, openGroups, openModules, sources]);
+  const rows = useMemo<readonly TreeRow[]>(
+    () => flattenTree(groups, openGroups, openModules, (id) => sources.get(id)?.functions ?? []),
+    [groups, openGroups, openModules, sources],
+  );
+
+  // Virtualised: only the rows the viewport can show are ever mounted (spec
+  // 22 §2's known debt — Service NSW's tree is ~4.5k modules / ~15k
+  // functions once every group is open, which used to mean that many real
+  // DOM nodes). `parentRef` is the scroll container below; `estimateSize`
+  // just needs to be close (see readRowHeightPx), `measureElement` corrects
+  // it per row after the first paint.
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const [rowHeightPx] = useState(readRowHeightPx);
+  const virtualizer = useVirtualizer({
+    count: searching ? 0 : rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => rowHeightPx,
+    overscan: 12,
+    getItemKey: (index) => rows[index]?.key ?? index,
+  });
+
+  // Scroll the active/selected row into view: the keyboard cursor moving
+  // past the visible window, and a selection change from elsewhere (the
+  // back/forward jump list, or picking a search hit and clearing the
+  // query) — both used to be a no-op because every row was already
+  // mounted DOM; virtualised, the target row may not even be rendered.
+  useEffect(() => {
+    if (searching) return;
+    virtualizer.scrollToIndex(Math.min(cursor, Math.max(rows.length - 1, 0)), { align: "auto" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursor, searching]);
+
+  const scrolledForSelection = useRef("");
+  useEffect(() => {
+    if (searching) return;
+    const target = sel.kind === "module" && sel.moduleId !== undefined
+      ? `m:${sel.moduleId}`
+      : sel.fn !== undefined ? `f:${sel.fn}` : "";
+    if (target === "" || target === scrolledForSelection.current) return;
+    const idx = sel.kind === "module" && sel.moduleId !== undefined
+      ? indexOfModuleRow(rows, Number(sel.moduleId))
+      : sel.fn !== undefined ? indexOfFnRow(rows, sel.fn) : -1;
+    // The row is not in the flattened array yet (its group/module is still
+    // closed, or a just-opened module's functions have not loaded) — try
+    // again once `rows` changes rather than giving up.
+    if (idx < 0) return;
+    scrolledForSelection.current = target;
+    virtualizer.scrollToIndex(idx, { align: "auto" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel.kind, sel.moduleId, sel.fn, rows, searching]);
 
   // Nothing is selected on load, and fn 0 (the global function) has no
   // recorded source range — opening it returns 400, not a listing. Land on
@@ -209,20 +257,30 @@ export function LeftPane(): ReactNode {
    *  functions resolving each one's module to graft it into the tree would
    *  be 15 000 requests. */
   const searchBody = ((): ReactNode => {
-    const moduleHits = filterGroups(groups, query, labelOf).flatMap((g) => g.modules.map((m) => ({ group: g.label, module: m }))).slice(0, 100);
+    const moduleHits = filterGroups(groups, query, labelOf)
+      .flatMap((g) => g.modules.map((m) => ({ groupKey: g.key, group: g.label, module: m })))
+      .slice(0, 100);
     if (hits.isLoading && moduleHits.length === 0) return <Empty>searching…</Empty>;
     const rowsOut = (hits.data?.rows ?? []).slice(0, 200);
     if (rowsOut.length === 0 && moduleHits.length === 0) return <Empty>nothing matches “{query}”</Empty>;
     return (
       <>
         {moduleHits.length > 0 && <div className="px-2 py-1 text-xs uppercase text-text-muted">modules</div>}
-        {moduleHits.map(({ group, module: m }) => (
+        {moduleHits.map(({ groupKey, group, module: m }) => (
           <div
             key={`sm:${m.id}`}
             data-module={m.id}
             title={group}
             className={rowClass(sel.kind === "module" && sel.moduleId === String(m.id), false)}
-            onClick={() => select({ kind: "module", moduleId: String(m.id) })}
+            onClick={() => {
+              // Selecting a search hit must also open its group, or the row
+              // this selection points at would never exist in the flattened
+              // tree — `flattenTree` skips a closed group's modules
+              // entirely, so the scroll-into-view effect below would have
+              // no row to find once the query is cleared.
+              toggleGroup(groupKey, true);
+              select({ kind: "module", moduleId: String(m.id) });
+            }}
           >
             <span className="truncate">{labelOf(m)}</span>
             <span className="ml-auto shrink-0 truncate font-mono text-text-muted">module_{m.id}</span>
@@ -248,8 +306,65 @@ export function LeftPane(): ReactNode {
     );
   })();
 
-  const body = ((): ReactNode => {
-    if (searching) return searchBody;
+  /** One row's JSX — shared between the virtualizer's `getVirtualItems()`
+   *  loop and (were it ever needed) a plain render; kept as a function
+   *  rather than inlined so the group/module/fn cases read the same as
+   *  before virtualisation. */
+  const renderRow = (row: TreeRow, i: number): ReactNode => {
+    const active = i === Math.min(cursor, rows.length - 1);
+    if (row.kind === "group") {
+      return (
+        <div
+          data-group={row.key}
+          className={rowClass(false, active)}
+          onClick={() => { setCursor(i); activate(row); }}
+        >
+          <span className="font-mono text-text-muted">{row.open ? "v" : ">"}</span>
+          <span className="truncate text-text">{row.label}</span>
+          <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.count}</span>
+        </div>
+      );
+    }
+    if (row.kind === "module") {
+      const selected = sel.kind === "module" && sel.moduleId === String(row.module.id);
+      return (
+        <RowMenu>
+          <div
+            data-module={row.module.id}
+            className={rowClass(selected, active)}
+            style={{ paddingLeft: `calc(0.5rem + ${row.depth} * 0.75rem)` }}
+            onClick={() => { setCursor(i); activate(row); }}
+            title={segById.get(row.module.id)?.path ?? row.module.file}
+          >
+            <span className="font-mono text-text-muted">{row.open ? "v" : ">"}</span>
+            <span className="truncate">{labelOf(row.module)}</span>
+            <span className="shrink-0 font-mono text-[0.9em] text-text-muted opacity-60">module_{row.module.id}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.count}</span>
+          </div>
+        </RowMenu>
+      );
+    }
+    const selected = sel.fn === row.row.fn && sel.kind !== "module";
+    return (
+      <RowMenu>
+        <div
+          data-fn={row.row.fn}
+          className={rowClass(selected, active)}
+          style={{ paddingLeft: `calc(0.5rem + ${row.depth} * 0.75rem)` }}
+          onClick={() => { setCursor(i); activate(row); }}
+        >
+          <span className="truncate font-mono">{fnLabel(row.row)}</span>
+          <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.row.lines[0]}</span>
+        </div>
+      </RowMenu>
+    );
+  };
+
+  /** The empty/loading states that replace the whole tree — computed once
+   *  so both the status line and the "is there anything to virtualise at
+   *  all" check below read the same verdict. `null` means "render the
+   *  virtualised rows". */
+  const treeStatus = ((): ReactNode | null => {
     if (modules.isLoading) return <Empty>loading modules…</Empty>;
     // Segregation is seconds of work on a 4,510-module bundle (the server
     // warms it at startup, but a browser can still beat it there). Say so
@@ -260,57 +375,29 @@ export function LeftPane(): ReactNode {
     if (seg.isLoading) return <Empty>recovering module names…</Empty>;
     if (modules.isError) return <Empty>could not load /api/modules</Empty>;
     if (rows.length === 0) return <Empty>no modules in this artifact</Empty>;
-    return rows.map((row, i) => {
-      const active = i === Math.min(cursor, rows.length - 1);
-      if (row.kind === "group") {
-        return (
-          <div
-            key={row.key}
-            data-group={row.key}
-            className={rowClass(false, active)}
-            onClick={() => { setCursor(i); activate(row); }}
-          >
-            <span className="font-mono text-text-muted">{row.open ? "v" : ">"}</span>
-            <span className="truncate text-text">{row.label}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.count}</span>
-          </div>
-        );
-      }
-      if (row.kind === "module") {
-        const selected = sel.kind === "module" && sel.moduleId === String(row.module.id);
-        return (
-          <RowMenu key={row.key}>
-            <div
-              data-module={row.module.id}
-              className={rowClass(selected, active)}
-              style={{ paddingLeft: `calc(0.5rem + ${row.depth} * 0.75rem)` }}
-              onClick={() => { setCursor(i); activate(row); }}
-              title={segById.get(row.module.id)?.path ?? row.module.file}
-            >
-              <span className="font-mono text-text-muted">{row.open ? "v" : ">"}</span>
-              <span className="truncate">{labelOf(row.module)}</span>
-              <span className="shrink-0 font-mono text-[0.9em] text-text-muted opacity-60">module_{row.module.id}</span>
-              <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.count}</span>
-            </div>
-          </RowMenu>
-        );
-      }
-      const selected = sel.fn === row.row.fn && sel.kind !== "module";
-      return (
-        <RowMenu key={row.key}>
-          <div
-            data-fn={row.row.fn}
-            className={rowClass(selected, active)}
-            style={{ paddingLeft: `calc(0.5rem + ${row.depth} * 0.75rem)` }}
-            onClick={() => { setCursor(i); activate(row); }}
-          >
-            <span className="truncate font-mono">{fnLabel(row.row)}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.row.lines[0]}</span>
-          </div>
-        </RowMenu>
-      );
-    });
+    return null;
   })();
+
+  const body = searching
+    ? searchBody
+    : (treeStatus ?? (
+      <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+        {virtualizer.getVirtualItems().map((item) => {
+          const row = rows[item.index];
+          if (row === undefined) return null;
+          return (
+            <div
+              key={item.key}
+              data-index={item.index}
+              ref={virtualizer.measureElement}
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${item.start}px)` }}
+            >
+              {renderRow(row, item.index)}
+            </div>
+          );
+        })}
+      </div>
+    ));
 
   return (
     <Tabs.Root defaultValue="modules" className="flex h-full min-w-0 flex-col bg-surface">
@@ -322,6 +409,7 @@ export function LeftPane(): ReactNode {
       </PaneHeader>
       <Tabs.Content value="modules" className="min-h-0 flex-1 outline-none">
         <div
+          ref={parentRef}
           role="tree"
           aria-label="module tree"
           tabIndex={0}

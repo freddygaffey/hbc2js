@@ -218,13 +218,62 @@ first would reshuffle every row under the analyst's cursor a moment later.
 per `node_modules/<pkg>` (`ui/src/listing/modules.ts`), and only fetches
 functions for the modules that are *open*, from their file views — a real
 bundle has 15 000 functions, so walking `/api/functions?cursor=` (the
-`useFunctionCatalogue` hook, kept for callers that want the whole catalogue)
-would be 300 requests to fill a tree that shows a dozen rows. The editor
-renders at most `MAX_RENDER_LINES` (5 000) lines and says how many it hid
+`useFunctionCatalogue` hook, kept for callers that want the whole catalogue;
+it now asks for `?limit=1000` a page — `FUNCTIONS_PAGE_MAX`,
+`src/ui-server/list.ts` — instead of the route's 50-row default, so the
+walk that used to cap out at 200×50=10,000 functions, silently dropping a
+third of Service NSW's ~15,000, is 15 requests, not 300) would still be a
+lot of requests to fill a tree that shows a dozen rows. The editor renders
+at most `MAX_RENDER_LINES` (5 000) lines and says how many it hid
 (`ui/src/listing/truncate.ts`), on top of the server's own truncation. The
 top bar's search is `GET /api/search/functions`: a dropdown of at most 50
 hits, `Enter` takes the first, and while a query is present the left pane
 shows the hits as a flat list instead of the tree.
+
+**Virtualised.** The tree is windowed by `@tanstack/react-virtual` (pinned
+exact, `ui/package.json`): `ui/src/listing/modules.ts`'s `flattenTree` turns
+the grouped tree (groups → open modules → open modules' functions) into one
+flat row array, and `ui/src/panes/LeftPane.tsx` mounts only the rows the
+viewport (plus a 12-row overscan) can show, via `useVirtualizer`. Everything
+the pre-virtualisation tree had keeps working against the flattened rows:
+expand/collapse, selection highlight, the roving-focus keyboard cursor
+(`ArrowUp`/`ArrowDown` call `virtualizer.scrollToIndex` so the cursor never
+walks off-screen), the search filter (`filterGroups` still runs over the
+WHOLE grouped tree, not the rendered window — search results are a separate
+non-virtualised list, capped at 100 modules / 200 functions same as before),
+the right-click context menu, and the `!seg.isLoading` auto-select-first-
+module guard. New: picking a module from a search hit now also opens its
+group (`toggleGroup`), and a `scrolledForSelection` effect calls
+`virtualizer.scrollToIndex` whenever the selected module/fn's row resolves
+in the flattened array — covering both the back/forward jump list and
+"select a search hit, then clear the query". A function selected from a
+*function*-search hit still cannot be scrolled to in the tree if its module
+is closed: `search/functions` returns fn ids with no module id (the same
+"15,000 requests to resolve" constraint noted above), so there is nothing to
+open.
+
+Measured on the live Service NSW rig (4,510 modules; `ui/src/theme` default
+density/tokens, Screens+Navigation open by default — Unclassified, the
+other 4,316 modules, stays collapsed): a same-page build against the SAME
+`:7331` ui-server, before vs. after, `[data-tree="modules"] *` node count and
+the count of rendered `[data-group]`/`[data-module]`/`[data-fn]` rows —
+
+| | DOM nodes under the tree | rendered rows |
+|---|---|---|
+| before (no virtualisation) | 1,026 | 210 |
+| after (virtualised) | 172 | 31 |
+
+— an 83% cut in DOM nodes and rendered rows with the same two groups open,
+even though Unclassified (the group that actually has thousands of modules)
+was never opened in this measurement; opening it is exactly the case
+virtualisation exists for, since the old tree would have mounted all 4,316
+of its rows at once. Time-to-interactive (`page.goto` → first `[data-module]`
+visible) was NOT a clean signal on this box: a cold run measured 51.6s
+before / 21.3s after, but a second, warm run measured 9.0s / 9.7s — the
+number is dominated by `/api/segregation`'s cache state and other agents'
+concurrent load on the shared box, not by tree rendering, so it is reported
+here for completeness but the DOM-node counts above are the metric this
+landing actually moved.
 
 **Back / forward.** The top bar carries the jump list's two arrows, left of
 the breadcrumbs. They dispatch `navigate.back` / `navigate.forward` through
@@ -253,9 +302,13 @@ and stops no events, so right-clicks reach the annotate track's menu.
   is landing 5.
 - **The activity pane** is live (see "Activity feed" below) — this bullet
   is now historical.
-- No virtualisation (spec 22 §2 accepts it): the tree renders every open
-  module's rows and the editor is capped at 5 000 lines instead. No graph
-  view, no worker/jobs rail, no Playwright smoke test yet.
+- ~~No virtualisation~~ FIXED: the tree is windowed by
+  `@tanstack/react-virtual` (see "Virtualised" above); the editor is still
+  capped at 5 000 rendered lines rather than windowed (`ui/src/listing/
+  truncate.ts`) — a real listing pane, not a graph view, so a fixed cap plus
+  a truncation notice is enough for now. No graph view, no worker/jobs rail
+  bullet applies here (the AI tab landed separately, see "AI workers"
+  below); no further Playwright smoke gaps known.
 
 ## Actions, keymap, context menu, annotate (wave 2, track 2)
 

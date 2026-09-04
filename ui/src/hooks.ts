@@ -178,10 +178,19 @@ export const useModuleSources = (ids: readonly number[]): ReadonlyMap<number, Mo
 export const useModules = (): UseQueryResult<ModuleListPage> =>
   useQuery({ queryKey: ["modules"], queryFn: () => api.modules(), staleTime: Infinity });
 
-/** How many 50-row pages of `/api/functions` the tree will walk. 200 pages =
- *  10 000 functions, which is more than the left pane can usefully show
- *  without virtualisation (spec 22 §2 accepts no virtualisation for the MVP);
- *  past that the tree shows what it has and says so. */
+/** The page size requested per `/api/functions` call — up to
+ *  `FUNCTIONS_PAGE_MAX` (1000, `src/ui-server/list.ts`) rather than the
+ *  route's 50-row default, so the whole catalogue walk below is a handful
+ *  of requests instead of hundreds. */
+export const FUNCTION_CATALOGUE_PAGE_SIZE = 1000;
+
+/** How many pages of `/api/functions` the tree will walk before giving up —
+ *  at {@link FUNCTION_CATALOGUE_PAGE_SIZE} a page this is 200 000 functions,
+ *  well past any real bundle (Service NSW's ~15 000 is 15 pages); past that
+ *  the caller shows what it has and says so via `incomplete`. This used to
+ *  be a real ceiling (200 pages of 50 = 10 000, less than NSW's ~15 000
+ *  functions, silently dropping a third of them) — raising the page size
+ *  is what actually lifted the cap, this is just a runaway guard now. */
 export const FUNCTION_PAGE_LIMIT = 200;
 
 export interface FunctionCatalogue {
@@ -202,7 +211,7 @@ export const useFunctionCatalogue = (): UseQueryResult<FunctionCatalogue> =>
       let cursor: number | undefined = 0;
       let total = 0;
       for (let page = 0; page < FUNCTION_PAGE_LIMIT; page += 1) {
-        const p: FunctionListPage = await api.functions(cursor);
+        const p: FunctionListPage = await api.functions(cursor, FUNCTION_CATALOGUE_PAGE_SIZE);
         rows.push(...p.rows);
         total = p.total;
         if (p.nextCursor === null) return { rows, total, incomplete: false };

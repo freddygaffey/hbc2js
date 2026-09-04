@@ -107,9 +107,10 @@ function errorLine(e: unknown): string {
 export function WorkersPane({ fn }: { readonly fn: number }): ReactNode {
   const selection = useSelection();
   const target = selection.fn ?? fn;
+  const hasTarget = target >= 0;
   const jobs = useJobs();
   const sessions = useSessions();
-  const suggestions = useSuggestions(target);
+  const suggestions = useSuggestions(hasTarget ? target : undefined);
   const enqueue = useEnqueue();
   const cancel = useCancelJob();
   const promote = usePromote();
@@ -151,7 +152,9 @@ export function WorkersPane({ fn }: { readonly fn: number }): ReactNode {
             {(sessions.data?.rows ?? []).length === 0 && <span className="text-xs text-text-muted">nobody yet</span>}
           </div>
 
-          <div className="px-3 pt-2 pb-1 text-xs text-text-muted">suggestions for fn:{target}</div>
+          <div className="px-3 pt-2 pb-1 text-xs text-text-muted">
+            {hasTarget ? `suggestions for fn:${target}` : "suggestions (no function selected)"}
+          </div>
           {(suggestions.data?.rows ?? []).length === 0 && <Empty>No suggestions yet — queue one above.</Empty>}
           {(suggestions.data?.rows ?? []).map((row) => (
             <SuggestionRowView

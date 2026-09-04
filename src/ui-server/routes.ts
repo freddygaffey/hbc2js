@@ -225,7 +225,7 @@ const BASE_ROUTES: readonly Route[] = [
   {
     method: "GET",
     re: /^\/api\/functions$/,
-    handler: (_p, req, ctx) => ok(listFunctions(ctx.resources.artifact, qNum(req.query.cursor) ?? 0)),
+    handler: (_p, req, ctx) => ok(listFunctions(ctx.resources.artifact, qNum(req.query.cursor) ?? 0, qNum(req.query.limit))),
   },
   // -- search (spec 17 §14 addition 3) --
   {

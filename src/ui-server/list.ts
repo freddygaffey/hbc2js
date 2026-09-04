@@ -45,10 +45,17 @@ export function listModules(artifactDir: string): ModuleListResult {
   return { rows: modules.slice(0, CAP_MODULES), total: modules.length, truncated: modules.length > CAP_MODULES };
 }
 
-/** `/api/functions?cursor=` — every function `{fn, name, size, module}`,
- *  paged like `search/functions` (`src/mcp/leads.ts`'s `paginate`) but with
- *  no name filter; same page size so the two feel consistent in the UI. */
+/** `/api/functions?cursor=&limit=` — every function `{fn, name, size,
+ *  module}`, paged like `search/functions` (`src/mcp/leads.ts`'s
+ *  `paginate`) but with no name filter. Default page size (50) matches
+ *  `search/functions` so the two feel consistent in the UI; a caller that
+ *  wants the whole catalogue in fewer round trips (the left pane's
+ *  `useFunctionCatalogue` hook, `ui/src/hooks.ts`) may ask for up to
+ *  {@link FUNCTIONS_PAGE_MAX} at once — a real bundle (Service NSW) has
+ *  ~15,000 functions, which the old fixed 50-row page made a 300-request
+ *  walk; `?limit=1000` makes it 15. */
 const FUNCTIONS_PAGE_CAP = 50;
+export const FUNCTIONS_PAGE_MAX = 1000;
 
 export interface FunctionListRow {
   readonly fn: number;
@@ -64,17 +71,26 @@ export interface FunctionListPage {
   readonly nextCursor: number | null;
 }
 
-export function listFunctions(artifact: ArtifactService, cursor = 0): FunctionListPage {
+/** Clamps a caller-supplied `?limit=` into `[1, FUNCTIONS_PAGE_MAX]`,
+ *  falling back to the default page size for anything absent or not a
+ *  positive integer (never a 400 — an odd `limit` is just ignored). */
+export function clampFunctionsLimit(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw) || raw < 1) return FUNCTIONS_PAGE_CAP;
+  return Math.min(Math.floor(raw), FUNCTIONS_PAGE_MAX);
+}
+
+export function listFunctions(artifact: ArtifactService, cursor = 0, limit = FUNCTIONS_PAGE_CAP): FunctionListPage {
+  const pageSize = clampFunctionsLimit(limit);
   const all = artifact.listFns();
   const start = Math.max(0, cursor);
-  const page = all.slice(start, start + FUNCTIONS_PAGE_CAP);
+  const page = all.slice(start, start + pageSize);
   const rows: FunctionListRow[] = page.map(({ fn }) => {
     const s: FnSummary = artifact.fn(fn);
     const size = s.lines !== null ? s.lines[1] - s.lines[0] + 1 : null;
     return { fn, name: s.overlayName ?? s.name, size, module: s.module };
   });
   const nextCursor = start + rows.length < all.length ? start + rows.length : null;
-  return { rows, total: all.length, truncated: all.length > FUNCTIONS_PAGE_CAP, nextCursor };
+  return { rows, total: all.length, truncated: all.length > pageSize, nextCursor };
 }
 
 /** `/api/module/{id}/source` — the whole module file plus every function

@@ -153,10 +153,10 @@ export const mockApi: Api = {
   moduleSource: (id): Promise<ModuleSource> => delay(moduleSourceFor(id)),
   modules: (): Promise<ModuleListPage> =>
     delay({ rows: MOCK_MODULES, total: MOCK_MODULES.length, truncated: false }),
-  // Paged exactly like the server (50 a page) so the catalogue hook's cursor
-  // walk is exercised in mock mode too.
-  functions: (cursor = 0): Promise<FunctionListPage> => {
-    const page = MOCK_FUNCTIONS.slice(cursor, cursor + 50);
+  // Paged exactly like the server (50 a page by default, up to `limit`) so
+  // the catalogue hook's cursor walk is exercised in mock mode too.
+  functions: (cursor = 0, limit = 50): Promise<FunctionListPage> => {
+    const page = MOCK_FUNCTIONS.slice(cursor, cursor + limit);
     const next = cursor + page.length;
     return delay({
       rows: page, total: MOCK_FUNCTIONS.length, truncated: false,

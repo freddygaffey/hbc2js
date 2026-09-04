@@ -264,6 +264,89 @@ test("filterGroups filters on group labels and module labels, keeping the tree s
   assert.equal(byGroup[0]!.modules.length, 1, "a group whose own label matches keeps all of its modules");
 });
 
+// -- 4b. flattening the tree for the virtualizer -----------------------------
+// LeftPane used to render every open group's modules and every open module's
+// functions as real DOM nodes. `flattenTree` (ui/src/listing/modules.ts) is
+// the pure function that turns the grouped tree into the flat row array
+// `@tanstack/react-virtual` windows — these assert its own properties
+// (which rows appear for which open/closed state, nesting, filter
+// interplay, index lookup), never a literal comparison against a shared
+// fixture's whole output.
+
+const fn = (n: number, start: number): unknown => ({ fn: n, name: `fn${n}`, lines: [start, start + 2] });
+
+test("flattenTree emits a row per group, and skips a closed group's modules entirely", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE);
+  const rows = m.flattenTree(groups, new Set(), new Set(), () => []) as readonly { kind: string; key: string }[];
+  assert.equal(rows.length, groups.length, "every group is one row when none is open");
+  assert.deepEqual(rows.map((r) => r.kind), groups.map(() => "group"));
+});
+
+test("flattenTree nests an open group's modules, and an open module's functions, at the right depth", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE) as readonly { key: string; modules: readonly { id: number }[] }[];
+  const screens = groups.find((g) => g.key === m.SCREENS_KEY)!;
+  const openGroups = new Set([m.SCREENS_KEY]);
+  const firstModuleKey = `m:${screens.modules[0]!.id}`;
+  const openModules = new Set([firstModuleKey]);
+  const functionsOf = (id: number): readonly unknown[] => (id === screens.modules[0]!.id ? [fn(101, 1), fn(102, 4)] : []);
+  const rows = m.flattenTree(groups, openGroups, openModules, functionsOf) as readonly { kind: string; key: string; depth?: number }[];
+
+  // One row for every group (open or not), then Screens's two modules
+  // (Screens is open), then the first module's two functions (it alone is
+  // open) — no other group's modules appear.
+  assert.equal(rows.filter((r) => r.kind === "group").length, groups.length);
+  const moduleRows = rows.filter((r) => r.kind === "module");
+  assert.equal(moduleRows.length, screens.modules.length, "only the open group's modules are rows");
+  assert.deepEqual(moduleRows.map((r) => r.depth), moduleRows.map(() => 1));
+  const fnRows = rows.filter((r) => r.kind === "fn");
+  assert.equal(fnRows.length, 2, "only the open module's functions are rows");
+  assert.deepEqual(fnRows.map((r) => r.key), ["f:101", "f:102"]);
+  assert.deepEqual(fnRows.map((r) => r.depth), [2, 2]);
+
+  // Order: group row, then its own module rows in place, each open module's
+  // function rows immediately after it.
+  const screensIdx = rows.findIndex((r) => r.key === m.SCREENS_KEY);
+  const firstModuleIdx = rows.findIndex((r) => r.key === firstModuleKey);
+  assert.ok(firstModuleIdx === screensIdx + 1, "the first module row follows its group row directly");
+  assert.equal(rows[firstModuleIdx + 1]!.key, "f:101", "function rows follow their open module directly");
+});
+
+test("flattenTree composes with filterGroups: a filtered tree flattens to exactly the filtered rows", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE) as readonly { label: string; key: string; modules: readonly { id: number }[] }[];
+  const byId = m.segregationById(SEG_FIXTURE) as Map<number, unknown>;
+  const labelOf = (x: { id: number }): string => m.moduleLabelSegregated(x, byId.get(x.id)) as string;
+  const filtered = m.filterGroups(groups, "screen", labelOf) as readonly { key: string; modules: readonly { id: number }[] }[];
+  const allOpen = new Set(filtered.map((g) => g.key));
+  const rows = m.flattenTree(filtered, allOpen, new Set(), () => []) as readonly { kind: string; key: string }[];
+  assert.deepEqual(
+    rows.map((r) => r.key),
+    filtered.flatMap((g) => [g.key, ...g.modules.map((mm) => `m:${mm.id}`)]),
+    "flattening a filtered tree never resurrects a module the filter dropped",
+  );
+});
+
+test("indexOfModuleRow / indexOfFnRow find a selection's row, or -1 when its group/module is closed", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE) as readonly { key: string; modules: readonly { id: number }[] }[];
+  const screens = groups.find((g) => g.key === m.SCREENS_KEY)!;
+  const targetModuleId = screens.modules[0]!.id;
+
+  const closedRows = m.flattenTree(groups, new Set(), new Set(), () => []) as readonly unknown[];
+  assert.equal(m.indexOfModuleRow(closedRows, targetModuleId), -1, "the module's group is closed, so it has no row yet");
+  assert.equal(m.indexOfFnRow(closedRows, 101), -1);
+
+  const openRows = m.flattenTree(groups, new Set([m.SCREENS_KEY]), new Set([`m:${targetModuleId}`]), (id: number) =>
+    id === targetModuleId ? [fn(101, 1)] : []) as readonly { kind: string; key: string }[];
+  const idx = m.indexOfModuleRow(openRows, targetModuleId);
+  assert.ok(idx >= 0);
+  assert.equal(openRows[idx]!.key, `m:${targetModuleId}`);
+  assert.equal(m.indexOfFnRow(openRows, 101), idx + 1);
+  assert.equal(m.indexOfModuleRow(openRows, 999999), -1, "an id with no row at all");
+});
+
 test("the LeftPane tree groups by segregation, not by ModuleEntry.file", () => {
   const pane = readFileSync(join(root, "ui", "src", "panes", "LeftPane.tsx"), "utf8");
   assert.match(pane, /groupModulesSegregated\(/, "the tree must group by /api/segregation");
