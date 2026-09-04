@@ -1,0 +1,9 @@
+# 2026-09-04 — Ghidra-like UI investigation (lean Fable)
+
+33k tokens, 8 calls. Commit ee5c6a6, docs/specs/19-ui-investigation.md.
+
+- Agentic-buildability: YES — HIGH for the functional tool, MEDIUM for polish, conditional on 3 mitigations: (a) Playwright headless screenshots the agent reads as images (verification at checkpoints — reliably catches "broken", unreliably "mediocre"); (b) mature component library (pre-decides spacing/typography/a11y, ships virtualized tables/split-panes/trees); (c) UI = thin view over the already-tested src/mcp contract (data bugs become backend bugs; rule: if the UI needs an answer the contract lacks, the contract grows first).
+- Division of labor: agent builds every functional view + routing + keyboard ops + write forms + empty/error states; human (owner as periodic design reviewer) owns taste, info hierarchy, first-run ergonomics, and graph readability at 4,510-module scale (highest visual risk, built last).
+- Testing (6 layers): view-model unit; Testing-Library DOM; Playwright E2E w/ the log audit trail as oracle; screenshot visual-regression under the golden-approval rule; golden rn-template .hbcproj so every layer renders real data; tests/mcp/* doubles as the UI data guarantee.
+- Architecture rec: Option A — local web app served by the SAME Node process hosting the warm services (MCP + UI as two transports over one service pair, solving SQLite single-writer structurally). Electron rejected; TUI rejected for Stage 3. Option D (MCP wire as the UI transport) noted — keep the UI data layer wire-swappable.
+- RESERVED FOR FRED: framework/component/graph-layout libs; transport/serving (HTTP vs MCP wire, co-hosting, localhost auth, -wal handoff); packaging (workspace split, `hbc2js ui` launcher, native shell?); read-only-first yes/no + visual-baseline policy.
