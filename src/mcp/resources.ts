@@ -164,6 +164,27 @@ export class McpResources {
     return truncateLines(text, SOURCE_LINE_CAP);
   }
 
+  /** `fn/{fn}/locals` — the nameable register bindings of one function
+   *  (`ArtifactService.list`, spec 10 §3.1 `name list`) joined with the
+   *  project's ACCEPTED name for each `reg:F:R` target. This is the map the
+   *  UI needs to turn a clicked identifier in the source pane into the
+   *  rename target `reg:F:R`: `rendered` is the identifier as it appears in
+   *  the served source, `named` the accepted name (null when never named).
+   *  Requires `--hbc` (live verb, same constraint as `source`'s siblings). */
+  locals(fn: number): {
+    readonly rows: readonly { readonly reg: number; readonly rendered: string; readonly named: string | null; readonly role: string; readonly uses: number }[];
+    readonly total: number;
+  } {
+    const rows = this.artifact.list(fn).map((r) => ({
+      reg: r.reg,
+      rendered: r.rendered,
+      named: this.project.getName(`reg:${fn}:${r.reg}`)?.name ?? r.named,
+      role: r.role,
+      uses: r.uses,
+    }));
+    return { rows, total: rows.length };
+  }
+
   /** `disasm/{fn}` — raw disassembly text for one fn (spec 02 §6.3's
    *  `hbc2js disasm --function`), capped identically to `source` (task
    *  brief: "capped like source"). Requires `--hbc` at construction, same

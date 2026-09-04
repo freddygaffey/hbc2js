@@ -46,6 +46,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/fn/{fn}` | `FnSummary` |
   | GET | `/api/fn/{fn}/source` | `SourceText` |
   | GET | `/api/fn/{fn}/disasm` | `SourceText` |
+  | GET | `/api/fn/{fn}/locals` | `{rows:[{reg,rendered,named,role,uses}],total}` |
   | GET | `/api/fn/{fn}/context` | `FnContext` |
   | GET | `/api/fn/{fn}/callers` | `WhoCalls` |
   | GET | `/api/fn/{fn}/callees` | `CallsFrom` |

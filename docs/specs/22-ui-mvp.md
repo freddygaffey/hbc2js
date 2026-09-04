@@ -93,6 +93,7 @@ whole-catalogue reads spec 17 §14 deliberately cut from `resources.ts`
 | `/api/fn/:fn` | GET | `McpResources.fn` |
 | `/api/fn/:fn/source?lines=a,b` | GET | `McpResources.source` |
 | `/api/fn/:fn/disasm` | GET | `McpResources.disasm` |
+| `/api/fn/:fn/locals` | GET | `McpResources.locals` (nameable registers + their rendered ident; the `reg:F:R` rename join) |
 | `/api/fn/:fn/context?include=&depth=` | GET | `McpResources.context` |
 | `/api/fn/:fn/callers` | GET | `McpResources.whoCalls` |
 | `/api/fn/:fn/callees` | GET | `McpResources.callsFrom` |

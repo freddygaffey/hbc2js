@@ -220,12 +220,17 @@ export class ProjectService {
     // per §4.3's coexistence rule.
     let store: ProjectStore;
     if (artifact.dbBacked) {
+      // docs/UI.md "rename": the rendered source must show the ACCEPTED
+      // `reg:F:R` names this DB holds. `ArtifactService` owns rendering and
+      // knows nothing about `d_names`, so it gets the lookup injected here —
+      // the one place that has both halves.
       // Writable, not readonly (§4.3's read layer opens readonly for
       // queries; a write-capable `ProjectService` needs the same handle
       // annotations.ts's `db*` verbs write through, retained for the life
       // of this instance per the prerequisite above).
       this.db = openProjectDb(dbPath(artifactDir));
       store = loadProjectStoreFromDb(this.db, this.storeDir, bundleSha256);
+      artifact.setActiveNames((fn) => this.activeRegNames(fn));
     } else {
       this.db = null;
       store = existsSync(this.storeDir) ? loadProjectStore(this.storeDir) : emptyStore(this.storeDir, bundleSha256);
@@ -518,6 +523,7 @@ export class ProjectService {
     const { record } = dbSetName(this.db, target, name, toDbProv(prov), { ctx: toDbCtx(this.captureCtx(target)) });
     this.exportWrite(record.rid);
     this.reloadFromDb();
+    this.invalidateRenderFor(target);
     return { rid: record.rid, line: `named ${target} "${name}" [${provLine(prov)}]` };
   }
 
@@ -708,6 +714,33 @@ export class ProjectService {
       ...(rev.prov.run !== undefined && rev.prov.run !== null ? { run: rev.prov.run } : {}),
       ts: rev.ts,
     }));
+  }
+
+  /** Every ACCEPTED `reg:<fn>:<reg>` name held for one function, keyed by
+   *  register — the map `ArtifactService`'s per-function render applies
+   *  (`setActiveNames`). Empty for a JSONL-backed project (no `d_names`). */
+  activeRegNames(fn: number): ReadonlyMap<number, { readonly name: string }> {
+    const out = new Map<number, { readonly name: string }>();
+    if (this.db === null) return out;
+    const prefix = `reg:${fn}:`;
+    const rows = this.db.prepare(`SELECT DISTINCT target FROM revisions WHERE kind = 'name' AND target LIKE ?`).all(`${prefix}%`) as unknown as { target: string }[];
+    for (const row of rows) {
+      const reg = Number(row.target.slice(prefix.length));
+      if (!Number.isInteger(reg)) continue;
+      const rev = dbGetName(this.db, row.target);
+      if (rev === undefined) continue;
+      out.set(reg, { name: rev.value.name });
+    }
+    return out;
+  }
+
+  /** A name write against `reg:F:R`/`fn:F` invalidates that function's
+   *  memoised render (`ArtifactService.renderFn`) so the next source read
+   *  shows it. Any other target shape leaves the cache alone. */
+  private invalidateRenderFor(target: string): void {
+    const m = /^reg:(\d+):\d+$/.exec(target) ?? /^fn:(\d+)$/.exec(target);
+    if (m === null) return;
+    this.artifact.invalidateRender(Number(m[1]));
   }
 }
 

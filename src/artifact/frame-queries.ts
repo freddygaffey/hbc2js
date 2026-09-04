@@ -17,12 +17,21 @@ export interface NameableRegister {
   readonly uses: number;
   readonly role: string;
   readonly named: string | null;
+  /** The identifier this register appears as in the rendered source right now
+   *  (`rN` when nothing renamed it and var-naming is off). The UI joins a
+   *  clicked token to `reg:F:R` on this column. */
+  readonly rendered: string;
 }
 
 /** §3.1 `name list <fn>`: every register the gate considers nameable — NOT
  *  refused `no-binding` (A7's own assertion) — with its use count and the
  *  gate's own verdict (`passed`/`overridden`/a refusal reason) as `role`. */
-export function listNameable(frames: ReadonlyMap<number, readonly Stmt[]>, fn: number, overlay?: OverlayStore): readonly NameableRegister[] {
+export function listNameable(
+  frames: ReadonlyMap<number, readonly Stmt[]>,
+  fn: number,
+  overlay?: OverlayStore,
+  rendered?: ReadonlyMap<number, string>,
+): readonly NameableRegister[] {
   const body = frames.get(fn);
   if (body === undefined) return [];
   const uses = registerUses(body);
@@ -34,7 +43,13 @@ export function listNameable(frames: ReadonlyMap<number, readonly Stmt[]>, fn: n
     if (!verdict.ok && verdict.reason === "no-binding") continue; // never listed (A7)
     const role = verdict.ok ? verdict.gate : verdict.reason;
     const u = uses.get(`r${reg}`);
-    out.push({ reg, uses: (u?.reads ?? 0) + (u?.writes ?? 0), role, named: overlay?.getName(regId(fn, reg))?.name ?? null });
+    out.push({
+      reg,
+      uses: (u?.reads ?? 0) + (u?.writes ?? 0),
+      role,
+      named: overlay?.getName(regId(fn, reg))?.name ?? null,
+      rendered: rendered?.get(reg) ?? `r${reg}`,
+    });
   }
   return out;
 }

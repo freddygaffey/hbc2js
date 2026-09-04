@@ -124,6 +124,15 @@ const BASE_ROUTES: readonly Route[] = [
   },
   {
     method: "GET",
+    re: /^\/api\/fn\/([^/]+)\/locals$/,
+    handler: ([raw], _req, ctx) => {
+      const fn = parseFn(raw!);
+      if (fn === null) return badRequest(`fn/${raw}/locals: not a function index`);
+      return ok(ctx.resources.locals(fn));
+    },
+  },
+  {
+    method: "GET",
     re: /^\/api\/fn\/([^/]+)\/disasm$/,
     handler: ([raw], _req, ctx) => {
       const fn = parseFn(raw!);

@@ -19,7 +19,9 @@ import { analyseModule } from "../cfg/index.ts";
 import type { ModuleAnalysis } from "../cfg/types.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
-import { rawFrameBodies } from "../name-overlay/frames.ts";
+import { rawFrames, type RawFrame } from "../name-overlay/frames.ts";
+import { renderFrame, renderedRegisterNames, type ActiveNames, type CollisionFlag } from "../name-overlay/render.ts";
+import { astPassHook, enabledPasses, type AstPassHook, type PassPipelineOptions } from "../passes/index.ts";
 import { OverlayStore } from "../name-overlay/store.ts";
 import { printModule } from "../disasm/print.ts";
 import { listNameable, contextSites, type NameableRegister as FrameNameableRegister } from "./frame-queries.ts";
@@ -126,6 +128,13 @@ export class ArtifactService {
   private readonly hbcPath: string | undefined;
   private analysis: ModuleAnalysis | undefined;
   private frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> | undefined;
+  private rawFrameMap: Map<number, RawFrame> | undefined;
+  private astHook: AstPassHook | undefined;
+  /** Injected by `ProjectService` (DB-backed): the ACCEPTED `reg:F:R` names
+   *  for one function, read live from `d_names`. Absent = no external names,
+   *  and every render path below is exactly what it was before. */
+  private activeNames: ((fn: number) => ActiveNames) | undefined;
+  private readonly renderCache = new Map<number, { readonly code: string; readonly collisions: readonly CollisionFlag[] }>();
   private hbcModule: HbcModule | undefined;
   private overlay: OverlayStore | undefined;
 
@@ -442,8 +451,19 @@ export class ArtifactService {
   source(fn: number, lines?: readonly [number, number]): string {
     const r = this.range(fn);
     if (r === undefined) throw new Hbc2jsError(ErrorCode.E_USAGE, `query source: no range recorded for fn ${fn}`);
-    const fileLines = readFileSync(this.modulePath(r.file), "utf8").split("\n");
     const [lo, hi] = r.lines;
+    if (this.activeNamesFor(fn).size > 0) {
+      const rendered = this.renderFn(fn);
+      if (rendered !== null) {
+        const renderedLines = rendered.code.split("\n");
+        if (lines === undefined) return rendered.code;
+        // `lines` is expressed in the module file's own numbering; clip
+        // relative to the function's first line, same window the disk slice
+        // below would have returned.
+        return renderedLines.slice(Math.max(0, lines[0] - lo), Math.max(0, lines[1] - lo + 1)).join("\n");
+      }
+    }
+    const fileLines = readFileSync(this.modulePath(r.file), "utf8").split("\n");
     const wantLo = lines !== undefined ? Math.max(lo, lines[0]) : lo;
     const wantHi = lines !== undefined ? Math.min(hi, lines[1]) : hi;
     return fileLines.slice(wantLo - 1, wantHi).join("\n");
@@ -468,7 +488,11 @@ export class ArtifactService {
     if (this.analysis === undefined) {
       this.analysis = analyseModule(module, { strictEnv: true });
     }
-    if (this.frames === undefined) this.frames = new Map(rawFrameBodies(this.analysis));
+    if (this.rawFrameMap === undefined) this.rawFrameMap = rawFrames(this.analysis);
+    if (this.frames === undefined) {
+      this.frames = new Map();
+      for (const [fn, frame] of this.rawFrameMap) if (frame.node.k === "func") this.frames.set(fn, frame.node.body);
+    }
     return { analysis: this.analysis, frames: this.frames };
   }
 
@@ -486,12 +510,76 @@ export class ArtifactService {
     return chunks.join("");
   }
 
+  /** The names an external store (the project DB) wants applied to `fn`'s
+   *  registers — empty when nothing is injected or nothing is named. */
+  private activeNamesFor(fn: number): ActiveNames {
+    return this.activeNames?.(fn) ?? new Map();
+  }
+
+  /** Inject the accepted-name source for register bindings (`reg:F:R`).
+   *  `ProjectService` wires this to `d_names` at construction, so every read
+   *  path here (`source`, `renderFn`, `list`) shows accepted names without
+   *  the caller knowing the storage layer. */
+  setActiveNames(provider: (fn: number) => ActiveNames): void {
+    this.activeNames = provider;
+    this.renderCache.clear();
+  }
+
+  /** Drop the memoised per-function render — called after any name write
+   *  (`ProjectService.setName`/`revertName`) so the next read re-renders. */
+  invalidateRender(fn?: number): void {
+    if (fn === undefined) this.renderCache.clear();
+    else this.renderCache.delete(fn);
+  }
+
+  /** The stage-B pass options a per-function re-render must use to match the
+   *  text `hbc2js render` wrote to disk. `src/split/index.ts` runs NO stage-B
+   *  hook unless `--passes` was given, so an empty/absent recorded `passes`
+   *  means "no stage-B passes" here too (docs/UI.md records the caveat). */
+  private renderPassOpts(): PassPipelineOptions {
+    const p = this.manifest.producer.passes;
+    if (p !== null && typeof p === "object" && Object.keys(p as object).length > 0) return p as PassPipelineOptions;
+    return { none: true };
+  }
+
+  /** True when the render this artifact's source was produced by runs
+   *  `var-naming`, i.e. when its register idents are heuristic names rather
+   *  than `rN`. Drives `list`'s `rendered` column. */
+  private varNamingOn(): boolean {
+    const opts = this.renderPassOpts();
+    if (opts.none === true) return false;
+    return enabledPasses({ ...opts, stage: "B" }).some((p) => p.name === "var-naming");
+  }
+
+  /** Re-render ONE function with the injected accepted names applied
+   *  (`src/name-overlay/render.ts`'s `renderFrame`) — the per-request path the
+   *  resident UI server uses instead of `render()`, which re-emits the whole
+   *  module. `null` when this service has no `--hbc` (live-verb constraint) or
+   *  the function has no emitted frame. Memoised per fn; `invalidateRender`
+   *  clears it. */
+  renderFn(fn: number): { readonly code: string; readonly collisions: readonly CollisionFlag[] } | null {
+    if (this.hbcPath === undefined) return null;
+    const hit = this.renderCache.get(fn);
+    if (hit !== undefined) return hit;
+    const { analysis } = this.ensureFrames();
+    const frame = this.rawFrameMap?.get(fn);
+    if (frame === undefined) return null;
+    if (this.astHook === undefined) this.astHook = astPassHook(analysis, this.renderPassOpts());
+    const r = renderFrame(this.astHook, frame.node, frame.cfg, this.activeNamesFor(fn));
+    const out = { code: r.code, collisions: r.collisions };
+    this.renderCache.set(fn, out);
+    return out;
+  }
+
   /** §3.1 `name list <fn>` (P2.1a(b)) — delegates to the shared live-frame
    *  query so the CLI's bare `hbc2js name list` (no artifact) and this
-   *  service agree by construction. */
+   *  service agree by construction. `rendered` joins on the served source:
+   *  what the identifier for that register actually LOOKS like right now. */
   list(fn: number): readonly FrameNameableRegister[] {
     const { frames } = this.ensureFrames();
-    return listNameable(frames, fn, this.overlay);
+    const body = frames.get(fn);
+    const rendered = body === undefined ? undefined : renderedRegisterNames(fn, body, this.activeNamesFor(fn), { varNaming: this.varNamingOn() });
+    return listNameable(frames, fn, this.overlay, rendered);
   }
 
   /** §3.1 `name context <fn> <reg>` (P2.1a(b)/(c)). */
