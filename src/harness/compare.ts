@@ -61,10 +61,22 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
   // elsewhere) advances the scan instead of ending it, but is recorded so
   // the caller must surface it, never silently drop it (see
   // `maskedMatches`'s doc).
+  //
+  // A `limit` record is not an observation, it is the marker that says "the
+  // budget ran out here" (runner.ts pushes it on timeout / record cap), so
+  // nothing at or after it on *either* side can be compared: the shorter
+  // side's `limit` would otherwise line up against the longer side's next
+  // real record and read as a divergence at the cut-off (docs/PUSHBACK.md
+  // P-16). Comparison therefore stops at the earliest budget marker.
   let i = 0;
   const n = Math.min(la.length, lb.length);
+  const limitAt = (records: readonly TraceRecord[]): number => {
+    const idx = records.findIndex((r) => r.k === "limit");
+    return idx < 0 ? Number.POSITIVE_INFINITY : idx;
+  };
+  const cutoff = Math.min(n, limitAt(ra), limitAt(rb));
   const maskedMatches: string[] = [];
-  while (i < n) {
+  while (i < cutoff) {
     if (la[i] === lb[i]) {
       i++;
       continue;
@@ -77,28 +89,53 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
     break;
   }
 
-  const divergence: TraceDivergence | null =
-    i < n
-      ? { index: i, a: la[i]!, b: lb[i]! }
-      : la.length !== lb.length
-        ? { index: i, a: la[i] ?? "<end of trace>", b: lb[i] ?? "<end of trace>" }
-        : null;
+  // Two distinct reasons the traces are not identical, and they are *not*
+  // equally strong evidence (docs/BUGS.md 2026-09-04 family H1, PUSHBACK
+  // P-16): a divergence found inside the common prefix means the two
+  // programs really disagreed, whereas an equal prefix with unequal lengths
+  // can be nothing but one side stopping earlier — which is exactly what a
+  // budget (timeout / record cap) does to a non-terminating program. The
+  // budget test must therefore be consulted *before* the length mismatch is
+  // called a divergence, or the "both traces hit a budget" branch below is
+  // unreachable whenever the two record counts differ (which, for a
+  // non-terminating program, they always do).
+  const prefixDivergence: TraceDivergence | null = i < cutoff ? { index: i, a: la[i]!, b: lb[i]! } : null;
+  const lengthMismatch = la.length !== lb.length;
 
   const timedOutA = "timedOut" in a && a.timedOut === true;
   const timedOutB = "timedOut" in b && b.timedOut === true;
-  const truncated = timedOutA || timedOutB || hasLimit(ra) || hasLimit(rb);
+  const truncatedA = timedOutA || hasLimit(ra);
+  const truncatedB = timedOutB || hasLimit(rb);
+  const truncated = truncatedA || truncatedB;
   const evidence = ra.filter(isEvidence).length;
+
+  // Budget-limited with an equal prefix: no divergence is reported at all,
+  // so a timing-dependent cut-off point can never become a divergence
+  // signature (`src/fuzzgen/signature.ts` keys off `divergence`).
+  //
+  // *Both* sides must have been cut off for a length mismatch to be
+  // evidence-free. If one side ran to completion, its trace is total
+  // information: "terminated after k records" versus "still going at k
+  // records" is a real behaviour difference, and killing it would blind the
+  // mutation selftest (`tests/gate/harness/selftest.test.ts` HA-09, whose
+  // kill rate drops by 8 mutants under an either-side rule).
+  const budgetLimited = prefixDivergence === null && truncatedA && truncatedB;
+  const divergence: TraceDivergence | null =
+    prefixDivergence ?? (lengthMismatch && !budgetLimited ? { index: i, a: la[i] ?? "<end of trace>", b: lb[i] ?? "<end of trace>" } : null);
 
   let verdict: TraceVerdict;
   let why: string;
   if (divergence !== null) {
     // A divergence found *before* any truncation point is real regardless of
-    // truncation: the two programs already disagreed.
+    // truncation: the two programs already disagreed. So is an unequal
+    // length when *neither* side hit a budget — one program simply stopped.
     verdict = TRACE_VERDICT.DIVERGENT;
-    why = `traces diverge at record ${i}`;
+    why = prefixDivergence !== null ? `traces diverge at record ${i}` : `traces have equal prefixes but different lengths (${la.length} vs ${lb.length}) and neither hit a budget`;
   } else if (truncated) {
     verdict = TRACE_VERDICT.INCONCLUSIVE;
-    why = "both traces hit a budget (timeout / record cap); the identical prefix proves nothing about the rest";
+    why = lengthMismatch
+      ? `both traces hit a budget (timeout / record cap) and the traces have different lengths (${la.length} vs ${lb.length}); the identical ${cutoff}-record prefix proves nothing about the rest`
+      : "both traces hit a budget (timeout / record cap); the identical prefix proves nothing about the rest";
   } else if (evidence === 0) {
     verdict = TRACE_VERDICT.INCONCLUSIVE;
     why = "neither program produced observable behaviour: no output, no error, no globals, no return value";

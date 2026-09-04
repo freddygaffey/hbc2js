@@ -264,9 +264,50 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
         // candidate side by construction never could). Joined then
         // compared as text, never per record (HA-07: one multi-line print
         // is one record here and several lines there).
-        const candidatePrint = printProjection(mainPhase).join("\n");
-        const hermesPrint = hermesPrintProjection(hermesResult).join("\n");
-        if (candidatePrint !== hermesPrint) {
+        //
+        // P-16 (docs/PUSHBACK.md, docs/BUGS.md 2026-09-04 family H1): the two
+        // sides are bounded by *different* budgets — the candidate's trace by
+        // `maxRecords` (and the timeout), the VM's stdout only by the
+        // timeout. For a non-terminating program that alone makes them
+        // differ, always, at the smaller one's cut-off (measured: 3,389,470
+        // VM lines vs 4,999 candidate records for `v84-seed778059`), so the
+        // verdict measured machine load rather than the decompiler. Cap both
+        // sides to the same number of *lines* before comparing (line-level,
+        // not record-level: one candidate print record can be several VM
+        // lines, HA-07), and when either side hit a budget treat an equal
+        // prefix as INCONCLUSIVE, never DIVERGENT and never as vm-agrees
+        // evidence — the last capped line is dropped too, since a VM killed
+        // by the timeout can be cut mid-line. A program that genuinely
+        // diverges before its cut-off still compares unequal inside the
+        // capped prefix and stays DIVERGENT.
+        const candidateOut = printProjection(mainPhase).join("\n").split("\n");
+        const vmOut = hermesPrintProjection(hermesResult).join("\n").split("\n");
+        const candidateBudgetHit = ta.timedOut === true || ta.records.some((r) => r.k === "limit");
+        const vmBudgetHit = hermesResult.timedOut || vmOut.length > (runOpts.maxRecords ?? 20000);
+        // *Both* sides must have been cut off, not either: a candidate that
+        // hung with no output while the VM ran to completion inside the same
+        // budget is a real behaviour difference (that is exactly what
+        // `tests/gate/harness/tiers.test.ts`'s mutation selftest detects, and
+        // it must stay DIVERGENT), and so is a candidate that terminated
+        // while the VM kept going. Only when neither side was allowed to
+        // finish is an equal prefix evidence-free.
+        const budgetHit = candidateBudgetHit && vmBudgetHit;
+        const cap = budgetHit ? Math.max(0, Math.min(candidateOut.length, vmOut.length) - 1) : Math.max(candidateOut.length, vmOut.length);
+        const candidatePrint = candidateOut.slice(0, cap).join("\n");
+        const hermesPrint = vmOut.slice(0, cap).join("\n");
+        if (candidatePrint === hermesPrint && budgetHit) {
+          // Equal as far as either side was allowed to run: no evidence
+          // either way. INCONCLUSIVE is never PASS (HA-01), so this can only
+          // ever weaken a verdict, and a candidate-vs-Node divergence found
+          // inside the prefix (cmp already DIVERGENT) is real evidence and
+          // is left alone.
+          caveats.push(
+            `${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} cross-check hit a budget (candidate ${candidateOut.length} line(s), record cap/timeout; VM ${vmOut.length} line(s), timeout/over the candidate's record budget); the ${cap}-line common prefix is identical, so this is a budget cut-off, not a divergence (P-16) — INCONCLUSIVE, not DIVERGENT`,
+          );
+          if (cmp.verdict !== TRACE_VERDICT.DIVERGENT) {
+            cmp = { verdict: TRACE_VERDICT.INCONCLUSIVE, why: `Hermes VM cross-check truncated by a budget after ${cap} identical line(s); the rest was never observed`, evidence: cmp.evidence, records: cmp.records, divergence: null, context: null, maskedMatches: cmp.maskedMatches };
+          }
+        } else if (candidatePrint !== hermesPrint) {
           // The candidate itself disagrees with the real Hermes VM's own
           // trace of the original bytecode: this is genuine evidence
           // *against* the candidate, never grounds for an override — a

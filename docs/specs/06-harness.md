@@ -150,6 +150,34 @@ and several lines).
 
 ---
 
+### 3.5 Budget symmetry in the cross-check (P-16)
+
+The two sides of the cross-check are bounded by **different** budgets: the
+candidate's trace by `maxRecords` (5 000 in the fuzz tools, 20 000 by default)
+*and* the timeout, the VM's stdout only by the timeout. Compared naively, any
+non-terminating program therefore differs at whichever side stopped first — a
+verdict that measures machine load rather than the decompiler (measured on
+`v84-seed778059`: 3 389 470 VM lines against 4 999 candidate records, identical
+up to the cut-off; 110 of 159 campaign finds were this artifact).
+
+Rule: cap both sides to the same number of **lines** before comparing (line
+level, not record level, per §3's joined-text rule), and drop the last capped
+line, which a VM killed by the timeout can have written only half of. Then:
+
+- an inequality inside the capped prefix → DIVERGENT, as before;
+- an equal capped prefix where **both** sides hit a budget → INCONCLUSIVE
+  (`budget`), never DIVERGENT and never vm-agrees evidence;
+- an equal prefix where only *one* side hit a budget → DIVERGENT: the side
+  that ran to completion is total information, and "terminated after k lines"
+  versus "still going at k lines" is a real behaviour difference (this is what
+  `tests/gate/harness/selftest.test.ts`'s HA-09 mutation kill rate detects for
+  a mutant that turns a loop infinite — an either-side rule costs 8 mutants).
+
+`compareTraces` follows the same three-way rule for record traces, and stops
+comparing at the earliest `limit` record on either side: a budget marker is not
+an observation, and lining it up against the other side's next real record
+turns every cut-off into a divergence.
+
 ## 4. Reference policy — which engine is the truth (D14)
 
 The single most consequential piece of configuration in the project.
