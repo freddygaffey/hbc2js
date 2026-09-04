@@ -6,6 +6,14 @@
 // The UI must show the accepted name wherever a function is named, or a
 // rename looks like it did nothing. Precedence, most human first:
 // acceptedName > overlayName > name > `fn N`.
+//
+// The annotate track has a single-source variant of this in
+// ui/src/actions/names.ts (`displayName(md)`, returns null when it knows
+// nothing). This one takes SEVERAL sources because the listing has two —
+// `/api/fn/{fn}` and the richer `/api/fn/{fn}/context` metadata — and must
+// prefer whichever of them actually carries the accepted name, and because
+// a pane always has to render something. The precedence order is the same
+// in both; if it ever changes, change it in both.
 
 export interface NamedFn {
   readonly name?: string | null;
