@@ -30,7 +30,7 @@ function StatusToast(): ReactNode {
         <div className="rounded-ui border border-accent bg-surface-2 px-2 py-1 font-mono text-xs text-text">{pendingChord}…</div>
       )}
       {status !== null && (
-        <div className="max-w-[min(560px,80vw)] rounded-ui border border-border bg-surface-2 px-2 py-1 text-xs text-text">{status}</div>
+        <div className="max-w-[min(35rem,80vw)] rounded-ui border border-border bg-surface-2 px-2 py-1 text-xs text-text">{status}</div>
       )}
     </div>
   );

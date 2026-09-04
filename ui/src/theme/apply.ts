@@ -39,6 +39,13 @@ export function resolveTheme(name: string = config.preset): ThemePreset {
     fonts: { ...base.fonts, ...o.fonts },
     spacing: { ...base.spacing, ...o.spacing },
     densities: { ...base.densities, ...o.densities },
+    type: { ...base.type, ...o.type },
+    elevation: {
+      level0: { ...base.elevation.level0, ...o.elevation?.level0 },
+      level1: { ...base.elevation.level1, ...o.elevation?.level1 },
+    },
+    border: { ...base.border, ...o.border },
+    syntax: { ...base.syntax, ...o.syntax },
   } as ThemePreset;
 }
 
@@ -94,6 +101,14 @@ export function applyTheme(theme: ThemePreset, density: Density): void {
   for (const [k, v] of Object.entries(theme.palette)) set(`--${k}`, v);
   for (const [k, v] of Object.entries(theme.severity)) set(`--sev-${k}`, v);
   for (const [k, v] of Object.entries(theme.spacing)) set(`--space-${k}`, v);
+  for (const [k, v] of Object.entries(theme.type)) set(`--type-${k}`, v);
+  set("--elevation-0-bg", theme.elevation.level0.bg);
+  set("--elevation-0-border", theme.elevation.level0.border);
+  set("--elevation-1-bg", theme.elevation.level1.bg);
+  set("--elevation-1-border", theme.elevation.level1.border);
+  set("--border-strong", theme.border.strong);
+  set("--border-focus", theme.border.focus);
+  for (const [k, v] of Object.entries(theme.syntax)) set(`--syn-${k}`, v);
   set("--font-sans-stack", theme.fonts.sans);
   set("--font-mono-stack", theme.fonts.mono);
   set("--radius", theme.radius);

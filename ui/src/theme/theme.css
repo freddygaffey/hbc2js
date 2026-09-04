@@ -18,9 +18,28 @@
   --color-sev-high: var(--sev-high);
   --color-sev-med: var(--sev-med);
   --color-sev-ok: var(--sev-ok);
+  --color-elevation-0: var(--elevation-0-bg);
+  --color-elevation-1: var(--elevation-1-bg);
+  --color-border-strong: var(--border-strong);
+  --color-border-focus: var(--border-focus);
+  --color-syntax-comment: var(--syn-comment);
+  --color-syntax-keyword: var(--syn-keyword);
+  --color-syntax-string: var(--syn-string);
+  --color-syntax-number: var(--syn-number);
+  --color-syntax-function: var(--syn-function);
+  --color-syntax-variable: var(--syn-variable);
+  --color-syntax-operator: var(--syn-operator);
+  --color-syntax-invalid: var(--syn-invalid);
   --font-sans: var(--font-sans-stack);
   --font-mono: var(--font-mono-stack);
   --radius-ui: var(--radius);
+  /* Type ramp (spec 20 §1.2): overrides Tailwind's own fixed `text-*`
+     scale so `text-xs/sm/base/lg` track the runtime theme + density
+     instead of a hardcoded rem value. No other font size is on the scale. */
+  --text-xs: var(--type-xs);
+  --text-sm: var(--type-sm);
+  --text-base: var(--type-base);
+  --text-lg: var(--type-lg);
 }
 
 /* Density (spec 22 §2's `density` token): the root font-size and Tailwind's

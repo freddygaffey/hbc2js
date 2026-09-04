@@ -43,6 +43,42 @@ export interface ThemePreset {
   readonly spacing: Readonly<Record<string, string>>;
   readonly density: Density;
   readonly densities: Readonly<Record<Density, DensitySpec>>;
+  /** Type ramp (spec 20 §1.2): the ONLY font sizes a component may use,
+   *  via the `text-xs/sm/base/lg` Tailwind utilities (ui/src/theme/theme.css
+   *  maps them onto these). Never a per-view `text-[Npx]`. */
+  readonly type: {
+    readonly xs: string;
+    readonly sm: string;
+    readonly base: string;
+    readonly lg: string;
+  };
+  /** Two elevation levels, flat-and-bordered (spec 20 §1.2: "a dense pro
+   *  tool wants flat and bordered, not shadow-heavy"). `level0` is a base
+   *  panel; `level1` is one step up (a popover/menu/modal). */
+  readonly elevation: {
+    readonly level0: { readonly bg: string; readonly border: string };
+    readonly level1: { readonly bg: string; readonly border: string };
+  };
+  /** Border set beyond `palette.border`'s single divider colour: `strong`
+   *  for an emphasised divider, `focus` for the accent-coloured ring
+   *  cm-theme.ts and the token/search highlights use. */
+  readonly border: {
+    readonly strong: string;
+    readonly focus: string;
+  };
+  /** Syntax palette shared by ui/src/listing/cm-theme.ts (source) and the
+   *  disasm view (ui/src/listing/disasm-highlight.ts), one set of names so
+   *  both panes read the same colours. */
+  readonly syntax: {
+    readonly comment: string;
+    readonly keyword: string;
+    readonly string: string;
+    readonly number: string;
+    readonly function: string;
+    readonly variable: string;
+    readonly operator: string;
+    readonly invalid: string;
+  };
 }
 
 /** ui/theme.json — names a preset and may override any token path. */

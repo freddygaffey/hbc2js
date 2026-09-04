@@ -38,6 +38,7 @@ import { search, searchKeymap } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
 import { useEffect, useRef, type ReactNode } from "react";
 import { hbcEditorTheme, hbcHighlightStyle } from "./cm-theme.ts";
+import { disasmHighlight } from "./disasm-highlight.ts";
 import { vimEnabled } from "../keymap-config.ts";
 import { setActiveFoldView } from "./fold-store.ts";
 import { classifyWord, isWordChar, kindFromNodeName, wordOccurrences, type ListingToken } from "./token.ts";
@@ -158,8 +159,10 @@ export function pointerHit(v: EditorView, x: number, y: number): PointerHit | nu
 
 export interface CodeViewProps {
   readonly text: string;
-  /** `javascript` gets the JS parser; disasm is plain text. */
-  readonly language: "javascript" | "plain";
+  /** `javascript` gets the JS parser + `hbcHighlightStyle`; `disasm` is
+   *  plain text with the line-based classifier (./disasm-highlight.ts);
+   *  `plain` is unstyled plain text. */
+  readonly language: "javascript" | "disasm" | "plain";
   /** 1-based line to decorate and reveal, or null. */
   readonly highlightLine: number | null;
   /** Single click: the token under the pointer (null on punctuation or
@@ -237,6 +240,7 @@ export function CodeView({ text, language, highlightLine, onSelectToken, onActiv
       EditorView.contentAttributes.of({ "aria-label": ariaLabel, tabindex: "0" }),
       pointer,
       ...(language === "javascript" ? [javascript()] : []),
+      ...(language === "disasm" ? [disasmHighlight] : []),
     ];
     const v = new EditorView({ state: EditorState.create({ doc: text, extensions }), parent: hostEl });
     view.current = v;

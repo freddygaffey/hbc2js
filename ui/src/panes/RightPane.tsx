@@ -184,7 +184,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
                   </div>
                 ) : (
                   <>
-                    <div className="px-3 pb-1 text-[11px] text-text-muted">
+                    <div className="px-3 pb-1 text-xs text-text-muted">
                       candidates only — a name match on a property read, not a proven call
                     </div>
                     {byName.data.rows.map((r) => <ByNameRow key={`byname-${r.fn}-${r.name}-${r.role}`} row={r} />)}

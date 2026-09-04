@@ -395,7 +395,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
                     </button>
                   )}
                   <div className="min-h-0 flex-1">
-                    <CodeView text={dis.text} language="plain" highlightLine={disasmLine} ariaLabel={`disassembly of function ${shown.fn}`} />
+                    <CodeView text={dis.text} language="disasm" highlightLine={disasmLine} ariaLabel={`disassembly of function ${shown.fn}`} />
                   </div>
                 </>
               )}

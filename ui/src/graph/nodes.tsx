@@ -31,6 +31,10 @@ export type HbcNodeData = {
    *  Callers/callees today; spec 26 L9 swaps this body for the CFG blocks
    *  and nothing else in this file moves. */
   readonly card: LodCard | null;
+  /** Bur 11 / spec 25 §5c: the width the LAYOUT placed this node at. The
+   *  framed layout narrows nodes to fit the measured pane, so the box must
+   *  render at the width dagre's re-packing assumed, not at a constant. */
+  readonly width: number;
 };
 
 export type HbcFlowNode = Node<HbcNodeData, "hbc">;
@@ -66,7 +70,7 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
       data-graph-level={data.level}
       data-graph-members={m.members}
       data-graph-card={card !== null ? "true" : "false"}
-      style={{ width: NODE_W, height: card !== null ? NODE_H_NEAR : NODE_H }}
+      style={{ width: data.width > 0 ? data.width : NODE_W, height: card !== null ? NODE_H_NEAR : NODE_H }}
       className={`flex flex-col justify-center gap-0.5 overflow-hidden rounded-ui border bg-surface px-2 ${border} ${ring} ${fade}`}
       title={m.byName ? `${m.label} — heuristic by-name candidate, not a proven edge` : m.label}
     >

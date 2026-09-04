@@ -36,7 +36,45 @@
   },
   "density": "comfortable",
   "densities": {
-    "comfortable": { "unit": "0.3rem", "fontSize": "15px", "rowHeight": "32px" },
-    "compact": { "unit": "0.22rem", "fontSize": "13px", "rowHeight": "24px" }
+    "comfortable": {
+      "unit": "0.3rem",
+      "fontSize": "15px",
+      "rowHeight": "32px"
+    },
+    "compact": {
+      "unit": "0.22rem",
+      "fontSize": "13px",
+      "rowHeight": "24px"
+    }
+  },
+  "type": {
+    "xs": "0.75rem",
+    "sm": "0.875rem",
+    "base": "1rem",
+    "lg": "1.125rem"
+  },
+  "elevation": {
+    "level0": {
+      "bg": "#141d2b",
+      "border": "#27354a"
+    },
+    "level1": {
+      "bg": "#1b2637",
+      "border": "#27354a"
+    }
+  },
+  "border": {
+    "strong": "#8ea0ba",
+    "focus": "#4c9be8"
+  },
+  "syntax": {
+    "comment": "#8ea0ba",
+    "keyword": "#4c9be8",
+    "string": "#5bc98f",
+    "number": "#d8c25a",
+    "function": "#dbe4f0",
+    "variable": "#dbe4f0",
+    "operator": "#8ea0ba",
+    "invalid": "#e2557b"
   }
 }

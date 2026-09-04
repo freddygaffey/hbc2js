@@ -104,6 +104,79 @@ test("the colour-literal detector actually fires (the gate cannot silently degra
   }
 });
 
+// -- L3: off-scale spacing / font size ---------------------------------------
+// spec 20 §1.2's token rule extended beyond colour: a raw px in a Tailwind
+// arbitrary value, or an arbitrary/off-ramp `text-*` size, is exactly the
+// same "invented art direction" the colour rule forbids; it just was not
+// caught before the type ramp (ui/themes/*.json `type.xs/sm/base/lg`)
+// existed to be off of.
+
+const SPACING_RULES: readonly { readonly name: string; readonly re: RegExp }[] = [
+  // `text-[10px]`, `text-[0.9em]`, ...: any arbitrary font-size utility is
+  // off the `text-xs/sm/base/lg` ramp by construction.
+  { name: "off-scale font size (arbitrary text-size utility)", re: /\btext-\[[^\]]+\]/g },
+  // A raw `font-size: Npx` in plain CSS (or a CSS-in-JS object), outside the
+  // type ramp.
+  { name: "off-scale font size (raw px font-size declaration)", re: /font-size:\s*[0-9.]+px\b/g },
+  // Any Tailwind arbitrary value (`w-[...]`, `max-w-[...]`, `top-[...]`, ...)
+  // that names a raw px length instead of the spacing scale / a token.
+  { name: "raw px in a Tailwind arbitrary value", re: /\b[a-z][a-z-]*-\[[^\]]*\b[0-9]+(?:\.[0-9]+)?px\b[^\]]*\]/g },
+];
+
+/** Every off-scale spacing/font-size violation in `text`, as `line: match`
+ *  strings (same shape as `findColourLiterals`). */
+function findSpacingLiterals(text: string): string[] {
+  const out: string[] = [];
+  const lines = text.split("\n");
+  for (const rule of SPACING_RULES) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? "";
+      for (const m of line.matchAll(rule.re)) out.push(`line ${i + 1}: ${rule.name} ${JSON.stringify(m[0])}`);
+    }
+  }
+  return out;
+}
+
+test("ui components use only on-scale font sizes and no raw px in Tailwind arbitrary values (spec 20 §1.2)", () => {
+  const files = [...walk(srcDir), join(uiDir, "index.html")].filter((f) => !isExempt(f));
+  const violations: string[] = [];
+  for (const f of files) {
+    for (const v of findSpacingLiterals(readFileSync(f, "utf8"))) violations.push(`${relative(repoRoot(), f)} ${v}`);
+  }
+  assert.deepEqual(
+    violations,
+    [],
+    `off-scale spacing/font-size outside the token layer:\n${violations.join("\n")}\n` +
+      "Use the type ramp (text-xs/sm/base/lg) and the spacing scale (or a rem value); no raw px in an arbitrary Tailwind value.",
+  );
+});
+
+test("token lint: fails on an off-scale font size", () => {
+  assert.ok(findSpacingLiterals('<div className="text-[13px]">x</div>').length > 0);
+  assert.ok(findSpacingLiterals('<div className="text-[0.9em]">x</div>').length > 0);
+  assert.ok(findSpacingLiterals("h1 { font-size: 22px; }").length > 0);
+});
+
+test("token lint: fails on a raw px in a Tailwind arbitrary value", () => {
+  assert.ok(findSpacingLiterals('<div className="w-[560px]" />').length > 0);
+  assert.ok(findSpacingLiterals('<div className="max-w-[min(560px,90vw)]" />').length > 0);
+});
+
+test("token lint: the new detectors still fire on samples (no silent no-op)", () => {
+  const samples: readonly string[] = [
+    'className="text-[10px]"',
+    'className="text-[0.9em]"',
+    "font-size: 9px;",
+    'className="w-[min(560px,90vw)]"',
+    'className="top-[12px]"',
+  ];
+  for (const s of samples) assert.ok(findSpacingLiterals(s).length > 0, `detector missed an off-scale sample: ${s}`);
+  // ...and does not fire on the token/ramp forms the shell actually uses.
+  for (const ok of ['className="text-xs text-sm text-base text-lg"', "font-size: var(--type-sm);", 'className="w-[min(35rem,90vw)]"', 'className="border-r"']) {
+    assert.deepEqual(findSpacingLiterals(ok), [], `detector false-positived on an on-scale form: ${ok}`);
+  }
+});
+
 // -- theme presets ----------------------------------------------------------
 
 type Json = string | number | boolean | null | { readonly [k: string]: Json } | readonly Json[];
@@ -132,6 +205,29 @@ test("dark and light presets carry exactly the same tokens", () => {
   assert.deepEqual(onlyDark, [], `tokens only in dark.json: ${onlyDark.join(", ")}`);
   assert.deepEqual(onlyLight, [], `tokens only in light.json: ${onlyLight.join(", ")}`);
   assert.ok(dark.includes("palette.accent") && dark.includes("severity.crit"), "presets must carry palette + severity tokens");
+});
+
+test("token lint: the type ramp exists in both presets", () => {
+  for (const file of ["dark.json", "light.json"]) {
+    const preset = readJson(join(themesDir, file)) as { readonly type?: Json };
+    const typeRamp = preset.type;
+    assert.ok(typeRamp !== undefined && isObject(typeRamp), `${file} is missing the "type" ramp group`);
+    for (const step of ["xs", "sm", "base", "lg"]) {
+      assert.equal(typeof (typeRamp as Record<string, Json>)[step], "string", `${file} type.${step} must be a string`);
+    }
+  }
+});
+
+test("token lint: the syntax palette is complete in both presets", () => {
+  const keys = ["comment", "keyword", "string", "number", "function", "variable", "operator", "invalid"];
+  for (const file of ["dark.json", "light.json"]) {
+    const preset = readJson(join(themesDir, file)) as { readonly syntax?: Json };
+    const syntax = preset.syntax;
+    assert.ok(syntax !== undefined && isObject(syntax), `${file} is missing the "syntax" palette group`);
+    for (const k of keys) {
+      assert.equal(typeof (syntax as Record<string, Json>)[k], "string", `${file} syntax.${k} must be a string`);
+    }
+  }
 });
 
 // -- bur 3 (docs/UI-BURS.md #3): nvim/VS Code-common editor theme presets --

@@ -72,7 +72,7 @@ export function CommandPalette({
       label="Command palette"
       shouldFilter={!isCmd}
       data-hbc-keys="off"
-      className="fixed top-24 left-1/2 z-50 w-[min(560px,90vw)] -translate-x-1/2 rounded-ui border border-border bg-surface text-text"
+      className="fixed top-24 left-1/2 z-50 w-[min(35rem,90vw)] -translate-x-1/2 rounded-ui border border-border bg-surface text-text"
     >
       <Command.Input
         value={value}

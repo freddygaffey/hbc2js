@@ -15,7 +15,7 @@ export const hbcEditorTheme = EditorView.theme({
   "&": {
     color: "var(--text)",
     backgroundColor: "var(--bg)",
-    fontSize: "calc(var(--font-size, 14px) - 1px)",
+    fontSize: "var(--type-sm)",
     height: "100%",
   },
   "&.cm-focused": { outline: "none" },
@@ -48,10 +48,10 @@ export const hbcEditorTheme = EditorView.theme({
   ".cm-cursor, .cm-dropCursor": { display: "none" },
   // The token under the pointer, and every other occurrence of it — the
   // listing's selection (../listing/token.ts).
-  ".hbc-token-selected": { backgroundColor: "var(--surface-2)", outline: "1px solid var(--accent)" },
+  ".hbc-token-selected": { backgroundColor: "var(--surface-2)", outline: "1px solid var(--border-focus)" },
   ".hbc-token-occurrence": { backgroundColor: "var(--surface-2)" },
-  ".cm-searchMatch": { backgroundColor: "var(--surface-2)", outline: "1px solid var(--accent)" },
-  ".cm-searchMatch.cm-searchMatch-selected": { outline: "1px solid var(--accent)" },
+  ".cm-searchMatch": { backgroundColor: "var(--surface-2)", outline: "1px solid var(--border-focus)" },
+  ".cm-searchMatch.cm-searchMatch-selected": { outline: "1px solid var(--border-focus)" },
   ".cm-panels": { backgroundColor: "var(--surface)", color: "var(--text)" },
   ".cm-panels input, .cm-panels button": {
     backgroundColor: "var(--surface-2)",
@@ -61,19 +61,32 @@ export const hbcEditorTheme = EditorView.theme({
   // The line the current selection points at (see CodeView's decoration).
   ".hbc-selected-line": { backgroundColor: "var(--surface-2)" },
   ".cm-fat-cursor": { backgroundColor: "var(--accent)" },
+  // Syntax palette classes (spec 20 §1.2): the disasm view has no lezer
+  // parser (plain text), so ./disasm-highlight.ts marks ranges with these
+  // classes directly instead of going through `HighlightStyle`. Same names,
+  // same underlying `--syn-*` variables as `hbcHighlightStyle` below, so
+  // source and disasm read as one palette.
+  ".hbc-syn-comment": { color: "var(--syn-comment)", fontStyle: "italic" },
+  ".hbc-syn-keyword": { color: "var(--syn-keyword)" },
+  ".hbc-syn-string": { color: "var(--syn-string)" },
+  ".hbc-syn-number": { color: "var(--syn-number)" },
+  ".hbc-syn-function": { color: "var(--syn-function)" },
+  ".hbc-syn-variable": { color: "var(--syn-variable)" },
+  ".hbc-syn-operator": { color: "var(--syn-operator)" },
+  ".hbc-syn-invalid": { color: "var(--syn-invalid)" },
 }, { dark: true });
 
-/** Syntax, in tokens only. Placeholder art direction exactly like the rest
- *  of the shell (docs/UI.md): the *structure* is the deliverable, the
- *  values come from whichever theme preset is loaded. */
+/** Syntax, in tokens only. Values come from whichever theme preset is
+ *  loaded (`ui/themes/*.json` `syntax` group) — this file only names which
+ *  lezer tag maps to which token, never a colour. */
 export const hbcHighlightStyle: HighlightStyle = HighlightStyle.define([
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--text-muted)", fontStyle: "italic" },
-  { tag: [t.keyword, t.controlKeyword, t.operatorKeyword, t.modifier], color: "var(--accent)" },
-  { tag: [t.string, t.special(t.string), t.regexp], color: "var(--sev-ok)" },
-  { tag: [t.number, t.bool, t.null], color: "var(--sev-med)" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "var(--text)" },
-  { tag: [t.definition(t.variableName), t.definition(t.propertyName), t.className], color: "var(--text)" },
-  { tag: [t.propertyName, t.variableName, t.attributeName], color: "var(--text)" },
-  { tag: [t.operator, t.punctuation, t.bracket, t.separator], color: "var(--text-muted)" },
-  { tag: [t.invalid], color: "var(--sev-crit)" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--syn-comment)", fontStyle: "italic" },
+  { tag: [t.keyword, t.controlKeyword, t.operatorKeyword, t.modifier], color: "var(--syn-keyword)" },
+  { tag: [t.string, t.special(t.string), t.regexp], color: "var(--syn-string)" },
+  { tag: [t.number, t.bool, t.null], color: "var(--syn-number)" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "var(--syn-function)" },
+  { tag: [t.definition(t.variableName), t.definition(t.propertyName), t.className], color: "var(--syn-variable)" },
+  { tag: [t.propertyName, t.variableName, t.attributeName], color: "var(--syn-variable)" },
+  { tag: [t.operator, t.punctuation, t.bracket, t.separator], color: "var(--syn-operator)" },
+  { tag: [t.invalid], color: "var(--syn-invalid)" },
 ]);

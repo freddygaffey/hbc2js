@@ -39,7 +39,7 @@ export function Modal({
         role="dialog"
         aria-label={title}
         data-hbc-keys="off"
-        className={`${wide ? "w-[min(820px,94vw)]" : "w-[min(520px,92vw)]"} rounded-ui border border-border bg-surface text-text`}
+        className={`${wide ? "w-[min(51.25rem,94vw)]" : "w-[min(32.5rem,92vw)]"} rounded-ui border border-border bg-surface text-text`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border px-3 py-2 text-xs">
