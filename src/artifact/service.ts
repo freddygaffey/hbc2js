@@ -401,6 +401,20 @@ export class ArtifactService {
     return [...this.functionsByFn.entries()].map(([fn, row]) => ({ fn, name: row.name }));
   }
 
+  /** Every function a module owns (`fnOwnership`), with its recorded line
+   *  range — the cheap walk `/api/module/{id}/source` needs; `fn()` per
+   *  function is O(native rows) each and is far too slow for a 15k-fn bundle. */
+  ownedFns(id: number): readonly { readonly fn: number; readonly name: string | null; readonly lines: readonly [number, number] | null }[] {
+    const out: { fn: number; name: string | null; lines: readonly [number, number] | null }[] = [];
+    for (const [key, owner] of Object.entries(this.modulesIndex.fnOwnership)) {
+      if (owner !== id) continue;
+      const fn = Number(key);
+      const r = this.range(fn);
+      out.push({ fn, name: this.functionsByFn.get(fn)?.name ?? null, lines: r !== undefined ? r.lines : null });
+    }
+    return out;
+  }
+
   /** §3.1 `query module <id>`. */
   module(id: number): { readonly deps: readonly number[]; readonly dependents: readonly number[]; readonly ownedFnCount: number; readonly file: string | null } {
     const m = this.modulesIndex.modules.find((x) => x.id === id);

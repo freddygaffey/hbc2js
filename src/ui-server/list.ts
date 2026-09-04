@@ -90,11 +90,7 @@ export function moduleSource(artifact: ArtifactService, artifactDir: string, id:
   const file = artifact.module(id).file;
   if (file === null) return null;
   const functions: { fn: number; name: string | null; lines: readonly [number, number] }[] = [];
-  for (const { fn } of artifact.listFns()) {
-    const s: FnSummary = artifact.fn(fn);
-    if (s.module !== id || s.lines === null) continue;
-    functions.push({ fn, name: s.overlayName ?? s.name, lines: s.lines });
-  }
+  for (const f of artifact.ownedFns(id)) if (f.lines !== null) functions.push({ fn: f.fn, name: f.name, lines: f.lines });
   functions.sort((a, b) => a.lines[0] - b.lines[0]);
   return { module: id, file, text: readFileSync(join(artifactDir, file), "utf8"), functions };
 }
