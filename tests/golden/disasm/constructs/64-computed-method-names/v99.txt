@@ -1,0 +1,102 @@
+; hbc2js disassembly of 64-computed-method-names/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=6 strings=21 globalCodeIndex=0
+function #0 "global"  params=1 frame=25 env=0 flags=dbg,overflowed  @0x000001e0 size=283
+  0000  GetGlobalObject      r5
+  0002  TryGetById           r3, r5, #c0, s12 "String"
+  0008  LoadConstUInt8       r0, 1
+  000b  LoadConstUndefined   r2
+  000d  Call2                r4, r3, r2, r0
+  0012  LoadConstString      r3, s2 "run"
+  0016  Add                  r4, r3, r4
+  001a  CreateBaseClass      r3, r6, r2, 1
+  0020  Mov                  r7, r6
+  0023  CreateClosure        r6, r2, f2 ""
+  0028  Mov                  r16, r6
+  002b  Mov                  r15, r4
+  002e  LoadConstZero        r14
+  0030  CallBuiltin          r8, b55 "setFunctionName", 4
+  0034  DefineOwnByVal       r7, r6, r4, 0
+  0039  CreateClosure        r6, r2, f3 ""
+  003e  LoadConstString      r8, s15 "value"
+  0042  Mov                  r16, r6
+  0045  Mov                  r15, r8
+  0048  Mov                  r14, r0
+  004b  CallBuiltin          r9, b55 "setFunctionName", 4
+  004f  DefineOwnGetterSetterByVal r7, r8, r6, r2, 0
+  0055  CreateClosure        r6, r2, f4 ""
+  005a  LoadConstUInt8       r0, 2
+  005d  Mov                  r16, r6
+  0060  Mov                  r14, r0
+  0063  CallBuiltin          r9, b55 "setFunctionName", 4
+  0067  DefineOwnGetterSetterByVal r7, r8, r2, r6, 0
+  006d  GetByIdShort         r6, r3, #c1, s19 "prototype"
+  0072  NewObjectWithParent  r6, r6
+  0075  PutByIdLoose         r6, r0, #c0, s15 "value"
+  007b  TryGetById           r11, r5, #c2, s18 "print"
+  0081  GetByIdShort         r7, r6, #c3, s11 "run1"
+  0086  LoadConstUInt8       r0, 3
+  0089  Call2                r15, r7, r6, r0
+  008e  GetByIdShort         r13, r6, #c4, s15 "value"
+  0093  LoadConstString      r14, s3 "accessor:"
+  0097  LoadConstString      r16, s8 "method:"
+  009b  LoadConstUndefined   r17
+  009d  Call                 r6, r11, 5
+  00a1  TryGetById           r7, r5, #c5, s13 "Object"
+  00a7  GetByIdShort         r6, r7, #c6, s10 "getOwnPropertyDescriptor"
+  00ac  GetByIdShort         r3, r3, #c1, s19 "prototype"
+  00b1  Call3                r7, r6, r7, r3, r8
+  00b7  TryGetById           r10, r5, #c2, s18 "print"
+  00bd  GetByIdShort         r3, r7, #c7, s9 "get"
+  00c2  GetByIdShort         r6, r7, #c8, s20 "set"
+  00c7  GetByIdShort         r13, r7, #c9, s17 "enumerable"
+  00cc  GetByIdShort         r12, r7, #c10, s16 "configurable"
+  00d1  LoadConstString      r16, s4 "descriptor:"
+  00d5  TypeOf               r14, r6
+  00d8  TypeOf               r15, r3
+  00db  LoadConstUndefined   r17
+  00dd  Call                 r3, r10, 6
+  00e1  NewObject            r3
+  00e3  CreateClosure        r6, r2, f5 ""
+  00e8  Mov                  r16, r6
+  00eb  Mov                  r15, r4
+  00ee  LoadConstZero        r14
+  00f0  CallBuiltin          r7, b55 "setFunctionName", 4
+  00f4  DefineOwnByVal       r3, r6, r4, 1
+  00f9  TryGetById           r6, r5, #c2, s18 "print"
+  00ff  GetByVal             r5, r3, r4
+  0103  Call1                r5, r5, r3
+  0107  GetByVal             r3, r3, r4
+  010b  LoadConstString      r4, s6 "object literal:"
+  010f  TypeOf               r3, r3
+  0112  Call4                r3, r6, r2, r4, r5, r3
+  0119  Ret                  r3
+
+function #1 "Widget"  params=1 frame=1 env=0 flags=strict,dbg,overflowed,ctor  @0x000002fb size=12
+  0000  GetNewTarget         r0
+  0002  GetByIdShort         r0, r0, #c0, s19 "prototype"
+  0007  NewObjectWithParent  r0, r0
+  000a  Ret                  r0
+
+function #2 ""  params=2 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x00000307 size=12
+  0000  LoadConstUInt8       r0, 2
+  0003  LoadParam            r1, 1
+  0006  Mul                  r0, r1, r0
+  000a  Ret                  r0
+
+function #3 ""  params=1 frame=1 env=0 flags=strict,dbg,overflowed,nc  @0x00000313 size=10
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r0, r0, #c0, s14 "_v"
+  0008  Ret                  r0
+
+function #4 ""  params=2 frame=3 env=0 flags=strict,dbg,overflowed,nc  @0x0000031d size=23
+  0000  LoadConstUInt8       r0, 10
+  0003  LoadParam            r2, 1
+  0006  Mul                  r0, r2, r0
+  000a  LoadParam            r2, 0
+  000d  PutByIdStrict        r2, r0, #c0, s14 "_v"
+  0013  LoadConstUndefined   r1
+  0015  Ret                  r1
+
+function #5 ""  params=1 frame=1 env=0 flags=nc  @0x00000334 size=6
+  0000  LoadConstString      r0, s5 "from object"
+  0004  Ret                  r0

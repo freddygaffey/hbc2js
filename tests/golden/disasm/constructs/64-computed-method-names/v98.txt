@@ -1,0 +1,90 @@
+; hbc2js disassembly of 64-computed-method-names/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=6 strings=21 globalCodeIndex=0
+function #0 "global"  params=1 frame=24 env=0 flags=dbg,overflowed  @0x000001e0 size=245
+  0000  GetGlobalObject      r4
+  0002  TryGetById           r2, r4, #c0, s12 "String"
+  0008  LoadConstUInt8       r0, 1
+  000b  LoadConstUndefined   r1
+  000d  Call2                r3, r2, r1, r0
+  0012  LoadConstString      r2, s2 "run"
+  0016  Add                  r3, r2, r3
+  001a  CreateBaseClass      r2, r5, r1, 1
+  0020  Mov                  r8, r5
+  0023  ToPropertyKey        r6, r3
+  0026  CreateClosure        r5, r1, f2 ""
+  002b  DefineOwnByVal       r8, r5, r6, 0
+  0030  LoadConstString      r7, s15 "value"
+  0034  ToPropertyKey        r6, r7
+  0037  CreateClosure        r5, r1, f3 ""
+  003c  DefineOwnGetterSetterByVal r8, r6, r5, r1, 0
+  0042  ToPropertyKey        r6, r7
+  0045  CreateClosure        r5, r1, f4 ""
+  004a  DefineOwnGetterSetterByVal r8, r6, r1, r5, 0
+  0050  GetByIdShort         r5, r2, #c1, s19 "prototype"
+  0055  NewObjectWithParent  r5, r5
+  0058  LoadConstUInt8       r0, 2
+  005b  PutByIdLoose         r5, r0, #c0, s15 "value"
+  0061  TryGetById           r10, r4, #c2, s18 "print"
+  0067  GetByIdShort         r6, r5, #c3, s11 "run1"
+  006c  LoadConstUInt8       r0, 3
+  006f  Call2                r14, r6, r5, r0
+  0074  GetByIdShort         r12, r5, #c4, s15 "value"
+  0079  LoadConstString      r13, s3 "accessor:"
+  007d  LoadConstString      r15, s8 "method:"
+  0081  LoadConstUndefined   r16
+  0083  Call                 r5, r10, 5
+  0087  TryGetById           r6, r4, #c5, s13 "Object"
+  008d  GetByIdShort         r5, r6, #c6, s10 "getOwnPropertyDescriptor"
+  0092  GetByIdShort         r2, r2, #c1, s19 "prototype"
+  0097  Call3                r6, r5, r6, r2, r7
+  009d  TryGetById           r9, r4, #c2, s18 "print"
+  00a3  GetByIdShort         r2, r6, #c7, s9 "get"
+  00a8  GetByIdShort         r5, r6, #c8, s20 "set"
+  00ad  GetByIdShort         r12, r6, #c9, s17 "enumerable"
+  00b2  GetByIdShort         r11, r6, #c10, s16 "configurable"
+  00b7  LoadConstString      r15, s4 "descriptor:"
+  00bb  TypeOf               r13, r5
+  00be  TypeOf               r14, r2
+  00c1  LoadConstUndefined   r16
+  00c3  Call                 r2, r9, 6
+  00c7  NewObject            r2
+  00c9  CreateClosure        r5, r1, f5 ""
+  00ce  DefineOwnByVal       r2, r5, r3, 1
+  00d3  TryGetById           r5, r4, #c2, s18 "print"
+  00d9  GetByVal             r4, r2, r3
+  00dd  Call1                r4, r4, r2
+  00e1  GetByVal             r2, r2, r3
+  00e5  LoadConstString      r3, s6 "object literal:"
+  00e9  TypeOf               r2, r2
+  00ec  Call4                r2, r5, r1, r3, r4, r2
+  00f3  Ret                  r2
+
+function #1 "Widget"  params=1 frame=1 env=0 flags=strict,dbg,overflowed,ctor  @0x000002d5 size=12
+  0000  GetNewTarget         r0
+  0002  GetByIdShort         r0, r0, #c0, s19 "prototype"
+  0007  NewObjectWithParent  r0, r0
+  000a  Ret                  r0
+
+function #2 ""  params=2 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x000002e1 size=12
+  0000  LoadConstUInt8       r0, 2
+  0003  LoadParam            r1, 1
+  0006  Mul                  r0, r1, r0
+  000a  Ret                  r0
+
+function #3 ""  params=1 frame=1 env=0 flags=strict,dbg,overflowed,nc  @0x000002ed size=10
+  0000  LoadParam            r0, 0
+  0003  GetByIdShort         r0, r0, #c0, s14 "_v"
+  0008  Ret                  r0
+
+function #4 ""  params=2 frame=3 env=0 flags=strict,dbg,overflowed,nc  @0x000002f7 size=23
+  0000  LoadConstUInt8       r0, 10
+  0003  LoadParam            r2, 1
+  0006  Mul                  r0, r2, r0
+  000a  LoadParam            r2, 0
+  000d  PutByIdStrict        r2, r0, #c0, s14 "_v"
+  0013  LoadConstUndefined   r1
+  0015  Ret                  r1
+
+function #5 ""  params=1 frame=1 env=0 flags=nc  @0x0000030e size=6
+  0000  LoadConstString      r0, s5 "from object"
+  0004  Ret                  r0

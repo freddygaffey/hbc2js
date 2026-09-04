@@ -20,6 +20,11 @@ export const KNOWN_AMBIGUOUS_V98: readonly string[] = [
   "41-spread-object",
   "43-template-literals",
   "47-typeof-instanceof-in",
+  // Added 2026-09-05 with the fixture itself (the v99 setFunctionName fix): its
+  // v98 build is ambiguous for exactly the reason above, and
+  // `--opcode-table=hbc98-late` resolves it the same way. Nothing about the
+  // fixture's own construct is special here.
+  "64-computed-method-names",
 ];
 
 export function isKnownAmbiguousV98(group: string, name: string, version: number): boolean {
