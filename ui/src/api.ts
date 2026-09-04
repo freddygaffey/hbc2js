@@ -6,9 +6,10 @@
 // by `VITE_API_MOCK` (default "1"; set VITE_API_MOCK=0 to hit a real server).
 import type {
   CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
-  ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
+  ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, Bounded,
 } from "./contracts.ts";
+import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
 
 export const API_BASE: string = import.meta.env["VITE_API_BASE"] ?? "http://127.0.0.1:7331";
@@ -22,6 +23,12 @@ export interface Api {
   whoCalls(fn: number): Promise<WhoCalls>;
   callsFrom(fn: number): Promise<CallsFrom>;
   module(id: number): Promise<ModuleInfo>;
+  /** `GET /api/module/:id/source` — the whole file plus its fn ranges. */
+  moduleSource(id: number): Promise<ModuleSource>;
+  /** `GET /api/modules` — the whole module catalogue (server caps at 500). */
+  modules(): Promise<ModuleListPage>;
+  /** `GET /api/functions?cursor=` — one 50-row page of the fn catalogue. */
+  functions(cursor?: number): Promise<FunctionListPage>;
   packageId(mod: number): Promise<PackageIdResult>;
   findings(): Promise<Bounded<ResolvedFinding>>;
   leads(): Promise<LeadsResult>;
@@ -62,6 +69,9 @@ export const httpApi: Api = {
   whoCalls: (fn) => get(`/fn/${fn}/callers`),
   callsFrom: (fn) => get(`/fn/${fn}/callees`),
   module: (id) => get(`/module/${id}`),
+  moduleSource: (id) => get(`/module/${id}/source`),
+  modules: () => get(`/modules`),
+  functions: (cursor) => get(`/functions`, { cursor }),
   packageId: (mod) => get(`/package-id/${mod}`),
   findings: () => get(`/findings`),
   leads: () => get(`/leads`),

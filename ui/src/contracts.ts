@@ -91,6 +91,23 @@ export interface ModuleInfo {
   readonly file: string | null;
 }
 
+/** `GET /api/module/{id}/source` — the WHOLE module file, with the line
+ *  range of every function in it (1-based, inclusive, sorted by start).
+ *  404 when the module has no file. This is the primary listing: an analyst
+ *  reads a file, not a function (owner request, wave 2). */
+export interface ModuleSourceFn {
+  readonly fn: number;
+  readonly name: string | null;
+  readonly lines: readonly [number, number];
+}
+
+export interface ModuleSource {
+  readonly module: number;
+  readonly file: string;
+  readonly text: string;
+  readonly functions: readonly ModuleSourceFn[];
+}
+
 // -- leads / search ---------------------------------------------------------
 
 export type SinkClass =

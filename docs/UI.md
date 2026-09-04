@@ -151,15 +151,68 @@ uselessness. Pane sizes persist per group via `autoSaveId`.
 Right-clicking a row in the left pane opens the Radix context menu with the
 spec 22 §3.3 item list (disabled until landing 4 wires the action registry).
 
+## The listing (wave 2, track 1)
+
+The centre pane is **CodeMirror 6**, read-only, pinned exactly
+(`@codemirror/{view,state,language,lang-javascript,search,commands}`,
+`@replit/codemirror-vim`, `@lezer/highlight` — all MIT). It is dressed
+entirely in tokens: `ui/src/listing/cm-theme.ts` is one
+`EditorView.theme({...})` plus one `HighlightStyle.define([...])` whose every
+value is a `var(--token)`, because CodeMirror's own `defaultHighlightStyle`
+is full of hex literals and would smuggle art direction past the token gate.
+
+**A file, not a function.** Selecting a module in the tree loads
+`GET /api/module/:id/source` — the whole module text plus the line range of
+every function in it — and renders it. Selecting a function keeps the *same
+document* and scrolls to its range (marked in the gutter margin by the
+`hbc-fn-start` decoration); clicking anywhere inside a marked range selects
+that function. Only when a module has no file view (404) does the pane fall
+back to `GET /api/fn/:fn/source`. `GET /api/fn/:fn/disasm` fills the lower
+half of the vertical split, which folds away entirely from the bar at the
+bottom of the pane.
+
+**Selection** lives in `ui/src/state/selection.ts`: a `useSyncExternalStore`
+store (no new dependency, no context provider, so keymap handlers and the
+action registry can read it from outside React) whose `Selection` is a
+field-for-field copy of `Selection` in `src/ui-core/actions.ts`, plus a
+`line`. It carries the spec 22 §3.2 jump list (`back()`/`forward()`, capped
+at 100). A single click on a word in the listing sets
+`{kind:"identifier", fn, name, line}` — that is exactly what Rename and the
+annotate actions consume. `tests/gate/ui/listing.test.ts` fails if the two
+`Selection` shapes drift apart.
+
+**Names.** Three sources disagree: `/api/fn/:fn` reports `name` and
+`overlayName`, but an *accepted* rename appears only as
+`metadata.acceptedName` on `/api/fn/:fn/context`. `ui/src/listing/names.ts`
+resolves `acceptedName > overlayName > name > "fn N"` and every pane that
+shows a function name goes through it.
+
+**Bounded by construction.** The left tree lists modules from
+`GET /api/modules` grouped into the app's own `src/` modules and one group
+per `node_modules/<pkg>` (`ui/src/listing/modules.ts`), and only fetches
+functions for the modules that are *open*, from their file views — a real
+bundle has 15 000 functions, so walking `/api/functions?cursor=` (the
+`useFunctionCatalogue` hook, kept for callers that want the whole catalogue)
+would be 300 requests to fill a tree that shows a dozen rows. The editor
+renders at most `MAX_RENDER_LINES` (5 000) lines and says how many it hid
+(`ui/src/listing/truncate.ts`), on top of the server's own truncation. The
+top bar's search is `GET /api/search/functions`: a dropdown of at most 50
+hits, `Enter` takes the first, and while a query is present the left pane
+shows the hits as a flat list instead of the tree.
+
+**Keyboard.** The tree is a roving-focus list: the container holds focus,
+Up/Down move a cursor over the visible rows, Enter opens, Left/Right
+collapse and expand. Every function row carries `data-fn`, so the keymap
+track can drive the list without a React handle. The vim layer is present
+but mounted only when `ui/keymap.json` says `"preset": "vim"`
+(`ui/src/keymap-config.ts`). The listing installs no `contextmenu` handler
+and stops no events, so right-clicks reach the annotate track's menu.
+
 ## What is stubbed (landing 1 is the shell, not the app)
 
-- **The listing** is a `<pre>` per block, not CodeMirror 6; no syntax
-  highlighting, no source↔disasm alignment (landing 2).
-- **The module tree and function list** are fake rows in
-  `ui/src/panes/LeftPane.tsx` (landing 2). The Leads tab is real data through
-  the mock adapter.
-- **Search** in the top bar is a placeholder input; `useSearchFunctions` is
-  wired but not rendered (landing 3).
+- **Source↔disasm alignment**: the two blocks are independent editors; the
+  disasm is not scrolled to the source line (no line→offset map in the UI
+  yet).
 - **The command palette** (`Cmd/Ctrl-K`) lists hard-coded items, of which
   only the theme and density toggles run; the action registry, keymap and
   vim preset are landing 4.
@@ -167,5 +220,6 @@ spec 22 §3.3 item list (disabled until landing 4 wires the action registry).
   is landing 5.
 - **The activity pane** shows mock log rows; real 1 s polling of a live
   project's log arrives with the server (landing 6).
-- No virtualisation (spec 22 §2 accepts it), no graph view, no worker/jobs
-  rail, no Playwright smoke test yet.
+- No virtualisation (spec 22 §2 accepts it): the tree renders every open
+  module's rows and the editor is capped at 5 000 lines instead. No graph
+  view, no worker/jobs rail, no Playwright smoke test yet.
