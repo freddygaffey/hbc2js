@@ -1486,6 +1486,7 @@ function runQuery(argv: readonly string[]): void {
         ...(num("--min-props") !== undefined ? { minProps: num("--min-props")! } : {}),
         ...(num("--string-ratio") !== undefined ? { stringRatio: num("--string-ratio")! } : {}),
         ...(num("--module") !== undefined ? { module: num("--module")! } : {}),
+        ...(num("--min-matched") !== undefined ? { minMatched: num("--min-matched")! } : {}),
         ...(num("--limit") !== undefined ? { limit: num("--limit")! } : {}),
         ...(flagValue(argv, "--key") !== undefined ? { key: flagValue(argv, "--key")! } : {}),
         ...(flagValue(argv, "--value") !== undefined ? { value: flagValue(argv, "--value")! } : {}),
@@ -1494,7 +1495,7 @@ function runQuery(argv: readonly string[]): void {
       if (json) process.stdout.write(JSON.stringify(result) + "\n");
       else {
         for (const t of result.tables) {
-          process.stdout.write(`fn ${t.fn} @${t.offset}  module ${t.module ?? "-"}  keys=${t.members.length} strings=${t.strings}\n`);
+          process.stdout.write(`fn ${t.fn} @${t.offset}  module ${t.module ?? "-"}  keys=${t.members.length} strings=${t.strings} matched=${t.matched}\n`);
           for (const m of t.members.slice(0, MEMBER_LINES)) {
             process.stdout.write(`  ${m.key}: ${m.kind === "string" ? m.value : m.kind === "computed" ? "<computed>" : `<${m.kind}>`}\n`);
           }

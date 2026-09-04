@@ -156,11 +156,26 @@ export interface ObjectTablesOptions {
   readonly key?: string;
   readonly value?: string;
   readonly module?: number;
+  /** Minimum number of members that must SATISFY `key`/`value` (default 1).
+   *  Guards the accidental hit: a 2,125-member HTML-entity table where one
+   *  member happens to be `&sol;: "/"` is not an endpoint table. Without a
+   *  key/value filter every member counts as matched, so this is a no-op. */
+  readonly minMatched?: number;
   readonly limit?: number;
 }
 
+/** A scan row plus how many of its members satisfied the query's
+ *  `key`/`value` patterns — the field the RANKING is built on, and the
+ *  reason a filtered query does not simply sort by size. */
+export interface ObjectTableMatch extends ObjectTableRow {
+  /** Members satisfying at least one of the supplied patterns; the table's
+   *  own member count when neither `key` nor `value` was given (that is
+   *  `numProps` for a table with no computed tail). */
+  readonly matched: number;
+}
+
 export interface ObjectTablesResult {
-  readonly tables: readonly ObjectTableRow[];
+  readonly tables: readonly ObjectTableMatch[];
   readonly total: number;
   readonly truncated: boolean;
   /** Functions the underlying scan decoded (`failed` = the ones it could
@@ -170,7 +185,7 @@ export interface ObjectTablesResult {
 }
 
 /** `query object-tables` defaults (spec 10 §3.1). */
-export const OBJECT_TABLE_DEFAULTS = { minProps: 4, stringRatio: 0.5, limit: 100 } as const;
+export const OBJECT_TABLE_DEFAULTS = { minProps: 4, stringRatio: 0.5, minMatched: 1, limit: 100 } as const;
 
 export interface Bounded<T> {
   readonly rows: readonly T[];
@@ -193,6 +208,27 @@ export const CAPS = {
 
 function fnDir(artifactDir: string): string {
   return join(artifactDir, "index");
+}
+
+/** The `object-tables` ranking (spec 10 §3.1). Unfiltered: biggest table
+ *  first — nothing else is known about relevance. FILTERED: how much of the
+ *  table the query actually hit — `matched` first, then the DENSITY of the
+ *  hit (`matched / members`), then size. Without the density term a
+ *  2,125-member HTML-entity table whose `&sol;` member is `"/"` outranks a
+ *  41-member `PATH_*` endpoint table on a `--value '^/'` query, which is the
+ *  wrong answer to the question being asked (reported on the live NSW
+ *  ui-server, 2026-09-04). Ties break on `fn` then `offset`, so the order is
+ *  total and render-independent. */
+export function compareObjectTables(filtered: boolean): (a: ObjectTableMatch, b: ObjectTableMatch) => number {
+  return (a, b) => {
+    if (filtered) {
+      const byMatched = b.matched - a.matched;
+      if (byMatched !== 0) return byMatched;
+      const byDensity = b.matched / b.members.length - a.matched / a.members.length;
+      if (byDensity !== 0) return byDensity;
+    }
+    return b.members.length - a.members.length || a.fn - b.fn || a.offset - b.offset;
+  };
 }
 
 export class ArtifactService {
@@ -597,6 +633,7 @@ export class ArtifactService {
     const scan = this.ensureObjectTables();
     const minProps = opts.minProps ?? OBJECT_TABLE_DEFAULTS.minProps;
     const stringRatio = opts.stringRatio ?? OBJECT_TABLE_DEFAULTS.stringRatio;
+    const minMatched = opts.minMatched ?? OBJECT_TABLE_DEFAULTS.minMatched;
     const limit = opts.limit ?? OBJECT_TABLE_DEFAULTS.limit;
     let keyRe: RegExp | undefined;
     let valueRe: RegExp | undefined;
@@ -606,20 +643,31 @@ export class ArtifactService {
     } catch (e) {
       throw new Hbc2jsError(ErrorCode.E_USAGE, `object-tables: bad regex — ${e instanceof Error ? e.message : String(e)}`);
     }
-    const matches = scan.rows.filter((r) => {
+    const filtered = keyRe !== undefined || valueRe !== undefined;
+
+    const rows: ObjectTableMatch[] = [];
+    for (const r of scan.rows) {
       const n = r.members.length;
-      if (n < minProps) return false;
-      if (n === 0 || r.strings / n < stringRatio) return false;
-      if (opts.module !== undefined && r.module !== opts.module) return false;
-      if (keyRe !== undefined && !r.members.some((m) => keyRe!.test(m.key))) return false;
-      if (valueRe !== undefined && !r.members.some((m) => m.value !== null && valueRe!.test(m.value))) return false;
-      return true;
-    });
-    matches.sort((a, b) => b.members.length - a.members.length || a.fn - b.fn || a.offset - b.offset);
+      if (n < minProps) continue;
+      if (n === 0 || r.strings / n < stringRatio) continue;
+      if (opts.module !== undefined && r.module !== opts.module) continue;
+      // Both patterns must be satisfied by the table (possibly by different
+      // members, as before); `matched` counts the members satisfying EITHER,
+      // so a table that passes the filter always has `matched ≥ 1`.
+      if (keyRe !== undefined && !r.members.some((m) => keyRe!.test(m.key))) continue;
+      if (valueRe !== undefined && !r.members.some((m) => m.value !== null && valueRe!.test(m.value))) continue;
+      const matched = filtered
+        ? r.members.filter((m) => (keyRe !== undefined && keyRe.test(m.key)) || (valueRe !== undefined && m.value !== null && valueRe.test(m.value))).length
+        : n;
+      if (matched < minMatched) continue;
+      rows.push({ ...r, matched });
+    }
+
+    rows.sort(compareObjectTables(filtered));
     return {
-      tables: matches.slice(0, limit),
-      total: matches.length,
-      truncated: matches.length > limit,
+      tables: rows.slice(0, limit),
+      total: rows.length,
+      truncated: rows.length > limit,
       scanned: scan.scanned,
       failed: scan.failed,
     };

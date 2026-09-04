@@ -80,7 +80,7 @@ resource key survives every rename and re-render (spec 10 §0).
 | `xref/string/{sid}` + `xref/string-grep/{regex}` | `sid` / regex | `query string` / `query string-grep` (spec 10 §3.1) | those verbs' caps (≤ 30 / ≤ 50 + total) |
 | `xref/global-uses/{name}` | global name | `query global-uses` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `xref/who-calls-by-name?fn=N\|name=X` | `fnIndex` OR export name | `query who-calls-by-name` (spec 10 §3.1; §14.1 below) | ≤ 50 candidate rows + total; `names[]` + `ambiguous` |
-| `object-tables?minProps&stringRatio&key&value&module&limit` | filter opts | `query object-tables` (spec 10 §3.1; §14.2 below) | ≤ 100 tables + total; rows inlined with `fnName`/`size` |
+| `object-tables?minProps&stringRatio&key&value&minMatched&module&limit` | filter opts | `query object-tables` (spec 10 §3.1; §14.2 below) | ≤ 100 tables + total; rows inlined with `fnName`/`size` |
 | `native[/{fn}]` — native surface | optional `fnIndex` | `query native` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `module/{mod}` + `module-graph` | `mod` | `query module` (spec 10 §3.1) | that verb's ≤ 15 lines |
 | `package-id/{mod}` — fingerprint-DB identification result for a module | `mod` | reuse-validation two-key gate (spec 13) over the shared sigdb (spec 15) | spec-13 published cap; every row cites the sigdb match, never a guess |
@@ -399,23 +399,36 @@ reported as `kind: "computed"` (`<computed>` in text): proving it would need the
 decompiler, and this verb deliberately never runs one.
 
 **Shape.** `hbc2js query object-tables --artifact <dir> --hbc <in.hbc>
-[--min-props N] [--string-ratio R] [--key <re>] [--value <re>] [--module M]
-[--limit N] [--all] [--json]` / `ArtifactService.objectTables(opts)` /
-`McpResources.objectTables` / `GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=`.
+[--min-props N] [--string-ratio R] [--key <re>] [--value <re>] [--min-matched N]
+[--module M] [--limit N] [--all] [--json]` / `ArtifactService.objectTables(opts)` /
+`McpResources.objectTables` / `GET /api/object-tables?minProps=&stringRatio=&key=&value=&minMatched=&module=&limit=`.
 
 **Filter / bounds.** Default: ≥ 4 members AND ≥ 50% of them string-valued —
 the shape of a table, as opposed to an options bag. `--key`/`--value` are
 ECMAScript regexes over member keys / string values; a table matches if ANY
-member matches. Sorted most-members-first; ≤ 100 tables by default plus
+member matches. Each row also reports `matched`, the number of members that
+satisfied those patterns (the table's own member count when neither was
+given), and `--min-matched N` (default 1) drops tables the query barely
+touched. ≤ 100 tables by default plus
 `total`/`truncated`, ≤ 20 member lines per table in text output. The scan
 itself is memoised per `ArtifactService`, so repeated filtered queries are a
 filter over an array, not a re-scan.
 
+**Ranking (2026-09-04 follow-up).** An UNFILTERED query sorts by size — nothing
+else is known about relevance. A FILTERED one sorts by `matched`, then by hit
+DENSITY (`matched / members`), then by size (`compareObjectTables`, exported
+and unit-tested). Reported on the live NSW ui-server: `?value=^/&minProps=4&limit=2`
+used to return the 2,125-member HTML-entity table (module 2447) first, because
+its `&sol;` member is `"/"` and the sort was purely by member count; the two
+real endpoint tables (41 and 22 fully-matching members) now lead.
+
 **Measured (Service NSW, 43,384 functions).** `--value '^(/|https?:)' --min-props 4`
-→ 486 tables; `--value '^/'` → 11, of which BOTH endpoint tables lead: fn 10635
-(module 778, 41 members, `PATH_AUTHENTICATE`/`PATH_BEARER_TOKEN`/…) and fn 11367
-(module 818, 22 members, `PATH_OLD_DRIVER_LICENCE`/`PATH_DDL_OPT_IN_STATUS`/… —
-the `LicenceAPIEndpoints` table the hunt originally found by luck).
+→ 645 tables; `--value '^/'` → 162, ranked (see above) so that BOTH endpoint
+tables lead: fn 10635 (module 778, 38 members, 35 matching — `PATH_AUTHENTICATE`/
+`PATH_BEARER_TOKEN`/…) then fn 11367 (module 818, 20 members, 12 matching —
+`PATH_OLD_DRIVER_LICENCE`/`PATH_DDL_OPT_IN_STATUS`/… = the `LicenceAPIEndpoints`
+table the hunt originally found by luck). Adding `--min-matched 4` narrows the
+162 to exactly those two.
 
 ### 14.1 `who-calls-by-name` — name-based caller recovery (2026-09-04, landed)
 

@@ -180,9 +180,14 @@ export interface ObjectTable {
   readonly strings: number;
   readonly nonStrings: number;
   readonly computed: number;
+  /** Members that satisfied the query's `key`/`value` patterns — the table's
+   *  own member count when neither was given. A FILTERED query ranks on this
+   *  (then on `matched / members.length`, then size), so a giant table with
+   *  one accidental hit no longer outranks a real endpoint table. */
+  readonly matched: number;
 }
 
-/** `GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=`
+/** `GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&minMatched=&limit=`
  *  — the "endpoint tables" inventory. `scanned`/`failed` are the functions
  *  the one-pass bytecode scan decoded / could not decode. */
 export interface ObjectTables {

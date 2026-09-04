@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { cachedSplitProject as splitProject } from "../../support/decompiled.ts";
 import { writeArtifact } from "../../../src/artifact/write.ts";
-import { ArtifactService } from "../../../src/artifact/service.ts";
+import { ArtifactService, compareObjectTables, type ObjectTableMatch } from "../../../src/artifact/service.ts";
 import { scanObjectTables, type ObjectTableRow } from "../../../src/artifact/object-tables.ts";
 import { parseHbc } from "../../../src/parse/module.ts";
 import { handle, type UiServerCtx } from "../../../src/ui-server/routes.ts";
@@ -166,7 +166,7 @@ test("CLI: `query object-tables` prints a table block and a total", () => {
   const out = execFileSync("node", [CLI, "query", "object-tables", "--artifact", outDir, "--hbc", RN_TEMPLATE, "--limit", "2"], {
     encoding: "utf8",
   });
-  assert.match(out, /^fn \d+ @\d+ {2}module (\d+|-) {2}keys=\d+ strings=\d+$/m);
+  assert.match(out, /^fn \d+ @\d+ {2}module (\d+|-) {2}keys=\d+ strings=\d+ matched=\d+$/m);
   assert.match(out, /^total:\d+ scanned:\d+$/m);
 });
 
@@ -201,11 +201,11 @@ test("route: GET /api/object-tables passes every filter through", async () => {
     },
   } as unknown as UiServerCtx;
   const res = await handle(
-    { method: "GET", path: "/api/object-tables", body: null, query: { minProps: "6", stringRatio: "0.25", key: "^PATH_", value: "^/", module: "3", limit: "7" } },
+    { method: "GET", path: "/api/object-tables", body: null, query: { minProps: "6", stringRatio: "0.25", key: "^PATH_", value: "^/", module: "3", minMatched: "4", limit: "7" } },
     ctx,
   );
   assert.equal(res.status, 200);
-  assert.deepEqual(seen, { minProps: 6, stringRatio: 0.25, module: 3, limit: 7, key: "^PATH_", value: "^/" });
+  assert.deepEqual(seen, { minProps: 6, stringRatio: 0.25, module: 3, minMatched: 4, limit: 7, key: "^PATH_", value: "^/" });
 });
 
 test("route: GET /api/object-tables with no query uses the service defaults", async () => {
@@ -221,4 +221,84 @@ test("route: GET /api/object-tables with no query uses the service defaults", as
   const res = await handle({ method: "GET", path: "/api/object-tables", body: null, query: {} }, ctx);
   assert.equal(res.status, 200);
   assert.deepEqual(seen, {});
+});
+
+// -- `matched` + ranking (orchestrator follow-up, 2026-09-04) ------------
+//
+// Reported on the live NSW ui-server: `?value=^/&minProps=4&limit=2` returned
+// the 2,125-member HTML-entity table (module 2447) first, because `&sol;` is
+// "/" and the sort was purely by member count. A filtered query now ranks on
+// how much of the table the query actually hit.
+
+/** The shape the ranking needs, with everything else stubbed. */
+function fakeTable(fn: number, members: number, matched: number): ObjectTableMatch {
+  return {
+    fn,
+    offset: 0,
+    module: null,
+    numProps: members,
+    members: Array.from({ length: members }, (_, i) => ({ key: `k${i}`, value: "v", kind: "string" as const })),
+    strings: members,
+    nonStrings: 0,
+    computed: 0,
+    matched,
+  };
+}
+
+test("ranking: an endpoint table outranks a giant table with one accidental hit", () => {
+  const entities = fakeTable(2447, 2125, 1); // `&sol;: "/"` — one lucky member
+  const endpoints = fakeTable(10635, 41, 41); // every member is a PATH_*
+  const licences = fakeTable(11367, 22, 22);
+  const ranked = [entities, endpoints, licences].sort(compareObjectTables(true));
+  assert.deepEqual(
+    ranked.map((t) => t.fn),
+    [10635, 11367, 2447],
+  );
+});
+
+test("ranking: equal matched counts break on density, then on size", () => {
+  const dense = fakeTable(1, 8, 4); // 4/8
+  const sparse = fakeTable(2, 100, 4); // 4/100
+  assert.deepEqual([sparse, dense].sort(compareObjectTables(true)).map((t) => t.fn), [1, 2]);
+  const sameDensity = [fakeTable(3, 8, 4), fakeTable(4, 16, 8)];
+  // 8 matched beats 4 matched outright, whatever the density.
+  assert.deepEqual(sameDensity.sort(compareObjectTables(true)).map((t) => t.fn), [4, 3]);
+});
+
+test("ranking: an UNFILTERED query still sorts by size alone", () => {
+  const ranked = [fakeTable(1, 4, 4), fakeTable(2, 40, 40)].sort(compareObjectTables(false));
+  assert.deepEqual(ranked.map((t) => t.fn), [2, 1]);
+});
+
+test("matched: equals the member count when no filter is given", () => {
+  for (const t of svc.objectTables({ limit: 20 }).tables) assert.equal(t.matched, t.members.length);
+});
+
+test("matched: counts exactly the members the pattern hit, and ranks on it", () => {
+  const r = svc.objectTables({ value: "^(/|https?:)", limit: 5000 });
+  assert.ok(r.total >= 1);
+  const cmp = compareObjectTables(true);
+  for (const t of r.tables) {
+    const expected = t.members.filter((m) => m.value !== null && /^(\/|https?:)/.test(m.value)).length;
+    assert.equal(t.matched, expected, `fn:${t.fn}@${t.offset}`);
+    assert.ok(t.matched >= 1, "a table that passes the filter has at least one matching member");
+  }
+  for (let i = 1; i < r.tables.length; i++) {
+    assert.ok(cmp(r.tables[i - 1]!, r.tables[i]!) <= 0, "rows must be in ranking order");
+  }
+});
+
+test("--min-matched excludes tables the pattern barely touched", () => {
+  const loose = svc.objectTables({ value: "^(/|https?:)", limit: 5000 });
+  const strict = svc.objectTables({ value: "^(/|https?:)", minMatched: 2, limit: 5000 });
+  assert.ok(strict.total <= loose.total);
+  for (const t of strict.tables) assert.ok(t.matched >= 2);
+  const onlyOne = loose.tables.filter((t) => t.matched < 2).length;
+  assert.equal(strict.total, loose.total - onlyOne);
+});
+
+test("--min-matched is a no-op without a key/value filter", () => {
+  const a = svc.objectTables({ limit: 5000 });
+  const b = svc.objectTables({ minMatched: 3, limit: 5000 });
+  assert.equal(a.total, b.total);
 });

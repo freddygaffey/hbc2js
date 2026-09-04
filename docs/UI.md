@@ -56,7 +56,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/segregation` | `SegregationResult` — the name-recovered module tree (`src/ui-server/segregation.ts`): one row per module `{id, path, bucket, package, nameSignal, nameConfidence}` sorted by id, plus disjoint `counts {screens, navigation, src, node_modules, unclassified}`, `depsApplied: boolean`, and an optional `computing: true` while a compute is in flight (see below). 404 when the project has no `module_<id>.js` files. **Never computed on the main thread**: `segregateSplitTree` runs on a `node:worker_threads` Worker (`src/workers/segregate-worker.ts`) so every other route keeps answering while it runs — measured 5 s isolated / 37-70 s loaded on Service NSW's 4,510 modules, which used to block the whole ui-server process for that entire window (the reason this route no longer computes synchronously). While no settled answer exists yet for a ctx, `segregation()` answers immediately with `{modules: [], counts: <all zero>, depsApplied: false, computing: true}` rather than blocking; `ui/src/listing/use-segregation.ts` polls every 500 ms while `computing === true` (`ui/src/panes/LeftPane.tsx` treats that placeholder exactly like `null` — flat fallback grouping — until it settles). **Persisted** in `project.hbcproj` (MIGRATION 4, `src/projdb/schema.sql`: `seg_modules`/`seg_meta`, `src/projdb/seg-cache.ts`) keyed on a hash of the module tree (`seg-cache.ts`'s `moduleTreeKey`: sorted `*.js`/`MODULES.json` file names + sizes) — a `--split` artifact with no `project.hbcproj` gets no persistence, never an error, and keeps the old in-memory-only behaviour. On the FIRST request for a ctx: a valid persisted row set is loaded and served sub-ms (no worker spawn at all); otherwise the worker runs and, once it lands, both the in-memory cache AND the DB are updated, so a ui-server restart against the SAME (unchanged) module tree serves from the DB instead of recomputing — this is OPERATIONAL cache state (spec 18 §4 boundary rule), never exported to `analysis/`, never in `log/`; losing it costs a recompute, nothing authoritative. That first landed snapshot has `depsApplied: false` (no `--hbc` deps report has run yet, so nothing lands in `node_modules/<pkg>/…`) unless a PRIOR deps-applied answer was already persisted, in which case it loads as `depsApplied: true` immediately. Once settled (from cache or from the worker), the route also starts the async deps run (`McpResources.depsReport()`, 16.5 s measured on Service NSW's 4,510 modules, offline signature-DB match — see `/api/package-id` below) and, when it settles, REPLACES the cached snapshot AND the persisted row set with one computed WITH that report (`depsApplied: true`), even when the report came back empty (no `--hbc` configured) — a settled "no deps" still flips the flag so a poll loop terminates. `ui/src/listing/use-segregation.ts` re-fetches every 5 s while `depsApplied === false` (after `computing` has cleared) and stops once `true`. The persisted cache is keyed on the module tree only, not on the deps/signature-DB identity — a `--hbc` bundle or signature DB swapped between restarts is not detected; delete `project.hbcproj`'s `seg_modules`/`seg_meta` rows (or the whole file) to force a full recompute |
   | GET | `/api/findings` | `Bounded<ResolvedFinding>` |
   | GET | `/api/leads` | `LeadsResult` |
-  | GET | `/api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=` | `ObjectTables` — the bundle-wide constant-object-literal ("endpoint tables") inventory, spec 17 §14.2. Live: needs the server's `--hbc`; each table is inlined with the containing function's `fnName`/`size`. No pane consumes it yet (contract type only) |
+  | GET | `/api/object-tables?minProps=&stringRatio=&key=&value=&minMatched=&module=&limit=` | `ObjectTables` — the bundle-wide constant-object-literal ("endpoint tables") inventory, spec 17 §14.2. Live: needs the server's `--hbc`; each table is inlined with the containing function's `fnName`/`size` and with `matched` (members hit by `key`/`value`). A filtered query is ranked by `matched`, then hit density, then size — not by size alone, or a 2,125-member HTML-entity table wins on `value=^/` |
   | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
   | GET | `/api/search/functions?q=&cursor=` | `SearchPage<FunctionMatch>` |
   | GET | `/api/search/source?q=&cursor=` | `SearchPage<SourceMatch>` |
@@ -428,6 +428,10 @@ and stops no events, so right-clicks reach the annotate track's menu.
   a Strings tab in the right pane searches the string table and global
   reads, and jumps to a use. Both routes now inline the using function's
   name/size server-side (no more client-side catalogue workaround).
+- **Tables (object literals)** landed (see "Tables (object literals)"
+  below): a Tables tab lists spec 17 §14.2's bundle-wide constant
+  object-literal inventory, filterable by key/value regex, min-props and
+  string-ratio, and jumps to the owning function.
 
 ## Actions, keymap, context menu, annotate (wave 2, track 2)
 
@@ -706,6 +710,50 @@ unchanged. `StringsPane.tsx` now renders the server-inlined `name` directly
 (`fn:<n>` only as the last resort, when the server itself has no name for
 that fn — e.g. a native/unknown neighbour); the client-side catalogue-lookup
 workaround (`useFnName`) is gone.
+
+## Tables (object literals)
+
+Spec 17 §14.2's bundle-wide constant object-literal inventory ("endpoint
+tables"), surfaced as a **Tables** tab in the right pane
+(`ui/src/panes/RightPane.tsx`, `ui/src/panes/TablesPane.tsx`), right after
+Strings — same reasoning as "Strings & globals (xref)" above: a query
+surface that jumps to a function belongs where the other query surfaces
+live.
+
+**Filter bar.** Key regex, value regex, min-props number, string-ratio
+number (all optional, debounced 250ms like the Strings search), and a
+"paths only" preset button that sets the value filter to
+`^(/|https?:)` — the exact filter spec 17 §14.2's Service NSW example uses
+to surface both endpoint tables in one query. Unlike Strings, the tab is
+**not** gated on typing something first: with every field blank the
+server's own defaults (>=4 members, >=50% string-valued — "the shape of a
+table, as opposed to an options bag") already answer a useful inventory, so
+`useObjectTables` (`ui/src/hooks.ts`) fetches on mount against
+`GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=`
+(`ui/src/api.ts`'s `ObjectTablesQuery`).
+
+**Result list.** Sorted most-members-first, same as the server
+(`ArtifactService.objectTables`); each row shows
+`fn <n> <fnName> · module <m> · K members (S strings)` plus a
+`"N of TOTAL tables (truncated)"` line honest about the server's cap, with
+the scanned/failed function counts alongside it. Clicking a row both
+selects that function — `select({kind:"fn", fn})`
+(`ui/src/state/selection.ts`), the SAME navigation call `XrefRow` and the
+Strings tab's use rows already make, so the jump list picks it up for free
+— and expands the row in place to its members, capped at 40 with a
+"+n more" line. A string member renders its value; every other kind
+(`computed`, `number`, `boolean`, `null`, `undefined`, `unknown`) renders
+`<kind>` in the muted theme token, since the server itself only recovers
+the true value for string-kind members (`ObjectTableMember`,
+`ui/src/contracts.ts`) — a computed member's value would need the
+decompiler, and this verb deliberately never runs one (spec 17 §14.2).
+
+**Reachable everywhere.** `navigate.tables` ("Find object tables…") is an
+ordinary `src/ui-core/actions.ts` registry action — palette, context menu
+(on a `"string"`-kind selection, e.g. a clicked string literal, which
+pre-fills the value filter via `ui/src/panes/tables-store.ts`, same pattern
+as `strings-store.ts`) and a chord in all three keymap presets
+(`Ctrl-Shift-T` default, `gt` vim, `Ctrl-Alt-T` ghidra).
 
 ## AI workers (the "AI" tab)
 

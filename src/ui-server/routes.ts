@@ -319,6 +319,7 @@ const BASE_ROUTES: readonly Route[] = [
       const minProps = qNum(req.query.minProps);
       const stringRatio = qNum(req.query.stringRatio);
       const moduleId = qNum(req.query.module);
+      const minMatched = qNum(req.query.minMatched);
       const limit = qNum(req.query.limit);
       const key = req.query.key;
       const value = req.query.value;
@@ -327,6 +328,7 @@ const BASE_ROUTES: readonly Route[] = [
           ...(minProps !== undefined ? { minProps } : {}),
           ...(stringRatio !== undefined ? { stringRatio } : {}),
           ...(moduleId !== undefined ? { module: moduleId } : {}),
+          ...(minMatched !== undefined ? { minMatched } : {}),
           ...(limit !== undefined ? { limit } : {}),
           ...(key !== undefined ? { key } : {}),
           ...(value !== undefined ? { value } : {}),
