@@ -177,3 +177,96 @@ test("the CodeMirror dependencies are exact pins", () => {
   assert.ok(cm.length >= 6, `expected the CodeMirror stack in ui/package.json, saw ${cm.map(([n]) => n).join(",")}`);
   for (const [name, range] of cm) assert.match(range, /^\d+\.\d+\.\d+$/, `${name} must be an exact pin, got ${range}`);
 });
+
+// -- 4. the screens-first tree (GET /api/segregation) ------------------------
+// A production Metro bundle has no module paths: `ModuleEntry.file` is
+// `module_<id>.js` for all 4,510 of Service NSW's modules, so `groupModules`
+// above yields ONE group with everything in it. `groupModulesSegregated`
+// groups by the recovered paths from `/api/segregation` instead. These assert
+// this helper's own properties (order, membership, labels, fallback) — no
+// literal comparison against any shared fixture's output.
+
+const segMod = (id: number): unknown => ({ id, file: `module_${id}.js`, factoryFn: null, deps: [], segment: 0 });
+
+function segPage(rows: readonly [number, string, string, string | null][]): unknown {
+  return {
+    modules: rows.map(([id, path, bucket, pkg]) => ({ id, path, bucket, package: pkg, nameSignal: null, nameConfidence: null })),
+    counts: { screens: 0, navigation: 0, src: 0, node_modules: 0, unclassified: 0 },
+  };
+}
+
+const SEG_FIXTURE = segPage([
+  [1, "src/screens/HomeScreen.js", "src", null],
+  [2, "_unclassified/module_2.js", "unclassified", null],
+  [3, "node_modules/lodash/module_3.js", "node_modules", "lodash"],
+  [4, "src/navigation/RootNavigator.js", "src", null],
+  [5, "src/store/counterSlice.js", "src", null],
+  [6, "node_modules/@react-navigation/native/module_6.js", "node_modules", "@react-navigation/native"],
+  [7, "src/screens/AboutScreen.js", "src", null],
+]);
+const SEG_IDS = [1, 2, 3, 4, 5, 6, 7];
+
+test("groupModulesSegregated orders Screens, Navigation, App, packages, Unclassified last", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE) as readonly { key: string; label: string; kind: string; modules: { id: number }[]; defaultOpen?: boolean }[];
+  assert.deepEqual(groups.map((g) => g.label), [
+    "Screens", "Navigation", "App", "node_modules/@react-navigation/native", "node_modules/lodash", "Unclassified",
+  ]);
+  assert.equal(groups.at(-1)!.kind, "unclassified", "Unclassified is always last — it is 4,316 of NSW's 4,510 modules");
+  assert.deepEqual(groups[0]!.modules.map((x) => x.id), [7, 1], "screens sort by their recovered basename (AboutScreen before HomeScreen)");
+  assert.deepEqual(groups[1]!.modules.map((x) => x.id), [4]);
+  assert.deepEqual(groups[2]!.modules.map((x) => x.id), [5]);
+  assert.deepEqual(groups[5]!.modules.map((x) => x.id), [2]);
+});
+
+test("groupModulesSegregated opens Screens and Navigation and nothing else", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE) as readonly { label: string }[];
+  assert.deepEqual(m.defaultOpenGroups(groups), [m.SCREENS_KEY, m.NAVIGATION_KEY]);
+});
+
+test("a module label is the basename of its recovered path, and every module keeps a group", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const byId = m.segregationById(SEG_FIXTURE) as Map<number, unknown>;
+  assert.equal(m.basenameOf("src/screens/HomeScreen.js"), "HomeScreen.js");
+  assert.equal(m.basenameOf("index.js"), "index.js");
+  assert.equal(m.moduleLabelSegregated(segMod(1), byId.get(1)), "HomeScreen.js");
+  // No segregation row for this id -> falls back to the flat label, and the
+  // module still appears (in Unclassified) rather than vanishing.
+  assert.equal(m.moduleLabelSegregated(segMod(99), undefined), "module_99.js");
+  const groups = m.groupModulesSegregated([...SEG_IDS, 99].map(segMod), SEG_FIXTURE) as readonly { label: string; modules: { id: number }[] }[];
+  const placed = groups.flatMap((g) => g.modules.map((x) => x.id)).sort((a, b) => a - b);
+  assert.deepEqual(placed, [...SEG_IDS, 99]);
+  assert.deepEqual(groups.at(-1)!.modules.map((x) => x.id), [2, 99]);
+});
+
+test("groupModulesSegregated falls back to groupModules when segregation is unavailable", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const rows = [
+    { id: 0, file: "node_modules/lodash/isEqual.js", factoryFn: null, deps: [], segment: 0 },
+    { id: 1, file: "src/index.js", factoryFn: null, deps: [], segment: 0 },
+  ];
+  assert.deepEqual(m.groupModulesSegregated(rows, null), m.groupModules(rows), "no segregation must never mean a blank tree");
+});
+
+test("filterGroups filters on group labels and module labels, keeping the tree shape", async () => {
+  const m = await import(pathToFileURL(join(listingDir, "modules.ts")).href);
+  const groups = m.groupModulesSegregated(SEG_IDS.map(segMod), SEG_FIXTURE) as readonly { label: string; modules: { id: number }[] }[];
+  const byId = m.segregationById(SEG_FIXTURE) as Map<number, unknown>;
+  const labelOf = (x: { id: number }): string => m.moduleLabelSegregated(x, byId.get(x.id)) as string;
+  assert.equal(m.filterGroups(groups, "  ", labelOf), groups, "a blank query filters nothing");
+  const home = m.filterGroups(groups, "home", labelOf) as readonly { label: string; modules: { id: number }[] }[];
+  assert.deepEqual(home.map((g) => g.label), ["Screens"]);
+  assert.deepEqual(home[0]!.modules.map((x) => x.id), [1]);
+  const byGroup = m.filterGroups(groups, "lodash", labelOf) as readonly { label: string; modules: { id: number }[] }[];
+  assert.deepEqual(byGroup.map((g) => g.label), ["node_modules/lodash"]);
+  assert.equal(byGroup[0]!.modules.length, 1, "a group whose own label matches keeps all of its modules");
+});
+
+test("the LeftPane tree groups by segregation, not by ModuleEntry.file", () => {
+  const pane = readFileSync(join(root, "ui", "src", "panes", "LeftPane.tsx"), "utf8");
+  assert.match(pane, /groupModulesSegregated\(/, "the tree must group by /api/segregation");
+  assert.doesNotMatch(pane, /\bgroupModules\(/, "grouping by ModuleEntry.file puts all 4,510 NSW modules in one group");
+  assert.match(pane, /useSegregation\(\)/, "LeftPane reads /api/segregation through its own query hook");
+  assert.match(pane, /filterGroups\(/, "the search box must filter the tree, not just the fn hit list");
+});

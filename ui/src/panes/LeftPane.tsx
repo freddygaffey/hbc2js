@@ -1,7 +1,12 @@
 // ui/src/panes/LeftPane.tsx — the module tree and the leads list (spec 22
-// §3.2). Real data: `GET /api/modules` grouped into the app's own `src/`
-// modules and one group per `node_modules/<pkg>` (ui/src/listing/modules.ts),
-// each module expanding into its functions from `GET /api/functions?cursor=`.
+// §3.2). Real data: `GET /api/modules` for the module set, grouped SCREENS
+// FIRST by `GET /api/segregation`'s recovered paths (Screens, Navigation,
+// App, one group per node_modules package, Unclassified last —
+// `groupModulesSegregated` in ui/src/listing/modules.ts), each module
+// expanding into its functions from its own file view. A production Metro
+// bundle has no module paths at all, so grouping by `ModuleEntry.file` puts
+// every module in one group; when segregation is unavailable the grouping
+// falls back to exactly that, never to a blank tree.
 //
 // Navigation is a roving-focus list, not per-row tab stops: the container
 // owns focus, Up/Down move a cursor over the *visible* rows, Enter opens,
@@ -10,10 +15,11 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import clsx from "clsx";
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Empty, PaneHeader } from "../components/primitives.tsx";
 import { useLeads, useModuleSources, useModules, useSearchFunctions } from "../hooks.ts";
-import { fnLabel, groupModules, moduleLabel } from "../listing/modules.ts";
+import { defaultOpenGroups, filterGroups, fnLabel, groupModulesSegregated, moduleLabelSegregated, segregationById } from "../listing/modules.ts";
+import { useSegregation } from "../listing/use-segregation.ts";
 import { useQueryText } from "../listing/search-store.ts";
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleEntry } from "../listing/wire.ts";
@@ -72,11 +78,30 @@ export function LeftPane(): ReactNode {
   const query = useQueryText();
   const hits = useSearchFunctions(query);
 
+  const seg = useSegregation();
   const [openGroups, toggleGroup] = useOpenSet(["app"]);
   const [openModules, toggleModule] = useOpenSet([]);
   const [cursor, setCursor] = useState(0);
 
-  const groups = useMemo(() => groupModules(modules.data?.rows ?? []), [modules.data]);
+  const segById = useMemo(() => segregationById(seg.data ?? null), [seg.data]);
+  const groups = useMemo(
+    () => groupModulesSegregated(modules.data?.rows ?? [], seg.data ?? null),
+    [modules.data, seg.data],
+  );
+  const labelOf = useMemo(() => (m: ModuleEntry): string => moduleLabelSegregated(m, segById.get(m.id)), [segById]);
+
+  // Screens and Navigation open themselves once, when segregation arrives —
+  // not on every render, so a group the analyst closed by hand stays closed.
+  const openedDefaults = useRef(false);
+  useEffect(() => {
+    if (openedDefaults.current) return;
+    const keys = defaultOpenGroups(groups);
+    if (keys.length === 0) return;
+    openedDefaults.current = true;
+    for (const k of keys) toggleGroup(k, true);
+    // `toggleGroup` is a stable setState wrapper; `groups` is the real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
 
   // Functions come from the FILE VIEW of the modules that are open, not from
   // a walk of `/api/functions?cursor=`: a real bundle has 15 000 functions
@@ -165,11 +190,26 @@ export function LeftPane(): ReactNode {
    *  functions resolving each one's module to graft it into the tree would
    *  be 15 000 requests. */
   const searchBody = ((): ReactNode => {
-    if (hits.isLoading) return <Empty>searching…</Empty>;
+    const moduleHits = filterGroups(groups, query, labelOf).flatMap((g) => g.modules.map((m) => ({ group: g.label, module: m }))).slice(0, 100);
+    if (hits.isLoading && moduleHits.length === 0) return <Empty>searching…</Empty>;
     const rowsOut = (hits.data?.rows ?? []).slice(0, 200);
-    if (rowsOut.length === 0) return <Empty>nothing matches “{query}”</Empty>;
+    if (rowsOut.length === 0 && moduleHits.length === 0) return <Empty>nothing matches “{query}”</Empty>;
     return (
       <>
+        {moduleHits.length > 0 && <div className="px-2 py-1 text-xs uppercase text-text-muted">modules</div>}
+        {moduleHits.map(({ group, module: m }) => (
+          <div
+            key={`sm:${m.id}`}
+            data-module={m.id}
+            title={group}
+            className={rowClass(sel.kind === "module" && sel.moduleId === String(m.id), false)}
+            onClick={() => select({ kind: "module", moduleId: String(m.id) })}
+          >
+            <span className="truncate">{labelOf(m)}</span>
+            <span className="ml-auto shrink-0 truncate font-mono text-text-muted">module_{m.id}</span>
+          </div>
+        ))}
+        {moduleHits.length > 0 && rowsOut.length > 0 && <div className="px-2 py-1 text-xs uppercase text-text-muted">functions</div>}
         {rowsOut.map((r) => (
           <RowMenu key={r.fn}>
             <div
@@ -219,10 +259,11 @@ export function LeftPane(): ReactNode {
               className={rowClass(selected, active)}
               style={{ paddingLeft: `calc(0.5rem + ${row.depth} * 0.75rem)` }}
               onClick={() => { setCursor(i); activate(row); }}
-              title={row.module.file}
+              title={segById.get(row.module.id)?.path ?? row.module.file}
             >
               <span className="font-mono text-text-muted">{row.open ? "v" : ">"}</span>
-              <span className="truncate">{moduleLabel(row.module)}</span>
+              <span className="truncate">{labelOf(row.module)}</span>
+              <span className="shrink-0 font-mono text-[0.9em] text-text-muted opacity-60">module_{row.module.id}</span>
               <span className="ml-auto shrink-0 tabular-nums text-text-muted">{row.count}</span>
             </div>
           </RowMenu>
