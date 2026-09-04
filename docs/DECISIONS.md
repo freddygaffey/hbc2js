@@ -208,3 +208,22 @@ The `object-literal` rung (`docs/specs/passes/20-object-literal.md`, catalogue r
 **Per-opcode equivalence.** `src/emit/lower.ts` lowers `PutNewOwnById`, `DefineOwnById`, `PutOwnByIndex`, `PutOwnBySlotIdx` **and** `PutById` to the very same JS AST node, `assign(member(rN, key), value)`. They are not the same program. Per the MIT-licensed Hermes repo's `BytecodeList.def` (never hermes-dec), the `PutNewOwn…`/`DefineOwn…`/`PutOwnBySlotIdx` family performs an own-property *define* — enumerable, writable, configurable, no prototype walk — which is exactly what a literal's `key: value` does. `PutById`/`PutByIdLoose`/`PutByIdStrict`/`TryPutById`/`PutByVal…` perform a full `[[Set]]`, which walks the prototype chain: with an accessor or a non-writable `a` installed on `Object.prototype`, `o = {}; o.a = v` runs the setter (or throws, in strict mode) and defines nothing, where `o = {a: v}` always creates an own data property. So `o = {}; o.a = v` is **not** foldable and the rung refuses it, even though it is the shape a reader would most like folded.
 
 Telling them apart means reading the emitter's per-statement bytecode `Origin` stamp and mapping it back to an opcode. D12a forbids a pass from importing `src/emit` or `src/cfg`, so that lookup is **framework**: `originOf`/`opcodeAt` in `src/passes/ast.ts` (memoised offset->opcode index per `FunctionCfg`). A statement with no origin — one an earlier rung synthesised — is refused rather than guessed at. This is the first rung to consult bytecode provenance from stage B; the alternative, folding on printed shape alone, would have been a silent semantic change in exactly the pathological case the project's soundness rule exists for.
+
+## D28 — Graph view: React Flow + dagre, and scale is answered by the contract, not the renderer (2026-09-05, orchestrator, delegated by Fred)
+
+Fred delegated the graph-library pick (QUEUE Needs-Fred item 5) on 2026-09-05.
+The pick is **React Flow (`@xyflow/react`, MIT) + `@dagrejs/dagre` (MIT)**,
+pinned exactly in `ui/package.json` — spec 20 §2.4's own recommendation.
+**elkjs is rejected**: EPL-2.0 is a weak copyleft and the tree stays cleanly
+MIT-compatible; nicer layered routing is not worth the licence class.
+
+The load-bearing half of this decision is that **scale is handled by the
+contract**: spec 19 §4 and spec 17 §14 serve neighbourhoods only (a function
+and its direct callers/callees, a module and its direct edges) and cut
+`module-graph` entirely, so the UI never draws the 4,510-module bundle at
+once. That makes a mid-weight SVG/DOM renderer correct and WebGL (sigma.js)
+unnecessary. If a low-hundreds-node neighbourhood ever stutters, the answer is
+level-of-detail and node collapsing — both specified in spec 25 §5 — before
+reaching for a different renderer. A whole-graph view would reopen this
+decision, and would need its own spec first.
+
