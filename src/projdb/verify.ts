@@ -64,7 +64,7 @@ export interface VerifyResult {
   readonly ok: boolean;
 }
 
-function listShardFiles(analysisDir: string): string[] {
+export function listShardFiles(analysisDir: string): string[] {
   const out: string[] = [];
   for (const sub of ["names", "annotations", "findings"]) {
     const dir = join(analysisDir, sub);
@@ -74,7 +74,7 @@ function listShardFiles(analysisDir: string): string[] {
   return out;
 }
 
-function checkShard(path: string, currentDbVersion: number): ShardCheck {
+export function checkShard(path: string, currentDbVersion: number): ShardCheck {
   const rel = path;
   let parsed: Record<string, unknown>;
   try {
@@ -150,9 +150,81 @@ function walk(dir: string): string[] {
   return out;
 }
 
+/** A shard JSON file's LOGICAL content — everything except `contentHash`
+ *  and `stateBinding` (§5's per-export version/hash stamp). Two shards with
+ *  identical logical content are the SAME shard as far as any agreement
+ *  check should care: differing only in `stateBinding.dbVersion`/
+ *  `contentHash` is exactly what a re-export at a LATER `dbVersion` of an
+ *  otherwise-untouched shard produces (the fast per-shard path's "lag",
+ *  `checkShard` above) — never a real divergence. Returns `undefined` if
+ *  `text` doesn't parse as a JSON object (a real problem, surfaced as a raw
+ *  content diff instead of silently ignored). */
+export function shardLogicalContent(text: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const { contentHash: _c, stateBinding: _s, ...rest } = parsed as Record<string, unknown>;
+  return canonicalJson(rest);
+}
+
+/** A `log/*.jsonl` file's per-entry content with the fields that are only a
+ *  function of WHEN an entry happened to be (re-)exported — `hash`,
+ *  `prevHash` (both derived from the whole chain, which itself embeds every
+ *  earlier entry's `shards[].contentHash`), and each `shards[].contentHash`
+ *  itself (a shard's hash at the moment THIS entry was minted, §5's "known
+ *  step-0 simplification" — a bulk re-export recomputes it against the
+ *  shard's CURRENT `stateBinding`, not the historical one) — stripped out.
+ *  What's left (`seq`/`ts`/`op`/`actor`/`kind`/`target`/`slot`/`rid`/
+ *  `value`/`reactivates`/the AFFECTED shard PATHS) is exactly what a write
+ *  actually did, independent of any later shard's binding having moved on.
+ *  Returns `undefined` if any line doesn't parse — a real problem. */
+function logLogicalContent(text: string): string | undefined {
+  const lines = text.split("\n").filter((l) => l.trim() !== "");
+  const entries: unknown[] = [];
+  for (const line of lines) {
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+    const { hash: _h, prevHash: _p, shards, ...rest } = entry;
+    const shardPaths = Array.isArray(shards) ? [...(shards as { path: string }[])].map((s) => s.path).sort() : [];
+    entries.push({ ...rest, shardPaths });
+  }
+  return canonicalJson(entries);
+}
+
+type DiffMode = "raw" | "shard-json" | "log-jsonl";
+
+/** Whether two files "agree" under `mode`: byte-identical for `"raw"`, or
+ *  ignoring the volatile stateBinding/hash-chain fields the given shape
+ *  carries (§8's lag-aware spirit, extended from the fast per-shard path to
+ *  the `--full` deep validators, docs/specs/18-project-storage-integrity.md
+ *  §R4 step 3 folded-in fix). Falls back to a raw byte compare if either
+ *  side fails to parse under `mode` — an actually-malformed file is a real
+ *  disagreement, never silently waved through. */
+function filesAgree(pa: string, pb: string, mode: DiffMode): boolean {
+  const ta = readFileSync(pa, "utf8");
+  const tb = readFileSync(pb, "utf8");
+  if (ta === tb) return true;
+  if (mode === "raw") return false;
+  const normalize = mode === "shard-json" ? shardLogicalContent : logLogicalContent;
+  const na = normalize(ta);
+  const nb = normalize(tb);
+  if (na === undefined || nb === undefined) return false;
+  return na === nb;
+}
+
 /** Compares two directory trees (relative path + content); returns a
- *  human-readable diff list, empty iff they are byte-identical. */
-function diffDirs(a: string, b: string): string[] {
+ *  human-readable diff list, empty iff they agree under `mode` (byte-
+ *  identical for `"raw"`; logical-content-only, ignoring stateBinding/hash-
+ *  chain drift, for `"shard-json"`/`"log-jsonl"`). */
+function diffDirs(a: string, b: string, mode: DiffMode = "raw"): string[] {
   const out: string[] = [];
   const aFiles = new Map(walk(a).map((p) => [relative(a, p), p]));
   const bFiles = new Map(walk(b).map((p) => [relative(b, p), p]));
@@ -162,7 +234,7 @@ function diffDirs(a: string, b: string): string[] {
       out.push(`${rel}: present under ${a}, missing under ${b}`);
       continue;
     }
-    if (readFileSync(pa, "utf8") !== readFileSync(pb, "utf8")) out.push(`${rel}: content differs`);
+    if (!filesAgree(pa, pb, mode)) out.push(`${rel}: content differs`);
   }
   for (const rel of bFiles.keys()) {
     if (!aFiles.has(rel)) out.push(`${rel}: present under ${b}, missing under ${a}`);
@@ -179,7 +251,7 @@ function runFull(db: DatabaseSync, projectDir: string): FullVerifyResult {
   let dbShardsAgree = true;
   try {
     exportProject(db, liveScratch);
-    const liveDiff = diffDirs(join(liveScratch, "analysis"), join(projectDir, "analysis")).concat(diffDirs(join(liveScratch, "log"), join(projectDir, "log")));
+    const liveDiff = diffDirs(join(liveScratch, "analysis"), join(projectDir, "analysis"), "shard-json").concat(diffDirs(join(liveScratch, "log"), join(projectDir, "log"), "log-jsonl"));
     if (liveDiff.length > 0) {
       dbShardsAgree = false;
       detail.push(...liveDiff.map((d) => `db-vs-shards: ${d}`));
@@ -202,7 +274,7 @@ function runFull(db: DatabaseSync, projectDir: string): FullVerifyResult {
     } finally {
       scratchDb.close();
     }
-    const rtDiff = diffDirs(join(rebuiltScratch, "analysis"), join(projectDir, "analysis")).concat(diffDirs(join(rebuiltScratch, "log"), join(projectDir, "log")));
+    const rtDiff = diffDirs(join(rebuiltScratch, "analysis"), join(projectDir, "analysis"), "shard-json").concat(diffDirs(join(rebuiltScratch, "log"), join(projectDir, "log"), "log-jsonl"));
     if (rtDiff.length > 0) {
       roundTrip = false;
       detail.push(...rtDiff.map((d) => `round-trip: ${d}`));

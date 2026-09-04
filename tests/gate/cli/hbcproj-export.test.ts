@@ -61,8 +61,8 @@ test("hbcproj export refuses a missing db path", () => {
   assert.match(r.stderr, /does not exist/);
 });
 
-test("hbcproj with an unimplemented verb exits 2 with a clear message", () => {
-  const r = runCli(["hbcproj", "status"]);
+test("hbcproj with an unknown verb exits 2 with a clear message", () => {
+  const r = runCli(["hbcproj", "bogus-verb"]);
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /only 'export'\/'rebuild'\/'verify' are implemented/);
+  assert.match(r.stderr, /unknown or unimplemented verb/);
 });

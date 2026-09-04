@@ -177,7 +177,7 @@ const byTargetRid = (a: { target: string; rid: string }, b: { target: string; ri
  *  Factored out of `exportProject`'s bulk pass so the write-path incremental
  *  exporter (`exportWriteEffect`) can rebuild the ONE affected module shard
  *  using identical logic, guaranteeing byte-identical output either way. */
-function namesShardContent(db: DatabaseSync, mod: string): Record<string, unknown> {
+export function namesShardContent(db: DatabaseSync, mod: string): Record<string, unknown> {
   const entries: Record<string, unknown> = {};
   for (const r of new DbRevisionStore(db, nameAdapter).allRecords()) {
     if (!r.active || moduleShardName(db, r.target) !== mod) continue;
@@ -186,7 +186,7 @@ function namesShardContent(db: DatabaseSync, mod: string): Record<string, unknow
   return { shard: `names/${mod}`, module: mod, entries };
 }
 
-function writeNamesShard(db: DatabaseSync, analysisDir: string, binding: StateBinding, mod: string, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } {
+export function writeNamesShard(db: DatabaseSync, analysisDir: string, binding: StateBinding, mod: string, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } {
   const shardId = `names/${mod}`;
   const hash = writeShard(join(analysisDir, "names", `${mod}.json`), namesShardContent(db, mod), binding, result);
   return { shardId, hash };
@@ -194,7 +194,7 @@ function writeNamesShard(db: DatabaseSync, analysisDir: string, binding: StateBi
 
 /** Same idea as `namesShardContent`, for the combined tags/comments/bookmarks
  *  `annotations/<module>.json` shard. */
-function annotationsShardContent(db: DatabaseSync, mod: string): Record<string, unknown> {
+export function annotationsShardContent(db: DatabaseSync, mod: string): Record<string, unknown> {
   const tags: Record<string, unknown>[] = [];
   const comments: Record<string, unknown>[] = [];
   const bookmarks: Record<string, unknown>[] = [];
@@ -219,7 +219,7 @@ function annotationsShardContent(db: DatabaseSync, mod: string): Record<string, 
   };
 }
 
-function writeAnnotationsShard(db: DatabaseSync, analysisDir: string, binding: StateBinding, mod: string, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } {
+export function writeAnnotationsShard(db: DatabaseSync, analysisDir: string, binding: StateBinding, mod: string, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } {
   const shardId = `annotations/${mod}`;
   const hash = writeShard(join(analysisDir, "annotations", `${mod}.json`), annotationsShardContent(db, mod), binding, result);
   return { shardId, hash };
@@ -229,7 +229,7 @@ function writeAnnotationsShard(db: DatabaseSync, analysisDir: string, binding: S
  *  record whose rid is `rid` — a no-op (returns `null`) if `rid` is not the
  *  live head of its slot (e.g. it has since been superseded), matching the
  *  bulk pass's own `if (!r.active) continue` skip. */
-function writeFindingShardForRid(db: DatabaseSync, analysisDir: string, binding: StateBinding, rid: number, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } | null {
+export function writeFindingShardForRid(db: DatabaseSync, analysisDir: string, binding: StateBinding, rid: number, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } | null {
   const r = new DbRevisionStore(db, findingAdapter).allRecords().find((rec) => Number(rec.rid) === rid);
   if (r === undefined || !r.active) return null;
   const id = findingContentId(r.target, r.value.evidence);

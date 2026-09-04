@@ -213,7 +213,7 @@ function insertRevisionRow(
   ).run(rid, kind, target, slot, prov.source, prov.who, prov.run ?? null, ts, supersedes, reactivates, cleared);
 }
 
-function insertLogRow(db: DatabaseSync, rid: number, ts: string, actor: ShardProv, op: string, kind: RevisionKind | undefined): void {
+function insertLogRow(db: DatabaseSync, rid: number | null, ts: string, actor: ShardProv, op: string, kind: RevisionKind | undefined): void {
   db.prepare(`INSERT INTO log (ts, actor_source, actor_who, actor_run, op, rid, gen, detail) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`).run(
     ts,
     actor.source,
@@ -251,6 +251,24 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
   db.exec("BEGIN;");
   try {
     for (const entry of logEntries) {
+      // Non-annotation bookkeeping ops (`init`/`rebuild-index`/`import`/
+      // `merge`/`export`/`render`, schema.sql §2.2's `op` enum) never had a
+      // `revisions` row to begin with — the live db's own `log.rid` is SQL
+      // NULL for them, round-tripped through export.ts's `exportLog` as the
+      // literal string `"null"` (`String(row.rid)` over a JS `null`). Two
+      // such entries (e.g. `init` immediately followed by `rebuild-index`,
+      // both ridless) used to collide: `Number("null")` is `NaN` for both,
+      // and both fell through to the "legacy inert placeholder" branch
+      // below, which synthesised a REAL `revisions` row at that same
+      // (bogus) rid for each — a `UNIQUE constraint failed: revisions.rid`
+      // crash the moment a real `init`-created project's log was replayed.
+      // Reconstruct them as what they actually are: a `log` row with no
+      // `revisions` row at all, never entering `seenRid`/the rid-keyed
+      // branches below.
+      if (entry.op !== "annotate" && entry.op !== "revert") {
+        insertLogRow(db, null, entry.ts, entry.actor, entry.op, entry.kind);
+        continue;
+      }
       const rid = Number(entry.rid);
       seenRid.add(rid);
       const activeRec = active.get(rid);

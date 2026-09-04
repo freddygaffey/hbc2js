@@ -35,6 +35,7 @@ import { initProjectDb } from "./projdb/ix-write.ts";
 import { exportProject } from "./projdb/export.ts";
 import { rebuildProject } from "./projdb/rebuild.ts";
 import { verifyProject } from "./projdb/verify.ts";
+import { adoptShard, allShardPaths, classifyThreeWay, diffShard, restoreShard } from "./projdb/threeway.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
@@ -70,6 +71,10 @@ Usage:
   hbc2js hbcproj export <project.hbcproj>    materialise analysis/ + log/ shards from the DB
   hbc2js hbcproj rebuild <project.hbcproj>   regenerate a FRESH DB's annotation state from analysis/ + log/ (recovery)
   hbc2js hbcproj verify <project.hbcproj> [--full]   check shard hashes + the log/ chain; --full re-runs round-trip validators
+  hbc2js hbcproj status <project.hbcproj>    classify every analysis/ shard clean/lag/hand-edit/conflict against the db
+  hbc2js hbcproj diff <project.hbcproj> [shard...]   show the content difference for changed shards
+  hbc2js hbcproj adopt <project.hbcproj> (<shard>|--all) [--force]   fold a hand-edited shard into the db, re-locked
+  hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
@@ -726,9 +731,10 @@ function runInit(argv: readonly string[]): number {
 
 /** `hbc2js hbcproj export <project.hbcproj>`: materialises `analysis/` +
  *  `log/` alongside the given `.hbcproj` DB file (§6 step 3, `src/projdb/
- *  export.ts`). `export`/`rebuild`/`verify` are implemented (§R4 steps 0-1);
- *  the rest of the §9 porcelain (`status`/`diff`/`adopt`/`restore`/`init`)
- *  is later steps. */
+ *  export.ts`). `export`/`rebuild`/`verify`/`status`/`diff`/`adopt`/
+ *  `restore` are implemented (§R4 steps 0-3, `src/projdb/threeway.ts` for
+ *  the last four); `init` (a separate command, `runInit` above) already
+ *  covers §9's project-creation verb. */
 function runHbcproj(argv: readonly string[]): number {
   const verb = argv[0];
   if (verb === "export") {
@@ -813,7 +819,136 @@ function runHbcproj(argv: readonly string[]): number {
       db.close();
     }
   }
-  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export'/'rebuild'/'verify' are implemented (docs/specs/18-project-storage-integrity.md §R4 steps 0-1)\n`);
+  if (verb === "status") {
+    const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write("hbc2js hbcproj status <project.hbcproj>   classify every analysis/ shard clean/lag/hand-edit/conflict against the db (docs/specs/18-project-storage-integrity.md §10)\n");
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj status: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const db = openProjectDb(dbFile);
+    try {
+      const shards = classifyThreeWay(db, dirname(dbFile));
+      for (const s of shards) process.stdout.write(`${s.status}: ${s.path}${s.detail !== undefined ? ` — ${s.detail}` : ""}\n`);
+      const counts = { clean: 0, lag: 0, "hand-edit": 0, conflict: 0, "corrupt-json": 0 } as Record<string, number>;
+      for (const s of shards) counts[s.status] = (counts[s.status] ?? 0) + 1;
+      process.stdout.write(`hbc2js hbcproj status: ${shards.length} shard(s) — clean=${counts.clean} lag=${counts.lag} hand-edit=${counts["hand-edit"]} conflict=${counts.conflict} corrupt-json=${counts["corrupt-json"]}\n`);
+      return 0;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj status: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  if (verb === "diff") {
+    const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write("hbc2js hbcproj diff <project.hbcproj> [shard-path...]   show the content difference between changed shards and what the db would currently produce (docs/specs/18-project-storage-integrity.md §10); defaults to every non-clean shard\n");
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj diff: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const db = openProjectDb(dbFile);
+    try {
+      const projectDir = dirname(dbFile);
+      const requested = argv.slice(1).filter((a) => !a.startsWith("-") && a !== dbFile);
+      const targets = requested.length > 0 ? requested : classifyThreeWay(db, projectDir).filter((s) => s.status !== "clean").map((s) => s.path);
+      if (targets.length === 0) {
+        process.stdout.write("hbc2js hbcproj diff: every shard is clean — nothing to diff\n");
+        return 0;
+      }
+      for (const path of targets) process.stdout.write(diffShard(db, path));
+      return 0;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj diff: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  if (verb === "adopt") {
+    const dbFile = argv.find((a, i) => i > 0 && !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write(
+        "hbc2js hbcproj adopt <project.hbcproj> (<shard-path>|--all) [--force] [--who <name>]   fold a hand-edited shard into the db, exactly like an MCP write, and re-lock it (docs/specs/18-project-storage-integrity.md §10); rejects a shard that fails validation or is a --force-less conflict\n",
+      );
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj adopt: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const rest = argv.slice(1).filter((a) => a !== dbFile);
+    const force = rest.includes("--force");
+    const whoIdx = rest.indexOf("--who");
+    const who = flagValue(rest, "--who") ?? "hbcproj-cli";
+    const explicit = rest.filter((a, i) => a !== "--all" && a !== "--force" && i !== whoIdx && i !== whoIdx + 1);
+    const db = openProjectDb(dbFile);
+    try {
+      const projectDir = dirname(dbFile);
+      const targets = rest.includes("--all") ? allShardPaths(projectDir) : explicit;
+      if (targets.length === 0) {
+        process.stdout.write("hbc2js hbcproj adopt: no shard given — pass a shard path or --all\n");
+        return 2;
+      }
+      let failures = 0;
+      for (const path of targets) {
+        const result = adoptShard(db, projectDir, path, { source: "human", who }, { force });
+        if (result.ok) process.stdout.write(`adopted: ${path} (${result.rids?.length ?? 0} write(s))\n`);
+        else {
+          failures++;
+          process.stdout.write(`rejected: ${path} — ${result.reason}\n`);
+        }
+      }
+      process.stdout.write(`hbc2js hbcproj adopt: ${targets.length - failures}/${targets.length} shard(s) adopted\n`);
+      return failures > 0 ? 1 : 0;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj adopt: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  if (verb === "restore") {
+    const dbFile = argv.find((a, i) => i > 0 && !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write("hbc2js hbcproj restore <project.hbcproj> (<shard-path>|--all)   discard a hand edit / catch up a lagging shard by re-materialising it from the db (docs/specs/18-project-storage-integrity.md §10)\n");
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj restore: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const rest = argv.slice(1).filter((a) => a !== dbFile);
+    const explicit = rest.filter((a) => a !== "--all");
+    const db = openProjectDb(dbFile);
+    try {
+      const projectDir = dirname(dbFile);
+      const targets = rest.includes("--all") ? allShardPaths(projectDir) : explicit;
+      if (targets.length === 0) {
+        process.stdout.write("hbc2js hbcproj restore: no shard given — pass a shard path or --all\n");
+        return 2;
+      }
+      for (const path of targets) {
+        const result = restoreShard(db, projectDir, path);
+        process.stdout.write(`restored: ${path}${result.deleted === true ? " (deleted — no live db content for this shard)" : ""}\n`);
+      }
+      process.stdout.write(`hbc2js hbcproj restore: ${targets.length} shard(s) restored\n`);
+      return 0;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj restore: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export'/'rebuild'/'verify'/'status'/'diff'/'adopt'/'restore' are implemented (docs/specs/18-project-storage-integrity.md §R4 steps 0-3)\n`);
   return 2;
 }
 
