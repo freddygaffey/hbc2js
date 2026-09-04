@@ -253,6 +253,36 @@ export function frameArgs(f: FunctionEmitter, argCount: number): Expr[] {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The operand index that holds a nested function id, per closure-creating
+ * opcode — the same operands the `CreateClosure`/`CreateGenerator`/class cases
+ * below read. Exported so `emit/index.ts` can find, without duplicating the
+ * table, *where* in a function a nested closure is created: a closure that
+ * captures a loop-local environment is emitted inline at exactly that site, so
+ * the site is an access to that environment's slot declarations.
+ */
+const CLOSURE_FN_OPERAND: ReadonlyMap<string, number> = new Map([
+  ["CreateClosure", 2],
+  ["CreateClosureLongIndex", 2],
+  ["CreateGeneratorClosure", 2],
+  ["CreateGeneratorClosureLongIndex", 2],
+  ["CreateAsyncClosure", 2],
+  ["CreateAsyncClosureLongIndex", 2],
+  ["CreateGenerator", 2],
+  ["CreateGeneratorLongIndex", 2],
+  ["CreateBaseClass", 3],
+  ["CreateBaseClassLongIndex", 3],
+  ["CreateDerivedClass", 4],
+  ["CreateDerivedClassLongIndex", 4],
+]);
+
+/** The nested function this instruction creates a closure/class for, if any. */
+export function closureFunctionId(insn: Instruction): number | undefined {
+  const i = CLOSURE_FN_OPERAND.get(insn.name);
+  if (i === undefined) return undefined;
+  return insn.operands[i]?.value;
+}
+
 export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: number, plan: BlockPlan, out: Stmt[]): void {
   const name = insn.name;
   if (plan.consumed.has(index)) return;
@@ -595,7 +625,7 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
       return set(V(insn, 0), UNDEF);
   }
 
-  // --- closures and generators ---------------------------------------------
+// --- closures and generators ---------------------------------------------
   switch (name) {
     case "CreateClosure":
     case "CreateClosureLongIndex":

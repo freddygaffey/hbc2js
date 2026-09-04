@@ -9,8 +9,9 @@ import { helperPrelude } from "../runtime/helpers.ts";
 import type { Param, Stmt } from "./ast.ts";
 import { id, lit, p } from "./ast.ts";
 import { emitFunction, envDeclaringFunction, ownedEnvSlots } from "./function.ts";
+import { closureFunctionId } from "./lower.ts";
 import { fnName, quote } from "./names.ts";
-import { checkBindings } from "./scope-check.ts";
+import { checkBindings, collectUnbound, unboundMessage } from "./scope-check.ts";
 import { printProgram } from "./print.ts";
 
 export * from "./ast.ts";
@@ -100,6 +101,60 @@ function stubFor(analysis: ModuleAnalysis, index: number, err: Hbc2jsError): Stm
   }
   body.push({ k: "throw", arg: { k: "new", callee: id("Error"), args: [lit(quote(message))] } });
   return { k: "func", name: fnName(index), params, body };
+}
+
+/**
+ * Replace the body of every named function *statement* in `program` whose name
+ * is a key of `targets` with a comment + `throw`, in place. Returns the names
+ * actually found. Used only by the EM-01 isolation path above; a stub body
+ * declares nothing and reads nothing but `Error`, so it can never itself fail
+ * the scope check.
+ */
+function stubFunctionsByName(program: readonly Stmt[], targets: ReadonlyMap<string, readonly string[]>): Set<string> {
+  const found = new Set<string>();
+  const walk = (body: readonly Stmt[]): void => {
+    for (const s of body) {
+      switch (s.k) {
+        case "func": {
+          const reasons = targets.get(s.name);
+          if (reasons !== undefined) {
+            found.add(s.name);
+            (s as unknown as { body: readonly Stmt[] }).body = [
+              { k: "comment", text: `${s.name} -- ISOLATED FAILURE (E_UNBOUND_IDENT)\n${reasons.join("\n")}` },
+              { k: "throw", arg: { k: "new", callee: id("Error"), args: [lit(quote(`hbc2js: could not decompile ${s.name} -- E_UNBOUND_IDENT`))] } },
+            ];
+            continue; // its own nested functions went with the body
+          }
+          walk(s.body);
+          continue;
+        }
+        case "iife":
+          walk(s.body);
+          continue;
+        case "if":
+          walk(s.then);
+          walk(s.else);
+          continue;
+        case "while":
+        case "do-while":
+        case "for":
+        case "labeled":
+          walk(s.body);
+          continue;
+        case "try":
+          walk(s.block);
+          walk(s.handler);
+          continue;
+        case "switch":
+          for (const c of s.cases) walk(c.body);
+          continue;
+        default:
+          continue;
+      }
+    }
+  };
+  walk(program);
+  return found;
 }
 
 /** True when `block` lies on a cycle of the normal graph. */
@@ -214,8 +269,35 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     const createBlock = cfg.blocks.find((b) => b.start >= 0 && node.createOffset >= b.start && node.createOffset < b.end);
     if (createBlock === undefined) continue;
     if (!inCycle(cfg, createBlock.id)) continue;
+    const inCreateBlock = (offset: number): boolean => offset >= createBlock.start && offset < createBlock.end;
     const accesses = envGraph.slots.filter((s) => s.env === node.id).flatMap((s) => s.accesses);
-    const outside = accesses.some((a) => a.functionIndex === owner && !(a.offset >= createBlock.start && a.offset < createBlock.end));
+    // A closure that captures a loop-local env is emitted *inline at its
+    // CreateClosure site* (lower.ts), and its body reads the `_e<env>_<slot>`
+    // names — so that site is an access to this declaration exactly as a
+    // Load/StoreToEnvironment is, even though the env graph books it under the
+    // child function. The structurer routinely puts the create block and the
+    // CreateClosure block in sibling labelled blocks of one loop body
+    // (`L3: { let _e2326_0; … } … L7: { r32 = function _fn13735 () { … _e2326_0 … }; }`),
+    // where a `let` emitted in the first is not in scope in the second:
+    // E_UNBOUND_IDENT on react-navigation-example `_e2326_0` (BUGS 2026-09-04).
+    // A closure whose creation site is not found at all is treated the same
+    // way — the inline form would be unreachable — so the hoisted fallback,
+    // which is always in scope, is used instead.
+    const closureSites = new Map<number, number[]>();
+    for (const b of cfg.blocks) {
+      for (const insn of b.instructions) {
+        const child = closureFunctionId(insn);
+        if (child === undefined || !node.closures.includes(child)) continue;
+        const list = closureSites.get(child);
+        if (list === undefined) closureSites.set(child, [insn.offset]);
+        else list.push(insn.offset);
+      }
+    }
+    const closuresOutside = node.closures.some((child) => {
+      const sites = closureSites.get(child);
+      return sites === undefined || sites.length === 0 || sites.some((o) => !inCreateBlock(o));
+    });
+    const outside = closuresOutside || accesses.some((a) => a.functionIndex === owner && !inCreateBlock(a.offset));
     if (outside) {
       diagnostics.push({
         severity: "warn",
@@ -356,6 +438,38 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     { k: "iife", body: inner },
   ];
 
+  // EM-01 with per-function isolation. An unbound identifier is an emitter bug
+  // wherever it appears, but losing a 12 MB module's entire output because one
+  // nested function out of 43,000 has one is worse than shipping that function
+  // as a throwing stub next to a loud comment (docs/BUGS.md 2026-09-01, Service
+  // NSW). So: collect *every* unbound identifier, replace the innermost emitted
+  // function statement each one sits under with a stub, and re-run the check —
+  // which must then pass, or the bug is not per-function and still throws.
+  const unbound = collectUnbound(program, prelude.names, globalIndex);
+  if (unbound.length > 0) {
+    const targets = new Map<string, string[]>(); // function name -> reasons
+    for (const u of unbound) {
+      const fn = u.path.length > 1 ? u.path[u.path.length - 1]! : undefined;
+      if (fn === undefined) {
+        // Module scope itself: nothing smaller to isolate. Fail as before.
+        throw new Hbc2jsError(ErrorCode.E_UNBOUND_IDENT, unboundMessage(u), { section: "emit/scope-check" });
+      }
+      const list = targets.get(fn);
+      if (list === undefined) targets.set(fn, [unboundMessage(u)]);
+      else list.push(unboundMessage(u));
+    }
+    const stubbedNames = stubFunctionsByName(program, targets);
+    for (const [name, reasons] of targets) {
+      if (!stubbedNames.has(name)) continue;
+      stubbedFunctions++;
+      diagnostics.push({
+        severity: "warn",
+        code: "W_UNBOUND_ISOLATED",
+        message: `function ${name} referenced an identifier no enclosing scope declares; its body was replaced with a throwing stub (${reasons.join("; ")})`,
+        context: { section: "emit/scope-check" },
+      });
+    }
+  }
   checkBindings(program, prelude.names, globalIndex);
 
   const code = printProgram(program, { indent, jsx: opts.jsx === true });

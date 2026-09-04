@@ -77,16 +77,27 @@ function declaredByRaw(text: string, into: Set<string>): void {
   }
 }
 
-export function checkBindings(program: readonly Stmt[], helperNames: readonly string[], globalIndex: number): void {
+/** One unbound identifier and the chain of emitted function *statements*
+ *  (`["module", "_fn321", "_fn4521"]`) it was found under. */
+export interface UnboundIdent {
+  readonly name: string;
+  readonly path: readonly string[];
+}
+
+export function unboundMessage(u: UnboundIdent): string {
+  return `emitted identifier "${u.name}" is not declared in any enclosing scope (${u.path.join(" > ")})`;
+}
+
+function scan(program: readonly Stmt[], helperNames: readonly string[], globalIndex: number, onFail: (u: UnboundIdent) => void): void {
   const root = new Set<string>(KNOWN_GLOBALS);
   for (const n of helperNames) root.add(n);
   root.add(`_fn${globalIndex}`);
 
-  const fail = (name: string, where: string): never => {
-    throw new Hbc2jsError(ErrorCode.E_UNBOUND_IDENT, `emitted identifier "${name}" is not declared in any enclosing scope (${where})`, { section: "emit/scope-check" });
+  const fail = (name: string, where: readonly string[]): void => {
+    onFail({ name, path: [...where] });
   };
 
-  const walkExpr = (e: Expr, scopes: readonly Set<string>[], where: string): void => {
+  const walkExpr = (e: Expr, scopes: readonly Set<string>[], where: readonly string[]): void => {
     switch (e.k) {
       case "ident":
         // A bare identifier the decompiler deliberately emitted as a proven
@@ -185,11 +196,11 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
     }
   };
 
-  const walkBody = (body: readonly Stmt[], scopes: readonly Set<string>[], where: string): void => {
+  const walkBody = (body: readonly Stmt[], scopes: readonly Set<string>[], where: readonly string[]): void => {
     for (const s of body) walkStmt(s, scopes, where);
   };
 
-  const walkStmt = (s: Stmt, scopes: readonly Set<string>[], where: string): void => {
+  const walkStmt = (s: Stmt, scopes: readonly Set<string>[], where: readonly string[]): void => {
     switch (s.k) {
       case "expr":
         walkExpr(s.expr, scopes, where);
@@ -250,7 +261,7 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
         const inner = new Set<string>(s.params.map((x) => x.name));
         collect(s.body, inner);
         for (const param of s.params) if (param.init !== undefined) walkExpr(param.init, [...scopes, inner], where);
-        walkBody(s.body, [...scopes, inner], `${where} > ${s.name}`);
+        walkBody(s.body, [...scopes, inner], [...where, s.name]);
         return;
       }
       default:
@@ -259,12 +270,38 @@ export function checkBindings(program: readonly Stmt[], helperNames: readonly st
   };
 
   /** A nested statement list shares the function scope but may add block-scoped names. */
-  const walkNested = (body: readonly Stmt[], scopes: readonly Set<string>[], where: string): void => {
+  const walkNested = (body: readonly Stmt[], scopes: readonly Set<string>[], where: readonly string[]): void => {
     const inner = new Set<string>();
     collect(body, inner);
     walkBody(body, inner.size === 0 ? scopes : [...scopes, inner], where);
   };
 
   collect(program, root);
-  walkBody(program, [root], "module");
+  walkBody(program, [root], ["module"]);
+}
+
+/** EM-01, throwing form: the first unbound identifier is `E_UNBOUND_IDENT`. */
+export function checkBindings(program: readonly Stmt[], helperNames: readonly string[], globalIndex: number): void {
+  scan(program, helperNames, globalIndex, (u) => {
+    throw new Hbc2jsError(ErrorCode.E_UNBOUND_IDENT, unboundMessage(u), { section: "emit/scope-check" });
+  });
+}
+
+/**
+ * EM-01, collecting form: every unbound identifier in the program, each with
+ * the chain of function statements it sits under, so `emitModule` can isolate
+ * the offending functions instead of losing the whole module's output
+ * (docs/BUGS.md 2026-09-01 Service NSW; 2026-09-04 react-navigation).
+ * The same (path, name) pair is reported once.
+ */
+export function collectUnbound(program: readonly Stmt[], helperNames: readonly string[], globalIndex: number): readonly UnboundIdent[] {
+  const out: UnboundIdent[] = [];
+  const seen = new Set<string>();
+  scan(program, helperNames, globalIndex, (u) => {
+    const key = `${u.path.join(">")}|${u.name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(u);
+  });
+  return out;
 }
