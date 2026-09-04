@@ -1,0 +1,8 @@
+# 2026-09-04 — UI aesthetics + libraries investigation (lean Fable)
+
+32k tokens, 8 calls. Commit cb6c104, docs/specs/20-ui-aesthetics-and-libraries.md.
+
+- AESTHETIC PLAYBOOK (beats MEDIUM polish): (A) design-token layer (one spacing scale / type ramp / semantic dark colours / severity ramp / syntax palette) enforced by a GATE LINT that fails on raw hex / off-scale spacing / off-scale font — turns "does it feel right" into a text assertion; (B) component lib whose dark defaults already look pro ("compose don't style"); (C) reference-driven screenshot loop — commit Ghidra/IDA/BinaryNinja/VSCode-Dark refs to docs/ui-refs/, render->screenshot->match (broken-vs-correct = reliable agent judgment); (D) owner's ~20-value art-direction seed up front. Confidence MEDIUM->MEDIUM-HIGH; residue = seed + first-run hierarchy + graph.
+- STACK (all MIT unless noted): React 19 + Vite; shadcn/ui + Radix + Tailwind (Tailwind config = the token layer); CodeMirror 6 + custom Lezer disasm grammar (over Monaco); React Flow + dagre (graph); TanStack Table/Virtual + react-arborist + react-resizable-panels; Playwright (Apache-2.0, dev) + Testing Library. Licence asterisks: Playwright Apache (dev, fine), elkjs EPL-2.0 -> use dagre (MIT) instead.
+- GRAPH-SCALE RISK SOLVED BY THE CONTRACT: spec 17 §14 cut whole module-graph; UI only draws neighbourhoods (module/{mod} direct edges) + per-fn CFG = tens-to-hundreds of nodes -> DOM/SVG (React Flow) suffices; WebGL (sigma.js) reserved only if a future spec adds whole-graph.
+- RESERVED FOR OWNER: the art-direction seed (indispensable); ratify/override stack; elkjs vs dagre; token format (Tailwind vs W3C tokens JSON); reference set + match strictness; lint hard-fail vs warn; + all of spec 19 §5.
