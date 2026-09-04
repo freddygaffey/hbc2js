@@ -10,7 +10,13 @@
 //     `let _e2326_0` went inside the labelled block that holds the
 //     `CreateEnvironment`, where the sibling block's inline closure cannot see
 //     it, and the whole 15,551-function decompile threw E_UNBOUND_IDENT.
-//  2. The module still emits code at all: the surviving offenders are isolated
+//  2. `_e652_0` (env 652, declared in fn#525) is no longer unbound either:
+//     `_fn13838`…`_fn13843` are orphans — created at two sites with different
+//     environments, so the env graph refuses to pick one — and used to be
+//     emitted at MODULE level, outside the global function, where nothing any
+//     function body declares is in scope. `src/emit/placement.ts` now hosts
+//     each orphan where the fewest names are unbound.
+//  3. The module still emits code at all: the surviving offenders are isolated
 //     per function (`W_UNBOUND_ISOLATED`) rather than aborting the file. The
 //     count is a ratchet, not an endorsement — every one of them is the open
 //     BUGS.md row, and this number must only ever go down.
@@ -27,9 +33,16 @@ import { cachedDecompile } from "../../support/decompiled.ts";
 
 const HBC = join(repoRoot(), "tests", "fixtures", "bundles", "react-navigation-example-0.85.3", "react-navigation-example.hbc");
 
-/** Measured on this fixture at the fix commit: 186 isolated functions, none of
- *  them `_e2326_0`. Ratchet: lower is fine, a rise is a regression. */
-const MAX_ISOLATED = 186;
+/** Measured on this fixture (deb, node 22, passes on): 186 isolated functions
+ *  at the loop-local-env fix commit (2810099), 103 after orphan placement
+ *  (`src/emit/placement.ts`) — 541 unbound names down to 158, and 176 -> 106
+ *  isolated with `--passes=none`. Ratchet: lower is fine, a rise is a
+ *  regression. */
+const MAX_ISOLATED = 103;
+/** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111.
+ *  A floor, so losing the placement rule fails here and not only on the count
+ *  above (which passes and structuring also move). */
+const MIN_HOSTED = 100;
 
 test("react-navigation-example-0.85.3: a loop-local env captured from a sibling block is declared, and the rest are isolated", (t) => {
   if (!requireSweep(t)) return;
@@ -46,6 +59,16 @@ test("react-navigation-example-0.85.3: a loop-local env captured from a sibling 
     named.map((d) => d.message),
     [],
     "_e2326_0 is unbound again: a loop-local environment's `let` is being emitted where a closure created in a sibling block of the same loop body cannot see it (src/emit/index.ts, loop-local `closuresOutside` check)",
+  );
+  const stillUnbound = (name: string): string[] => isolated.filter((d) => d.message.includes(`"${name}"`)).map((d) => d.message);
+  assert.deepEqual(
+    stillUnbound("_e652_0"),
+    [],
+    "_e652_0 is unbound again: an orphan function (no resolved closure environment) is being emitted at module level while its body reads an env slot declared inside another function's body (src/emit/placement.ts)",
+  );
+  assert.ok(
+    result.diagnostics.filter((d) => d.code === "W_ORPHAN_HOSTED").length >= MIN_HOSTED,
+    `only ${result.diagnostics.filter((d) => d.code === "W_ORPHAN_HOSTED").length} orphans were hosted inside a function, expected at least ${MIN_HOSTED} (src/emit/placement.ts)`,
   );
   assert.ok(isolated.length <= MAX_ISOLATED, `${isolated.length} functions isolated for E_UNBOUND_IDENT, was ${MAX_ISOLATED} at the fix commit — that number must only go down (docs/BUGS.md 2026-09-04)`);
 });
