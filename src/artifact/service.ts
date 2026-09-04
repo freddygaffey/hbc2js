@@ -142,6 +142,13 @@ export class ArtifactService {
   private readonly renderCache = new Map<number, { readonly code: string; readonly collisions: readonly CollisionFlag[] }>();
   private hbcModule: HbcModule | undefined;
   private overlay: OverlayStore | undefined;
+  private warmPromise: Promise<void> | undefined;
+  /** Test-only observability hook: how many times `ensureFrames` actually ran
+   *  `analyseModule` (never more than once per instance — its own
+   *  `this.analysis === undefined` guard is the real invariant; this counter
+   *  lets a test assert that a prewarm plus a concurrent request never race
+   *  into two computations, docs/UI.md "Cold start"). */
+  private analyseCount = 0;
 
   /** §4.3 backend selection: `.hbcproj` present → DB-backed; else the
    *  JSONL path (unchanged). Exposed for callers that need to know without
@@ -492,6 +499,7 @@ export class ArtifactService {
   private ensureFrames(): { readonly analysis: ModuleAnalysis; readonly frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> } {
     const module = this.ensureModule("list/context");
     if (this.analysis === undefined) {
+      this.analyseCount++;
       this.analysis = analyseModule(module, { strictEnv: true });
     }
     if (this.rawFrameMap === undefined) this.rawFrameMap = rawFrames(this.analysis);
@@ -500,6 +508,54 @@ export class ArtifactService {
       for (const [fn, frame] of this.rawFrameMap) if (frame.node.k === "func") this.frames.set(fn, frame.node.body);
     }
     return { analysis: this.analysis, frames: this.frames };
+  }
+
+  /** Test-only: how many times `analyseModule` actually ran (never more than
+   *  1 — see `analyseCount`'s own doc comment). */
+  get warmAnalyseCount(): number {
+    return this.analyseCount;
+  }
+
+  /** Proactively runs the whole-bundle live-frame computation
+   *  (`analyseModule` + `rawFrames`, `ensureFrames` above) off a request's own
+   *  critical path — on a large bundle (measured 65 s on Service NSW's 4,510
+   *  modules / ~15k functions: `rawFrames` alone is ~90% of that) this is the
+   *  same work the FIRST `/api/fn/{fn}/locals` or `/api/module/{id}/source`
+   *  after start would otherwise pay for, synchronously, freezing every other
+   *  route meanwhile. `src/ui-server/server.ts` calls this once, right after
+   *  `listen`, so by the time a real request needs frames they are usually
+   *  already there (docs/UI.md "Cold start").
+   *
+   *  No-op (resolves immediately) when this service has no `--hbc` (nothing
+   *  live to warm) or the frames are already computed. Concurrent callers —
+   *  the prewarm call racing an early request that reaches `ensureFrames`
+   *  directly — share the SAME in-flight promise / the SAME memoised result:
+   *  `ensureFrames`'s `this.analysis === undefined` guard is single-threaded
+   *  JS, so only one real `analyseModule` pass ever runs regardless of how
+   *  many callers ask (`warmAnalyseCount` above is the test-visible proof).
+   *  The computation itself stays synchronous, on the main thread: it is
+   *  wrapped in `setImmediate` only so the `listen` callback returns first,
+   *  not to make it non-blocking (the `analysis` object closes over local
+   *  helpers — `structuredClone` on it throws — so it cannot be handed to a
+   *  `worker_threads` worker without a much larger refactor of `src/cfg`;
+   *  out of scope here, logged clearly by the caller instead). */
+  warmFrames(): Promise<void> {
+    if (this.hbcPath === undefined) return Promise.resolve();
+    if (this.analysis !== undefined && this.rawFrameMap !== undefined) return Promise.resolve();
+    if (this.warmPromise === undefined) {
+      this.warmPromise = new Promise<void>((resolve, reject) => {
+        setImmediate(() => {
+          this.warmPromise = undefined;
+          try {
+            this.ensureFrames();
+            resolve();
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      });
+    }
+    return this.warmPromise;
   }
 
   /** Raw disassembly text for one function (`hbc2js disasm --function`,

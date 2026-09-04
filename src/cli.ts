@@ -79,8 +79,9 @@ Usage:
   hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
   hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the git pre-commit hook (§11); \`init\` does this best-effort already
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
-  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off]   serve the Stage-3 UI's JSON API (+ static ui/dist/,
+  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off] [--no-prewarm]   serve the Stage-3 UI's JSON API (+ static ui/dist/,
                                               docs/specs/22-ui-mvp.md §1/§3) over that project directory, localhost only
+                                              (--no-prewarm skips the post-listen whole-bundle frame warm, docs/UI.md "Cold start")
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -727,8 +728,18 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
     return 2;
   }
   const workers = workersRaw !== "off";
+  // docs/UI.md "Cold start": the whole-bundle live-frame analysis is
+  // prewarmed right after `listen` by default; `--no-prewarm` skips it
+  // (tests use this so a fixture's tiny bundle never warms unasked-for work).
+  const prewarm = !argv.includes("--no-prewarm");
   try {
-    const handle = await startUiServer({ projectDir, workers, ...(hbc !== undefined ? { hbc } : {}), ...(port !== undefined ? { port } : {}) });
+    const handle = await startUiServer({
+      projectDir,
+      workers,
+      ...(hbc !== undefined ? { hbc } : {}),
+      ...(port !== undefined ? { port } : {}),
+      ...(prewarm ? {} : { prewarm: false }),
+    });
     process.stdout.write(`hbc2js ui-server: listening on http://${handle.host}:${handle.port} (project ${projectDir}, workers ${workers ? "on" : "off"})\n`);
     await new Promise<void>(() => {}); // serve forever; Ctrl-C/SIGTERM stops it (no --detach in this MVP, spec 22 §1)
     return 0;

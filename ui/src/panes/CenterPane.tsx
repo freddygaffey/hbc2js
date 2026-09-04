@@ -14,7 +14,7 @@
 // `ActionContext.selection`; clicking anywhere inside a marked function
 // range selects that function.
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PaneHeader } from "../components/primitives.tsx";
 import {
   isMissingResource, useContextResource, useDisasm, useFn, useModule, useModuleSource, useSource,
@@ -40,6 +40,26 @@ function TruncationBar({ hidden, shown }: { readonly hidden: number; readonly sh
 
 function Notice({ children }: { readonly children: ReactNode }): ReactNode {
   return <div className="p-3 text-xs text-text-muted">{children}</div>;
+}
+
+/** True once `loading` has been continuously true for `delayMs` — drives the
+ *  cold-start hint (docs/UI.md "Cold start"): on a large bundle, the FIRST
+ *  `/api/fn/{fn}/locals` or `/api/module/{id}/source` query after `ui-server`
+ *  starts can take tens of seconds (`ArtifactService.warmFrames`'s prewarm
+ *  usually beats it, but not always — a request right at start, or a
+ *  `--no-prewarm` server, still pays for it). After a full second stuck
+ *  loading, say why instead of leaving a bare "loading…" spinner. */
+function useSlowLoading(loading: boolean, delayMs = 1000): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setSlow(true), delayMs);
+    return () => clearTimeout(t);
+  }, [loading, delayMs]);
+  return slow;
 }
 
 /** The function whose range contains `line`, if any. */
@@ -109,9 +129,12 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const name = displayName(fnId, ctx.data?.metadata, meta.data);
   const sourceMissing = !useFileView && hasFn && fnSource.isError && isMissingResource(fnSource.error);
 
+  const listingLoading = file.isLoading || fnSource.isLoading;
+  const listingSlow = useSlowLoading(listingLoading);
+
   const listing = ((): ReactNode => {
     if (!hasFn && selectedModule === null) return <Notice>select a module or a function on the left</Notice>;
-    if (file.isLoading || fnSource.isLoading) return <Notice>loading listing…</Notice>;
+    if (listingLoading) return <Notice>{listingSlow ? "analysing the bundle (first request after start is slow)" : "loading listing…"}</Notice>;
     if (sourceMissing) return <Notice>no listing recorded for fn {fnId} (the bundle records no source range for it)</Notice>;
     if (!useFileView && fnSource.isError) return <Notice>could not load the listing for fn {fnId}</Notice>;
     if (!useFileView && fileMissing && !hasFn) return <Notice>module {moduleId} has no file view</Notice>;

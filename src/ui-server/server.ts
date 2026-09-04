@@ -35,6 +35,15 @@ export interface UiServerOptions {
   readonly workers?: boolean;
   /** Jobs in flight (spec 23 §2.2's cap; the UI shows it). */
   readonly workerConcurrency?: number;
+  /** Default ON: right after `listen`, warm the whole-bundle live-frame
+   *  analysis (`ArtifactService.warmFrames`) off the request path — on a
+   *  large bundle (measured 65 s on Service NSW's 4,510 modules) this is the
+   *  computation the first `/api/fn/{fn}/locals` or `/api/module/{id}/source`
+   *  would otherwise pay for synchronously, freezing every other route
+   *  meanwhile (docs/UI.md "Cold start"). `false` (CLI `--no-prewarm`) skips
+   *  it — the tests use this so a fixture's tiny bundle does not warm work
+   *  it never asks for. No-op either way when `hbc` is not given. */
+  readonly prewarm?: boolean;
 }
 
 export interface UiServerHandle {
@@ -346,6 +355,25 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
           /* a project we cannot segregate is one the UI falls back for */
         }
       });
+      // Cold-start prewarm (docs/UI.md "Cold start"): schedule the
+      // whole-bundle live-frame analysis now, before any browser has asked
+      // for it, so a `/locals`/`/source` request lands on already-computed
+      // frames instead of triggering (and blocking every other route behind)
+      // a from-scratch pass. `warmFrames` itself no-ops without `--hbc` and
+      // shares its in-flight computation with any request that beats it
+      // there, so this is safe to always attempt when `prewarm` is not
+      // explicitly disabled.
+      if (opts.prewarm !== false && opts.hbc !== undefined) {
+        const warmStarted = Date.now();
+        process.stderr.write(`${new Date().toISOString()} ui-server: warming analysis (whole-bundle live frames) …\n`);
+        mcp.artifact.warmFrames().then(
+          () => process.stderr.write(`${new Date().toISOString()} ui-server: warming analysis … done in ${Date.now() - warmStarted}ms\n`),
+          (e: unknown) =>
+            process.stderr.write(
+              `${new Date().toISOString()} ui-server: warming analysis failed: ${e instanceof Error ? e.message : String(e)}\n`,
+            ),
+        );
+      }
       resolvePromise({
         server,
         port,

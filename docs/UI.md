@@ -72,6 +72,38 @@ Apache-2.0, dev-only, same as the root).
   `/api/log/tail` every second (spec 22 §1/§3.5's live-update wire); it polls
   from seq 0 for now, incremental cursor advance being landing 6's job.
 
+## Cold start
+
+`/api/fn/{fn}/locals` and `/api/module/{id}/source` are the two LIVE routes
+(§ above, `list`/`context`/render) that need the frame bodies
+`ArtifactService.ensureFrames()` builds from bytecode
+(`analyseModule({strictEnv:true})` then `rawFrames`) — never on disk in the
+artifact, and the SAME work `/api/segregation`'s worker-thread note above
+describes for the module tree. On a large bundle this is expensive and, unlike
+segregation, cannot be moved to a `worker_threads` worker without a much
+larger `src/cfg` refactor: the `ModuleAnalysis` object closes over local
+helpers, so `structuredClone` throws on it (measured on Service NSW's 4,510
+modules / ~15k functions: `analyseModule` ~5.6 s, `rawFrames` ~58.5 s of a
+~65 s total — the dominant cost, and the reason a future `rawFrames` `indices`
+option, mirroring `emitModule`'s function-subset support once it exists, is
+the real fix, not attempted here).
+
+`startUiServer` (`src/ui-server/server.ts`) prewarms this analysis right
+after `listen`, mirroring the existing `/api/segregation` prewarm: by the time
+a browser asks, the frames are often already there instead of the first
+`/locals`/`/source` request freezing every other route for the full
+computation. `ArtifactService.warmFrames()` is the shared entry point — a
+prewarm call and a request that reaches the live-frame path first (the race
+is possible; the computation itself stays synchronous, on the main thread)
+never run `analyseModule` twice, since both funnel through the same
+`this.analysis === undefined` memoisation `ensureFrames` already had. `--no-
+prewarm` (CLI) / `prewarm: false` (`startUiServer` option) skips it — the
+test suite uses this so a tiny fixture bundle never warms work nothing asks
+for. While a locals/source query has been in flight for over a second, the
+centre pane says "analysing the bundle (first request after start is slow)"
+instead of a bare "loading listing…" (`ui/src/panes/CenterPane.tsx`'s
+`useSlowLoading`).
+
 ## Theme: one config, tokens only
 
 `ui/theme.json` is the single config:
