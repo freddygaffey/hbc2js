@@ -25,3 +25,8 @@ tests/fixtures/bundles/**/*.map
 # record is the collector's scoreboard row (docs/reports/metrics/), not a
 # snapshot of this directory.
 /reports/
+
+# ui/e2e/ (Playwright smoke suite, docs/UI.md "Smoke test (Playwright)")
+# run artifacts — traces/screenshots/HTML reports, machine-local only.
+ui/test-results/
+ui/playwright-report/

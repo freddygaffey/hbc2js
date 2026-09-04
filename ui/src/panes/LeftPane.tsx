@@ -134,8 +134,21 @@ export function LeftPane(): ReactNode {
   // Nothing is selected on load, and fn 0 (the global function) has no
   // recorded source range — opening it returns 400, not a listing. Land on
   // the first module's FILE instead: the file view is the listing.
+  //
+  // Wait for segregation to settle first: while `seg.isLoading` is true,
+  // `groups` is computed from `groupModulesSegregated(rows, null)`, which
+  // FALLS BACK to `groupModules` — a different key scheme (`"app"` vs the
+  // segregated `APP_KEY` `"seg:app"`, `ui/src/listing/modules.ts`). Firing
+  // this effect against the fallback opens/selects the fallback's group
+  // key; once the real segregation answer lands moments later, `groups` is
+  // recomputed with the segregated keys and the guard above (`sel.kind !==
+  // "none"`) stops the effect from ever running again — stranding the
+  // analyst on a permanently-collapsed group in the tree they can see is
+  // selected. Playwright regression: ui/e2e/smoke.spec.ts's "right-click"/
+  // "back-forward"/"rename" steps all depend on the first group being open.
   useEffect(() => {
     if (sel.kind !== "none") return;
+    if (seg.isLoading) return;
     const first = groups[0];
     const m = first?.modules[0];
     if (first === undefined || m === undefined) return;
@@ -144,7 +157,7 @@ export function LeftPane(): ReactNode {
     select({ kind: "module", moduleId: String(m.id) });
     // `toggle*` are stable setState wrappers; `groups` is the real input.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groups, sel.kind]);
+  }, [groups, sel.kind, seg.isLoading]);
 
   const activate = (row: TreeRow): void => {
     if (row.kind === "group") toggleGroup(row.key);

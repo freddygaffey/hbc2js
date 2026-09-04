@@ -9,7 +9,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "node e2e/prepare-fixture.mjs && playwright test --config e2e/playwright.config.ts",
+    "e2e:nsw": "PW_BASE_URL=http://127.0.0.1:4173 PW_READONLY=1 playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.0",
@@ -33,6 +35,7 @@
     "react-resizable-panels": "3.0.6"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.1.13",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",

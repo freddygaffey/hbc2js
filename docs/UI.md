@@ -432,3 +432,63 @@ from the function's own callees and strings), so the loop works with no API
 key and no network. `hbc2js ui-server … --workers off` turns the pool off
 entirely; the tab then says so instead of drawing an empty rail, because the
 routes answer 503 rather than an empty list.
+
+## Smoke test (Playwright)
+
+`ui/e2e/` (`@playwright/test`, pinned exact, a `ui/`-only devDependency —
+the root package stays zero-runtime-dependency) drives the built shell
+through a real browser (Chromium, `npx playwright install chromium`) against
+a real `ui-server`, not the mock adapter. Two ways to run it:
+
+- `cd ui && npm run e2e` — builds a throwaway project from
+  `tests/fixtures/bundles/rn-template-0.72/index.android.hbc`
+  (`ui/e2e/prepare-fixture.mjs`, via `hbc2js init`) and a throwaway
+  `ui/dist` build (`VITE_API_MOCK=0 VITE_API_BASE=http://127.0.0.1:7341`)
+  into `$TMPDIR/hbc2js-ui-e2e/`, then starts our OWN `ui-server` on `:7341`
+  (API only) and `vite preview` on `:7342` serving that throwaway dist — the
+  fixture run **never touches the shared `ui/dist/`** the live rig's `vite
+  preview` serves, exactly so a local smoke run cannot disturb Fred's
+  already-running `:4173`/`:7331` rig. Playwright's own `webServer` config
+  starts and stops both processes; nothing is left running after the test
+  exits.
+- `cd ui && npm run e2e:nsw` — the same spec, `PW_BASE_URL=http://127.0.0.1:4173`
+  and `PW_READONLY=1`: no `webServer` entries at all (it never starts, never
+  restarts, never rebuilds anything), points straight at Fred's live rig,
+  and skips the one write step (rename). Response times there scale with the
+  bundle: `/api/segregation` on a 4,510-module bundle can take up to ~70s on
+  a loaded box (see "Screens first" above) — `ui/e2e/smoke.spec.ts`'s `WAIT`/
+  `SHORT_WAIT` constants and `playwright.config.ts`'s per-test `timeout`
+  both scale up automatically when `PW_BASE_URL` is set, rather than the
+  fixture run's tight defaults.
+
+What it exercises: page loads with no console/page error beyond one
+documented, not-yet-fixed one (see below); the module tree renders groups,
+expands one, and a module click shows its file in the centre pane; a
+function click updates the right pane's Context tab; right-click on code
+opens the context menu (Radix), Escape closes it, "Rename" opens the dialog
+and Cancel closes it without writing; back/forward restore prior selections;
+the search box finds and selects a function; and (fixture run only) a
+submitted rename shows up as `Context`'s `name` row and produces at least
+one Activity row.
+
+**Known, reported, not fixed here:** on first paint `App.tsx` defaults the
+selected `fn` to `0` (`useSelection().fn ?? 0`) before anything is actually
+selected, so `RightPane`/`CenterPane` query `/api/fn/0/context` etc.
+immediately; fn 0 (the global function) has no recorded source range and
+answers 400, which the browser logs as a console error on every fresh load
+regardless of application code. Fixing it means threading
+`fn: number | undefined` through `RightPane.tsx` so it can skip the query
+instead of collapsing "nothing selected" into fn 0 — `RightPane.tsx` is
+owned by a different concurrent track, so this was reported rather than
+edited; `ui/e2e/smoke.spec.ts`'s console-error test allowlists exactly this
+one known signature and still fails on anything else.
+
+A real bug the suite caught and a fix that shipped with it: `LeftPane.tsx`'s
+auto-select-first-module effect could fire while `GET /api/segregation` was
+still loading, against the FALLBACK grouping's keys (`groupModules`, e.g.
+`"app"`) rather than the segregated grouping's keys (`groupModulesSegregated`,
+e.g. `APP_KEY` = `"seg:app"`) — once the real segregation answer landed
+moments later the effect's `sel.kind !== "none"` guard stopped it from ever
+re-running, so the analyst landed on a module that LOOKED selected but whose
+group stayed permanently collapsed. The effect now also waits on
+`!seg.isLoading`, same as the tree body's own render gate.
