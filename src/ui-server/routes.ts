@@ -210,6 +210,19 @@ const BASE_ROUTES: readonly Route[] = [
     },
   },
   {
+    // `McpResources.packageId` — spec-13's two-key gate over the module the
+    // signature DB (spec 15) attributes `mod` to. Always 200 (never a 404):
+    // an unattributed/ungated module is an honest `{available:false,
+    // reason}` body, not a missing resource (docs/UI.md route table).
+    method: "GET",
+    re: /^\/api\/package-id\/([^/]+)$/,
+    handler: async ([raw], _req, ctx) => {
+      const mod = parseFn(raw!);
+      if (mod === null) return badRequest(`package-id/${raw}: not a module id`);
+      return ok(await ctx.resources.packageId(mod));
+    },
+  },
+  {
     method: "GET",
     re: /^\/api\/functions$/,
     handler: (_p, req, ctx) => ok(listFunctions(ctx.resources.artifact, qNum(req.query.cursor) ?? 0)),

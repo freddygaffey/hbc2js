@@ -58,9 +58,9 @@ async function get<T>(path: string, params: Readonly<Record<string, string | num
 
 /** Route table — spec 22 §3.5's routes, as implemented by src/ui-server.
  *  Keep in sync with docs/UI.md's route list; a route rename is a two-file
- *  change. `packageId` is the one route §3.5 does not (yet) publish — it
- *  404s against the real server, which is why the Package panel is
- *  documented as stubbed. */
+ *  change. `packageId` (wave 4a) is published by the real server too —
+ *  always 200, `{available:false, reason}` when the module has no cleared
+ *  identification, never a 404. */
 export const httpApi: Api = {
   fn: (fn) => get(`/fn/${fn}`),
   source: (fn) => get(`/fn/${fn}/source`),

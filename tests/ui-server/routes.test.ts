@@ -410,6 +410,44 @@ test("GET /api/segregation counts are disjoint and total the module count", asyn
   assert.equal(c.unclassified, body.modules.filter((m) => m.bucket === "unclassified").length);
 });
 
+test("GET /api/package-id/:mod matches resources.packageId's shape (available:false or true with a reason/evidence string)", async () => {
+  const r = await get("/api/package-id/0");
+  assert.equal(r.status, 200);
+  const body = r.json as { available: boolean; mod: number; reason?: string; package?: string };
+  assert.equal(body.mod, 0);
+  if (body.available) {
+    assert.equal(typeof body.package, "string");
+  } else {
+    assert.equal(typeof body.reason, "string");
+    assert.ok(body.reason!.length > 0);
+  }
+  const direct = await resources.packageId(0);
+  assert.deepEqual(body, direct);
+});
+
+test("GET /api/package-id/:mod 400s on a non-numeric module id", async () => {
+  const r = await get("/api/package-id/not-a-number");
+  assert.equal(r.status, 400);
+  assert.match((r.json as { reason: string }).reason, /package-id/);
+});
+
+test("GET /api/segregation carries depsApplied, and settles from false to true without a second explicit request cycle", async () => {
+  const fresh: UiServerCtx = { resources: mcpContext.resources, tools, artifactDir: outDir };
+  const first = (await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, fresh)).json as { depsApplied: boolean };
+  assert.equal(typeof first.depsApplied, "boolean");
+  // The async deps recompute (`applyDepsWhenReady`) was kicked off by that
+  // first call; give it a chance to settle rather than asserting a fixed
+  // value — `depsApplied` must eventually reach `true` for a ctx with an
+  // `--hbc` bundle configured (this fixture's `mcpContext` has one).
+  let settled = first.depsApplied;
+  for (let i = 0; i < 50 && !settled; i++) {
+    await new Promise((res) => setTimeout(res, 50));
+    const poll = (await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, fresh)).json as { depsApplied: boolean };
+    settled = poll.depsApplied;
+  }
+  assert.equal(settled, true, "depsApplied must settle to true so the UI's poll loop terminates");
+});
+
 test("segregation is computed once per ctx and served from cache after that", async () => {
   const { segregation, segregationCached, moduleDirOf } = await import("../../src/ui-server/segregation.ts");
   assert.notEqual(moduleDirOf(outDir), null, "the fixture must hold module_<id>.js files somewhere");

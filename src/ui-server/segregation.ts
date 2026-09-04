@@ -20,6 +20,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { segregateSplitTree, type SegregationBucket } from "../split/segregate.ts";
+import type { DepsReport } from "../deps/report.ts";
+import type { McpResources } from "../mcp/resources.ts";
 
 /** One module, as the tree needs it. A projection of `SegregatedModuleInfo`
  *  (src/split/segregate.ts) minus the fields the UI has no use for
@@ -52,12 +54,30 @@ export interface SegregationResult {
   /** Sorted by module id. */
   readonly modules: readonly SegregationRow[];
   readonly counts: SegregationCounts;
+  /** True once the deps stage (`McpResources.depsReport()`, spec 15's
+   *  signature DB against the `--hbc` bundle) has settled for this ctx AND,
+   *  if it produced a report, that report has been fed into THIS
+   *  snapshot's `segregateSplitTree` call — so third-party modules are
+   *  filed under `node_modules/<pkg>/…` and `SegregationRow.package` is
+   *  filled where the deps run could attribute one. `false` on the fast
+   *  first snapshot `server.ts` warms at listen (deps has not had a chance
+   *  to run yet); becomes `true` on the ONE async recompute that follows,
+   *  even when deps came back `null` (no `--hbc` configured, or no
+   *  attributable inventory) — a settled "no deps" is still settled, so
+   *  the UI's poll loop (`ui/src/hooks/use-segregation.ts`, re-fetches
+   *  `/api/segregation` every 5 s while this is `false`) always
+   *  terminates. */
+  readonly depsApplied: boolean;
 }
 
 /** Everything this module needs from `UiServerCtx` (structural, so routes.ts
- *  can import this file without an import cycle). */
+ *  can import this file without an import cycle). `resources` is read only
+ *  for its `depsReport()` — never for `artifact`/`project` — so the async
+ *  deps recompute below reuses the SAME cached `deps` run `/api/package-id`
+ *  triggers, rather than starting a second one. */
 export interface SegregationCtx {
   readonly artifactDir: string;
+  readonly resources: McpResources;
 }
 
 export const SCREENS_PREFIX = "src/screens/";
@@ -116,13 +136,15 @@ function countsOf(modules: readonly SegregationRow[]): SegregationCounts {
 }
 
 /** The uncached computation, exported for tools/tests that hold a directory
- *  rather than a ctx. Returns `null` when `dir` has no module files. */
-export function segregationOf(artifactDir: string): SegregationResult | null {
+ *  rather than a ctx. Returns `null` when `dir` has no module files. `deps`/
+ *  `depsApplied` are threaded straight through to `SegregationResult` —
+ *  `null`/`false` (the defaults) reproduce the pre-deps behaviour exactly. */
+export function segregationOf(artifactDir: string, deps: DepsReport | null = null, depsApplied = false): SegregationResult | null {
   const dir = moduleDirOf(artifactDir);
   if (dir === null) return null;
   let result;
   try {
-    result = segregateSplitTree(readModuleTree(dir), null);
+    result = segregateSplitTree(readModuleTree(dir), deps);
   } catch {
     // No MODULES.json (or an unreadable one): the tree cannot be recovered,
     // which the UI treats exactly like "no module dir" — it falls back to
@@ -132,7 +154,7 @@ export function segregationOf(artifactDir: string): SegregationResult | null {
   const modules: SegregationRow[] = result.modules
     .map((m) => ({ id: m.id, path: m.newPath, bucket: m.bucket, package: m.package, nameSignal: m.nameSignal, nameConfidence: m.nameConfidence }))
     .sort((a, b) => a.id - b.id);
-  return { modules, counts: countsOf(modules) };
+  return { modules, counts: countsOf(modules), depsApplied };
 }
 
 /** One entry per ctx, computed on first request. A `WeakMap` rather than a
@@ -142,13 +164,51 @@ export function segregationOf(artifactDir: string): SegregationResult | null {
  *  not re-`readdir` on every poll. */
 const cache = new WeakMap<SegregationCtx, SegregationResult | null>();
 
+/** One entry per ctx, set once the async deps recompute below has been
+ *  STARTED for it — guards against `segregation()` kicking off a second
+ *  `depsReport()`/`segregateSplitTree` run on every poll while the first is
+ *  still in flight. */
+const depsStarted = new WeakSet<SegregationCtx>();
+
+/** The deps-aware recompute: awaits `ctx.resources.depsReport()` (cached on
+ *  the `McpResources` instance — this never duplicates a `deps` run
+ *  `/api/package-id` already started or will start) and, if the base
+ *  directory still segregates, REPLACES the cache entry with a fresh
+ *  `SegregationResult` computed WITH that report, `depsApplied: true`.
+ *  Runs at most once per ctx (`depsStarted` above); failures leave the
+ *  deps-less snapshot in place but still flip `depsApplied` so the UI's
+ *  poll loop terminates rather than retrying forever. */
+async function applyDepsWhenReady(ctx: SegregationCtx): Promise<void> {
+  let report: DepsReport | null = null;
+  try {
+    report = await ctx.resources.depsReport();
+  } catch {
+    report = null;
+  }
+  // A ctx with no module dir cached `null` up front; deps can't change
+  // that (`segregateSplitTree` never ran), so nothing to recompute — but
+  // the entry must still exist for `cache.has` below to have fired.
+  if (!cache.has(ctx)) return;
+  const recomputed = segregationOf(ctx.artifactDir, report, true);
+  cache.set(ctx, recomputed);
+}
+
 /** `GET /api/segregation`. Identical (`===`) on every call after the first
- *  for the same ctx — that identity IS the cache contract the tests assert. */
+ *  for the same ctx UNTIL the async deps recompute lands — that identity is
+ *  the cache contract the tests assert for the synchronous, deps-less
+ *  window; the recompute deliberately swaps in a NEW object (real
+ *  attribution replaces the placeholder one, `depsApplied` flips) once it
+ *  finishes, which is the signal the UI polls on. */
 export function segregation(ctx: SegregationCtx): SegregationResult | null {
-  if (cache.has(ctx)) return cache.get(ctx) ?? null;
-  const computed = segregationOf(ctx.artifactDir);
-  cache.set(ctx, computed);
-  return computed;
+  if (!cache.has(ctx)) {
+    const computed = segregationOf(ctx.artifactDir);
+    cache.set(ctx, computed);
+  }
+  if (!depsStarted.has(ctx)) {
+    depsStarted.add(ctx);
+    void applyDepsWhenReady(ctx);
+  }
+  return cache.get(ctx) ?? null;
 }
 
 /** True once `segregation(ctx)` has run for this ctx (test/introspection). */

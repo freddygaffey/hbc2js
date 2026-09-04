@@ -321,6 +321,19 @@ export class McpResources {
     return this.depsCache;
   }
 
+  /** Public half of `computeDeps()`: the `DepsReport` alone, for callers
+   *  outside this class that need `segregateSplitTree`'s `deps` parameter
+   *  (`src/ui-server/segregation.ts`'s async deps recompute) without a
+   *  second independent `deps` run — same cached promise `packageId`/
+   *  `scanDeps` share. `null` exactly when `computeDeps()` is (no `--hbc`
+   *  bundle configured for this instance). Measured 16.5 s on Service NSW
+   *  (4,510 modules, offline signature-DB match + guess, no network) — see
+   *  `docs/UI.md`'s route table row for `/api/segregation`. */
+  async depsReport(): Promise<DepsReport | null> {
+    const computed = await this.computeDeps();
+    return computed?.report ?? null;
+  }
+
   /** `package-id/{mod}` — spec-13's reuse-validation two-key gate (`src/
    *  security/osv-gate.ts`'s `gateDependency`) over the module the shared
    *  signature DB (spec 15) attributes `mod` to. Every row cites the sigdb

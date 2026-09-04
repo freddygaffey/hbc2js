@@ -51,13 +51,13 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/fn/{fn}/callees` | `CallsFrom` |
   | GET | `/api/module/{id}` | `ModuleInfo` |
   | GET | `/api/module/{id}/source` | `ModuleSource` — whole file text + every owned fn `{fn,name,lines}`; the FILE view (select a module, see all its functions; per-function focus is optional, not forced) |
-  | GET | `/api/segregation` | `SegregationResult` — the name-recovered module tree (`src/ui-server/segregation.ts`): one row per module `{id, path, bucket, package, nameSignal, nameConfidence}` sorted by id, plus disjoint `counts {screens, navigation, src, node_modules, unclassified}`. 404 when the project has no `module_<id>.js` files. Computed once per server process (0.5 s read + 4.6 s segregate on a 4 510-module bundle, ~70 s on a loaded box) and cached — `server.ts` warms it in a `setImmediate` right after `listen`, so the first browser request is a map lookup; restart the server to pick up new modules |
+  | GET | `/api/segregation` | `SegregationResult` — the name-recovered module tree (`src/ui-server/segregation.ts`): one row per module `{id, path, bucket, package, nameSignal, nameConfidence}` sorted by id, plus disjoint `counts {screens, navigation, src, node_modules, unclassified}` and `depsApplied: boolean`. 404 when the project has no `module_<id>.js` files. The FIRST snapshot is computed once per server process (0.5 s read + 4.6 s segregate on a 4 510-module bundle, ~70 s on a loaded box) and cached — `server.ts` warms it in a `setImmediate` right after `listen`, so the first browser request is a map lookup. That first snapshot has `depsApplied: false` (no `--hbc` deps report has run yet, so nothing lands in `node_modules/<pkg>/…`); the same `setImmediate` also starts the async deps run (`McpResources.depsReport()`, 16.5 s measured on Service NSW's 4,510 modules, offline signature-DB match — see `/api/package-id` below) and, when it settles, REPLACES the cached snapshot with one computed WITH that report (`depsApplied: true`), even when the report came back empty (no `--hbc` configured) — a settled "no deps" still flips the flag so a poll loop terminates. `ui/src/hooks/use-segregation.ts` re-fetches every 5 s while `depsApplied === false` and stops once `true`. Restart the server to pick up new modules |
   | GET | `/api/findings` | `Bounded<ResolvedFinding>` |
   | GET | `/api/leads` | `LeadsResult` |
   | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
   | GET | `/api/search/functions?q=&cursor=` | `SearchPage<FunctionMatch>` |
   | GET | `/api/search/source?q=&cursor=` | `SearchPage<SourceMatch>` |
-  | GET | `/api/package-id/{mod}` | `PackageIdResult` — **not in spec 22 §3.5's route table**; the Package panel stays on the mock until the server publishes it |
+  | GET | `/api/package-id/{mod}` | `PackageIdResult` — `McpResources.packageId(mod)` (spec-13's two-key gate over the module the signature DB attributes `mod` to); 400 on a non-numeric `mod`, otherwise always 200 — `{available:false, mod, reason}` is an honest answer, not a 404. Shares the SAME cached deps run `/api/segregation`'s async recompute uses (`McpResources.computeDeps()`, one run per server process) |
 
   These are spec 22 §3.5's routes (the server landing owns that table). If
   they change, the client is the file to change (one table, `httpApi`) —
@@ -323,7 +323,7 @@ wired, so right-clicking a local and choosing Rename renames the function —
 the dialog states its target so it cannot mislead silently. `view.fold` /
 `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs;
 `view.copyDisasmOffset` copies `fn:<n>`, not a byte offset. The Package panel
-stays on the mock (the server publishes no `/api/package-id`).
+reads the real `GET /api/package-id/{mod}` (wave 4a).
 
 ## Activity feed (wave 2, track 3)
 
