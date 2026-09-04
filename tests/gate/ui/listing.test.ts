@@ -172,6 +172,30 @@ test("the listing caps rendered lines and reports how many it hid", async () => 
   assert.equal(serverCut.hidden, 898);
 });
 
+// The whole-module file view (`CenterPane`'s file view, `docs/UI.md`
+// "Whole-module file view") got a much higher ceiling than the
+// per-function editor once CM6 was confirmed to virtualise the viewport
+// regardless of document length (see `truncate.ts`'s doc comment for the
+// measurement that justified this) — Fred's instruction was "file view
+// must show the whole module", so a module under the new ceiling must
+// render EVERY line, not just the old 5,000.
+test("the module view's ceiling is far above the per-function cap, so a 40k-line module renders whole", async () => {
+  const t = await import(pathToFileURL(join(listingDir, "truncate.ts")).href);
+  assert.ok(t.MAX_RENDER_LINES_MODULE > t.MAX_RENDER_LINES, "the module ceiling must exceed the function cap");
+  assert.ok(t.MAX_RENDER_LINES_MODULE >= 200_000, "the module ceiling must be a high safety cap, not a rendering target");
+  const bigModule = Array.from({ length: 40_000 }, (_u, i) => `line ${i}`).join("\n");
+  const whole = t.clampLines(bigModule, 40_000, false, t.MAX_RENDER_LINES_MODULE);
+  assert.equal(whole.truncated, false, "a 40k-line module must render whole under the module ceiling");
+  assert.equal(whole.shown, 40_000);
+  assert.equal(whole.hidden, null);
+  assert.equal(whole.text, bigModule);
+  // Sanity: the same document under the OLD per-function cap is still cut,
+  // proving the two caps are genuinely independent, not one constant reused.
+  const underFnCap = t.clampLines(bigModule, 40_000, false, t.MAX_RENDER_LINES);
+  assert.equal(underFnCap.truncated, true);
+  assert.equal(underFnCap.shown, t.MAX_RENDER_LINES);
+});
+
 test("the CodeMirror dependencies are exact pins", () => {
   const pkg = JSON.parse(readFileSync(join(root, "ui", "package.json"), "utf8")) as { dependencies: Record<string, string> };
   const cm = Object.entries(pkg.dependencies).filter(([n]) => n.startsWith("@codemirror/") || n.startsWith("@lezer/") || n === "@replit/codemirror-vim");

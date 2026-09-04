@@ -21,18 +21,18 @@ import {
 } from "../hooks.ts";
 import { CodeView } from "../listing/CodeView.tsx";
 import { displayName } from "../listing/names.ts";
-import { clampLines, MAX_RENDER_LINES } from "../listing/truncate.ts";
+import { clampLines, MAX_RENDER_LINES, MAX_RENDER_LINES_MODULE } from "../listing/truncate.ts";
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleSourceFn } from "../contracts.ts";
 import { setDisasmOpen, useDisasmOpen } from "./disasm-store.ts";
 
-function TruncationBar({ hidden, shown }: { readonly hidden: number; readonly shown: number }): ReactNode {
+function TruncationBar({ hidden, shown, cap }: { readonly hidden: number; readonly shown: number; readonly cap: number }): ReactNode {
   return (
     <div className="flex h-6 shrink-0 items-center gap-2 border-t border-border bg-surface-2 px-3 text-xs text-text-muted">
       <span className="text-text">truncated</span>
       <span>
         showing the first {shown.toLocaleString()} lines, {hidden.toLocaleString()} more not rendered
-        {shown >= MAX_RENDER_LINES ? " (listing cap)" : " (server cap)"}
+        {shown >= cap ? " (listing cap)" : " (server cap)"}
       </span>
     </div>
   );
@@ -110,7 +110,13 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const body = useFileView
     ? { text: file.data!.text, totalLines: file.data!.text.split("\n").length, truncated: false }
     : { text: fnSource.data?.text ?? "", totalLines: fnSource.data?.totalLines ?? 0, truncated: fnSource.data?.truncated ?? false };
-  const src = useMemo(() => clampLines(body.text, body.totalLines, body.truncated), [body.text, body.totalLines, body.truncated]);
+  // The whole-module file view (spec 22 §2's editor cap, lifted per Fred's
+  // "file view must show the whole module") gets a much higher ceiling than
+  // the per-function view — CodeMirror 6 virtualises the viewport itself
+  // (see `../listing/truncate.ts`'s doc comment for the measurement), so
+  // this costs nothing until a module is pathologically large.
+  const srcCap = useFileView ? MAX_RENDER_LINES_MODULE : MAX_RENDER_LINES;
+  const src = useMemo(() => clampLines(body.text, body.totalLines, body.truncated, srcCap), [body.text, body.totalLines, body.truncated, srcCap]);
   const dis = useMemo(
     () => clampLines(disasm.data?.text ?? "", disasm.data?.totalLines ?? 0, disasm.data?.truncated ?? false),
     [disasm.data],
@@ -173,7 +179,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
       <PanelGroup direction="vertical" autoSaveId="hbc2js.listing" className="min-h-0 flex-1">
         <Panel defaultSize={62} minSize={15} className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1">{listing}</div>
-          {src.hidden !== null && src.hidden > 0 && <TruncationBar hidden={src.hidden} shown={src.shown} />}
+          {src.hidden !== null && src.hidden > 0 && <TruncationBar hidden={src.hidden} shown={src.shown} cap={srcCap} />}
         </Panel>
         <PanelResizeHandle className="h-px bg-border data-[resize-handle-state=drag]:bg-accent data-[resize-handle-state=hover]:bg-accent" />
         <Panel
@@ -198,7 +204,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
                 <CodeView text={dis.text} language="plain" highlightLine={null} ariaLabel={`disassembly of function ${fnId}`} />
               )}
             </div>
-            {dis.hidden !== null && dis.hidden > 0 && <TruncationBar hidden={dis.hidden} shown={dis.shown} />}
+            {dis.hidden !== null && dis.hidden > 0 && <TruncationBar hidden={dis.hidden} shown={dis.shown} cap={MAX_RENDER_LINES} />}
           </div>
         </Panel>
       </PanelGroup>

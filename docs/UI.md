@@ -256,9 +256,11 @@ it now asks for `?limit=1000` a page — `FUNCTIONS_PAGE_MAX`,
 `src/ui-server/list.ts` — instead of the route's 50-row default, so the
 walk that used to cap out at 200×50=10,000 functions, silently dropping a
 third of Service NSW's ~15,000, is 15 requests, not 300) would still be a
-lot of requests to fill a tree that shows a dozen rows. The editor renders
-at most `MAX_RENDER_LINES` (5 000) lines and says how many it hid
-(`ui/src/listing/truncate.ts`), on top of the server's own truncation. The
+lot of requests to fill a tree that shows a dozen rows. The per-function
+editor renders at most `MAX_RENDER_LINES` (5,000) lines and says how many it
+hid (`ui/src/listing/truncate.ts`), on top of the server's own truncation;
+the whole-module file view uses the much higher `MAX_RENDER_LINES_MODULE`
+(200,000) instead — see "What is stubbed" below for why. The
 top bar's search is `GET /api/search/functions`: a dropdown of at most 50
 hits, `Enter` takes the first, and while a query is present the left pane
 shows the hits as a flat list instead of the tree.
@@ -337,10 +339,20 @@ and stops no events, so right-clicks reach the annotate track's menu.
 - **The activity pane** is live (see "Activity feed" below) — this bullet
   is now historical.
 - ~~No virtualisation~~ FIXED: the tree is windowed by
-  `@tanstack/react-virtual` (see "Virtualised" above); the editor is still
-  capped at 5 000 rendered lines rather than windowed (`ui/src/listing/
-  truncate.ts`) — a real listing pane, not a graph view, so a fixed cap plus
-  a truncation notice is enough for now. No graph view, no worker/jobs rail
+  `@tanstack/react-virtual` (see "Virtualised" above). ~~The editor is
+  capped at 5,000 rendered lines~~ FIXED for the module (whole-file) view:
+  Fred's instruction was "file view must show the whole module", and
+  CodeMirror 6 turned out to already virtualise the viewport on its own
+  (only the `.cm-line`s actually on screen are ever mounted, independent of
+  document length) — measured on the fixture project's `module_226`
+  (29,754 lines) via `ui/e2e/`'s throwaway rig (never the live NSW ports):
+  DOM nodes under `.cm-content` 751 → 750, `.cm-line` count 36 → 36, paint
+  ~399ms → ~373ms, i.e. no measurable cost from lifting the cap. So
+  `ui/src/listing/truncate.ts`'s `MAX_RENDER_LINES` (5,000, per-*function*
+  editor, e.g. "Show raw Hermes") is unchanged, but the module/file view now
+  uses `MAX_RENDER_LINES_MODULE` (200,000) — a safety ceiling for a
+  pathological generated file, not a rendering target — with the same
+  honest truncation bar beyond that. No graph view, no worker/jobs rail
   bullet applies here (the AI tab landed separately, see "AI workers"
   below); no further Playwright smoke gaps known.
 

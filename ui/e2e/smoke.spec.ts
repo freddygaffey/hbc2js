@@ -5,6 +5,9 @@
 // restarting or modifying it (PW_READONLY=1 skips the rename step, which
 // writes).
 import { test, expect, type ConsoleMessage, type Locator, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { PROJECT_DIR } from "./prepare-fixture.mjs";
 
 const READONLY = process.env["PW_READONLY"] === "1";
 
@@ -280,5 +283,47 @@ test.describe("hbc2js UI shell smoke", () => {
     await page.getByPlaceholder("Run a command").fill("raw Hermes");
     await page.getByText("Show raw Hermes", { exact: true }).click();
     await expect(disasmToggle).toHaveAttribute("aria-expanded", "true", { timeout: SHORT_WAIT });
+  });
+
+  // "file view must show the whole module" (Fred, 2026-09-04) — the whole
+  // module render cap (`ui/src/listing/truncate.ts`, `MAX_RENDER_LINES_
+  // MODULE`) must not silently cut a large module. `module_226` in the
+  // fixture project (rn-template-0.72's own decompiled output) is 29,754
+  // lines, comfortably over the OLD 5,000-line cap; asserts the last line
+  // is reachable, not exact text (docs/CONSOLIDATION.md §B item 7 — no
+  // exact-output assertions on a decompiled fixture).
+  test("a >5,000-line module renders whole: the last line is reachable, no cap notice", async ({ page }) => {
+    test.skip(READONLY, "module_226 is our own throwaway fixture's module id — meaningless against the live NSW rig");
+    const totalLines = readFileSync(join(PROJECT_DIR, "src", "module_226.js"), "utf8").split("\n").length;
+    expect(totalLines).toBeGreaterThan(5000);
+
+    await page.goto("/");
+    await expect(page.getByRole("tree", { name: "module tree" })).toBeVisible({ timeout: WAIT });
+    await page.getByPlaceholder("Search functions").fill("module_226");
+    const hit = page.locator('[data-module="226"]').first();
+    await expect(hit).toBeVisible({ timeout: WAIT });
+    await hit.click();
+    await page.getByPlaceholder("Search functions").fill("");
+
+    const codeView = page.getByTestId("code-view").first();
+    await expect(codeView).toBeVisible({ timeout: WAIT });
+    await expect(codeView.locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
+
+    // No "truncated" bar: the whole module is under MAX_RENDER_LINES_MODULE.
+    await expect(page.getByText("truncated", { exact: true })).toHaveCount(0);
+
+    // Force CodeMirror's own scroller to the document end (it virtualises
+    // the viewport — see truncate.ts's doc comment — so only lines near the
+    // bottom mount once we scroll there) and read the highest rendered
+    // gutter line number back out.
+    const maxLineSeen = await codeView.locator(".cm-scroller").evaluate(async (scroller) => {
+      scroller.scrollTop = scroller.scrollHeight;
+      await new Promise((r) => setTimeout(r, 300));
+      const nums = Array.from(scroller.querySelectorAll(".cm-lineNumbers .cm-gutterElement"))
+        .map((el) => Number(el.textContent))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      return nums.length > 0 ? Math.max(...nums) : 0;
+    });
+    expect(maxLineSeen).toBeGreaterThan(totalLines - 50);
   });
 });
