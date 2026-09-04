@@ -264,10 +264,46 @@ function loopTestGuard(loop: Stmt, value: Expr): RefuseReason | null {
   if (loop.k !== "while" && loop.k !== "do-while" && loop.k !== "for") return null;
   if (!isPure(value)) return "loop-variant-input";
   const update = loop.k === "for" ? loop.update : null;
+  // A `for`'s `init` runs *before* the first `test`, so a header that writes
+  // one of `E`'s inputs makes the very first evaluation of the folded `E`
+  // read the wrong value — not just later iterations. (fuzz family F2,
+  // fixture 46: `r1 = "" + r1; for (r1 = 2, r4 = 0; r4 < r1; …)` folded to
+  // `r4 < "" + r1` with `r1` still the *pre-init* environment read, turning
+  // `r4 < 2` into `0 < "0"` and skipping the loop.)
+  const init = loop.k === "for" ? loop.init : null;
   for (const name of namesReadBy(value)) {
     const u = identUses(loop.body, name);
     if (u.writes + u.nested > 0) return "loop-variant-input";
     if (update !== null && exprCounts(update, name).writes > 0) return "loop-variant-input";
+    if (init !== null && exprCounts(init, name).writes > 0) return "input-clobbered";
+  }
+  return null;
+}
+
+/** A `for` header's own verdict for `reg`, or `null` when the header says
+ *  nothing about it (and for `while`/`do-while`, which have no header).
+ *
+ *  `topLevelExprOf` names only the one field the rewriter may fold into —
+ *  `test` for every loop — so `init` and `update` are invisible to the
+ *  scans, even though `for-header` (stage A) routinely hoists a store into
+ *  `init` and the increment into `update`. Order of execution decides:
+ *  `init` runs once, before the first `test`, so a store there redefines
+ *  `reg` before anything in the loop can read the incoming value (`dead`),
+ *  while a read there consumes it (`read`). `update` runs between
+ *  iterations; a read there is still a read of whatever `reg` held, so it
+ *  is reported as one. A bare `update` *store* settles nothing (a `break`
+ *  in the body can leave the loop before it ever runs), so the caller
+ *  keeps scanning, exactly as before this function existed. */
+function forHeaderVerdict(s: Stmt, reg: string): Verdict | null {
+  if (s.k !== "for") return null;
+  if (s.init !== null) {
+    const c = exprCounts(s.init, reg);
+    if (c.reads + c.nested > 0) return "read";
+    if (c.writes > 0) return "dead";
+  }
+  if (s.update !== null) {
+    const c = exprCounts(s.update, reg);
+    if (c.reads + c.nested > 0) return "read";
   }
   return null;
 }
@@ -388,6 +424,8 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
     case "while":
     case "do-while":
     case "for": {
+      const header = forHeaderVerdict(s, reg);
+      if (header !== null) return header;
       const withBreak = new Map(labels);
       withBreak.set(UNLABELLED_BREAK, rest);
       const body = scanFrom(s.body, reg, 0, withBreak, CLEAR, memo);
@@ -654,6 +692,17 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
   // neither reads nor stores `reg` and has no sub-list verdict of its own.
   for (let m = nextRelevant(list, reg, i + 1); m < list.length; m = nextRelevant(list, reg, m + 1)) {
     const s = list[m]!;
+    // A `for` header settles `reg` before its `test` is ever evaluated (see
+    // `forHeaderVerdict`): an `init` store means the `test` read found below
+    // is of the *fresh* value, not this site's, and an `init`/`update` read
+    // consumes this site's value outside the one field the rewriter can
+    // fold into. Either way the `test` read must not be taken as `j`.
+    const headerVerdict = forHeaderVerdict(s, reg);
+    if (headerVerdict === "read") {
+      blocked = true;
+      break;
+    }
+    if (headerVerdict === "dead") break; // redefined by `init`, no read ever reached it
     const tlReads = topLevelReads(s).get(reg) ?? 0;
     if (tlReads > 0) {
       // Stepping statement by statement, a pass-through compound statement

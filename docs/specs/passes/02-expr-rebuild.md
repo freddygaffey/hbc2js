@@ -157,3 +157,29 @@ PASS unchanged and PL-09 (PASS with passes on *and* off) holding.
 
 **Estimated size:** ~200 lines across `match/rewrite/check`, ~250 lines of
 tests. The largest rung in batch 1 and the one to review hardest.
+
+## 8. Amendment 2026-09-04 — `for` headers (fuzz family F2)
+
+`topLevelExprOf` names the one field the writer may fold into, which for every
+loop is `test`. A `for` also has `init` and `update`, and both were invisible
+to §4's scans, which is unsound in two directions:
+
+* `init` runs **before** the first `test`. An `init` that stores to `reg`
+  therefore redefines it before anything in the loop can read the incoming
+  value (the scan must treat the `for` as a redefinition, never take the
+  `test`'s read as the site's consumer `j`), and an `init` that *reads* `reg`
+  consumes the value outside the writable field (a read).
+* An `init` that writes an input of the folded value `E` clobbers it before the
+  first evaluation of the folded test — `loopTestGuard`'s existing body/`update`
+  invariance check does not cover it, so it refuses with `input-clobbered`.
+* An `update` that reads `reg` is a genuine read of the value (a bare `update`
+  *store* settles nothing: a `break` can leave the loop before it ever runs, so
+  the scan carries on exactly as before).
+
+Implemented as `forHeaderVerdict` in `match.ts`, consulted by `classifySite`'s
+forward scan and by `branchVerdict`. Regression: construct fixture
+`60-for-header-init-clobber`, adversarial fixture `46-fuzz-let-capture-branch`,
+and the `F2:` unit tests in `tests/gate/passes/expr-rebuild.test.ts`. Found by
+the construct fuzzer (docs/BUGS.md family-F2 row): the real v96 bytecode of a
+dead `AddEmptyString` in front of a loop limit folded `r4 < 2` into
+`r4 < "" + outer`, i.e. `0 < "0"`, and the loop never ran.

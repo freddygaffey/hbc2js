@@ -1,0 +1,62 @@
+; hbc2js disassembly of 60-for-header-init-clobber/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=3 strings=9 globalCodeIndex=0
+function #0 "global"  params=1 frame=15 env=1 flags=dbg  @0x00000130 size=100
+  0000  DeclareGlobalVar     s6 "bump"
+  0005  DeclareGlobalVar     s4 "loopAfterDeadConcat"
+  000a  CreateEnvironment    r0
+  000c  CreateClosure        r2, r0, f1 "bump"
+  0011  GetGlobalObject      r1
+  0013  PutById              r1, r2, #c1, s6 "bump"
+  0019  CreateClosure        r2, r0, f2 "loopAfterDeadConcat"
+  001e  PutById              r1, r2, #c2, s4 "loopAfterDeadConcat"
+  0024  LoadConstZero        r2
+  0026  StoreNPToEnvironment r0, 0, r2
+  002a  GetByIdShort         r2, r1, #c1, s6 "bump"
+  002f  LoadConstUndefined   r3
+  0031  Call1                r2, r2, r3
+  0035  TryGetById           r5, r1, #c2, s7 "print"
+  003b  GetByIdShort         r2, r1, #c3, s4 "loopAfterDeadConcat"
+  0040  Call1                r4, r2, r3
+  0044  LoadConstString      r2, s2 "ret"
+  0048  Call3                r2, r5, r3, r2, r4
+  004e  TryGetById           r2, r1, #c2, s7 "print"
+  0054  LoadFromEnvironment  r1, r0, 0
+  0058  LoadConstString      r0, s1 "outer"
+  005c  Call3                r0, r2, r3, r0, r1
+  0062  Ret                  r0
+
+function #1 "bump"  params=1 frame=3 env=0 flags=dbg  @0x00000194 size=22
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r2, r1, 0
+  0007  LoadConstUInt8       r0, 1
+  000a  Add                  r0, r2, r0
+  000e  StoreToEnvironment   r1, 0, r0
+  0012  LoadConstUndefined   r0
+  0014  Ret                  r0
+
+function #2 "loopAfterDeadConcat"  params=1 frame=17 env=0 flags=dbg  @0x000001aa size=86
+  0000  GetGlobalObject      r0
+  0002  LoadConstUndefined   r3
+  0004  LoadConstTrue        r2
+  0006  LoadConstUInt8       r6, 1
+  0009  LoadConstUInt8       r1, 2
+  000c  LoadConstZero        r5
+L1:
+  000e  TryGetById           r7, r0, #c1, s7 "print"
+  0014  Call3                r7, r7, r3, r5, r2
+  001a  Inc                  r5, r5
+  001d  JLess                L1, r5, r6
+  0021  GetEnvironment       r5, 0
+  0024  LoadFromEnvironment  r5, r5, 0
+  0028  AddEmptyString       r5, r5
+  002b  LoadConstZero        r4
+L2:
+  002d  TryGetById           r5, r0, #c1, s7 "print"
+  0033  Call3                r5, r5, r3, r4, r2
+  0039  Inc                  r4, r4
+  003c  JLess                L2, r4, r1
+  0040  TryGetById           r0, r0, #c2, s5 "HermesInternal"
+  0046  GetByIdShort         r1, r0, #c3, s8 "concat"
+  004b  LoadConstString      r0, s3 "v-"
+  004f  Call2                r0, r1, r0, r2
+  0054  Ret                  r0

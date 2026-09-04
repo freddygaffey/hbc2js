@@ -449,3 +449,75 @@ test("if-chain regression companion: the same consumer without the jump still fo
   const v = classifySite(before, before, 0, "r0", id("a2"));
   assert.deepEqual(v, { ok: true, rule: "R1a", j: 1 });
 });
+
+// ---------------------------------------------------------------------------
+// Fuzz family F2 (docs/BUGS.md 2026-09-04 row; adversarial fixture
+// 46-fuzz-let-capture-branch, construct fixture 60-for-header-init-clobber):
+// a `for` header's `init` runs BEFORE its first `test`, and `update` runs
+// between iterations, but `topLevelExprOf` names only `test` (the one field
+// the rewriter may fold into), so neither was visible to the scans. The
+// v96 bytecode of `for (let i = 0; i < 2; i++)` after a dead
+// `AddEmptyString` into the same register emits
+// `r1 = "" + outer; for (r1 = 2, r4 = 0; r4 < r1; …)`, and the read in the
+// test was taken as this site's consumer — folding the *pre-init* value in
+// and turning `r4 < 2` into `0 < "0"`, so the loop never ran.
+// ---------------------------------------------------------------------------
+
+test("F2: a `for` whose init redefines the register is never the site's consumer (init runs before the first test)", () => {
+  // r1 = "" + r2; for (r1 = 2, r0 = 0; r0 < r1; r0 = r0 + 1) { }
+  const value = bin("+", lit('""'), id("r2"));
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r1"), value)),
+    {
+      k: "for",
+      label: null,
+      init: { k: "seq", exprs: [assignExpr(id("r1"), lit("2")), assignExpr(id("r0"), lit("0"))] },
+      test: bin("<", id("r0"), id("r1")),
+      update: assignExpr(id("r0"), bin("+", id("r0"), lit("1"))),
+      body: [],
+    },
+  ];
+  const v = classifySite(before, before, 0, "r1", value);
+  assert.equal(v.ok, false, `the test's read of r1 is of the init's fresh 2, not this site's value — got ${JSON.stringify(v)}`);
+  const m = match(before, ctxFor(before));
+  if (m !== null) {
+    // Only an R1b deletion of a provably dead store may pass here; a fold
+    // into the loop test (R1a on j = 1) is the bug.
+    assert.equal(m.data.rule, "R1b", `expected no fold into the for-test, got ${JSON.stringify(m.data)}`);
+  }
+});
+
+test("F2: a `for` whose init clobbers an input of the folded value refuses (input-clobbered)", () => {
+  // r0 = r1 + 0; for (r1 = 9; r0; ) { } — the init overwrites r1 before the
+  // first test, so folding `r1 + 0` in reads 9, not the snapshot.
+  const value = bin("+", id("r1"), lit("0"));
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), value)),
+    { k: "for", label: null, init: assignExpr(id("r1"), lit("9")), test: id("r0"), update: null, body: [] },
+  ];
+  assert.deepEqual(classifySite(before, before, 0, "r0", value), { ok: false, reason: "input-clobbered" });
+  assert.equal(match(before, ctxFor(before)), null);
+});
+
+test("F2: a `for` whose update reads the register keeps the site alive (no bogus dead-store deletion)", () => {
+  // r0 = 1; for (; c; r1 = r0 + 1) { } r0 = 2 — the update reads r0, so the
+  // first store is NOT dead and must not be deleted by R1b.
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), lit("1"))),
+    { k: "for", label: null, init: null, test: id("c"), update: assignExpr(id("r1"), bin("+", id("r0"), lit("1"))), body: [] },
+    exprStmt(assignExpr(id("r0"), lit("2"))),
+  ];
+  assert.deepEqual(classifySite(before, before, 0, "r0", lit("1")), { ok: false, reason: "use-under-control-flow" });
+});
+
+test("F2 control: a `for` header that neither reads nor writes the register still folds", () => {
+  // r0 = r3 + 0; for (r1 = 0; r0; r1 = r1 + 1) { } — nothing in the header
+  // touches r0 or its input r3, so the loop-invariant fold is unaffected.
+  const value = bin("+", id("r3"), lit("0"));
+  const before: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r0"), value)),
+    { k: "for", label: null, init: assignExpr(id("r1"), lit("0")), test: id("r0"), update: assignExpr(id("r1"), bin("+", id("r1"), lit("1"))), body: [] },
+  ];
+  const v = classifySite(before, before, 0, "r0", value);
+  assert.deepEqual(v, { ok: true, rule: "R1a", j: 1 });
+});

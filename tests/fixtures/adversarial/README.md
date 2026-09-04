@@ -187,7 +187,7 @@ renderings onto one canonical, name-preserving form
 (V8's) wording, as for every other fixture here; the Hermes wording is what
 the VM side produces.
 
-### 46-fuzz-let-capture-branch (added 2026-09-04, construct-fuzzer family F2) -- OPEN BUG
+### 46-fuzz-let-capture-branch (added 2026-09-04, construct-fuzzer family F2) -- FIXED 2026-09-04
 
 Machine-reduced (103 -> 76 lines, signature-preserving) by
 `tools/fuzz/minimise-live.mjs` from find `v96-seed780933`. **DIVERGENT at v96
@@ -197,7 +197,18 @@ print the same lines except that the VM takes the `else` branch of `f3`'s
 `if ((0 === (outer + '')))` -- printing `0 true` / `1 true` -- while the
 decompiled candidate takes the `if` branch and prints neither, as if the
 string concatenation on the captured module-level `let` `outer` were dropped
-and the comparison were the numeric `0 === outer`. Not root-caused.
+and the comparison were the numeric `0 === outer`.
+
+Root-caused and fixed the same day (see the family-F2 row in docs/BUGS.md): the
+bug was in the `expr-rebuild` readability pass, not in the closure/env graph.
+hermesc drops the provably-false `0 === (outer + '')` comparison outright and
+emits only the else branch, leaving a dead `AddEmptyString r1, r1` right in
+front of that loop's `LoadConstUInt8 r1, 2`; expr-rebuild then folded the dead
+store into the loop *test* (`r4 < "" + outer` = `0 < "0"`), because a `for`
+header's `init` -- which runs before the first `test` -- was invisible to its
+scans. This fixture now PASSes at all four versions and is kept as the
+end-to-end regression for that fix (the gating one is construct fixture
+`60-for-header-init-clobber`).
 `expected.txt` is Node's script-mode output, which differs from both (under
 Node the sibling-block `t3` read is a real ReferenceError that kills `f0`).
 
