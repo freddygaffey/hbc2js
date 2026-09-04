@@ -33,6 +33,7 @@ jobs:
           cache: pip
           cache-dependency-path: tools/oracles/requirements-hermes-dec.txt
       - run: pip install -r tools/oracles/requirements-hermes-dec.txt
+      - run: pip install semgrep==1.176.1 androguard==4.1.4  # tests/security/* Lane S/M toolchain oracles (pinned; docs/BUGS.md CI red-run fix)
       - run: npm ci
       - run: npm run typecheck
       - run: npm run gen:tables:check      # generated tables are reproducible
@@ -67,6 +68,7 @@ jobs:
           cache: pip
           cache-dependency-path: tools/oracles/requirements-hermes-dec.txt
       - run: pip install -r tools/oracles/requirements-hermes-dec.txt
+      - run: pip install semgrep==1.176.1 androguard==4.1.4  # tests/security/* Lane S/M toolchain oracles (pinned; docs/BUGS.md CI red-run fix)
       - run: npm ci
       - uses: actions/cache@v4             # hermesc binaries, keyed on the fetch script (see build-test)
         with:
