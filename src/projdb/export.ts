@@ -54,15 +54,19 @@ import type { FindingEvidenceValue } from "./annotations.ts";
 
 const UNASSIGNED_MODULE = "_unassigned";
 
-function sha256Hex(s: string): string {
+/** Exported for `src/projdb/rebuild.ts` and `src/projdb/verify.ts` (§8/§R3):
+ *  both need the SAME hash used to lock a shard, either to recompute it
+ *  during a hand-edit-vs-lag check, or to reproduce log-entry hashes. */
+export function sha256Hex(s: string): string {
   return createHash("sha256").update(s, "utf8").digest("hex");
 }
 
 /** Recursively sorts object keys (arrays keep their element order — order is
  *  meaningful there, e.g. evidence anchors) so the same logical value always
  *  serialises identically. The basis of every content hash and of the
- *  byte-stable shard files this module writes. */
-function sortKeysDeep(value: unknown): unknown {
+ *  byte-stable shard files this module writes. Exported for the same reason
+ *  as `sha256Hex` above. */
+export function sortKeysDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeysDeep);
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -72,7 +76,7 @@ function sortKeysDeep(value: unknown): unknown {
   return value;
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   return JSON.stringify(sortKeysDeep(value));
 }
 
@@ -109,7 +113,7 @@ function moduleShardName(db: DatabaseSync, target: string): string {
   return modRow.file.replace(/[\\/]/g, "__").replace(/[^A-Za-z0-9_.\-]/g, "_");
 }
 
-interface StateBinding {
+export interface StateBinding {
   readonly dbVersion: number;
   readonly stateHash: string;
 }
@@ -119,8 +123,10 @@ interface StateBinding {
  *  (its own monotonic rid), `stateHash` a hash of the whole `log` table at
  *  that point — so every shard from one export is provably tied to the same
  *  DB state, and re-exporting unchanged state reproduces the same binding
- *  byte-for-byte (part of what makes re-export a no-op). */
-function stateBindingOf(db: DatabaseSync): StateBinding {
+ *  byte-for-byte (part of what makes re-export a no-op). Exported so
+ *  `verify.ts` can read the DB's CURRENT version to classify a shard whose
+ *  on-disk `stateBinding.dbVersion` is older as lag (§8), not a hand edit. */
+export function stateBindingOf(db: DatabaseSync): StateBinding {
   const rows = db.prepare(`SELECT rid, ts, op, actor_source, actor_who, actor_run, detail FROM log ORDER BY rid`).all() as {
     rid: number;
   }[];

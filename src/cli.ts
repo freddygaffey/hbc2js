@@ -33,6 +33,8 @@ import { buildIndexRows } from "./artifact/index-rows.ts";
 import { openProjectDb } from "./projdb/db.ts";
 import { initProjectDb } from "./projdb/ix-write.ts";
 import { exportProject } from "./projdb/export.ts";
+import { rebuildProject } from "./projdb/rebuild.ts";
+import { verifyProject } from "./projdb/verify.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
@@ -66,6 +68,8 @@ Usage:
   hbc2js init <bundle.hbc> [--out <dir>]     create a project.hbcproj (docs/specs/16-project-db.md §4.1): split
                                               render + ix_* index rows in one SQLite file; refuses if it exists
   hbc2js hbcproj export <project.hbcproj>    materialise analysis/ + log/ shards from the DB
+  hbc2js hbcproj rebuild <project.hbcproj>   regenerate a FRESH DB's annotation state from analysis/ + log/ (recovery)
+  hbc2js hbcproj verify <project.hbcproj> [--full]   check shard hashes + the log/ chain; --full re-runs round-trip validators
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
@@ -722,8 +726,8 @@ function runInit(argv: readonly string[]): number {
 
 /** `hbc2js hbcproj export <project.hbcproj>`: materialises `analysis/` +
  *  `log/` alongside the given `.hbcproj` DB file (§6 step 3, `src/projdb/
- *  export.ts`). Only `export` is implemented (§R4 step 0); the rest of the
- *  §9 porcelain (`status`/`diff`/`adopt`/`restore`/`rebuild`/`verify`/`init`)
+ *  export.ts`). `export`/`rebuild`/`verify` are implemented (§R4 steps 0-1);
+ *  the rest of the §9 porcelain (`status`/`diff`/`adopt`/`restore`/`init`)
  *  is later steps. */
 function runHbcproj(argv: readonly string[]): number {
   const verb = argv[0];
@@ -749,7 +753,67 @@ function runHbcproj(argv: readonly string[]): number {
       db.close();
     }
   }
-  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export' is implemented (docs/specs/18-project-storage-integrity.md §R4 step 0)\n`);
+  if (verb === "rebuild") {
+    const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write(
+        "hbc2js hbcproj rebuild <project.hbcproj>   regenerate the DB's annotation state from analysis/ + log/ (docs/specs/18-project-storage-integrity.md §6 step 1); " +
+          "the target must be a FRESH db (no prior revisions/log rows — append-only, cannot be wiped in place)\n",
+      );
+      return argv.includes("--help") ? 0 : 2;
+    }
+    const projectDir = dirname(dbFile);
+    if (!existsSync(projectDir)) {
+      process.stderr.write(`hbc2js hbcproj rebuild: ${projectDir} does not exist\n`);
+      return 2;
+    }
+    const db = openProjectDb(dbFile); // creates a fresh schema if dbFile doesn't exist yet (the recovery case, §8)
+    try {
+      const result = rebuildProject(db, projectDir);
+      process.stdout.write(
+        `hbc2js hbcproj rebuild: restored ${result.activeWritten} active record(s), ${result.revisionsWritten} revisions row(s), ${result.logEntriesWritten} log row(s)` +
+          (result.warnings.length > 0 ? `, ${result.warnings.length} warning(s):\n${result.warnings.map((w) => `  - ${w}`).join("\n")}\n` : "\n"),
+      );
+      return 0;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj rebuild: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  if (verb === "verify") {
+    const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write(
+        "hbc2js hbcproj verify <project.hbcproj> [--full]   check shard content-hashes + the log/ hash chain, classifying any divergence as lag or a hand edit (docs/specs/18-project-storage-integrity.md §8/§9); " +
+          "--full additionally re-runs the DB<->shards agreement and rebuild round-trip validators (§R3)\n",
+      );
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj verify: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const db = openProjectDb(dbFile);
+    try {
+      const result = verifyProject(db, dirname(dbFile), { full: argv.includes("--full") });
+      for (const s of result.shards) if (s.status !== "ok") process.stdout.write(`${s.status}: ${s.path}${s.detail !== undefined ? ` — ${s.detail}` : ""}\n`);
+      for (const c of result.logChain) if (!c.ok) process.stdout.write(`log-chain-broken: ${c.path}${c.detail !== undefined ? ` — ${c.detail}` : ""}\n`);
+      if (result.full !== undefined) {
+        for (const d of result.full.detail) process.stdout.write(`full: ${d}\n`);
+        process.stdout.write(`full: round-trip=${result.full.roundTrip ? "ok" : "FAIL"} db-shards-agree=${result.full.dbShardsAgree ? "ok" : "FAIL"}\n`);
+      }
+      process.stdout.write(`hbc2js hbcproj verify: ${result.shards.length} shard(s) checked, ${result.logChain.length} log file(s) checked — ${result.ok ? "OK" : "FAILED"}\n`);
+      return result.ok ? 0 : 1;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj verify: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export'/'rebuild'/'verify' are implemented (docs/specs/18-project-storage-integrity.md §R4 steps 0-1)\n`);
   return 2;
 }
 
