@@ -159,6 +159,16 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
    *  environment still conflicts through `closureEnvOf`. */
   const noEnvClosures = new Set<number>();
   const closureEnvConflict = new Set<number>();
+  /** functionIndex -> siteKey(creator, offset) -> env captured there. */
+  const closureCreationSites = new Map<number, Map<string, EnvNodeId | null>>();
+  const noteSite = (fnId: number, key: string, env: EnvNodeId | null): void => {
+    let sites = closureCreationSites.get(fnId);
+    if (sites === undefined) {
+      sites = new Map();
+      closureCreationSites.set(fnId, sites);
+    }
+    sites.set(key, env);
+  };
   closureEnvOf.set(mod.header.globalCodeIndex, null);
 
   // (env,slot) -> the environment it holds, or "conflict".
@@ -264,6 +274,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
         const fnId = insn.operands.find((o) => o.role === "function")!.value;
         if (env !== null) noteClosure(fnId, env);
         else if (ev.t === "none") noteNoEnvClosure(fnId);
+        if (env !== null || ev.t === "none") noteSite(fnId, siteKey(f, insn.offset), env);
         set(insn.operands[0]!.value, { t: "closure", fn: fnId, env });
         return;
       }
@@ -274,6 +285,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
         const fnId = insn.operands[insn.operands.length - 1]!.value;
         if (env !== null) noteClosure(fnId, env);
         else if (ev.t === "none") noteNoEnvClosure(fnId);
+        if (env !== null || ev.t === "none") noteSite(fnId, siteKey(f, insn.offset), env);
         clobber(insn);
         set(insn.operands[0]!.value, { t: "closure", fn: fnId, env });
         return;
@@ -542,6 +554,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
       return i === undefined ? undefined : slots[i];
     },
     closureEnvOf,
+    closureCreationSites,
     envsCreatedIn,
     resolvedAt: collected.resolvedAt,
     envInSlot: new Map([...slotEnv].filter((e): e is [string, EnvNodeId] => e[1] !== "conflict")),

@@ -367,6 +367,12 @@ export interface EnvGraph {
    *  i.e. its lexical parent environment. Null for the global function and for
    *  any function whose creation site we never saw. */
   readonly closureEnvOf: ReadonlyMap<number, EnvNodeId | null>;
+  /** Every `Create*Closure`/`Create*Class` site that made a closure over this
+   *  function index, keyed by `siteKey(creatingFunction, offset)`, mapped to the
+   *  environment captured there (`null` = the undefined operand). More than one
+   *  distinct value is `W_AMBIGUOUS_CLOSURE_ENV`; the map is the evidence a fix
+   *  needs, since `closureEnvOf` then reports only `null`. See §6.2. */
+  readonly closureCreationSites: ReadonlyMap<number, ReadonlyMap<string, EnvNodeId | null>>;
   /** Function index -> env nodes created *inside* that function. */
   readonly envsCreatedIn: ReadonlyMap<number, readonly EnvNodeId[]>;
   readonly unresolved: readonly EnvAccess[];
@@ -642,6 +648,17 @@ environment created with an undefined parent has no parent.
   conflict (`W_AMBIGUOUS_CLOSURE_ENV`): `none` never loses to, and never
   overrides, a real environment, because binding the body to that environment
   would be wrong on the undefined-operand path.
+* Every site is kept, not just the winner: `closureCreationSites` maps the
+  function index to `siteKey(creatingFunction, offset) -> environment`. A
+  conflict is a statement that the function has more than one lexical identity —
+  Hermes inlines closure-making helpers and deduplicates identical bodies across
+  Metro module factories, so the same function index is created from two places
+  with two different environments. Reporting it and giving up leaves the body
+  named for whichever site the fixed point saw first, which is silently wrong at
+  the others; the fix is one emitted body per creation context, designed with
+  measured numbers in `docs/reports/2026-09-05-ambiguous-closure-env.md`
+  (178 such functions on react-navigation-example-0.85.3, 160 of them differing
+  only in the directly captured environment).
 * Merge at joins: equal values meet to themselves, everything else to `unknown`.
 * Iterate to a fixed point over RPO. Loops converge in ≤ 2 passes with this
   lattice; cap at `blocks.length` and bail to `unknown` if not.

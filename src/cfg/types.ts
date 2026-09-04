@@ -172,6 +172,15 @@ export interface EnvGraph {
   readonly slots: readonly EnvSlot[];
   slot(env: EnvNodeId, slot: number): EnvSlot | undefined;
   readonly closureEnvOf: ReadonlyMap<number, EnvNodeId | null>;
+  /**
+   * Every `Create*Closure` site that made a closure over this function index,
+   * keyed by `siteKey(creatingFunction, offset)`, mapped to the environment the
+   * site captured (`null` = the undefined environment operand: captures
+   * nothing). A function with more than one distinct value here is
+   * `W_AMBIGUOUS_CLOSURE_ENV` — its `_e<env>_<slot>` names cannot be right for
+   * every site at once (docs/BUGS.md 2026-09-04 cause (a)).
+   */
+  readonly closureCreationSites: ReadonlyMap<number, ReadonlyMap<string, EnvNodeId | null>>;
   readonly envsCreatedIn: ReadonlyMap<number, readonly EnvNodeId[]>;
   /** (functionIndex, offset) -> the resolved env for that access site. */
   readonly resolvedAt: ReadonlyMap<string, EnvNodeId>;

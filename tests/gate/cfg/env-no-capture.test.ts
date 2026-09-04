@@ -123,6 +123,32 @@ test("T5: an environment operand that is a real env on one path and undefined on
   assert.equal(graph.closureEnvOf.get(1), null, "fn#1 captures nothing");
 });
 
+test("T6: every Create*Closure site is recorded, with the environment it captured", () => {
+  // The evidence an ambiguity fix needs: `W_AMBIGUOUS_CLOSURE_ENV` says only
+  // *that* a function was created with two environments, and `closureEnvOf`
+  // then reports `null`, so nothing downstream can tell how many sites there
+  // were, where they are, or which environment each one captured. Per-creation-
+  // context body duplication (docs/reports/2026-09-05-ambiguous-closure-env.md)
+  // is driven entirely off this map, and so is the bucketing that measured the
+  // 178 ambiguous functions on react-navigation-example-0.85.3.
+  const { graph } = twoSiteModule();
+  const sites2 = graph.closureCreationSites.get(2);
+  assert.ok(sites2 !== undefined, "fn#2 has two Create*Closure sites; none were recorded");
+  assert.deepEqual(
+    [...sites2].sort(([a], [b]) => (a < b ? -1 : 1)),
+    [
+      ["0:4", 0],
+      ["0:12", null],
+    ].sort(([a], [b]) => ((a as string) < (b as string) ? -1 : 1)),
+    "fn#2 is created at offset 4 over env 0 and at offset 12 over the undefined environment operand",
+  );
+  assert.equal(new Set(sites2.values()).size, 2, "the two sites disagree: that disagreement is exactly what makes fn#2 ambiguous");
+  assert.deepEqual([...graph.closureCreationSites.get(1)!.values()], [null], "fn#1 has a single site and it captures nothing");
+  for (const [f, sites] of graph.closureCreationSites) {
+    for (const key of sites.keys()) assert.match(key, /^\d+:\d+$/, `creation site key ${key} of fn#${f} is not siteKey(function, offset)`);
+  }
+});
+
 // --- synthesis -------------------------------------------------------------
 
 type Op = { readonly name: string; readonly ops: readonly (readonly [string, number])[] };
