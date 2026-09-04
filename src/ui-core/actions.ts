@@ -43,6 +43,11 @@ export interface ActionApi {
    *  pre-filling its search from `target` when it is a `"string"` selection
    *  (a clicked string literal) — otherwise just opens the window empty. */
   showStrings(target: Selection): void | Promise<void>;
+  /** Spec 17 §14.2: switch the right pane to the Tables (object-literal
+   *  inventory) window, pre-filling its value filter from `target` when it
+   *  is a `"string"` selection — otherwise just opens the window with the
+   *  server's own defaults applied. */
+  showTables(target: Selection): void | Promise<void>;
   search(query?: string): void | Promise<void>;
   openPalette(): void | Promise<void>;
   markReviewed(target: Selection): void | Promise<void>;
@@ -144,6 +149,12 @@ export function standardActions(): Action[] {
       title: "Find string uses…",
       group: "navigate",
       run: (ctx) => ctx.api.showStrings(ctx.selection),
+    },
+    {
+      id: "navigate.tables",
+      title: "Find object tables…",
+      group: "navigate",
+      run: (ctx) => ctx.api.showTables(ctx.selection),
     },
     {
       id: "navigate.nextFn",

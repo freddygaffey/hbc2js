@@ -3,5 +3,6 @@
   "G": "project.search",
   ";": "annotate.comment",
   "Ctrl-Shift-F": "navigate.xrefs",
-  "Ctrl-Alt-S": "navigate.strings"
+  "Ctrl-Alt-S": "navigate.strings",
+  "Ctrl-Alt-T": "navigate.tables"
 }

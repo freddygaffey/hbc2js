@@ -7,7 +7,7 @@ import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry, StringExact, StringGrep, GlobalUses,
-  WhoCallsByName,
+  WhoCallsByName, ObjectTable, ObjectTables,
 } from "./contracts.ts";
 import type { ModuleSource } from "./contracts.ts";
 import type { FunctionListPage, FunctionListRow, ModuleEntry, ModuleListPage } from "./listing/wire.ts";
@@ -151,6 +151,34 @@ const MOCK_STRING_USES: readonly { sid: number; fn: number; role: string; n: num
   { sid: 103, fn: 11, role: "property-put", n: 1 },
 ];
 
+/** A small deterministic fixture for `GET /api/object-tables` (spec 17
+ *  §14.2) — two "endpoint table"-shaped literals so the Tables tab's
+ *  filter/expand/jump flow has something real to exercise in mock mode.
+ *  One member is `kind:"computed"` (a `BASE + "/x"` tail) so the muted
+ *  `<computed>` rendering path is reachable without a real bundle. */
+const MOCK_OBJECT_TABLES: readonly Omit<ObjectTable, "matched">[] = [
+  {
+    fn: 5, fnName: "storeToken", size: 96, offset: 40, module: 3, numProps: 4,
+    members: [
+      { key: "AUTH", value: "/v1/auth", kind: "string" },
+      { key: "REFRESH", value: "/v1/auth/refresh", kind: "string" },
+      { key: "LOGOUT", value: "/v1/auth/logout", kind: "string" },
+      { key: "BASE_URL", value: null, kind: "computed" },
+    ],
+    strings: 3, nonStrings: 0, computed: 1,
+  },
+  {
+    fn: 11, fnName: "parseDeepLink", size: 64, offset: 12, module: 3, numProps: 4,
+    members: [
+      { key: "HOME", value: "https://example.com/home", kind: "string" },
+      { key: "PROFILE", value: "https://example.com/profile", kind: "string" },
+      { key: "SETTINGS", value: "https://example.com/settings", kind: "string" },
+      { key: "SUPPORT", value: "https://example.com/support", kind: "string" },
+    ],
+    strings: 4, nonStrings: 0, computed: 0,
+  },
+];
+
 const MOCK_GLOBALS: readonly { fn: number; access: string; n: number }[] = [
   { fn: 0, access: "get", n: 3 },
   { fn: 5, access: "set", n: 1 },
@@ -289,6 +317,48 @@ export const mockApi: Api = {
       ...u, name: FN_BY_ID.get(u.fn)?.name ?? null, size: FN_BY_ID.get(u.fn)?.size ?? null,
     }));
     return delay({ value, uses: { rows, total: rows.length, truncated: false } });
+  },
+  // Mirrors `ArtifactService.objectTables` (`src/artifact/service.ts`):
+  // `matched` counts the members satisfying EITHER pattern (the table's own
+  // member count when neither is given, so an unfiltered query always
+  // passes `minMatched`); defaults are >=4 members, >=50% string-valued,
+  // >=1 matched; a FILTERED query ranks on `matched` then hit density then
+  // size, an unfiltered one on size alone.
+  objectTables: (query): Promise<ObjectTables> => {
+    const minProps = query.minProps ?? 4;
+    const stringRatio = query.stringRatio ?? 0.5;
+    const minMatched = query.minMatched ?? 1;
+    const keyRe = query.key !== undefined ? new RegExp(query.key) : undefined;
+    const valueRe = query.value !== undefined ? new RegExp(query.value) : undefined;
+    const filtered = keyRe !== undefined || valueRe !== undefined;
+    const rows: ObjectTable[] = [];
+    for (const t of MOCK_OBJECT_TABLES) {
+      const n = t.members.length;
+      if (n < minProps) continue;
+      if (n === 0 || t.strings / n < stringRatio) continue;
+      if (query.module !== undefined && t.module !== query.module) continue;
+      if (keyRe !== undefined && !t.members.some((m) => keyRe.test(m.key))) continue;
+      if (valueRe !== undefined && !t.members.some((m) => m.value !== null && valueRe.test(m.value))) continue;
+      const matched = filtered
+        ? t.members.filter((m) => (keyRe !== undefined && keyRe.test(m.key)) || (valueRe !== undefined && m.value !== null && valueRe.test(m.value))).length
+        : n;
+      if (matched < minMatched) continue;
+      rows.push({ ...t, matched });
+    }
+    rows.sort((a, b) => {
+      if (filtered) {
+        const byMatched = b.matched - a.matched;
+        if (byMatched !== 0) return byMatched;
+        const byDensity = b.matched / b.members.length - a.matched / a.members.length;
+        if (byDensity !== 0) return byDensity;
+      }
+      return b.members.length - a.members.length || a.fn - b.fn || a.offset - b.offset;
+    });
+    const limit = query.limit ?? 100;
+    return delay({
+      tables: rows.slice(0, limit), total: rows.length, truncated: rows.length > limit,
+      scanned: MOCK_FUNCTIONS.length, failed: 0,
+    });
   },
   xrefGlobal: (name): Promise<GlobalUses> => {
     const rows = name.length === 0 ? [] : MOCK_GLOBALS.map((g) => ({

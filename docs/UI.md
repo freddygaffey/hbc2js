@@ -729,12 +729,22 @@ to surface both endpoint tables in one query. Unlike Strings, the tab is
 server's own defaults (>=4 members, >=50% string-valued — "the shape of a
 table, as opposed to an options bag") already answer a useful inventory, so
 `useObjectTables` (`ui/src/hooks.ts`) fetches on mount against
-`GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=`
-(`ui/src/api.ts`'s `ObjectTablesQuery`).
+`GET /api/object-tables?minProps=&stringRatio=&key=&value=&minMatched=&module=&limit=`
+(`ui/src/api.ts`'s `ObjectTablesQuery`; `minMatched` — server default 1 —
+is not its own filter-bar field, just passed through for forward
+compatibility).
 
-**Result list.** Sorted most-members-first, same as the server
-(`ArtifactService.objectTables`); each row shows
-`fn <n> <fnName> · module <m> · K members (S strings)` plus a
+**Result list.** Sorted exactly as the server ranks (`ArtifactService.
+objectTables`'s `compareObjectTables`): unfiltered, biggest table first;
+FILTERED (a `key`/`value` given), `matched` — how many members the query
+actually hit — first, then hit density, then size, so a 2,125-member
+HTML-entity table with one accidental hit no longer outranks a real
+41-member endpoint table. Each row shows
+`fn <n> <fnName> · module <m> · K members (S strings)`, plus
+`· M matched` whenever `matched` (`ObjectTable.matched`,
+`ui/src/contracts.ts`) is less than the member count — i.e. only once a
+filter actually narrowed the hit, never on an unfiltered row where it would
+just repeat the count already printed — and a
 `"N of TOTAL tables (truncated)"` line honest about the server's cap, with
 the scanned/failed function counts alongside it. Clicking a row both
 selects that function — `select({kind:"fn", fn})`

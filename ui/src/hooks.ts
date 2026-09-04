@@ -4,12 +4,12 @@
 // precisely, and the log poll (landing 6) has its own 1 s interval.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { API_BASE, USING_MOCK, api, ApiError } from "./api.ts";
+import { API_BASE, USING_MOCK, api, ApiError, type ObjectTablesQuery } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
   LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
-  StringExact, StringGrep, GlobalUses, WhoCallsByName,
+  StringExact, StringGrep, GlobalUses, WhoCallsByName, ObjectTables,
 } from "./contracts.ts";
 
 /** Delays echoing `value` by `ms` of no further change — the Strings/Globals
@@ -116,6 +116,17 @@ export const useStringUses = (sid: number | undefined): UseQueryResult<StringExa
 /** `xref/global` — the Globals sub-view. */
 export const useGlobalUses = (name: string): UseQueryResult<GlobalUses> =>
   useQuery({ queryKey: ["xref-global", name], queryFn: () => api.xrefGlobal(name), enabled: name.length > 0 });
+
+/** `object-tables` — the Tables tab's search (spec 17 §14.2). Unlike
+ *  Strings/Globals this is not gated on an empty pattern: with every field
+ *  left blank the server's own defaults (>=4 members, >=50% string-valued)
+ *  already answer a useful bundle-wide inventory, so the tab fetches on
+ *  mount and refetches as the filter bar changes. */
+export const useObjectTables = (query: ObjectTablesQuery): UseQueryResult<ObjectTables> =>
+  useQuery({
+    queryKey: ["object-tables", query.key, query.value, query.minProps, query.stringRatio, query.minMatched, query.module, query.limit],
+    queryFn: () => api.objectTables(query),
+  });
 
 /** Rows kept in memory by {@link useLog} — the bottom pane never needs the
  *  full session history, and an unbounded array under a live feed is a

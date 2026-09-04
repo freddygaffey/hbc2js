@@ -12,6 +12,7 @@ import { keymap } from "../actions/registry.ts";
 import { select, useSelection } from "../state/selection.ts";
 import { WorkersPane } from "./WorkersPane.tsx";
 import { StringsPane } from "./StringsPane.tsx";
+import { TablesPane } from "./TablesPane.tsx";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -112,6 +113,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <Tabs.Trigger value="context" className={tabClass}>Context</Tabs.Trigger>
           <Tabs.Trigger value="xrefs" className={tabClass}>Xrefs</Tabs.Trigger>
           <Tabs.Trigger value="strings" className={tabClass}>Strings</Tabs.Trigger>
+          <Tabs.Trigger value="tables" className={tabClass}>Tables</Tabs.Trigger>
           <Tabs.Trigger value="findings" className={tabClass}>Findings</Tabs.Trigger>
           <Tabs.Trigger value="package" className={tabClass}>Package</Tabs.Trigger>
           <Tabs.Trigger value="workers" className={tabClass}>AI</Tabs.Trigger>
@@ -197,6 +199,12 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           the currently-selected function. */}
       <Tabs.Content value="strings" className={bodyClass}>
         <StringsPane />
+      </Tabs.Content>
+
+      {/* spec 17 §14.2: bundle-wide constant object-literal inventory —
+          not gated on `hasFn` either, same reasoning as Strings. */}
+      <Tabs.Content value="tables" className={bodyClass}>
+        <TablesPane />
       </Tabs.Content>
 
       <Tabs.Content value="findings" className={bodyClass}>

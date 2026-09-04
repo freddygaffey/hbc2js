@@ -22,6 +22,7 @@ import type { FnSummary } from "../contracts.ts";
 import { foldActive, unfoldActive } from "../listing/fold-store.ts";
 import { openDisasm } from "../panes/disasm-store.ts";
 import { setStringsPrefill } from "../panes/strings-store.ts";
+import { setTablesPrefill } from "../panes/tables-store.ts";
 
 export const registry = createStandardRegistry();
 
@@ -163,6 +164,10 @@ export const actionApi: ActionApi = {
   showStrings: (target) => {
     if (target.kind === "string" && target.name !== undefined) setStringsPrefill(target.name);
     setRightPanel("strings");
+  },
+  showTables: (target) => {
+    if (target.kind === "string" && target.name !== undefined) setTablesPrefill(target.name);
+    setRightPanel("tables");
   },
   search: () => focusSearch(),
   openPalette: () => setPaletteOpen(true),

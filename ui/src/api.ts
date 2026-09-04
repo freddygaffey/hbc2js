@@ -8,13 +8,30 @@ import type {
   CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, Bounded, LocalsListing, LineMap, StringExact, StringGrep, GlobalUses,
-  WhoCallsByName,
+  WhoCallsByName, ObjectTables,
 } from "./contracts.ts";
 import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
 
 export const API_BASE: string = import.meta.env["VITE_API_BASE"] ?? "http://127.0.0.1:7331";
 export const USING_MOCK: boolean = (import.meta.env["VITE_API_MOCK"] ?? "1") !== "0";
+
+/** `GET /api/object-tables`'s filter options (spec 17 §14.2) — the Tables
+ *  tab's filter bar (`ui/src/panes/TablesPane.tsx`). All optional; an
+ *  omitted field is left off the query string, so the server's own
+ *  defaults (>=4 members, >=50% string-valued) apply. */
+export interface ObjectTablesQuery {
+  readonly minProps?: number;
+  readonly stringRatio?: number;
+  readonly key?: string;
+  readonly value?: string;
+  readonly module?: number;
+  /** Minimum members satisfying `key`/`value` (server default 1) — guards
+   *  the accidental single-hit in a giant table. A no-op with neither
+   *  pattern given. */
+  readonly minMatched?: number;
+  readonly limit?: number;
+}
 
 export interface Api {
   fn(fn: number): Promise<FnSummary>;
@@ -58,6 +75,10 @@ export interface Api {
   xrefStringUses(sid: number): Promise<StringExact>;
   /** `GET /api/xref/global?name=` — the Globals sub-view. */
   xrefGlobal(name: string): Promise<GlobalUses>;
+  /** `GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&
+   *  limit=` — the bundle-wide constant object-literal inventory (spec 17
+   *  §14.2), the Tables tab's search. */
+  objectTables(query: ObjectTablesQuery): Promise<ObjectTables>;
 }
 
 export class ApiError extends Error {
@@ -107,6 +128,7 @@ export const httpApi: Api = {
   xrefStringSearch: (mode, pattern) => get(`/xref/string`, { mode, key: pattern }),
   xrefStringUses: (sid) => get(`/xref/string`, { mode: "exact", key: sid }),
   xrefGlobal: (name) => get(`/xref/global`, { name }),
+  objectTables: (query) => get(`/object-tables`, { ...query }),
 };
 
 export const api: Api = USING_MOCK ? mockApi : httpApi;

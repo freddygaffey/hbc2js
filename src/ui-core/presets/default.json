@@ -5,6 +5,7 @@
   "F12": "navigate.definition",
   "Shift-F12": "navigate.xrefs",
   "Ctrl-Shift-S": "navigate.strings",
+  "Ctrl-Shift-T": "navigate.tables",
   "Ctrl-P": "project.palette",
   "Ctrl-F": "project.search",
   "Alt-Left": "navigate.back",
