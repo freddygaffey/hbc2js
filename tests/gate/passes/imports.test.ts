@@ -23,10 +23,22 @@ const ALLOWED = new Set(["../types.ts", "../tree.ts", "../ast.ts", "../driver.ts
  * clause-less side-effect `import "x";` (review M5-pass-1 F1: the original
  * regex required a `from` clause, so `import "../../emit/conds.ts";` was
  * invisible to it).
+ *
+ * The `from`-clause regex used to scan `[\s\S]*?` between the `import`/
+ * `export` keyword and `from` — that crosses newlines and string literals,
+ * so a statement with no `from` clause of its own (e.g. `export function
+ * f() {`) would lazily hunt *forward through the rest of the file* for the
+ * next `from"` it could find, including inside an unrelated string literal
+ * ending `"...from"`, and then capture whatever text sat between that
+ * literal's closing quote and the next quote in the file as a bogus
+ * "import" (docs/BUGS.md 2026-09-02). Fixed by keeping the clause search
+ * inside the same statement: excluded from the scan are `;`, `\n`, and
+ * quote characters, so it can never leave the statement it started in nor
+ * read into any string literal's contents.
  */
 function importsOf(source: string): string[] {
   const out: string[] = [];
-  for (const m of source.matchAll(/(?:^|\n)\s*(?:import|export)[\s\S]*?from\s*["']([^"']+)["']/g)) out.push(m[1]!);
+  for (const m of source.matchAll(/(?:^|\n)\s*(?:import|export)[^;\n"']*from\s*["']([^"']+)["']/g)) out.push(m[1]!);
   for (const m of source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']/g)) out.push(m[1]!);
   for (const m of source.matchAll(/(?:^|\n)\s*import\s*["']([^"']+)["']/g)) out.push(m[1]!);
   return out;
@@ -103,6 +115,26 @@ test("D12a import boundary: five forbidden-import forms, and the two sibling/all
 
   const allowed: readonly string[] = ['import { match } from "./match.ts";', 'import type { Stmt } from "../../structure/ir.ts";', 'import type { Pass } from "../types.ts";', 'import { items } from "../tree.ts";'];
   for (const source of allowed) assert.deepEqual(violationsIn(dirAbs, source), [], `should not have flagged: ${source}`);
+});
+
+// docs/BUGS.md 2026-09-02: a statement with no `from` clause of its own,
+// followed later in the file by a string literal ending `...from"`, used to
+// have the regex hunt across the statement/newline/string boundary and
+// capture bogus text as an "import" — flagging a wholly legal file. A real
+// illegal import elsewhere in the same file must still be caught.
+test("D12a import boundary: a string literal ending in 'from\"' is not mistaken for an import clause, but a real illegal import still is", () => {
+  const dirAbs = join(passesDir, "loop-cond");
+  const source = [
+    'import { bad } from "../../emit/conds.ts";',
+    "",
+    "export function license() {",
+    '  return "Portions of this file are derived from";',
+    "}",
+    "",
+    'const OTHER = "ignored";',
+    "",
+  ].join("\n");
+  assert.deepEqual(violationsIn(dirAbs, source), ["../../emit/conds.ts"], "should flag exactly the one real illegal import, and no bogus entry derived from the string literal");
 });
 
 test("D12a: src/passes/README.md is the one page an implementer reads", () => {
