@@ -319,3 +319,76 @@ CREATE VIEW v_json_findings AS
            'status', d.status, 'claim', d.claim) AS j,
          r.rid FROM revisions r JOIN d_findings d ON d.rid = r.rid
    WHERE r.kind = 'finding' ORDER BY r.rid;
+
+-- ===========================================================================
+-- MIGRATION 2 — worker/session operational stratum (docs/specs/23-ui-workers.md
+-- §3/§4). ADDITIVE ONLY. Everything between the two markers below is (a)
+-- applied to a fresh DB as part of this file and (b) re-applied on its own by
+-- `db.ts`'s `migrateProjectDb` to a minor-1 DB, so the block must stay
+-- idempotent (`IF NOT EXISTS` on every object) and must never alter an
+-- existing v1 object.
+--
+-- Boundary rule (spec 18 §4, restated in spec 23 §4.1): these tables are
+-- OPERATIONAL state, not authoritative analysis — they are never exported to
+-- `analysis/` shards and never enter the hash-chained `log/`. `cache.db` is
+-- disposable (spec 18 §2); losing a job queue loses nothing authoritative,
+-- because a job's *output* is an annotation written through the normal write
+-- path. `sessions`/`jobs`/`claims` are therefore mutable (no append-only
+-- triggers, unlike `log`/`revisions`); `worker_events` is the append-only
+-- change feed and DOES carry the trigger pair.
+-- >>> MIGRATION 2 >>>
+CREATE TABLE IF NOT EXISTS sessions (
+  id        TEXT PRIMARY KEY,          -- caller-supplied or content-derived id
+  kind      TEXT NOT NULL CHECK (kind IN ('human','worker','external')),
+  who       TEXT NOT NULL,             -- email | 'worker:<jobKind>' | mcp client id
+  opened_at TEXT NOT NULL,             -- iso
+  last_seen TEXT NOT NULL,             -- iso; heartbeat (spec 23 §3)
+  closed_at TEXT,                      -- iso, or NULL while open
+  meta      TEXT                       -- small JSON
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS sessions_live ON sessions(closed_at, last_seen);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id              TEXT PRIMARY KEY,    -- content hash (spec 23 §1)
+  kind            TEXT NOT NULL,       -- 'explain-fn' | 'suggest-name' | … (§1)
+  input           TEXT NOT NULL,       -- JSON
+  status          TEXT NOT NULL CHECK (status IN
+                    ('queued','running','done','failed','cancelled')),
+  idempotency_key TEXT NOT NULL UNIQUE,
+  created_by      TEXT REFERENCES sessions(id),
+  created_at      TEXT NOT NULL,
+  started_at      TEXT,
+  finished_at     TEXT,
+  progress_done   INTEGER NOT NULL DEFAULT 0,
+  progress_total  INTEGER,
+  attempts        INTEGER NOT NULL DEFAULT 0,   -- retry policy (§2.4)
+  result          TEXT,                -- JSON: {tier,proposal,writes:[…]}
+  error           TEXT,
+  cost            TEXT                 -- JSON: {maxTokens,maxSeconds,tokensIn,tokensOut}
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status, created_at, id);
+
+CREATE TABLE IF NOT EXISTS claims (
+  target      TEXT PRIMARY KEY,        -- 'fn:N' | 'mod:N' (id.ts vocabulary)
+  session     TEXT NOT NULL REFERENCES sessions(id),
+  acquired_at TEXT NOT NULL,
+  expires_at  TEXT NOT NULL            -- advisory TTL (§3)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS worker_events (
+  seq     INTEGER PRIMARY KEY,         -- monotonic; the UI tails this
+  ts      TEXT NOT NULL,
+  type    TEXT NOT NULL CHECK (type IN
+            ('session.open','session.close',
+             'job.queued','job.started','job.progress','job.done','job.failed','job.cancelled',
+             'claim.acquire','claim.release')),
+  session TEXT,
+  job     TEXT,
+  target  TEXT,
+  detail  TEXT                         -- small JSON
+);
+CREATE TRIGGER IF NOT EXISTS worker_events_no_update BEFORE UPDATE ON worker_events
+  BEGIN SELECT RAISE(ABORT,'E_APPEND_ONLY: worker_events'); END;
+CREATE TRIGGER IF NOT EXISTS worker_events_no_delete BEFORE DELETE ON worker_events
+  BEGIN SELECT RAISE(ABORT,'E_APPEND_ONLY: worker_events'); END;
+-- <<< MIGRATION 2 <<<

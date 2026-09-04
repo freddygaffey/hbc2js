@@ -19,11 +19,72 @@ export const APPLICATION_ID = 0x48425250;
 export const USER_VERSION = 1;
 /** `meta.schema` row value. */
 export const SCHEMA_VERSION = "hbc2js-proj/1";
+/** `meta.schema_minor` row value — the ADDITIVE schema minor within the
+ *  `user_version`/`meta.schema` major. Minor 1 is the original v1 DDL; minor 2
+ *  adds the worker/session operational stratum (`sessions`, `jobs`, `claims`,
+ *  `worker_events` — docs/specs/23-ui-workers.md §3/§4.1). A minor bump is
+ *  additive BY DEFINITION: it may only create new objects, never alter or drop
+ *  an existing one, so an older DB is migrated forward in place (§`migrateProjectDb`)
+ *  and a NEWER minor still opens read/write with this build (its extra tables are
+ *  simply unused) — unlike a major mismatch, which is refused. */
+export const SCHEMA_MINOR = 2;
 
 export class ProjectDbVersionError extends Error {}
 
 function schemaSqlPath(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "schema.sql");
+}
+
+/** The DDL block for one schema minor, sliced out of `schema.sql` between its
+ *  `-- >>> MIGRATION n >>>` / `-- <<< MIGRATION n <<<` markers. One source of
+ *  truth: a fresh DB gets the block by applying the whole file, an older DB
+ *  gets exactly the same text re-applied by `migrateProjectDb`. Every
+ *  statement in a migration block is `IF NOT EXISTS`, so re-application is a
+ *  no-op. Minor 1 is the pre-marker body of the file and has no block. */
+export function migrationSql(minor: number): string {
+  if (minor <= 1) return "";
+  const ddl = readFileSync(schemaSqlPath(), "utf8");
+  const start = ddl.indexOf(`-- >>> MIGRATION ${minor} >>>`);
+  const end = ddl.indexOf(`-- <<< MIGRATION ${minor} <<<`);
+  if (start < 0 || end < 0 || end < start) {
+    throw new ProjectDbVersionError(`migrationSql: schema.sql has no MIGRATION ${minor} block`);
+  }
+  return ddl.slice(start, end);
+}
+
+function readMinor(db: DatabaseSync): number {
+  let row: { value: string } | undefined;
+  try {
+    row = db.prepare("SELECT value FROM meta WHERE key = 'schema_minor'").get() as { value: string } | undefined;
+  } catch {
+    row = undefined;
+  }
+  const n = row === undefined ? 1 : Number.parseInt(row.value, 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+/** Brings an already-identity-verified DB up to `SCHEMA_MINOR` by applying each
+ *  missing migration block (§`migrationSql`) in one transaction and recording
+ *  the new `meta.schema_minor`. Returns the minor the DB is at afterwards. A DB
+ *  already at (or beyond) `SCHEMA_MINOR` is untouched — this is a pure
+ *  forward, additive migration: no existing row is read, rewritten or deleted,
+ *  so it cannot disturb the annotation/log strata or their append-only
+ *  triggers (docs/specs/23-ui-workers.md §4.1). */
+export function migrateProjectDb(db: DatabaseSync): number {
+  const from = readMinor(db);
+  if (from >= SCHEMA_MINOR) return from;
+  db.exec("BEGIN;");
+  try {
+    for (let m = from + 1; m <= SCHEMA_MINOR; m++) db.exec(migrationSql(m));
+    db.prepare("INSERT INTO meta (key, value) VALUES ('schema_minor', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
+      String(SCHEMA_MINOR),
+    );
+    db.exec("COMMIT;");
+  } catch (err) {
+    db.exec("ROLLBACK;");
+    throw err;
+  }
+  return SCHEMA_MINOR;
 }
 
 /** Opens (creating if absent) a project DB at `path`. A fresh file gets the
@@ -49,6 +110,7 @@ export function openProjectDb(path: string): DatabaseSync {
       const now = new Date().toISOString();
       const insertMeta = db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)");
       insertMeta.run("schema", SCHEMA_VERSION);
+      insertMeta.run("schema_minor", String(SCHEMA_MINOR));
       insertMeta.run("created_at", now);
       db.exec("COMMIT;");
     } catch (err) {
@@ -57,6 +119,9 @@ export function openProjectDb(path: string): DatabaseSync {
     }
   } else {
     verifyProjectDb(db, path);
+    // Additive minors are migrated in place on open: a project written by an
+    // older build must keep opening (docs/specs/23-ui-workers.md §8).
+    migrateProjectDb(db);
   }
   return db;
 }
