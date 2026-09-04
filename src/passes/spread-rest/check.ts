@@ -5,7 +5,7 @@
 // offset, and the canonical expansion of what was *written* is diffed,
 // through `effectSequence`, against the matched run's real effect sequence.
 import type { Expr, Stmt } from "../ast.ts";
-import { effectSequence, identUses, isSafeIdentifier, parses } from "../ast.ts";
+import { effectSequence, identUses, isSafeIdentifier } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
 import { extractFunc, match } from "./match.ts";
 import type { PropEl, SpreadRestSite } from "./match.ts";
@@ -88,7 +88,14 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
     if (!sameJson(afterFunc.params.slice(0, -1), beforeFunc.params)) return { ok: false, reason: "rest rewrite changed an existing param" };
     const reads = identUses(afterFunc.body, last.name);
     if (reads.reads !== 1 || reads.writes !== 0) return { ok: false, reason: "rest rewrite's fresh name is not read exactly once" };
-    if (!parses(after)) return { ok: false, reason: "spread-rest produced unparseable output" };
+    // Deliberately NOT `parses(after)` per site: the stage-B driver already
+    // runs `parses` once per (pass, function) on the whole reconstructed body
+    // (`src/passes/README.md`); doing it here too both costs a whole-list
+    // print+parse on every site of a real bundle and spuriously refuses one
+    // whose enclosing list holds an untouched bare `break`/`continue` (legal
+    // in the real function, illegal the moment this list alone is wrapped
+    // standalone — object-literal/check.ts, commit 3b0ec3a, docs/BUGS.md
+    // `stage-b-per-site-parses`).
     return { ok: true };
   }
 
@@ -156,6 +163,6 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   const actual = JSON.stringify(effectSequence(realExpand(before, site)));
   if (expected !== actual) return { ok: false, reason: "spread-rest changed the observable effect sequence" };
 
-  if (!parses(after)) return { ok: false, reason: "spread-rest produced unparseable output" };
+  // See the `rest`-rule branch above: deliberately not re-checked here.
   return { ok: true };
 }

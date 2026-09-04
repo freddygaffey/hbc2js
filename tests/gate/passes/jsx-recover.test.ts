@@ -131,6 +131,25 @@ test("check refuses an `after` that is not the derived fold, and one whose node 
   assert.equal(check(before, tampered, ctx).ok, false);
 });
 
+// `stage-b-per-site-parses` (docs/BUGS.md): a per-site `parses(after)` call
+// used to refuse a site the instant its enclosing statement list also held
+// an untouched bare `break`/`continue` — legal in the real function (an
+// enclosing loop/switch this list-level check never sees), illegal only
+// because `parses` wraps *this list alone* standalone. Prepending one such
+// statement, untouched by the rewrite, must not change the verdict.
+test("check does not refuse a site whose enclosing list also holds an untouched bare `break`", () => {
+  const bareBreak: Stmt = { k: "break", label: null };
+  const before = [bareBreak, ...automaticSite()];
+  const ctx = ctxFor(before);
+  const m = match(before, ctx);
+  assert.ok(m !== null);
+  const after = rewrite(m!);
+  // The bug this guards: printing `after` alone (as this per-site checker
+  // used to) is not valid JS on its own — proof the fix is not vacuous.
+  assert.equal(parses(after), false);
+  assert.deepEqual(check(before, after, ctx), { ok: true });
+});
+
 // ---------------------------------------------------------------------------
 // Framework (D20 §7): registry, opt-in, printer.
 // ---------------------------------------------------------------------------

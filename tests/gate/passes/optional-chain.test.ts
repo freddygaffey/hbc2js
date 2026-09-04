@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { decompile } from "../../../src/decompile.ts";
 import type { Expr, Stmt } from "../../../src/emit/ast.ts";
+import { parses } from "../../../src/passes/ast.ts";
 import { check } from "../../../src/passes/optional-chain/check.ts";
 import { optionalChain } from "../../../src/passes/optional-chain/index.ts";
 import { match } from "../../../src/passes/optional-chain/match.ts";
@@ -307,6 +308,25 @@ test("optional-chain: check rejects a mutated ?? (fallback swapped for an unrela
   const mutated: Stmt = { ...stmt, expr: { ...value, value: { ...(value.value as Extract<Expr, { k: "logical" }>), right: lit("999") } } };
   const res = check(body, [...after.slice(0, -1), mutated], { ...ctx, fnBody: body });
   assert.equal(res.ok, false);
+});
+
+// `stage-b-per-site-parses` (docs/BUGS.md): a per-site `parses(after)` call
+// used to refuse a site the instant its enclosing statement list also held
+// an untouched bare `break`/`continue` — legal in the real function (an
+// enclosing loop/switch this list-level check never sees), illegal only
+// because `parses` wraps *this list alone* standalone. Prepending one such
+// statement, untouched by the rewrite, must not change the verdict.
+test("optional-chain: check does not refuse a site whose enclosing list also holds an untouched bare `break`", () => {
+  const bareBreak: Stmt = { k: "break", label: null };
+  const body = [bareBreak, ...oneLinkBody()];
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.ok(m !== null);
+  const after = rewrite(m!);
+  // The bug this guards: printing `after` alone (as this per-site checker
+  // used to) is not valid JS on its own — proof the fix is not vacuous.
+  assert.equal(parses(after), false);
+  const res = check(body, after, { ...ctx, fnBody: body });
+  assert.equal(res.ok, true, res.reason);
 });
 
 // ---------------------------------------------------------------------------

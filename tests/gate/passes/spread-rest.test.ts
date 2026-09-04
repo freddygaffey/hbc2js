@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { decompile } from "../../../src/decompile.ts";
 import type { Expr, Stmt } from "../../../src/emit/ast.ts";
 import { printProgram } from "../../../src/emit/print.ts";
+import { parses } from "../../../src/passes/ast.ts";
 import { check } from "../../../src/passes/spread-rest/check.ts";
 import { spreadRest } from "../../../src/passes/spread-rest/index.ts";
 import { match } from "../../../src/passes/spread-rest/match.ts";
@@ -258,6 +259,26 @@ test("spread-rest: check rejects a spread rewritten as a non-spread element (wro
   const mutated = rewritten.map((s, i) => (i === idx ? { ...stmt, expr: { ...assign, value: { ...callExpr, args: mutatedArgs } } } : s));
   const res = check(body, mutated, { ...ctx, fnBody: body });
   assert.equal(res.ok, false);
+});
+
+// `stage-b-per-site-parses` (docs/BUGS.md): a per-site `parses(after)` call
+// used to refuse a site the instant its enclosing statement list also held
+// an untouched bare `break`/`continue` — legal in the real function (an
+// enclosing loop/switch this list-level check never sees), illegal only
+// because `parses` wraps *this list alone* standalone. Prepending one such
+// statement, untouched by the rewrite, must not change the verdict.
+test("spread-rest: check does not refuse a site whose enclosing list also holds an untouched bare `break`", () => {
+  const bareBreak: Stmt = { k: "break", label: null };
+  const body = [bareBreak, ...arrayBody()];
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.notEqual(m, null);
+  const rewritten = spreadRest.rewrite(m!, ctx);
+  // The bug this guards: printing `rewritten` alone (as this per-site
+  // checker used to) is not valid JS on its own — proof the fix is not
+  // vacuous.
+  assert.equal(parses(rewritten), false);
+  const res = check(body, rewritten, { ...ctx, fnBody: body });
+  assert.equal(res.ok, true, JSON.stringify(res));
 });
 
 // ---------------------------------------------------------------------------

@@ -12,16 +12,21 @@
 //      those definitions' values in place — which is what the guards prove
 //      evaluates the same effects in the same order as the statements they
 //      came from.
-//   3. `parses(after)` — printed without `--jsx` every `jsx` node lowers to
-//      its call, so this is the same whole-function guard every other stage-B
-//      rung gets, on runnable JS.
+//   3. (formerly) `parses(after)` — deliberately removed: the stage-B driver
+//      already runs `parses` once per (pass, function) on the whole
+//      reconstructed body (`src/passes/README.md`), so a per-site call here
+//      both costs a whole-list print+parse on every site of a real bundle
+//      and spuriously refuses one whose enclosing list holds an untouched
+//      bare `break`/`continue` (legal in the real function, illegal the
+//      moment this list alone is wrapped standalone — object-literal/
+//      check.ts, commit 3b0ec3a, docs/BUGS.md `stage-b-per-site-parses`).
 //
 // `expressionOnlyCheck` is deliberately not used: absorbing `rP = {}; rP.k =
 // v` removes fresh-object `member-write` entries from the effect sequence by
 // design (unobservable — no setter can exist on a literal `{}`). The
 // obligations above are the precise replacement.
 import type { Stmt } from "../ast.ts";
-import { jsxToCall, parses } from "../ast.ts";
+import { jsxToCall } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
 import { deriveSites } from "./match.ts";
 
@@ -43,6 +48,5 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
       if (k > 1 || c.args[k]!.k !== "ident" || s.absorbed.length === 0) return { ok: false, reason: "resolved call substitutes an operand the site did not absorb" };
     }
   }
-  if (!parses(after)) return { ok: false, reason: "the lowered output does not parse" };
   return { ok: true };
 }

@@ -16,7 +16,6 @@
 // changes exactly that node's kind with nothing else in the printed source
 // moving — the comparison at "chain link kind mismatch" below rejects it.
 import type { Expr, Stmt } from "../ast.ts";
-import { parses } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
 import type { ChainLink, NullishSite } from "./match.ts";
 import { match } from "./match.ts";
@@ -89,7 +88,14 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
         }
       }
     }
-    if (!parses(after)) return { ok: false, reason: "optional-chain produced unparseable output" };
+    // Deliberately NOT `parses(after)` per site: the stage-B driver already
+    // runs `parses` once per (pass, function) on the whole reconstructed body
+    // (`src/passes/README.md`); doing it here too both costs a whole-list
+    // print+parse on every site of a real bundle and spuriously refuses one
+    // whose enclosing list holds an untouched bare `break`/`continue` (legal
+    // in the real function, illegal the moment this list alone is wrapped
+    // standalone — object-literal/check.ts, commit 3b0ec3a, docs/BUGS.md
+    // `stage-b-per-site-parses`).
     return { ok: true };
   }
 
@@ -109,6 +115,6 @@ function checkNullish(site: NullishSite, before: readonly Stmt[], after: readonl
   if (value.k !== "logical" || value.op !== "??") return { ok: false, reason: "optional-chain (??) did not produce a `??` node" };
   if (!sameExpr(value.left, site.left) || !sameExpr(value.right, site.fallback)) return { ok: false, reason: "optional-chain (??) operands are not reference-equal" };
   void before;
-  if (!parses(after)) return { ok: false, reason: "optional-chain (??) produced unparseable output" };
+  // See the `chain` branch above: deliberately not re-checked here.
   return { ok: true };
 }

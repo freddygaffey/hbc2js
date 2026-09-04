@@ -5,7 +5,7 @@
 // `expr-rebuild/check.ts`, `for-header/check.ts` and `loop-cond/check.ts`
 // use.
 import type { Expr, Stmt } from "../ast.ts";
-import { effectSequence, freeNames, parses } from "../ast.ts";
+import { effectSequence, freeNames } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
 import type { FuncLike } from "./match.ts";
 import { buildFunc, classifyFunc, extractFunc } from "./match.ts";
@@ -114,8 +114,14 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
     if (F1.body.some((s) => s.k === "decl" && s.names.includes(d.rX))) return { ok: false, reason: "a moved parameter is still declared with let" };
   }
 
-  // §6 item 6 / F15's printer backstop.
-  if (!parses(after)) return { ok: false, reason: "default-params produced unparseable output" };
+  // §6 item 6 / F15's printer backstop: deliberately NOT `parses(after)` per
+  // site. The stage-B driver already runs `parses` once per (pass, function)
+  // on the whole reconstructed body (`src/passes/README.md`); doing it here
+  // too both costs a whole-list print+parse on every site of a real bundle
+  // and spuriously refuses one whose enclosing list holds an untouched bare
+  // `break`/`continue` (legal in the real function, illegal the moment this
+  // list alone is wrapped standalone — object-literal/check.ts, commit
+  // 3b0ec3a, docs/BUGS.md `stage-b-per-site-parses`).
 
   return { ok: true };
 }

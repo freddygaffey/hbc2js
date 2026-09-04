@@ -17,6 +17,7 @@ import { repoRoot } from "../../support/paths.ts";
 import { decompile } from "../../../src/decompile.ts";
 import type { Expr, Param, Stmt } from "../../../src/emit/ast.ts";
 import { p } from "../../../src/emit/ast.ts";
+import { parses } from "../../../src/passes/ast.ts";
 import { check } from "../../../src/passes/default-params/check.ts";
 import { defaultParams } from "../../../src/passes/default-params/index.ts";
 import { classifyFunc, rewriteList } from "../../../src/passes/default-params/match.ts";
@@ -177,6 +178,25 @@ test("default-params: check() rejects a before/after pair whose guard polarity w
   const flippedBody: readonly Stmt[] = [decl(["r0", "r1"]), flippedLabeled, ret(id("r0"))];
   const flippedBefore: readonly Stmt[] = [{ k: "func", name: "f", params: [], body: flippedBody }];
   assert.equal(check(flippedBefore, real, ctx).ok, false);
+});
+
+// `stage-b-per-site-parses` (docs/BUGS.md): a per-site `parses(after)` call
+// used to refuse a site the instant its enclosing statement list also held
+// an untouched bare `break`/`continue` — legal in the real function (an
+// enclosing loop/switch this list-level check never sees), illegal only
+// because `parses` wraps *this list alone* standalone. Prepending one such
+// statement, untouched by the rewrite, must not change the verdict.
+test("default-params: check() does not refuse a site whose enclosing list also holds an untouched bare `break`", () => {
+  const F = greetFunc();
+  const bareBreak: Stmt = { k: "break", label: null };
+  const list: readonly Stmt[] = [bareBreak, { k: "func", name: F.name!, params: F.params, body: F.body }];
+  const m = match(list, ctx);
+  assert.ok(m !== null);
+  const after = rewriteList(list, m!.data);
+  // The bug this guards: printing `after` alone (as this per-site checker
+  // used to) is not valid JS on its own — proof the fix is not vacuous.
+  assert.equal(parses(after), false);
+  assert.equal(check(list, after, ctx).ok, true);
 });
 
 // ---------------------------------------------------------------------------
