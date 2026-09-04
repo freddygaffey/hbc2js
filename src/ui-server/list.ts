@@ -17,8 +17,11 @@ import type { ModuleEntry, ModulesIndex } from "../artifact/schema.ts";
 import { hasProjectDb, openProjectDbReadonly, loadIndexRowsFromDb } from "../projdb/artifact-read.ts";
 
 /** Every module the artifact knows about — own cap (never widens anything
- *  `resources.ts` publishes; this is a new list this layer owns). */
-const CAP_MODULES = 500;
+ *  `resources.ts` publishes; this is a new list this layer owns). The UI's
+ *  module tree needs the whole list in one response: a real 12 MB RN app
+ *  (Service NSW) has 4,510 modules, so 500 truncated the tree to a ninth of
+ *  the app. Rows are ~60 bytes each; 20,000 is ~1 MB, plenty of headroom. */
+export const CAP_MODULES = 20_000;
 
 export interface ModuleListResult {
   readonly rows: readonly ModuleEntry[];

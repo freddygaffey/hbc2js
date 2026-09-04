@@ -356,3 +356,13 @@ test("GET /api/events forwards a log event after a set-name write", async () => 
     rmSync(ssOutDir, { recursive: true, force: true });
   }
 });
+
+test("GET /api/modules is not truncated below a real app's module count (Service NSW: 4,510)", async () => {
+  // regression: CAP_MODULES was 500, so the tree showed 500 of 4,510 modules.
+  const r = await get("/api/modules");
+  const body = r.json as { rows: readonly unknown[]; total: number; truncated: boolean };
+  assert.equal(body.truncated, false);
+  assert.equal(body.rows.length, body.total);
+  const { CAP_MODULES } = await import("../../src/ui-server/list.ts");
+  assert.ok(CAP_MODULES >= 5000, `CAP_MODULES ${CAP_MODULES} must cover a 4,510-module app`);
+});
