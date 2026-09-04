@@ -117,7 +117,7 @@ test("xref/string mode=exact resolves a known sid", () => {
 });
 
 test("xref/string mode=exact inlines each use row with the using function's name/size", () => {
-  const r = res.xrefString(SHARED_SID, "exact") as { uses: { rows: { fn: number; name: string | null; size: number | null }[] } };
+  const r = res.xrefString(SHARED_SID, "exact") as unknown as { uses: { rows: { fn: number; name: string | null; size: number | null }[] } };
   assert.ok(r.uses.rows.length > 0);
   for (const row of r.uses.rows) assert.ok("name" in row && "size" in row);
 });

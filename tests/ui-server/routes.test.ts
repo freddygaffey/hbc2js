@@ -244,7 +244,7 @@ test("GET /api/xref/string mode=exact matches resources.xrefString", async () =>
   const r = await get("/api/xref/string", { key: "69", mode: "exact" });
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, resources.xrefString(69, "exact"));
-  const body = r.json as { uses: { rows: { name: string | null; size: number | null }[] } };
+  const body = r.json as unknown as { uses: { rows: { name: string | null; size: number | null }[] } };
   for (const row of body.uses.rows) assert.ok("name" in row && "size" in row);
 });
 
