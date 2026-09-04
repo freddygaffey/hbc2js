@@ -1,5 +1,12 @@
 # 2026-09-04 — fuzz campaign finds reclassified (post fix-wave step 3 A+B)
 
+> **Superseded 2026-09-04** by `2026-09-04-finds-reclassified-post-f2.md`:
+> after the family-F2 fix in `src/passes/expr-rebuild/match.ts`, DIVERGENT is
+> 9 -> 5. The four cleared finds are `v96-seed780933`, `v99-seed777358`,
+> `v99-seed777578`, `v99-seed777648`. The note below that assigns 8 of the 9
+> survivors to family F2 is wrong: only those four were the F2 bug.
+
+
 Same 201 campaign finds as `2026-09-04-finds-reclassified-post-p16.md`,
 re-run on the `deb` box (own clone `~/hbc2js-fixwave3`, fnm node v22.23.2)
 with the resource-ceiling marker (step 3A) and the missing-global wording
