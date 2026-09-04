@@ -189,6 +189,55 @@ test("positive: a real host global (`print`) now folds — the folded read is st
   assert.deepEqual(check(before, after, ctx), { ok: true });
 });
 
+// ---------------------------------------------------------------------------
+// §4 condition 5 — loop re-entry (docs/BUGS.md T14, fixed 2026-09-04).
+// `isProvenGlobal`'s whole-function "first write is the only globalThis
+// write" rule is position-blind, which is only sound where the site runs
+// once. Inside a loop, a write textually AFTER the read runs BEFORE it on
+// every repeat visit.
+// ---------------------------------------------------------------------------
+
+test("loop-reentry-clobber: a write nested inside the loop body (after the read, in an `if`) can precede the read on re-entry and refuses the fold", () => {
+  const loopBody: readonly Stmt[] = [
+    guardFor("Array", id("r1")),
+    exprStmt(assignExpr(id("r0"), member(id("r1"), "Array"))),
+    { k: "if", test: id("cond"), then: [exprStmt(assignExpr(id("r1"), id("other")))], else: [] },
+  ];
+  const fnBody: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), { k: "while", label: null, test: id("r2"), body: loopBody }];
+  const shape = recognizeGuard(loopBody[0]!)!;
+  assert.deepEqual(classifySite(loopBody, fnBody, 0, shape.name, shape.global), { ok: false, reason: "loop-reentry-clobber" });
+  assert.equal(match(loopBody, ctxFor(fnBody)), null);
+});
+
+test("loop-reentry-clobber: the enclosing loop scanned is the OUTERMOST one — a clobber in an outer loop body, outside the inner loop holding the site, still refuses", () => {
+  const innerBody: readonly Stmt[] = [guardFor("Array", id("r1")), exprStmt(assignExpr(id("r0"), member(id("r1"), "Array")))];
+  const outerBody: readonly Stmt[] = [
+    { k: "while", label: null, test: id("r3"), body: innerBody },
+    exprStmt(assignExpr(id("r1"), id("other"))), // runs before the inner loop on the OUTER loop's 2nd visit
+  ];
+  const fnBody: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), { k: "while", label: null, test: id("r2"), body: outerBody }];
+  const shape = recognizeGuard(innerBody[0]!)!;
+  assert.deepEqual(classifySite(innerBody, fnBody, 0, shape.name, shape.global), { ok: false, reason: "loop-reentry-clobber" });
+  assert.equal(match(innerBody, ctxFor(fnBody)), null);
+});
+
+test("positive: a write inside the loop valued `globalThis` itself is not a clobber — it re-establishes exactly the value being proven, so the fold stands", () => {
+  const loopBody: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r1"), id("globalThis"))),
+    guardFor("Array", id("r1")),
+    exprStmt(reflectApply(member(id("r1"), "Array"), id("undefined"), [])),
+  ];
+  const fnBody: readonly Stmt[] = [{ k: "while", label: null, test: id("r2"), body: loopBody }];
+  const ctx = ctxFor(fnBody);
+  const shape = recognizeGuard(loopBody[1]!)!;
+  assert.deepEqual(classifySite(loopBody, fnBody, 1, shape.name, shape.global), { ok: true, site: { guardIndex: 1, useIndex: 2, name: "Array", global: id("r1") } });
+  const m = match(loopBody, ctx);
+  assert.ok(m !== null);
+  const after = rewrite(m);
+  assert.deepEqual(after, [exprStmt(assignExpr(id("r1"), id("globalThis"))), exprStmt(reflectApply(gid("Array"), id("undefined"), []))]);
+  assert.deepEqual(check(loopBody, after, ctx), { ok: true });
+});
+
 test("clobbered-between: a statement between the guard and the read reassigns the object", () => {
   const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), guardFor("Array", id("r1")), exprStmt(assignExpr(id("r1"), id("somethingElse"))), exprStmt(call(member(id("r1"), "Array"), []))];
   assert.equal(match(before, ctxFor(before)), null);

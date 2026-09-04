@@ -9,7 +9,7 @@
 import type { Effect, Expr, Stmt } from "../ast.ts";
 import { defUse, effectSequence, isSafeIdentifier } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
-import { isProvenGlobal, isShadowed, isTargetRead, recognizeGuard } from "./match.ts";
+import { hasLoopReentryClobber, isProvenGlobal, isShadowed, isTargetRead, recognizeGuard } from "./match.ts";
 import { substitute } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
@@ -120,6 +120,13 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // Item 4: `G` is still a proven global reference in `before`.
   const fnBody = ctx.fnBody ?? before;
   if (!isProvenGlobal(fnBody, global)) return { ok: false, reason: "unproven-global" };
+
+  // Item 4b (§4 condition 5, docs/BUGS.md T14): the whole-function proof
+  // above is position-blind, so it is only sound where the site runs once.
+  // Re-derived here exactly as `classifySite` derives it — `before` is the
+  // same list object the driver matched, so `outermostLoopBodyContaining`
+  // finds the same enclosing loop from `ctx.fnBody`.
+  if (hasLoopReentryClobber(fnBody, before, global)) return { ok: false, reason: "loop-reentry-clobber" };
 
   // Item 5: `p` is not a declared name in `before`.
   if (!isSafeIdentifier(name)) return { ok: false, reason: "unsafe-identifier" };

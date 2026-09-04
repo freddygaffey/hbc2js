@@ -22,7 +22,7 @@ export interface GlobalAccessSite {
 
 export type GlobalAccessMatch = Match<readonly Stmt[], GlobalAccessSite>;
 
-export type RefuseReason = "unproven-global" | "shadowed" | "unsafe-identifier" | "no-read-after-guard" | "clobbered-between" | "read-twice" | "guard-in-other-list";
+export type RefuseReason = "unproven-global" | "loop-reentry-clobber" | "shadowed" | "unsafe-identifier" | "no-read-after-guard" | "clobbered-between" | "read-twice" | "guard-in-other-list";
 
 export type ClassifyResult = { readonly ok: true; readonly site: GlobalAccessSite } | { readonly ok: false; readonly reason: RefuseReason };
 
@@ -132,7 +132,13 @@ function registerStoreValues(stmts: readonly Stmt[], reg: string): readonly Expr
  * (ambiguous: which one dominates a given read?) and still requires
  * `identUses(...).nested === 0` and — for the one guard/read pair actually
  * being folded — the unchanged §4 condition 3 ("no statement in
- * `L[i+1..j-1]` writes `G`") as the local clobber guard for *that* site. It
+ * `L[i+1..j-1]` writes `G`") as the local clobber guard for *that* site.
+ *
+ * This proof is deliberately whole-function and **position-blind**: it answers
+ * "which write ever put `globalThis` here", not "can it still be there at this
+ * site". The site-aware half — chronology is only domination where control
+ * runs through the list once — is §4 condition 5, `hasLoopReentryClobber`
+ * below (docs/BUGS.md T14). It
  * is unsound only against a register whose value legitimately reverts to
  * `globalThis`-equivalent behaviour after an intervening reassignment in a
  * *different* statement list the current site cannot see — a shape no
@@ -148,6 +154,91 @@ export function isProvenGlobal(fnBody: readonly Stmt[], e: Expr): boolean {
   const writes = registerStoreValues(fnBody, e.name);
   const globalWriteIndices = writes.reduce<number[]>((acc, w, idx) => (w.k === "ident" && w.name === "globalThis" ? [...acc, idx] : acc), []);
   return globalWriteIndices.length === 1 && globalWriteIndices[0] === 0;
+}
+
+// ---------------------------------------------------------------------------
+// §4 condition 5: repeat-visit (loop re-entry) soundness.
+// ---------------------------------------------------------------------------
+
+/** The **outermost** loop body (`while`/`do-while`/`for`, labelled or not)
+ *  that transitively contains the statement list `target`, or `null` when
+ *  `target` is not inside a loop at all. Lists are compared by *identity*:
+ *  `stmtLists` (`src/passes/ast.ts`) hands the driver the very arrays that
+ *  live inside `ctx.fnBody`, and `check` receives that same `before` array,
+ *  so both sides re-derive the same answer with no extra plumbing through
+ *  `classifySite`'s signature (the smaller of the two options the fix could
+ *  take — see docs/specs/passes/03-global-access.md §4). `labeled` and
+ *  `iife` bodies are *not* loops themselves (a labelled block runs once; a
+ *  labelled *loop* is a `while`/`for` carrying a `label`), but they are
+ *  transparent: a list inside a `labeled` inside a `while` is still inside
+ *  that `while`. A `func` body is a separate frame and is never entered. */
+function outermostLoopBodyContaining(fnBody: readonly Stmt[], target: readonly Stmt[]): readonly Stmt[] | null {
+  const visit = (list: readonly Stmt[], loop: readonly Stmt[] | null): { readonly loop: readonly Stmt[] | null } | null => {
+    if (list === target) return { loop };
+    for (const s of list) {
+      let hit: { readonly loop: readonly Stmt[] | null } | null = null;
+      switch (s.k) {
+        case "if":
+          hit = visit(s.then, loop) ?? visit(s.else, loop);
+          break;
+        case "while":
+        case "do-while":
+        case "for":
+          hit = visit(s.body, loop ?? s.body);
+          break;
+        case "labeled":
+        case "iife":
+          hit = visit(s.body, loop);
+          break;
+        case "try":
+          hit = visit(s.block, loop) ?? visit(s.handler, loop);
+          break;
+        case "switch":
+          for (const c of s.cases) {
+            hit = visit(c.body, loop);
+            if (hit !== null) break;
+          }
+          break;
+        default:
+          break; // decl, break, continue, return, throw, expr, func (separate frame)
+      }
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+  return visit(fnBody, null)?.loop ?? null;
+}
+
+/**
+ * §4 condition 5 (2026-08-30, docs/BUGS.md T14). `isProvenGlobal` is a
+ * whole-function, *position-blind* proof: "exactly one write is ever valued
+ * `globalThis`, and it is chronologically the first". Chronology in a
+ * statement list is only a sound stand-in for domination while control flow
+ * runs through that list **once**. Inside a loop, a write that comes *after*
+ * the guarded read in program text runs *before* it on every repeat visit,
+ * so a register the whole-function rule calls "proven" can hold something
+ * else from the 2nd iteration on and the fold to a bare global is wrong —
+ * the exact shape pinned in `tests/gate/passes/adversarial-ladder.test.ts`
+ * ("global-access BUG (pinned)") and confirmed divergent under `node:vm`.
+ *
+ * So: when the site's statement list is (transitively) inside a loop, take
+ * the **outermost** enclosing loop body — a clobber in an outer loop can
+ * precede the read on that outer loop's re-entry just as an inner one can —
+ * and refuse if it contains *any* write to `G`'s register whose value is not
+ * literally `globalThis`, wherever it sits relative to the read and however
+ * deeply nested. A write valued `globalThis` re-establishes exactly the
+ * value being proven, so it is not a clobber.
+ *
+ * Non-loop sites keep the whole-function rule unchanged, which is what keeps
+ * §7's `targets` fixtures green: Hermes reuses the `globalThis` register for
+ * a scratch value after its last guarded read, and that reuse is only a
+ * hazard if it can run again before the read.
+ */
+export function hasLoopReentryClobber(fnBody: readonly Stmt[], list: readonly Stmt[], e: Expr): boolean {
+  if (e.k !== "ident" || !isRegisterName(e.name)) return false; // bare `globalThis` cannot be assigned
+  const loopBody = outermostLoopBodyContaining(fnBody, list);
+  if (loopBody === null) return false;
+  return registerStoreValues(loopBody, e.name).some((w) => !(w.k === "ident" && w.name === "globalThis"));
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +450,7 @@ function isGuardShapeFor(s: Stmt, name: string): boolean {
 export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: number, name: string, global: Expr): ClassifyResult {
   if (!isSafeIdentifier(name)) return { ok: false, reason: "unsafe-identifier" };
   if (!isProvenGlobal(fnBody, global)) return { ok: false, reason: "unproven-global" };
+  if (hasLoopReentryClobber(fnBody, list, global)) return { ok: false, reason: "loop-reentry-clobber" };
   if (isShadowed(name, fnBody)) return { ok: false, reason: "shadowed" };
 
   for (let k = i + 1; k < list.length; k++) {

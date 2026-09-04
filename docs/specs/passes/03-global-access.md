@@ -78,6 +78,32 @@ conditions, all required:
 3. No statement in `L[i+1..j-1]` writes `G`, writes the property `p` on `G`, or
    contains another guard for `p`.
 4. The member read at `j` occurs **exactly once** in that statement.
+5. **Loop re-entry** (added 2026-09-04, docs/BUGS.md T14). Conditions 3 and
+   the global-reference proof above are both *chronological*: they read "later
+   in the list" as "later in time", which only holds while control passes
+   through the site **once**. If `L` is (transitively) inside a loop body, a
+   write that sits after the read in program text runs *before* it on every
+   repeat visit. So: let `B` be the body of the **outermost** loop
+   (`while`/`do-while`/`for`, labelled or not) that transitively contains `L`
+   — outermost, because a clobber in an outer loop can precede the read on
+   that outer loop's re-entry just as an inner one can. If `B` exists and any
+   write to `G`'s register anywhere in `B` (before or after the read, at any
+   nesting depth, excluding a nested `func`'s own frame) has a value other
+   than `{k:"ident", name:"globalThis"}`, refuse (`loop-reentry-clobber`). A
+   write valued `globalThis` re-establishes exactly the value being proven and
+   is not a clobber. Where no loop encloses `L`, the whole-function proof is
+   unchanged — which is what keeps §7's `targets` green, since Hermes's reuse
+   of the `globalThis` register for scratch after the last guarded read can
+   never run again before that read outside a loop.
+
+   *Implementation note.* The enclosing loop is computed from `ctx.fnBody` by
+   locating `L` **by identity** (`outermostLoopBodyContaining` in `match.ts`),
+   not plumbed through `classifySite`'s signature: `stmtLists`
+   (`src/passes/ast.ts`) hands the driver the very arrays that live inside
+   `ctx.fnBody`, and `check` is given that same `before` array, so both sides
+   re-derive the identical verdict with no signature change — the smaller of
+   the two options. A list that is not found under any loop (including
+   `ctx.fnBody` itself) is treated as non-loop.
 
 Match data: `{ guardIndex: i, useIndex: j, name: p, global: G }`.
 
@@ -110,7 +136,11 @@ the guard. `check` therefore asserts, recomputing from `before`:
    with the guard's effects and that member read removed must deep-equal
    `effectSequence(after)` with the corresponding identifier read removed;
 4. `G` is still a proven global reference (§4) in `before`;
-5. `p` is not a declared name in `before` (re-run the §4.2 test).
+5. `p` is not a declared name in `before` (re-run the §4.2 test);
+6. §4 condition 5 holds for `before` as the site list — the site is not inside
+   a loop whose outermost body clobbers `G`'s register
+   (`loop-reentry-clobber`). Re-derived here independently of `match`, like
+   every other item.
 
 ## 7. Ordering, refusals, semantics, metrics
 
@@ -128,7 +158,10 @@ Leave the pair alone; the readability cost is two lines in the global function
 only. Record the reason `global-var-declaration-is-observable` if a
 site is otherwise tempting.
 
-**Refuse (per-site):** `unproven-global`, `shadowed`, `unsafe-identifier`
+**Refuse (per-site):** `unproven-global`, `loop-reentry-clobber` (§4
+condition 5: the site is inside a loop whose outermost body writes `G`'s
+register a non-`globalThis` value, so the write can precede the guarded read
+on a repeat visit), `shadowed`, `unsafe-identifier`
 (`p` = `"default"`, or containing a `-`), `no-read-after-guard` (leave the
 guard), `clobbered-between`, `read-twice`, `guard-in-other-list` (guard and
 read must share a statement list; a read that migrated into a nested `if` body
@@ -146,8 +179,11 @@ a hard stop, not a tolerated delta.
 **Fixtures (red→green).** `targets: ["19-var-hoisting", "01-if-else-chain",
 "02-while-loop"]`, all five versions and `.min`/`.obf`. Unit tests: ≥1 positive,
 negatives for a guard whose name differs from the read, a shadowed name, a
-non-`globalThis` object, and a register with two `globalThis` stores; ≥1 site
-`check` refuses.
+non-`globalThis` object, and a register with two `globalThis` stores; a guard+read in a loop
+body whose register is clobbered inside that loop and one whose clobber sits
+in an enclosing outer loop (both `loop-reentry-clobber`), with positives for a
+loop body that never writes the register, a loop write valued `globalThis`
+itself, and the straight-line scratch-reuse idiom; ≥1 site `check` refuses.
 
 **Corpus metric.** Share of emitted functions containing zero
 `" in ` global guards: baseline 0 %, target **100 %** on

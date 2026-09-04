@@ -40,7 +40,7 @@ import { match as exprRebuildMatch } from "../../../src/passes/expr-rebuild/matc
 import { check as exprRebuildCheck } from "../../../src/passes/expr-rebuild/check.ts";
 import { classifyNode as callShapeClassify } from "../../../src/passes/call-shape/match.ts";
 import { check as callShapeCheck } from "../../../src/passes/call-shape/check.ts";
-import { match as globalAccessMatch, isProvenGlobal } from "../../../src/passes/global-access/match.ts";
+import { classifySite as globalAccessClassify, match as globalAccessMatch, isProvenGlobal, recognizeGuard as globalAccessRecognize } from "../../../src/passes/global-access/match.ts";
 import { check as globalAccessCheck } from "../../../src/passes/global-access/check.ts";
 import { rewrite as globalAccessRewrite } from "../../../src/passes/global-access/rewrite.ts";
 import type { Pass, PassContext } from "../../../src/passes/types.ts";
@@ -206,14 +206,20 @@ test("call-shape vicious case: Reflect.construct(getter, args, SAME getter) as n
 });
 
 // ---------------------------------------------------------------------------
-// 5. global-access — BUG. `isProvenGlobal` proves a register global by
-//    scanning EVERY write to it across the whole function and requiring
-//    exactly one write valued literally `globalThis`, chronologically
-//    first. It never checks whether a LATER write (elsewhere in the
-//    function) can execute again BEFORE the guarded read on a repeat visit
-//    — which is exactly what happens when the guard+read+a later clobber
-//    all live in the body of a loop. See docs/BUGS.md (2026-08-30,
-//    global-access loop-clobber).
+// 5. global-access — was a BUG, FIXED 2026-09-04 (docs/BUGS.md T14,
+//    "global-access loop-clobber", now Resolved). `isProvenGlobal` proves a
+//    register global by scanning EVERY write to it across the whole function
+//    and requiring exactly one write valued literally `globalThis`,
+//    chronologically first — a position-blind rule that never asked whether a
+//    LATER write can execute again BEFORE the guarded read on a repeat visit,
+//    which is exactly what happens when the guard+read+a later clobber all
+//    live in the body of a loop. `classifySite`/`check` now add §4 condition 5
+//    (`loop-reentry-clobber`, `hasLoopReentryClobber` in match.ts): at a site
+//    inside a loop, ANY write to the register anywhere in the outermost
+//    enclosing loop body valued something other than `globalThis` refuses the
+//    fold. The assertions below are the correct (post-fix) verdicts; the
+//    `node:vm` divergence run is kept as the standing proof that the refused
+//    form really was wrong.
 // ---------------------------------------------------------------------------
 
 function guardFor(p: string, g: Expr): Stmt {
@@ -225,35 +231,40 @@ function guardFor(p: string, g: Expr): Stmt {
   };
 }
 
-test("global-access BUG (pinned): a proven-global register clobbered later in a repeating loop body still folds, which is wrong from the 2nd iteration on", () => {
+test("global-access (was BUGS T14, fixed): a proven-global register clobbered later in a repeating loop body is REFUSED (loop-reentry-clobber) — folding it would be wrong from the 2nd iteration on", () => {
   // r1 = globalThis;
   // while (r2) {
   //   if (!("p" in r1)) throw new ReferenceError("Property 'p' doesn't exist");
-  //   r0 = r1.p;      <- global-access wants to fold this to bare `p`
+  //   r0 = r1.p;      <- global-access wanted to fold this to bare `p`
   //   r1 = other;     <- clobbers r1 for the NEXT iteration; same statement
-  //                      list as the guard+read, but AFTER the read, so
-  //                      classifySite never looks at it before returning ok
+  //                      list as the guard+read, but AFTER the read, so the
+  //                      old classifySite never looked at it before saying ok
   // }
   const loopBody: readonly Stmt[] = [guardFor("p", id("r1")), exprStmt(assignExpr(id("r0"), member(id("r1"), "p"))), exprStmt(assignExpr(id("r1"), id("other")))];
   const whileStmt: Stmt = { k: "while", label: null, test: id("r2"), body: loopBody };
   const fnBody: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), whileStmt];
   const ctx = astCtx(fnBody, {} as PassContext["cfg"]);
 
-  // The unsoundness lives in isProvenGlobal itself: it is whole-function and
-  // position-blind, so it says "proven" even though r1 is clobbered by a
-  // statement that executes (on the 2nd+ iteration) before the read it is
-  // "proving" — pinned here so a fix to isProvenGlobal must touch this test.
-  assert.equal(isProvenGlobal(fnBody, id("r1")), true, "current (unsound) behaviour: whole-function write-count proof ignores loop re-entry");
+  // `isProvenGlobal` itself is unchanged and still whole-function and
+  // position-blind — deliberately: it answers "which write ever put
+  // `globalThis` here", not "can it still be there at this site". The
+  // site-aware question is condition 5's, asked by classifySite/check.
+  assert.equal(isProvenGlobal(fnBody, id("r1")), true, "unchanged: the whole-function write-count proof on its own still says `proven`");
+
+  const shape = globalAccessRecognize(loopBody[0]!)!;
+  assert.deepEqual(globalAccessClassify(loopBody, fnBody, 0, shape.name, shape.global), { ok: false, reason: "loop-reentry-clobber" }, "fixed: the site is inside a loop whose body clobbers r1, so the fold is refused");
 
   const m = globalAccessMatch(loopBody, ctx);
-  assert.ok(m !== null, "current (wrong) behaviour: the fold is accepted");
-  const after = globalAccessRewrite(m);
-  assert.deepEqual(globalAccessCheck(loopBody, after, ctx), { ok: true }, "current (wrong) behaviour: check() re-derives the same unsound proof and also accepts it");
+  assert.equal(m, null, "fixed: the matcher finds no site at all here");
 
-  // Confirm the divergence is real by actually running both forms (no
-  // Hermes-vs-Node ambiguity here at all: no let-in-loop, no TDZ, no
-  // `arguments` — plain property reads under a global write, identical
-  // semantics on any ES engine).
+  // Defence in depth: force the (unsound) rewrite through by hand and ask
+  // check() — it must re-derive condition 5 independently and refuse too.
+  const forcedAfter: readonly Stmt[] = [exprStmt(assignExpr(id("r0"), { k: "ident", name: "p", global: true } as Expr)), exprStmt(assignExpr(id("r1"), id("other")))];
+  assert.deepEqual(globalAccessCheck(loopBody, forcedAfter, ctx), { ok: false, reason: "loop-reentry-clobber" }, "fixed: check() re-derives the same site-aware verdict and rejects the forced rewrite");
+
+  // The standing proof that the refused form really was wrong: run both
+  // programs (no Hermes-vs-Node ambiguity at all — no let-in-loop, no TDZ,
+  // no `arguments`, just property reads under a global write).
   const run = (src: string): string[] => {
     const out: string[] = [];
     const sandbox = { print: (...a: unknown[]) => out.push(String(a[0])) };
@@ -272,7 +283,31 @@ test("global-access BUG (pinned): a proven-global register clobbered later in a 
     while (r2-- > 0) { r0 = p; print(r0); r1 = other; }
   `);
   assert.deepEqual(before, ["GLOBAL", "OTHER"], "the un-rewritten (correct) program: global on iteration 1, `other` on iteration 2");
-  assert.deepEqual(afterRun, ["GLOBAL", "GLOBAL"], "current (wrong) rewrite: reads the real global on EVERY iteration -- a genuine behaviour change");
+  assert.deepEqual(afterRun, ["GLOBAL", "GLOBAL"], "the refused rewrite: reads the real global on EVERY iteration -- a genuine behaviour change, which is why it is refused");
+});
+
+test("global-access (was BUGS T14, fixed): the refusal is site-aware, not a blanket ban on loops — a loop body that never writes the register still folds, and so does an outer-loop clobber's sibling only when no loop encloses the site", () => {
+  // Positive 1: guard+read inside a loop, register written only AFTER the
+  // loop (the `targets` scratch-reuse idiom, one loop deeper). Nothing in
+  // the loop body can clobber r1 before the read on re-entry.
+  const loopBody: readonly Stmt[] = [guardFor("p", id("r1")), exprStmt(assignExpr(id("r0"), member(id("r1"), "p")))];
+  const fnBody: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), { k: "while", label: null, test: id("r2"), body: loopBody }, exprStmt(assignExpr(id("r1"), lit('"scratch"')))];
+  const ctx = astCtx(fnBody, {} as PassContext["cfg"]);
+  const shape = globalAccessRecognize(loopBody[0]!)!;
+  assert.deepEqual(globalAccessClassify(loopBody, fnBody, 0, shape.name, shape.global), { ok: true, site: { guardIndex: 0, useIndex: 1, name: "p", global: id("r1") } });
+  const m = globalAccessMatch(loopBody, ctx);
+  assert.ok(m !== null, "a loop body with no write to the register still folds");
+  assert.deepEqual(globalAccessCheck(loopBody, globalAccessRewrite(m), ctx), { ok: true });
+
+  // Positive 2: the same clobber, but the site is NOT in a loop — the
+  // whole-function rule is sound there and the `targets` idiom must survive.
+  const flat: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), guardFor("p", id("r1")), exprStmt(assignExpr(id("r0"), member(id("r1"), "p"))), exprStmt(assignExpr(id("r1"), id("other")))];
+  const flatCtx = astCtx(flat, {} as PassContext["cfg"]);
+  const flatShape = globalAccessRecognize(flat[1]!)!;
+  assert.deepEqual(globalAccessClassify(flat, flat, 1, flatShape.name, flatShape.global), { ok: true, site: { guardIndex: 1, useIndex: 2, name: "p", global: id("r1") } });
+  const fm = globalAccessMatch(flat, flatCtx);
+  assert.ok(fm !== null, "a straight-line site with a later scratch reuse still folds");
+  assert.deepEqual(globalAccessCheck(flat, globalAccessRewrite(fm), flatCtx), { ok: true });
 });
 
 // ---------------------------------------------------------------------------
