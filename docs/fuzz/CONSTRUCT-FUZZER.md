@@ -30,6 +30,19 @@ node tools/fuzz/construct-fuzz.mjs --versions 84,94,96,98,99 --count 500 \
 - `--versions` — comma-separated HBC versions. 84/94/96/99 get the full
   traced ladder (minus `roundtrip`, see "Oracle set" below); 98 gets
   syntax+roundtrip only, reported with `mode: "roundtrip-only"` (§1.3).
+  Each traced version's cell also records which reference engine actually
+  ran (`referenceEngine: "hermes-vm" | "expected-txt" | "node-source"`,
+  `src/harness/reference-policy.ts`'s `chooseReference`), and the driver
+  prints one banner line per version at start (`v96: reference engine =
+  expected-txt (no Hermes VM found) — …`). `mode` is `"full-ladder"` **only**
+  when the engine is `hermes-vm`; if a traced version's host has no matching
+  VM the cell is `mode: "full-ladder-no-vm"` instead — same oracle set, but
+  pass/divergent counts are Node-vs-decompiler, not a Hermes-VM cross-check
+  (D14), and must be read accordingly. Found the hard way: `docs/reports/
+  2026-09-05-campaign2-rediff.md` originally reported every v96 cell as
+  `full-ladder` on a deb host that had no v96 VM at all — corrected in
+  `docs/reports/2026-09-05-campaign2-v96-vm-rediff.md`, which is also where
+  this label was introduced.
 - `--count` — programs per version.
 - `--seed-base` — campaign seed base `S`. Work range is `[S, S+80000)`;
   pass `--eval` to run the disjoint evaluation range `[S+900000, S+902000)`

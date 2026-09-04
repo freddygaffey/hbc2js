@@ -344,16 +344,25 @@ hermes-dec.
 prebuilt `hermes` **VM/interpreter** available on npm is bundled with
 `hermes-engine-cli`, whose last release (`0.12.0`) tops out at HBC 89 and hard-
 refuses newer bytecode (`Error deserializing bytecode: Wrong bytecode version.
-Expected 89 but got 94`). `docs/EQUIVALENCE.md` §5 needs a VM for v94 and v99
-to use as the ground-truth oracle (D14) instead of Node, so
-`tools/build-hermes-vm.sh <94|99>` builds `hermes` (+ `hermesc`, `hbcdump`)
+Expected 89 but got 94`). `docs/EQUIVALENCE.md` §5 needs a VM for v94, v96 and
+v99 to use as the ground-truth oracle (D14) instead of Node, so
+`tools/build-hermes-vm.sh <94|96|99>` builds `hermes` (+ `hermesc`, `hbcdump`)
 from source at the facebook/hermes commit that produced each version.
 
 ```sh
 tools/build-hermes-vm.sh 94   # → tools/hermes-vm/v94/bin/{hermes,hermesc,hbcdump}
+tools/build-hermes-vm.sh 96   # → tools/hermes-vm/v96/bin/{hermes,hermesc,hbcdump}
 tools/build-hermes-vm.sh 99   # → tools/hermes-vm/v99/bin/{hermes,hermesc,hbcdump}
 tools/hermes-vm/v94/bin/hermes -b tests/fixtures/hermes-dec-sample/v94.hbc
 ```
+
+Note: `react-native@0.73.11`'s own npm tarball happens to bundle a working
+`hermes` CLI too (`tools/hermesc/v96/hermes`, macOS-only in that tarball's
+`osx-bin/`), which `src/harness/hermes-vm.ts`'s generic
+`tools/hermesc/v<N>/hermes` fallback already picks up on macOS. This source
+build is what makes v96 available as a VM oracle on hosts that only got the
+`hermesc`-only Linux slice of that tarball (e.g. the `deb` fuzzing box) — see
+`docs/reports/2026-09-05-campaign2-v96-vm-rediff.md`.
 
 `tools/hermes-vm/` is gitignored; nothing here is committed, same policy as
 `tools/hermesc/`.
@@ -363,6 +372,7 @@ tools/hermes-vm/v94/bin/hermes -b tests/fixtures/hermes-dec-sample/v94.hbc
 | Version | Commit | Date | Message | How found |
 |---|---|---|---|---|
 | 94 | `3815fec63d1a6667ca3195160d6e12fee6a0d8d5` | 2024-04-26 | "Removing API usage not applicable on iOS (stat and fstat) in libhermes" | `react-native@0.72.17`'s `packages/react-native/sdks/.hermesversion` records `hermes-2024-04-29-RNv0.72.14-3815fec63d1a6667ca3195160d6e12fee6a0d8d5` verbatim — no guessing needed. |
+| 96 | `644c8be78af1eae7c138fa4093fb87f0f4f8db85` |  |  | `react-native@0.73.11`'s `packages/react-native/sdks/.hermesversion` records this commit verbatim (docs/AGENT-LOG.md's 2026-08-30 "v96 toolchain" row) — same `main` (classic Hermes) lineage as 94, no `static_h` fork yet (that happens at v97). Same commit pin `tools/build-hermesc-linux-arm64.sh` already uses for the `hermesc`-only arm64 build below. |
 | 99 | `913d31acd10aff31e0856657c9c566c3e72bd24a` | 2026-03-05 | "Revert bytecode version to 99" | This is the commit `docs/HBC-FORMAT.md` §0 already names as the one that inserts `NewTypedObjectWithBuffer` at opcode index 4, producing the 220-opcode table both `v99.hbc` and `v99-public.hbc` require (confirmed there by hand-decoding). `hermes-compiler@260318099.0.x`'s npm tarball carries no commit hash anywhere (checked: `package.json` has no `gitHead` field, `hermesc --version` prints only the npm release string, and the binary has no embedded 40-hex-char strings), so it can't be pinned more precisely than "the earliest commit with the right opcode table" — see below for how close that gets. |
 
 Both repos were fetched with `git clone --filter=blob:none` (partial clone,
@@ -378,7 +388,7 @@ itself has not moved and its default branch is now `static_h`.
   clang). `ninja` was not preinstalled; `brew install ninja` (a few seconds,
   bottled). No ICU install needed — Hermes's `CMakeLists.txt` special-cases
   `APPLE` to skip the ICU search entirely and use the platform's built-in ICU.
-- **One build fix needed, v94 only**: the v94-era top-level `CMakeLists.txt`
+- **One build fix needed, v94/v96 (same lineage)**: the v94/v96-era top-level `CMakeLists.txt`
   unconditionally does `cmake_policy(SET CMP0026 OLD)`. CMake >= 4.0 removed
   `CMP0026`'s OLD behavior outright (not just gated behind a policy-version
   floor), so this hard-errors at configure time ("Policy CMP0026 may not be

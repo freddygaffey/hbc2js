@@ -20,6 +20,7 @@ import { runOracleLadder, VERDICT } from "../../src/harness/ladder.ts";
 import { chooseReference } from "../../src/harness/reference-policy.ts";
 import { signatureOf, signatureKey } from "../../src/fuzzgen/signature.ts";
 import { decompile } from "../../src/decompile.ts";
+import { referenceEngineBanner } from "./reference-mode.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..", "..");
@@ -125,9 +126,15 @@ async function main() {
   const survivingSignatures = new Map(); // sigKey -> { count, versions:Set, example, verdict }
 
   for (const [version, entries] of [...byVersion.entries()].sort((a, b) => a[0] - b[0])) {
+    // Loud, one-line-per-version banner (docs/reports/2026-09-05-campaign2-v96-vm-rediff.md):
+    // a "full-ladder" number is only a VM-cross-check when the engine below
+    // is `hermes-vm`; otherwise pass/divergent counts are Node-vs-decompiler,
+    // not Hermes-VM-vs-decompiler, and must not be read as the latter.
+    const probeReference = chooseReference({ name: "reclassify-probe" }, version);
+    console.log(referenceEngineBanner(version, probeReference));
     const hermesc = findHermesc(version);
     if (hermesc === null) {
-      versionRows.push({ version, total: entries.length, pass: 0, divergent: 0, error: 0, noToolchain: entries.length });
+      versionRows.push({ version, total: entries.length, pass: 0, divergent: 0, error: 0, noToolchain: entries.length, referenceEngine: probeReference.engine });
       continue;
     }
     let pass = 0, divergent = 0, error = 0;
@@ -154,7 +161,7 @@ async function main() {
         // surviving-signature; noted in the row's "other" bucket.
       }
     }
-    versionRows.push({ version, total: entries.length, pass, divergent, error, noToolchain: 0 });
+    versionRows.push({ version, total: entries.length, pass, divergent, error, noToolchain: 0, referenceEngine: probeReference.engine });
   }
 
   const lines = [];
@@ -162,18 +169,18 @@ async function main() {
   lines.push("");
   lines.push(`Re-ran all ${files.length} saved finds (\`reports/fuzz/finds/*.js\`) through compile -> decompile -> \`runOracleLadder\` with the current harness.`);
   lines.push("");
-  lines.push("| version | total | now PASS (false alarm) | still DIVERGENT | still ERROR | no local toolchain |");
-  lines.push("|---|---|---|---|---|---|");
+  lines.push("| version | reference engine | total | now PASS (false alarm) | still DIVERGENT | still ERROR | no local toolchain |");
+  lines.push("|---|---|---|---|---|---|---|");
   let totalAll = 0, totalPass = 0, totalDiv = 0, totalErr = 0, totalNoTc = 0;
   for (const row of versionRows) {
-    lines.push(`| v${row.version} | ${row.total} | ${row.pass} | ${row.divergent} | ${row.error} | ${row.noToolchain} |`);
+    lines.push(`| v${row.version} | ${row.referenceEngine} | ${row.total} | ${row.pass} | ${row.divergent} | ${row.error} | ${row.noToolchain} |`);
     totalAll += row.total;
     totalPass += row.pass;
     totalDiv += row.divergent;
     totalErr += row.error;
     totalNoTc += row.noToolchain;
   }
-  lines.push(`| **total** | **${totalAll}** | **${totalPass}** | **${totalDiv}** | **${totalErr}** | **${totalNoTc}** |`);
+  lines.push(`| **total** |  | **${totalAll}** | **${totalPass}** | **${totalDiv}** | **${totalErr}** | **${totalNoTc}** |`);
   lines.push("");
   lines.push(`Distinct surviving signatures: ${survivingSignatures.size}.`);
   lines.push("");

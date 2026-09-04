@@ -28,6 +28,7 @@ import { findHermesc, compileWithHermesc } from "../../src/harness/roundtrip.ts"
 import { runOracleLadder, VERDICT } from "../../src/harness/ladder.ts";
 import { chooseReference } from "../../src/harness/reference-policy.ts";
 import { decompile } from "../../src/decompile.ts";
+import { modeForCell, referenceEngineBanner } from "./reference-mode.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..", "..");
@@ -47,7 +48,7 @@ function parseArgs(argv) {
 }
 
 function newCell() {
-  return { n: 0, pass: 0, divergent: 0, inconclusive: 0, error: 0, mode: "full-ladder" };
+  return { n: 0, pass: 0, divergent: 0, inconclusive: 0, error: 0, mode: "full-ladder", referenceEngine: null };
 }
 
 async function runOne(version, seed, findsDir, findsCount) {
@@ -148,7 +149,15 @@ async function main() {
   const signatures = new Set();
   for (const version of opts.versions) {
     const cell = newCell();
-    cell.mode = TRACED_VERSIONS.includes(version) ? "full-ladder" : "roundtrip-only";
+    const isTracedVersion = TRACED_VERSIONS.includes(version);
+    // The engine choice is a pure function of hbcVersion for any fixture
+    // name that isn't a named known-divergence construct (fuzz-generated
+    // programs never are), so probing once per version before the seed loop
+    // is exact, not a guess.
+    const probeReference = chooseReference({ name: "construct-fuzz-probe" }, version);
+    console.log(referenceEngineBanner(version, probeReference));
+    cell.referenceEngine = probeReference.engine;
+    cell.mode = modeForCell(isTracedVersion, probeReference.engine);
     for (let i = 0; i < opts.count; i++) {
       const seed = range.start + i;
       if (!inRange(seed, range)) break;

@@ -19,8 +19,15 @@
 //
 // Report-shape notes (read from a real campaign-1 JSON, not guessed):
 //   - `cells[]` is `{ name: "construct-fuzz@v<version>", n, pass, divergent,
-//     inconclusive, error, mode }` — one cell per version *in that one
-//     report/chunk*, mode is "full-ladder" or "roundtrip-only" (v98).
+//     inconclusive, error, mode, referenceEngine }` — one cell per version
+//     *in that one report/chunk*. `mode` is "full-ladder" (traced version,
+//     real Hermes VM reference), "full-ladder-no-vm" (traced version, but no
+//     Hermes VM was found for it — the trace/fuzz oracles ran against
+//     expected.txt/Node instead, so pass/divergent counts are NOT a
+//     VM-cross-check; see docs/reports/2026-09-05-campaign2-v96-vm-rediff.md)
+//     or "roundtrip-only" (v98). This diff tool treats `mode` as an opaque
+//     label (aggregated into a Set, displayed verbatim) so a new label needs
+//     no change here.
 //   - `signatures[]` is a flat array of signature-key strings for the WHOLE
 //     report (all versions combined) — the schema does NOT link a signature
 //     to the cell/version/seed that produced it. So "versions" for a NEW

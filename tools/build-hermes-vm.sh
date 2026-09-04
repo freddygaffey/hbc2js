@@ -6,7 +6,7 @@
 # react-native/hermes-compiler ship hermesc only, no VM).
 #
 # Usage:
-#   tools/build-hermes-vm.sh <94|99>
+#   tools/build-hermes-vm.sh <94|96|99>
 #
 # Output: tools/hermes-vm/v<N>/bin/{hermes,hermesc,hbcdump} (gitignored).
 # Source clones and build trees live in tools/hermes-vm/src-<N>/ and
@@ -32,6 +32,21 @@
 #         tools/get-hermesc.sh 94's hermesc reproduces
 #         tests/fixtures/hermes-dec-sample/v94.hbc byte-identically, so this is
 #         a confirmed match, not a guess.
+#   96 -> 644c8be78af1eae7c138fa4093fb87f0f4f8db85
+#         "main" (classic Hermes) lineage, same fork as 94 (the `static_h`
+#         split happens at v97 — docs/HBC-FORMAT.md §0). This is the exact
+#         commit `react-native@0.73.11` vendors
+#         (package/sdks/.hermesversion, recorded in docs/AGENT-LOG.md's
+#         2026-08-30 "v96 toolchain" row when v96 was added to
+#         tools/get-hermesc.sh); docs/TOOLCHAIN.md's "v96: opcode table and
+#         layout" section independently confirms it as layout class C with
+#         v94's opcode table plus one operand change (`DirectEval` grows
+#         `isStrict`), so it is the same build path as 94, not a guess.
+#         react-native@0.73.11's own npm tarball happens to bundle a working
+#         `hermes` CLI too (`tools/hermesc/v96/hermes`, macOS-only in that
+#         tarball's `osx-bin/`), which is why this project's harness could
+#         already run v96 fixtures against a VM on macOS — but nothing
+#         portable ships for Linux, hence this source build.
 #   99 -> 913d31acd10aff31e0856657c9c566c3e72bd24a
 #         "static_h" (Static Hermes) lineage. This is "Revert bytecode version
 #         to 99" (2026-03-05), the commit that inserts NewTypedObjectWithBuffer
@@ -58,10 +73,11 @@ OUT_ROOT="$SCRIPT_DIR/hermes-vm"
 REPO_URL="${HERMES_REPO_URL:-https://github.com/facebook/hermes.git}"
 
 version_94_sha="3815fec63d1a6667ca3195160d6e12fee6a0d8d5"
+version_96_sha="644c8be78af1eae7c138fa4093fb87f0f4f8db85"
 version_99_sha="913d31acd10aff31e0856657c9c566c3e72bd24a"
 
 usage() {
-  echo "Usage: $0 [--clean] <94|99>" >&2
+  echo "Usage: $0 [--clean] <94|96|99>" >&2
   exit 1
 }
 
@@ -70,7 +86,7 @@ VERSION=""
 for arg in "$@"; do
   case "$arg" in
     --clean) CLEAN=1 ;;
-    94|99) VERSION="$arg" ;;
+    94|96|99) VERSION="$arg" ;;
     *) usage ;;
   esac
 done
@@ -102,8 +118,8 @@ fi
   git checkout --detach "$SHA"
 )
 
-# --- CMake 4.x compat patch (v94 only) ----------------------------------
-# facebook/hermes's top-level CMakeLists.txt at the v94 commit sets
+# --- CMake 4.x compat patch (v94/v96, same classic-Hermes lineage) ------
+# facebook/hermes's top-level CMakeLists.txt at the v94/v96 commits sets
 # CMP0026 to OLD (needed only for HERMES_BUILD_APPLE_DSYM, which we never
 # enable). CMake >= 4.0 removed CMP0026-OLD support outright (not just
 # gated behind a policy-version minimum), so cmake_policy(SET CMP0026 OLD)
@@ -111,7 +127,7 @@ fi
 # it is dead code for our build (dSYM bundling is off by default and we
 # don't turn it on). The v99/static_h CMakeLists.txt has already dropped
 # this block upstream, so no patch is needed there.
-if [ "$VERSION" = "94" ]; then
+if [ "$VERSION" = "94" ] || [ "$VERSION" = "96" ]; then
   cmakelists="$SRC_DIR/CMakeLists.txt"
   if grep -q '^  cmake_policy(SET CMP0026 OLD)$' "$cmakelists"; then
     echo "Patching $cmakelists: dropping CMP0026-OLD (removed in CMake >= 4.0; only needed for HERMES_BUILD_APPLE_DSYM, which is off)" >&2
