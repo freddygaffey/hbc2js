@@ -8,6 +8,7 @@ import type {
   CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, Bounded, LocalsListing, LineMap, StringExact, StringGrep, GlobalUses,
+  WhoCallsByName,
 } from "./contracts.ts";
 import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
@@ -29,6 +30,11 @@ export interface Api {
   context(fn: number): Promise<FnContext>;
   whoCalls(fn: number): Promise<WhoCalls>;
   callsFrom(fn: number): Promise<CallsFrom>;
+  /** `GET /api/xref/who-calls-by-name?fn=` — spec 17 §14.1's heuristic
+   *  caller-candidate recovery, for the dominant RN dispatch idiom
+   *  `who-calls`/`calls-from` return `total:0` for. Candidates, not proven
+   *  callers (docs/UI.md "Xrefs"). */
+  xrefWhoCallsByName(fn: number): Promise<WhoCallsByName>;
   module(id: number): Promise<ModuleInfo>;
   /** `GET /api/module/:id/source` — the whole file plus its fn ranges. */
   moduleSource(id: number): Promise<ModuleSource>;
@@ -87,6 +93,7 @@ export const httpApi: Api = {
   context: (fn) => get(`/fn/${fn}/context`),
   whoCalls: (fn) => get(`/fn/${fn}/callers`),
   callsFrom: (fn) => get(`/fn/${fn}/callees`),
+  xrefWhoCallsByName: (fn) => get(`/xref/who-calls-by-name`, { fn }),
   module: (id) => get(`/module/${id}`),
   moduleSource: (id) => get(`/module/${id}/source`),
   modules: () => get(`/modules`),

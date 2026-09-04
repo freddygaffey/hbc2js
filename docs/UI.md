@@ -590,6 +590,45 @@ than throwing — verified directly against the live Service NSW project
 server (`seq 1`–`4`: `init`, `rebuild-index {functions:43384,...}`,
 `annotate {kind:"name"}`, `annotate {kind:"comment"}`).
 
+## Xrefs
+
+The right pane's **Xrefs** tab (`ui/src/panes/RightPane.tsx`) shows the
+selected function's resolved neighbours: `called by` (`GET /api/fn/:fn/
+callers`, `useWhoCalls`) and `calls` (`GET /api/fn/:fn/callees`,
+`useCallsFrom`), each row an `XrefRow` that jumps to that function via
+`select({kind:"fn", fn})` — the same navigation call the Strings tab's use
+rows and the module tree's function rows already use, so jump-list
+back/forward picks it up for free.
+
+**Callers by name (heuristic).** `who-calls` is `total:0` for the dominant
+RN dispatch idiom (`const m = require(list[N]); m.export(...)`) — the callee
+register is list-indexed, so the calls index records `?`. Below the exact
+callers, a second, clearly-labelled "Callers by name (heuristic)" section
+shows `GET /api/xref/who-calls-by-name?fn=` (spec 17 §14.1, `useWhoCallsByName`):
+every function that reads a property under one of the selected function's
+export names, excluding its own module. **These rows are candidates, not
+proven callers** — `confidence: "by-name"` is a NAME match on a
+`property-get`, never a resolved call edge (three known false-positive
+classes: an unrelated same-named method, a re-export/barrel, or two modules
+exporting the same name — spec 17 §14.1's "known false-positive classes").
+The section:
+
+- is fetched **lazily**, only while the Xrefs tab is the visible right-panel
+  tab for the selected fn (`enabled: hasFn && panel === "xrefs"` on the
+  hook) — no reason to pay for the scan while another tab is showing;
+- renders each row (`ByNameRow`) in the muted theme token
+  (`text-text-muted`, not a new colour) so it visibly reads as
+  lower-confidence than an exact `XrefRow`'s `text-text`; a row jumps to its
+  function exactly like an exact-caller row;
+- when the server marks the export name **ambiguous** (`names[].ambiguous`
+  — a common JS member like `default`/`map`/`then`, or over the 200-function
+  fan-out limit), renders the `why` as a one-line explanation instead of
+  drawing rows (an ambiguous name always contributes zero candidates by
+  design, per spec 17 §14.1 — dumping the fan-out would be noise);
+- is **hidden** when the exact callers are already non-empty and the
+  by-name scan found nothing — a well-resolved function does not grow a
+  pointless extra section.
+
 ## Strings & globals (xref)
 
 Spec 22 §3's "xref panels … strings/globals": a **Strings** tab in the right

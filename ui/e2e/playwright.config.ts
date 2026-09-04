@@ -14,7 +14,7 @@
 //                        already-running rig (:4173 / :7331) read-only,
 //                        never restarts it, skips the rename test.
 import { defineConfig, devices } from "@playwright/test";
-import { API_PORT, DIST_DIR, PREVIEW_PORT, PROJECT_DIR } from "./prepare-fixture.mjs";
+import { API_PORT, BUNDLE, DIST_DIR, PREVIEW_PORT, PROJECT_DIR } from "./prepare-fixture.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,7 +44,10 @@ export default defineConfig({
     ? {
         webServer: [
           {
-            command: `node ${join(repoRoot, "src/cli.ts")} ui-server ${PROJECT_DIR} --port ${API_PORT}`,
+            // `--hbc` is needed for the live verbs (disasm, locals, and
+            // spec 17 §14.1's who-calls-by-name) — without it those 400,
+            // same as against a plain `--split` artifact with no bytecode.
+            command: `node ${join(repoRoot, "src/cli.ts")} ui-server ${PROJECT_DIR} --port ${API_PORT} --hbc ${BUNDLE}`,
             url: `http://127.0.0.1:${API_PORT}/api/segregation`,
             reuseExistingServer: false,
             timeout: 30_000,

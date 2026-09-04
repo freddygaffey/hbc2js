@@ -9,7 +9,7 @@ import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listin
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
   LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
-  StringExact, StringGrep, GlobalUses,
+  StringExact, StringGrep, GlobalUses, WhoCallsByName,
 } from "./contracts.ts";
 
 /** Delays echoing `value` by `ms` of no further change — the Strings/Globals
@@ -71,6 +71,18 @@ export const useWhoCalls = (fn: number): UseQueryResult<WhoCalls> =>
 
 export const useCallsFrom = (fn: number): UseQueryResult<CallsFrom> =>
   useQuery({ queryKey: ["calls-from", fn], queryFn: () => api.callsFrom(fn), ...perFn(fn) });
+
+/** `xref/who-calls-by-name?fn=` (spec 17 §14.1) — fetched lazily, only when
+ *  `enabled` (the Xrefs tab is the visible right-panel tab for the selected
+ *  fn): candidates, not proven callers, so there is no reason to pay for the
+ *  scan while another tab is showing. */
+export const useWhoCallsByName = (fn: number, enabled: boolean): UseQueryResult<WhoCallsByName> =>
+  useQuery({
+    queryKey: ["who-calls-by-name", fn],
+    queryFn: () => api.xrefWhoCallsByName(fn),
+    enabled: enabled && Number.isInteger(fn) && fn >= 0,
+    retry: retryServerErrorsOnly,
+  });
 
 export const useModule = (id: number): UseQueryResult<ModuleInfo> =>
   useQuery({ queryKey: ["module", id], queryFn: () => api.module(id), ...perFn(id) });

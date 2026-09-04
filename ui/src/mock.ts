@@ -7,6 +7,7 @@ import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry, StringExact, StringGrep, GlobalUses,
+  WhoCallsByName,
 } from "./contracts.ts";
 import type { ModuleSource } from "./contracts.ts";
 import type { FunctionListPage, FunctionListRow, ModuleEntry, ModuleListPage } from "./listing/wire.ts";
@@ -200,6 +201,31 @@ export const mockApi: Api = {
   whoCalls: (): Promise<WhoCalls> =>
     delay({ rows: [edge(3, "call"), edge(5, "call")], total: 2, truncated: false, unknownInScope: 1 }),
   callsFrom: (): Promise<CallsFrom> => delay({ rows: [edge(11, "call")], total: 1, truncated: false }),
+  // spec 17 §14.1: heuristic by-name caller candidates. `fn:999` is a
+  // deliberate demo of the ambiguous-name path (no real fn is ever 999 in
+  // this mock module set) — its rows are empty, `names[0].ambiguous` true.
+  xrefWhoCallsByName: (fn): Promise<WhoCallsByName> => {
+    if (fn === 999) {
+      return delay({
+        rows: [], total: 0, truncated: false,
+        names: [{
+          name: "default", sid: null, ambiguous: true,
+          why: "\"default\" is a common JS member name; a property-get of it proves nothing about dynamic dispatch to a specific export",
+        }],
+        excludedModule: null,
+      });
+    }
+    const candidates = MOCK_FUNCTIONS.filter((r) => r.fn !== fn).slice(0, 2);
+    const rows = candidates.map((r) => ({
+      fn: r.fn, callerName: r.name, size: r.size, name: "verifyLicence", role: "property-get", n: 1,
+      file: MODULE_BY_ID.get(r.module ?? -1)?.file ?? null, line: 18, confidence: "by-name" as const,
+    }));
+    return delay({
+      rows, total: rows.length, truncated: false,
+      names: [{ name: "verifyLicence", sid: 42, ambiguous: false }],
+      excludedModule: MOCK_FUNCTIONS.find((r) => r.fn === fn)?.module ?? null,
+    });
+  },
   module: (id): Promise<ModuleInfo> => delay({
     deps: [...(MODULE_BY_ID.get(id)?.deps ?? [])],
     dependents: MOCK_MODULES.filter((m) => m.deps.includes(id)).map((m) => m.id),

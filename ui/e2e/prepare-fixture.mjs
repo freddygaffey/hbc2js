@@ -20,7 +20,7 @@ export const DIST_DIR = join(FIXTURE_ROOT, "dist");
 export const API_PORT = 7341;
 export const PREVIEW_PORT = 7342;
 
-const BUNDLE = join(repoRoot, "tests/fixtures/bundles/rn-template-0.72/index.android.hbc");
+export const BUNDLE = join(repoRoot, "tests/fixtures/bundles/rn-template-0.72/index.android.hbc");
 
 function main() {
   if (!existsSync(BUNDLE)) {

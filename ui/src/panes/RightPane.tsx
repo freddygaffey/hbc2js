@@ -3,9 +3,9 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import type { ReactNode } from "react";
 import { Empty, PaneHeader, ToolButton } from "../components/primitives.tsx";
-import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls } from "../hooks.ts";
+import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls, useWhoCallsByName } from "../hooks.ts";
 import { useSegregation } from "../listing/use-segregation.ts";
-import type { Severity, XrefEdge } from "../contracts.ts";
+import type { ByNameCaller, Severity, XrefEdge } from "../contracts.ts";
 import { displayName } from "../actions/names.ts";
 import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../actions/store.ts";
 import { keymap } from "../actions/registry.ts";
@@ -44,6 +44,26 @@ function XrefRow({ edge, dir }: { readonly edge: XrefEdge; readonly dir: "in" | 
   );
 }
 
+/** A `who-calls-by-name` candidate: a NAME match on a `property-get`, never
+ *  a resolved edge (spec 17 §14.1) — deliberately in `text-text-muted`
+ *  throughout (existing theme token, not a literal colour) so it reads as
+ *  lighter-weight than an `XrefRow`'s proven `text-text` without inventing
+ *  a new "heuristic" colour. */
+function ByNameRow({ row }: { readonly row: ByNameCaller }): ReactNode {
+  return (
+    <button
+      type="button"
+      data-fn={row.fn}
+      onClick={() => select({ kind: "fn", fn: row.fn })}
+      className="flex w-full items-center gap-2 px-3 py-0.5 text-left font-mono text-xs text-text-muted hover:bg-surface-2"
+      title={`heuristic candidate: reads property "${row.name}" (${row.role} x${row.n}) — confidence:by-name, not a proven caller`}
+    >
+      <span className="truncate">{row.callerName ?? `fn:${row.fn}`}</span>
+      <span className="ml-auto shrink-0 text-text-muted">{row.file}:{row.line}</span>
+    </button>
+  );
+}
+
 function KeyVal({ k, v }: { readonly k: string; readonly v: string | number | null | undefined }): ReactNode {
   return (
     <div className="flex gap-2 px-3 py-0.5 text-xs">
@@ -68,6 +88,10 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
   const findingChord = keymap.chordFor("annotate.finding");
   const callers = useWhoCalls(fn);
   const callees = useCallsFrom(fn);
+  // spec 17 §14.1: only pay for the by-name scan while the Xrefs tab is the
+  // one actually visible for this fn — the same "lazily, gated on tab
+  // visibility" rule StringsPane's mode=exact expansion already follows.
+  const byName = useWhoCallsByName(fn, hasFn && panel === "xrefs");
   const findings = useFindings();
   const pkg = usePackageId(hasFn ? (ctx.data?.metadata?.module ?? 0) : -1);
   const md = ctx.data?.metadata;
@@ -133,6 +157,37 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
             {(callers.data?.rows ?? []).map((e) => <XrefRow key={`in-${e.fn}`} edge={e} dir="in" />)}
             <div className="px-3 pt-3 pb-1 text-xs text-text-muted">calls ({callees.data?.total ?? 0})</div>
             {(callees.data?.rows ?? []).map((e) => <XrefRow key={`out-${e.fn}`} edge={e} dir="out" />)}
+            {/* spec 17 §14.1: heuristic name-based caller CANDIDATES, below
+                the exact callers — hidden when the exact callers already
+                answered (non-empty) and the heuristic scan found nothing,
+                so a well-resolved fn does not grow a pointless extra
+                section. */}
+            {!(((callers.data?.total ?? 0) > 0) && byName.data !== undefined && byName.data.rows.length === 0) && (
+              <div className="border-t border-border">
+                <div className="px-3 pt-3 pb-1 text-xs text-text-muted">
+                  Callers by name (heuristic){byName.data !== undefined && <> ({byName.data.total})</>}
+                </div>
+                {byName.data === undefined ? (
+                  <div className="px-3 pb-2 text-xs text-text-muted">loading…</div>
+                ) : byName.data.rows.length === 0 ? (
+                  <div className="px-3 pb-2 text-xs text-text-muted">
+                    {(() => {
+                      const ambiguous = byName.data.names.find((n) => n.ambiguous);
+                      return ambiguous !== undefined
+                        ? `no by-name candidates: "${ambiguous.name}" is too common a property name to use as a dispatch signal${ambiguous.why !== undefined ? ` — ${ambiguous.why}` : ""}.`
+                        : "no by-name candidates.";
+                    })()}
+                  </div>
+                ) : (
+                  <>
+                    <div className="px-3 pb-1 text-[11px] text-text-muted">
+                      candidates only — a name match on a property read, not a proven call
+                    </div>
+                    {byName.data.rows.map((r) => <ByNameRow key={`byname-${r.fn}-${r.name}-${r.role}`} row={r} />)}
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </Tabs.Content>

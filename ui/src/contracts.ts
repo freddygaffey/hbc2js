@@ -120,6 +120,42 @@ export type WhoCalls = Bounded<XrefEdge> & { readonly unknownInScope: number };
 /** `xref/calls-from/{fn}`. */
 export type CallsFrom = Bounded<XrefEdge>;
 
+/** One row of `GET /api/xref/who-calls-by-name?fn=` (spec 17 §14.1): a
+ *  function that reads property `name` — a NAME match on a `property-get`,
+ *  NEVER a resolved call edge (`confidence` is always `"by-name"`; the
+ *  server does not emit any other value). `name` here is the EXPORT name
+ *  matched, not the caller's own name — that is `callerName` (the inlined
+ *  `NeighborRef`, same as every other xref row). */
+export interface ByNameCaller {
+  readonly fn: number;
+  readonly callerName: string | null;
+  readonly size: number | null;
+  readonly name: string;
+  readonly role: string;
+  readonly n: number;
+  readonly file: string | null;
+  readonly line: number | null;
+  readonly confidence: "by-name";
+}
+
+/** One export name `who-calls-by-name` considered. A name the server judges
+ *  too common to be a useful dispatch signal (`default`, `map`, … or over
+ *  the fan-out limit) is `ambiguous: true` with a `why`, and contributes NO
+ *  rows — the caller must show that explanation instead of an empty list. */
+export interface ByNameEntry {
+  readonly name: string;
+  readonly sid: number | null;
+  readonly ambiguous: boolean;
+  readonly why?: string;
+}
+
+/** `GET /api/xref/who-calls-by-name?fn=N`. `excludedModule` is the
+ *  exporting module the scan excluded from candidates (fn form only). */
+export type WhoCallsByName = Bounded<ByNameCaller> & {
+  readonly names: readonly ByNameEntry[];
+  readonly excludedModule: number | null;
+};
+
 /** A `strings.json` entry, verbatim (`src/artifact/schema.ts`'s
  *  `StringRow`) — either the literal value or, for a string over 4 KB, a
  *  head + hash instead of a silent truncation (§2.3a). */
