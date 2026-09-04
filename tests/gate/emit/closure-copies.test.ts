@@ -17,16 +17,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { parseM4 } from "../../support/m4.ts";
-import { bucketAFunctions, fakeFunction, graphOf, realCfg } from "../../support/synth-module.ts";
+import type { Op } from "../../support/synth-module.ts";
+import { bucketAFunctions, fakeFunction, graphOf, realCfg, travelFunctions } from "../../support/synth-module.ts";
 import type { ModuleAnalysis } from "../../../src/cfg/types.ts";
 import type { HbcModule } from "../../../src/parse/types.ts";
 import { emitModule } from "../../../src/emit/index.ts";
 
 const DONOR = join(repoRoot(), "tests", "fixtures", "constructs", "22-nested-closures-counters", "v99.hbc");
 
-function emitBucketA(): ReturnType<typeof emitModule> {
+function emitSynth(bodies: ReadonlyMap<number, readonly Op[]>): ReturnType<typeof emitModule> {
   const donor = parseM4(new Uint8Array(readFileSync(DONOR))).module;
-  const bodies = bucketAFunctions();
   const fns = new Map([...bodies].map(([i, ops]) => [i, fakeFunction(i, ops)]));
   const cfgs = new Map([...fns].map(([i, f]) => [i, realCfg(f)]));
   const module = {
@@ -64,7 +64,7 @@ test("a function created over two environments is emitted once per environment, 
     t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
     return;
   }
-  const result = emitBucketA();
+  const result = emitSynth(bucketAFunctions());
   const code = result.code;
 
   // Two bodies, not one.
@@ -92,4 +92,57 @@ test("a function created over two environments is emitted once per environment, 
     [],
   );
   assert.equal(result.stubbedFunctions, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Report §5 item 1 — placement is a property of the INSTANCE, not of the
+// function index. `tests/support/synth-module.ts`'s `travelFunctions` adds two
+// children to the duplicated fn#3: fn#4, created over the environment fn#3
+// *captured* (so `closureEnvOf` puts it beside copy 0, out of copy 1's scope)
+// and also created from a non-duplicated site in fn#1; and fn#5, created over
+// an environment fn#3 owns (an ordinary per-copy child).
+
+test("a child created over the environment its duplicated parent captured gets one instance per copy", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  const result = emitSynth(travelFunctions());
+  const copy1 = bodyOf(result.code, "_fn3__c1");
+
+  // The instance travelled: it is emitted inside the copy that references it,
+  // not left beside copy 0 where copy 1 cannot see it.
+  assert.ok(copy1.includes("function _fn4("), "fn#4 has no instance inside copy 1, so copy 1's reference to it is unbound (report §5 item 1)");
+  // …and it is remapped like the copy that hosts it: copy 1 captured env 2.
+  assert.match(bodyOf(copy1, "_fn4"), /_e2_0/, "the travelling instance must read through the copy's own chain, not copy 0's");
+  assert.doesNotMatch(bodyOf(copy1, "_fn4"), /_e1_0/);
+
+  // Copy 0 is untouched: fn#1 still declares the instance its own,
+  // non-duplicated creation site references. Moving the function index inward
+  // instead of per instance is what took that away (report §5, reverted).
+  const fn1 = bodyOf(result.code, "_fn1");
+  assert.ok(fn1.includes("function _fn4("), "the non-duplicated site in fn#1 lost the instance it references");
+  assert.match(bodyOf(fn1, "_fn4"), /_e1_0/, "copy 0's instance reads env 1");
+
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED" || d.code === "W_AMBIGUOUS_CLOSURE_ENV" || d.code === "W_ORPHAN_FUNCTION").map((d) => `${d.code}: ${d.message}`),
+    [],
+  );
+  assert.equal(result.stubbedFunctions, 0);
+});
+
+test("a copy's children keep their own names — the copy's name renames the instance, not its subtree", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  const result = emitSynth(travelFunctions());
+  const copy1 = bodyOf(result.code, "_fn3__c1");
+  // Regression: the `emitName` of copy i used to be inherited by every child
+  // emitted inside it, so fn#5 came out as `function _fn3__c1()` nested in
+  // `_fn3__c1` — shadowing the copy inside its own body and leaving every
+  // reference to `_fn5` unbound.
+  assert.ok(copy1.includes("function _fn5("), "fn#5's instance inside copy 1 was emitted under the wrong name");
+  assert.doesNotMatch(copy1, /function _fn3__c1\(/, "a child of copy 1 was named after the copy, shadowing it inside its own body");
+  assert.ok(bodyOf(result.code, "_fn3").includes("function _fn5("), "copy 0 must keep its own child too");
 });

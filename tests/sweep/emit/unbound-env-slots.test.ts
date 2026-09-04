@@ -40,7 +40,15 @@ const HBC = join(repoRoot(), "tests", "fixtures", "bundles", "react-navigation-e
  *  (`src/emit/placement.ts`) — 541 unbound names down to 158, and 176 -> 106
  *  isolated with `--passes=none`. Ratchet: lower is fine, a rise is a
  *  regression. */
-const MAX_ISOLATED = 79;
+const MAX_ISOLATED = 32;
+/** Individual unbound *names* behind those isolated functions (one isolated
+ *  function can carry several). 158 before per-creation-context bodies, 155
+ *  after, **63** once placement became a property of the emitted *instance*
+ *  rather than of the function index (report §5 item 1: a child created over an
+ *  environment its duplicated parent captured travels with each copy, and a
+ *  copy's `emitName` no longer renames its children). Same ratchet rule as
+ *  above: it may go down, never up. */
+const MAX_UNBOUND_NAMES = 63;
 /** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111 when
  *  every `W_AMBIGUOUS_CLOSURE_ENV` function was an orphan, **13** now that they
  *  are not. That drop is the point of per-creation-context bodies
@@ -78,6 +86,11 @@ test("react-navigation-example-0.85.3: a loop-local env captured from a sibling 
     `only ${result.diagnostics.filter((d) => d.code === "W_ORPHAN_HOSTED").length} orphans were hosted inside a function, expected at least ${MIN_HOSTED} (src/emit/placement.ts)`,
   );
   assert.ok(isolated.length <= MAX_ISOLATED, `${isolated.length} functions isolated for E_UNBOUND_IDENT, was ${MAX_ISOLATED} at the fix commit — that number must only go down (docs/BUGS.md 2026-09-04)`);
+  const unboundNames = isolated.reduce((n, d) => n + (d.message.match(/emitted identifier "/g) ?? []).length, 0);
+  assert.ok(
+    unboundNames <= MAX_UNBOUND_NAMES,
+    `${unboundNames} identifiers are unbound across those functions, was ${MAX_UNBOUND_NAMES} — that number must only go down (docs/reports/2026-09-05-ambiguous-closure-env.md §5)`,
+  );
 });
 
 /** docs/BUGS.md 2026-09-04, cause (b): 4,009 of this bundle's 4,187 orphan

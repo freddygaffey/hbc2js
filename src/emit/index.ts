@@ -293,11 +293,16 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
   const copyNameOf = (fn: number, copy: number): string => (copy === 0 ? fnName(fn) : `${fnName(fn)}__c${copy}`);
   /** siteKey(creator, offset) -> the `_fn…` name that site must emit. */
   const closureNameAt = new Map<string, string>();
+  /** siteKey -> the copy that site creates, for both the name and the remap. */
+  const copyAt = new Map<string, ClosureCopy>();
   /** host function -> the extra copies (i>0) emitted inside it. */
   const extraCopies = new Map<number, { fn: number; copy: ClosureCopy }[]>();
   for (const [fn, copies] of envGraph.closureCopies) {
     for (const copy of copies) {
-      for (const site of copy.sites) closureNameAt.set(site, copyNameOf(fn, copy.index));
+      for (const site of copy.sites) {
+        closureNameAt.set(site, copyNameOf(fn, copy.index));
+        copyAt.set(site, copy);
+      }
       if (copy.index === 0) continue;
       const host = envGraph.nodes[copy.env]!.ownerFunction;
       const list = extraCopies.get(host);
@@ -306,6 +311,25 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     }
   }
   for (const list of extraCopies.values()) list.sort((a, b) => a.fn - b.fn || a.copy.index - b.copy.index);
+
+  // Report §5 item 1 — the creation-site-only children. `closureCreationSites`
+  // is keyed by the function *created*; inverting it gives, per creating
+  // function, every closure its body makes and the `siteKey` that makes it.
+  // A child whose `closureEnvOf` environment is owned by an ANCESTOR (it was
+  // created inside `f` over an environment `f` itself captured) is placed by
+  // `parentOf` beside copy 0, where no other copy of `f` can see it; the loop
+  // in `emitBody` gives it one instance per copy instead.
+  const createdIn = new Map<number, { readonly fn: number; readonly key: string }[]>();
+  for (const [fn, sites] of envGraph.closureCreationSites) {
+    for (const key of sites.keys()) {
+      const creator = Number(key.slice(0, key.indexOf(":")));
+      if (!Number.isInteger(creator)) continue;
+      const list = createdIn.get(creator);
+      if (list === undefined) createdIn.set(creator, [{ fn, key }]);
+      else list.push({ fn, key });
+    }
+  }
+  for (const l of createdIn.values()) l.sort((a, b) => a.fn - b.fn || (a.key < b.key ? -1 : 1));
 
   /** `outer ∘ inner`: a copy nested inside another copy's subtree. */
   const composeRemap = (outer: ReadonlyMap<number, number> | undefined, inner: ReadonlyMap<number, number>): ReadonlyMap<number, number> => {
@@ -426,7 +450,12 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     /** Distinguishes the instances of one function index; "" is the original. */
     readonly path: string;
     readonly remap: ReadonlyMap<number, number> | undefined;
+    /** The name of THIS instance only. It must never reach a child: a copy's
+     *  children keep their own `_fn<n>` names (see `childCtx`). */
     readonly name?: string;
+    /** This instance lies inside a named copy's subtree (it is not itself the
+     *  copy). Carries the one thing `name` used to be read for downstream. */
+    readonly inCopy?: true;
   }
   const ROOT_CTX: CopyCtx = { path: "", remap: undefined };
   const active = new Set<number>();
@@ -461,11 +490,17 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
         structured = passed.fn;
         for (const d of passed.diagnostics) diagnostics.push(d);
       }
+      // `name` renames the *instance*, not its subtree: passing `ctx` itself to
+      // a child emitted `function _fn<f>__c<i>()` for the child too, so every
+      // reference to the child inside the copy stayed `_fn<child>` and was
+      // unbound (and, worse, shadowed the copy's own name inside its body).
+      const childCtx: CopyCtx = ctx.name === undefined ? ctx : { path: ctx.path, remap: ctx.remap, inCopy: true };
+      const inCopySubtree = ctx.name !== undefined || ctx.inCopy === true;
       const kids = childrenOf.get(index) ?? [];
       const hoisted: Stmt[] = [];
       const inlined = new Map<number, Stmt>();
       for (const child of kids) {
-        const body = emitOne(child, ctx);
+        const body = emitOne(child, childCtx);
         if (inlineFunctions.has(child)) inlined.set(child, body);
         else hoisted.push(body);
       }
@@ -477,7 +512,7 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
         // `f` itself owns) hosts its own copies. They go inside the copy-0
         // instance, as siblings, so every copy can see every other; emitting
         // them again inside each copy would not terminate.
-        const selfHosted = extra.fn === index && ctx.name === undefined;
+        const selfHosted = extra.fn === index && !inCopySubtree;
         if (active.has(extra.fn) && !selfHosted) continue;
         pendingCopies.delete(`${extra.fn}#${extra.copy.index}`);
         hoisted.push(
@@ -487,6 +522,41 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
             name: copyNameOf(extra.fn, extra.copy.index),
           }),
         );
+      }
+      // Report §5 item 1: per-copy travel. Placement is a property of the
+      // INSTANCE being emitted, not of the function index. A closure `g`
+      // created inside this body over an environment this function *captured*
+      // has `closureEnvOf(g)` pointing at an ancestor's environment, so
+      // `parentOf` hosts it beside copy 0 and every other copy references a
+      // `_fn<g>` it cannot see. Inside a copy (`ctx.path !== ""`) `g` therefore
+      // gets its own instance here, under the name its creation site emits and
+      // under this instance's remap, shadowing the copy-0 one. Copy 0 itself is
+      // untouched, so every non-duplicated site keeps the binding it has today
+      // — that is exactly what the reverted "reparent the function index
+      // inward" attempt (report §5) got wrong.
+      if (ctx.path !== "") {
+        const travelled = new Set<string>();
+        for (const site of createdIn.get(index) ?? []) {
+          const g = site.fn;
+          if (g === index || active.has(g)) continue;
+          const home = parentOf.get(g) ?? null;
+          if (home === null) continue; // module level: in scope from everywhere
+          if (isAncestor(index, home)) continue; // already emitted in this subtree
+          if (isAncestor(g, index)) continue; // travelling it would re-emit this body
+          const name = closureNameAt.get(site.key) ?? fnName(g);
+          if (travelled.has(name)) continue;
+          travelled.add(name);
+          const copy = copyAt.get(site.key);
+          const isExtra = copy !== undefined && copy.index > 0;
+          if (isExtra) pendingCopies.delete(`${g}#${copy.index}`);
+          hoisted.push(
+            emitOne(g, {
+              path: `${ctx.path}/${index}t${g}_${copy?.index ?? 0}`,
+              remap: isExtra ? composeRemap(ctx.remap, copy.envRemap) : ctx.remap,
+              ...(name !== fnName(g) ? { name } : { inCopy: true as const }),
+            }),
+          );
+        }
       }
       let out = emitFunction({
         analysis,

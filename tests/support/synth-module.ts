@@ -137,3 +137,33 @@ export function realCfg(fn: DecodedFunction): FunctionCfg {
     disableResumeDispatch: false,
   });
 }
+
+/**
+ * Bucket A plus the two shapes report §5 item 1 is about, on top of the same
+ * duplicated function fn#3:
+ *
+ *  * **fn#4 travels.** fn#3 creates it over the environment fn#3 itself
+ *    *captured*, so `closureEnvOf(4)` is env 1 — owned by fn#1, i.e. beside
+ *    copy 0 — and copy 1 (inside fn#2) cannot see `_fn4` at all. fn#1 also
+ *    creates it directly, from a site that is NOT duplicated, so the copy-0
+ *    instance must stay exactly where it is: that second site is what broke
+ *    the reverted "reparent the function index inward" attempt (report §5).
+ *  * **fn#5 does not travel.** fn#3 creates it over an environment fn#3 *owns*
+ *    (env 3), so it is an ordinary child that is emitted once per copy — and
+ *    must keep its own `_fn5` name in every copy.
+ */
+export function travelFunctions(): Map<number, readonly Op[]> {
+  return new Map<number, readonly Op[]>([
+    [0, [mkEnv(0), mkClosure(1, 0, 1), mkClosure(2, 0, 2), ret(1)]],
+    [1, [mkEnv(0), mkClosure(1, 0, 3), mkClosure(2, 0, 4), ret(1)]],
+    [2, [mkEnv(0), mkClosure(1, 0, 3), ret(1)]],
+    // env 3 is fn#3's own; reg 2 is the environment fn#3 captured (env 1 / env 2).
+    [3, [mkEnv(0), mkClosure(1, 0, 5), selfEnv(2), mkClosure(3, 2, 4), loadSlot(4, 2, 0), ret(4)]],
+    [4, [selfEnv(0), loadSlot(1, 0, 0), ret(1)]],
+    [5, [selfEnv(0), loadSlot(1, 0, 0), ret(1)]],
+  ]);
+}
+
+export function travel(): EnvGraph {
+  return graphOf(travelFunctions());
+}
