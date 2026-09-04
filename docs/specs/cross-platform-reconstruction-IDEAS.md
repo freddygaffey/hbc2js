@@ -65,3 +65,12 @@ shared-codebase RN app). Direction asymmetry: Android is the canonical donor
 2. Merge native dep list with deps' JS-fingerprint list (two channels, dedup).
 3. Emit a complete RN project: package.json + src/ + .env + assets, buildable for
    android and ios; flag custom native modules as TODO-resynthesize.
+
+## Standing principle — hunt-driven tooling (Fred 2026-09-04)
+Capability gaps found during real research ARE the roadmap. When a live hunt needs
+something the tool lacks (native-side ingestion, JS↔native linkage, a `string-uses`
+verb, a scoped single-function decompile, dataflow/taint, guess-confirm deps), that
+gap becomes a first-class tool feature: build it INTO the tool, then use the improved
+tool to do the thing. Real testing feeds the build queue; the tool compounds. Don't
+work around a gap ad hoc without also queueing the fix. (Native ingestion + JS↔native
+linkage above is the current instance.)

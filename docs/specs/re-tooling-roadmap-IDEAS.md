@@ -23,6 +23,38 @@ cheap to interact with: it returns exactly the scoped context an LLM needs, in a
 compact form, so the loop covers more code rather than burning context on
 re-parsing, guessing, or reading a whole function to answer one question.
 
+## 1b. Ambition — an industry-standard tool, not a hobby project
+The goal is for hbc2js to be to Hermes / React Native what **Ghidra and Binary
+Ninja are to native binaries**: a serious, extensible framework security teams
+reach for by default. That means deliberately investing in ADVANCED tooling, not
+just enough to work, and actively encouraging its development. Pursue:
+- **Extensibility + ecosystem.** The MCP server + artifact format is the plugin
+  seam — make it a documented, stable API so others can write analyzers, passes,
+  and integrations. A tool becomes a standard when a community can extend it.
+- **Open, interoperable formats.** Publish the artifact format as an open
+  interchange; emit findings as **SARIF** (the industry standard) so results drop
+  into GitHub code-scanning, DefectDojo, and security dashboards; bridge to
+  Ghidra/Binary Ninja where useful.
+- **Faithfulness as the differentiator.** The trace-equivalence oracle is rigor
+  most decompilers LACK. "Provably faithful decompilation" is a professional
+  claim few can make — make it a headline property with published benchmarks.
+- **Analysis depth.** Data-flow/taint, type + structure recovery, protocol and
+  credential-format reconstruction (W3C Verifiable Credentials, ISO 18013-5 mDL),
+  symbolic reasoning — the analyses that separate a decompiler from an RE platform.
+- **Scale + performance.** Parallel, incremental, cached — biggest bundles in
+  seconds, usable in CI and over real corpora.
+- **Collaboration + UI.** A shared multi-analyst project store and a real UI
+  (graph / xref / decompiler views over the artifact), the way IDA teams and
+  Binary Ninja collaboration work.
+- **Pipeline integration.** A GitHub Action / CLI that runs in CI and posts
+  SARIF, so it lives in real security workflows, not just a researcher's laptop.
+- **Rigor, docs, permissive licensing.** The MIT / no-AGPL stance + the test
+  corpus + real docs is exactly how Ghidra (open-sourced) and Frida became
+  standards. Keep it open, documented, reproducible.
+
+Through-line: invest in the advanced tooling deliberately. Every item above is a
+step from "a decompiler that works" to "the tool the industry standardises on."
+
 ## 2. Organizing principles (carry these into every later spec)
 - **The goals are ordered: truth first, then token efficiency — never the
   reverse.** Truth (correctness, a faithful decompile, real findings not
