@@ -366,3 +366,68 @@ test("GET /api/modules is not truncated below a real app's module count (Service
   const { CAP_MODULES } = await import("../../src/ui-server/list.ts");
   assert.ok(CAP_MODULES >= 5000, `CAP_MODULES ${CAP_MODULES} must cover a 4,510-module app`);
 });
+
+// -- GET /api/segregation (the screens-first tree's source) -------------------
+// A real Metro bundle has no module paths, so the tree cannot group by
+// `ModuleEntry.file`; it groups by the name-recovery pass instead
+// (src/ui-server/segregation.ts over src/split/segregate.ts). These assert
+// route-owned properties only — coverage of the module set, the shape of a
+// row, the counts' disjointness and the cache — never the recovered names
+// themselves, which belong to segregate.ts's own tests.
+
+test("GET /api/segregation covers every module in /api/modules exactly once", async () => {
+  const r = await get("/api/segregation");
+  assert.equal(r.status, 200);
+  const body = r.json as { modules: readonly { id: number; path: string; bucket: string; package: string | null }[]; counts: Record<string, number> };
+  const ids = body.modules.map((m) => m.id);
+  assert.deepEqual([...ids].sort((a, b) => a - b), ids, "rows must be sorted by id");
+  assert.equal(new Set(ids).size, ids.length, "no module id may appear twice");
+  const listed = listModules(outDir).rows.map((m) => m.id);
+  assert.ok(listed.length > 0, "sanity: the fixture has modules");
+  assert.deepEqual([...ids].sort((a, b) => a - b), [...listed].sort((a, b) => a - b));
+});
+
+test("GET /api/segregation rows carry a non-empty path and a known bucket", async () => {
+  const body = (await get("/api/segregation")).json as { modules: readonly { id: number; path: string; bucket: string }[] };
+  const buckets = new Set(["src", "node_modules", "unclassified"]);
+  for (const m of body.modules) {
+    assert.ok(m.path.length > 0, `module ${m.id} has an empty path`);
+    assert.ok(buckets.has(m.bucket), `module ${m.id} has bucket ${m.bucket}`);
+    assert.ok(m.path.includes(`module_${m.id}`) || /\.js$/.test(m.path), `module ${m.id} path ${m.path} is not a module file`);
+  }
+});
+
+test("GET /api/segregation counts are disjoint and total the module count", async () => {
+  const body = (await get("/api/segregation")).json as {
+    modules: readonly { path: string; bucket: string }[];
+    counts: { screens: number; navigation: number; src: number; node_modules: number; unclassified: number };
+  };
+  const c = body.counts;
+  assert.equal(c.screens + c.navigation + c.src + c.node_modules + c.unclassified, body.modules.length);
+  assert.equal(c.screens, body.modules.filter((m) => m.path.startsWith("src/screens/")).length);
+  assert.equal(c.navigation, body.modules.filter((m) => m.path.startsWith("src/navigation/")).length);
+  assert.equal(c.node_modules, body.modules.filter((m) => m.bucket === "node_modules").length);
+  assert.equal(c.unclassified, body.modules.filter((m) => m.bucket === "unclassified").length);
+});
+
+test("segregation is computed once per ctx and served from cache after that", async () => {
+  const { segregation, segregationCached, moduleDirOf } = await import("../../src/ui-server/segregation.ts");
+  assert.notEqual(moduleDirOf(outDir), null, "the fixture must hold module_<id>.js files somewhere");
+  const fresh: UiServerCtx = { resources, tools, artifactDir: outDir };
+  assert.equal(segregationCached(fresh), false, "nothing is computed until the first request");
+  const first = segregation(fresh);
+  assert.notEqual(first, null);
+  assert.equal(segregationCached(fresh), true);
+  assert.equal(segregation(fresh), first, "the second call must return the SAME object, not recompute");
+});
+
+test("GET /api/segregation 404s for a project with no module files", async () => {
+  const empty = mkdtempSync(join(tmpdir(), "hbc2js-ui-server-empty-"));
+  try {
+    const r = await handle({ method: "GET", path: "/api/segregation", query: {}, body: null }, { resources, tools, artifactDir: empty });
+    assert.equal(r.status, 404);
+    assert.match((r.json as { reason: string }).reason, /segregat/i);
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});

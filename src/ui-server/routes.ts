@@ -14,6 +14,8 @@ import type { McpResources } from "../mcp/resources.ts";
 import type { McpTools } from "../mcp/tools.ts";
 import { Hbc2jsError } from "../errors.ts";
 import { listModules, listFunctions, moduleSource } from "./list.ts";
+import { segregation } from "./segregation.ts";
+import { WORKER_ROUTES, type WorkersCtx } from "./workers-routes.ts";
 
 export interface UiRequest {
   readonly method: string;
@@ -44,6 +46,12 @@ export interface UiServerCtx {
    *  the raw path for `hasProjectDb`/`index/modules.json`, so the ctx that
    *  builds `McpResources` carries it alongside, not re-derived. */
   readonly artifactDir: string;
+  /** The spec-23 worker surface (queue, presence, event feed, runner), built
+   *  by `server.ts` when workers are enabled. `undefined` = this server runs
+   *  without workers (`--workers off`, or a project with no DB); every
+   *  `/api/jobs|sessions|worker-events|suggestions` route then answers 503
+   *  rather than an empty list. */
+  readonly workers?: WorkersCtx;
 }
 
 function ok(json: unknown): UiResponse {
@@ -87,7 +95,7 @@ interface Route {
   readonly handler: Handler;
 }
 
-const ROUTES: readonly Route[] = [
+const BASE_ROUTES: readonly Route[] = [
   // -- fn / source / disasm / context / xrefs / annotations (spec 17 §1, §14) --
   {
     method: "GET",
@@ -189,6 +197,17 @@ const ROUTES: readonly Route[] = [
     method: "GET",
     re: /^\/api\/modules$/,
     handler: (_p, _req, ctx) => ok(listModules(ctx.artifactDir)),
+  },
+  {
+    // The name-recovered tree (`segregation.ts`): computed once per server
+    // process, then served from that file's cache.
+    method: "GET",
+    re: /^\/api\/segregation$/,
+    handler: (_p, _req, ctx) => {
+      const r = segregation(ctx);
+      if (r === null) return notFound("segregation: this project has no module_<id>.js files to segregate");
+      return ok(r);
+    },
   },
   {
     method: "GET",
@@ -334,6 +353,12 @@ const ROUTES: readonly Route[] = [
     handler: (_p, req, ctx) => ok(ctx.tools.recompileEdit(req.body as Parameters<McpTools["recompileEdit"]>[0])),
   },
 ];
+
+/** One table, two files: the spec-22 routes above plus the spec-23 worker
+ *  routes (`workers-routes.ts`, which owns their doc comments). `handle()`
+ *  below still walks a single list, so there is exactly one place a request
+ *  can 404. */
+const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES];
 
 /** `/api/log/tail?since=<seq>` — spec 21 §1.3's "read log entries after its
  *  cursor" half of the doorbell pairing (this MVP does poll only, §1
