@@ -1,0 +1,14 @@
+0 true
+1 true
+2 true
+0 0
+1 0
+0 a
+f1 
+other true
+f2 false
+0 true
+0 true
+1 true
+f3 v-true
+outer 0

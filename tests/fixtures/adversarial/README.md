@@ -4,7 +4,7 @@ Deliberately hard-to-decompile JavaScript code designed to stress-test and find 
 
 ## Test status summary
 
-- **Total fixtures**: 45
+- **Total fixtures**: 46
 - **PASS through decompiler**: 40 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
 - **DIVERGE (harness verdict)**: 2, all v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`) and `43-fuzz-async-guard-shared-range` (**confirmed real bug, not yet root-caused**: candidate genuinely disagrees with the v99 Hermes VM's own trace — see docs/BUGS.md 2026-09-02, construct-fuzzer seed-base 777000 row). `20-symbol-keyed-properties` (**toolchain artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM) is now **PASS-with-caveat**, not DIVERGE — as of 2026-09-02 `src/harness/ladder.ts`'s D14 VM-agrees-with-candidate override is evidence-based (fires whenever `candidatePrint === hermesPrint`, not only for a curated fixture name), so this fixture's own VM-agrees evidence now overrules the Node-vs-candidate divergence directly; the underlying toolchain builtin-table gap itself is unfixed (see docs/BUGS.md's toolchain row). See "CONSOLIDATION 26 triage" below and the fuzz row above for `43`.
 - **ERROR (decompiler threw)**: 0
@@ -186,6 +186,20 @@ renderings onto one canonical, name-preserving form
 `compare.ts` and in `ladder.ts`'s VM cross-check. `expected.txt` is Node's
 (V8's) wording, as for every other fixture here; the Hermes wording is what
 the VM side produces.
+
+### 46-fuzz-let-capture-branch (added 2026-09-04, construct-fuzzer family F2) -- OPEN BUG
+
+Machine-reduced (103 -> 76 lines, signature-preserving) by
+`tools/fuzz/minimise-live.mjs` from find `v96-seed780933`. **DIVERGENT at v96
+only** (v84/v94/v99 PASS), kept here per D22a as the regression test for the
+open family-F2 row in docs/BUGS.md. The candidate and the real Hermes VM
+print the same lines except that the VM takes the `else` branch of `f3`'s
+`if ((0 === (outer + '')))` -- printing `0 true` / `1 true` -- while the
+decompiled candidate takes the `if` branch and prints neither, as if the
+string concatenation on the captured module-level `let` `outer` were dropped
+and the comparison were the numeric `0 === outer`. Not root-caused.
+`expected.txt` is Node's script-mode output, which differs from both (under
+Node the sibling-block `t3` read is a real ReferenceError that kills `f0`).
 
 ## Compilation note
 
