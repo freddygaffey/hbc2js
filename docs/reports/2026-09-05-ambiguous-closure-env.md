@@ -195,12 +195,67 @@ the reason is a second level of the same defect, one step down the tree:
   per-instance — the same generalisation the emitter already makes for
   `emitOne`'s `CopyCtx`.
 
+### Landing item 1: per-instance placement (2026-09-05, later)
+
+Two defects, one shape. Measured on the same bundle and options, macOS / node 25:
+
+| | isolated | unbound names | `_fn<n>` | `_fn<n>__c<i>` | `_e<env>_<slot>` | bytes |
+|---|---|---|---|---|---|---|
+| §5 landing above | 79 | 155 | 112 | 35 | 8 | 17,728,320 |
+| + per-copy travel | 69 | 131 | 88 | 35 | 8 | 17,809,223 |
+| + `emitName` fix | **32** | **63** | 20 | 35 | 8 | 17,923,967 |
+
+1. **Per-copy travel.** Placement is now a property of the *instance*: while
+   emitting a copy of `f` (or anything nested inside it), every closure the body
+   creates whose `closureEnvOf` home is not already inside that instance gets
+   its own instance there, under the instance's remap and under the name the
+   creation site emits. Copy 0 is untouched, which is what the reverted
+   "reparent the function index inward" attempt got wrong — the same child is
+   usually created from non-duplicated sites too, and those keep the copy-0
+   instance where it is. The creating-function → sites map is
+   `closureCreationSites` inverted; a child is skipped when its home is already
+   in the instance's subtree, when it is an ancestor of the instance (emitting it
+   would re-emit this very body), or when its home is module level (visible from
+   everywhere anyway).
+2. **A copy's `emitName` was inherited by its children.** `emitOne(child, ctx)`
+   passed the copy's `CopyCtx` unchanged, so every child of `_fn<f>__c<i>` was
+   *itself* emitted as `function _fn<f>__c<i>()`. That both shadowed the copy
+   inside its own body and left every reference to the child unbound — 68 of the
+   155 names. `name` now applies to the instance only (`childCtx`), with the one
+   thing it was read for downstream carried by an explicit `inCopy` flag.
+
+Control: a bundle with no ambiguity is byte-identical before and after
+(`rn-template-0.72/index.android.hbc`, 0 ambiguous — 5,000,434 bytes at CLI
+defaults, `cmp`-identical against the same tree with only `src/emit/index.ts`
+reverted). It cannot be otherwise: with `closureCopies` empty no instance ever
+has a non-empty `CopyCtx.path`, so neither new path runs. (The 6,649,289 above
+was measured under a different option set and was not reproduced here.)
+
+Sweep ratchets moved down: `MAX_ISOLATED` 79 -> 32 and a new `MAX_UNBOUND_NAMES`
+63 in `tests/sweep/emit/unbound-env-slots.test.ts`. No other floor moved.
+
+The 63 that remain are three families, none of them item 1:
+
+* **35 `_fn<n>__c<i>`** — *mutually recursive copies*. `_fn12406__c4` references
+  `_fn12407__c4` and `_fn12407__c5`, and vice versa: two functions that create
+  each other, each with 5 copies, hosted in different places, so a copy can see
+  its own siblings but not the other function's. §5 item 3's self-recursive rule
+  covers `f` creating `f`; the mutual case needs the copies of a *recursion
+  group* to be hosted together. Cheapest next fix.
+* **20 `_fn<n>`** — the pre-existing orphan-placement family (`_fn13838`…
+  `_fn13844` inside `_fn525 > _fn5569`, `_fn13914`…`_fn14002`): functions with no
+  resolved creation environment at all, hosted by `src/emit/placement.ts`'s cost
+  rule where the referencing site cannot see them. Unrelated to duplication.
+* **8 `_e2192_0`** — two copies (`_fn10396__c1`, `_fn10397__c1`) reading an
+  environment that is not on their captured chain, so no positional remap
+  touches it.
+
 Remaining work, in order:
 
-1. Per-copy travel for creation-site-only children (the 123 `_fn` names above):
-   make the child's placement a property of the *instance* being emitted, not of
-   the function index. Expect it to subsume the 29 `_e` names too, since those
-   are the same functions reading through the same chain.
+1. ~~Per-copy travel for creation-site-only children~~ — **done**, above. It did
+   not subsume the `_e` names: those 8 are a separate shape (an environment off
+   the captured chain), and the mutually recursive copies are now the largest
+   family.
 2. The 18 unaligned residual: chains of different length have no positional
    remap. They need either a chain-alignment by *owner function* rather than by
    position, or an explicit decision to leave them as `W_AMBIGUOUS_CLOSURE_ENV`

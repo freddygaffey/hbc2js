@@ -215,6 +215,21 @@ creation site (a `CallDirect`, say) still resolves; copies `i > 0` are
 `_fn<n>__c<i>`. Orphan placement (below) is therefore left with only the
 functions that have no resolved creation site at all.
 
+**Placement is a property of the instance, not of the function index.** "The
+copy's whole lexical subtree" is more than the `closureEnvOf` children. A
+closure `g` created *inside* a duplicated function `f`, over an environment `f`
+itself captured, has `closureEnvOf(g)` pointing at an ancestor's environment, so
+the nesting rule above hosts `g` beside copy 0 and copies `1..n` reference a
+`_fn<g>` they cannot see. `g` therefore travels per **instance**: while emitting
+a copy (and anything inside it), every closure the body creates whose home is
+not already inside the instance being emitted gets its own instance there, under
+this instance's remap and under the name its creation site emits. Moving the
+*function index* inward instead is wrong and was measured worse: `g` is usually
+also created from sites that are not duplicated, and those sites keep the copy-0
+instance exactly where it is. For the same reason a copy's `emitName` renames
+only that instance — never its children, which keep their own `_fn<n>` names.
+See docs/reports/2026-09-05-ambiguous-closure-env.md §5.
+
 **`materialised` slots.** `const _env<id> = { s0: undefined, … };` in the owner,
 accesses become `_env<id>.s<slot>`, and any closure created with that env
 captures the object. Correct, uglier, and rare.

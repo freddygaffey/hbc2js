@@ -674,6 +674,15 @@ environment created with an undefined parent has no parent.
   subtree ever names an environment the sites disagree about, the copies would
   be identical text: it is joined instead - one body, one lexical home, no
   warning. See docs/specs/05-emitter.md §6 for what the emitter does with it.
+* **A copy is an instance, not a renamed function.** `closureCopies` names the
+  environments; it does not name the functions that travel. The emitter derives
+  those from `closureCreationSites` inverted by *creating* function: a closure
+  created inside a copied function over an environment that function captured
+  has its own `closureEnvOf` home outside the copy, and it needs one instance
+  per copy rather than a new home. That is why `closureCreationSites` keeps the
+  creating function and offset in the key and why it must stay exported even
+  though `closureEnvOf` is enough for ordinary placement
+  (docs/specs/05-emitter.md §6, report §5 item 1).
 * Merge at joins: equal values meet to themselves, everything else to `unknown`.
 * Iterate to a fixed point over RPO. Loops converge in ≤ 2 passes with this
   lattice; cap at `blocks.length` and bail to `unknown` if not.
