@@ -19,9 +19,15 @@ const root = repoRoot();
 const helper = join(root, "ui", "src", "listing", "line-map.ts");
 
 type Row = readonly [number, number, number, number];
+interface RowAcrossFns {
+  readonly row: Row;
+  readonly fn: number;
+  readonly nested: boolean;
+}
 interface Helper {
   fnLocalLine(editorLine: number | null, fileView: boolean, fnStartLine: number | null): number | null;
   rowForLine(rows: readonly Row[], fn: number, localLine: number | null): Row | null;
+  rowForLineAcrossFns(rows: readonly Row[], fn: number, localLine: number | null): RowAcrossFns | null;
   disasmLineForOffset(text: string, offset: number): number | null;
   alignedDisasmLine(args: { rows: readonly Row[]; fn: number; editorLine: number | null; fileView: boolean; fnStartLine: number | null; disasmText: string }): number | null;
 }
@@ -65,6 +71,46 @@ test("§16: rows belonging to a nested closure never steer the parent's disassem
   // The honest answer for fn 7 at line 5 is fn 7's own line-3 instruction.
   assert.deepEqual(h.rowForLine(ROWS, 7, 5), [3, 7, 4, 10]);
   assert.deepEqual(h.rowForLine(ROWS, 9, 5), [5, 9, 0, 4]);
+});
+
+test("§16.2: rowForLineAcrossFns resolves a nested row and leaves parent-owned lines unaffected", async () => {
+  const h = await load();
+  // Line 5 is fn 9's own row (a nested closure inline in fn 7's listing) —
+  // the honest answer for the CURSOR, regardless which fn's text is being
+  // read, is that closure's own instruction.
+  assert.deepEqual(h.rowForLineAcrossFns(ROWS, 7, 5), { row: [5, 9, 0, 4], fn: 9, nested: true });
+  // A parent-owned line resolves exactly as `rowForLine` would, with
+  // `nested: false` and the identical row.
+  assert.deepEqual(h.rowForLineAcrossFns(ROWS, 7, 3), { row: [3, 7, 4, 10], fn: 7, nested: false });
+  assert.deepEqual(h.rowForLineAcrossFns(ROWS, 7, 4), { row: [3, 7, 4, 10], fn: 7, nested: false });
+  // Nothing at or above line 1: no answer, same as `rowForLine`.
+  assert.equal(h.rowForLineAcrossFns(ROWS, 7, 1), null);
+  assert.equal(h.rowForLineAcrossFns(ROWS, 7, null), null);
+  // Asked from the CHILD's own point of view, its own row is not "nested".
+  assert.deepEqual(h.rowForLineAcrossFns(ROWS, 9, 5), { row: [5, 9, 0, 4], fn: 9, nested: false });
+});
+
+test("§16.2: rowForLineAcrossFns assumes rows arrive sorted by line (breaks at the first row past localLine)", async () => {
+  const h = await load();
+  // An out-of-order row would never be reached once a later line has broken
+  // the scan — documenting the sortedness assumption `rowForLine` already
+  // relies on (`// rows arrive sorted by line`).
+  const unsorted: readonly Row[] = [[2, 7, 0, 4], [6, 7, 16, 18], [3, 7, 4, 10]];
+  assert.deepEqual(h.rowForLineAcrossFns(unsorted, 7, 5), { row: [2, 7, 0, 4], fn: 7, nested: false });
+});
+
+test("§16.2: the closing-brace imprecision — a nested closure's last printed lines can resolve to the child, accepted", async () => {
+  const h = await load();
+  // fn 9's inline closure is spliced into fn 7's listing: line 2 is fn 7's
+  // own statement before it, line 4 is the closure's only mapped statement,
+  // and lines 5-6 are its closing `}` / the enclosing `});` — neither carries
+  // an origin (§16.2), so the nearest-preceding-row rule attributes both to
+  // the CHILD until a real fn-7 row (line 7) follows.
+  const rows2: readonly Row[] = [[2, 7, 0, 4], [4, 9, 0, 4], [7, 7, 4, 10]];
+  assert.deepEqual(h.rowForLineAcrossFns(rows2, 7, 5), { row: [4, 9, 0, 4], fn: 9, nested: true });
+  assert.deepEqual(h.rowForLineAcrossFns(rows2, 7, 6), { row: [4, 9, 0, 4], fn: 9, nested: true });
+  // Once fn 7's own next statement is reached, the pane returns to fn 7.
+  assert.deepEqual(h.rowForLineAcrossFns(rows2, 7, 7), { row: [7, 7, 4, 10], fn: 7, nested: false });
 });
 
 test("§16: an offset is found by its `[@ N]` prefix, and only exactly", async () => {

@@ -37,6 +37,45 @@ export function rowForLine(rows: readonly LineMapEntry[], fn: number, localLine:
   return best;
 }
 
+/** `rowForLineAcrossFns`'s result: the row it picked, the `fn` that row
+ *  belongs to, and whether that `fn` differs from the one the caller asked
+ *  about (a nested closure printed inline, §16.2). */
+export interface RowAcrossFns {
+  readonly row: LineMapEntry;
+  readonly fn: number;
+  readonly nested: boolean;
+}
+
+/** Like `rowForLine`, but not confined to `fn`: the last row at or before
+ *  `localLine` in the WHOLE array, whichever function it belongs to. §16.2's
+ *  inline-function mapping interleaves a nested closure's own rows into its
+ *  enclosing function's map (same array, sorted by line together), so the
+ *  nearest preceding row overall is the honest answer to "what produced this
+ *  line" even when it is not `fn`'s own row: the cursor is sitting inside
+ *  that closure's body as printed, not the enclosing function's. When the
+ *  picked row's `fn` equals the one asked about, `nested` is `false` and the
+ *  result is the same row `rowForLine` would have picked; otherwise
+ *  `nested: true` and `fn: row[1]` names the closure whose disassembly should
+ *  actually be shown.
+ *
+ *  One known imprecision (§16.2): an inline closure's closing `}`/`);` line
+ *  is shared with the statement that encloses it (no origin is recorded for
+ *  either), so the LAST printed line of a nested closure's body can resolve
+ *  to a row that still belongs to the child even though the cursor sitting
+ *  there reads, to a human, as back in the parent. This module does not try
+ *  to disambiguate it — that would be a guess — and a test pins it as
+ *  documented, accepted behaviour rather than a bug. */
+export function rowForLineAcrossFns(rows: readonly LineMapEntry[], fn: number, localLine: number | null): RowAcrossFns | null {
+  if (localLine === null) return null;
+  let best: LineMapEntry | null = null;
+  for (const row of rows) {
+    if (row[0] > localLine) break; // rows arrive sorted by line
+    best = row;
+  }
+  if (best === null) return null;
+  return { row: best, fn: best[1], nested: best[1] !== fn };
+}
+
 /** The 1-based line of `text` that disassembles the instruction at `offset`.
  *  `src/disasm/print.ts` writes every instruction as `[@ <offset>] Opcode …`,
  *  so this is an anchored match, not a search. `null` when the listing does

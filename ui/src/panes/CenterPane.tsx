@@ -25,7 +25,7 @@ import { clampLines, MAX_RENDER_LINES, MAX_RENDER_LINES_MODULE } from "../listin
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleSourceFn } from "../contracts.ts";
 import { setDisasmOpen, useDisasmOpen } from "./disasm-store.ts";
-import { alignedDisasmLine } from "../listing/line-map.ts";
+import { disasmLineForOffset, fnLocalLine, rowForLineAcrossFns } from "../listing/line-map.ts";
 
 function TruncationBar({ hidden, shown, cap }: { readonly hidden: number; readonly shown: number; readonly cap: number }): ReactNode {
   return (
@@ -119,10 +119,6 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   // this costs nothing until a module is pathologically large.
   const srcCap = useFileView ? MAX_RENDER_LINES_MODULE : MAX_RENDER_LINES;
   const src = useMemo(() => clampLines(body.text, body.totalLines, body.truncated, srcCap), [body.text, body.totalLines, body.truncated, srcCap]);
-  const dis = useMemo(
-    () => clampLines(disasm.data?.text ?? "", disasm.data?.totalLines ?? 0, disasm.data?.truncated ?? false),
-    [disasm.data],
-  );
 
   const fns = file.data?.functions ?? [];
   const marks = useMemo(() => fns.map((f) => f.lines[0]), [fns]);
@@ -135,21 +131,59 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
     : range?.lines[0] ?? null;
 
   // Source -> disasm alignment (docs/specs/05-emitter.md §16): the cursor line
-  // maps to the instruction behind it, and the disassembly pane highlights and
-  // scrolls to that instruction's own line. `null` whenever the map has nothing
-  // honest for this line, in which case the pane keeps its own scroll position.
-  const disasmLine = useMemo(
-    () =>
-      alignedDisasmLine({
-        rows: lineMap.data?.lines ?? [],
-        fn: fnId,
-        editorLine: line,
-        fileView: useFileView,
-        fnStartLine: lineMap.data?.fnStartLine ?? null,
-        disasmText: dis.text,
-      }),
-    [lineMap.data, fnId, line, useFileView, dis.text],
+  // maps to the instruction behind it. Since §16.2's inline-function mapping,
+  // that instruction may belong to a nested closure printed inline inside
+  // this function's own listing (`ui/src/listing/line-map.ts`'s
+  // `rowForLineAcrossFns`) — the honest disasm to show is then the CHILD's
+  // own, not the nearest preceding line in the parent's.
+  const resolvedRow = useMemo(
+    () => rowForLineAcrossFns(lineMap.data?.lines ?? [], fnId, fnLocalLine(line, useFileView, lineMap.data?.fnStartLine ?? null)),
+    [lineMap.data, fnId, line, useFileView],
   );
+  const nestedFn = resolvedRow?.nested === true ? resolvedRow.fn : null;
+  // Always called, never conditionally (React hook rule) — disabled (fn -1)
+  // when the cursor is not currently inside a nested closure.
+  const nestedDisasm = useDisasm(nestedFn ?? -1);
+
+  // No flicker: the disasm pane keeps showing whatever it last had (the
+  // parent's own listing, or a previously-loaded nested closure's) until the
+  // NEWLY resolved target's own data has actually arrived, rather than
+  // blanking or reverting to a loading message while it fetches. A genuine
+  // function switch (a different `fnId`, e.g. an xref jump) still clears it,
+  // so that case keeps its own honest loading/error state below.
+  type ShownDisasm = {
+    readonly parentFn: number;
+    readonly fn: number;
+    readonly text: string;
+    readonly totalLines: number;
+    readonly truncated: boolean;
+    readonly highlightLine: number | null;
+    readonly nestedHeader: { readonly child: number; readonly parent: number } | null;
+  };
+  const shownRef = useRef<ShownDisasm | null>(null);
+  if (shownRef.current !== null && shownRef.current.parentFn !== fnId) shownRef.current = null;
+  const activeFn = nestedFn ?? fnId;
+  const activeQuery = nestedFn !== null ? nestedDisasm : disasm;
+  if (activeQuery.data !== undefined) {
+    const highlightLine =
+      resolvedRow !== null && resolvedRow.fn === activeFn ? disasmLineForOffset(activeQuery.data.text, resolvedRow.row[2]) : null;
+    shownRef.current = {
+      parentFn: fnId,
+      fn: activeFn,
+      text: activeQuery.data.text,
+      totalLines: activeQuery.data.totalLines,
+      truncated: activeQuery.data.truncated,
+      highlightLine,
+      nestedHeader: nestedFn !== null ? { child: nestedFn, parent: fnId } : null,
+    };
+  }
+  const shown = shownRef.current;
+  const dis = useMemo(
+    () => clampLines(shown?.text ?? "", shown?.totalLines ?? 0, shown?.truncated ?? false),
+    [shown],
+  );
+  const disasmLine = shown?.highlightLine ?? null;
+  const nestedHeader = shown?.nestedHeader ?? null;
 
   const name = displayName(fnId, ctx.data?.metadata, meta.data);
   const sourceMissing = !useFileView && hasFn && fnSource.isError && isMissingResource(fnSource.error);
@@ -212,15 +246,33 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
           className="min-h-0 bg-surface"
         >
           <div className="flex h-full min-h-0 flex-col">
-            <div ref={disasmBody} className="min-h-0 flex-1">
+            <div ref={disasmBody} className="flex min-h-0 flex-1 flex-col">
               {!hasFn ? (
                 <Notice>no function selected</Notice>
-              ) : disasm.isLoading ? (
+              ) : shown === null && disasm.isLoading ? (
                 <Notice>loading disassembly…</Notice>
-              ) : disasm.isError ? (
+              ) : shown === null && disasm.isError ? (
                 <Notice>{isMissingResource(disasm.error) ? `no disassembly for fn ${fnId}` : "could not load the disassembly"}</Notice>
+              ) : shown === null ? (
+                <Notice>loading disassembly…</Notice>
               ) : (
-                <CodeView text={dis.text} language="plain" highlightLine={disasmLine} ariaLabel={`disassembly of function ${fnId}`} />
+                <>
+                  {nestedHeader !== null && (
+                    <button
+                      type="button"
+                      onClick={() => select({ kind: "fn", fn: nestedHeader.child })}
+                      className="flex h-6 shrink-0 items-center gap-1 border-b border-border bg-surface-2 px-3 text-left text-xs text-text-muted hover:text-text"
+                      title="jump to this nested closure's own function"
+                      data-testid="disasm-nested-header"
+                    >
+                      <span className="font-mono text-text">fn {nestedHeader.child}</span>
+                      <span>— nested closure inside fn {nestedHeader.parent}</span>
+                    </button>
+                  )}
+                  <div className="min-h-0 flex-1">
+                    <CodeView text={dis.text} language="plain" highlightLine={disasmLine} ariaLabel={`disassembly of function ${shown.fn}`} />
+                  </div>
+                </>
               )}
             </div>
             {dis.hidden !== null && dis.hidden > 0 && <TruncationBar hidden={dis.hidden} shown={dis.shown} cap={MAX_RENDER_LINES} />}

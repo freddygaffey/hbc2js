@@ -219,9 +219,9 @@ bottom of the pane.
 
 `GET /api/fn/:fn/linemap` (above) says which line of the served source came
 from which instruction. `ui/src/listing/line-map.ts` turns that into the line
-of the disassembly to highlight — three pure functions, no React and no
-CodeMirror, so the root gate imports them directly with no `ui/node_modules`
-present (`tests/gate/ui/line-map-align.test.ts`):
+of the disassembly to highlight — pure functions, no React and no CodeMirror,
+so the root gate imports them directly with no `ui/node_modules` present
+(`tests/gate/ui/line-map-align.test.ts`):
 
 - `fnLocalLine` rebases the editor's line onto the function's own numbering
   (the centre pane usually shows the WHOLE module file, so it subtracts
@@ -232,6 +232,37 @@ present (`tests/gate/ui/line-map-align.test.ts`):
   offsets index a different listing;
 - `disasmLineForOffset` finds the line by its `[@ <offset>]` prefix, which is
   exactly what `src/disasm/print.ts` writes.
+
+**Following the cursor into a nested closure.** After §16.2's inline-function
+mapping landed, a function's linemap also carries rows for statements printed
+inside an inline function expression, whose `fn` is that CHILD closure's own
+Hermes index — `rowForLine` above ignores them (correct for the plain "which
+line in THIS listing" question it answers). `rowForLineAcrossFns` answers the
+different question `CenterPane.tsx` actually needs when the cursor might be
+sitting inside a printed-inline closure: the nearest preceding row in the
+WHOLE array, whichever `fn` it belongs to. When that `fn` differs from the
+one asked about, the result carries `nested: true` and the child's own `fn` —
+the honest disassembly to show is the CHILD's, not the parent's nearest
+preceding line. `CenterPane` then fetches that child's own `/api/fn/:fn/disasm`
+(`useDisasm`, an unconditional hook call keyed on the resolved child or -1)
+and renders it with a small header ("fn N — nested closure inside fn M")
+whose click jumps straight to the child (the same `select({kind:"fn", fn})`
+path a Callees row uses). No flicker: the pane keeps its previously rendered
+disasm (parent's or a previously-visited child's) until the newly resolved
+target's own data has actually loaded, so moving the cursor in and out of a
+closure never blanks the pane mid-fetch. A genuine function switch (a
+different top-level `fnId`, e.g. an xref jump) still clears it, so THAT
+transition keeps its own honest loading/error state.
+
+One known imprecision (§16.2): an inline closure's closing `}` / `);` line
+shares the enclosing statement's own line (neither carries an origin), so the
+LAST printed line of a nested closure's body can still resolve to the CHILD
+even though a human reads that line as back in the parent — accepted rather
+than guessed around, and pinned by a test
+(`tests/gate/ui/line-map-align.test.ts`) as documented behaviour. This is a UI
+default Fred may change; it is not a claim about what the bytecode did, only
+about which listing is more honest to show while the imprecision is
+unresolved.
 
 `CenterPane.tsx` feeds the result to the disasm `CodeView` as its
 `highlightLine`, so the existing `hbc-selected-line` decoration and its
