@@ -95,17 +95,21 @@ for (let i = 0; i < 0x10; i++) {
 }
 `;
 
-// Find `v99-seed777142`'s shape: output, then an array grown by a loop whose
-// counter never advances (`-Infinity + 1`). Both engines die of their own
-// array-size ceiling, with different wording, after identical output.
+// Find `v99-seed777142`'s shape, reduced to the part that matters: output,
+// then an engine resource ceiling both engines hit after byte-identical
+// output. The find itself grows an array in a loop whose counter never
+// advances (`-Infinity + 1`), which takes the VM seconds to allocate its way
+// through and made this test a load flake (it raced the ladder's 5 s
+// timeout, and a VM cut off by the timeout instead of by its own ceiling
+// exercises a different branch). Unbounded recursion reaches the same class
+// of ceiling — `RangeError: Maximum call stack size exceeded` in *both*
+// engines, `trace.ts`'s `RESOURCE_CEILING_MESSAGES` and `ladder.ts`'s
+// `VM_RESOURCE_CEILING` — in ~16 ms under the VM, so no amount of machine
+// load can turn it into a timeout.
 const RESOURCE_CEILING_SOURCE = `var x = 999;
 print('body runs even though condition is false: x=' + x);
-var results = [];
-var k = -Infinity;
-do {
-  results.push(k * k);
-  k++;
-} while (k < 5);
+function rec(n) { return rec(n + 1); }
+rec(0);
 print('unreachable');
 `;
 
