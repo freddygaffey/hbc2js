@@ -875,6 +875,49 @@ key and no network. `hbc2js ui-server … --workers off` turns the pool off
 entirely; the tab then says so instead of drawing an empty rail, because the
 routes answer 503 rather than an empty list.
 
+## Graph view
+
+The **Graph** tab in the right-hand panel (spec 25, decision D28) draws the
+*neighbourhood* of whatever is selected — never the whole graph. Renderer:
+React Flow (`@xyflow/react`, MIT); layout: `@dagrejs/dagre` (MIT), top-down
+layered, callers above the focus and callees below. Code lives in
+`ui/src/graph/` (`model.ts` pure, `layout.ts` pure, `nodes.tsx`, `store.ts`,
+`GraphPane.tsx`); `graph.css` re-points React Flow's own chrome at the theme
+tokens, so the graph has no palette of its own.
+
+Two modes, chosen by the selection:
+
+- **Call neighbourhood** of a function — `GET /api/fn/{fn}/callers`,
+  `/api/fn/{fn}/callees`, and `GET /api/xref/who-calls-by-name?fn=` drawn as
+  **dashed, muted** edges (candidates, never proven callers — the same honesty
+  rule the Xrefs pane follows). Neighbours with no function index (`require`
+  module refs, `computed-callee` unknowns) are drawn as `ext:` nodes and are
+  not navigable.
+- **Module edges** of a module — `GET /api/module/{id}`'s direct `deps` and
+  `dependents`. Direct edges only; spec 17 §14 cut the whole module graph.
+- **CFG** is not implemented: `src/ui-server` publishes no per-function CFG
+  route (spec 25 §7 keeps it as a follow-up).
+
+Interactions: **click** a node to focus the graph on it (the breadcrumb at the
+top grows; the code pane is untouched), **double-click** to select it — that
+jumps the listing and re-roots the graph there. **+** on a node expands one
+more hop into the existing drawing. **⛶** maximises the pane over the window
+(a call neighbourhood does not read at 280 px) and back.
+
+Scale rules, both visible in the UI:
+
+- **Level of detail** — below zoom 0.55 labels come off and nodes render as
+  token-coloured boxes (`data-lod="min"`).
+- **Cap** — at most `GRAPH_NODE_CAP = 300` nodes; the overflow is dropped and a
+  truncation bar says how many are not drawn, the same idiom as the listing's.
+
+Actions: `graph.open`, `graph.focus`, `graph.expand`, registered in
+`ui/src/actions/registry.ts` (browser shell only). The shared registry's
+`view.graph` stays disabled — `tests/ui-core/actions.test.ts` asserts that, and
+an implementation task does not invert an existing test — but its `openGraph`
+binding now opens this pane, so enabling it later is a one-line change plus
+that test's update.
+
 ## Smoke test (Playwright)
 
 `ui/e2e/` (`@playwright/test`, pinned exact, a `ui/`-only devDependency —

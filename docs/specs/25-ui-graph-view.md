@@ -45,8 +45,9 @@ Driven by the current selection (`ui/src/state/selection.ts`), one at a time:
 Only the focus node's neighbours are ever fetched. **Expand** re-roots nothing:
 clicking a neighbour's "+" fetches *that* node's callers/callees and merges
 them into the drawn graph; **focus** (click) makes the node the new focus and
-pushes a breadcrumb; **double-click** selects the function/module in the shared
-selection store, which is what jumps the code pane.
+pushes a breadcrumb, without touching the shared selection; **double-click**
+selects the function/module in the selection store, which jumps the code pane
+(and, because the pane follows a *new* selection, re-roots the graph there).
 
 ## 4. Where it lives
 
@@ -90,26 +91,39 @@ selection store, which is what jumps the code pane.
 
 ## 6. Acceptance tests
 
-`ui/e2e/graph.spec.ts`, against the throwaway fixture rig
-(`ui/e2e/prepare-fixture.mjs`, ports via `HBC2JS_E2E_PORT_BASE`) — never the
+**Model (`tests/ui-core/graph-model.test.ts`, node:test, runs in the root
+gate).** `ui/src/graph/model.ts` imports only *types* from
+`ui/src/contracts.ts`, so the pure half is testable with no browser and no
+`ui/node_modules`: focus + callers-above/callees-below, by-name candidates as
+`byName` edges that never outrank a resolved edge, a native/unknown neighbour
+(string `fn`) drawn but not navigable, the 300-node cap dropping the overflow
+and reporting `hidden` honestly (with edges to capped-away nodes dropped), and
+module mode drawing direct deps/consumers only.
+
+**Pane (`ui/e2e/graph.spec.ts`, Playwright)** against the throwaway fixture rig
+(`ui/e2e/prepare-fixture.mjs`; ports via `HBC2JS_E2E_PORT_BASE`) — never the
 owner's live rig:
 
-1. **opens and draws the selected function's neighbourhood**: select the first
-   function, open the Graph tab, assert ≥1 node and that the focus node's
-   `data-graph-focus="true"` matches the selected fn; assert the node count
-   agrees with the live `/api/fn/{fn}/callers` + `/callees` + by-name
-   candidates the UI itself fetched (bounded by the cap) — ground truth from
-   the API, never a hard-coded number.
-2. **expand adds nodes**: expanding a neighbour never *reduces* the node count
-   and re-roots nothing (focus is unchanged).
-3. **focus change**: clicking a neighbour makes it the focus and the breadcrumb
-   grows; the code pane's selection is unchanged until double-click.
-4. **LOD**: zooming out past the threshold hides labels (`data-lod="min"` on
-   the drawn nodes).
-5. **truncation bar**: a synthetic model over the cap renders the bar with the
-   hidden count (unit-checked in the pane's pure model helper via a DOM-free
-   assertion in the e2e run's page context, since no fixture bundle has a
-   300-neighbour function).
+1. **draws exactly the selected function's neighbourhood**: the drawn node id
+   set equals the set computed from the SAME routes the pane calls
+   (`/callers`, `/callees`, `who-calls-by-name`), the focus is marked, and the
+   breadcrumb starts at length 1. Ground truth from the API, never a
+   hard-coded count.
+2. **expand adds that neighbour's hop and never re-roots** (focus and
+   breadcrumb unchanged).
+3. **click re-focuses**: the clicked neighbour becomes the focus, the
+   breadcrumb grows to 2, and the graph is now *its* neighbourhood.
+4. **cap**: 300 nodes drawn and the truncation bar states the 51 that are not.
+5. **level of detail**: at full detail labels are drawn; zooming out past the
+   threshold flips every node to `data-lod="min"`.
+6. **maximise** toggles the pane over the window and back.
+
+Tests 2–4 drive **stubbed** xref responses (`page.route`): the rn-template
+fixture has no resolved `fn -> fn` call edges at all (its callees are
+`require` module refs and `computed-callee` unknowns; its callers are all
+`unknownInScope`), so expansion, re-focus and the cap cannot be exercised
+against it honestly. The routes are the contract; the pane is what is under
+test. Tests 1, 5 and 6 run against the real fixture server.
 
 Plus `npm run typecheck` in `ui/` (React Flow and dagre are typed; no `any`).
 

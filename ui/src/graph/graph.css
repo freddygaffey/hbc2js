@@ -1,0 +1,46 @@
+/* ui/src/graph/graph.css — React Flow's own chrome (controls, background
+ * dots, attribution) re-pointed at the shell's THEME TOKENS (spec 25 §5:
+ * same art direction, no new palette). Only `var(--…)` token references
+ * here — never a literal colour, which is what tests/gate/ui/tokens.test.ts
+ * enforces for everything outside ui/src/theme/**. */
+.react-flow {
+  --xy-background-color: var(--bg);
+  --xy-edge-stroke: var(--border);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-node-border: 1px solid var(--border);
+  --xy-node-background-color: var(--surface);
+  --xy-node-color: var(--text);
+  --xy-node-boxshadow-hover: none;
+  --xy-node-boxshadow-selected: none;
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-2);
+  --xy-controls-button-color: var(--text-muted);
+  --xy-controls-button-color-hover: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: none;
+  --xy-attribution-background-color: var(--surface);
+  --xy-minimap-background-color: var(--surface);
+  --xy-selection-background-color: var(--surface-2);
+  --xy-handle-background-color: var(--border);
+  --xy-handle-border-color: var(--border);
+}
+
+/* The dotted background pattern: a token-coloured dot on the shell's bg. */
+.react-flow__background pattern circle {
+  fill: var(--border);
+}
+
+/* Our custom node draws its own border/background; React Flow's default
+ * `.react-flow__node` box would double it up. */
+.react-flow__node-hbc {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.react-flow__attribution {
+  font-size: 9px;
+}

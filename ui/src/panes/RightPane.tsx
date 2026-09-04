@@ -13,6 +13,7 @@ import { select, useSelection } from "../state/selection.ts";
 import { WorkersPane } from "./WorkersPane.tsx";
 import { StringsPane } from "./StringsPane.tsx";
 import { TablesPane } from "./TablesPane.tsx";
+import { GraphPane } from "../graph/GraphPane.tsx";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -114,6 +115,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <Tabs.Trigger value="xrefs" className={tabClass}>Xrefs</Tabs.Trigger>
           <Tabs.Trigger value="strings" className={tabClass}>Strings</Tabs.Trigger>
           <Tabs.Trigger value="tables" className={tabClass}>Tables</Tabs.Trigger>
+          <Tabs.Trigger value="graph" className={tabClass}>Graph</Tabs.Trigger>
           <Tabs.Trigger value="findings" className={tabClass}>Findings</Tabs.Trigger>
           <Tabs.Trigger value="package" className={tabClass}>Package</Tabs.Trigger>
           <Tabs.Trigger value="workers" className={tabClass}>AI</Tabs.Trigger>
@@ -205,6 +207,13 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           not gated on `hasFn` either, same reasoning as Strings. */}
       <Tabs.Content value="tables" className={bodyClass}>
         <TablesPane />
+      </Tabs.Content>
+
+      {/* Spec 25: the neighbourhood graph. `flex` (not the scrolling
+          `bodyClass`) — React Flow owns its own pan/zoom viewport and must
+          fill the panel rather than scroll inside it. */}
+      <Tabs.Content value="graph" className="flex min-h-0 flex-1 flex-col outline-none">
+        <GraphPane visible={panel === "graph"} />
       </Tabs.Content>
 
       <Tabs.Content value="findings" className={bodyClass}>
