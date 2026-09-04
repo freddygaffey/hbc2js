@@ -51,6 +51,7 @@ import type {
 } from "./schema.ts";
 import { exportedNamesOf } from "./exported-names.ts";
 import { scanObjectTables, type ObjectTableRow, type ObjectTableScan } from "./object-tables.ts";
+import { compareTemplateInjections, scanTemplateInjections, type TemplateInjectionRow, type TemplateInjectionScan } from "./template-injections.ts";
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -186,6 +187,28 @@ export interface ObjectTablesResult {
 
 /** `query object-tables` defaults (spec 10 §3.1). */
 export const OBJECT_TABLE_DEFAULTS = { minProps: 4, stringRatio: 0.5, minMatched: 1, limit: 100 } as const;
+
+/** Options for `query template-injections` (spec 17 §14.3): the WebView-
+ *  injection anti-pattern lead (hunt lead C1) — a template literal / `+`
+ *  chain whose static text quotes a hole. */
+export interface TemplateInjectionsOptions {
+  readonly module?: number;
+  readonly limit?: number;
+  readonly all?: boolean;
+}
+
+export interface TemplateInjectionsResult {
+  readonly rows: readonly TemplateInjectionRow[];
+  readonly total: number;
+  readonly truncated: boolean;
+  /** Functions the underlying scan decoded (`failed` = the ones it could
+   *  not, skipped rather than fatal). */
+  readonly scanned: number;
+  readonly failed: number;
+}
+
+/** `query template-injections` default cap (spec 17 §14.3). */
+export const TEMPLATE_INJECTIONS_DEFAULT_LIMIT = 100;
 
 export interface Bounded<T> {
   readonly rows: readonly T[];
@@ -666,6 +689,37 @@ export class ArtifactService {
     rows.sort(compareObjectTables(filtered));
     return {
       tables: rows.slice(0, limit),
+      total: rows.length,
+      truncated: rows.length > limit,
+      scanned: scan.scanned,
+      failed: scan.failed,
+    };
+  }
+
+  /** The one bundle-wide `template-injections` scan, memoised the same way
+   *  `objectTables` is: O(instructions), so every later filtered query is a
+   *  filter over an array. Live verb — needs `--hbc`, because chunks/holes
+   *  are read from the bytecode, not artifact rows. */
+  private templateInjectionScan: TemplateInjectionScan | undefined;
+  private ensureTemplateInjections(): TemplateInjectionScan {
+    if (this.templateInjectionScan === undefined) {
+      const module = this.ensureModule("template-injections");
+      this.templateInjectionScan = scanTemplateInjections(module, (fn) => this.moduleOfFn(fn));
+    }
+    return this.templateInjectionScan;
+  }
+
+  /** §14.3 `query template-injections` — the WebView-injection anti-pattern
+   *  lead (hunt lead C1, docs/specs/hunt-tooling-backlog.md line ~55):
+   *  surfaces every template literal / `+` chain whose static text quotes a
+   *  substitution. Ranked by substitutions-inside-quotes desc, then `fn`
+   *  (`compareTemplateInjections`). */
+  templateInjections(opts: TemplateInjectionsOptions = {}): TemplateInjectionsResult {
+    const scan = this.ensureTemplateInjections();
+    const rows = (opts.module !== undefined ? scan.rows.filter((r) => r.module === opts.module) : scan.rows).slice().sort(compareTemplateInjections);
+    const limit = opts.all === true ? rows.length : (opts.limit ?? TEMPLATE_INJECTIONS_DEFAULT_LIMIT);
+    return {
+      rows: rows.slice(0, limit),
       total: rows.length,
       truncated: rows.length > limit,
       scanned: scan.scanned,

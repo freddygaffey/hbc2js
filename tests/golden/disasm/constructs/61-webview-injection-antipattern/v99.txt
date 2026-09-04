@@ -1,0 +1,58 @@
+; hbc2js disassembly of 61-webview-injection-antipattern/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=4 strings=14 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x00000174 size=129
+  0000  DeclareGlobalVar     s11 "injectTemplate"
+  0005  DeclareGlobalVar     s10 "injectConcat"
+  000a  DeclareGlobalVar     s13 "safeTemplate"
+  000f  GetGlobalObject      r1
+  0011  LoadConstUndefined   r0
+  0013  CreateClosure        r2, r0, f1 "injectTemplate"
+  0018  PutByIdLoose         r1, r2, #c0, s11 "injectTemplate"
+  001e  CreateClosure        r2, r0, f2 "injectConcat"
+  0023  PutByIdLoose         r1, r2, #c1, s10 "injectConcat"
+  0029  CreateClosure        r2, r0, f3 "safeTemplate"
+  002e  PutByIdLoose         r1, r2, #c2, s13 "safeTemplate"
+  0034  TryGetById           r3, r1, #c0, s12 "print"
+  003a  GetByIdShort         r4, r1, #c1, s11 "injectTemplate"
+  003f  LoadConstString      r2, s5 "abc"
+  0043  Call2                r2, r4, r0, r2
+  0048  Call2                r2, r3, r0, r2
+  004d  TryGetById           r3, r1, #c0, s12 "print"
+  0053  GetByIdShort         r4, r1, #c2, s10 "injectConcat"
+  0058  LoadConstString      r2, s7 "xyz"
+  005c  Call2                r2, r4, r0, r2
+  0061  Call2                r2, r3, r0, r2
+  0066  TryGetById           r2, r1, #c0, s12 "print"
+  006c  GetByIdShort         r3, r1, #c3, s13 "safeTemplate"
+  0071  LoadConstString      r1, s4 "World"
+  0075  Call2                r1, r3, r0, r1
+  007a  Call2                r1, r2, r0, r1
+  007f  Ret                  r1
+
+function #1 "injectTemplate"  params=2 frame=14 env=0 flags=dbg,overflowed  @0x000001f5 size=32
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r0, r0, #c0, s9 "HermesInternal"
+  0008  GetByIdShort         r3, r0, #c1, s8 "concat"
+  000d  LoadConstString      r2, s2 "')"
+  0011  LoadConstString      r1, s1 "window.postMessage('"
+  0015  LoadParam            r0, 1
+  0018  Call3                r0, r3, r1, r0, r2
+  001e  Ret                  r0
+
+function #2 "injectConcat"  params=2 frame=2 env=0 flags=dbg,overflowed  @0x00000215 size=21
+  0000  LoadConstString      r1, s1 "window.postMessage('"
+  0004  LoadParam            r0, 1
+  0007  Add                  r1, r1, r0
+  000b  LoadConstString      r0, s2 "')"
+  000f  AddS                 r0, r1, r0
+  0013  Ret                  r0
+
+function #3 "safeTemplate"  params=2 frame=14 env=0 flags=dbg,overflowed  @0x0000022a size=32
+  0000  GetGlobalObject      r0
+  0002  TryGetById           r0, r0, #c0, s9 "HermesInternal"
+  0008  GetByIdShort         r3, r0, #c1, s8 "concat"
+  000d  LoadConstString      r2, s0 "!"
+  0011  LoadConstString      r1, s3 "Hello, "
+  0015  LoadParam            r0, 1
+  0018  Call3                r0, r3, r1, r0, r2
+  001e  Ret                  r0

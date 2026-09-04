@@ -198,6 +198,40 @@ export interface ObjectTables {
   readonly failed: number;
 }
 
+/** One WebView-injection anti-pattern site (`GET /api/template-injections`,
+ *  spec 17 §14.3, hunt lead C1): a template literal / `+` chain whose static
+ *  text quotes a substitution, e.g. `` `window.foo('${userValue}')` `` or
+ *  `"x = '" + userValue + "'"`. `prefix`/`suffix` are the static text either
+ *  side of the reported quote pair, capped at ~120 chars; holes inside them
+ *  are rendered as `${…}`. `substitutions` is how many of this call/chain's
+ *  substitutions fall INSIDE the reported quotes (the ranking key);
+ *  `nSubs` is the total in the whole template/chain. No UI pane yet —
+ *  contracts only. */
+export interface TemplateInjectionRow {
+  readonly fn: number;
+  readonly fnName: string | null;
+  readonly size: number | null;
+  readonly offset: number;
+  readonly module: number | null;
+  readonly kind: "template" | "concat";
+  readonly quote: "'" | '"';
+  readonly prefix: string;
+  readonly suffix: string;
+  readonly substitutions: number;
+  readonly nSubs: number;
+}
+
+/** `GET /api/template-injections?module=&limit=` — bundle-wide scan result.
+ *  `scanned`/`failed` are the functions the one-pass bytecode scan decoded /
+ *  could not decode. */
+export interface TemplateInjections {
+  readonly rows: readonly TemplateInjectionRow[];
+  readonly total: number;
+  readonly truncated: boolean;
+  readonly scanned: number;
+  readonly failed: number;
+}
+
 /** A `strings.json` entry, verbatim (`src/artifact/schema.ts`'s
  *  `StringRow`) — either the literal value or, for a string over 4 KB, a
  *  head + hash instead of a silent truncation (§2.3a). */

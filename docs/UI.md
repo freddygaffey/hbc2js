@@ -57,6 +57,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/findings` | `Bounded<ResolvedFinding>` |
   | GET | `/api/leads` | `LeadsResult` |
   | GET | `/api/object-tables?minProps=&stringRatio=&key=&value=&minMatched=&module=&limit=` | `ObjectTables` — the bundle-wide constant-object-literal ("endpoint tables") inventory, spec 17 §14.2. Live: needs the server's `--hbc`; each table is inlined with the containing function's `fnName`/`size` and with `matched` (members hit by `key`/`value`). A filtered query is ranked by `matched`, then hit density, then size — not by size alone, or a 2,125-member HTML-entity table wins on `value=^/` |
+  | GET | `/api/template-injections?module=&limit=` | `TemplateInjections` — bundle-wide WebView-injection anti-pattern scan (hunt lead C1), spec 17 §14.3. Live: needs the server's `--hbc`; each row is inlined with the containing function's `fnName`/`size`. Ranked by substitutions-inside-quotes desc, then `fn`. **Contracts only — no UI pane yet.** |
   | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
   | GET | `/api/search/functions?q=&cursor=` | `SearchPage<FunctionMatch>` |
   | GET | `/api/search/source?q=&cursor=` | `SearchPage<SourceMatch>` |

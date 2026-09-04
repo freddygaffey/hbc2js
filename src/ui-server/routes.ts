@@ -336,6 +336,22 @@ const BASE_ROUTES: readonly Route[] = [
       );
     },
   },
+  {
+    // spec 17 §14.3: bundle-wide WebView-injection anti-pattern scan (hunt
+    // lead C1). Live verb, no UI pane yet — contracts-only for now.
+    method: "GET",
+    re: /^\/api\/template-injections$/,
+    handler: (_p, req, ctx) => {
+      const moduleId = qNum(req.query.module);
+      const limit = qNum(req.query.limit);
+      return ok(
+        ctx.resources.templateInjections({
+          ...(moduleId !== undefined ? { module: moduleId } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        }),
+      );
+    },
+  },
   // -- native / leads / findings / scan (spec 17 §1/§14) --
   {
     method: "GET",

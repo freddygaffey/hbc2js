@@ -16,7 +16,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { LineMapEntry } from "../emit/origin.ts";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary, type ObjectTablesOptions } from "../artifact/service.ts";
+import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary, type ObjectTablesOptions, type TemplateInjectionsOptions } from "../artifact/service.ts";
 import { ProjectService, PROJECT_CAPS, type AnnotationRow } from "../project/service.ts";
 import type { ResolvedFinding } from "../project/findings.ts";
 import type { FindingStatus, Severity, Tag } from "../project/schema.ts";
@@ -316,6 +316,22 @@ export class McpResources {
       tables: r.tables.map((t) => {
         const nb = this.neighbor(t.fn);
         return { ...t, fnName: nb.name, size: nb.size };
+      }),
+    };
+  }
+
+  /** `template-injections` (spec 17 §14.3) — the WebView-injection
+   *  anti-pattern lead (hunt lead C1, docs/specs/hunt-tooling-backlog.md
+   *  line ~55): a template literal / `+` chain whose static text quotes a
+   *  substitution. Rows are inlined with the CONTAINING function's
+   *  `fnName`/`size`, same convention as `objectTables`. */
+  templateInjections(opts: TemplateInjectionsOptions = {}) {
+    const r = this.artifact.templateInjections(opts);
+    return {
+      ...r,
+      rows: r.rows.map((row) => {
+        const nb = this.neighbor(row.fn);
+        return { ...row, fnName: nb.name, size: nb.size };
       }),
     };
   }

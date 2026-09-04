@@ -52,8 +52,12 @@ New verbs/capabilities the hunt wanted:
   derived?) — currently pure manual reading.
 - JSX-prop / named-component-config locator (`originWhitelist={…}` on WebView, RN
   `linking` config) — blocked confirming WebView origin restrictions + deep-link map.
-- AST pattern match "template literal containing a quoted string containing ${…}" — the
-  WebView-injection anti-pattern (C1); would surface the bug class bundle-wide.
+- ~~AST pattern match "template literal containing a quoted string containing ${…}" — the
+  WebView-injection anti-pattern (C1); would surface the bug class bundle-wide.~~ **DONE
+  (2026-09-04)**: `query template-injections` (spec 17 §14.3, `src/artifact/
+  template-injections.ts`) — bundle-wide, no decompilation; recognises both the
+  `HermesInternal.concat` (template literal) and `Add`/`AddN`/`AddS` (`+`-chain) shapes.
+  245 rows on Service NSW, ≈ 1 s scan.
 - Generator/state-machine lowering reuses register names across case/yield boundaries
   (one `r3` = different things per case) → per-state rename in decompile/`query fn`.
 - Storage-key classification (which keys route to encrypted-store vs plaintext

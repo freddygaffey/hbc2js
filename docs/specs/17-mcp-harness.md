@@ -81,6 +81,7 @@ resource key survives every rename and re-render (spec 10 §0).
 | `xref/global-uses/{name}` | global name | `query global-uses` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `xref/who-calls-by-name?fn=N\|name=X` | `fnIndex` OR export name | `query who-calls-by-name` (spec 10 §3.1; §14.1 below) | ≤ 50 candidate rows + total; `names[]` + `ambiguous` |
 | `object-tables?minProps&stringRatio&key&value&minMatched&module&limit` | filter opts | `query object-tables` (spec 10 §3.1; §14.2 below) | ≤ 100 tables + total; rows inlined with `fnName`/`size` |
+| `template-injections?module&limit` | filter opts | `query template-injections` (spec 10 §3.1; §14.3 below) | ≤ 100 rows + total; rows inlined with `fnName`/`size` |
 | `native[/{fn}]` — native surface | optional `fnIndex` | `query native` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `module/{mod}` + `module-graph` | `mod` | `query module` (spec 10 §3.1) | that verb's ≤ 15 lines |
 | `package-id/{mod}` — fingerprint-DB identification result for a module | `mod` | reuse-validation two-key gate (spec 13) over the shared sigdb (spec 15) | spec-13 published cap; every row cites the sigdb match, never a guess |
@@ -429,6 +430,73 @@ tables lead: fn 10635 (module 778, 38 members, 35 matching — `PATH_AUTHENTICAT
 `PATH_OLD_DRIVER_LICENCE`/`PATH_DDL_OPT_IN_STATUS`/… = the `LicenceAPIEndpoints`
 table the hunt originally found by luck). Adding `--min-matched 4` narrows the
 162 to exactly those two.
+
+### 14.3 `template-injections` — WebView-injection anti-pattern scan (2026-09-04, landed)
+
+Backlog item #9 (`docs/specs/hunt-tooling-backlog.md` line ~55), hunt lead
+C1: a template literal or `+`-concatenation whose static text QUOTES a
+runtime substitution, e.g. `` `window.foo('${userValue}')` `` or
+`"x = '" + userValue + "'"`. That shape is exactly what turns "we pass a
+value into `injectedJavaScript`" into "we pass a value into
+`injectedJavaScript` in a position an attacker can break out of with a `'`
+in the value" — a security-relevant lead a hunt today can only find by
+grepping for `injectedJavaScript` and eyeballing every hit.
+
+**How.** No decompilation, like `object-tables` (§14.2): `src/artifact/
+template-injections.ts` decodes every function ONCE (decode only — no CFG,
+no frames) and walks it straight-line, tracking a per-register "reaching
+definition" map that is DROPPED at every branch target — so a reported
+chunk is always really this call/chain's, never guessed across a CFG edge.
+Two bytecode shapes are recognised, matching `docs/lowering/
+template-literals.md`'s finding that hermesc never confuses `concat` (a
+template literal — ToString per piece) with `+` (ToPrimitive):
+`kind: "template"` is one call whose callee resolves through that map to a
+`Get*ById "concat"` off a `Get*ById "HermesInternal"` base, `this` = the
+first cooked chunk, args alternating `substitution, chunk, …` (both the
+explicit-register `Call1`..`Call4` and the generic `Call`/`CallLong`, whose
+args are recovered from the function header's `frameSize` alone via the
+same `argBase - i` convention `src/emit/lower.ts`'s `frameArgs` uses — no
+CFG needed); `kind: "concat"` is the OUTERMOST `Add`/`AddN`/`AddS` of a
+chain, flattened by recursing through operands whose reaching def is
+itself an `Add`. A chunk position that does not resolve to a string
+literal (a nested template, a nonliteral built across a branch) drops the
+whole call — never a guessed chunk.
+
+**Truth rule — what is and is not recognised.** Recognised: a direct
+`Call*`/`CallLong` to `HermesInternal.concat` (not a `Reflect.apply`
+indirection — that is the EMITTER's rebuild of the raw call, and this
+scanner reads raw bytecode) whose every chunk is a compile-time string
+literal reachable in the SAME straight-line block as the call; the
+outermost `Add`/`AddN`/`AddS` of a `+` chain with the same constraint.
+NOT recognised: a callee/chunk reached through a register hop that crosses
+a branch (the reaching-def map is dropped at every label — a definition
+that depends on which edge was taken is not "this call's" with certainty);
+`.concat(...)` on anything other than `HermesInternal` (plain
+`Array.prototype.concat`/`String.prototype.concat` are extremely common and
+are not templates); a quote pair whose two halves come from two different
+calls/chains. A found quote pair is reported with `substitutions` = how
+many of that call/chain's substitutions fall INSIDE it (the ranking key)
+and `nSubs` = the total in the whole expression; `prefix`/`suffix` are the
+static text either side of the quotes, capped at 120 chars (holes shown as
+`${…}`).
+
+**Shape.** `hbc2js query template-injections --artifact <dir> --hbc <in.hbc>
+[--module M] [--limit N=100] [--all] [--json]` / `ArtifactService
+.templateInjections(opts)` / `McpResources.templateInjections` /
+`GET /api/template-injections?module=&limit=`. Ranked by
+`substitutions` desc, then `fn` (`compareTemplateInjections`, exported and
+unit-tested). No UI pane yet — `ui/src/contracts.ts` carries the additive
+`TemplateInjectionRow`/`TemplateInjections` types for a future one.
+
+**Measured (Service NSW, 43,384 functions, same corpus as §14.2).** One
+CLI call (`--json`, cold `--hbc` decode included) completed in ≈ 1 s,
+`scanned:43384 failed:0`, `total:245` rows. The top 5 by
+substitutions-inside-quotes are all in bundled LIBRARY code, not app code —
+`fn:36610` (module 3611), `fn:4253` (module 334), `fn:5794` (module 498),
+`fn:7560` (module 551), `fn:7565` (module 551) — consistent with the shape
+being common in error-message/JSX-string builders generally, not a signal
+on its own; a hunt still has to read each hit's actual text (`query
+source`) to judge whether the quoted hole is attacker-reachable.
 
 ### 14.1 `who-calls-by-name` — name-based caller recovery (2026-09-04, landed)
 

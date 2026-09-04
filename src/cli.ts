@@ -1505,6 +1505,30 @@ function runQuery(argv: readonly string[]): void {
         if (tl !== null) process.stdout.write(`${tl}\n`);
         process.stdout.write(`total:${result.total} scanned:${result.scanned}\n`);
       }
+    } else if (verb === "template-injections") {
+      // Bundle-wide WebView-injection anti-pattern scan (spec 17 §14.3;
+      // hunt lead C1). Live verb: chunks/holes are read from the bytecode,
+      // so this needs `--hbc`.
+      const num = (flag: string): number | undefined => {
+        const v = flagValue(argv, flag);
+        return v === undefined ? undefined : Number(v);
+      };
+      const result = svc.templateInjections({
+        ...(num("--module") !== undefined ? { module: num("--module")! } : {}),
+        ...(num("--limit") !== undefined ? { limit: num("--limit")! } : {}),
+        all,
+      });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) {
+          process.stdout.write(
+            `fn:${r.fn} @${r.offset} module:${r.module ?? "-"} kind:${r.kind} subs-in-quotes:${r.substitutions}/${r.nSubs} ${r.quote}\n  …${r.prefix}${r.quote}[${r.substitutions} sub${r.substitutions === 1 ? "" : "s"}]${r.quote}${r.suffix}…\n`,
+          );
+        }
+        const tl = truncationLine(result.total, result.rows.length, "--limit N or --all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total} scanned:${result.scanned}\n`);
+      }
     } else if (verb === "string") {
       const sid = Number(positional[0]);
       const showFull = argv.includes("--full");
@@ -1560,7 +1584,7 @@ function runQuery(argv: readonly string[]): void {
       const range = linesArg !== undefined ? (linesArg.split("-").map(Number) as [number, number]) : undefined;
       process.stdout.write(svc.source(fn, range) + "\n");
     } else {
-      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|object-tables|module|source> …", 2, json);
+      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|object-tables|template-injections|module|source> …", 2, json);
     }
     process.exit(0);
   } catch (e) {
