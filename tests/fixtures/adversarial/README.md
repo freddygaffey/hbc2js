@@ -4,7 +4,7 @@ Deliberately hard-to-decompile JavaScript code designed to stress-test and find 
 
 ## Test status summary
 
-- **Total fixtures**: 43
+- **Total fixtures**: 45
 - **PASS through decompiler**: 40 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
 - **DIVERGE (harness verdict)**: 2, all v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`) and `43-fuzz-async-guard-shared-range` (**confirmed real bug, not yet root-caused**: candidate genuinely disagrees with the v99 Hermes VM's own trace — see docs/BUGS.md 2026-09-02, construct-fuzzer seed-base 777000 row). `20-symbol-keyed-properties` (**toolchain artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM) is now **PASS-with-caveat**, not DIVERGE — as of 2026-09-02 `src/harness/ladder.ts`'s D14 VM-agrees-with-candidate override is evidence-based (fires whenever `candidatePrint === hermesPrint`, not only for a curated fixture name), so this fixture's own VM-agrees evidence now overrules the Node-vs-candidate divergence directly; the underlying toolchain builtin-table gap itself is unfixed (see docs/BUGS.md's toolchain row). See "CONSOLIDATION 26 triage" below and the fuzz row above for `43`.
 - **ERROR (decompiler threw)**: 0
@@ -170,6 +170,22 @@ being declared, before its promise chain ever runs — while the decompiled
 candidate runs to completion under Node. Not root-caused (out of scope for
 the triage task that landed it); see docs/BUGS.md's 2026-09-02 seed-base
 777000 row for the minimisation trail (`tools/fuzz/minimise-live.mjs`).
+
+### 45-missing-global-wording (added 2026-09-04, construct-fuzzer family F3)
+
+A read of a missing global throws a `ReferenceError` in every engine, at the
+same point, with the same constructor -- but Hermes words the message
+`Property 'missingCallee' doesn't exist` and V8 words it `missingCallee is not
+defined`. A program that prints `String(e)` therefore carries engine-specific
+prose inside ordinary `print` output, where the harness's err/unhandled
+message-masking channel never sees it, so all 9 finds of fuzz family F3 read
+as DIVERGENT against the Hermes VM. Verified DIVERGENT at v84/v94/v96/v99
+before the fix and PASS at all four after it: the harness now projects both
+renderings onto one canonical, name-preserving form
+(`normaliseEngineMessages`, `src/harness/trace.ts`), applied to both sides in
+`compare.ts` and in `ladder.ts`'s VM cross-check. `expected.txt` is Node's
+(V8's) wording, as for every other fixture here; the Hermes wording is what
+the VM side produces.
 
 ## Compilation note
 

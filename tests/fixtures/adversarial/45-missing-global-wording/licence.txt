@@ -1,0 +1,6 @@
+Original work, written for the hbc2js project. Licensed MIT, same terms as
+the rest of hbc2js (see docs/DECISIONS.md D4 -- fixtures must be freely usable
+and are authored fresh rather than borrowed from any external corpus).
+Hand-reduced from the 9 construct-fuzzer finds of family F3 (all v99, e.g.
+reports/fuzz/finds/v99-seed777080.js), campaign seed-base 777000
+(docs/BUGS.md, 2026-09-04 family F3 row).

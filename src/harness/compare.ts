@@ -11,7 +11,7 @@
 // two truncated traces with equal prefixes compare equal. **Never allow a
 // two-valued verdict** — HA-01.
 import type { Trace, TraceRecord } from "./trace.ts";
-import { renderRecord, renderRecordMasked, isComparable, isEvidence } from "./trace.ts";
+import { renderRecord, renderRecordMasked, isComparable, isEvidence, isResourceCeilingRecord, normaliseEngineMessages } from "./trace.ts";
 
 export const TRACE_VERDICT = {
   EQUIVALENT: "EQUIVALENT",
@@ -50,10 +50,17 @@ interface ComparableTrace {
 export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | Trace): TraceComparison {
   const ra = a.records.filter(isComparable);
   const rb = b.records.filter(isComparable);
-  const la = ra.map(renderRecord);
-  const lb = rb.map(renderRecord);
-  const laMasked = ra.map(renderRecordMasked);
-  const lbMasked = rb.map(renderRecordMasked);
+  // Both sides are projected through the same engine-wording normalisation
+  // (`normaliseEngineMessages`, docs/BUGS.md 2026-09-04 family F3) before
+  // anything is compared: the missing-global ReferenceError text differs
+  // between Hermes and V8 and reaches the trace inside ordinary `out`
+  // records (`print(String(e))`), which the err/unhandled masking channel
+  // never sees. Name-preserving, so a missing `f2` still never matches a
+  // missing `f3`.
+  const la = ra.map((r) => normaliseEngineMessages(renderRecord(r)));
+  const lb = rb.map((r) => normaliseEngineMessages(renderRecord(r)));
+  const laMasked = ra.map((r) => normaliseEngineMessages(renderRecordMasked(r)));
+  const lbMasked = rb.map((r) => normaliseEngineMessages(renderRecordMasked(r)));
 
   // A record that differs only in an err/unhandled message's
   // identifier-shaped tokens (renderRecordMasked === renderRecord for every
@@ -99,15 +106,40 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
   // called a divergence, or the "both traces hit a budget" branch below is
   // unreachable whenever the two record counts differ (which, for a
   // non-terminating program, they always do).
-  const prefixDivergence: TraceDivergence | null = i < cutoff ? { index: i, a: la[i]!, b: lb[i]! } : null;
   const lengthMismatch = la.length !== lb.length;
 
   const timedOutA = "timedOut" in a && a.timedOut === true;
   const timedOutB = "timedOut" in b && b.timedOut === true;
   const truncatedA = timedOutA || hasLimit(ra);
   const truncatedB = timedOutB || hasLimit(rb);
-  const truncated = truncatedA || truncatedB;
   const evidence = ra.filter(isEvidence).length;
+
+  // Resource-ceiling marker (docs/BUGS.md 2026-09-04, the 30 post-P-16
+  // survivors). One side died where the engine ran out of room — call
+  // stack, max string length, max array length — while the other side was
+  // still producing ordinary output and was itself cut off by a budget. The
+  // engine's ceiling is a property of the *host*, not of the program: it is
+  // the same kind of "we stopped looking here" marker a `limit` record is,
+  // so the comparison ends at it, INCONCLUSIVE, exactly as it would at a
+  // `limit`. Three guards keep this from swallowing real evidence:
+  //   * the prefix up to that record must already be equal (we only get
+  //     here at the first mismatch, so anything earlier is a real
+  //     divergence and is reported as one);
+  //   * exactly one side may be resource-ceiling shaped — if the other side
+  //     terminated too, with any err/unhandled of its own, the two really
+  //     did die differently and that stays DIVERGENT;
+  //   * the other side must itself be budget-limited, i.e. still running
+  //     when we stopped watching. A program that genuinely throws
+  //     `RangeError: Invalid array length` (`new Array(-1)`) against a side
+  //     that ran to completion is therefore still DIVERGENT.
+  const stillRunning = (r: TraceRecord | undefined): boolean => r !== undefined && r.k !== "err" && r.k !== "unhandled";
+  const aCeiling = i < cutoff && isResourceCeilingRecord(ra[i]!);
+  const bCeiling = i < cutoff && isResourceCeilingRecord(rb[i]!);
+  const resourceCeiling: "a" | "b" | null =
+    aCeiling && !bCeiling && stillRunning(rb[i]) && truncatedB ? "a" : bCeiling && !aCeiling && stillRunning(ra[i]) && truncatedA ? "b" : null;
+  const truncated = truncatedA || truncatedB || resourceCeiling !== null;
+
+  const prefixDivergence: TraceDivergence | null = i < cutoff && resourceCeiling === null ? { index: i, a: la[i]!, b: lb[i]! } : null;
 
   // Budget-limited with an equal prefix: no divergence is reported at all,
   // so a timing-dependent cut-off point can never become a divergence
@@ -119,7 +151,7 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
   // records" is a real behaviour difference, and killing it would blind the
   // mutation selftest (`tests/gate/harness/selftest.test.ts` HA-09, whose
   // kill rate drops by 8 mutants under an either-side rule).
-  const budgetLimited = prefixDivergence === null && truncatedA && truncatedB;
+  const budgetLimited = prefixDivergence === null && (resourceCeiling !== null || (truncatedA && truncatedB));
   const divergence: TraceDivergence | null =
     prefixDivergence ?? (lengthMismatch && !budgetLimited ? { index: i, a: la[i] ?? "<end of trace>", b: lb[i] ?? "<end of trace>" } : null);
 
@@ -131,6 +163,11 @@ export function compareTraces(a: ComparableTrace | Trace, b: ComparableTrace | T
     // length when *neither* side hit a budget — one program simply stopped.
     verdict = TRACE_VERDICT.DIVERGENT;
     why = prefixDivergence !== null ? `traces diverge at record ${i}` : `traces have equal prefixes but different lengths (${la.length} vs ${lb.length}) and neither hit a budget`;
+  } else if (resourceCeiling !== null) {
+    verdict = TRACE_VERDICT.INCONCLUSIVE;
+    const which = resourceCeiling === "a" ? "first" : "second";
+    const ceilingRecord = resourceCeiling === "a" ? la[i]! : lb[i]!;
+    why = `resource: the ${which} trace hit an engine resource ceiling (${ceilingRecord}) after ${i} identical record(s) while the other side was still running inside its own budget; an engine limit is a budget marker, not an observation, so the rest was never observed`;
   } else if (truncated) {
     verdict = TRACE_VERDICT.INCONCLUSIVE;
     why = lengthMismatch

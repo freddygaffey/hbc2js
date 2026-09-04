@@ -21,7 +21,7 @@ import { runProgram } from "./runner.ts";
 import type { RunOptions } from "./runner.ts";
 import { compareTraces, TRACE_VERDICT } from "./compare.ts";
 import type { TraceComparison } from "./compare.ts";
-import { printProjection } from "./trace.ts";
+import { printProjection, isResourceCeilingRecord, normaliseEngineMessages } from "./trace.ts";
 import { runHermesAsync, hermesPrintProjection } from "./hermes-vm.ts";
 import { syntaxOk } from "./mutate.ts";
 import { findHermesc, compileWithHermesc, roundTripFromBytes } from "./roundtrip.ts";
@@ -280,9 +280,31 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
         // by the timeout can be cut mid-line. A program that genuinely
         // diverges before its cut-off still compares unequal inside the
         // capped prefix and stays DIVERGENT.
-        const candidateOut = printProjection(mainPhase).join("\n").split("\n");
-        const vmOut = hermesPrintProjection(hermesResult).join("\n").split("\n");
-        const candidateBudgetHit = ta.timedOut === true || ta.records.some((r) => r.k === "limit");
+        //
+        // Resource-ceiling marker (docs/BUGS.md 2026-09-04, the 30 finds
+        // that survived P-16): when the candidate under Node dies of an
+        // uncaught engine-resource RangeError (call stack, max string
+        // length, max array length) while the VM is still looping toward its
+        // own timeout, the candidate's death is Node's ceiling, not a
+        // behaviour difference — the same "we stopped watching here" marker
+        // a `limit` record is. `printProjection` renders it as a trailing
+        // `uncaught RangeError` line; that line is dropped and the candidate
+        // counted as budget-limited, so an otherwise-equal prefix reports
+        // INCONCLUSIVE. The VM side must *itself* still be inside a budget
+        // (`vmBudgetHit` below) for this to apply, so a program that really
+        // throws `RangeError: Invalid array length` against a VM that ran to
+        // completion stays DIVERGENT.
+        //
+        // Both projections also go through `normaliseEngineMessages`
+        // (family F3): Hermes's `Property 'f2' doesn't exist` and V8's `f2
+        // is not defined` are the same ReferenceError at the same point in
+        // two engines' prose, and here they arrive inside `print` output
+        // where no masking channel sees them.
+        const candidateCeiling = mainPhase.some((r) => r.k === "err" && r.phase === "main" && isResourceCeilingRecord(r));
+        const candidateLines = printProjection(mainPhase).map(normaliseEngineMessages).join("\n").split("\n");
+        const candidateOut = candidateCeiling ? candidateLines.slice(0, -1) : candidateLines;
+        const vmOut = hermesPrintProjection(hermesResult).map(normaliseEngineMessages).join("\n").split("\n");
+        const candidateBudgetHit = ta.timedOut === true || ta.records.some((r) => r.k === "limit") || candidateCeiling;
         const vmBudgetHit = hermesResult.timedOut || vmOut.length > (runOpts.maxRecords ?? 20000);
         // *Both* sides must have been cut off, not either: a candidate that
         // hung with no output while the VM ran to completion inside the same
@@ -302,10 +324,10 @@ export async function runOracleLadder(opts: LadderOptions): Promise<CheckResult>
           // inside the prefix (cmp already DIVERGENT) is real evidence and
           // is left alone.
           caveats.push(
-            `${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} cross-check hit a budget (candidate ${candidateOut.length} line(s), record cap/timeout; VM ${vmOut.length} line(s), timeout/over the candidate's record budget); the ${cap}-line common prefix is identical, so this is a budget cut-off, not a divergence (P-16) — INCONCLUSIVE, not DIVERGENT`,
+            `${opts.fixture.name}: Hermes VM v${opts.reference.vm.hbcVersion} cross-check hit a budget (candidate ${candidateOut.length} line(s), ${candidateCeiling ? "engine resource ceiling (resource)" : "record cap/timeout"}; VM ${vmOut.length} line(s), timeout/over the candidate's record budget); the ${cap}-line common prefix is identical, so this is a budget cut-off, not a divergence (P-16) — INCONCLUSIVE, not DIVERGENT`,
           );
           if (cmp.verdict !== TRACE_VERDICT.DIVERGENT) {
-            cmp = { verdict: TRACE_VERDICT.INCONCLUSIVE, why: `Hermes VM cross-check truncated by a budget after ${cap} identical line(s); the rest was never observed`, evidence: cmp.evidence, records: cmp.records, divergence: null, context: null, maskedMatches: cmp.maskedMatches };
+            cmp = { verdict: TRACE_VERDICT.INCONCLUSIVE, why: `${candidateCeiling ? "resource: the candidate hit an engine resource ceiling while the VM kept running; " : ""}Hermes VM cross-check truncated by a budget after ${cap} identical line(s); the rest was never observed`, evidence: cmp.evidence, records: cmp.records, divergence: null, context: null, maskedMatches: cmp.maskedMatches };
           }
         } else if (candidatePrint !== hermesPrint) {
           // The candidate itself disagrees with the real Hermes VM's own

@@ -459,6 +459,49 @@ export function makeEncoder(opts: EncoderOptions = {}): Encoder {
   };
 }
 
+/** The messages V8 and Hermes use when the *engine's own* resource ceiling
+ *  is hit — the call stack, the maximum string length, the maximum array
+ *  length. They are not program-level observations: they say "this engine
+ *  ran out of room here", exactly the way a `limit` record says "the budget
+ *  ran out here" (docs/BUGS.md 2026-09-04, the 30 finds whose candidate
+ *  died of an uncaught RangeError under Node while the Hermes VM kept
+ *  looping to its timeout).
+ *
+ *  Deliberately narrow, because `RangeError: Invalid array length` is *also*
+ *  what a program-level `new Array(-1)` throws: `isResourceCeilingRecord`
+ *  only says "this record is resource-ceiling shaped". Every caller must add
+ *  the context that makes it a budget marker rather than an observation —
+ *  the *other* side must still be running inside its own budget at that
+ *  point (see `compareTraces` and `ladder.ts`'s VM cross-check). */
+const RESOURCE_CEILING_MESSAGES: readonly string[] = ["Maximum call stack size exceeded", "Invalid string length", "Invalid array length"];
+
+/** True for an `err`/`unhandled` record carrying one of the engine
+ *  resource-ceiling RangeErrors above. See `RESOURCE_CEILING_MESSAGES` for
+ *  why this is a shape test, never on its own a verdict. */
+export function isResourceCeilingRecord(r: TraceRecord): boolean {
+  if (r.k !== "err" && r.k !== "unhandled") return false;
+  if (r.name !== "RangeError") return false;
+  return RESOURCE_CEILING_MESSAGES.some((m) => r.message.includes(m));
+}
+
+// docs/BUGS.md 2026-09-04 family F3: a read of a missing global throws a
+// ReferenceError in both engines, at the same point, with the same
+// constructor — but Hermes words it `Property 'f2' doesn't exist` and V8
+// words it `f2 is not defined`. A program that prints `String(e)` therefore
+// carries engine-specific prose inside an ordinary `out` record, where
+// `renderRecordMasked`'s err/unhandled masking channel never sees it. Both
+// renderings are projected onto one canonical, *name-preserving* form so the
+// comparison is symmetric: the identifier is kept (a missing `f2` still
+// never matches a missing `f3`), only the engine's wording is dropped.
+const HERMES_MISSING_GLOBAL = /Property '([A-Za-z_$][A-Za-z0-9_$]*)' doesn't exist/g;
+
+/** Canonicalises the two engine renderings of a missing-global
+ *  ReferenceError onto V8's wording (`X is not defined`), preserving X.
+ *  Applied to *both* sides of every comparison, never to one. */
+export function normaliseEngineMessages(text: string): string {
+  return text.replace(HERMES_MISSING_GLOBAL, "$1 is not defined");
+}
+
 /** Canonical single-line rendering of a record, used as the diff unit. */
 export function renderRecord(r: TraceRecord): string {
   switch (r.k) {

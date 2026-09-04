@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { runProgram } from "../../../src/harness/runner.ts";
 import { compareTraces, TRACE_VERDICT } from "../../../src/harness/compare.ts";
+import type { TraceRecord } from "../../../src/harness/trace.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "hbc2js-harness-compare-test-"));
 const write = (name: string, src: string): string => {
@@ -110,3 +111,71 @@ test("P-16 guard: a divergence inside the common prefix stays DIVERGENT even whe
 });
 
 test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));
+
+// --- resource-ceiling marker (docs/BUGS.md 2026-09-04, the 30 finds that
+// survived P-16): the candidate under Node dies of an uncaught engine
+// RangeError while the Hermes VM is still looping. Synthetic traces, because
+// the real shape needs a non-terminating program and a 5 s timeout per side.
+const out = (s: string): TraceRecord => ({ k: "out", ch: "print", s, a: [JSON.stringify(s)] });
+const rangeErr = (message: string): TraceRecord => ({ k: "err", phase: "main", name: "RangeError", message });
+const limit = (why: string): TraceRecord => ({ k: "limit", why });
+
+test("resource ceiling: an equal prefix then a candidate RangeError, while the other side is still running, is INCONCLUSIVE (resource), never DIVERGENT", () => {
+  const candidate = { records: [out("0"), out("1"), rangeErr("Maximum call stack size exceeded"), { k: "end" } as TraceRecord] };
+  const vm = { records: [out("0"), out("1"), out("2"), out("3"), limit("sync-timeout"), { k: "end" } as TraceRecord] };
+  const r = compareTraces(candidate, vm);
+  assert.equal(r.verdict, TRACE_VERDICT.INCONCLUSIVE);
+  assert.equal(r.divergence, null);
+  assert.match(r.why, /^resource: /);
+  // Symmetric: whichever side hit the ceiling, the verdict is the same.
+  assert.equal(compareTraces(vm, candidate).verdict, TRACE_VERDICT.INCONCLUSIVE);
+});
+
+test("resource ceiling: all three engine-ceiling messages are markers", () => {
+  for (const message of ["Maximum call stack size exceeded", "Invalid string length", "Invalid array length"]) {
+    const candidate = { records: [out("0"), rangeErr(message)] };
+    const vm = { records: [out("0"), out("1"), limit("sync-timeout")] };
+    assert.equal(compareTraces(candidate, vm).verdict, TRACE_VERDICT.INCONCLUSIVE, message);
+  }
+});
+
+test("resource ceiling: a candidate RangeError after the other side already printed a DIFFERENT value is still DIVERGENT", () => {
+  const candidate = { records: [out("0"), out("wrong"), rangeErr("Maximum call stack size exceeded")] };
+  const vm = { records: [out("0"), out("1"), out("2"), limit("sync-timeout")] };
+  const r = compareTraces(candidate, vm);
+  assert.equal(r.verdict, TRACE_VERDICT.DIVERGENT);
+  assert.equal(r.divergence?.index, 1);
+});
+
+test("resource ceiling: a candidate RangeError against an error of a different type on the other side is DIVERGENT", () => {
+  const candidate = { records: [out("0"), rangeErr("Maximum call stack size exceeded")] };
+  const vm = { records: [out("0"), { k: "err", phase: "main", name: "TypeError", message: "x is not a function" } as TraceRecord, limit("sync-timeout")] };
+  assert.equal(compareTraces(candidate, vm).verdict, TRACE_VERDICT.DIVERGENT);
+});
+
+test("resource ceiling: a program-level RangeError against a side that ran to completion is DIVERGENT (new Array(-1) is an observation, not a ceiling)", () => {
+  const candidate = { records: [out("0"), rangeErr("Invalid array length"), { k: "end" } as TraceRecord] };
+  const vm = { records: [out("0"), out("1"), { k: "end" } as TraceRecord] };
+  assert.equal(compareTraces(candidate, vm).verdict, TRACE_VERDICT.DIVERGENT);
+});
+
+// --- family F3: the missing-global ReferenceError's engine wording, arriving
+// inside `print` output (docs/BUGS.md 2026-09-04 family F3).
+test("F3: Hermes's and V8's missing-global wording compare equal, name-preservingly", () => {
+  const hermes = { records: [out("threw ReferenceError: Property 'f2' doesn't exist"), { k: "end" } as TraceRecord] };
+  const v8 = { records: [out("threw ReferenceError: f2 is not defined"), { k: "end" } as TraceRecord] };
+  assert.equal(compareTraces(hermes, v8).verdict, TRACE_VERDICT.EQUIVALENT);
+  assert.equal(compareTraces(v8, hermes).verdict, TRACE_VERDICT.EQUIVALENT);
+
+  // Name-preserving: a missing `f2` never matches a missing `f3`.
+  const other = { records: [out("threw ReferenceError: f3 is not defined"), { k: "end" } as TraceRecord] };
+  assert.equal(compareTraces(hermes, other).verdict, TRACE_VERDICT.DIVERGENT);
+});
+
+test("F3: the same normalisation applies to err records, not only print output", () => {
+  const hermes = { records: [{ k: "err", phase: "main", name: "ReferenceError", message: "Property 'f2' doesn't exist" } as TraceRecord] };
+  const v8 = { records: [{ k: "err", phase: "main", name: "ReferenceError", message: "f2 is not defined" } as TraceRecord] };
+  const r = compareTraces(hermes, v8);
+  assert.equal(r.verdict, TRACE_VERDICT.EQUIVALENT);
+  assert.deepEqual(r.maskedMatches, []);
+});

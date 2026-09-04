@@ -1,0 +1,7 @@
+ReferenceError: missingCallee is not defined
+ReferenceError: missingRead is not defined
+ReferenceError: missingA is not defined
+ReferenceError: missingInFunction is not defined
+undefined
+ReferenceError: alpha is not defined
+ReferenceError: beta is not defined
