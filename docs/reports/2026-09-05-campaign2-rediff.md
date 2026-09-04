@@ -1,5 +1,25 @@
 # Campaign-2 signature re-diff after P-16 + fix-wave-3 — 2026-09-05
 
+> **Correction (2026-09-05, `docs/reports/2026-09-05-campaign2-v96-vm-rediff.md`):**
+> every v96 cell below is labelled `mode: "full-ladder"` but was actually run
+> against `expected-txt` (Node), not a real Hermes VM — deb had `hermesc` for
+> v96 but no `hermes` interpreter, and `chooseReference()` silently fell back
+> rather than failing loud. A real v96 VM was subsequently built on deb
+> (`tools/build-hermes-vm.sh 96`) and every v96 finding here re-verified
+> against it: **all 617 raw v96 divergences in the 4,000-seed sample below,
+> and all 400 saved v96 finds, are Node-vs-old-Hermes semantic differences
+> (D14), not decompiler bugs** — 0/400 DIVERGENT under the real VM. This
+> includes every v96-only family in the table below
+> (`TDZ/ReferenceError-value`, `unexpected-ReferenceError-missing-global`,
+> `other-cannot-read-props`, `iterable-wording`, `cleanup-push-undefined`,
+> `rest-args-length`, `globals-dump-mismatch`) and the v96 members of
+> `let-closures-capture` and `arity/arguments-aliasing`. The 15.4% v96
+> "divergent" figure and the numbers/tables below that derive from it should
+> be read as historical (pre-fix) only; see the linked report for the
+> corrected numbers, the harness fix that makes this mislabelling impossible
+> going forward (`mode: "full-ladder-no-vm"`), and the proposed `docs/BUGS.md`
+> row moves.
+
 Supersedes `docs/reports/2026-09-04-campaign2-signatures.md` (see the note
 added at the top of that file). Lean worker, compute on `deb` (`ssh deb`,
 non-interactive, own clone `~/hbc2js-rediff`), report written locally.
