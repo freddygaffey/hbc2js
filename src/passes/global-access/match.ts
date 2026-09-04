@@ -22,7 +22,7 @@ export interface GlobalAccessSite {
 
 export type GlobalAccessMatch = Match<readonly Stmt[], GlobalAccessSite>;
 
-export type RefuseReason = "unproven-global" | "loop-reentry-clobber" | "shadowed" | "unsafe-identifier" | "no-read-after-guard" | "clobbered-between" | "read-twice" | "guard-in-other-list";
+export type RefuseReason = "unproven-global" | "loop-reentry-clobber" | "pre-guard-clobber" | "shadowed" | "unsafe-identifier" | "no-read-after-guard" | "clobbered-between" | "read-twice" | "guard-in-other-list";
 
 export type ClassifyResult = { readonly ok: true; readonly site: GlobalAccessSite } | { readonly ok: false; readonly reason: RefuseReason };
 
@@ -242,6 +242,124 @@ export function hasLoopReentryClobber(fnBody: readonly Stmt[], list: readonly St
 }
 
 // ---------------------------------------------------------------------------
+// §4 condition 6: a write BEFORE the guard can clobber the register.
+// ---------------------------------------------------------------------------
+
+/** Writes to `reg` in every statement list that *precedes* `target` in flow
+ *  order, from `list` outward-in: the statements of `list` before the one
+ *  containing `target`, then (recursively) the same inside that statement,
+ *  down to `target`'s immediately enclosing list. Returns `null` when
+ *  `target` is not reachable from `list` at all (compared by identity, like
+ *  `outermostLoopBodyContaining`). Writes are returned in flow order
+ *  (outermost prefix first), at **any nesting depth** — a write buried in an
+ *  `if` before the guard is a *possible* clobber and is reported as one;
+ *  §4 condition 6 refuses rather than trying to prove the branch untaken. */
+function prefixWrites(list: readonly Stmt[], target: readonly Stmt[], reg: string): readonly Expr[] | null {
+  if (list === target) return [];
+  const prefix: Expr[] = [];
+  for (const s of list) {
+    const inner = prefixWritesIn(s, target, reg);
+    if (inner !== null) return [...prefix, ...inner];
+    prefix.push(...registerStoreValues([s], reg));
+  }
+  return null;
+}
+
+/** `prefixWrites` for the sub-lists of one statement. An `if`'s `then` and
+ *  `else` are *alternatives*, so entering one never inherits the other's
+ *  writes; a `try`'s `block` does run before its `handler`, so descending
+ *  into the handler inherits the block's writes. A loop body's own later
+ *  statements are §4 condition 5's business, not this one's. A `func` body
+ *  is a separate frame and is never entered. */
+function prefixWritesIn(s: Stmt, target: readonly Stmt[], reg: string): readonly Expr[] | null {
+  switch (s.k) {
+    case "if":
+      return prefixWrites(s.then, target, reg) ?? prefixWrites(s.else, target, reg);
+    case "while":
+    case "do-while":
+    case "for":
+    case "labeled":
+    case "iife":
+      return prefixWrites(s.body, target, reg);
+    case "try": {
+      const inBlock = prefixWrites(s.block, target, reg);
+      if (inBlock !== null) return inBlock;
+      const inHandler = prefixWrites(s.handler, target, reg);
+      return inHandler === null ? null : [...registerStoreValues(s.block, reg), ...inHandler];
+    }
+    case "switch": {
+      for (const c of s.cases) {
+        const hit = prefixWrites(c.body, target, reg);
+        if (hit !== null) return hit;
+      }
+      return null;
+    }
+    default:
+      return null; // decl, break, continue, return, throw, expr, func, directive, comment, raw
+  }
+}
+
+/**
+ * §4 condition 6 (2026-09-04). The companion to condition 5, same root cause
+ * — `isProvenGlobal` is *position-blind* — but the other region: writes that
+ * sit **before** the guard. Condition 3 only scans `L[i+1..j-1]`, so the flat
+ * list
+ *
+ * ```
+ * r1 = globalThis; r1 = other; if (!("p" in r1)) throw …; r0 = r1.p;
+ * ```
+ *
+ * used to fold to a bare `p` even though `r1` is `other` at the read — the
+ * whole-function proof sees one `globalThis` write, chronologically first,
+ * and says "proven".
+ *
+ * The sound requirement is that the last write to `G`'s register that can
+ * reach the guard in flow order is valued `globalThis`. This is the
+ * approximation the stage-B machinery can express without a CFG: walk
+ * `L[0..i-1]` plus every enclosing list's statements before the one
+ * containing `L` (outward to `fnBody`), at any nesting depth, and require the
+ * **last** write found to be `{k:"ident", name:"globalThis"}`. Because
+ * `isProvenGlobal` has already established that exactly one write in the
+ * whole function is valued `globalThis`, "the last pre-guard write is the
+ * `globalThis` one" is equivalent to "no other write precedes the guard at
+ * all" — the two readings of the rule coincide.
+ *
+ * Two deliberate limits, both measured against the whole construct corpus
+ * (61 constructs x 5 versions x plain/.min/.obf) rather than argued:
+ *
+ *  - **No pre-guard write found at all is NOT a refusal.** Control-flow
+ *    flattened (`.obf`) output puts `rN = globalThis` in one `__pc` dispatch
+ *    case and the guards in others, so the store is nowhere in the site's
+ *    *textual* prefix even though it dominates. Refusing there costs 141 of
+ *    the 768 corpus outputs their folds (every `.obf` tier at v84/v94/v96)
+ *    for no soundness gain over the pre-existing whole-function proof, which
+ *    is exactly as position-blind about that case as it always was. This
+ *    condition only adds information when a write *is* visible before the
+ *    guard; where none is, the old proof stands unchanged.
+ *  - **A write on a path that cannot reach the guard still refuses.** The
+ *    walk is flow-order but not path-sensitive: a write inside an `if` whose
+ *    branch ends in `throw` is counted, because proving the branch untaken
+ *    needs reachability analysis stage B does not have. Measured cost: the
+ *    two guards in `14-nested-try-catch/*.obf` (all five versions), where
+ *    `r3 = r3.Error` sits in a branch that always throws. That is a
+ *    readability cost only — the refusal direction is always the safe one.
+ *
+ * Non-clobbering shapes this deliberately leaves alone: the `targets`
+ * fixtures' scratch-reuse idiom (`r = <lastGlobalCall>(…); return r;`) lives
+ * *after* the last guarded read, so it is never in any site's prefix.
+ */
+export function hasPreGuardClobber(fnBody: readonly Stmt[], list: readonly Stmt[], guardIndex: number, e: Expr): boolean {
+  if (e.k !== "ident" || !isRegisterName(e.name)) return false; // bare `globalThis` cannot be assigned
+  const outer = prefixWrites(fnBody, list, e.name);
+  if (outer === null) return false; // `list` is not reachable from `fnBody`: same convention as `outermostLoopBodyContaining`
+  const writes = [...outer];
+  for (let k = 0; k < guardIndex; k++) writes.push(...registerStoreValues([list[k]!], e.name));
+  const last = writes[writes.length - 1];
+  if (last === undefined) return false; // no write to `G` is visible before the guard at all: nothing new to say, the whole-function proof stands (see the doc comment)
+  return !(last.k === "ident" && last.name === "globalThis");
+}
+
+// ---------------------------------------------------------------------------
 // §4.2: shadowing.
 // ---------------------------------------------------------------------------
 
@@ -451,6 +569,7 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
   if (!isSafeIdentifier(name)) return { ok: false, reason: "unsafe-identifier" };
   if (!isProvenGlobal(fnBody, global)) return { ok: false, reason: "unproven-global" };
   if (hasLoopReentryClobber(fnBody, list, global)) return { ok: false, reason: "loop-reentry-clobber" };
+  if (hasPreGuardClobber(fnBody, list, i, global)) return { ok: false, reason: "pre-guard-clobber" };
   if (isShadowed(name, fnBody)) return { ok: false, reason: "shadowed" };
 
   for (let k = i + 1; k < list.length; k++) {

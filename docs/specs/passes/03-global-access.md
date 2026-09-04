@@ -105,6 +105,58 @@ conditions, all required:
    the two options. A list that is not found under any loop (including
    `ctx.fnBody` itself) is treated as non-loop.
 
+6. **Pre-guard clobber** (added 2026-09-04). Condition 5's companion: same
+   root cause (`isProvenGlobal` is position-blind), the other region. Condition
+   3 scans only `L[i+1..j-1]` — *between* the guard and the read — so a write
+   between the `globalThis` store and the **guard** was seen by nothing at all,
+   no loop required. The flat list `[r1 = globalThis; r1 = other;
+   guard(r1,"p"); r0 = r1.p]` was accepted and folded to bare `p`, though `r1`
+   is `other` at the read. So: the **last** write to `G`'s register that can
+   reach the guard in flow order must be valued `{k:"ident",
+   name:"globalThis"}`. The approximation stage B can express, and the one
+   implemented (`hasPreGuardClobber` in `match.ts`): walk `L[0..i-1]` plus
+   every enclosing list's statements *before* the one containing `L`, outward
+   to `ctx.fnBody`, at **any nesting depth**, and take the last write found.
+   If it is not the `globalThis` write, refuse (`pre-guard-clobber`). Because
+   the proof above already fixes exactly one write in the whole function as
+   `globalThis`-valued and chronologically first, "the last pre-guard write is
+   the `globalThis` one" and "no other write precedes the guard" are the same
+   condition. `if`/`else` are alternatives (entering one never inherits the
+   other's writes); a `try`'s `block` *does* precede its `handler`, so a site
+   in the handler inherits the block's writes; a loop body's own later
+   statements are condition 5's business, not this one's.
+
+   Two deliberate limits, both **measured** over the whole construct corpus
+   (61 constructs x 5 versions x plain/`.min`/`.obf`), not argued:
+
+   - *No pre-guard write visible at all is not a refusal.* Control-flow
+     flattened (`.obf`) output puts `rN = globalThis` in one `__pc` dispatch
+     case and the guards in others, so the store is nowhere in the site's
+     textual prefix even though it dominates. Refusing there costs 141 of the
+     768 corpus outputs their folds (every `.obf` tier at v84/v94/v96) for no
+     soundness gain over the pre-existing whole-function proof, which is
+     exactly as position-blind about that case as it has always been. This
+     condition only adds information when a write *is* visible before the
+     guard.
+   - *A write on a path that cannot reach the guard still refuses.* The walk
+     is flow-order but not path-sensitive: a write inside an `if` whose branch
+     ends in `throw` is counted, because proving the branch untaken needs
+     reachability analysis stage B does not have. Measured cost: the two
+     guards in `14-nested-try-catch/*.obf` at all five versions, where
+     `r3 = r3.Error` sits in a branch that always throws. Readability only —
+     the refusal direction is the safe one.
+
+   *End-to-end status.* This is **not** a synthetic-only defect. The comment
+   in `match.ts` claiming "Hermes's allocator does not reuse a live register"
+   is not a guarantee the rung can lean on: `14-nested-try-catch/*.obf` is
+   real Hermes output in which the `globalThis` register `r3` is reused for
+   `r3.Error` before two later guards on `r3`, and the pre-condition-6 rung
+   folded both of those reads. It is harmless *there* only because the
+   clobbering write sits on an always-throwing path. Regression tests:
+   `tests/gate/passes/adversarial-ladder.test.ts` section 5b (AST + `node:vm`
+   divergence) and the `14-nested-try-catch` `.obf` tests in
+   `tests/gate/passes/global-access.test.ts`.
+
 Match data: `{ guardIndex: i, useIndex: j, name: p, global: G }`.
 
 Only the *first* guard/read pair in the list is captured per call; the driver
@@ -141,6 +193,10 @@ the guard. `check` therefore asserts, recomputing from `before`:
    a loop whose outermost body clobbers `G`'s register
    (`loop-reentry-clobber`). Re-derived here independently of `match`, like
    every other item.
+7. §4 condition 6 holds for `before` as the site list with the recovered
+   `guardIndex` — no write that reaches the guard in flow order clobbers
+   `G`'s register (`pre-guard-clobber`). Re-derived here independently of
+   `match` (item 4c in `check.ts`), like every other item.
 
 ## 7. Ordering, refusals, semantics, metrics
 
@@ -161,7 +217,9 @@ site is otherwise tempting.
 **Refuse (per-site):** `unproven-global`, `loop-reentry-clobber` (§4
 condition 5: the site is inside a loop whose outermost body writes `G`'s
 register a non-`globalThis` value, so the write can precede the guarded read
-on a repeat visit), `shadowed`, `unsafe-identifier`
+on a repeat visit), `pre-guard-clobber` (§4 condition 6: the last write to
+`G`'s register reaching the guard in flow order is not the `globalThis`
+write), `shadowed`, `unsafe-identifier`
 (`p` = `"default"`, or containing a `-`), `no-read-after-guard` (leave the
 guard), `clobbered-between`, `read-twice`, `guard-in-other-list` (guard and
 read must share a statement list; a read that migrated into a nested `if` body
@@ -183,7 +241,12 @@ non-`globalThis` object, and a register with two `globalThis` stores; a guard+re
 body whose register is clobbered inside that loop and one whose clobber sits
 in an enclosing outer loop (both `loop-reentry-clobber`), with positives for a
 loop body that never writes the register, a loop write valued `globalThis`
-itself, and the straight-line scratch-reuse idiom; ≥1 site `check` refuses.
+itself, and the straight-line scratch-reuse idiom; for condition 6, a
+straight-line pre-guard clobber (AST + a `node:vm` run proving the divergence),
+a pre-guard clobber nested inside an `if`, one in an enclosing list, and
+`14-nested-try-catch/*.obf` at all five versions end to end, with positives for
+a nested pre-guard write valued `globalThis` and for the no-visible-write case
+the condition deliberately stays silent about; ≥1 site `check` refuses.
 
 **Corpus metric.** Share of emitted functions containing zero
 `" in ` global guards: baseline 0 %, target **100 %** on

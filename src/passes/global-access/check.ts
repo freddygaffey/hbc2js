@@ -9,7 +9,7 @@
 import type { Effect, Expr, Stmt } from "../ast.ts";
 import { defUse, effectSequence, isSafeIdentifier } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
-import { hasLoopReentryClobber, isProvenGlobal, isShadowed, isTargetRead, recognizeGuard } from "./match.ts";
+import { hasLoopReentryClobber, hasPreGuardClobber, isProvenGlobal, isShadowed, isTargetRead, recognizeGuard } from "./match.ts";
 import { substitute } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
@@ -127,6 +127,12 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // same list object the driver matched, so `outermostLoopBodyContaining`
   // finds the same enclosing loop from `ctx.fnBody`.
   if (hasLoopReentryClobber(fnBody, before, global)) return { ok: false, reason: "loop-reentry-clobber" };
+
+  // Item 4c (§4 condition 6): the same position-blindness in the other
+  // region — a write to `G`'s register that runs BEFORE the guard. The last
+  // such write that can reach the guard must be the `globalThis` one.
+  // Re-derived from `before` + `ctx.fnBody`, independently of `match`.
+  if (hasPreGuardClobber(fnBody, before, guardIndex, global)) return { ok: false, reason: "pre-guard-clobber" };
 
   // Item 5: `p` is not a declared name in `before`.
   if (!isSafeIdentifier(name)) return { ok: false, reason: "unsafe-identifier" };

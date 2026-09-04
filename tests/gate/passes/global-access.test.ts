@@ -238,6 +238,62 @@ test("positive: a write inside the loop valued `globalThis` itself is not a clob
   assert.deepEqual(check(loopBody, after, ctx), { ok: true });
 });
 
+// ---------------------------------------------------------------------------
+// §4 condition 6 — pre-guard clobber (2026-09-04). The companion to
+// condition 5: `isProvenGlobal` is position-blind, and condition 3 only
+// scans `L[i+1..j-1]`, so a write BETWEEN the `globalThis` store and the
+// guard used to be invisible to every check the rung ran.
+// ---------------------------------------------------------------------------
+
+test("pre-guard-clobber: a write nested inside an `if` before the guard is a possible clobber and refuses the fold — the rung does not try to prove the branch untaken", () => {
+  const fnBody: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r1"), id("globalThis"))),
+    { k: "if", test: id("cond"), then: [exprStmt(assignExpr(id("r1"), id("other")))], else: [] },
+    guardFor("Array", id("r1")),
+    exprStmt(assignExpr(id("r0"), member(id("r1"), "Array"))),
+  ];
+  const shape = recognizeGuard(fnBody[2]!)!;
+  assert.deepEqual(classifySite(fnBody, fnBody, 2, shape.name, shape.global), { ok: false, reason: "pre-guard-clobber" });
+  assert.equal(match(fnBody, ctxFor(fnBody)), null);
+});
+
+test("positive: a pre-guard write valued `globalThis` is not a clobber even when it is nested inside an `if` — it establishes exactly the value being proven, so the fold stands", () => {
+  const fnBody: readonly Stmt[] = [
+    { k: "if", test: id("cond"), then: [exprStmt(assignExpr(id("r1"), id("globalThis")))], else: [] },
+    guardFor("Array", id("r1")),
+    exprStmt(reflectApply(member(id("r1"), "Array"), id("undefined"), [])),
+  ];
+  const ctx = ctxFor(fnBody);
+  const shape = recognizeGuard(fnBody[1]!)!;
+  assert.deepEqual(classifySite(fnBody, fnBody, 1, shape.name, shape.global), { ok: true, site: { guardIndex: 1, useIndex: 2, name: "Array", global: id("r1") } });
+  const m = match(fnBody, ctx);
+  assert.ok(m !== null);
+  const after = rewrite(m);
+  assert.deepEqual(check(fnBody, after, ctx), { ok: true });
+});
+
+test("pre-guard-clobber: the prefix walked is not just the site's own list — a clobber in an ENCLOSING list, before the statement that holds the site, refuses too", () => {
+  const siteList: readonly Stmt[] = [guardFor("Array", id("r1")), exprStmt(assignExpr(id("r0"), member(id("r1"), "Array")))];
+  const fnBody: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r1"), id("globalThis"))),
+    exprStmt(assignExpr(id("r1"), id("other"))), // enclosing-list clobber, before the `if` that holds the site
+    { k: "if", test: id("cond"), then: siteList, else: [] },
+  ];
+  const shape = recognizeGuard(siteList[0]!)!;
+  assert.deepEqual(classifySite(siteList, fnBody, 0, shape.name, shape.global), { ok: false, reason: "pre-guard-clobber" });
+  assert.equal(match(siteList, ctxFor(fnBody)), null);
+});
+
+test("documented limit: where NO write to the register is visible before the guard, condition 6 stays silent — the control-flow-flattened `.obf` shape puts `rN = globalThis` in another `__pc` dispatch case, and refusing there would cost 141 corpus outputs their folds for no soundness gain", () => {
+  const fnBody: readonly Stmt[] = [
+    guardFor("Array", id("r1")),
+    exprStmt(reflectApply(member(id("r1"), "Array"), id("undefined"), [])),
+    exprStmt(assignExpr(id("r1"), id("globalThis"))),
+  ];
+  const shape = recognizeGuard(fnBody[0]!)!;
+  assert.deepEqual(classifySite(fnBody, fnBody, 0, shape.name, shape.global), { ok: true, site: { guardIndex: 0, useIndex: 1, name: "Array", global: id("r1") } });
+});
+
 test("clobbered-between: a statement between the guard and the read reassigns the object", () => {
   const before: readonly Stmt[] = [exprStmt(assignExpr(id("r1"), id("globalThis"))), guardFor("Array", id("r1")), exprStmt(assignExpr(id("r1"), id("somethingElse"))), exprStmt(call(member(id("r1"), "Array"), []))];
   assert.equal(match(before, ctxFor(before)), null);
@@ -407,3 +463,30 @@ test("v94 shape: 47-typeof-instanceof-in — a builtin read folds to a bare call
   // may also rename the destination register/identifier.
   assert.match(code, /\w+(?:_\d+)? = (Reflect\.apply\(Symbol, r11(?:_\d+)?, \[\]\)|Symbol\(\));/);
 });
+
+// ---------------------------------------------------------------------------
+// §4 condition 6, end-to-end. `14-nested-try-catch`'s `.obf` tier is real
+// Hermes output in which the register holding `globalThis` (`r3`) is reused
+// for a non-`globalThis` value BEFORE two later guards on that same
+// register: `r3 = globalThis; …; if (…) { …; r3 = r3.Error; …; throw r0; }
+// try { if (!("_0x542463" in r3)) throw …; … r3._0x542463 … }`. Before
+// condition 6 the rung folded both of those reads to bare identifiers on the
+// strength of the position-blind whole-function proof. It happens to be
+// harmless there only because the clobbering write sits on a path that always
+// throws — luck, not an invariant — so the fold is refused and the guards
+// stay. This is the end-to-end half of the regression test; the AST half and
+// the `node:vm` divergence proof are in
+// tests/gate/passes/adversarial-ladder.test.ts (section 5b).
+// ---------------------------------------------------------------------------
+
+for (const version of VERSIONS) {
+  test(`v${version} condition 6 end-to-end: 14-nested-try-catch .obf keeps the two guards whose register is clobbered before them (r3 = r3.Error), and folds nothing on that register there`, () => {
+    const code = decompile(loadFixture("14-nested-try-catch", version, ".obf"), { moduleName: "x" }).code;
+    // The clobbering write itself is still printed as a guarded read (it is
+    // the FIRST guard on the register, so its own prefix is clean and it
+    // folds) — what must survive is a guard for each read that comes after.
+    assert.ok(inGuardCount(code) >= 2, `expected the post-clobber guards to survive, got ${inGuardCount(code)}`);
+    assert.match(code, /if \(!\("_0x542463" in r\d+\)\)/, "the read after the clobber keeps its guard");
+    assert.match(code, /if \(!\("_0x5c54b7" in r\d+\)\)/, "the catch-handler read after the clobber keeps its guard");
+  });
+}

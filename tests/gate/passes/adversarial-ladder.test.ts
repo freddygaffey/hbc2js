@@ -311,6 +311,73 @@ test("global-access (was BUGS T14, fixed): the refusal is site-aware, not a blan
 });
 
 // ---------------------------------------------------------------------------
+// 5b. global-access — the adjacent gap to T14, found while fixing it and
+//     FIXED in the same week (§4 condition 6, `pre-guard-clobber`). Same
+//     root cause as 5: `isProvenGlobal` is position-blind. Different region:
+//     condition 3 only scans `L[i+1..j-1]`, i.e. BETWEEN the guard and the
+//     read, so a clobber sitting between the `globalThis` store and the
+//     GUARD was seen by nothing at all — no loop needed, a flat list is
+//     enough. `hasPreGuardClobber` now requires the last write that reaches
+//     the guard in flow order to be the `globalThis` one.
+// ---------------------------------------------------------------------------
+
+test("global-access (adjacent to BUGS T14, fixed): a register clobbered BETWEEN the `globalThis` store and the guard is REFUSED (pre-guard-clobber) — straight-line, no loop required", () => {
+  // r1 = globalThis;
+  // r1 = other;     <- clobbers r1 BEFORE the guard; condition 3 scans only
+  //                    L[i+1..j-1], so nothing ever looked here
+  // if (!("p" in r1)) throw new ReferenceError("Property 'p' doesn't exist");
+  // r0 = r1.p;      <- reads `other.p`, NOT the real global
+  const list: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r1"), id("globalThis"))),
+    exprStmt(assignExpr(id("r1"), id("other"))),
+    guardFor("p", id("r1")),
+    exprStmt(assignExpr(id("r0"), member(id("r1"), "p"))),
+  ];
+  const ctx = astCtx(list, {} as PassContext["cfg"]);
+
+  // Unchanged and deliberately so: the whole-function write-count proof still
+  // says "proven" (exactly one write is ever valued `globalThis`, and it is
+  // chronologically first). The site-aware question is condition 6's.
+  assert.equal(isProvenGlobal(list, id("r1")), true, "unchanged: the position-blind whole-function proof on its own still says `proven`");
+
+  const shape = globalAccessRecognize(list[2]!)!;
+  assert.deepEqual(globalAccessClassify(list, list, 2, shape.name, shape.global), { ok: false, reason: "pre-guard-clobber" }, "fixed: the last write reaching the guard is `other`, not `globalThis`, so the fold is refused");
+  assert.equal(globalAccessMatch(list, ctx), null, "fixed: the matcher finds no site at all here");
+
+  // Defence in depth: force the (unsound) rewrite through and ask check().
+  const forcedAfter: readonly Stmt[] = [
+    exprStmt(assignExpr(id("r1"), id("globalThis"))),
+    exprStmt(assignExpr(id("r1"), id("other"))),
+    exprStmt(assignExpr(id("r0"), { k: "ident", name: "p", global: true } as Expr)),
+  ];
+  assert.deepEqual(globalAccessCheck(list, forcedAfter, ctx), { ok: false, reason: "pre-guard-clobber" }, "fixed: check() re-derives condition 6 independently and rejects the forced rewrite");
+
+  // The standing proof that the refused form really was wrong — both programs
+  // under `node:vm`, no Hermes-vs-Node ambiguity (no let-in-loop, no TDZ, no
+  // `arguments`; just a property read under a preceding register write).
+  const run = (src: string): string[] => {
+    const out: string[] = [];
+    const sandbox = { print: (...a: unknown[]) => out.push(String(a[0])) };
+    vm.createContext(sandbox);
+    vm.runInContext(`globalThis.p = "GLOBAL"; ${src}`, sandbox);
+    return out;
+  };
+  const before = run(`
+    let r1, r0, other = { p: "OTHER" };
+    r1 = globalThis; r1 = other;
+    if (!("p" in r1)) throw new ReferenceError("Property 'p' doesn't exist");
+    r0 = r1.p; print(r0);
+  `);
+  const afterRun = run(`
+    let r1, r0, other = { p: "OTHER" };
+    r1 = globalThis; r1 = other;
+    r0 = p; print(r0);
+  `);
+  assert.deepEqual(before, ["OTHER"], "the un-rewritten (correct) program reads `other.p`");
+  assert.deepEqual(afterRun, ["GLOBAL"], "the refused rewrite reads the real global instead -- a genuine behaviour change, which is why it is refused");
+});
+
+// ---------------------------------------------------------------------------
 // 6. structurer limits — BUG. `maxDepth` (default 1500, src/structure/index.ts)
 //    exists so a pathologically deep recursion refuses cleanly
 //    (E_TOO_COMPLEX) instead of crashing. Measured boundary on a cold
