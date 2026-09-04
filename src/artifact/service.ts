@@ -75,6 +75,11 @@ export interface FnSummary {
   readonly edgesOut: number;
   readonly nativeSurfaceCount: number;
   readonly degraded: string | null;
+  /** The function header's byte offset into the `.hbc` file
+   *  (`FunctionRow.offset`, §2.1 — already recorded by every build path,
+   *  never re-derived here). Additive field: `view.copyDisasmOffset`
+   *  (docs/UI.md) formats it as `fn:<n>@0x<hex>`. */
+  readonly offset: number;
 }
 
 /** A `who-calls`/`calls-from` row: `fn:N file:line kind[ why]`. `fn`/`file`/
@@ -291,6 +296,7 @@ export class ArtifactService {
       edgesOut,
       nativeSurfaceCount,
       degraded,
+      offset: row.offset,
     };
   }
 

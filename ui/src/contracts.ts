@@ -36,6 +36,10 @@ export interface FnSummary {
   readonly edgesOut: number;
   readonly nativeSurfaceCount: number;
   readonly degraded: string | null;
+  /** Byte offset of the function header in the `.hbc` file — the real
+   *  disasm offset `view.copyDisasmOffset` copies (`fn:<n>@0x<hex>`,
+   *  `formatDisasmOffset` in `@ui-core/disasm-offset.ts`). */
+  readonly offset: number;
 }
 
 /** `source/{fn}` and `disasm/{fn}` — both return this shape. */

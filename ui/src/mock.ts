@@ -66,6 +66,8 @@ function summary(fn: number): FnSummary {
     file: MODULE_BY_ID.get(mod)?.file ?? null,
     lines: [10, 42], params: fn % 3, kind: "function", edgesIn: 3, edgesOut: 5,
     nativeSurfaceCount: 0, degraded: null,
+    // Deterministic, not a real .hbc offset — mock mode has no bytecode.
+    offset: fn * 64,
   };
 }
 

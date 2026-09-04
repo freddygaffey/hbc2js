@@ -418,6 +418,12 @@ string literal is a contract change, not a binding rename, and has no store.
 var-named one (it classifies the same raw frame body `var-naming` classifies).
 `view.fold` / `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs.
 The Package panel reads the real `GET /api/package-id/{mod}` (wave 4a).
+`view.copyDisasmOffset` copies a real byte offset now, `fn:<n>@0x<hex>` —
+`FnSummary.offset` (`src/artifact/service.ts`) is `FunctionRow.offset`
+(§2.1), the function header's offset into the `.hbc` file, already recorded
+by every build path; `@ui-core/disasm-offset.ts`'s `formatDisasmOffset` does
+the formatting and falls back to the old `fn:<n>` shape if no offset is
+known yet (mock mode fabricates a deterministic `fn * 64`, not a real one).
 
 ## Activity feed (wave 2, track 3)
 

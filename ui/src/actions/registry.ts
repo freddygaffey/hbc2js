@@ -10,12 +10,15 @@ import {
 } from "@ui-core/actions.ts";
 import { createKeymap } from "@ui-core/keymap.ts";
 import { resolveKeymapConfigWith } from "@ui-core/keymap-resolve.ts";
+import { formatDisasmOffset } from "@ui-core/disasm-offset.ts";
 import { PRESETS, keymapConfig } from "../keymap-config.ts";
 import type { FunctionCatalogue } from "../hooks.ts";
 import { back, forward, getSelection, select, type Selection } from "../state/selection.ts";
 import { openDialog, setPaletteOpen, setRightPanel, setStatus } from "./store.ts";
 import { addTag, fnTarget } from "./writes.ts";
 import { workersApi } from "../workers/wire.ts";
+import { api } from "../api.ts";
+import type { FnSummary } from "../contracts.ts";
 
 export const registry = createStandardRegistry();
 
@@ -127,6 +130,17 @@ function copy(text: string): void {
   );
 }
 
+/** `view.copyDisasmOffset` (docs/UI.md) — copies the function's real disasm
+ *  offset, `fn:<n>@0x<hex>` (`FnSummary.offset`, `@ui-core/disasm-offset.ts`
+ *  does the formatting). Reads `useFn`'s own cache (`["fn", fn]`, same key
+ *  `invalidateFn` drops) first so an already-open function pane copies with
+ *  no extra request; only fetches when nothing is cached yet. */
+async function copyDisasmOffset(fn: number): Promise<void> {
+  const cached = queryClient?.getQueryData<FnSummary>(["fn", fn]);
+  const summary = cached ?? (await api.fn(fn).catch(() => undefined));
+  copy(formatDisasmOffset(fn, summary?.offset));
+}
+
 /** The core `Selection` is structurally the shell's minus `line`. */
 function asShellSelection(s: CoreSelection): Selection {
   return s as Selection;
@@ -147,7 +161,7 @@ export const actionApi: ActionApi = {
   openPalette: () => setPaletteOpen(true),
   markReviewed: (target) => tag(target, "reviewed"),
   markSuspicious: (target) => tag(target, "suspicious"),
-  copyDisasmOffset: (target) => copy(target.fn === undefined ? "" : `fn:${target.fn}`),
+  copyDisasmOffset: (target) => (target.fn === undefined ? copy("") : copyDisasmOffset(target.fn)),
   showRawHermes: () => setStatus("raw Hermes is the centre pane's Disasm tab"),
   explain: (target) => queueJob("explain-fn", target),
   suggestName: (target) => queueJob("suggest-name", target),
