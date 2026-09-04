@@ -223,3 +223,71 @@ and stops no events, so right-clicks reach the annotate track's menu.
 - No virtualisation (spec 22 §2 accepts it): the tree renders every open
   module's rows and the editor is capped at 5 000 lines instead. No graph
   view, no worker/jobs rail, no Playwright smoke test yet.
+
+## Actions, keymap, context menu, annotate (wave 2, track 2)
+
+This section supersedes the "command palette lists hard-coded items" and
+"context menu items are disabled" bullets under *What is stubbed*.
+
+**One registry, three views.** `ui/` imports the repo-root
+`src/ui-core/{actions,keymap,keymap-resolve}.ts` through the `@ui-core`
+alias (declared twice, in `ui/vite.config.ts` and in `ui/tsconfig.json`'s
+`paths`; `tests/gate/ui/actions-registry.test.ts` fails if either goes
+missing). `createStandardRegistry()` is the ONLY list of commands in the
+shell: the context menu (`contextMenuFor`), the palette (`paletteItems`) and
+the keymap all read it. Adding an action to `src/ui-core/actions.ts` — plus
+a chord in `src/ui-core/presets/*.json` — makes it appear in all three.
+
+**Keymap.** `ui/keymap.json` is `{ preset, overrides }`; `preset` is
+`default` | `vim` | `ghidra`, `overrides` maps a chord to an action id (or
+`null` to unbind). `ui/src/keymap-config.ts` imports the preset JSON through
+the alias and `ui/src/actions/registry.ts` resolves it with
+`resolveKeymapConfigWith` — an override naming an unknown action id throws at
+startup, not at keypress. `ui/src/actions/keys.ts` is the DOM adapter: one
+`window` keydown listener, normalising to ui-core `KeyEvent`s. It ignores
+keys typed in an `input`/`textarea`/`select`/contenteditable, anything inside
+`[data-hbc-keys="off"]` (the dialogs, the palette, the menu), and the
+CodeMirror editor while the vim layer is in INSERT mode (no `cm-fat-cursor`
+class). A pending multi-key sequence shows as a chord indicator bottom-right.
+
+**Context menu.** Radix `ContextMenu`, items from `contextMenuFor` with the
+chord at the right. It is opened from a document-level listener in the
+CAPTURE phase (`ui/src/components/ContextMenu.tsx`) rather than by wrapping
+panes in a trigger: the centre pane is CodeMirror and the tree belongs to
+track 1, neither is ours to edit, and CodeMirror swallowed the right-click so
+the browser's native menu appeared over the source. The listener
+`preventDefault()`s every right-click that is not in a real text field (where
+the native copy/paste menu is what you want), derives the identifier under
+the pointer with `caretPositionFromPoint`/`caretRangeFromPoint`, then
+re-dispatches a synthetic `contextmenu` onto a 1px Radix trigger placed at
+those coordinates — Radix keeps positioning, keyboard nav and focus return.
+Synthetic events are `isTrusted === false`, which is how it avoids re-entry.
+
+**Writes.** `ui/src/actions/writes.ts` POSTs to `/api/tools/*`, i.e. exactly
+`McpTools`, so a UI rename is logged, exported and hash-locked like an MCP
+client's. Targets are STRINGS (`fn:7992`), provenance is
+`{source:"human", who:"ui"}`. On refusal the server's `reason` is shown
+VERBATIM in the form — e.g. `record_finding: rejected — a finding needs >=1
+evidence ref and at least one must resolve`. After a successful write the
+`fn`/`source`/`disasm`/`context`/`who-calls`/`calls-from` queries for that
+function plus `functions-all`, `findings` and `log-tail` are invalidated.
+
+| Action | Surface | Route |
+|---|---|---|
+| `annotate.rename` (`F2`, vim `cr`) | inline dialog, pre-filled with the accepted name, showing call sites + context xrefs before confirm | `POST /api/tools/set-name` |
+| `annotate.comment` (`Ctrl-/`, vim `gc`) | textarea dialog | `POST /api/tools/add-comment` |
+| `annotate.finding` (`Ctrl-Shift-N`, vim `cf`) | "Add finding" button in the Findings panel, plus menu and palette | `POST /api/tools/record-finding` |
+| `review.markReviewed` / `markSuspicious` | menu, palette | `POST /api/tools/add-tag` |
+
+**Names.** `McpResources.fn` adds `acceptedName` on top of the artifact's
+`name`/`overlayName`; `ui/src/actions/names.ts`'s `displayName()` is the one
+place that resolves the precedence (accepted > overlay > artifact) and the
+right pane uses it — without it a rename looks like it did nothing.
+
+**Still rough here.** Rename writes the *enclosing function's* name
+(`fn:<n>`): identifier- and string-level targets (`reg:F:R`, `sid:N`) are not
+wired, so right-clicking a local and choosing Rename renames the function —
+the dialog states its target so it cannot mislead silently. `view.fold` /
+`view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs;
+`view.copyDisasmOffset` copies `fn:<n>`, not a byte offset. The Package panel
+stays on the mock (the server publishes no `/api/package-id`).
