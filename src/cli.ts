@@ -2,7 +2,7 @@
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { parseHbc } from "./parse/module.ts";
@@ -36,6 +36,7 @@ import { exportProject } from "./projdb/export.ts";
 import { rebuildProject } from "./projdb/rebuild.ts";
 import { verifyProject } from "./projdb/verify.ts";
 import { adoptShard, allShardPaths, classifyThreeWay, diffShard, restoreShard } from "./projdb/threeway.ts";
+import { installPreCommitHook } from "./projdb/hooks.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
@@ -75,6 +76,7 @@ Usage:
   hbc2js hbcproj diff <project.hbcproj> [shard...]   show the content difference for changed shards
   hbc2js hbcproj adopt <project.hbcproj> (<shard>|--all) [--force]   fold a hand-edited shard into the db, re-locked
   hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
+  hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the git pre-commit hook (§11); \`init\` does this best-effort already
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
@@ -673,6 +675,26 @@ function runDecompile(argv: readonly string[]): void {
  *  "after init, spec-10/11 JSONL files are no longer written by any command
  *  for this project". Refuses (does not `--force`-overwrite) if
  *  `project.hbcproj` already exists (§4.1 step 2, mirrors spec 10 §1.3 E4). */
+/** Writes `<outDir>/.gitignore` (§3: "Git-tracked = `src/`, `analysis/`,
+ *  `log/`. Gitignored = `cache.db`, `index/`, `scans/`"). This project
+ *  stores its operational DB as `project.hbcproj` rather than a `cache.db`
+ *  file (spec 16 §4.1's naming, kept as-is here — see the `init` doc
+ *  comment above) so it is listed alongside `index/`/`scans/` instead. Only
+ *  writes the file if one doesn't already exist, so a re-run (or a repo
+ *  that already has its own `.gitignore` conventions) is never clobbered. */
+function writeGitignore(outDir: string): void {
+  const path = join(outDir, ".gitignore");
+  if (existsSync(path)) return;
+  writeFileSync(
+    path,
+    "# docs/specs/18-project-storage-integrity.md §3 — derived/rebuildable state only.\n" +
+      "project.hbcproj\n" +
+      "index/\n" +
+      "scans/\n",
+    "utf8",
+  );
+}
+
 function runInit(argv: readonly string[]): number {
   const input = argv.find((a) => !a.startsWith("-"));
   if (argv.includes("--help") || input === undefined) {
@@ -694,7 +716,13 @@ function runInit(argv: readonly string[]): number {
   }
   try {
     const splitResult = splitProject(bytes, { moduleName: basename(input) });
-    writeSplitResult(splitResult, outDir);
+    // §3's layout puts decompiled source under `src/`, not the project root
+    // (the root also holds `analysis/`, `log/`, `project.hbcproj` — mixing
+    // split output in with those would make the pre-commit hook's staged-
+    // path filter below ambiguous between "source changed" and "state
+    // changed").
+    writeSplitResult(splitResult, join(outDir, "src"));
+    writeGitignore(outDir);
     const rows = buildIndexRows({ bytes, splitResult, passes: {}, strictEnv: false, form: "flat" });
     const db = openProjectDb(dbPath);
     try {
@@ -702,9 +730,17 @@ function runInit(argv: readonly string[]): number {
     } finally {
       db.close();
     }
+    // Best-effort (§9's `init` row: "scaffold the project; install the git
+    // pre-commit hook" — a bundle-only run outside any git working tree
+    // must not fail just because there is nowhere to put a hook; §11's
+    // enforcement only matters once the project is actually committed to).
+    const hookResult = installPreCommitHook(outDir, resolve(process.argv[1] ?? "hbc2js"));
     process.stdout.write(
-      `hbc2js init: wrote ${splitResult.modules.length} module file(s) to ${outDir} and ${dbPath} ` +
-        `(${rows.functionRows.length} functions, ${rows.modulesIndex.modules.length} modules, ${rows.callRows.length} calls)\n`,
+      `hbc2js init: wrote ${splitResult.modules.length} module file(s) to ${join(outDir, "src")} and ${dbPath} ` +
+        `(${rows.functionRows.length} functions, ${rows.modulesIndex.modules.length} modules, ${rows.callRows.length} calls)\n` +
+        (hookResult.installed
+          ? `hbc2js init: installed pre-commit hook at ${hookResult.hookPath} (docs/specs/18-project-storage-integrity.md §11)\n`
+          : `hbc2js init: pre-commit hook not installed (${hookResult.reason}) — run \`hbc2js hbcproj install-hooks ${dbPath}\` once this is a git repo\n`),
     );
     return 0;
   } catch (e) {
@@ -737,6 +773,27 @@ function runInit(argv: readonly string[]): number {
  *  covers §9's project-creation verb. */
 function runHbcproj(argv: readonly string[]): number {
   const verb = argv[0];
+  if (verb === "install-hooks") {
+    const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write(
+        "hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the pre-commit hook that blocks committing un-adopted state (docs/specs/18-project-storage-integrity.md §11); " +
+          "`init` already does this best-effort — use this to retry once the project is inside a git working tree, or after a hook shape upgrade\n",
+      );
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj install-hooks: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const result = installPreCommitHook(dirname(dbFile), resolve(process.argv[1] ?? "hbc2js"), { force: argv.includes("--force") });
+    if (!result.installed) {
+      process.stderr.write(`hbc2js hbcproj install-hooks: ${result.reason}\n`);
+      return 1;
+    }
+    process.stdout.write(`hbc2js hbcproj install-hooks: installed ${result.hookPath}\n`);
+    return 0;
+  }
   if (verb === "export") {
     const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
     if (argv.includes("--help") || dbFile === undefined) {
@@ -888,7 +945,13 @@ function runHbcproj(argv: readonly string[]): number {
     const force = rest.includes("--force");
     const whoIdx = rest.indexOf("--who");
     const who = flagValue(rest, "--who") ?? "hbcproj-cli";
-    const explicit = rest.filter((a, i) => a !== "--all" && a !== "--force" && i !== whoIdx && i !== whoIdx + 1);
+    // `whoIdx === -1` (no `--who` given) must not filter out index 0 — the
+    // naive `i !== whoIdx + 1` check does exactly that (`-1 + 1 === 0`),
+    // silently dropping a lone shard-path argument and turning `hbcproj
+    // adopt <db> <shard>` into "no shard given" (found via
+    // tests/gate/cli/hbcproj-hooks.test.ts, which — unlike the other adopt
+    // tests — calls adopt without `--who`).
+    const explicit = rest.filter((a, i) => a !== "--all" && a !== "--force" && (whoIdx === -1 || (i !== whoIdx && i !== whoIdx + 1)));
     const db = openProjectDb(dbFile);
     try {
       const projectDir = dirname(dbFile);
@@ -948,7 +1011,7 @@ function runHbcproj(argv: readonly string[]): number {
       db.close();
     }
   }
-  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export'/'rebuild'/'verify'/'status'/'diff'/'adopt'/'restore' are implemented (docs/specs/18-project-storage-integrity.md §R4 steps 0-3)\n`);
+  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export'/'rebuild'/'verify'/'status'/'diff'/'adopt'/'restore'/'install-hooks' are implemented (docs/specs/18-project-storage-integrity.md §R4 steps 0-4)\n`);
   return 2;
 }
 

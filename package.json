@@ -10,7 +10,7 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
   "files": ["dist", "tools/pkgsig/db"],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\" && node tools/copy-build-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run typecheck && node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/projdb/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" \"tests/security/**/*.test.ts\" \"tests/appgen/**/*.test.ts\" \"tests/mcp/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts",
     "test:gate": "node --test \"tests/gate/**/*.test.ts\" \"tests/artifact/**/*.test.ts\" \"tests/project/**/*.test.ts\" \"tests/projdb/**/*.test.ts\" \"tests/secrets/**/*.test.ts\" \"tests/security/**/*.test.ts\" \"tests/appgen/**/*.test.ts\" \"tests/mcp/**/*.test.ts\" tests/fuzz/spec-consistency.test.ts",

@@ -42,6 +42,12 @@ jobs:
           key: hermesc-${{ runner.os }}-${{ hashFiles('tools/get-hermesc.sh') }}
       - run: tools/get-hermesc.sh all      # v84, v94, v96, v98, v99
       - run: npm run build                 # also proves dist/cli.js is executable
+      - name: hbcproj verify --full smoke (docs/specs/18-project-storage-integrity.md §11 — the non-bypassable twin of the pre-commit hook's fast check)
+        run: |
+          out=$(mktemp -d)
+          node dist/cli.js init tests/fixtures/constructs/04-for-loop-basic/v96.hbc --out "$out"
+          node dist/cli.js hbcproj export "$out/project.hbcproj"
+          node dist/cli.js hbcproj verify --full "$out/project.hbcproj"
       - run: npm run test:gate
 
   oracle-hermes-dec:
