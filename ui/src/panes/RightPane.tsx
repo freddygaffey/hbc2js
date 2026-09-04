@@ -2,8 +2,9 @@
 // Context / Xrefs / Findings / Package.
 import * as Tabs from "@radix-ui/react-tabs";
 import type { ReactNode } from "react";
-import { Empty, PaneHeader, Stub, ToolButton } from "../components/primitives.tsx";
+import { Empty, PaneHeader, ToolButton } from "../components/primitives.tsx";
 import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls } from "../hooks.ts";
+import { useSegregation } from "../listing/use-segregation.ts";
 import type { Severity, XrefEdge } from "../contracts.ts";
 import { displayName } from "../actions/names.ts";
 import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../actions/store.ts";
@@ -63,6 +64,12 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
   const findings = useFindings();
   const pkg = usePackageId(ctx.data?.metadata?.module ?? 0);
   const md = ctx.data?.metadata;
+  // segregation.ts attributes a module to `node_modules/<pkg>/…` from path
+  // shape alone (no two-key gate) — a WEAKER claim than `packageId`'s, so
+  // it is shown only as a fallback labelled as such, never in place of a
+  // gated identification.
+  const segregation = useSegregation();
+  const segregationPackage = segregation.data?.modules.find((m) => m.id === md?.module)?.package ?? null;
   return (
     <Tabs.Root
       value={panel}
@@ -150,12 +157,23 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
             <KeyVal k="package" v={pkg.data.package} />
             <KeyVal k="version" v={pkg.data.version} />
             <KeyVal k="tier" v={pkg.data.tier} />
+            <KeyVal k="identity basis" v={pkg.data.identityBasis} />
+            <KeyVal k="version basis" v={pkg.data.versionBasis} />
             <KeyVal k="evidence" v={pkg.data.evidence} />
           </div>
         ) : (
-          <Empty>not identified — {pkg.data.reason}</Empty>
+          <div className="py-2">
+            <Empty>not identified — {pkg.data.reason}</Empty>
+            {segregationPackage !== null && (
+              <div className="px-3 pt-1">
+                <KeyVal k="package (unverified)" v={segregationPackage} />
+                <div className="pt-1 text-xs text-text-muted">
+                  attributed by segregation, not gated — path shape only, no spec-13 two-key check
+                </div>
+              </div>
+            )}
+          </div>
         )}
-        <Stub what="package identification is served by McpResources.packageId once src/ui-server lands" />
       </Tabs.Content>
 
       {/* spec 23 §6: jobs rail + presence + accept/reject, owned by

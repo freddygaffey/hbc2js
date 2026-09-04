@@ -55,7 +55,10 @@ export interface SegregationRow {
   readonly nameConfidence: number | null;
 }
 
-/** `SegregationResult` — src/ui-server/segregation.ts. Counts are disjoint. */
+/** `SegregationResult` — src/ui-server/segregation.ts. Counts are disjoint.
+ *  `depsApplied`: `false` on the fast deps-less first snapshot the server
+ *  warms at startup, `true` once the async deps recompute has landed (even
+ *  when it found no deps to apply) — `use-segregation.ts` polls on it. */
 export interface SegregationPage {
   readonly modules: readonly SegregationRow[];
   readonly counts: {
@@ -65,6 +68,7 @@ export interface SegregationPage {
     readonly node_modules: number;
     readonly unclassified: number;
   };
+  readonly depsApplied: boolean;
 }
 
 /** Fetches `/api/segregation`, or `null` when it is not available — the mock
