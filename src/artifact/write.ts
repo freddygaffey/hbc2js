@@ -8,6 +8,7 @@ import type { SplitResult } from "../split/index.ts";
 import { analyseForArtifact, buildFactoryInfo, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
 import { buildNativeIndex, resolveBridgeModuleIds } from "./native.ts";
 import { buildSemanticIndexes } from "./semantic-walk.ts";
+import { resolvePointsToCalls } from "./points-to.ts";
 import { indexHeader, rangesHeader, sha256Hex, toJsonl, type Manifest } from "./schema.ts";
 import { buildStringsIndex } from "./strings.ts";
 
@@ -46,6 +47,8 @@ export interface WrittenArtifact {
   readonly moduleCount: number;
   readonly rangeCount: number;
   readonly callCount: number;
+  /** §2.2a: edges the `require(N)` points-to pass resolved (`index/calls-resolved.jsonl`). */
+  readonly resolvedCallCount: number;
   readonly stringCount: number;
   readonly stringUseCount: number;
   readonly globalCount: number;
@@ -80,10 +83,15 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
   const stringsIndex = buildStringsIndex(module);
   const bridgeModuleIds = resolveBridgeModuleIds(module, opts.classification);
   const nativeRows = buildNativeIndex(callRows, globalRows, bridgeModuleIds);
+  // §2.2a: the `require(N)` points-to pass. Decodes only the module factories
+  // plus the readers of an environment slot it proved holds a module — never
+  // the whole bundle — so it is additive in time as well as in content.
+  const resolvedCallRows = resolvePointsToCalls(module, analysis, opts.splitResult.modules).rows;
 
   const functionsJsonl = toJsonl(indexHeader("functions"), functionRows);
   const modulesJson = JSON.stringify(modulesIndex, null, 2) + "\n";
   const callsJsonl = toJsonl(indexHeader("calls"), callRows);
+  const callsResolvedJsonl = toJsonl(indexHeader("calls-resolved"), resolvedCallRows);
   const stringsJson = JSON.stringify(stringsIndex, null, 2) + "\n";
   const stringUsesJsonl = toJsonl(indexHeader("string-uses"), stringUseRows);
   const globalsJsonl = toJsonl(indexHeader("globals"), globalRows);
@@ -93,6 +101,7 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     ["index/functions.jsonl", functionsJsonl],
     ["index/modules.json", modulesJson],
     ["index/calls.jsonl", callsJsonl],
+    ["index/calls-resolved.jsonl", callsResolvedJsonl],
     ["index/strings.json", stringsJson],
     ["index/string-uses.jsonl", stringUsesJsonl],
     ["index/globals.jsonl", globalsJsonl],
@@ -123,6 +132,7 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
   writeFileSync(join(opts.outDir, "index", "modules.json"), modulesJson);
   writeFileSync(join(opts.outDir, "index", "ranges.jsonl"), rangesJsonl);
   writeFileSync(join(opts.outDir, "index", "calls.jsonl"), callsJsonl);
+  writeFileSync(join(opts.outDir, "index", "calls-resolved.jsonl"), callsResolvedJsonl);
   writeFileSync(join(opts.outDir, "index", "strings.json"), stringsJson);
   writeFileSync(join(opts.outDir, "index", "string-uses.jsonl"), stringUsesJsonl);
   writeFileSync(join(opts.outDir, "index", "globals.jsonl"), globalsJsonl);
@@ -141,6 +151,7 @@ export function writeArtifact(opts: WriteArtifactOptions): WrittenArtifact {
     moduleCount: modulesIndex.modules.length,
     rangeCount: rangeRows.length,
     callCount: callRows.length,
+    resolvedCallCount: resolvedCallRows.length,
     stringCount: stringsIndex.entries.length,
     stringUseCount: stringUseRows.length,
     globalCount: globalRows.length,

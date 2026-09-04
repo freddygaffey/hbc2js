@@ -49,6 +49,12 @@ export interface XrefEdge extends NeighborRef {
   readonly line: number | null;
   readonly kind: string;
   readonly why?: string;
+  /** Spec 17 §14.4: set only on an edge the `require(N)` points-to pass
+   *  resolved; `exportName`/`module` say which module export the call went
+   *  through. Absent on every edge that came straight from `calls.jsonl`. */
+  readonly confidence?: "points-to";
+  readonly exportName?: string;
+  readonly module?: number;
 }
 
 /** One live `'suggested'`-tier name proposal (§15) — `ProjectService.
@@ -144,7 +150,14 @@ export class McpResources {
   private inlineEdges(bounded: Bounded<Edge>): Bounded<XrefEdge> {
     return {
       ...bounded,
-      rows: bounded.rows.map((e) => ({ ...this.neighbor(e.fn), file: e.file, line: e.line, kind: e.kind, ...(e.why !== undefined ? { why: e.why } : {}) })),
+      rows: bounded.rows.map((e) => ({
+        ...this.neighbor(e.fn),
+        file: e.file,
+        line: e.line,
+        kind: e.kind,
+        ...(e.why !== undefined ? { why: e.why } : {}),
+        ...(e.confidence !== undefined ? { confidence: e.confidence, exportName: e.exportName, module: e.module } : {}),
+      })),
     };
   }
 

@@ -1,0 +1,166 @@
+; hbc2js disassembly of 62-require-slot-dispatch/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=12 strings=16 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=dbg  @0x00000218 size=246
+  0000  DeclareGlobalVar     s8 "__hbc_registry"
+  0005  DeclareGlobalVar     s7 "__hbc_instances"
+  000a  DeclareGlobalVar     s5 "__d"
+  000f  DeclareGlobalVar     s9 "__r"
+  0014  CreateEnvironment    r5
+  0016  CreateClosure        r1, r5, f1 "__d"
+  001b  GetGlobalObject      r0
+  001d  PutById              r0, r1, #c1, s5 "__d"
+  0023  CreateClosure        r1, r5, f2 "__r"
+  0028  PutById              r0, r1, #c2, s9 "__r"
+  002e  NewObject            r1
+  0030  PutById              r0, r1, #c3, s8 "__hbc_registry"
+  0036  NewObject            r1
+  0038  PutById              r0, r1, #c4, s7 "__hbc_instances"
+  003e  GetByIdShort         r6, r0, #c1, s5 "__d"
+  0043  LoadConstUndefined   r2
+  0045  CreateClosure        r4, r5, f3 ""
+  004a  LoadConstZero        r3
+  004c  NewArray             r1, 0
+  0050  Call4                r1, r6, r2, r4, r3, r1
+  0057  GetByIdShort         r6, r0, #c1, s5 "__d"
+  005c  CreateClosure        r4, r5, f5 ""
+  0061  LoadConstUInt8       r3, 1
+  0064  NewArray             r1, 0
+  0068  Call4                r1, r6, r2, r4, r3, r1
+  006f  GetByIdShort         r4, r0, #c1, s5 "__d"
+  0074  CreateClosure        r3, r5, f7 ""
+  0079  LoadConstUInt8       r6, 2
+  007c  NewArrayWithBuffer   r1, 1, 1, lit@0x0001
+  0084  Call4                r1, r4, r2, r3, r6, r1
+  008b  GetByIdShort         r7, r0, #c1, s5 "__d"
+  0090  CreateClosure        r4, r5, f9 ""
+  0095  LoadConstUInt8       r3, 3
+  0098  NewArrayWithBuffer   r1, 1, 1, lit@0x0006
+  00a0  Call4                r1, r7, r2, r4, r3, r1
+  00a7  TryGetById           r4, r0, #c2, s15 "print"
+  00ad  GetByIdShort         r1, r0, #c3, s9 "__r"
+  00b2  Call2                r7, r1, r2, r6
+  00b7  GetByIdShort         r6, r7, #c4, s11 "callRun"
+  00bc  LoadConstString      r1, s4 "x"
+  00c0  Call2                r1, r6, r7, r1
+  00c5  Call2                r1, r4, r2, r1
+  00ca  TryGetById           r1, r0, #c2, s15 "print"
+  00d0  GetByIdShort         r0, r0, #c3, s9 "__r"
+  00d5  Call2                r4, r0, r2, r3
+  00da  GetByIdShort         r3, r4, #c5, s12 "callUnknown"
+  00df  NewObject            r0
+  00e1  CreateClosure        r5, r5, f11 "run"
+  00e6  PutNewOwnByIdShort   r0, r5, s10 "run"
+  00ea  Call2                r0, r3, r4, r0
+  00ef  Call2                r0, r1, r2, r0
+  00f4  Ret                  r0
+
+function #1 "__d"  params=4 frame=3 env=0 flags=dbg  @0x0000030e size=34
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r2, r0, #c1, s8 "__hbc_registry"
+  0007  NewObject            r1
+  0009  LoadParam            r0, 1
+  000c  PutNewOwnByIdShort   r1, r0, s14 "factory"
+  0010  LoadParam            r0, 3
+  0013  PutNewOwnByIdShort   r1, r0, s6 "deps"
+  0017  LoadParam            r0, 2
+  001a  PutByVal             r2, r0, r1
+  001e  LoadConstUndefined   r0
+  0020  Ret                  r0
+
+function #2 "__r"  params=2 frame=21 env=0 flags=dbg  @0x00000330 size=98
+  0000  LoadParam            r1, 1
+  0003  GetGlobalObject      r0
+  0005  GetByIdShort         r2, r0, #c1, s7 "__hbc_instances"
+  000a  GetByVal             r2, r2, r1
+  000e  JmpTrue              L1, r2
+  0011  GetByIdShort         r2, r0, #c2, s8 "__hbc_registry"
+  0016  GetByVal             r8, r2, r1
+  001a  NewObject            r2
+  001c  NewObject            r3
+  001e  PutNewOwnByIdShort   r2, r3, s13 "exports"
+  0022  GetByIdShort         r3, r0, #c1, s7 "__hbc_instances"
+  0027  PutByVal             r3, r1, r2
+  002b  GetByIdShort         r7, r8, #c3, s14 "factory"
+  0030  GetByIdShort         r12, r0, #c4, s9 "__r"
+  0035  GetByIdShort         r10, r2, #c5, s13 "exports"
+  003a  GetByIdShort         r9, r8, #c6, s6 "deps"
+  003f  LoadThisNS           r13
+  0041  Mov                  r14, r8
+  0044  Mov                  r11, r2
+  0047  Call                 r3, r7, 6
+  004b  GetByIdShort         r2, r2, #c5, s13 "exports"
+  0050  Ret                  r2
+L1:
+  0052  GetByIdShort         r0, r0, #c1, s7 "__hbc_instances"
+  0057  GetByVal             r0, r0, r1
+  005b  GetByIdShort         r0, r0, #c5, s13 "exports"
+  0060  Ret                  r0
+
+function #3 ""  params=6 frame=2 env=0 flags=dbg  @0x00000392 size=20
+  0000  CreateEnvironment    r0
+  0002  CreateClosure        r1, r0, f4 ""
+  0007  LoadParam            r0, 4
+  000a  PutById              r0, r1, #c1, s10 "run"
+  0010  LoadConstUndefined   r0
+  0012  Ret                  r0
+
+function #4 ""  params=2 frame=2 env=0 flags=dbg  @0x000003a6 size=13
+  0000  LoadConstString      r1, s1 "A:"
+  0004  LoadParam            r0, 1
+  0007  Add                  r0, r1, r0
+  000b  Ret                  r0
+
+function #5 ""  params=6 frame=2 env=0 flags=dbg  @0x000003b3 size=20
+  0000  CreateEnvironment    r0
+  0002  CreateClosure        r1, r0, f6 ""
+  0007  LoadParam            r0, 4
+  000a  PutById              r0, r1, #c1, s10 "run"
+  0010  LoadConstUndefined   r0
+  0012  Ret                  r0
+
+function #6 ""  params=2 frame=2 env=0 flags=dbg  @0x000003c7 size=13
+  0000  LoadConstString      r1, s2 "B:"
+  0004  LoadParam            r0, 1
+  0007  Add                  r0, r1, r0
+  000b  Ret                  r0
+
+function #7 ""  params=6 frame=12 env=1 flags=dbg  @0x000003d4 size=41
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r2, 5
+  0005  LoadConstZero        r0
+  0007  GetByVal             r3, r2, r0
+  000b  LoadParam            r2, 2
+  000e  LoadConstUndefined   r0
+  0010  Call2                r2, r2, r0, r3
+  0015  StoreToEnvironment   r1, 0, r2
+  0019  CreateClosure        r2, r1, f8 ""
+  001e  LoadParam            r1, 4
+  0021  PutById              r1, r2, #c1, s11 "callRun"
+  0027  Ret                  r0
+
+function #8 ""  params=2 frame=11 env=0 flags=dbg  @0x000003fd size=22
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s10 "run"
+  000c  LoadParam            r0, 1
+  000f  Call2                r0, r1, r2, r0
+  0014  Ret                  r0
+
+function #9 ""  params=6 frame=2 env=0 flags=dbg  @0x00000413 size=20
+  0000  CreateEnvironment    r0
+  0002  CreateClosure        r1, r0, f10 ""
+  0007  LoadParam            r0, 4
+  000a  PutById              r0, r1, #c1, s12 "callUnknown"
+  0010  LoadConstUndefined   r0
+  0012  Ret                  r0
+
+function #10 ""  params=2 frame=11 env=0 flags=dbg  @0x00000427 size=18
+  0000  LoadParam            r2, 1
+  0003  GetByIdShort         r1, r2, #c1, s10 "run"
+  0008  LoadConstUInt8       r0, 7
+  000b  Call2                r0, r1, r2, r0
+  0010  Ret                  r0
+
+function #11 "run"  params=2 frame=1 env=0 flags=none  @0x00000439 size=5
+  0000  LoadParam            r0, 1
+  0003  Ret                  r0

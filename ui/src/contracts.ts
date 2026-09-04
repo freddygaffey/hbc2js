@@ -94,6 +94,12 @@ export interface XrefEdge extends NeighborRef {
   readonly line: number | null;
   readonly kind: string;
   readonly why?: string;
+  /** Spec 17 §14.4 (`require(N)` points-to pass): present ONLY on a resolved
+   *  dynamic-dispatch edge; `exportName`/`module` are the module export the
+   *  call went through. No UI pane reads these yet. */
+  readonly confidence?: "points-to";
+  readonly exportName?: string;
+  readonly module?: number;
 }
 
 export interface StringUse {

@@ -13,7 +13,8 @@ import type { SplitResult } from "../split/index.ts";
 import { analyseForArtifact, buildFactoryInfo, buildFunctionsIndex, buildManifest, buildModulesIndex, buildRangesIndex, computeFnOwnership } from "./build.ts";
 import { buildNativeIndex, resolveBridgeModuleIds } from "./native.ts";
 import { buildSemanticIndexes } from "./semantic-walk.ts";
-import { sha256Hex, type CallRow, type FunctionRow, type GlobalRow, type Manifest, type ModulesIndex, type NativeRow, type RangeRow, type StringsIndex, type StringUseRow } from "./schema.ts";
+import { resolvePointsToCalls } from "./points-to.ts";
+import { sha256Hex, type CallRow, type FunctionRow, type GlobalRow, type Manifest, type ModulesIndex, type NativeRow, type RangeRow, type ResolvedCallRow, type StringsIndex, type StringUseRow } from "./schema.ts";
 import { buildStringsIndex } from "./strings.ts";
 
 export interface BuildIndexRowsOptions {
@@ -35,6 +36,11 @@ export interface IndexRows {
   readonly functionRows: readonly FunctionRow[];
   readonly modulesIndex: ModulesIndex;
   readonly callRows: readonly CallRow[];
+  /** §2.2a `index/calls-resolved.jsonl` — the `require(N)` points-to edges.
+   *  The DB sink has no `ix_` table for them yet (docs/BUGS.md 2026-09-05
+   *  row): a DB-backed `ArtifactService` therefore serves no points-to edges,
+   *  exactly as it did before this index existed. */
+  readonly resolvedCallRows: readonly ResolvedCallRow[];
   readonly stringsIndex: StringsIndex;
   readonly stringUseRows: readonly StringUseRow[];
   readonly globalRows: readonly GlobalRow[];
@@ -57,6 +63,7 @@ export function buildIndexRows(opts: BuildIndexRowsOptions): IndexRows {
   const bridgeModuleIds = resolveBridgeModuleIds(module, opts.classification);
   const nativeRows = buildNativeIndex(callRows, globalRows, bridgeModuleIds);
   const rangeRows = buildRangesIndex(opts.splitResult.functionRanges);
+  const resolvedCallRows = resolvePointsToCalls(module, analysis, opts.splitResult.modules).rows;
 
   // Empty on purpose: `manifest.index.semanticHash` (over `index/*.jsonl`
   // content) has no DB-path analogue — the DB sink never serialises JSONL —
@@ -78,5 +85,5 @@ export function buildIndexRows(opts: BuildIndexRowsOptions): IndexRows {
     ...(opts.git !== undefined ? { git: opts.git } : {}),
   });
 
-  return { manifest, functionRows, modulesIndex, callRows, stringsIndex, stringUseRows, globalRows, nativeRows, rangeRows };
+  return { manifest, functionRows, modulesIndex, callRows, resolvedCallRows, stringsIndex, stringUseRows, globalRows, nativeRows, rangeRows };
 }

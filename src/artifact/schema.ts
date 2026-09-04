@@ -11,7 +11,7 @@ export const ARTIFACT_SCHEMA = "hbc2js-artifact/1";
 /** §1.1 index-file schema id (every `index/*.jsonl`/`.json` file's header). */
 export const INDEX_SCHEMA = "hbc2js-index/1";
 
-export type IndexKind = "functions" | "calls" | "strings" | "string-uses" | "globals" | "native" | "modules" | "ranges";
+export type IndexKind = "functions" | "calls" | "calls-resolved" | "strings" | "string-uses" | "globals" | "native" | "modules" | "ranges";
 
 /** §1.1: every index file's first line. */
 export interface IndexHeader {
@@ -61,6 +61,30 @@ export interface CallRow {
   readonly via?: string;
   /** Mandatory when `callee === "?"` (A1b); absent otherwise. */
   readonly why?: string;
+}
+
+// ---- §2.2a calls-resolved.jsonl --------------------------------------------
+/** One call edge recovered by the `require(N)` points-to pass
+ *  (`src/artifact/points-to.ts`, docs/specs/17-mcp-harness.md §14.4): a call
+ *  whose callee `calls.jsonl` records as `"?"` (`why: "computed-callee"`)
+ *  because the receiver is a `require(dependencyMap[N])` value held in a
+ *  register or an environment slot. Every field is PROVEN — the pass refuses
+ *  rather than guesses (§14.4 "sound refusal") — and `confidence` marks the
+ *  provenance so a consumer can never mistake it for a direct `calls.jsonl`
+ *  edge. Separate file, never a rewrite of `calls.jsonl`: an old reader of
+ *  the calls index keeps reading exactly what it always did. */
+export interface ResolvedCallRow {
+  readonly caller: number;
+  /** Function-relative OFFSET (pc) of the call instruction — unlike
+   *  `CallRow.site`, which is an ordinal within the caller. */
+  readonly site: number;
+  /** The resolved callee function index. */
+  readonly callee: number;
+  /** The module whose export the callee is. */
+  readonly module: number;
+  /** The export name the call went through. */
+  readonly name: string;
+  readonly confidence: "points-to";
 }
 
 // ---- §2.3 strings.json / string-uses.jsonl ---------------------------------

@@ -38,6 +38,7 @@ import {
 } from "../projdb/artifact-read.ts";
 import type {
   CallRow,
+  ResolvedCallRow,
   FunctionRow,
   GlobalRow,
   Manifest,
@@ -95,6 +96,18 @@ export interface Edge {
   readonly line: number | null;
   readonly kind: string;
   readonly why?: string;
+  /** Present ONLY on an edge recovered by the `require(N)` points-to pass
+   *  (`index/calls-resolved.jsonl`, spec 17 §14.4): the receiver was proven
+   *  to be module `module`'s export `name`. An edge WITHOUT this marker is
+   *  exactly what `who-calls`/`calls-from` always returned (a direct
+   *  `calls.jsonl` edge) — consumers that ignore the field see no change. */
+  readonly confidence?: "points-to";
+  /** §14.4: the export name the call went through (points-to edges only).
+   *  Named `exportName`, not `name`, because the MCP/UI `XrefEdge` this is
+   *  inlined into already uses `name` for the neighbour FUNCTION's name. */
+  readonly exportName?: string;
+  /** §14.4: the module whose export was called (points-to edges only). */
+  readonly module?: number;
 }
 
 /** A `who-calls-by-name` candidate caller (docs/specs/17-mcp-harness.md §14):
@@ -259,6 +272,11 @@ export class ArtifactService {
   private readonly functionsByFn = new Map<number, FunctionRow>();
   private readonly callersByCallee = new Map<number, CallRow[]>();
   private readonly callsByCaller = new Map<number, CallRow[]>();
+  /** §2.2a points-to edges, indexed both ways. Empty when the artifact has no
+   *  `index/calls-resolved.jsonl` (an artifact built before the pass existed,
+   *  or a DB-backed one) — every query then behaves exactly as it did. */
+  private readonly resolvedByCallee = new Map<number, ResolvedCallRow[]>();
+  private readonly resolvedByCaller = new Map<number, ResolvedCallRow[]>();
   private readonly stringsById = new Map<number, StringRow>();
   private stringUses!: readonly StringUseRow[];
   private globals!: readonly GlobalRow[];
@@ -328,6 +346,10 @@ export class ArtifactService {
       const { rows: stringUseRows } = readJsonlRows<StringUseRow>(join(dir, "string-uses.jsonl"));
       const { rows: globalRows } = readJsonlRows<GlobalRow>(join(dir, "globals.jsonl"));
       const { rows: nativeRows } = readJsonlRows<NativeRow>(join(dir, "native.jsonl"));
+      // §2.2a: OPTIONAL by construction — an artifact written before the
+      // points-to pass existed has no such file and must keep working.
+      const resolvedPath = join(dir, "calls-resolved.jsonl");
+      const resolvedCallRows = existsSync(resolvedPath) ? readJsonlRows<ResolvedCallRow>(resolvedPath).rows : [];
       const modulesIndex = readJson<ModulesIndex>(join(dir, "modules.json"));
 
       // §4.2 staleness: ranges header renderHash must equal manifest render.hash.
@@ -352,7 +374,7 @@ export class ArtifactService {
         );
       }
 
-      this.populateFromRows({ functionRows, callRows, stringsIndex, stringUseRows, globalRows, nativeRows, modulesIndex, rangeRows });
+      this.populateFromRows({ functionRows, callRows, stringsIndex, stringUseRows, globalRows, nativeRows, modulesIndex, rangeRows }, resolvedCallRows);
     }
 
     if (opts.overlayStorePath !== undefined && existsSync(opts.overlayStorePath)) {
@@ -386,7 +408,7 @@ export class ArtifactService {
    *  produced it (JSONL reads or `src/projdb/artifact-read.ts`'s DB reads)
    *  — the ONE place caps/slicing-relevant state is built, so every verb
    *  below answers identically regardless of backend (§3.2). */
-  private populateFromRows(rows: DbIndexRows): void {
+  private populateFromRows(rows: DbIndexRows, resolvedCallRows: readonly ResolvedCallRow[] = []): void {
     for (const r of rows.functionRows) this.functionsByFn.set(r.fn, r);
     for (const c of rows.callRows) {
       const list = this.callsByCaller.get(c.caller) ?? [];
@@ -405,6 +427,14 @@ export class ArtifactService {
     this.nativeRows = rows.nativeRows;
     this.modulesIndex = rows.modulesIndex;
     for (const r of rows.rangeRows) this.rangesByFn.set(r.fn, r);
+    for (const r of resolvedCallRows) {
+      const out = this.resolvedByCaller.get(r.caller) ?? [];
+      out.push(r);
+      this.resolvedByCaller.set(r.caller, out);
+      const inList = this.resolvedByCallee.get(r.callee) ?? [];
+      inList.push(r);
+      this.resolvedByCallee.set(r.callee, inList);
+    }
   }
 
   private range(fn: number): RangeRow | undefined {
@@ -457,10 +487,21 @@ export class ArtifactService {
     return { fn: fnRef, file: null, line: null, kind: c.kind, ...(c.why !== undefined ? { why: c.why } : {}) };
   }
 
-  /** §3.1 `query who-calls <fn>` — inverts calls.jsonl (§2.2's own note). */
+  /** §14.4: one `index/calls-resolved.jsonl` row as an `Edge`. `kind` is
+   *  `"method"` (the call really is a property call on the module's exports);
+   *  `confidence: "points-to"` is what tells the two apart. */
+  private edgeFromResolved(r: ResolvedCallRow, other: "callee" | "caller"): Edge {
+    const fnRef = other === "callee" ? r.callee : r.caller;
+    const range = this.range(fnRef);
+    return { fn: fnRef, file: range?.file ?? null, line: range?.lines[0] ?? null, kind: "method", confidence: "points-to", exportName: r.name, module: r.module };
+  }
+
+  /** §3.1 `query who-calls <fn>` — inverts calls.jsonl (§2.2's own note),
+   *  then appends the §2.2a points-to edges whose callee is `fn` (spec 17
+   *  §14.4). Direct edges stay first and unchanged. */
   whoCalls(fn: number, opts: { readonly all?: boolean } = {}): Bounded<Edge> & { readonly unknownInScope: number } {
     const rows = this.callersByCallee.get(fn) ?? [];
-    const edges = rows.map((c) => this.edgeFromCall({ ...c, callee: fn }, "caller"));
+    const edges = [...rows.map((c) => this.edgeFromCall({ ...c, callee: fn }, "caller")), ...(this.resolvedByCallee.get(fn) ?? []).map((r) => this.edgeFromResolved(r, "caller"))];
     const cap = opts.all === true ? edges.length : CAPS.whoCalls;
     return { rows: edges.slice(0, cap), total: edges.length, truncated: edges.length > cap, unknownInScope: this.totalUnknownCallees };
   }
@@ -468,7 +509,7 @@ export class ArtifactService {
   /** §3.1 `query calls-from <fn>`. */
   callsFrom(fn: number, opts: { readonly all?: boolean } = {}): Bounded<Edge> {
     const rows = this.callsByCaller.get(fn) ?? [];
-    const edges = rows.map((c) => this.edgeFromCall(c, "callee"));
+    const edges = [...rows.map((c) => this.edgeFromCall(c, "callee")), ...(this.resolvedByCaller.get(fn) ?? []).map((r) => this.edgeFromResolved(r, "callee"))];
     const cap = opts.all === true ? edges.length : CAPS.callsFrom;
     return { rows: edges.slice(0, cap), total: edges.length, truncated: edges.length > cap };
   }

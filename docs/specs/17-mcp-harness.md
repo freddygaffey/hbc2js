@@ -552,6 +552,77 @@ specific module still needs the full require-`N` points-to pass the backlog
 flags as the follow-up for the residue. Measured on rn-template: of 3,909
 functions with `who-calls total:0`, **484** gain ≥1 by-name candidate.
 
+### 14.4 `require(N)` points-to pass — resolving the RECEIVER (2026-09-05, landed)
+
+§14.1's recorded residue, closed: `who-calls-by-name` returns a NAME-based
+SUPERSET; this pass resolves the receiver's IDENTITY, so the call becomes a
+real, module-scoped edge. Implementation `src/artifact/points-to.ts`, index
+`index/calls-resolved.jsonl` (spec 10 §2.2a), merged into `who-calls` /
+`calls-from` / `McpResources.whoCalls` / `GET /api/fn/{fn}/callers` with
+`confidence: "points-to"`.
+
+**The lattice.** Per register, straight-line, DROPPED at every branch target
+(the reaching-definition idiom of `object-tables.ts` / `template-injections.ts`):
+
+| value | proven by |
+|---|---|
+| module M | `require(dependencyMap[i])` inside a known factory with `i` a compile-time index (the same recognition `semantic-walk.ts` uses for the `m:<id>` call row), or a `LoadFromEnvironment` of a slot every writer of which proved module M |
+| export E of M | a `Get*ById "E"` off a module value; plus the reserved key `module.exports` for the module VALUE itself (`module.exports = function …`, then `require(d[N])(…)`) |
+| unknown | everything else — absent from the map |
+
+**Environment identity** is taken from the module's already-built `EnvGraph`
+(`resolvedAt` for the access site, `EnvSlot.accesses` for every store to a
+slot bundle-wide), not from a hand-rolled `GetEnvironment`-level walk
+(docs/DECISIONS.md D26). A slot resolves ONLY when every one of its store
+accesses is a proven store of the SAME module.
+
+**Sound refusal — a missing edge beats a wrong one.** Any unresolved link
+drops the edge; one edge per call site, or none.
+- A slot whose store list contains a store this pass did not prove: refused.
+- A slot INDEX that any bundle-wide UNRESOLVED store writes (the env graph
+  could not resolve that store's environment, so it could target any
+  environment's slot of that index): refused module-wide.
+- An export name is resolved to a function only when exactly ONE closure in
+  that module's factory is stored under it on a PROVEN exports object (the
+  factory's `exports` parameter, `module.exports` off its `module`
+  parameter, or the object a `module.exports = …` installed). Two closures
+  under one name, or one closure plus one unproven value under the same name
+  (the LAST write wins at runtime, so the target is not provable), resolve to
+  nothing.
+- A factory whose parameter count cannot locate `exports`/`module`
+  positionally is skipped entirely.
+
+**False-positive classes it REMOVES** (§14.1's list): (1) a same-named method
+on an unrelated object — the receiver is proven, so an unrelated object is
+never an edge; (2) a barrel/re-export that merely reads the name — no call, no
+edge; (3) two modules exporting the same name — the edge names WHICH module.
+The construct fixture `tests/fixtures/constructs/62-require-slot-dispatch`
+pins exactly that: two modules both export `run`, and the resolved edge is
+module 0's.
+
+**What still escapes (honest residue).** A receiver that is a parameter, a
+property of another object, or a value that crosses a branch target; an
+`_interopRequireDefault(require(d[N]))` wrapper (the module value is consumed
+by a call, so it is dropped); babel's `exports.default = void 0;` prologue,
+which makes `default` unprovable for every module that uses it; a
+`module.exports` assembled by a helper. Measured tail: on rn-template 152 of
+1,086 proven `export E of M` call sites had no provable target; on the Service
+NSW bundle 5,183 of 11,972.
+
+**Cost.** Decode-only and NOT bundle-wide: the pass decodes the module
+factories plus the readers of a slot it proved (rn-template 452 of 4,199
+functions, NSW 7,134 of 43,384), with a bounded fixed point (≤ 4 rounds).
+Measured: rn-template 22 ms (10.6% of `writeArtifact`'s 208 ms), NSW 705 ms.
+
+**Measured (rn-template).** 934 resolved edges over 208 distinct caller
+functions; 8 callee functions that had `who-calls total:0` now have real
+edges. For those same 8 callees, `who-calls-by-name` offers 4 candidate rows
+in total — the class is structurally invisible to a by-name scan, because a
+`module.exports = function …` module has no export NAME to match.
+**Service NSW** (counts only): 4,510 modules / 43,384 functions → 6,789
+resolved edges, 2,164 proven environment slots, 2,629 distinct callers, 86
+functions lifted out of `who-calls total:0`.
+
 ## 15. Provenance tier + shared service context (2026-09-04) — landed
 
 Two follow-ups this round closed: §14's own recorded gap ("`src/mcp/tools.ts` has no `tier`/`author` field ... belongs to the owner of `src/mcp/tools.ts`", also spec 23 §4) and spec 22 §3.5's read-after-write note.

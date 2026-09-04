@@ -48,6 +48,9 @@ test("A2 manifest hashes verify: render.hash and index.semanticHash recompute to
       ["index/functions.jsonl", readFileSync(join(outDir, "index", "functions.jsonl"), "utf8")],
       ["index/modules.json", readFileSync(join(outDir, "index", "modules.json"), "utf8")],
       ["index/calls.jsonl", readFileSync(join(outDir, "index", "calls.jsonl"), "utf8")],
+      // §2.2a `require(N)` points-to edges — a semantic index like the rest,
+      // so it is hashed like the rest.
+      ["index/calls-resolved.jsonl", readFileSync(join(outDir, "index", "calls-resolved.jsonl"), "utf8")],
       ["index/strings.json", readFileSync(join(outDir, "index", "strings.json"), "utf8")],
       ["index/string-uses.jsonl", readFileSync(join(outDir, "index", "string-uses.jsonl"), "utf8")],
       ["index/globals.jsonl", readFileSync(join(outDir, "index", "globals.jsonl"), "utf8")],

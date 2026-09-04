@@ -28,7 +28,7 @@ test("A5 rename survives across a re-render: semantic index unchanged, id-based 
 
   // Build #1: no name set yet.
   const written1 = writeArtifact({ bytes, splitResult, outDir: artifactDir, passes: {}, strictEnv: false, form: "flat", overlayStorePath: overlayPath });
-  const semanticFiles = ["functions.jsonl", "calls.jsonl", "strings.json", "string-uses.jsonl", "globals.jsonl", "native.jsonl", "modules.json"] as const;
+  const semanticFiles = ["functions.jsonl", "calls.jsonl", "calls-resolved.jsonl", "strings.json", "string-uses.jsonl", "globals.jsonl", "native.jsonl", "modules.json"] as const;
   const before = new Map(semanticFiles.map((f) => [f, readFileSync(join(artifactDir, "index", f), "utf8")]));
 
   const svcBefore = new ArtifactService(artifactDir, { overlayStorePath: overlayPath });

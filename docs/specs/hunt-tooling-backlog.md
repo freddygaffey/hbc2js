@@ -40,11 +40,24 @@ UI (Stage 3) first, THEN these.
 endpoint discovery; deps confirmedDeps as the API/host map seed.
 
 ## Round 2 tool-gaps (overnight hunt, 2026-09-04 — 4 directions)
-**DOMINANT (hit in every direction — promote to #1):** `who-calls`/grep can't resolve
-callers of `require(list[N]).method(...)` dynamic dispatch — this app's DOMINANT
-calling convention, not an edge case. Blocked confirming B1 licence-link body, D3
-PIN→jsrsasign wiring, A4 Auth0 reachability. FIX = a points-to / dataflow pass that
-resolves `require(N)` even when N is register/list-indexed. Highest-value tool work.
+**DOMINANT (hit in every direction — promote to #1): PARTLY CLOSED 2026-09-05.**
+`who-calls`/grep can't resolve callers of `require(list[N]).method(...)` dynamic
+dispatch — this app's DOMINANT calling convention, not an edge case. Blocked
+confirming B1 licence-link body, D3 PIN→jsrsasign wiring, A4 Auth0 reachability.
+FIX = a points-to / dataflow pass that resolves `require(N)` even when N is
+register/list-indexed.
+- LANDED (cheap half): `who-calls-by-name` — a by-NAME superset, spec 17 §14.1.
+- LANDED (the residue): the points-to pass, spec 17 §14.4 — resolves the
+  RECEIVER, so the edge is real and module-scoped (`index/calls-resolved.jsonl`,
+  `confidence:"points-to"`). NSW: 6,789 resolved edges, 2,629 distinct callers,
+  86 functions lifted out of `who-calls total:0`; rn-template: 934 edges / 208
+  callers.
+- STILL OPEN (honest): the pass refuses rather than guesses, so a receiver held
+  across a branch, an `_interopRequireDefault` wrapper, or a babel
+  `exports.default = void 0` prologue still yields no edge — 152/1,086 (rn-template)
+  and 5,183/11,972 (NSW) proven receiver+name sites have no provable target
+  (docs/BUGS.md 2026-09-05 rows). The three named leads should be re-run against
+  the new edges before this gap is called closed.
 
 New verbs/capabilities the hunt wanted:
 - ~~`endpoint-tables` / object-literal-group discovery by key-pattern (PATH_*)~~ —

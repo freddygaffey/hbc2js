@@ -67,6 +67,7 @@ this same directory; the naming overlay sidecar already lives beside it):
   index/
     functions.jsonl        # §2.1  one row per fnIndex
     calls.jsonl            # §2.2  call-graph edges
+    calls-resolved.jsonl   # §2.2a `require(N)` points-to edges (additive)
     strings.json           # §2.3a string table (sid → value)
     string-uses.jsonl      # §2.3b sid → use sites
     globals.jsonl          # §2.4  global read/write/call sites
@@ -184,6 +185,44 @@ One row per call **site**:
 - `kind` ∈ `closure|method|construct|global|require|builtin|unknown`.
 - **who-calls / called-by are both derived from this one edge list** (the query
   layer inverts it; the file stores each edge once).
+
+### 2.2a `calls-resolved.jsonl` — the `require(N)` points-to edges
+
+One row per call site the points-to pass (`src/artifact/points-to.ts`, spec 17
+§14.4) resolved through a `require(dependencyMap[N])` receiver — the sites
+`calls.jsonl` records as `{"callee":"?","why":"computed-callee"}` because the
+callee register holds a required module's export:
+
+```json
+{"caller":8,"site":15,"callee":4,"module":0,"name":"run","confidence":"points-to"}
+```
+
+- `site` is a function-relative OFFSET (pc) of the call instruction, NOT
+  `calls.jsonl`'s ordinal `site` — this index is written by a separate,
+  decode-only pass that never builds the ordinal.
+- `callee` is always an integer `fnIndex`; `module`/`name` say which module
+  export it was reached through (`name` is the reserved key `module.exports`
+  when the module's whole export value is the callee, i.e.
+  `module.exports = function …`).
+- `confidence` is always `"points-to"`. It exists so no consumer can mistake
+  a recovered edge for a direct one.
+
+**Why a separate file, not extra rows in `calls.jsonl` (decision, 2026-09-05).**
+Three reasons, in order: (1) `calls.jsonl`'s primary key is
+`(caller, site-ordinal)` and these rows have no ordinal — folding them in
+would either invent one or overload `site` with two meanings; (2) an existing
+reader of `calls.jsonl` (the native index, the secrets xref, `src/mcp/leads.ts`,
+every committed test) keeps reading EXACTLY what it read before, so nothing
+has to be re-verified for a false "new edge appeared"; (3) the file is
+optional on read (`ArtifactService` tolerates its absence), which is what
+makes an artifact written before this pass existed still load. The merge
+happens at query time in `who-calls`/`calls-from`, where the marker travels
+with the row.
+
+The file is `renderIndependent: true` and IS hashed into
+`manifest.index.semanticHash` (§1.2) like every other semantic index — it is
+derived from bytecode alone, so a rename or a re-render leaves it
+byte-identical.
 
 ### 2.3 String table → use sites
 
@@ -303,6 +342,13 @@ answer that looks complete would be an untruth. Default caps; `--all` pages.
 | `query who-calls <fn>` | one line per caller edge: `fn:12 src/a.js:45 method` | ≤ 50 lines + total |
 | `query who-calls-by-name <fn:N \| --name X>` | NAME-based caller recovery for `<slot>.export(...)` dispatch `who-calls` can't resolve; one line per candidate: `fn:12 name:foo property-get n:1 … confidence:by-name` (spec 17 §14.1). `fn:N` proves N's export names from bytecode (needs `--hbc`) then scans other modules; `--name X` scans one name. Common/high-fan-out names → `ambiguous`, no rows. | ≤ 50 lines + total |
 | `query calls-from <fn>` | one line per callee edge (incl. `?` rows with `why`) | ≤ 50 lines + total |
+
+Both `who-calls` and `calls-from` MERGE the §2.2a points-to edges into their
+rows; a merged row prints its marker (`… method confidence:points-to
+via:m:3.module.exports`) and carries `confidence`/`exportName`/`module` in
+`--json`. Rows without the marker are exactly the direct `calls.jsonl` edges
+they always were.
+
 | `query string <sid>` | the value (head if >4 KB unless `--full`) + use rows `fn role n` | ≤ 30 lines |
 | `query string-grep <regex>` | matching `sid  head-of-value  useCount` rows | ≤ 50 lines + total |
 | `query global-uses <name>` | `fn access n file:line` rows | ≤ 50 lines + total |
