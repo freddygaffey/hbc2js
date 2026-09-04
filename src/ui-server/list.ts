@@ -86,11 +86,11 @@ export interface ModuleSourceResult {
   readonly functions: readonly { readonly fn: number; readonly name: string | null; readonly lines: readonly [number, number] }[];
 }
 
-export function moduleSource(artifact: ArtifactService, artifactDir: string, id: number): ModuleSourceResult | null {
+export function moduleSource(artifact: ArtifactService, id: number): ModuleSourceResult | null {
   const file = artifact.module(id).file;
   if (file === null) return null;
   const functions: { fn: number; name: string | null; lines: readonly [number, number] }[] = [];
   for (const f of artifact.ownedFns(id)) if (f.lines !== null) functions.push({ fn: f.fn, name: f.name, lines: f.lines });
   functions.sort((a, b) => a.lines[0] - b.lines[0]);
-  return { module: id, file, text: readFileSync(join(artifactDir, file), "utf8"), functions };
+  return { module: id, file, text: readFileSync(artifact.modulePath(file), "utf8"), functions };
 }

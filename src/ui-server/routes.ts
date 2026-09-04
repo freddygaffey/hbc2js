@@ -180,7 +180,7 @@ const ROUTES: readonly Route[] = [
     handler: ([raw], _req, ctx) => {
       const id = parseFn(raw!);
       if (id === null) return badRequest(`module/${raw}/source: not a module id`);
-      const r = moduleSource(ctx.resources.artifact, ctx.artifactDir, id);
+      const r = moduleSource(ctx.resources.artifact, id);
       if (r === null) return { status: 404, json: { reason: `module ${id}: no source file recorded` } };
       return ok(r);
     },

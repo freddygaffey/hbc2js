@@ -424,13 +424,25 @@ export class ArtifactService {
     return { deps: m?.deps ?? [], dependents, ownedFnCount, file: m?.file ?? null };
   }
 
+  /** Where a recorded `file` (always a bare `module_N.js`, spec 10 §2)
+   *  lives on disk: the artifact root for `--split` artifacts, `src/` for
+   *  `hbc2js init` projects (spec 16 §4.1 renders the split tree under
+   *  `<out>/src` but records the same bare names). Both layouts are read
+   *  by the same query surface — regression: an `init` project used to
+   *  500 on every source read. */
+  modulePath(file: string): string {
+    const direct = join(this.artifactDir, file);
+    if (existsSync(direct)) return direct;
+    const underSrc = join(this.artifactDir, "src", file);
+    return existsSync(underSrc) ? underSrc : direct;
+  }
+
   /** §3.1 `query source <fn> [--lines a-b]` — the only source-emitting verb;
    *  clipped to the function's own range regardless of the requested slice. */
   source(fn: number, lines?: readonly [number, number]): string {
     const r = this.range(fn);
     if (r === undefined) throw new Hbc2jsError(ErrorCode.E_USAGE, `query source: no range recorded for fn ${fn}`);
-    const filePath = join(this.artifactDir, r.file);
-    const fileLines = readFileSync(filePath, "utf8").split("\n");
+    const fileLines = readFileSync(this.modulePath(r.file), "utf8").split("\n");
     const [lo, hi] = r.lines;
     const wantLo = lines !== undefined ? Math.max(lo, lines[0]) : lo;
     const wantHi = lines !== undefined ? Math.min(hi, lines[1]) : hi;

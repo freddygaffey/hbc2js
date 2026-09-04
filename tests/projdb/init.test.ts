@@ -104,3 +104,18 @@ test("A2 hbc2js init on an existing .hbcproj refuses (end-to-end CLI)", () => {
     assert.equal(status, 3);
   }
 });
+
+test("regression: an `init` project (modules rendered under src/) serves fn source through ArtifactService", async () => {
+  // `init` writes the split tree to <out>/src but records bare `module_N.js`
+  // names (spec 16 §4.1); `ArtifactService.source` used to join the bare
+  // name onto the artifact root and throw ENOENT for every function.
+  const { writeSplitResult } = await import("../../src/split/write.ts");
+  const { ArtifactService } = await import("../../src/artifact/service.ts");
+  writeSplitResult(splitResult, join(outDir, "src"));
+  assert.equal(existsSync(join(outDir, "module_0.js")), false, "layout under test: nothing at the root");
+  const svc = new ArtifactService(outDir, {});
+  const owned = svc.ownedFns(0).filter((f) => f.lines !== null);
+  assert.ok(owned.length > 0);
+  const text = svc.source(owned[0]!.fn);
+  assert.equal(text.split("\n").length, owned[0]!.lines![1] - owned[0]!.lines![0] + 1);
+});
