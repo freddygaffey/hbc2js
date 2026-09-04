@@ -129,16 +129,28 @@ test.describe("hbc2js UI shell smoke", () => {
     await page.goto("/");
     const modules = page.locator("[data-module]");
     await expect(modules.first()).toBeVisible({ timeout: WAIT });
-    // Open every group so a fixture with one module per open group (e.g. a
-    // one-module "App" group plus a collapsed "Unclassified") still exposes
-    // two modules to pick from, instead of skipping.
+    // Open groups until two modules are on screen (e.g. a one-module "App"
+    // group plus a collapsed "Unclassified") instead of skipping. The tree
+    // is virtualised (`@tanstack/react-virtual`, ui/src/panes/LeftPane.tsx)
+    // — opening a group can push later groups out of the rendered window,
+    // so `[data-group]` rows must be re-queried after every click rather
+    // than indexed once up front (a `[data-group]` locator only ever sees
+    // the currently-mounted rows, not every group in the tree).
     if ((await modules.count()) < 2) {
       const groups = page.locator("[data-group]");
-      const groupCount = await groups.count();
-      for (let i = 0; i < groupCount; i += 1) {
-        const row = groups.nth(i);
-        const marker = await row.locator("span").first().textContent();
-        if (marker === ">") await row.click();
+      for (let guard = 0; guard < 20 && (await modules.count()) < 2; guard += 1) {
+        const groupCount = await groups.count();
+        let opened = false;
+        for (let i = 0; i < groupCount; i += 1) {
+          const row = groups.nth(i);
+          const marker = await row.locator("span").first().textContent();
+          if (marker === ">") {
+            await row.click();
+            opened = true;
+            break;
+          }
+        }
+        if (!opened) break; // no more collapsed groups mounted — give up, let test.skip below decide
       }
     }
     const count = await modules.count();
