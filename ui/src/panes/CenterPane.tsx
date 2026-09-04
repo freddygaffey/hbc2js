@@ -14,7 +14,7 @@
 // `ActionContext.selection`; clicking anywhere inside a marked function
 // range selects that function.
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { PaneHeader } from "../components/primitives.tsx";
 import {
   isMissingResource, useContextResource, useDisasm, useFn, useModule, useModuleSource, useSource,
@@ -24,6 +24,7 @@ import { displayName } from "../listing/names.ts";
 import { clampLines, MAX_RENDER_LINES } from "../listing/truncate.ts";
 import { select, useSelection } from "../state/selection.ts";
 import type { ModuleSourceFn } from "../contracts.ts";
+import { setDisasmOpen, useDisasmOpen } from "./disasm-store.ts";
 
 function TruncationBar({ hidden, shown }: { readonly hidden: number; readonly shown: number }): ReactNode {
   return (
@@ -66,14 +67,24 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const useFileView = file.data !== undefined;
   const fnSource = useSource(useFileView || !hasFn ? -1 : fnId);
   const disasm = useDisasm(hasFn ? fnId : -1);
-  const [disasmOpen, setDisasmOpen] = useState(true);
+  const disasmOpen = useDisasmOpen();
   const disasmPanel = useRef<ImperativePanelHandle | null>(null);
+  const disasmBody = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const p = disasmPanel.current;
     if (p === null) return;
     if (disasmOpen) p.expand();
     else p.collapse();
+  }, [disasmOpen]);
+
+  // `view.rawHermes` (../actions/registry.ts) opens the panel from outside
+  // this component; once it is open (here or via the toggle bar), scroll it
+  // fully into view and hand it keyboard focus.
+  useEffect(() => {
+    if (!disasmOpen) return;
+    disasmBody.current?.scrollIntoView({ block: "nearest" });
+    disasmBody.current?.querySelector<HTMLElement>(".cm-content")?.focus();
   }, [disasmOpen]);
 
   const body = useFileView
@@ -111,6 +122,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
         highlightLine={line}
         markedLines={marks}
         ariaLabel={useFileView ? `source of module ${moduleId}` : `source of function ${fnId}`}
+        registerFold
         onIdentifier={(token, at) => select({ kind: "identifier", fn: fnId, name: token, line: at })}
         onLine={(at) => {
           const hit = useFileView ? fnAtLine(fns, at) : null;
@@ -152,7 +164,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
           className="min-h-0 bg-surface"
         >
           <div className="flex h-full min-h-0 flex-col">
-            <div className="min-h-0 flex-1">
+            <div ref={disasmBody} className="min-h-0 flex-1">
               {!hasFn ? (
                 <Notice>no function selected</Notice>
               ) : disasm.isLoading ? (
@@ -169,7 +181,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
       </PanelGroup>
       <button
         type="button"
-        onClick={() => setDisasmOpen((v) => !v)}
+        onClick={() => setDisasmOpen(!disasmOpen)}
         className="flex h-6 shrink-0 items-center gap-2 border-t border-border bg-surface px-3 text-left text-xs text-text-muted hover:text-text"
         aria-expanded={disasmOpen}
         data-testid="disasm-fold"

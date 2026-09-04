@@ -19,8 +19,22 @@ import { addTag, fnTarget } from "./writes.ts";
 import { workersApi } from "../workers/wire.ts";
 import { api } from "../api.ts";
 import type { FnSummary } from "../contracts.ts";
+import { foldActive, unfoldActive } from "../listing/fold-store.ts";
+import { openDisasm } from "../panes/disasm-store.ts";
 
 export const registry = createStandardRegistry();
+
+// `view.fold` / `view.unfold` need a listing on screen: gate on the same
+// selection shape CenterPane requires to render one (a module, or anything
+// carrying an `fn`). `register()` overwrites by id (src/ui-core/actions.ts),
+// so this only touches the `when` the browser shell uses — the shared
+// `standardActions()` definition (outside this UI-only track) is untouched.
+for (const id of ["view.fold", "view.unfold"] as const) {
+  const action = registry.get(id);
+  if (action !== undefined) {
+    registry.register({ ...action, when: (ctx) => ctx.selection.kind === "module" || ctx.selection.fn !== undefined });
+  }
+}
 
 /** The active keymap: `ui/keymap.json`'s preset plus its overrides,
  *  validated against `registry` (an override naming an unknown action id
@@ -162,7 +176,10 @@ export const actionApi: ActionApi = {
   markReviewed: (target) => tag(target, "reviewed"),
   markSuspicious: (target) => tag(target, "suspicious"),
   copyDisasmOffset: (target) => (target.fn === undefined ? copy("") : copyDisasmOffset(target.fn)),
-  showRawHermes: () => setStatus("raw Hermes is the centre pane's Disasm tab"),
+  showRawHermes: () => {
+    openDisasm();
+    setStatus("showing disasm");
+  },
   explain: (target) => queueJob("explain-fn", target),
   suggestName: (target) => queueJob("suggest-name", target),
   openGraph: () => setStatus("the graph view lands with spec 23"),
@@ -172,8 +189,8 @@ export const actionApi: ActionApi = {
   prevModule: () => stepModule(-1),
   back: () => void back(),
   forward: () => void forward(),
-  fold: () => setStatus("folding is a listing follow-up"),
-  unfold: () => setStatus("folding is a listing follow-up"),
+  fold: () => setStatus(foldActive() ? "folded" : "no listing to fold"),
+  unfold: () => setStatus(unfoldActive() ? "unfolded" : "no listing to unfold"),
 };
 
 /** Which pane has focus right now — actions may gate on it (`when`). */

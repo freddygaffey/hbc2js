@@ -16,12 +16,13 @@ import {
 } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
-import { syntaxHighlighting } from "@codemirror/language";
+import { codeFolding, foldGutter, foldKeymap, syntaxHighlighting } from "@codemirror/language";
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
 import { useEffect, useRef, type ReactNode } from "react";
 import { hbcEditorTheme, hbcHighlightStyle } from "./cm-theme.ts";
 import { vimEnabled } from "../keymap-config.ts";
+import { setActiveFoldView } from "./fold-store.ts";
 
 // NOTE: this component installs NO `contextmenu` handler and stops no
 // events. Right-clicking the listing must reach the document-level listener
@@ -80,9 +81,13 @@ export interface CodeViewProps {
   /** 1-based lines that start a function, marked in the file view. */
   readonly markedLines?: readonly number[];
   readonly ariaLabel: string;
+  /** When true, this instance becomes the target of `view.fold` /
+   *  `view.unfold` (../actions/registry.ts) while it is mounted — the
+   *  listing's primary block, never the disasm block (./fold-store.ts). */
+  readonly registerFold?: boolean;
 }
 
-export function CodeView({ text, language, highlightLine, onIdentifier, onLine, markedLines, ariaLabel }: CodeViewProps): ReactNode {
+export function CodeView({ text, language, highlightLine, onIdentifier, onLine, markedLines, ariaLabel, registerFold }: CodeViewProps): ReactNode {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
   // Handlers live behind refs: the extension array is built once, but the
@@ -110,7 +115,9 @@ export function CodeView({ text, language, highlightLine, onIdentifier, onLine, 
       drawSelection(),
       search({ top: true }),
       highlightSelectionMatches(),
-      cmKeymap.of([...searchKeymap, ...defaultKeymap]),
+      codeFolding(),
+      foldGutter(),
+      cmKeymap.of([...searchKeymap, ...foldKeymap, ...defaultKeymap]),
       lineHighlightField,
       markField,
       syntaxHighlighting(hbcHighlightStyle),
@@ -123,9 +130,11 @@ export function CodeView({ text, language, highlightLine, onIdentifier, onLine, 
     ];
     const v = new EditorView({ state: EditorState.create({ doc: text, extensions }), parent: host.current });
     view.current = v;
+    if (registerFold) setActiveFoldView(v);
     return () => {
       v.destroy();
       view.current = null;
+      if (registerFold) setActiveFoldView(null);
     };
     // The editor is created once per language/label; `text` is pushed in by
     // the effect below, so switching functions never remounts the DOM.

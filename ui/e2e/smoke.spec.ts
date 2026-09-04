@@ -251,4 +251,34 @@ test.describe("hbc2js UI shell smoke", () => {
     await expect(activityRows.first()).toBeVisible({ timeout: WAIT });
     expect(await activityRows.count()).toBeGreaterThan(0);
   });
+
+  test("fold gutter present; Cmd-K Fold folds the listing; Show raw Hermes opens the disasm panel", async ({ page }) => {
+    await page.goto("/");
+    const firstFn = await openFirstModuleAndFn(page);
+    await firstFn.click();
+
+    const codeView = page.getByTestId("code-view").first();
+    await expect(codeView).toBeVisible({ timeout: WAIT });
+    await expect(codeView.locator(".cm-foldGutter")).toBeVisible({ timeout: WAIT });
+
+    // Cmd-K -> "Fold" -> the listing gets at least one folded placeholder.
+    await page.keyboard.press((process.platform === "darwin" ? "Meta" : "Control") + "+k");
+    await expect(page.getByPlaceholder("Run a command")).toBeVisible({ timeout: SHORT_WAIT });
+    await page.getByPlaceholder("Run a command").fill("Fold");
+    await page.getByText("Fold", { exact: true }).click();
+    await expect(codeView.locator(".cm-foldPlaceholder").first()).toBeVisible({ timeout: SHORT_WAIT });
+
+    // Collapse the disasm panel via the toggle bar, then re-open it with
+    // "Show raw Hermes" from the palette.
+    const disasmToggle = page.getByTestId("disasm-fold");
+    await expect(disasmToggle).toHaveAttribute("aria-expanded", "true");
+    await disasmToggle.click();
+    await expect(disasmToggle).toHaveAttribute("aria-expanded", "false");
+
+    await page.keyboard.press((process.platform === "darwin" ? "Meta" : "Control") + "+k");
+    await expect(page.getByPlaceholder("Run a command")).toBeVisible({ timeout: SHORT_WAIT });
+    await page.getByPlaceholder("Run a command").fill("raw Hermes");
+    await page.getByText("Show raw Hermes", { exact: true }).click();
+    await expect(disasmToggle).toHaveAttribute("aria-expanded", "true", { timeout: SHORT_WAIT });
+  });
 });

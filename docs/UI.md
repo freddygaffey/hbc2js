@@ -296,9 +296,10 @@ and stops no events, so right-clicks reach the annotate track's menu.
 - **Source↔disasm alignment**: the two blocks are independent editors; the
   disasm is not scrolled to the source line (no line→offset map in the UI
   yet).
-- **The command palette** (`Cmd/Ctrl-K`) lists hard-coded items, of which
-  only the theme and density toggles run; the action registry, keymap and
-  vim preset are landing 4.
+- ~~The command palette lists hard-coded items~~ FIXED: `CommandPalette.tsx`
+  builds its list from `paletteItems(ctx, registry)` (see "Actions, keymap,
+  context menu, annotate" below) — every registry action is reachable by
+  `Cmd/Ctrl-K`, not just the theme and density toggles.
 - **The context menu** items are disabled; rename/comment through `McpTools`
   is landing 5.
 - **The activity pane** is live (see "Activity feed" below) — this bullet
@@ -416,7 +417,11 @@ already true of `/api/fn/{fn}/source` and is unchanged here.
 string literal is a contract change, not a binding rename, and has no store.
 `list`'s `rendered` column is exact for a named register and best-effort for a
 var-named one (it classifies the same raw frame body `var-naming` classifies).
-`view.fold` / `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs.
+`view.fold` / `view.unfold` fold-all/unfold-all the current listing editor
+(CodeMirror's `foldAll`/`unfoldAll` over `@codemirror/language`'s fold
+gutter, `ui/src/listing/fold-store.ts`; `when` requires a fn or module
+selected) and `view.rawHermes` expands and focuses the centre pane's Disasm
+panel (`ui/src/panes/disasm-store.ts`).
 The Package panel reads the real `GET /api/package-id/{mod}` (wave 4a).
 `view.copyDisasmOffset` copies a real byte offset now, `fn:<n>@0x<hex>` —
 `FnSummary.offset` (`src/artifact/service.ts`) is `FunctionRow.offset`

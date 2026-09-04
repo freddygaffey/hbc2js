@@ -32,6 +32,9 @@ export const hbcEditorTheme = EditorView.theme({
     borderRight: "1px solid var(--border)",
   },
   ".cm-activeLineGutter": { backgroundColor: "var(--surface-2)", color: "var(--text)" },
+  // Fold gutter: no new colours, just kept narrow (default CodeMirror
+  // padding runs wide) so it does not steal width from the line numbers.
+  ".cm-foldGutter .cm-gutterElement": { cursor: "pointer", paddingInline: "2px" },
   ".cm-activeLine": { backgroundColor: "transparent" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
     backgroundColor: "var(--surface-2)",
