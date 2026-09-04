@@ -196,25 +196,44 @@ var __hbc_arguments = (function () {
   // of an unmodified array iteration as an integer index; taking the ordinary
   // iterator every time is observationally the same and much simpler. Both
   // helpers return `[value, newState]` because the opcodes write two registers.
+  // Shared by __hbc_iterBegin and __hbc_b_arraySpread (CallBuiltin's internal
+  // arraySpread entry, used to lower array-spread), the two places bytecode
+  // requires a value that turned out not to be iterable. docs/BUGS.md
+  // `iterable-wording`: an earlier version of this file gave both a V8-style
+  // "<value> is not iterable (cannot read property Symbol(Symbol.iterator))"
+  // text, on the mistaken assumption (repeated in that BUGS row and the
+  // campaign-2 report it came from) that this is "the wording Hermes/V8
+  // actually use" -- true only for V8/Node, never checked against a real
+  // Hermes VM. Measured directly against three real interpreters
+  // (`tools/hermesc/v84/hermes`, `tools/hermesc/v96/hermes`,
+  // `tools/hermes-vm/v99/bin/hermes`, agreeing exactly), Hermes's own text
+  // carries no value description at all: `null`/`undefined` (GetMethod's
+  // ToObject step) get one fixed text each, everything else that lacks a
+  // callable `Symbol.iterator` gets one shared text, regardless of whether
+  // the source was a spread, a for-of, or a destructuring -- so, unlike the
+  // V8 text this replaces, it needs no per-callsite "how would the source
+  // expression have read" reasoning at all.
+  h(
+    "__hbc_notIterable",
+    `
+function __hbc_notIterable(src) {
+  if (src === null) throw new TypeError("Cannot convert null value to object");
+  if (src === undefined) throw new TypeError("Cannot convert undefined value to object");
+  throw new TypeError("iterator method is not callable");
+}
+`,
+  ),
   h(
     "__hbc_iterBegin",
     `
 function __hbc_iterBegin(src) {
   var m = src === null || src === undefined ? undefined : src[Symbol.iterator];
-  if (typeof m !== "function") {
-    // V8 has two texts for this: one built from the *source expression* (for
-    // for-of and spread) and one built from the value alone (for
-    // destructuring, where no expression text exists). Only the second is
-    // reproducible from bytecode -- register names are not the program's names
-    // -- so it is the one emitted.
-    var t = typeof src;
-    var d = src === null ? "object null" : t === "undefined" ? "undefined" : t === "number" || t === "boolean" ? t + " " + String(src) : t;
-    throw new TypeError(d + " is not iterable (cannot read property Symbol(Symbol.iterator))");
-  }
+  if (typeof m !== "function") __hbc_notIterable(src);
   var it = m.call(src);
   return [it, it.next];
 }
 `,
+    ["__hbc_notIterable"],
   ),
   h(
     "__hbc_iterNext",
@@ -298,7 +317,7 @@ function __hbc_b_applyWithNewTarget(fn, args, newTarget) {
 function __hbc_b_arraySpread(target, source, index) {
   var i = index;
   var m = source === null || source === undefined ? undefined : source[Symbol.iterator];
-  if (typeof m !== "function") throw new TypeError("is not iterable");
+  if (typeof m !== "function") __hbc_notIterable(source);
   var it = m.call(source);
   for (;;) {
     var n = it.next();
@@ -308,6 +327,7 @@ function __hbc_b_arraySpread(target, source, index) {
   return i;
 }
 `,
+    ["__hbc_notIterable"],
   ),
   h(
     "__hbc_b_copyDataProperties",

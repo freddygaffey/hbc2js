@@ -168,21 +168,39 @@ test("review-M4-H3: __hbc_arguments builds an UNMAPPED arguments object (D14)", 
 
 // --- iteration opcodes -------------------------------------------------------
 
+test("review-M4-H3: __hbc_notIterable reproduces the real Hermes VM's wording (measured on tools/hermesc/v84,v96/hermes and tools/hermes-vm/v99/bin/hermes, not V8/Node's), shared by __hbc_iterBegin and __hbc_b_arraySpread", () => {
+  const h = load("__hbc_notIterable");
+  for (const [value, text] of [
+    [null, "Cannot convert null value to object"],
+    [undefined, "Cannot convert undefined value to object"],
+    [7, "iterator method is not callable"],
+    [true, "iterator method is not callable"],
+    [{}, "iterator method is not callable"],
+    [() => {}, "iterator method is not callable"],
+  ] as const) {
+    assert.throws(
+      () => h["__hbc_notIterable"](value),
+      (e: unknown) => e instanceof TypeError && e.message === text,
+      `wrong text for ${String(value)}`,
+    );
+  }
+});
+
 test("review-M4-H3: __hbc_iterBegin returns [iterator, next] and reproduces Hermes's message", () => {
   const h = load("__hbc_iterBegin");
   const [it, next] = h["__hbc_iterBegin"]([1, 2]);
   assert.equal(typeof next, "function");
   assert.deepEqual(next.call(it), { value: 1, done: false });
   for (const [value, text] of [
-    [null, "object null"],
-    [undefined, "undefined"],
-    [7, "number 7"],
-    [true, "boolean true"],
-    [{}, "object"],
+    [null, "Cannot convert null value to object"],
+    [undefined, "Cannot convert undefined value to object"],
+    [7, "iterator method is not callable"],
+    [true, "iterator method is not callable"],
+    [{}, "iterator method is not callable"],
   ] as const) {
     assert.throws(
       () => h["__hbc_iterBegin"](value),
-      (e: unknown) => e instanceof TypeError && e.message === `${text} is not iterable (cannot read property Symbol(Symbol.iterator))`,
+      (e: unknown) => e instanceof TypeError && e.message === text,
       `wrong text for ${String(value)}`,
     );
   }
@@ -278,7 +296,17 @@ test("review-M4-H3: __hbc_b_arraySpread writes from `index` and returns the next
   assert.deepEqual(target, ["keep", 1, 2, 3]);
   // Any iterable, not just arrays.
   assert.equal(h["__hbc_b_arraySpread"]([], new Set(["a"]), 0), 1);
-  assert.throws(() => h["__hbc_b_arraySpread"]([], 5, 0), (e: unknown) => e instanceof TypeError && /is not iterable/.test(e.message));
+  // review-M4-H3/iterable-wording (docs/BUGS.md): this used to be a bare
+  // "is not iterable" with no value description, unlike __hbc_iterBegin; now
+  // both share __hbc_notIterable and reproduce the real Hermes VM's wording.
+  assert.throws(
+    () => h["__hbc_b_arraySpread"]([], 5, 0),
+    (e: unknown) => e instanceof TypeError && e.message === "iterator method is not callable",
+  );
+  assert.throws(
+    () => h["__hbc_b_arraySpread"]([], undefined, 0),
+    (e: unknown) => e instanceof TypeError && e.message === "Cannot convert undefined value to object",
+  );
 });
 
 test("review-M4-H3: __hbc_b_copyDataProperties copies own enumerable keys, minus the excluded", () => {

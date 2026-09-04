@@ -216,7 +216,7 @@ test("an environment created inside a loop gets one binding per iteration", () =
 test("emitModule reports the helpers it used and no others", () => {
   const { module } = parseM4(new Uint8Array(readFileSync(path("01-if-else-chain", 94))));
   const r = emitModule(analyseModule(module, { strictEnv: true }), { provenanceComments: false });
-  assert.deepEqual([...r.helpersUsed].sort(), ["__hbc_iterBegin", "__hbc_iterClose", "__hbc_iterNext"]);
+  assert.deepEqual([...r.helpersUsed].sort(), ["__hbc_iterBegin", "__hbc_iterClose", "__hbc_iterNext", "__hbc_notIterable"]);
 });
 
 // docs/BUGS.md "02-proxy-trap-counting" / docs/DECISIONS.md D14: an `in`

@@ -4,7 +4,7 @@ Deliberately hard-to-decompile JavaScript code designed to stress-test and find 
 
 ## Test status summary
 
-- **Total fixtures**: 46
+- **Total fixtures**: 47
 - **PASS through decompiler**: 40 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
 - **DIVERGE (harness verdict)**: 2, all v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`) and `43-fuzz-async-guard-shared-range` (**confirmed real bug, not yet root-caused**: candidate genuinely disagrees with the v99 Hermes VM's own trace — see docs/BUGS.md 2026-09-02, construct-fuzzer seed-base 777000 row). `20-symbol-keyed-properties` (**toolchain artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM) is now **PASS-with-caveat**, not DIVERGE — as of 2026-09-02 `src/harness/ladder.ts`'s D14 VM-agrees-with-candidate override is evidence-based (fires whenever `candidatePrint === hermesPrint`, not only for a curated fixture name), so this fixture's own VM-agrees evidence now overrules the Node-vs-candidate divergence directly; the underlying toolchain builtin-table gap itself is unfixed (see docs/BUGS.md's toolchain row). See "CONSOLIDATION 26 triage" below and the fuzz row above for `43`.
 - **ERROR (decompiler threw)**: 0
@@ -211,6 +211,31 @@ end-to-end regression for that fix (the gating one is construct fixture
 `60-for-header-init-clobber`).
 `expected.txt` is Node's script-mode output, which differs from both (under
 Node the sibling-block `t3` read is a real ReferenceError that kills `f0`).
+
+### 47-spread-non-iterable-message (added 2026-09-05, campaign-2 rediff family `iterable-wording`) -- FIXED 2026-09-05
+
+Call-argument spread (`Math.max(...x)`) and array destructuring (`var [a] =
+x`) over `undefined`/`null`/a number/a plain object, in try/catch, printing
+`e.constructor.name + ": " + e.message`. **Kept here, not in `constructs/`,
+because the divergence is inherent to the construct itself**: Node's own
+`TypeError` text for these throws embeds the *source expression* (e.g. `"x is
+not iterable"`), which is not reconstructible from bytecode at all (register
+names are not the program's names), while the real Hermes VM's text carries
+no value description whatsoever (`"Cannot convert null/undefined value to
+object"`, `"iterator method is not callable"`) -- so even the *original*
+source.js, unmodified, disagrees with the VM under Node. `src/runtime/helpers.ts`'s
+`__hbc_b_arraySpread` used to throw a bare `"is not iterable"`, worse than
+even that; `__hbc_iterBegin`'s existing text was V8-style, checked only
+against Node, never against a real Hermes VM. Both now share one
+`__hbc_notIterable(src)` reproducing the measured Hermes text exactly (see
+`docs/BUGS.md`'s `iterable-wording` row and `docs/LOWERING-CATALOGUE.md`).
+Verified DIVERGENT at v94/v96/v99 before the fix and PASS after (dedicated
+gate test `tests/gate/runtime/spread-non-iterable-message.test.ts`, since
+this directory's own real-decompiler check lives under `tests/sweep/
+adversarial/**`, not run by `npm test`). `expected.txt` is Node's own
+captured output, as for every other fixture here — it is not expected to
+match either side's runtime wording in the try/catch branches; the fixture's
+value is the VM-vs-candidate comparison, not the Node baseline.
 
 ## Compilation note
 

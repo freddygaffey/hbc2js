@@ -1,0 +1,8 @@
+undefined call-spread TypeError: x is not iterable (cannot read property undefined)
+undefined destructure TypeError: x is not iterable
+null call-spread TypeError: x is not iterable (cannot read property null)
+null destructure TypeError: x is not iterable
+number call-spread TypeError: Spread syntax requires ...iterable[Symbol.iterator] to be a function
+number destructure TypeError: x is not iterable
+object call-spread TypeError: Spread syntax requires ...iterable[Symbol.iterator] to be a function
+object destructure TypeError: x is not iterable
