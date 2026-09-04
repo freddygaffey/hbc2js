@@ -404,8 +404,10 @@ and stops no events, so right-clicks reach the annotate track's menu.
   builds its list from `paletteItems(ctx, registry)` (see "Actions, keymap,
   context menu, annotate" below) — every registry action is reachable by
   `Cmd/Ctrl-K`, not just the theme and density toggles.
-- **The context menu** items are disabled; rename/comment through `McpTools`
-  is landing 5.
+- ~~The context menu items are disabled; rename/comment is landing 5~~ FIXED:
+  the context menu is built from the same action registry as the palette and
+  rename/comment/tag write through `McpTools` (see "Actions, keymap, context
+  menu, annotate" below).
 - **The activity pane** is live (see "Activity feed" below) — this bullet
   is now historical.
 - ~~No virtualisation~~ FIXED: the tree is windowed by
