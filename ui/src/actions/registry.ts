@@ -15,6 +15,7 @@ import type { FunctionCatalogue } from "../hooks.ts";
 import { back, forward, getSelection, select, type Selection } from "../state/selection.ts";
 import { openDialog, setPaletteOpen, setRightPanel, setStatus } from "./store.ts";
 import { addTag, fnTarget } from "./writes.ts";
+import { workersApi } from "../workers/wire.ts";
 
 export const registry = createStandardRegistry();
 
@@ -92,6 +93,22 @@ async function tag(target: CoreSelection, which: "reviewed" | "suspicious"): Pro
   }
 }
 
+/** spec 23 §6: the two AI actions enqueue a job on the server-owned pool and
+ *  report what happened; the result appears in the right pane's AI tab (the
+ *  jobs rail, then the suggestion with Accept/Reject). Nothing here writes to
+ *  the project — a proposal is not truth until a human promotes it. */
+async function queueJob(kind: "explain-fn" | "suggest-name", target: CoreSelection): Promise<void> {
+  if (target.fn === undefined) return setStatus("select a function first");
+  setRightPanel("workers");
+  try {
+    const res = await workersApi.enqueue(kind, { fn: target.fn });
+    queryClient?.invalidateQueries({ queryKey: ["jobs"] });
+    setStatus(res.deduped ? `${kind} for fn:${target.fn} is already queued` : `${kind} queued for fn:${target.fn}`);
+  } catch (e) {
+    setStatus(e instanceof Error ? e.message : String(e));
+  }
+}
+
 function copy(text: string): void {
   void navigator.clipboard?.writeText(text).then(
     () => setStatus(`copied ${text}`),
@@ -121,8 +138,8 @@ export const actionApi: ActionApi = {
   markSuspicious: (target) => tag(target, "suspicious"),
   copyDisasmOffset: (target) => copy(target.fn === undefined ? "" : `fn:${target.fn}`),
   showRawHermes: () => setStatus("raw Hermes is the centre pane's Disasm tab"),
-  explain: () => setStatus("Explain lands with the AI spec"),
-  suggestName: () => setStatus("Suggest name lands with the AI spec"),
+  explain: (target) => queueJob("explain-fn", target),
+  suggestName: (target) => queueJob("suggest-name", target),
   openGraph: () => setStatus("the graph view lands with spec 23"),
   nextFn: () => stepFn(1),
   prevFn: () => stepFn(-1),

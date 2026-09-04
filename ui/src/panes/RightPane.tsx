@@ -9,6 +9,7 @@ import { displayName } from "../actions/names.ts";
 import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../actions/store.ts";
 import { keymap } from "../actions/registry.ts";
 import { select, useSelection } from "../state/selection.ts";
+import { WorkersPane } from "./WorkersPane.tsx";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -74,6 +75,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <Tabs.Trigger value="xrefs" className={tabClass}>Xrefs</Tabs.Trigger>
           <Tabs.Trigger value="findings" className={tabClass}>Findings</Tabs.Trigger>
           <Tabs.Trigger value="package" className={tabClass}>Package</Tabs.Trigger>
+          <Tabs.Trigger value="workers" className={tabClass}>AI</Tabs.Trigger>
         </Tabs.List>
       </PaneHeader>
 
@@ -154,6 +156,12 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <Empty>not identified — {pkg.data.reason}</Empty>
         )}
         <Stub what="package identification is served by McpResources.packageId once src/ui-server lands" />
+      </Tabs.Content>
+
+      {/* spec 23 §6: jobs rail + presence + accept/reject, owned by
+          ui/src/panes/WorkersPane.tsx. */}
+      <Tabs.Content value="workers" className={bodyClass}>
+        <WorkersPane fn={fn} />
       </Tabs.Content>
     </Tabs.Root>
   );

@@ -96,10 +96,11 @@ function alwaysFalse(): boolean {
 }
 
 /**
- * The standard action set from spec 22 §3.3. `ai.*` and `view.graph` are
+ * The standard action set from spec 22 §3.3. `view.graph` is still
  * registered disabled (`when: () => false`) — greyed out in menu and
- * palette — until the AI/graph specs land; keymap resolution still finds
- * their ids so preset JSON referencing them is not "dangling".
+ * palette — until the graph spec lands; keymap resolution still finds its
+ * id so preset JSON referencing it is not "dangling". The `ai.*` pair is
+ * ENABLED as of spec 23 (the server owns the workers; see below).
  */
 export function standardActions(): Action[] {
   return [
@@ -224,18 +225,24 @@ export function standardActions(): Action[] {
       when: alwaysFalse,
       run: (ctx) => ctx.api.openGraph(ctx.selection),
     },
+    // ENABLED as of spec 23 (docs/specs/23-ui-workers.md §6: accept/reject
+    // and the two enqueue actions are "ordinary entries in spec 22 §3.1's
+    // action registry, so they get a keybinding and a context-menu item for
+    // free"). They need a function to work on, nothing more — the queue is
+    // the server's, and it answers 503 when the pool is off, which the shell
+    // reports as a status line rather than a disabled menu item.
     {
       id: "ai.explain",
       title: "Explain",
       group: "ai",
-      when: alwaysFalse,
+      when: hasFnTarget,
       run: (ctx) => ctx.api.explain(ctx.selection),
     },
     {
       id: "ai.suggestName",
       title: "Suggest name",
       group: "ai",
-      when: alwaysFalse,
+      when: hasFnTarget,
       run: (ctx) => ctx.api.suggestName(ctx.selection),
     },
     {

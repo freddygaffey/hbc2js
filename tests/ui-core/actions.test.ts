@@ -76,16 +76,28 @@ test("palette items equal enabled registry actions", () => {
   assert.ok(!palette.some((p) => p.id.startsWith("ai.")));
 });
 
-test("view.graph and ai.* are registered but disabled everywhere", () => {
+test("view.graph stays disabled; ai.* are enabled on an fn target only (spec 23)", () => {
+  // This test used to assert `ai.*` were disabled EVERYWHERE, with the
+  // registry's own comment saying "until the AI/graph specs land". Spec 23
+  // (docs/specs/23-ui-workers.md §6) landed the server-owned worker pool the
+  // two actions enqueue onto, so they are enabled — and the assertion is
+  // narrowed rather than dropped: they are enabled ONLY where they have a
+  // function to work on, and `view.graph` is still off, still awaiting its
+  // own spec.
   const registry = createStandardRegistry();
   assert.ok(registry.get("view.graph"));
   assert.ok(registry.get("ai.explain"));
   assert.ok(registry.get("ai.suggestName"));
-  const ctx: ActionContext = { selection: { kind: "fn", fn: 1 }, focusPane: "editor", api: stubApi() };
-  const enabled = registry.enabledFor(ctx).map((a) => a.id);
-  assert.ok(!enabled.includes("view.graph"));
-  assert.ok(!enabled.includes("ai.explain"));
-  assert.ok(!enabled.includes("ai.suggestName"));
+  const onFn: ActionContext = { selection: { kind: "fn", fn: 1 }, focusPane: "editor", api: stubApi() };
+  const enabled = registry.enabledFor(onFn).map((a) => a.id);
+  assert.ok(!enabled.includes("view.graph"), "the graph view still awaits its spec");
+  assert.ok(enabled.includes("ai.explain"));
+  assert.ok(enabled.includes("ai.suggestName"));
+  // No function selected -> nothing to explain or name.
+  const onNothing: ActionContext = { selection: { kind: "none" }, focusPane: "editor", api: stubApi() };
+  const none = registry.enabledFor(onNothing).map((a) => a.id);
+  assert.ok(!none.includes("ai.explain"));
+  assert.ok(!none.includes("ai.suggestName"));
 });
 
 test("run() rejects a disabled action and an unknown id", () => {
