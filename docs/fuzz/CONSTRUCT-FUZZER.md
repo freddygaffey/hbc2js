@@ -223,3 +223,45 @@ first; if `deb.local` still fails to resolve, that is an environment/network
 issue outside this repo (check host is awake, on the same LAN/mDNS domain,
 and that no VPN is intercepting `.local` resolution) before assuming
 anything about the campaign itself.
+
+## Morning after a campaign
+
+`tools/fuzz/diff-signatures.mjs` turns a night's worth of `campaign-runner.sh`
+chunk reports into a one-page triage headline: how many programs each
+version ran, and which divergence signatures are already known (tracked in
+`tools/fuzz/known-signatures.json`, 64 entries seeded from
+`docs/reports/2026-09-04-finds-retriage-postfix.md`) versus genuinely new.
+It reads `reports/*.json` under each given campaign directory — never find
+bodies — so it stays cheap even across thousands of finds and hundreds of
+chunk reports. Exit code is always 0; it is a report, not a gate.
+
+Deb layout (`campaign-runner.sh`'s `~/hbc2js-fuzz/campaign2-v<ver>-<seedbase>/
+{reports,finds,state}`):
+
+```
+node tools/fuzz/diff-signatures.mjs ~/hbc2js-fuzz/campaign2-* \
+     --out docs/reports/<date>-campaign2-signatures.md
+```
+
+Add `--known <path>` to compare against a different known-signatures file
+(default `tools/fuzz/known-signatures.json`). The generated markdown has a
+per-version pass/divergent/error table, a **NEW signatures** section (the
+headline — triage these into `tests/fixtures/constructs/` fixtures or
+`docs/BUGS.md` rows per the minimisation steps above), and a **KNOWN
+signatures still firing** section for signatures already tracked.
+
+Two caveats baked into the tool, because the `fuzz-matrix/1` schema does not
+carry them: a report's `signatures[]` is a flat set for the whole
+report/chunk, not linked to the specific version/seed that produced each
+one, so a NEW signature's "version(s)" is the union of every version that
+chunk covered; and the "example find" column is a heuristic (first find file
+on disk whose version matches) rather than a verified repro — re-minimise
+before trusting it as the actual reproducing program.
+
+Regenerate `known-signatures.json` from a future retriage report the same
+way it was first built:
+
+```
+node tools/fuzz/diff-signatures.mjs --extract docs/reports/<date>-retriage.md \
+     --out tools/fuzz/known-signatures.json
+```

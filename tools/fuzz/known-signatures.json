@@ -1,0 +1,759 @@
+[
+  {
+    "key": "DIVERGENT:trace:trace:total=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed777054.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#:# | #:# | #:# | #:# | #:#\ntotal=#\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# dummy=NaN\ni=# j=# ",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed777316.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#\n#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,,#,#,#,#\n#\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed778046.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:final i=# sum=#\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntic",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 13,
+    "versions": [
+      84,
+      94,
+      96,
+      99
+    ],
+    "example": "v84-seed778059.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:final i=Infinity sum=#\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntick #\ntic",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed778448.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":true} | {\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":true}\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 14,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed778735.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,#\n#\n#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed778870.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":true}\n{\"…\":true} | {\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":true}\n{\"…\":true}\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 4,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed778894.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:let closures each see own i:  | let closures each see own i: \nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed779013.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:breaking at i=# computed=#\nfinal i=# sum=#\ntick #\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntick -Infinity\ntic",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed779419.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:map: a:#,b:#,c:#\nset (dedup): #,#,#,#,# | map: a:#,b:#,c:#\nset (dedup): #,#,#,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed779558.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,Infinity\n#\nInfinity\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,Infinity\n#\nInfinity\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed779709.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#e+#,#,#,#,#e+#\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,,#,#,#,\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed779831.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:{\"…\":\"…\",\"…\":\"…\",\"…\":false,\"…\":\"…\"}\n{\"…\":\"…\",\"…\":\"…\",\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":\"…\",\"…\":false}\noriginal unaffected: {\"…\":#e+#} copy: {\"…\":#}\nspreading null/undefined is a no-op: {\"…\":#} | {\"…\":\"…\",\"…\":\"…\",\"…\":false,\"…\":\"…\"}\n{\"…\":\"…\",\"…\":\"…\",\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed779942.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#:# | #:# | #:# | #:# | #:#\ntotal=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed781829.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:undefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefined -> #\nundefine",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 5,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed781885.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#e+#\n#\n#e+#\na-b-c\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,#e+#\n#\n#e+#\na-b-c\nuncaught TypeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed781975.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,NaN,#,#,#,NaN,#\nNaN\nNaN\na-b-c\noriginal unaffected: #,#,NaN copy: #,#,NaN,# | #,#,#,NaN,,#,#,NaN,#\nNaN\nNaN\na-b-c\noriginal unaffected: #,#,NaN copy: #,#,NaN,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed782241.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:map: a:#,b:#,c:#\nset (dedup): #,-Infinity,#,# | map: a:#,b:#,c:#\nset (dedup): #,-Infinity,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed782758.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:| uncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 17,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed783042.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false} | {\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":false}\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 5,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed783147.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#e+#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,,#,#,#,#\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed783451.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\nNaN\na-b-c\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,#\n#\nNaN\na-b-c\nuncaught TypeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed783599.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#:# | #:# | #:# | #:# | #:#\ntotal=#e+#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#\ni=# j=# dummy=#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed783738.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:first=# rest=[#,#,#] arguments.length=#\nfirst=only rest=[] arguments.length=# | first=# rest=[#,#,#] arguments.length=#\nfirst=only rest=[] arguments.length=#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed783790.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,Infinity,#,#,#,Infinity,NaN\nInfinity\nNaN\na-b-c\noriginal unaffected: #,#,Infinity copy: #,#,Infinity,# | #,#,#,Infinity,,#,#,Infinity,NaN\nInfinity\nNaN\na-b-c\noriginal unaffected: #,#,Infinity copy: #,#,Infinity,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed784319.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,Infinity,#,#,#,Infinity,#,#,#\nInfinity\nNaN\na-b-c\noriginal unaffected: Infinity,#,# copy: Infinity,#,#,# | #,Infinity,#,#,#,Infinity,#,#,#\nInfinity\nNaN\na-b-c\noriginal unaffected: Infinity,#,# copy: Infinity,#,#,",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed785508.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#:# | #:# | #:# | #:# | #:#\n#:# | #:# | #:# | #:# | #:#\ntotal=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=#\ni=# j=-Infinity dummy=",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed785753.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#e+#,Infinity,#,#,#e+#,Infinity,#\nInfinity\nInfinity\na-b-c\na-b-c\noriginal unaffected: #,#e+#,Infinity copy: #,#e+#,Infinity,# | #,#,#e+#,Infinity,#,#,#e+#,Infinity,#\nInfinity\nInfinity\na-b-c\nuncaught TypeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed785948.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:iterations=# final n=#\nbody runs even though condition is false: x=# | iterations=# final n=#\nbody runs even though condition is false: x=#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed785964.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:iterations=-Infinity final n=#\nbody runs even though condition is false: x=-Infinity | iterations=-Infinity final n=#\nbody runs even though condition is false: x=-Infinity\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed786132.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,,#,#,#,#\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed786391.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,-Infinity\n#\n-Infinity\na-b-c\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,-Infinity\n#\n-Infinity\na-b-c\nuncaught TypeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      84
+    ],
+    "example": "v84-seed786471.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:map: a:#,b:#,c:#\nset (dedup): #,#,#,#,#,# | map: a:#,b:#,c:#\nset (dedup): #,#,#,#,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      84,
+      94,
+      96
+    ],
+    "example": "v84-seed786810.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,#\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,#\n#\n#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,function (...args           )            {\n      emit({ k: \"…\", ch, s: hermesRender(args), a: args.",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed780044.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:map: a:NaN,b:#,c:#\nset (dedup): #,#,#,# | map: a:NaN,b:#,c:#\nset (dedup): #,#,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed780559.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:let closures each see own i: #,#,#,#,#,#,#,#,#,#,#,#,#,#,#,# | let closures each see own i: #,#,#,#,#,#,#,#,#,#,#,#,#,#,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed780867.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:map: a:#,b:#,c:#\nset (dedup): #,#,# | map: a:#,b:#,c:#\nset (dedup): #,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed781754.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#e+#,-Infinity,#e+#,#,#,-Infinity,#e+#,#,-Infinity\n-Infinity\n-Infinity\n-Infinity\na-b-c\noriginal unaffected: -Infinity,#e+#,# copy: -Infinity,#e+#,#,# | #e+#,-Infinity,#e+#,#,#,-Infinity,#e+#,#,-Infinity\n-Infinity\n-Infinity\n-Infinity\na-b-c\noriginal unaffected: -Infinity,#e+#,# c",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed782833.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:let closures each see own i: #,#,# | let closures each see own i: #,#,#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 3,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed782973.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:first=# rest=[#,#,Infinity] arguments.length=#\nfirst=only rest=[] arguments.length=# | first=# rest=[#,#,Infinity] arguments.length=#\nfirst=only rest=[] arguments.length=#\nuncaught RangeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed783159.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#e+#\na-b-c\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,#\n#\n#e+#\na-b-c\nuncaught TypeError",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed784166.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,NaN,#,#,#,#\n#,#,#,#,NaN,#,#,#,#\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,NaN,#,#,#,#\n#,#,#,#,NaN,#,#,#,#\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed784673.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,Infinity,#,#,#e+#,Infinity,#,#,#e+#\nInfinity\nInfinity\na-b-c\noriginal unaffected: Infinity,#,# copy: Infinity,#,#,# | #,Infinity,#,#,,Infinity,#,#,\nInfinity\nNaN\na-b-c\noriginal unaffected: Infinity,#,# copy: Infinity,#,#,#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed785176.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,#\n#\n#e+#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,#\n#\n#e+#\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed785803.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:\"…\"\nunparseable\nattempt # failed, no binding needed\nattempt # failed, no binding needed\nattempt # failed, no binding needed\nattempt # failed, no binding needed\nattempt # failed, no binding needed\nattempt # failed, no binding needed\nattempt # failed, no binding needed\nattempt # ",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 2,
+    "versions": [
+      94,
+      96
+    ],
+    "example": "v94-seed785825.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:# true\n# true\n# true\nother false\nf# b\n# #\n# #\n# a\nf# \nother true\nf# false\n# true\n# true\n# true\nf# v-true\nouter # | # true\n# true\n# true\nother false\nf# b\n# #\n# #\n# a\nf# \nother true\nf# false\n# true\nf# v-true\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      96
+    ],
+    "example": "v96-seed780933.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:roundtrip:roundtrip:function count mismatch: original=# recompiled=#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      98
+    ],
+    "example": "v98-seed314159.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:,#\nf# ,b\nf# false\nother true\n#,#\nv#\nf# threw ReferenceError: Property '…' doesn't exist\nf# #\ntrue,#\nfinally\nfinally\nouter # | ,#\nf# ,b\nf# false\nother true\n#,#\nv#\nf# threw ReferenceError: t# is not defined\nf# #\ntrue,#\nfinally\nfinally\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777080.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:iterations=-Infinity final n=#\nbody runs even though condition is false: x=#\nbody runs even though condition is false: x=#\nuncaught RangeError | iterations=-Infinity final n=#\nbody runs even though condition is false: x=#\nbody runs even though condition is false: x=#",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777142.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:other v#\nf# #\nx#\n\nfinally\nf# threw ReferenceError: Property '…' doesn't exist\nouter # | other v#\nf# #\nx#\n\nfinally\nf# threw ReferenceError: t# is not defined\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777315.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:# #\nfalse\nf# true\n#\nfinally\n# ,#\n# ,#\nf# v#\nf# a,#\n#,b\nouter # | # #\nfalse\nf# true\n#\nfinally\n# ,#\nf# v#\nf# a,#\n#,b\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777358.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:NaN\nfinally\nf# threw ReferenceError: Property '…' doesn't exist\nv-true\n# #\n# #\n# #\nfinally\nf# v-true\nother a,#\nf# a\nouter # | NaN\nfinally\nf# threw ReferenceError: t# is not defined\nv-true\n# #\n# #\n# #\nfinally\nf# v-true\nother a,#\nf# a\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777552.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#\nfinally\nfinally\n# true\n# true\n# true\nf# NaN\ntrue\nzero\nf# \n#\nfinally\nf# true\n#\ntrue\nf# #\nouter # | #\nfinally\nfinally\n# true\nf# NaN\ntrue\nzero\nf# \n#\nfinally\nf# true\n#\ntrue\nf# #\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777578.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,x#\nfinally\n# true\n# true\n# true\nf# v-false\nf# #\na\nouter # | #,x#\nfinally\n# true\nf# v-false\nf# #\na\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777648.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#\nfinally\n# false\n# false\n# false\nf# a,#\nx#\n#\nf# #\nother #\nf# false\nf# #\nv-a\nouter # | #\nfinally\n# false\nf# a,#\nx#\n#\nf# #\nother #\nf# false\nf# #\nv-a\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777767.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:f# x#\n# false,false\n# false,false\n# false,false\n#\n#\nf# threw ReferenceError: Property '…' doesn't exist\nv#,#\nf# true\nouter # | f# x#\n# false,false\n# false,false\n# false,false\n#\n#\nf# threw ReferenceError: t# is not defined\nv#,#\nf# true\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed777959.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:other #\nf# #\n# #,#\n# #,#\n# #,#\nv#\nfinally\nf# threw ReferenceError: Property '…' doesn't exist\nother #,#\nf# #\nouter # | other #\nf# #\n# #,#\n# #,#\n# #,#\nv#\nfinally\nf# threw ReferenceError: t# is not defined\nother #,#\nf# #\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778025.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:{\"…\":\"…\",\"…\":\"…\",\"…\":false,\"…\":\"…\"}\n{\"…\":\"…\",\"…\":\"…\",\"…\":\"…\",\"…\":false}\n{\"…\":\"…\",\"…\":\"…\",\"…\":false}\noriginal unaffected: {\"…\":#} copy: {\"…\":#}\nspreading null/undefined is a no-op: {\"…\":#}\nspreading null/undefined is a no-op: {\"…\":#} | {\"…\":\"…\",\"…\":\"…\",\"…\":false,\"…\":\"…\"}\n{\"…\":\"…",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778046.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#\n#\nf# threw ReferenceError: Property '…' doesn't exist\nother #\nf# #\n# #\n# #\n# #\nfinally\nf# #,#\n#\n# x#\n# x#\n# x#\nf# #,#\nouter # | #\n#\nf# threw ReferenceError: t# is not defined\nother #\nf# #\n# #\n# #\n# #\nfinally\nf# #,#\n#\n# x#\n# x#\n# x#\nf# #,#\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778055.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,#,#,#,#,#,#,#,-Infinity\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,# | #,#,#,#,#,#,#,#,-Infinity\n#\nNaN\na-b-c\noriginal unaffected: #,#,# copy: #,#,#,",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778058.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:zero\n#\nf# v#\nother #\nf# threw ReferenceError: Property '…' doesn't exist\nother v-#\nf# true\nv#\n# #\nf# b,#\nouter # | zero\n#\nf# v#\nother #\nf# threw ReferenceError: t# is not defined\nother v-#\nf# true\nv#\n# #\nf# b,#\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778123.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:true,false,b\nf# #\nv#\nv#\nf# threw ReferenceError: Property '…' doesn't exist\nouter # | true,false,b\nf# #\nv#\nv#\nf# threw ReferenceError: t# is not defined\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778158.js",
+    "status": "open"
+  },
+  {
+    "key": "DIVERGENT:trace:trace:#,x#\nf# threw ReferenceError: Property '…' doesn't exist\nf# #\n#\n# #\n# #\n# #\ntrue,#\n# false,x#\n# false,x#\nf# #\ntrue\ntrue\nf# #\nouter # | #,x#\nf# threw ReferenceError: t# is not defined\nf# #\n#\n# #\n# #\n# #\ntrue,#\n# false,x#\n# false,x#\nf# #\ntrue\ntrue\nf# #\nouter #",
+    "firstSeen": "2026-09-04",
+    "verdict": "DIVERGENT",
+    "count": 1,
+    "versions": [
+      99
+    ],
+    "example": "v99-seed778174.js",
+    "status": "open"
+  }
+]
