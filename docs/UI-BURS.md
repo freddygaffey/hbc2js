@@ -1,0 +1,22 @@
+# UI burs — Fred's list, triaged
+
+Intake: Fred keeps `bugs-fred.md` (repo root, untracked) as the raw list; the
+orchestrator copies each item here verbatim-in-spirit, triages it, and batches
+items into fix agents. Every fixed item ships a Playwright e2e or a gate test
+and links its commit. Status vocabulary: `open | in-progress | fixed <sha> | needs-fred`.
+
+| # | Bur (Fred, 2026-09-05 07:22) | Triage | Owner / model | Status |
+|---|---|---|---|---|
+| 1 | UI on refresh takes a long time to show anything — "it is all computed in the db, right?" | It is. Suspects (spec 26 §3): `App.tsx` `fn ?? 0` fires a 400 per load; LeftPane fetches the whole listing then `.slice(0,100)`; every pane queries on mount with no cache/skeleton; `/api/events` 500 ms poll. Measure with the Network tab against the NSW rig, fix the top offenders, add a Playwright budget test (first paint of the module tree under N ms on the e2e fixture). | wave 1 · Opus (diagnosis) | open |
+| 2 | The text caret (`\|`) in the listing is wrong — the pane should not look editable unless an explicit edit mode (which would syntax-check) is entered; a word-based selector is better | CodeMirror pane is read-only but still paints a caret. Design: click selects the token (word) under the pointer like Ghidra/IDA; caret hidden outside an explicit edit mode; edit mode only where a write tool exists (rename/comment) and validates the identifier before commit. | wave 1 · Opus (design + impl) | open |
+| 3 | Theme editor should ship default themes common to nvim and VS Code | Add presets under `ui/themes/`: gruvbox (dark/light), catppuccin (mocha/latte), tokyonight, nord, dracula, one-dark, solarized (dark/light) — token-only, licence-checked (colour palettes are not copyrightable but keep attributions). Selectable in Settings → Theme. | wave 2 · Sonnet | open |
+| 4 | `/` should open search | Bind `/` to `project.search` in the default preset and vim preset (vim already has `/`? verify); gate test in `tests/gate/ui/keymap-default.test.ts`. | wave 1 · Sonnet | open |
+| 5 | `:` should open a vim-style command line | Command palette in "command mode": `:` opens the palette prefilled with `:`; accepts `:<action-id>` and a few verbs (`:fn 123`, `:mod 45`, `:goto <name>`, `:q` closes pane). Reuse CommandPalette; no new component. | wave 1 · Sonnet | open |
+| 6 | Light/dark should be a toggle, not a dropdown | Settings → Theme: a switch (+ a `theme.toggle` action bound in all presets); keep the dropdown only for the preset list (bur 3). | wave 1 · Sonnet | open |
+| 7 | Double-click navigation is good, but must not navigate on non-navigable tokens (e.g. the keyword `function`) — currently jumps to a blank page | Resolve the token under the pointer via the listing's symbol map before navigating; keywords/literals/punctuation → no-op (or flash). Playwright: dblclick `function` keyword stays on the same fn; dblclick an identifier with a target navigates. Root cause likely the same `fn ?? 0` fallback as bur 1. | wave 1 · Sonnet | open |
+| 8 | Graph view: nodes should be draggable, with highlighting, and a reset-to-default-view button | React Flow supports drag natively — enable `nodesDraggable`; hover/selection highlights the node's edges + neighbours; "Reset view" button re-runs dagre + `fitView`. After the spec 25 agent lands. | wave 2 · Sonnet | open |
+| 9 | Graph should have a level-of-recursion view — "like a fractal: as you zoom in you see more" | Semantic zoom (LOD): far = modules as nodes; closer = functions inside the module; closest = the function's CFG blocks (spec 26 L9 CFG mode). Needs a design note in spec 25 (§ LOD) before impl; likely `zoom` thresholds → `expandGraphNode` automatically, collapse on zoom-out. | wave 2 · Opus (design) then Sonnet | open |
+
+Waves: **wave 1** starts as soon as the graph-view agent (spec 25) lands, because
+several fixes touch `ui/src/actions/registry.ts` / panes it is editing; bur 1's
+diagnosis can start immediately (server + hooks only). **wave 2** follows.
