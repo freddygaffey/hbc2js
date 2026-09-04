@@ -2,7 +2,7 @@
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { parseHbc } from "./parse/module.ts";
@@ -32,6 +32,7 @@ import { writeArtifact } from "./artifact/write.ts";
 import { buildIndexRows } from "./artifact/index-rows.ts";
 import { openProjectDb } from "./projdb/db.ts";
 import { initProjectDb } from "./projdb/ix-write.ts";
+import { exportProject } from "./projdb/export.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
@@ -64,6 +65,8 @@ Usage:
   hbc2js secrets <verb> --artifact <dir> …   the P2.3 string-secrets indexer: scan/report/list/show/hosts/paths (docs/specs/12-string-secrets.md §5)
   hbc2js init <bundle.hbc> [--out <dir>]     create a project.hbcproj (docs/specs/16-project-db.md §4.1): split
                                               render + ix_* index rows in one SQLite file; refuses if it exists
+  hbc2js hbcproj export <project.hbcproj>    materialise analysis/ + log/ shards from the DB
+                                              (docs/specs/18-project-storage-integrity.md §9 step 0)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -710,6 +713,44 @@ function runInit(argv: readonly string[]): number {
     process.stderr.write(`hbc2js init: ${e instanceof Error ? e.message : String(e)}\n`);
     return 1;
   }
+}
+
+// ---------------------------------------------------------------------------
+// `hbc2js hbcproj export <project.hbcproj>` — docs/specs/18-project-storage-
+// integrity.md §9 `export` verb, §R4 implementation-plan step 0.
+// ---------------------------------------------------------------------------
+
+/** `hbc2js hbcproj export <project.hbcproj>`: materialises `analysis/` +
+ *  `log/` alongside the given `.hbcproj` DB file (§6 step 3, `src/projdb/
+ *  export.ts`). Only `export` is implemented (§R4 step 0); the rest of the
+ *  §9 porcelain (`status`/`diff`/`adopt`/`restore`/`rebuild`/`verify`/`init`)
+ *  is later steps. */
+function runHbcproj(argv: readonly string[]): number {
+  const verb = argv[0];
+  if (verb === "export") {
+    const dbFile = argv.slice(1).find((a) => !a.startsWith("-"));
+    if (argv.includes("--help") || dbFile === undefined) {
+      process.stdout.write("hbc2js hbcproj export <project.hbcproj>   materialise analysis/ + log/ shards from the DB (docs/specs/18-project-storage-integrity.md §6 step 0)\n");
+      return argv.includes("--help") ? 0 : 2;
+    }
+    if (!existsSync(dbFile)) {
+      process.stderr.write(`hbc2js hbcproj export: ${dbFile} does not exist\n`);
+      return 2;
+    }
+    const db = openProjectDb(dbFile);
+    try {
+      const result = exportProject(db, dirname(dbFile));
+      process.stdout.write(`hbc2js hbcproj export: wrote ${result.written.length} shard(s), ${result.unchanged.length} unchanged (no-op)\n`);
+      return 0;
+    } catch (e) {
+      process.stderr.write(`hbc2js hbcproj export: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    } finally {
+      db.close();
+    }
+  }
+  process.stderr.write(`hbc2js hbcproj: unknown or unimplemented verb ${verb ?? "(none)"} — only 'export' is implemented (docs/specs/18-project-storage-integrity.md §R4 step 0)\n`);
+  return 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -1509,6 +1550,10 @@ function main(): void {
   }
   if (argv[0] === "init") {
     process.exitCode = runInit(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "hbcproj") {
+    process.exitCode = runHbcproj(argv.slice(1));
     return;
   }
   if (argv[0] === "disasm") {
