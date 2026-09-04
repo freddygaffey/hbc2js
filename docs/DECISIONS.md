@@ -271,3 +271,37 @@ The build plan that executes this decision is **`docs/specs/26-ui-full-ide.md`**
 user-visible value, then the missing test layers, then the heavy/risky, then
 workspace polish). Spec 22's §1 table of MVP defaults is retired by it row by
 row (spec 26 §1).
+
+## D30 — The listing is a viewer: selection is a token, text entry only in a write dialog (2026-09-05, Claude Opus 5, from Fred's burs 2 and 7)
+
+Fred: *"the `|` caret that you can edit text with is wrong unless you enter an
+edit mode which would check for the same syntax; a selector based on words is
+better"*, and *"double-clicking is good UI but it must not navigate on a token
+that has no target"*.
+
+Ratified for the whole UI, not just the centre pane:
+
+1. **No caret anywhere a listing is shown.** Read-only is not enough — a
+   painted caret is a promise the pane cannot keep. `drawSelection()` is not
+   installed and `.cm-cursor` is hidden (`ui/src/listing/cm-theme.ts`).
+   Browser text selection (drag, Cmd-A, copy) stays.
+2. **The unit of selection is a token**, not a character offset: identifier,
+   definition, property, keyword, string, number, comment, punctuation
+   (`ui/src/listing/token.ts`, CodeMirror-free so the classification can be
+   reasoned about and tested without an editor). One click = one
+   `select()`.
+3. **Navigation must resolve before it moves.** Double-click activates the
+   token only when it is name-like *and* a symbol source resolves it (the
+   file view's own function ranges, the emitter's `_fn<n>` convention, this
+   module's names, then `GET /api/search/functions`). Anything else flashes
+   "no target" and leaves the selection where it is. A pane may never
+   navigate to a function id it has not resolved — that is what produced a
+   blank listing.
+4. **Text entry lives in a write dialog, never in the listing.** An edit
+   mode exists only where a write tool exists (`annotate.rename`,
+   `annotate.comment`); it validates before commit
+   (`validateIdentifierName`: JS identifier syntax, not a reserved word,
+   not `undefined`/`arguments`/`eval`) and shows the affected-reference
+   count. hbc2js is not building a general text editor over decompiled
+   output — the artifact is the source of truth and every change to it is a
+   logged, hash-locked write.

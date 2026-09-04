@@ -246,6 +246,73 @@ back to `GET /api/fn/:fn/source`. `GET /api/fn/:fn/disasm` fills the lower
 half of the vertical split, which folds away entirely from the bar at the
 bottom of the pane.
 
+### Selection is a token, not a caret (burs 2, 7)
+
+The listing is a **viewer**, and it says so: `EditorState.readOnly` +
+`EditorView.editable(false)` were always set, but `drawSelection()` still
+painted a blinking `|` the moment the content took focus, which invites
+typing into a pane nothing can be typed into. `drawSelection` is gone,
+`.cm-cursor`/`.cm-dropCursor` are `display: none` and `.cm-content`'s
+caret-colour is transparent (`ui/src/listing/cm-theme.ts`). Text is still
+selectable and copyable through the browser's own selection, and the vim
+preset's block cursor (`.cm-fat-cursor`) is deliberately untouched.
+
+The unit of selection is a **token**, the way it is in Ghidra/IDA:
+
+- **One click** resolves the whole word under the pointer, wherever in the
+  word you clicked. Word boundaries come from the document text
+  (`[A-Za-z0-9_$]`, so `$foo` and `_fn75` stay one token — CodeMirror's own
+  categoriser splits on `$`); the *kind* comes from the syntax tree
+  (`VariableName`, `PropertyName`, `String`, `Number`, …) and falls back to
+  `classifyWord` for the plain-text disasm block and for text the
+  incremental parser has not reached. `ui/src/listing/token.ts` owns the
+  vocabulary — `identifier | definition | property | keyword | string |
+  number | comment | punctuation` — and is CodeMirror-free.
+- The clicked token and **every other occurrence of it** are decorated
+  (`.hbc-token-selected` / `.hbc-token-occurrence`); the occurrence scan is
+  skipped above 400 kB of document.
+- The token is exposed on the code-view host as `data-selected-token`,
+  `data-selected-token-kind` and `data-selected-line` — the contract
+  `ui/e2e/code-pane.spec.ts` asserts.
+- **One click produces exactly ONE selection.** A name-like token gives
+  `{kind:"identifier", name, fn, moduleId, line}`; otherwise the function
+  whose marked range the line falls in; otherwise the module. The pane used
+  to `select()` twice per click (line, then word), which filled the jump
+  list with pairs and — when nothing was selected yet, or the line belonged
+  to no function — set `fn` to a sentinel that no longer named anything.
+  That is the **blank listing** bur 7 reported: the identifier selection
+  dropped the module context, the file view was replaced by a per-function
+  listing for a function that did not exist, and the pane rendered empty.
+  An `identifier`/`string` selection now carries its `moduleId`, and it
+  carries `fn` only when a real function encloses the line.
+
+**Double-click activates the token** — "go to what this names" — and never
+navigates blindly (bur 7). It is refused outright for anything that is not
+name-like (the keyword `function`, a literal, punctuation) and for a name
+that resolves to nothing; the header flashes `no target: <token>` and the
+selection does not move. Resolution order, cheapest first:
+
+1. the name printed at a function's own header line (the file view already
+   knows every function's range, so `function factory(…)` resolves without
+   a request — parameters on the same line do not);
+2. `_fn<n>`, the emitter's name for a nested closure
+   (`src/emit/index.ts` §6 "Function nesting"): `n` *is* the function
+   index, so a call site like `r1 = _fn75;` is a real target;
+3. a function this module declares under that name;
+4. an exact name match from `GET /api/search/functions`, fetched **on
+   demand** through the query client — the pane never pulls the whole
+   function catalogue just to be ready for a double-click.
+
+**Edit mode.** There is none in the listing itself, by design (D30): the
+only writes the UI has are `annotate.rename` (F2 / vim `cr`) and
+`annotate.comment`, and both already own a dialog that shows the exact
+target and its reference count before commit. `validateIdentifierName()` in
+`ui/src/listing/token.ts` is the syntax check bur 2 asked for (JS identifier
+syntax, not a reserved word, not `undefined`/`arguments`/…), ready for that
+dialog and for any future inline editor. Nothing else in the pane accepts
+text. Not yet built, and not needed by either bur: an inline editor drawn
+over the identifier, and arrow-key motion from token to token.
+
 ### Source↔disasm alignment
 
 `GET /api/fn/:fn/linemap` (above) says which line of the served source came

@@ -24,7 +24,7 @@ export const hbcEditorTheme = EditorView.theme({
     lineHeight: "1.5",
     overflow: "auto",
   },
-  ".cm-content": { caretColor: "var(--accent)" },
+  ".cm-content": { caretColor: "transparent" },
   ".cm-gutters": {
     backgroundColor: "var(--surface)",
     color: "var(--text-muted)",
@@ -39,8 +39,17 @@ export const hbcEditorTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
     backgroundColor: "var(--surface-2)",
   },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--accent)" },
-  ".cm-selectionMatch": { backgroundColor: "var(--surface-2)" },
+  // Bur 2: the listing is a viewer, so it must not paint a text caret. The
+  // cursor layer is not even installed (CodeView drops `drawSelection`);
+  // this rule and the transparent caret-color are belt and braces, and they
+  // also cover the native caret if a future edit mode ever makes a block
+  // editable. The vim preset's block cursor (`.cm-fat-cursor`) is a
+  // different element and is deliberately left visible.
+  ".cm-cursor, .cm-dropCursor": { display: "none" },
+  // The token under the pointer, and every other occurrence of it — the
+  // listing's selection (../listing/token.ts).
+  ".hbc-token-selected": { backgroundColor: "var(--surface-2)", outline: "1px solid var(--accent)" },
+  ".hbc-token-occurrence": { backgroundColor: "var(--surface-2)" },
   ".cm-searchMatch": { backgroundColor: "var(--surface-2)", outline: "1px solid var(--accent)" },
   ".cm-searchMatch.cm-searchMatch-selected": { outline: "1px solid var(--accent)" },
   ".cm-panels": { backgroundColor: "var(--surface)", color: "var(--text)" },

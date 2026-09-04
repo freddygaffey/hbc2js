@@ -8,12 +8,20 @@
 // Below it, folded away by the bar at the bottom, is `/api/fn/{fn}/disasm`
 // for the selected function. Both blocks are CodeMirror 6 (../listing).
 //
-// The pane is driven by the selection store: clicking a word sets an
-// `identifier` selection (name + line), which is what the context menu's
-// Rename and the palette's annotate actions read out of
-// `ActionContext.selection`; clicking anywhere inside a marked function
-// range selects that function.
+// The pane is driven by the selection store, and the unit of selection is a
+// TOKEN, not a character offset (bur 2, ../listing/token.ts): one click
+// selects the whole word under the pointer and produces ONE selection —
+// `identifier` when the token names something, otherwise the function whose
+// marked range the line falls in, otherwise the module. That selection is
+// what the context menu's Rename and the palette's annotate actions read out
+// of `ActionContext.selection`.
+//
+// Double-click ACTIVATES the token: go to what it names (bur 7). It never
+// navigates blindly — a keyword (`function`), a literal or punctuation is
+// refused before any lookup, and a name that resolves to no function flashes
+// "no target" in the header instead of moving the selection.
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PaneHeader } from "../components/primitives.tsx";
 import {
@@ -23,7 +31,9 @@ import { CodeView } from "../listing/CodeView.tsx";
 import { displayName } from "../listing/names.ts";
 import { clampLines, MAX_RENDER_LINES, MAX_RENDER_LINES_MODULE } from "../listing/truncate.ts";
 import { select, useSelection } from "../state/selection.ts";
-import type { ModuleSourceFn } from "../contracts.ts";
+import { api } from "../api.ts";
+import { isNameLike, isNavigable, type ListingToken } from "../listing/token.ts";
+import type { FunctionMatch, ModuleSourceFn, SearchPage } from "../contracts.ts";
 import { setDisasmOpen, useDisasmOpen } from "./disasm-store.ts";
 import { disasmLineForOffset, fnLocalLine, rowForLineAcrossFns } from "../listing/line-map.ts";
 
@@ -77,8 +87,16 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const ctx = useContextResource(hasFn ? fnId : -1);
 
   // Which module's file are we reading? An explicit module selection wins;
-  // otherwise the selected function's own module.
-  const selectedModule = sel.kind === "module" && sel.moduleId !== undefined ? Number(sel.moduleId) : null;
+  // otherwise the selected function's own module. An `identifier`/`string`
+  // selection carries the module it was clicked in too (bur 7): clicking a
+  // word in a module file view whose line belongs to no function used to
+  // drop the module context entirely — `moduleId` went null, the file view
+  // was replaced by a per-function listing for a function that did not
+  // exist, and the pane went blank.
+  const selectedModule =
+    sel.moduleId !== undefined && (sel.kind === "module" || sel.kind === "identifier" || sel.kind === "string")
+      ? Number(sel.moduleId)
+      : null;
   const moduleId = selectedModule ?? meta.data?.module ?? null;
   const mod = useModule(moduleId ?? -1);
   const file = useModuleSource(moduleId ?? -1);
@@ -188,6 +206,113 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
   const name = displayName(fnId, ctx.data?.metadata, meta.data);
   const sourceMissing = !useFileView && hasFn && fnSource.isError && isMissingResource(fnSource.error);
 
+  // Bur 7: a double-click that resolves to nothing says so instead of
+  // navigating. Transient, header-only; the selection does not move.
+  const [noTarget, setNoTarget] = useState<string | null>(null);
+  const noTargetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashNoTarget = (label: string): void => {
+    if (noTargetTimer.current !== null) clearTimeout(noTargetTimer.current);
+    setNoTarget(label);
+    noTargetTimer.current = setTimeout(() => setNoTarget(null), 2500);
+  };
+  useEffect(() => () => {
+    if (noTargetTimer.current !== null) clearTimeout(noTargetTimer.current);
+  }, []);
+
+  // The listing's own symbol map: the functions this module file declares,
+  // by name. Free (the file view already carries them) and the first place
+  // a double-clicked identifier is looked up.
+  const nameToFn = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of fns) if (f.name !== null && f.name !== "" && !m.has(f.name)) m.set(f.name, f.fn);
+    return m;
+  }, [fns]);
+  const qc = useQueryClient();
+
+  /** The function whose header line `at` is, when `name` is the name that
+   *  header declares (not one of its parameters, which sit on the same
+   *  line). `null` in the per-function view, which has no ranges. */
+  const declaredFnAt = (at: number, name: string): number | null => {
+    if (!useFileView) return null;
+    const f = fns.find((x) => x.lines[0] === at);
+    if (f === undefined) return null;
+    const lineText = src.text.split("\n")[at - 1] ?? "";
+    const m = /^\s*(?:async\s+)?function\s*\*?\s*([A-Za-z_$][A-Za-z0-9_$]*)/.exec(lineText);
+    return m !== null && m[1] === name ? f.fn : null;
+  };
+
+  /** Single click: select the token under the pointer (bur 2). ONE selection
+   *  per click — the fn the line belongs to and the token are the same
+   *  event, and pushing two entries filled the jump list with pairs and let
+   *  the second one (built from a stale `fnId`) undo the first. */
+  const selectToken = (token: ListingToken | null, at: number): void => {
+    const hit = useFileView ? fnAtLine(fns, at) : null;
+    const containing = hit?.fn ?? (hasFn ? fnId : undefined);
+    const base = {
+      line: at,
+      ...(containing !== undefined && containing >= 0 ? { fn: containing } : {}),
+      ...(moduleId !== null ? { moduleId: String(moduleId) } : {}),
+    };
+    if (token !== null && isNameLike(token.kind)) select({ kind: "identifier", name: token.text, ...base });
+    else if (containing !== undefined && containing >= 0) select({ kind: "fn", ...base });
+    else if (moduleId !== null) select({ kind: "module", ...base });
+  };
+
+  /** Double click: go to what the token names, or nowhere (bur 7). The
+   *  token must be name-like (never the keyword `function`, a literal or
+   *  punctuation) AND resolve to a real function — this module's own
+   *  declarations first, then an exact name match from
+   *  `/api/search/functions`, fetched on demand so the pane never pulls the
+   *  whole function catalogue just to be ready for a double-click. */
+  const activateToken = (token: ListingToken | null, at: number): void => {
+    selectToken(token, at);
+    if (token === null || !isNavigable(token)) {
+      flashNoTarget(token === null ? "nothing" : token.text);
+      return;
+    }
+    const name = token.text;
+    // The listing's own symbol conventions, cheapest first.
+    //   1. the name printed at a function's own header line (`function
+    //      factory(…)` on a marked fn-start line) — the file view already
+    //      knows every function's range;
+    //   2. `_fn<n>`, the emitter's name for a nested closure (src/emit/
+    //      index.ts §6 "Function nesting") — `n` IS the function index, so a
+    //      call site like `r1 = _fn75;` is a real, resolvable target;
+    //   3. a function this module declares under that name;
+    //   4. an exact name match from `/api/search/functions`.
+    const declared = declaredFnAt(at, name);
+    if (declared !== null) {
+      select({ kind: "fn", fn: declared, name });
+      return;
+    }
+    const emitted = /^_fn([0-9]+)$/.exec(name);
+    if (emitted !== null) {
+      select({ kind: "fn", fn: Number(emitted[1]), name });
+      return;
+    }
+    const local = nameToFn.get(name);
+    if (local !== undefined) {
+      select({ kind: "fn", fn: local, name });
+      return;
+    }
+    void (async () => {
+      let target: number | null = null;
+      try {
+        const page = await qc.fetchQuery<SearchPage<FunctionMatch>>({
+          queryKey: ["search-functions", name],
+          staleTime: Infinity,
+          queryFn: () => api.searchFunctions(name),
+        });
+        const exact = page.rows.filter((r) => r.name === name);
+        target = exact.length > 0 ? exact[0]!.fn : null;
+      } catch {
+        target = null;
+      }
+      if (target === null) flashNoTarget(name);
+      else select({ kind: "fn", fn: target, name });
+    })();
+  };
+
   const listingLoading = file.isLoading || fnSource.isLoading;
   const listingSlow = useSlowLoading(listingLoading);
 
@@ -205,11 +330,8 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
         markedLines={marks}
         ariaLabel={useFileView ? `source of module ${moduleId}` : `source of function ${fnId}`}
         registerFold
-        onIdentifier={(token, at) => select({ kind: "identifier", fn: fnId, name: token, line: at })}
-        onLine={(at) => {
-          const hit = useFileView ? fnAtLine(fns, at) : null;
-          if (hit !== null && hit.fn !== sel.fn) select({ kind: "fn", fn: hit.fn, line: at });
-        }}
+        onSelectToken={selectToken}
+        onActivateToken={activateToken}
       />
     );
   })();
@@ -227,6 +349,9 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
         <span className="shrink-0">{src.total.toLocaleString()} lines</span>
         {range !== null && <span className="shrink-0 font-mono">@{range.lines[0]}–{range.lines[1]}</span>}
         {meta.data?.degraded != null && <span className="shrink-0 text-sev-high">degraded: {meta.data.degraded}</span>}
+        {noTarget !== null && (
+          <span className="shrink-0 text-sev-high" data-testid="code-no-target">no target: {noTarget}</span>
+        )}
         <span className="ml-auto shrink-0">{sel.kind === "identifier" ? `selected: ${sel.name}` : ""}</span>
       </PaneHeader>
       <PanelGroup direction="vertical" autoSaveId="hbc2js.listing" className="min-h-0 flex-1">
