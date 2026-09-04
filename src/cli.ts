@@ -79,7 +79,7 @@ Usage:
   hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
   hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the git pre-commit hook (§11); \`init\` does this best-effort already
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
-  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>]   serve the Stage-3 UI's JSON API (+ static ui/dist/,
+  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off]   serve the Stage-3 UI's JSON API (+ static ui/dist/,
                                               docs/specs/22-ui-mvp.md §1/§3) over that project directory, localhost only
   hbc2js --help                    print this message
   hbc2js --version                 print the version
@@ -718,9 +718,18 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
     }
   }
   const hbc = flagValue(argv, "--hbc");
+  // spec 23 §2: the server-owned worker pool is ON by default (the shipped
+  // backend is offline and deterministic); `--workers off` runs the plain
+  // spec-22 server, and the /api/jobs family then answers 503.
+  const workersRaw = flagValue(argv, "--workers");
+  if (workersRaw !== undefined && workersRaw !== "on" && workersRaw !== "off") {
+    process.stderr.write(`hbc2js ui-server: --workers takes on|off, got ${workersRaw}\n`);
+    return 2;
+  }
+  const workers = workersRaw !== "off";
   try {
-    const handle = await startUiServer({ projectDir, ...(hbc !== undefined ? { hbc } : {}), ...(port !== undefined ? { port } : {}) });
-    process.stdout.write(`hbc2js ui-server: listening on http://${handle.host}:${handle.port} (project ${projectDir})\n`);
+    const handle = await startUiServer({ projectDir, workers, ...(hbc !== undefined ? { hbc } : {}), ...(port !== undefined ? { port } : {}) });
+    process.stdout.write(`hbc2js ui-server: listening on http://${handle.host}:${handle.port} (project ${projectDir}, workers ${workers ? "on" : "off"})\n`);
     await new Promise<void>(() => {}); // serve forever; Ctrl-C/SIGTERM stops it (no --detach in this MVP, spec 22 §1)
     return 0;
   } catch (e) {

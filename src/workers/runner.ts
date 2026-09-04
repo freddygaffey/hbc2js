@@ -52,6 +52,20 @@ export interface WorkerRunnerOpts {
   /** Source-line cap handed to the backend — the token-hygiene rule applies to
    *  a worker exactly as it does to an agent. */
   readonly sourceLines?: number;
+  /** Additive (spec 23 §4's "known gap", now closed by spec 17 §15's `tier`):
+   *  when true, a `suggest-name` job ALSO records its proposal as a
+   *  `set_name` write carrying `tier:"suggested"`, so the suggestion has a
+   *  revision id a human can promote by rid (`McpTools.promote`) instead of
+   *  the UI having to re-type the name out of a comment body. It is still a
+   *  SUGGESTION, never truth: `tier:"suggested"` is exactly the "occupy the
+   *  name slot greyed out" state §4 describes, and promotion — a human's own
+   *  provenance — is what makes it accepted.
+   *
+   *  Default OFF, because §4 was written when `tier` did not exist and
+   *  deliberately wrote nothing into the name slot; the ui-server turns it on
+   *  (`src/ui-server/workers-routes.ts`) so the UI's accept/reject flow has
+   *  something to accept. */
+  readonly writeSuggestedNames?: boolean;
 }
 
 export class WorkerRunner {
@@ -63,6 +77,7 @@ export class WorkerRunner {
   private readonly presence: Presence | undefined;
   private readonly sessionId: string | undefined;
   private readonly sourceLines: number;
+  private readonly writeSuggestedNames: boolean;
 
   constructor(opts: WorkerRunnerOpts) {
     this.db = opts.db;
@@ -73,6 +88,7 @@ export class WorkerRunner {
     this.presence = opts.presence;
     this.sessionId = opts.sessionId;
     this.sourceLines = opts.sourceLines ?? 120;
+    this.writeSuggestedNames = opts.writeSuggestedNames ?? false;
   }
 
   private prov(job: Job): Provenance {
@@ -124,13 +140,24 @@ export class WorkerRunner {
       const text = res.text.trim();
       const body =
         job.kind === "suggest-name" ? `${SUGGESTED_PREFIX} name: ${text} (job ${job.id})` : `${SUGGESTED_PREFIX} ${text} (job ${job.id})`;
-      const write = this.tools.addComment({ target, body, prov: this.prov(job) });
+      const write = this.tools.addComment({ target, body, prov: this.prov(job), tier: "suggested" });
+      const writes: { readonly tool: string; readonly target: string; readonly rid: string }[] = [
+        { tool: "add_comment", target, rid: write.rid },
+      ];
+      // The proposed name as a `tier:"suggested"` revision (opt-in, see
+      // `writeSuggestedNames`): it never displaces the accepted name, and it
+      // gives `McpTools.promote({kind:"name", target, rid})` something to
+      // resolve. Rule 1 still holds — nothing here is accepted.
+      if (this.writeSuggestedNames && job.kind === "suggest-name" && text.length > 0) {
+        const named = this.tools.setName({ target, name: text, prov: this.prov(job), tier: "suggested" });
+        writes.push({ tool: "set_name", target, rid: named.rid });
+      }
       const result: JobResult = {
         tier: "suggested",
         kind: job.kind,
         text,
         ...(job.kind === "suggest-name" ? { proposal: { name: text } } : {}),
-        writes: [{ tool: "add_comment", target, rid: write.rid }],
+        writes,
       };
       return this.queue.finish(job.id, { result, ...(res.cost !== undefined ? { cost: res.cost } : {}) });
     } catch (err) {

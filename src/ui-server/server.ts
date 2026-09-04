@@ -11,13 +11,29 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpContext } from "../mcp/context.ts";
+import { openProjectDb } from "../projdb/db.ts";
+import { dbPath } from "../projdb/artifact-read.ts";
+import { JobQueue } from "../workers/queue.ts";
+import { Presence } from "../workers/presence.ts";
+import { WorkerRunner } from "../workers/runner.ts";
+import { HeuristicBackend } from "../workers/backends/heuristic.ts";
 import { handle, tailLog, type UiServerCtx } from "./routes.ts";
+import { tailWorkerEvents, type WorkersCtx } from "./workers-routes.ts";
 
 export interface UiServerOptions {
   readonly projectDir: string;
   readonly hbc?: string;
   readonly port?: number;
   readonly host?: string;
+  /** Spec 23's server-owned worker pool. Default ON: the shipped backend is
+   *  `HeuristicBackend` — deterministic, offline, no key, no spawn — so
+   *  "enabled by default" costs nothing and the AI flow in the UI is real
+   *  rather than stubbed (spec 23 §9 item 1 reserves the backend choice to
+   *  the owner; this is that choice for the default). `--workers off` (CLI)
+   *  or `workers: false` turns the pool off; the routes then 503. */
+  readonly workers?: boolean;
+  /** Jobs in flight (spec 23 §2.2's cap; the UI shows it). */
+  readonly workerConcurrency?: number;
 }
 
 export interface UiServerHandle {
@@ -109,6 +125,76 @@ function serveStatic(path: string, res: ServerResponse, extraHeaders: Record<str
 
 const SSE_POLL_MS = 500;
 
+/** How often the pool looks for a claimable job. Short enough that a button
+ *  press in the UI feels immediate, long enough to be free when idle (one
+ *  indexed SELECT). */
+const WORKER_POLL_MS = 250;
+const DEFAULT_WORKER_CONCURRENCY = 2;
+
+interface WorkerPool {
+  readonly ctx: WorkersCtx;
+  stop(): void;
+}
+
+/** Builds the spec-23 worker surface over the project DB and starts ONE pool
+ *  loop over `HeuristicBackend`. Returns undefined (workers simply absent,
+ *  routes 503) when the project has no `.hbcproj` — a JSONL-only project has
+ *  no `jobs` table to queue into, and inventing one is not this server's
+ *  job. Never throws: a server that can serve source must still start. */
+function startWorkers(projectDir: string, mcp: McpContext, concurrency: number): WorkerPool | undefined {
+  const path = dbPath(projectDir);
+  if (!existsSync(path)) return undefined;
+  let db;
+  try {
+    db = openProjectDb(path);
+  } catch {
+    return undefined;
+  }
+  const queue = new JobQueue(db);
+  const presence = new Presence(db);
+  const backend = new HeuristicBackend();
+  const session = presence.open({ kind: "worker", who: `worker:${backend.id}`, meta: { pool: concurrency } });
+  const runner = new WorkerRunner({
+    db,
+    resources: mcp.resources,
+    tools: mcp.tools,
+    backend,
+    queue,
+    presence,
+    sessionId: session.id,
+    // spec 23 §4 + spec 17 §15's `tier`: a proposal lands as a
+    // `tier:"suggested"` name (promotable by rid) as well as a comment. It is
+    // still never truth — promotion is.
+    writeSuggestedNames: true,
+  });
+  let busy = false;
+  const timer = setInterval(() => {
+    presence.heartbeat(session.id);
+    presence.expire();
+    if (busy) return;
+    busy = true;
+    void runner
+      .runUntilIdle({ concurrency })
+      .catch(() => undefined)
+      .finally(() => {
+        busy = false;
+      });
+  }, WORKER_POLL_MS);
+  timer.unref?.();
+  return {
+    ctx: { db, queue, presence, runner, backendId: backend.id, concurrency },
+    stop: () => {
+      clearInterval(timer);
+      try {
+        presence.close(session.id, "server stopped");
+        db.close();
+      } catch {
+        /* closing a DB the process is about to drop is never fatal */
+      }
+    },
+  };
+}
+
 /** `GET /api/events` — Server-Sent Events convenience wrapper over
  *  `tailLog` (spec 21 §1.3's read-the-log-after-my-cursor half; the MVP
  *  default is polling, §1, so this endpoint polls the log server-side
@@ -129,6 +215,18 @@ function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerC
   // one long-lived `McpContext`-shared instance (no rebuild anywhere, §15),
   // so a concurrent write is visible on the very next poll regardless.
   let cursor = sinceParam !== null && sinceParam !== "" ? Number(sinceParam) : tailLog(ctx.resources, 0).cursor;
+  // Second channel on the SAME connection (spec 23 §4.1's `worker_events`
+  // change feed): one `event: worker` frame with the same {rows,cursor}
+  // shape, its own cursor, from `?workerSince=` or the current head. Two
+  // feeds, one socket — a client that only cares about the log ignores the
+  // frame, and nothing about the log channel changes.
+  const workerSinceParam = query.get("workerSince");
+  let workerCursor =
+    workerSinceParam !== null && workerSinceParam !== ""
+      ? Number(workerSinceParam)
+      : ctx.workers !== undefined
+        ? tailWorkerEvents(ctx.workers.db, 0).cursor
+        : 0;
   const timer = setInterval(() => {
     let result;
     try {
@@ -139,6 +237,17 @@ function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerC
     if (result.rows.length > 0) {
       cursor = result.cursor;
       res.write(`event: log\ndata: ${JSON.stringify(result)}\n\n`);
+    }
+    if (ctx.workers !== undefined) {
+      try {
+        const w = tailWorkerEvents(ctx.workers.db, workerCursor);
+        if (w.rows.length > 0) {
+          workerCursor = w.cursor;
+          res.write(`event: worker\ndata: ${JSON.stringify(w)}\n\n`);
+        }
+      } catch {
+        /* the worker tables are disposable state; a read failure is not fatal */
+      }
     }
   }, SSE_POLL_MS);
   res.on("close", () => clearInterval(timer));
@@ -151,10 +260,13 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
   // and write through — a write is visible to the very next read with no
   // rebuild step (see `McpContext`'s own doc comment for why).
   const mcp = new McpContext(opts.projectDir, resourcesOpts);
+  const pool =
+    opts.workers === false ? undefined : startWorkers(opts.projectDir, mcp, Math.max(1, opts.workerConcurrency ?? DEFAULT_WORKER_CONCURRENCY));
   const ctx: UiServerCtx = {
     resources: mcp.resources,
     tools: mcp.tools,
     artifactDir: opts.projectDir,
+    ...(pool !== undefined ? { workers: pool.ctx } : {}),
   };
   const host = opts.host ?? DEFAULT_HOST;
   const requestedPort = opts.port ?? DEFAULT_PORT;
@@ -223,6 +335,7 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
         host,
         close: () =>
           new Promise<void>((res2, rej2) => {
+            pool?.stop();
             server.close((err) => (err !== undefined && err !== null ? rej2(err) : res2()));
           }),
       });
