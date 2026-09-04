@@ -129,3 +129,21 @@ Filed in `docs/BUGS.md`, owner `fix-wave`.
 - H1's 28 signatures were classified by termination + truncation-point
   measurement rather than by reduction: a non-terminating program has no
   smaller reproducer worth landing until the harness bug is fixed.
+
+## Outcome (same day)
+
+F1 fixed in `src/passes/spread-rest/match.ts` (commit `67062d3`): the matcher
+refuses a site whose deleted run kills a still-live staging register, and plain
+elements/arguments now resolve through `Subst`. Regression fixture
+`tests/fixtures/adversarial/44-fuzz-spread-shared-register` (adversarial rather
+than a construct because a new construct fixture needs new golden snapshots,
+and golden generation is queued for Fred's approval, never done inside an
+implementation task), verified failing before and passing after at
+v84/v94/v96/v99.
+
+Re-run of the 91 terminating finds after the fix (`/tmp/retriage-after.md`):
+**77 PASS, 14 DIVERGENT**, against 42 PASS / 49 DIVERGENT before — all 35
+family-F1 finds moved to PASS, and all 22 F1 signature examples pass. The 159
+still-failing finds therefore becomes **124** (110 H1 + 9 F3 + 5 F2). The 110
+H1 finds were not re-run: their verdict is timing-dependent and measures the
+machine, not the decompiler.
