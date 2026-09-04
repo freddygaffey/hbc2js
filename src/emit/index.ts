@@ -504,6 +504,19 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     for (const child of node.closures) inlineFunctions.add(child);
   }
 
+  /** True when a copy hosted in `host` must be emitted INLINE at its creation
+   *  site rather than hoisted: it captured an environment `host` declares
+   *  inside a loop body's block (report §5 "Landing item 3"). */
+  const inlinableCopy = (host: number, fn: number, copy: ClosureCopy): boolean => {
+    const node = envGraph.nodes[copy.env];
+    if (node === undefined || node.ownerFunction !== host) return false;
+    if (!(loopLocal.get(host)?.has(node.createOffset) ?? false)) return false;
+    const creatorOf = (key: string): number => Number(key.slice(0, key.indexOf(":")));
+    if (copy.sites.length === 0 || !copy.sites.every((k) => creatorOf(k) === host)) return false;
+    const mine = new Set(copy.sites);
+    return (createdIn.get(host) ?? []).every((s) => s.fn !== fn || mine.has(s.key));
+  };
+
   const emitted = new Set<number>();
   /** One key per *instance*: a copy's subtree is emitted once per copy. */
   const emittedInstances = new Set<string>();
@@ -599,14 +612,27 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
       // remap, and are hoisted like any other child.
       for (const extra of extrasHere) {
         pendingCopies.delete(`${extra.fn}#${extra.copy.index}`);
-        hoisted.push(
-          emitOne(extra.fn, {
-            path: `${ctx.path}/${index}c${extra.fn}_${extra.copy.index}`,
-            remap: composeRemap(ctx.remap, extra.copy.envRemap),
-            name: extra.name,
-            hosted,
-          }),
-        );
+        const body = emitOne(extra.fn, {
+          path: `${ctx.path}/${index}c${extra.fn}_${extra.copy.index}`,
+          remap: composeRemap(ctx.remap, extra.copy.envRemap),
+          name: extra.name,
+          hosted,
+        });
+        // Report §5 "Landing item 3". A copy is hoisted to the top of its host
+        // — but when the environment it captured is LOOP-LOCAL, that
+        // environment's `let` lives in the loop body's own block (see
+        // `loopLocal` above), where a hoisted declaration cannot see it:
+        // react-navigation's `_fn10396__c1` / `_fn10397__c1` read `_e2192_0`
+        // and were isolated for E_UNBOUND_IDENT. Copy 0's closures already take
+        // the inline form at their `Create*Closure` site for exactly this
+        // reason (`inlineFunctions`); a copy has to as well. Only when every
+        // recorded site of this function index inside this body is a site of
+        // THIS copy, since `inlineClosure` is keyed by function index — if some
+        // other site here made a different copy, inlining would bind it to the
+        // wrong body, and the hoisted form (wrong scope, isolated, visible) is
+        // the safer failure.
+        if (inlinableCopy(index, extra.fn, extra.copy) && !inlined.has(extra.fn)) inlined.set(extra.fn, body);
+        else hoisted.push(body);
       }
       // Report §5 item 1: per-copy travel. Placement is a property of the
       // INSTANCE being emitted, not of the function index. A closure `g`

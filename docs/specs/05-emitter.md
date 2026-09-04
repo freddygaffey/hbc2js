@@ -245,6 +245,20 @@ binding, because the site that would create it there is exactly the
 self-reference. Depth is bounded by the number of copies in the group. See the
 report's "Landing item 2".
 
+**A copy that captured a loop-local environment is emitted at its creation
+site.** An environment created inside a loop is a fresh record per iteration, so
+its slots are declared at the `Create*Environment` (a `let` in the loop body's
+own block) and every closure made with it is emitted as a function *expression*
+at its `Create*Closure` site — see the loop-local rule below. A copy hosted in
+the owner of such an environment must take the same form: hoisted to the top of
+its host it cannot see a `let` that lives inside the loop block, which is
+`E_UNBOUND_IDENT` (react-navigation's `_fn10396__c1` / `_fn10397__c1` reading
+`_e2192_0`). The inline form is used only when every recorded creation site of
+that function index inside the host body belongs to *this* copy, because the
+inline map is keyed by function index; otherwise the hoisted form is kept, since
+a wrong-scope binding that the unbound check reports is better than a silent
+binding to the wrong body. See the report's "Landing item 3".
+
 **`materialised` slots.** `const _env<id> = { s0: undefined, … };` in the owner,
 accesses become `_env<id>.s<slot>`, and any closure created with that env
 captures the object. Correct, uglier, and rare.

@@ -38,10 +38,11 @@ const HBC = join(repoRoot(), "tests", "fixtures", "bundles", "react-navigation-e
 /** Measured on this fixture (deb, node 22, passes on): 186 isolated functions
  *  at the loop-local-env fix commit (2810099), 103 after orphan placement
  *  (`src/emit/placement.ts`) — 541 unbound names down to 158, and 176 -> 106
- *  isolated with `--passes=none`. 32 after per-instance placement and **16**
- *  after recursion-group hosting. Ratchet: lower is fine, a rise is a
+ *  isolated with `--passes=none`. 32 after per-instance placement, 16
+ *  after recursion-group hosting and **14** once a copy that captured a
+ *  loop-local environment was emitted at its creation site. Ratchet: lower is fine, a rise is a
  *  regression. */
-const MAX_ISOLATED = 16;
+const MAX_ISOLATED = 14;
 /** Individual unbound *names* behind those isolated functions (one isolated
  *  function can carry several). 158 before per-creation-context bodies, 155
  *  after, **63** once placement became a property of the emitted *instance*
@@ -50,9 +51,12 @@ const MAX_ISOLATED = 16;
  *  copy's `emitName` no longer renames its children), and **28** once a copy
  *  hosted inside its own recursion group was emitted in every instance of that
  *  host (report §5 "Landing item 2": the 35 `_fn<n>__c<i>` went to 0, leaving
- *  only the 20 orphan-placement `_fn<n>` and 8 `_e<env>_<slot>`). Same ratchet
+ *  only the 20 orphan-placement `_fn<n>` and 8 `_e<env>_<slot>`), and **26** once
+ *  a copy hosted in the owner of a LOOP-LOCAL environment was emitted inline at
+ *  its creation site instead of hoisted, where the loop block's `let` is not in
+ *  scope (report §5 "Landing item 3": the 2 `_e2192_0` went to 0). Same ratchet
  *  rule as above: it may go down, never up. */
-const MAX_UNBOUND_NAMES = 28;
+const MAX_UNBOUND_NAMES = 26;
 /** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111 when
  *  every `W_AMBIGUOUS_CLOSURE_ENV` function was an orphan, **13** now that they
  *  are not. That drop is the point of per-creation-context bodies

@@ -340,6 +340,60 @@ the grandparent — 12406/12407 in miniature) plus the emit test named for it in
 detached worktree (the other group member's copy is missing from every instance
 of its host, and four functions are stubbed `E_UNBOUND_IDENT`) and green after.
 
+### Landing item 3: copies over loop-local environments (2026-09-05, later still)
+
+Leftover 3 above — the 2 `_e2192_0` — and its diagnosis was **wrong**, in a way
+worth recording. It is true that env 2192's slot 0 has one writer and no
+readers; it is not true that no `let _e2192_0` is emitted. It is emitted, and it
+is emitted *inside a loop body's block*:
+
+```
+L5: { … let _e2192_0; _e2192_0 = r17; r19 = _fn10396__c1; r7.get = r19; … }
+```
+
+Having one writer and no readers is exactly what makes env 2192 **loop-local**
+(`src/emit/index.ts`'s `loopLocal`: created inside a cycle, no access and no
+closure site outside the creating block). A loop-local environment is a fresh
+record per iteration, so its `let` goes at the `Create*Environment` and every
+closure made with it is emitted as a function *expression* at its
+`Create*Closure` site (`inlineFunctions`). Copy 0 of fn#10396 gets that
+treatment — env 2190 is loop-local too, and `r4.get = function _fn10396() {…}`
+is inline. The **copies** did not: `extraCopies` always pushed them onto
+`hoisted`, i.e. a function declaration at the top of the host's body, where the
+loop block's `let` is out of scope. Hence `E_UNBOUND_IDENT` on `_e2192_0`.
+
+The fix is one branch in `emitBody`: a copy whose captured environment is
+loop-local in this host goes into `inlined` instead of `hoisted`, so the
+lowering emits it at the site. It is taken only when the copy's sites are all in
+this host *and* every recorded site of that function index in this host belongs
+to this copy — `inlineClosure` is keyed by function index, so a mixed body would
+otherwise bind one copy's site to the other copy's body. That is a silent
+wrong-binding; the hoisted form's unbound name is loud, so the guard prefers it.
+
+| | isolated | unbound names | `_fn<n>` | `_fn<n>__c<i>` | `_e2192_0` | `_e4551_*` | bytes |
+|---|---|---|---|---|---|---|---|
+| item 2 above | 16 | 28 | 20 | 0 | 2 | 6 | 20,240,937 |
+| + inline loop-local copies | **14** | **26** | 20 | 0 | **0** | 6 | 20,241,172 |
+
+Control: `rn-template-0.72/index.android.hbc` (0 ambiguous) is `cmp`-identical
+against the same tree with only `src/emit/index.ts` reverted — **5,000,113
+bytes** at CLI defaults. (Item 2 recorded 5,000,434 for the same control; the
+difference is another agent's committed `src/runtime/helpers.ts` change between
+the two measurements, not this one — the `cmp` is what rules this change out.)
+It cannot be otherwise: with `closureCopies` empty, `extraCopies` is empty and
+the new branch is never reached.
+
+Sweep ratchets moved down: `MAX_ISOLATED` 16 -> 14, `MAX_UNBOUND_NAMES` 28 ->
+26. No other floor moved, no golden regenerated.
+
+Regression test: `tests/support/synth-module.ts`'s `loopLocalCopyFunctions`
+(fn#1 and fn#2 both create fn#3; fn#2 makes its environment inside a loop —
+which needed `instructions()` to grow real `jump`/`condJump` terminators so
+`buildCfg` sees the back edge) plus the emit test named for it in
+`tests/gate/emit/closure-copies.test.ts`. Verified RED at `9d9dcc1` in a
+detached worktree (`_e2_0` is not declared in any enclosing scope, `_fn3__c1`
+stubbed) and green after.
+
 ### Remaining work after item 2
 
 1. **20 `_fn<n>`** — unchanged, and not a duplication defect: functions with no

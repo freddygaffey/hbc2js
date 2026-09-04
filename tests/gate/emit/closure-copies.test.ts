@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { parseM4 } from "../../support/m4.ts";
 import type { Op } from "../../support/synth-module.ts";
-import { bucketAFunctions, fakeFunction, graphOf, mutualRecursionFunctions, realCfg, travelFunctions } from "../../support/synth-module.ts";
+import { bucketAFunctions, fakeFunction, graphOf, loopLocalCopyFunctions, mutualRecursionFunctions, realCfg, travelFunctions } from "../../support/synth-module.ts";
 import type { ModuleAnalysis } from "../../../src/cfg/types.ts";
 import type { HbcModule } from "../../../src/parse/types.ts";
 import { emitModule } from "../../../src/emit/index.ts";
@@ -181,4 +181,43 @@ test("a copy hosted inside its own recursion group is emitted in every instance 
     [],
   );
   assert.equal(result.stubbedFunctions, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Report §5 "Landing item 3" — a copy that captured a LOOP-LOCAL environment.
+// `synth-module.ts`'s `loopLocalCopyFunctions` is react-navigation's
+// `_fn10396__c1` / `_fn10397__c1` in miniature: copy 1 captures an environment
+// its host creates inside a loop, so that environment's `let` is emitted in the
+// loop body's own block and a copy hoisted to the top of the host cannot see it
+// (`_e2_0` unbound, the function isolated). Copy 0's closures already take the
+// inline function-expression form at their creation site for this reason; a
+// copy has to as well.
+
+test("a copy that captured a loop-local environment is emitted at its creation site, not hoisted", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  const result = emitSynth(loopLocalCopyFunctions());
+  const code = result.code;
+
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").map((d) => d.message),
+    [],
+    "copy 1 reads `_e2_0`, whose `let` is inside the loop block of its host — hoisting the copy puts it out of scope (report §5 item 3)",
+  );
+  assert.equal(result.stubbedFunctions, 0);
+
+  // The copy exists, is named for its creation context, and is a function
+  // *expression* at the site rather than a hoisted declaration.
+  assert.match(code, /_fn3__c1/, "the second creation context still needs its own body");
+  assert.doesNotMatch(code, /^\s*function _fn3__c1\(/m, "…but not as a hoisted declaration in statement position: it has to be the expression at its creation site");
+  const inFn2 = bodyOf(code, "_fn2");
+  assert.match(inFn2, /let _e2_0[\s\S]*=\s*function _fn3__c1\(/, "the copy must be created after, and inside the scope of, the loop-local `let` it reads");
+  assert.match(bodyOf(code, "_fn3__c1"), /_e2_0/, "copy 1 reads env 2's slot through its remap");
+
+  // Copy 0 is untouched: its host has no loop, so it keeps its own name and its
+  // own env-slot names.
+  assert.match(bodyOf(code, "_fn3"), /_e1_0/, "copy 0 reads env 1's slot");
+  assert.doesNotMatch(bodyOf(code, "_fn3"), /_e2_0/);
 });

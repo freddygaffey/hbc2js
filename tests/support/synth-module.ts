@@ -11,17 +11,28 @@ import type { HbcModule } from "../../src/parse/types.ts";
 
 export type Op = { readonly name: string; readonly ops: readonly (readonly [string, number])[] };
 
+/** Ops whose `kind` is not `normal`. A synthetic body needs real terminators
+ *  as soon as it contains a LOOP (report §5 "Landing item 3": a copy captured
+ *  over a loop-local environment), because `buildCfg` splits blocks on
+ *  `targets` and `inCycle` needs the back edge. `addr` operands are absolute
+ *  offsets, as they are after `src/disasm` resolves them. */
+const UNCONDITIONAL_JUMPS = new Set(["Jmp", "JmpLong"]);
+const CONDITIONAL_JUMPS = new Set(["JmpTrue", "JmpTrueLong", "JmpFalse", "JmpFalseLong"]);
+
 export function instructions(ops: readonly Op[]): Instruction[] {
-  return ops.map((o, i) => ({
-    offset: i * 4,
-    length: 4,
-    opcode: 0,
-    name: o.name,
-    operands: o.ops.map(([role, value]) => ({ type: "Reg8", role, value }) as unknown as Operand),
-    kind: o.name === "Ret" ? ("return" as const) : ("normal" as const),
-    targets: [] as readonly number[],
-    fallsThrough: o.name !== "Ret",
-  }));
+  return ops.map((o, i) => {
+    const kind = o.name === "Ret" ? ("return" as const) : UNCONDITIONAL_JUMPS.has(o.name) ? ("jump" as const) : CONDITIONAL_JUMPS.has(o.name) ? ("condJump" as const) : ("normal" as const);
+    return {
+      offset: i * 4,
+      length: 4,
+      opcode: 0,
+      name: o.name,
+      operands: o.ops.map(([role, value]) => ({ type: role === "addr" ? "Addr8" : "Reg8", role, value }) as unknown as Operand),
+      kind,
+      targets: o.ops.filter(([role]) => role === "addr").map(([, value]) => value) as readonly number[],
+      fallsThrough: kind !== "return" && kind !== "jump",
+    };
+  });
 }
 
 export function fakeFunction(index: number, ops: readonly Op[]): DecodedFunction {
@@ -200,5 +211,35 @@ export function mutualRecursionFunctions(): Map<number, readonly Op[]> {
     [2, [mkEnv(0), mkClosure(1, 0, 3), mkClosure(2, 0, 4), ret(1)]],
     [3, groupMember()],
     [4, groupMember()],
+  ]);
+}
+
+/** `JmpTrue <absolute offset>, rCond` — a back edge, so the block it ends is in
+ *  a cycle. */
+export const jmpTrue = (target: number, cond: number): Op => ({ name: "JmpTrue", ops: [["addr", target], ["reg", cond]] });
+
+/**
+ * Report §5 "Landing item 3", the 2 `_e2192_0`: a duplicated function whose
+ * copy 1 captures a **loop-local** environment.
+ *
+ * fn#1 and fn#2 both create fn#3, aligned (bucket A), so fn#3 gets two copies.
+ * fn#2's environment is created *inside a loop* and is read by nothing but the
+ * closure it makes — which is exactly what makes it loop-local: its `let` is
+ * emitted at the `CreateEnvironment`, inside the loop body's block, so a copy
+ * hoisted to the top of fn#2 cannot see it (`_e2_0` unbound). Copy 0's home,
+ * fn#1, has no loop, so copy 0 is unaffected.
+ *
+ * This is react-navigation's `_fn10396__c1`/`_fn10397__c1` in miniature: env
+ * 2192 (owner fn#3497) has one writer and no readers, is created in a loop, and
+ * copy 1's remap `2190 -> 2192` makes the copy's body read `_e2192_0`.
+ */
+export function loopLocalCopyFunctions(): Map<number, readonly Op[]> {
+  return new Map<number, readonly Op[]>([
+    [0, [mkEnv(0), mkClosure(1, 0, 1), mkClosure(2, 0, 2), ret(1)]],
+    [1, [mkEnv(0), mkClosure(1, 0, 3), ret(1)]],
+    // offsets 0/4/8: the CreateEnvironment, the CreateClosure and the back edge
+    // to offset 0 all sit in ONE block, and that block is its own successor.
+    [2, [mkEnv(0), mkClosure(1, 0, 3), jmpTrue(0, 1), ret(1)]],
+    [3, [selfEnv(0), loadSlot(1, 0, 0), ret(1)]],
   ]);
 }
