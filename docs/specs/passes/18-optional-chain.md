@@ -192,14 +192,27 @@ recurse into all children; `freeNames` as for `member`/`call`.
 
 Site = one statement list `L` (the labeled block's body is such a list).
 
-**C — optional chain.** Anchor: a statement `rRes = undefined` followed by a
-guard on some register `B0` (either `if (B0 == N) { break L; }` or the
-spilled `rC = B0 == N; [rRes = undefined;] if (rC) { break L; }` — v99).
-Consume forward: alternating **link** (a statement `rT = <link expr>` where
-the link expr is `member`/computed `member` on the previous link's register,
-or `Reflect.apply(rPrev, rBaseOfPrev, args)`) and **guard** (same shape on
-the link's register), ending at a **commit** `rRes = <final link expr>`
-followed by `break L`. Preconditions, all recomputed in `check`:
+**C — optional chain.** Anchor: **not** a fixed opening shape — a run is a
+sequence of alternating **link** (a statement `rT = <link expr>` where the
+link expr is `member`/computed `member` on the current chain register, or
+`Reflect.apply(rPrev, rBaseOfPrev, args)`) and **guard** (`rRes = undefined`
+then `if (X == N) { break L; }`, or the spilled `rC = X == N; [rRes =
+undefined;] if (rC) { break L; }` — v99, `X` the link register just
+produced, or the run's own base for the very first guard), ending at a
+**commit** `rRes = <final link expr>` followed by `break L`. Each link is
+matched **independently of whether a guard immediately precedes it**
+(implemented as `matchChainGuard`, `src/passes/optional-chain/match.ts`):
+`rRes`/`L` are themselves discovered from whichever statement is the run's
+*first* real guard, not assumed to open the run, so a run may begin with one
+or more unguarded link reads before its first guard — v99's compiler elides
+a link's own guard whenever it has separately proven that link's base
+non-nullish (an object-literal base, or an earlier sibling chain over the
+same register already having guarded it — `docs/lowering/optional-chaining.md`
+§7, `docs/BUGS.md` row dated 2026-09-02). An all-unguarded run (no `?.` in
+it at all) can never spuriously match: until a real guard is found, `rRes`
+is unknown, so no link read can ever satisfy the commit condition, and the
+run simply exhausts its link statements and refuses. Preconditions, all
+recomputed in `check`:
 
 1. `N` is literal `null` or a register whose only write in the function is
    literal `null`, `nested === 0` (`not-null-guard`).
@@ -223,9 +236,15 @@ followed by `break L`. Preconditions, all recomputed in `check`:
    contiguous (`interleaved-effect`).
 
 → `{ rRes, base: B0, links: [{kind: member|computed|call, expr, guarded:
-bool}…] }`. Note the *first* link may be unguarded in source (`a.b?.c`);
-observed fixtures always guard from the base, but the matcher keys each `?.`
-strictly on the presence of a guard, so both fall out naturally.
+bool}…] }`. Each link's own `guarded` flag records whether *its own* guard
+was present in `before` — the writer (§5) uses it directly: a `guarded:
+false` link (the run's opening link, when the base guard was elided) prints
+as a plain `member`/`call` (`a.b`), never `a?.b`; every `guarded: true` link
+prints as `optmember`/`optcall` (`?.`/`?.()`). This is exactly the "first
+link may be unguarded in source (`a.b?.c`)" case the matcher always keyed on
+a guard's presence for, generalised to actually accept it: an unguarded
+opening link was previously indistinguishable from "no base guard, refuse
+the whole run" (`matchBaseGuard` required one); it no longer is.
 
 **N — nullish.** Anchor: `if (rX != N) { break L; }` where `N` as
 precondition 1, followed by a fallback body ending `break L` (or falling out

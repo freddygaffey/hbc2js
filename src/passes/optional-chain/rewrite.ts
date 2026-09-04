@@ -2,18 +2,18 @@
 import type { Expr, Stmt } from "../ast.ts";
 import type { ChainSite, NullishSite, OptionalChainMatch } from "./match.ts";
 
-/** §5 C: build the chain expression inside-out, from `base` outward — every
- *  link this rung matched was guarded (each is preceded by a `== null`
- *  check on the previous link's own register, §4's note on why the "first
- *  link may be unguarded" case never actually arises for a run this
- *  matcher accepts), so every link becomes an `optmember`/`optcall`. */
+/** §5 C: build the chain expression inside-out, from `base` outward — each
+ *  link becomes `optmember`/`optcall` (`?.`) when its own guard was present
+ *  in `before`, or a plain `member`/`call` (`.`) when it was elided (§4's
+ *  closing note): the matcher keys every link strictly on the presence of
+ *  its own guard, so the writer just mirrors `link.guarded` per link. */
 function buildChainExpr(site: ChainSite): Expr {
   let acc: Expr = site.base;
   for (const link of site.links) {
     if (link.kind === "member") {
-      acc = { k: "optmember", obj: acc, prop: link.prop!, computed: link.computed };
+      acc = link.guarded ? { k: "optmember", obj: acc, prop: link.prop!, computed: link.computed } : { k: "member", obj: acc, prop: link.prop!, computed: link.computed };
     } else {
-      acc = { k: "optcall", callee: acc, args: link.args!, thisIsBase: true };
+      acc = link.guarded ? { k: "optcall", callee: acc, args: link.args!, thisIsBase: true } : { k: "call", callee: acc, args: link.args! };
     }
   }
   return acc;

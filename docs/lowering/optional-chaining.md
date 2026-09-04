@@ -96,11 +96,27 @@ the catalogue row's confidence is `✅ verified` at both v94 and v99.
 The **statement-level lowering the `optional-chain` rung's matcher sees**
 (spec 18 §2.4) differs by version beyond what this row's own bytecode
 evidence covers: v99's optimizer occasionally elides a chain's own base
-guard once a *sibling* chain earlier in the same function has already
-proven that register non-nullish (observed on `48`'s own `user?.profile?.
-contacts?.email` — the second chain over `user` starts directly with
-`r9 = r6.profile`, no preceding `r6 == null` guard, because the first
-chain over `user` already established it). Spec 18 §4's matcher requires
-a base guard to open every run; this optimizer-driven omission is a real,
-distinct shape spec 18 does not document, tracked as an open rung-coverage
-item (not a catalogue-confidence question) in `docs/BUGS.md`.
+guard once it has separately proven that register non-nullish — observed on
+`48`'s own `user?.profile?.name` and `user?.profile?.contacts?.email`,
+*both* of which start directly with `r9 = r6.profile` (no preceding
+`r6 == null` guard at all): `r6` is a fresh object literal in the first
+case, and already established non-nullish by the first chain over the same
+register in the second. **Fixed 2026-09-04** (BUGS.md row dated 2026-09-02):
+`src/passes/optional-chain/match.ts`'s matcher no longer requires a run to
+open with a base guard — each link is keyed strictly on the presence of
+*its own* guard (spec 18 §4), so an elided-base run is now recovered with a
+plain `.` on the unguarded link(s) and `?.` on the rest (verified directly
+against this fixture's own v99 shape, `tests/gate/passes/optional-chain.test.ts`).
+
+**Separate, newly-identified gap** (new `docs/BUGS.md` row, 2026-09-04): on
+the actual compiled `48-optional-chaining-nullish` v99 binary, *no* chain
+recovers yet, elided-base or not — `48`'s hermesc build reuses the
+null-sentinel register (`r2`) for unrelated values later in the same
+function (a later chain's own spilled-compare destination reuses `r2` as
+its `rC`, and an unrelated `0 ?? 'fallback'`-style literal near the end of
+the function also lands in `r2`), which trips `isNullSentinel`'s
+whole-function "only write in the function is literal `null`" precondition
+(spec 18 §4 precondition 1) for every guard testing against `r2`, not just
+the elided-base ones. This is unrelated to base-guard elision and predates
+this fix (confirmed: 0 chains recovered at v99 before this fix too) — it is
+a distinct, position-blind-precondition bug in its own right.

@@ -4,16 +4,17 @@
 // `before` alone by re-running the real matcher, and the written chain is
 // walked back apart and compared, link by link, against it.
 //
-// D14 / guard-depth (§6 item 2): every link this rung's matcher accepts is
-// guarded — `parseChainAt` (match.ts) requires a `== null` guard
-// immediately before *every* link, including the final commit, so a sound
-// rewrite must use `optmember`/`optcall` (never plain `member`/`call`) at
-// every one of those positions. That per-link "is this the guarded node
-// kind" comparison below *is* the guard-depth check: a mutation that flips
-// one guard's polarity or downgrades one `?.` link to a plain `.` changes
-// exactly that node's kind from `optmember`/`optcall` to `member`/`call`
-// (or vice-versa) with nothing else in the printed source moving — the
-// comparison at "chain link kind mismatch" below is what rejects it.
+// D14 / guard-depth (§6 item 2): `parseChainAt` (match.ts) records, per
+// link, whether a `== null` guard immediately preceded that link's own
+// read — every link that had one must become `optmember`/`optcall`
+// (`?.`); every link that did not (the run's own opening link, when the
+// compiler elided its base guard — §4's closing note) must stay plain
+// `member`/`call` (`.`). That per-link "does the written node's kind match
+// the recomputed guard" comparison below *is* the guard-depth check: a
+// mutation that flips one guard's polarity, downgrades a guarded `?.` link
+// to a plain `.`, or upgrades an unguarded link to a `?.` it never earned
+// changes exactly that node's kind with nothing else in the printed source
+// moving — the comparison at "chain link kind mismatch" below rejects it.
 import type { Expr, Stmt } from "../ast.ts";
 import { parses } from "../ast.ts";
 import type { CheckResult, PassContext } from "../types.ts";
@@ -28,8 +29,8 @@ function sameExpr(a: Expr, b: Expr): boolean {
  *  first — the exact inverse of `rewrite.ts`'s `buildChainExpr`. Returns
  *  `null` the moment a node is not a chain link at all (any other `Expr`
  *  kind) — that ends the unwrap at the true base. */
-function unwrapChain(e: Expr): { readonly base: Expr; readonly links: readonly (ChainLink & { readonly guarded: boolean })[] } {
-  const links: (ChainLink & { readonly guarded: boolean })[] = [];
+function unwrapChain(e: Expr): { readonly base: Expr; readonly links: readonly ChainLink[] } {
+  const links: ChainLink[] = [];
   let cur = e;
   for (;;) {
     if (cur.k === "optmember" || cur.k === "member") {
@@ -78,7 +79,7 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
     for (let i = 0; i < links.length; i++) {
       const got = links[i]!;
       const want = site.links[i]!;
-      if (!got.guarded) return { ok: false, reason: "chain link kind mismatch: link is not ?.-guarded" };
+      if (got.guarded !== want.guarded) return { ok: false, reason: "chain link kind mismatch: guardedness differs from the recomputed site" };
       if (got.kind !== want.kind) return { ok: false, reason: "chain link kind mismatch" };
       if (got.kind === "member") {
         if (got.computed !== want.computed || !sameExpr(got.prop!, want.prop!)) return { ok: false, reason: "chain link property is not reference-equal" };

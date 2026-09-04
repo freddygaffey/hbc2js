@@ -28,6 +28,16 @@ export interface ChainLink {
   readonly prop: Expr | null;
   /** call link's arguments; `null` for a member link. */
   readonly args: readonly Expr[] | null;
+  /** Whether this link's own base was null-checked immediately before this
+   *  read (`?.`) or not (plain `.`) — §4's closing note: the matcher keys
+   *  each link strictly on the presence of *its own* guard, never on
+   *  whether the run's opening link happened to carry one. A run may open
+   *  with one or more unguarded reads (the compiler elides a link's guard
+   *  once it has separately proven that base non-nullish — observed on
+   *  v99's own object-literal bases and on a sibling chain's already-
+   *  proven register, docs/lowering/optional-chaining.md §7) — those links
+   *  are plain `member`/`call` in the output, not `optmember`/`optcall`. */
+  readonly guarded: boolean;
 }
 
 export interface ChainSite {
@@ -129,17 +139,28 @@ function looseEqNull(test: Expr, op: "==" | "!="): { readonly left: Expr; readon
  *  where `B` is the current chain register — precondition 5 (`chain-broken`,
  *  `optcall-this-mismatch`). `callBase` is the register `B` (the callee) was
  *  itself loaded from, required to equal the apply's `thisArg`. */
-function matchLinkExpr(value: Expr, B: Expr, callBase: Expr | null): ChainLink | null {
+/** `B === null` means "unconstrained — discover the base from `value.obj`/
+ *  `value.args[0]` instead of requiring it to equal a known register" —
+ *  only reachable for the very first link of a run whose base guard the
+ *  compiler elided (no `current` chain register has been established yet).
+ *  A call link can never be the discovery case: with no known `current`
+ *  there is also no known `callBase` for the `?.()` receiver check, and
+ *  `Reflect.apply`'s own base is always guarded in every observed fixture
+ *  (open question 2, spec 18 §8) — refuse rather than guess. Returns the
+ *  base actually used (either `B` itself, confirmed, or the discovered
+ *  one) so the caller can seed `current`/`base` on first use. */
+function matchLinkExpr(value: Expr, B: Expr | null, callBase: Expr | null): { readonly link: Omit<ChainLink, "guarded">; readonly base: Expr } | null {
   if (value.k === "member") {
-    if (!sameRegOrExpr(value.obj, B)) return null;
-    return { kind: "member", computed: value.computed, prop: value.prop, args: null };
+    if (B !== null && !sameRegOrExpr(value.obj, B)) return null;
+    return { link: { kind: "member", computed: value.computed, prop: value.prop, args: null }, base: value.obj };
   }
   if (value.k === "call" && value.callee.k === "member" && !value.callee.computed && value.callee.obj.k === "ident" && value.callee.obj.name === "Reflect" && value.callee.prop.k === "lit" && value.callee.prop.text === "apply" && value.args.length === 3) {
+    if (B === null) return null; // no known base to discover a call link from
     const [callee, thisArg, argsArr] = value.args;
     if (!sameRegOrExpr(callee!, B)) return null;
     if (callBase === null || !sameRegOrExpr(thisArg!, callBase)) return null; // optcall-this-mismatch
     if (argsArr!.k !== "array") return null;
-    return { kind: "call", computed: false, prop: null, args: argsArr!.elements };
+    return { link: { kind: "call", computed: false, prop: null, args: argsArr!.elements }, base: callee! };
   }
   return null;
 }
@@ -155,7 +176,7 @@ function matchLinkExpr(value: Expr, B: Expr, callBase: Expr | null): ChainLink |
  * it survives for `interleaved-effect` to trip on). Falls back to reading
  * `list[cursor]` directly as the link statement.
  */
-function readLinkStmt(list: readonly Stmt[], cursor: number, current: Expr, currentBase: Expr | null): { readonly link: ChainLink; readonly target: string; readonly afterLink: number } | null {
+function readLinkStmt(list: readonly Stmt[], cursor: number, current: Expr | null, currentBase: Expr | null): { readonly link: Omit<ChainLink, "guarded">; readonly base: Expr; readonly target: string; readonly afterLink: number } | null {
   const prep = list[cursor];
   const real = list[cursor + 1];
   if (prep !== undefined && prep.k === "expr" && prep.expr.k === "assign" && prep.expr.target.k === "ident" && isRegisterName(prep.expr.target.name) && prep.expr.value.k === "lit" && real !== undefined && real.k === "expr" && real.expr.k === "assign" && real.expr.target.k === "ident") {
@@ -163,122 +184,118 @@ function readLinkStmt(list: readonly Stmt[], cursor: number, current: Expr, curr
     const value = real.expr.value;
     if (value.k === "member" && value.computed && value.prop.k === "ident" && value.prop.name === prepReg) {
       const substituted = { ...value, prop: prep.expr.value };
-      const link = matchLinkExpr(substituted, current, currentBase);
-      if (link !== null) return { link, target: real.expr.target.name, afterLink: cursor + 2 };
+      const read = matchLinkExpr(substituted, current, currentBase);
+      if (read !== null) return { link: read.link, base: read.base, target: real.expr.target.name, afterLink: cursor + 2 };
     }
   }
   const linkStmt = list[cursor];
   if (linkStmt === undefined || linkStmt.k !== "expr" || linkStmt.expr.k !== "assign" || linkStmt.expr.target.k !== "ident") return null;
-  const link = matchLinkExpr(linkStmt.expr.value, current, currentBase);
-  if (link === null) return null;
-  return { link, target: linkStmt.expr.target.name, afterLink: cursor + 1 };
+  const read = matchLinkExpr(linkStmt.expr.value, current, currentBase);
+  if (read === null) return null;
+  return { link: read.link, base: read.base, target: linkStmt.expr.target.name, afterLink: cursor + 1 };
 }
 
 // ---------------------------------------------------------------------------
 // C-rule (the optional chain itself).
 // ---------------------------------------------------------------------------
 
-/** Tries to parse a full run starting at `list[start]`: reset, base guard,
- *  then alternating link/guard pairs, ending at the commit + tail `break`.
- *  Returns `null` on any precondition failure — the caller (`match`) simply
- *  tries the next `start`. */
-function parseChainAt(list: readonly Stmt[], start: number, fnBody: readonly Stmt[]): ChainSite | null {
-  const baseGuard = matchBaseGuard(list, start, fnBody);
-  if (baseGuard === null) return null;
-  const { rRes, B0, label } = baseGuard;
-  let cursor = start + baseGuard.consumed;
-
-  const links: ChainLink[] = [];
-  const tempRegs: string[] = [];
-  let current: Expr = B0;
-  let currentBase: Expr | null = null;
-  for (;;) {
-    const read = readLinkStmt(list, cursor, current, currentBase);
-    if (read === null) return null; // chain-broken
-    const { link, target, afterLink } = read;
-    if (target === rRes) {
-      if (!matchTailBreak(list[afterLink], label)) return null; // not-suffix
-      links.push(link);
-      const endIndex = afterLink + 1;
-      if (!labelExclusive(list, label, start, endIndex)) return null; // label-shared
-      if (identUses(list.slice(start, endIndex), rRes).reads > 0) return null; // result-read-early
-      return { kind: "chain", rRes, base: B0, links, startIndex: start, endIndex, label, tempRegs };
-    }
-    if (!isRegisterName(target)) return null;
-    const nextGuard = matchLinkGuard(list, afterLink, label, rRes, target, fnBody);
-    if (nextGuard === null) return null;
-    tempRegs.push(target);
-    links.push(link);
-    currentBase = current;
-    current = { k: "ident", name: target };
-    cursor = afterLink + nextGuard.consumed;
-  }
-}
-
 /**
- * The run's anchor (§4 "C — optional chain"): the reset of `rRes` and the
- * base guard on `B0`, in either version's statement order (§2.4) —
- * v94 `reset; if (B0 == N) break L;`, v99 `rC = B0 == N; reset; if (rC)
- * break L;`. Neither shape is known ahead of time (nothing before `start`
- * says whether this is v94 or v99, or names `B0`/`L`), so both are tried
- * directly against `list[start..]`.
+ * A guard on `expectedReg` (§4 "C — optional chain" anchor / alternating
+ * link/guard run), in either version's statement order (§2.4) — v94
+ * `reset; if (X == N) break L;`, v99 `rC = X == N; reset; if (rC) break
+ * L;`. `expectedReg === null` *discovers* `X`/`rRes`/`label` from the
+ * guard itself (only true for the very first guard a run finds, whether
+ * that is the base guard or, when the base guard is elided, the first
+ * link's own guard); once known, every later call requires `X` to equal
+ * `expectedReg` and (when `expectedRRes`/`expectedLabel` are given) the
+ * reset/break to still target the run's own `rRes`/`label` (precondition
+ * 3 — every reset writes the *same* register; precondition 2's label
+ * exclusivity is checked separately once the whole run is known).
  */
-function matchBaseGuard(list: readonly Stmt[], start: number, fnBody: readonly Stmt[]): { readonly rRes: string; readonly B0: Expr; readonly label: string; readonly consumed: number } | null {
-  // v94: reset, then an inline `if (B0 == N) break L`.
-  const reset0 = matchReset(list[start]);
-  if (reset0 !== null) {
-    const g = matchGuardIf(list[start + 1], null);
+function matchChainGuard(list: readonly Stmt[], idx: number, fnBody: readonly Stmt[], expectedReg: Expr | null, expectedRRes: string | null, expectedLabel: string | null): { readonly rRes: string; readonly tested: Expr; readonly label: string; readonly consumed: number } | null {
+  // v94: reset, then an inline `if (X == N) break L`.
+  const reset0 = matchReset(list[idx]);
+  if (reset0 !== null && (expectedRRes === null || reset0.reg === expectedRRes)) {
+    const g = matchGuardIf(list[idx + 1], expectedLabel);
     if (g !== null) {
       const eq = looseEqNull(g.test, "==");
-      if (eq !== null && isNullSentinel(eq.right, fnBody)) return { rRes: reset0.reg, B0: eq.left, label: g.label, consumed: 2 };
+      if (eq !== null && isNullSentinel(eq.right, fnBody) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
+        return { rRes: reset0.reg, tested: eq.left, label: g.label, consumed: 2 };
+      }
     }
   }
   // v99: a spilled compare first, then the reset, then `if (rC) break L`.
-  const s0 = list[start];
+  const s0 = list[idx];
   if (s0 !== undefined && s0.k === "expr" && s0.expr.k === "assign" && s0.expr.target.k === "ident" && isRegisterName(s0.expr.target.name)) {
     const eq = looseEqNull(s0.expr.value, "==");
-    if (eq !== null && isNullSentinel(eq.right, fnBody)) {
+    if (eq !== null && isNullSentinel(eq.right, fnBody) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
       const rC = s0.expr.target.name;
-      const reset1 = matchReset(list[start + 1]);
-      if (reset1 !== null) {
-        const g = matchGuardIf(list[start + 2], null);
-        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { rRes: reset1.reg, B0: eq.left, label: g.label, consumed: 3 };
+      const reset1 = matchReset(list[idx + 1]);
+      if (reset1 !== null && (expectedRRes === null || reset1.reg === expectedRRes)) {
+        const g = matchGuardIf(list[idx + 2], expectedLabel);
+        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { rRes: reset1.reg, tested: eq.left, label: g.label, consumed: 3 };
       }
     }
   }
   return null;
 }
 
-/**
- * An intermediate link's own guard (§4's alternating link/guard run): the
- * link just consumed at `list[idx - 1]` produced `targetName`; this
- * consumes its guard, requiring the reset to still target the run's own
- * `rRes` (precondition 3 — every reset writes the *same* register). Same
- * two version shapes as `matchBaseGuard`.
- */
-function matchLinkGuard(list: readonly Stmt[], idx: number, label: string, rRes: string, targetName: string, fnBody: readonly Stmt[]): { readonly N: Expr; readonly label: string; readonly consumed: number } | null {
-  const target: Expr = { k: "ident", name: targetName };
-  const reset0 = matchReset(list[idx]);
-  if (reset0 !== null && reset0.reg === rRes) {
-    const g = matchGuardIf(list[idx + 1], label);
+/** Tries to parse a full run starting at `list[start]`: alternating
+ *  guard/link pairs, ending at the commit + tail `break`. §4's closing
+ *  note: a link is keyed strictly on the *presence* of its own guard, so
+ *  the run need not open with one — when `list[start]` is not a guard at
+ *  all, this reads it directly as an unguarded first link (`guarded:
+ *  false`) and discovers `base`/`current` from its own operand instead of
+ *  from a preceding `== null` check; every subsequent unguarded position is
+ *  handled the same way, so an elided guard anywhere in the run (not only
+ *  at the open) falls out of the same loop. `rRes`/`label` are themselves
+ *  discovered from whichever statement is the run's *first* real guard —
+ *  until one is found, `target === rRes` can never be true, so an all-
+ *  unguarded run (no `?.` in it at all — precondition 6, guard count ≥ 1)
+ *  can never spuriously reach a commit; it just runs out of link statements
+ *  and refuses. Returns `null` on any precondition failure — the caller
+ *  (`match`) simply tries the next `start`. */
+function parseChainAt(list: readonly Stmt[], start: number, fnBody: readonly Stmt[]): ChainSite | null {
+  const links: ChainLink[] = [];
+  const tempRegs: string[] = [];
+  let rRes: string | null = null;
+  let label: string | null = null;
+  let base: Expr | null = null;
+  let current: Expr | null = null;
+  let currentBase: Expr | null = null;
+  let cursor = start;
+
+  for (;;) {
+    const g = matchChainGuard(list, cursor, fnBody, current, rRes, label);
+    let guarded = false;
     if (g !== null) {
-      const eq = looseEqNull(g.test, "==");
-      if (eq !== null && sameRegOrExpr(eq.left, target) && isNullSentinel(eq.right, fnBody)) return { N: eq.right, label: g.label, consumed: 2 };
+      guarded = true;
+      if (rRes === null) { rRes = g.rRes; label = g.label; }
+      if (current === null) current = g.tested;
+      cursor += g.consumed;
     }
-  }
-  const s0 = list[idx];
-  if (s0 !== undefined && s0.k === "expr" && s0.expr.k === "assign" && s0.expr.target.k === "ident" && isRegisterName(s0.expr.target.name)) {
-    const eq = looseEqNull(s0.expr.value, "==");
-    if (eq !== null && sameRegOrExpr(eq.left, target) && isNullSentinel(eq.right, fnBody)) {
-      const rC = s0.expr.target.name;
-      const reset1 = matchReset(list[idx + 1]);
-      if (reset1 !== null && reset1.reg === rRes) {
-        const g = matchGuardIf(list[idx + 2], label);
-        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { N: eq.right, label: g.label, consumed: 3 };
-      }
+
+    const read = readLinkStmt(list, cursor, current, currentBase);
+    if (read === null) return null; // chain-broken
+    const { link, base: readBase, target, afterLink } = read;
+    if (current === null) current = readBase;
+    if (base === null) base = current;
+
+    if (rRes !== null && target === rRes) {
+      if (!matchTailBreak(list[afterLink], label!)) return null; // not-suffix
+      links.push({ ...link, guarded });
+      const endIndex = afterLink + 1;
+      if (!labelExclusive(list, label!, start, endIndex)) return null; // label-shared
+      if (identUses(list.slice(start, endIndex), rRes).reads > 0) return null; // result-read-early
+      return { kind: "chain", rRes, base, links, startIndex: start, endIndex, label: label!, tempRegs };
     }
+    if (!isRegisterName(target)) return null;
+    links.push({ ...link, guarded });
+    tempRegs.push(target);
+    currentBase = current;
+    current = { k: "ident", name: target };
+    cursor = afterLink;
   }
-  return null;
 }
 
 /** Precondition 2 (`label-shared`): no statement in `list` outside

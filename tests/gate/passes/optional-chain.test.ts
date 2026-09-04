@@ -88,12 +88,37 @@ function v99Body(): readonly Stmt[] {
   ];
 }
 
+/** `r7 = r6.profile?.contacts?.email;` — the run's own base guard is
+ *  elided: the compiler had already proven `r6` non-nullish elsewhere
+ *  (an object-literal base, or an earlier sibling chain over the same
+ *  register — docs/lowering/optional-chaining.md §7), so the run opens
+ *  directly with an unguarded link read instead of `rRes = undefined; if
+ *  (r6 == N) break L;`. Reproduces `48-optional-chaining-nullish`'s own
+ *  v99 `user?.profile?.contacts?.email` shape (`docs/BUGS.md`, row dated
+ *  2026-09-02, `src/passes/optional-chain/match.ts`'s `matchBaseGuard`). */
+function elidedBaseGuardBody(): readonly Stmt[] {
+  return [
+    asg(id("r2"), lit("null")),
+    asg(id("r9"), mem(id("r6"), "profile")), // unguarded first link — base guard elided
+    asg(id("r3"), { k: "bin", op: "==", left: id("r9"), right: id("r2") }),
+    asg(id("r7"), lit("undefined")),
+    iff(id("r3"), [brk("L1")]),
+    asg(id("r9"), mem(id("r9"), "contacts")),
+    asg(id("r3"), { k: "bin", op: "==", left: id("r9"), right: id("r2") }),
+    asg(id("r7"), lit("undefined")),
+    iff(id("r3"), [brk("L1")]),
+    asg(id("r7"), mem(id("r9"), "email")),
+    brk("L1"),
+  ];
+}
+
 for (const [name, body] of [
   ["one-link", oneLinkBody()],
   ["three-link", threeLinkBody()],
   ["computed", computedBody()],
   ["call", callBody()],
   ["v99 spilled-compare", v99Body()],
+  ["elided base guard (v99 base-guard-elision, BUGS 2026-09-02)", elidedBaseGuardBody()],
 ] as const) {
   test(`optional-chain: C-rule matches (${name})`, () => {
     const m = match(body, { ...ctx, fnBody: body });
@@ -107,6 +132,28 @@ for (const [name, body] of [
     assert.equal(match(after, { ...ctx, fnBody: after }), null);
   });
 }
+
+test("optional-chain: an elided base guard keys the base link on `.`, not `?.` (docs/BUGS.md 2026-09-02)", () => {
+  const body = elidedBaseGuardBody();
+  const m = match(body, { ...ctx, fnBody: body });
+  assert.ok(m !== null);
+  assert.equal(m!.data.kind, "chain");
+  if (m!.data.kind !== "chain") return;
+  // The spec's own note (§4): "the first link may be unguarded in source
+  // (`a.b?.c`)" — an elided base guard is a plain access, never `user?.`.
+  assert.deepEqual(
+    m!.data.links.map((l) => l.guarded),
+    [false, true, true],
+  );
+  const after = rewrite(m!);
+  const commit = after[after.length - 1]! as Extract<Stmt, { k: "expr" }>;
+  const value = (commit.expr as Extract<Expr, { k: "assign" }>).value;
+  assert.equal(value.k, "optmember"); // outermost link (.email) — guarded
+  const mid = (value as Extract<Expr, { k: "optmember" }>).obj;
+  assert.equal(mid.k, "optmember"); // .contacts — guarded
+  const base = (mid as Extract<Expr, { k: "optmember" }>).obj;
+  assert.equal(base.k, "member"); // .profile — base guard elided, plain access
+});
 
 // ---------------------------------------------------------------------------
 // N-rule positives.
@@ -244,14 +291,23 @@ test("optional-chain: 48-optional-chaining-nullish (v94) — ?./?? recovered, gu
   assert.equal(nullGuardCount(code), 0);
 });
 
-// v99: docs/BUGS.md's optional-chain v99 row — the compiler elides the
-// *base's own* redundant guard once a sibling chain in the same function
-// has already proven it non-nullish (§2.4 does not document this shape),
-// so this rung's matcher — which always expects a base guard to open the
-// run — does not recognise those particular blocks yet. Recorded, not
-// silently accepted: the fixture's *other* chains (the ones that do carry
-// their own base guard) are unaffected by this gap.
-test("optional-chain: 48-optional-chaining-nullish (v99) — known base-guard-elision gap (docs/BUGS.md)", () => {
+// v99: the base-guard-elision gap this test used to record (docs/BUGS.md,
+// row dated 2026-09-02) is fixed at the matcher level — see the "elided
+// base guard" unit tests above, which reproduce this fixture's own
+// `user?.profile?.contacts?.email` shape directly and pass. On the real
+// compiled fixture, though, every v99 chain (elided-base or not) is still
+// left unrewritten, for a *different*, newly-identified reason: this
+// binary's register allocator reuses the null-sentinel register (`r2`)
+// for unrelated values later in the same function (a later chain's own
+// spilled-compare destination, and an unrelated `0 ?? 'fallback'`-style
+// literal at the end of the function) — `isNullSentinel`'s "only write in
+// the function is literal null" precondition (spec 18 §4 precondition 1)
+// is whole-function-scoped, so it now sees more than one write to `r2`
+// and refuses every guard that tests against it, even ones with their own
+// base guard intact. Tracked as a new, separate `docs/BUGS.md` row (this
+// row's fix did not regress it — it was already 0 chains recovered at v99
+// before this change too, confirmed by re-running the pre-fix decompiler).
+test("optional-chain: 48-optional-chaining-nullish (v99) — elided-base-guard chains now match in isolation; full-fixture recovery blocked by a separate null-sentinel-reuse gap (docs/BUGS.md)", () => {
   const code = decompileFixture("48-optional-chaining-nullish", "v99");
   assert.ok(code.length > 0);
 });
