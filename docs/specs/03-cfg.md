@@ -618,13 +618,30 @@ over the RPO with a flat lattice** is enough and is deliberately small:
 type EnvValue =
   | { readonly t: "env"; readonly node: EnvNodeId }
   | { readonly t: "closure"; readonly fn: number; readonly env: EnvNodeId }
+  | { readonly t: "none" }
   | { readonly t: "unknown" };
 ```
 
-* Transfer: `Create*Environment` → `env`; `GetParentEnvironment`/`GetEnvironment`
+`none` is the **undefined environment operand**, and it is a fact, not an
+absence: Hermes compiles a function that captures nothing to
+`LoadConstUndefined rE; CreateClosure rD, rE, fn`. Folding that into `unknown`
+makes every non-capturing function an orphan with an unknown `selfEnv`, and the
+closures *it* creates cascade into orphans too — 4,009 of the 4,187 orphans on
+react-navigation-example-0.85.3 (docs/BUGS.md 2026-09-04). `none` also answers
+the parent operand of `CreateEnvironment`/`CreateInnerEnvironment`: an
+environment created with an undefined parent has no parent.
+
+* Transfer: `Create*Environment` → `env`; `LoadConstUndefined` → `none`;
+  `GetParentEnvironment`/`GetEnvironment`
   with a static `levels` → walk `parent` that many times (`unknown` if it runs
   off the top); `GetClosureEnvironment r, c` → the closure's env if `c` is a
   tracked `closure`, else `unknown`; `Mov` copies; every other write → `unknown`.
+* `Create*Closure d, rE, fn` with `rE` = `none` records `closureEnvOf(fn) =
+  null` — *known* to capture nothing, which is what makes it not an orphan. If
+  another site creates the same `fn` with a real environment, that is a genuine
+  conflict (`W_AMBIGUOUS_CLOSURE_ENV`): `none` never loses to, and never
+  overrides, a real environment, because binding the body to that environment
+  would be wrong on the undefined-operand path.
 * Merge at joins: equal values meet to themselves, everything else to `unknown`.
 * Iterate to a fixed point over RPO. Loops converge in ≤ 2 passes with this
   lattice; cap at `blocks.length` and bail to `unknown` if not.

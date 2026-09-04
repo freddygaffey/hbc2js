@@ -28,6 +28,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
+import { analyseModule } from "../../../src/cfg/index.ts";
+import { parseHbc } from "../../../src/parse/module.ts";
 import { requireSweep } from "../../support/tiers.ts";
 import { cachedDecompile } from "../../support/decompiled.ts";
 
@@ -71,4 +73,41 @@ test("react-navigation-example-0.85.3: a loop-local env captured from a sibling 
     `only ${result.diagnostics.filter((d) => d.code === "W_ORPHAN_HOSTED").length} orphans were hosted inside a function, expected at least ${MIN_HOSTED} (src/emit/placement.ts)`,
   );
   assert.ok(isolated.length <= MAX_ISOLATED, `${isolated.length} functions isolated for E_UNBOUND_IDENT, was ${MAX_ISOLATED} at the fix commit — that number must only go down (docs/BUGS.md 2026-09-04)`);
+});
+
+/** docs/BUGS.md 2026-09-04, cause (b): 4,009 of this bundle's 4,187 orphan
+ *  functions were not orphans at all — they are created with an *undefined*
+ *  environment operand (`LoadConstUndefined rE; CreateClosure rD, rE, fn`),
+ *  which is Hermes stating that the closure captures nothing. `src/cfg/env-graph.ts`
+ *  now records that as a known-empty environment, so `W_ORPHAN_FUNCTION` on this
+ *  bundle went 4,009 -> 0 and every one of those functions carries its own
+ *  `selfEnv` (null) into the fixed point instead of poisoning it. A ratchet: it
+ *  may go down, never up. */
+const MAX_ORPHAN_FUNCTIONS = 0;
+/** Functions the graph knows capture nothing. A floor, so losing the `none`
+ *  lattice value fails here and not only on the count above. Measured: 4,188
+ *  (4,009 undefined-operand closures + the 178 W_AMBIGUOUS_CLOSURE_ENV ones +
+ *  the global function). */
+const MIN_KNOWN_EMPTY_ENV = 4000;
+
+test("react-navigation-example-0.85.3: a closure created with an undefined environment operand is not an orphan", (t) => {
+  if (!requireSweep(t)) return;
+  if (!existsSync(HBC)) {
+    t.skip(`${HBC} not present — run this fixture's fetch.sh first (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  const mod = parseHbc(readFileSync(HBC));
+  const analysis = analyseModule(mod, { strictEnv: false });
+  const graph = analysis.envGraph;
+  const orphans = analysis.diagnostics.filter((d) => d.code === "W_ORPHAN_FUNCTION");
+  assert.ok(
+    orphans.length <= MAX_ORPHAN_FUNCTIONS,
+    `${orphans.length} functions have no known closure creation environment, was ${MAX_ORPHAN_FUNCTIONS} at the fix commit — that number must only go down (docs/BUGS.md 2026-09-04, src/cfg/env-graph.ts \`none\` lattice value)`,
+  );
+  let knownEmpty = 0;
+  for (let i = 0; i < mod.functions.length; i++) if (graph.closureEnvOf.has(i) && graph.closureEnvOf.get(i) === null) knownEmpty++;
+  assert.ok(
+    knownEmpty >= MIN_KNOWN_EMPTY_ENV,
+    `only ${knownEmpty} functions are recorded as capturing nothing, expected at least ${MIN_KNOWN_EMPTY_ENV} (src/cfg/env-graph.ts)`,
+  );
 });

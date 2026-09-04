@@ -49,9 +49,24 @@ export function isEnvCreate(name: string): boolean {
 // §6.2 lattice
 // ---------------------------------------------------------------------------
 
-type EnvValue = { readonly t: "env"; readonly node: EnvNodeId } | { readonly t: "closure"; readonly fn: number; readonly env: EnvNodeId | null } | { readonly t: "unknown" };
+// "none" is the *undefined* environment operand. Hermes >= v96 compiles a
+// function that captures nothing to `LoadConstUndefined rE; CreateClosure rD,
+// rE, fn` — `rE` is not an unknown environment, it is the definite statement
+// that this closure has no environment at all (probe: `nocap` in
+// tests/fixtures/constructs/61-closure-no-capture, v99 `[@30] LoadConstUndefined
+// 1; [@32] CreateClosure 3, 1, 3`). Treating it as UNKNOWN made every such
+// function an orphan, and — worse — left its own `selfEnv` unknown, so its
+// `CreateFunctionEnvironment` had no parent and every closure *it* created
+// cascaded into an orphan too (docs/BUGS.md 2026-09-04, cause b: 2,254 + 1,755
+// on react-navigation-example).
+type EnvValue =
+  | { readonly t: "env"; readonly node: EnvNodeId }
+  | { readonly t: "closure"; readonly fn: number; readonly env: EnvNodeId | null }
+  | { readonly t: "none" }
+  | { readonly t: "unknown" };
 
 const UNKNOWN: EnvValue = { t: "unknown" };
+const NO_ENV: EnvValue = { t: "none" };
 
 function sameValue(a: EnvValue, b: EnvValue): boolean {
   if (a.t !== b.t) return false;
@@ -137,6 +152,12 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
 
   // ---- Fixed point ----------------------------------------------------------
   const closureEnvOf = new Map<number, EnvNodeId | null>();
+  /** Functions every one of whose creation sites passed an *undefined*
+   *  environment operand: they capture nothing. Kept apart from `closureEnvOf`
+   *  so the fixed point stays monotone — a later site that supplies a real
+   *  environment simply wins, and a site that supplies a different real
+   *  environment still conflicts through `closureEnvOf`. */
+  const noEnvClosures = new Set<number>();
   const closureEnvConflict = new Set<number>();
   closureEnvOf.set(mod.header.globalCodeIndex, null);
 
@@ -160,7 +181,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
 
   const runFunction = (f: number, collect: RoundOut | null): boolean => {
     const cfg = input.cfg(f);
-    const selfEnv = closureEnvOf.has(f) ? closureEnvOf.get(f)! : undefined;
+    const selfEnv = closureEnvOf.has(f) ? closureEnvOf.get(f)! : noEnvClosures.has(f) ? null : undefined;
     let learned = false;
     let state: State = new Map();
 
@@ -175,13 +196,19 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
     const noteClosure = (fnId: number, env: EnvNodeId): void => {
       drafts[env]!.closures.add(fnId);
       const known = closureEnvOf.get(fnId);
-      if (known === undefined) {
+      if (!closureEnvOf.has(fnId)) {
         closureEnvOf.set(fnId, env);
         learned = true;
       } else if (known !== env && !closureEnvConflict.has(fnId)) {
         closureEnvConflict.add(fnId);
         learned = true;
       }
+    };
+
+    const noteNoEnvClosure = (fnId: number): void => {
+      if (noEnvClosures.has(fnId)) return;
+      noEnvClosures.add(fnId);
+      learned = true;
     };
 
     const applyTransfer = (insn: Instruction, collect: RoundOut | null): void => {
@@ -195,7 +222,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
         else if (name === "CreateEnvironment" && insn.operands.length === 1) parent = selfEnv;
         else {
           const pv = get(insn.operands[1]!.value);
-          parent = pv.t === "env" ? pv.node : undefined;
+          parent = pv.t === "env" ? pv.node : pv.t === "none" ? null : undefined;
         }
         if (parent !== undefined && draft.parent === undefined) {
           draft.parent = parent;
@@ -223,6 +250,10 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
         set(insn.operands[0]!.value, c.t === "closure" && c.env !== null ? { t: "env", node: c.env } : UNKNOWN);
         return;
       }
+      if (name === "LoadConstUndefined") {
+        set(insn.operands[0]!.value, NO_ENV);
+        return;
+      }
       if (name === "Mov" || name === "MovLong") {
         set(insn.operands[0]!.value, get(insn.operands[1]!.value));
         return;
@@ -232,6 +263,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
         const env = ev.t === "env" ? ev.node : null;
         const fnId = insn.operands.find((o) => o.role === "function")!.value;
         if (env !== null) noteClosure(fnId, env);
+        else if (ev.t === "none") noteNoEnvClosure(fnId);
         set(insn.operands[0]!.value, { t: "closure", fn: fnId, env });
         return;
       }
@@ -241,6 +273,7 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
         const env = ev.t === "env" ? ev.node : null;
         const fnId = insn.operands[insn.operands.length - 1]!.value;
         if (env !== null) noteClosure(fnId, env);
+        else if (ev.t === "none") noteNoEnvClosure(fnId);
         clobber(insn);
         set(insn.operands[0]!.value, { t: "closure", fn: fnId, env });
         return;
@@ -404,6 +437,16 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
   // ---- Final round: collect accesses ---------------------------------------
   const collected: RoundOut = { accesses: [], resolvedAt: new Map() };
   for (const f of input.functionIndices) runFunction(f, collected);
+
+  // A function whose every creation site passed an *undefined* environment is
+  // not an orphan: its environment is known to be none. A function created both
+  // with a real environment and with none is genuinely ambiguous — binding it to
+  // the real one would be a silent mis-binding on the other path — so it joins
+  // the W_AMBIGUOUS_CLOSURE_ENV set and stays unhosted.
+  for (const f of noEnvClosures) {
+    if (!closureEnvOf.has(f)) closureEnvOf.set(f, null);
+    else if (closureEnvOf.get(f) !== null) closureEnvConflict.add(f);
+  }
 
   for (const f of closureEnvConflict) {
     diagnostics.push({
