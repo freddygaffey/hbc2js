@@ -569,21 +569,18 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
       if (insn.operands.length === 5) {
         // v<=96: (dest, sizeHint, numProps, keyBufferIdx, valueBufferIdx)
         const keys = objectKeys(f.mod, V(insn, 3), V(insn, 2), f.fn.index, insn.offset);
-        f.recordShape(V(insn, 0), keys);
         return set(V(insn, 0), objectFromBuffers(f.mod, keys, V(insn, 4), f.fn.index, insn.offset));
       }
       // v>=97: (dest, shapeTableIdx, valueBufferOffset)
       const shape = f.mod.shapes[V(insn, 1)];
       if (shape === undefined) return fail(`shape index ${V(insn, 1)} out of range`);
       const keys = objectKeys(f.mod, shape.keyBufferOffset, shape.numProps, f.fn.index, insn.offset);
-      f.recordShape(V(insn, 0), keys);
       return set(V(insn, 0), objectFromBuffers(f.mod, keys, V(insn, 2), f.fn.index, insn.offset));
     }
     case "NewObjectWithBufferAndParent": {
       const shape = f.mod.shapes[V(insn, 2)];
       if (shape === undefined) return fail(`shape index ${V(insn, 2)} out of range`);
       const keys = objectKeys(f.mod, shape.keyBufferOffset, shape.numProps, f.fn.index, insn.offset);
-      f.recordShape(V(insn, 0), keys);
       const literalObj = objectFromBuffers(f.mod, keys, V(insn, 3), f.fn.index, insn.offset);
       return set(V(insn, 0), call(prop(id("Object"), "assign"), [call(prop(id("Object"), "create"), [RG(insn, 1)]), literalObj]));
     }

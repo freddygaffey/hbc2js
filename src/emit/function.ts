@@ -4,7 +4,6 @@ import type { Diagnostic } from "../errors.ts";
 import type { DecodedFunction, Instruction } from "../disasm/decode.ts";
 import type { BlockId, EnvGraph, FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import { siteKey } from "../cfg/types.ts";
-import { writtenRegisters } from "../cfg/reg-effects.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { BuiltinTable, TypeOfIsTable } from "../tables/types.ts";
 import { typeOfIsTableFor } from "./typeofis.ts";
@@ -17,6 +16,7 @@ import { lowerInstruction, planBlock, prop } from "./lower.ts";
 import { originOfInsn, stampFrom, withOrigin, type Origin } from "./origin.ts";
 import { EXC_VALUE, envSlot, excName, fnName, GEN_DONE, GEN_STATE, labelName, PC_VAR, quote, reg, SCRATCH, stateVar } from "./names.ts";
 import { argSlotBase } from "./semantics.ts";
+import { resolveShapes } from "./shapes.ts";
 
 export interface FunctionEmitter {
   readonly analysis: ModuleAnalysis;
@@ -39,7 +39,6 @@ export interface FunctionEmitter {
    *  function has per-creation-context copies and this site captured copy i's
    *  environment (report 2026-09-05 §4). */
   closureName(functionIndex: number, offset: number): string;
-  recordShape(register: number, keys: readonly string[]): void;
   /** The env node created at `offset`, when its slots are declared inline. */
   loopLocalSlotsAt(offset: number): readonly string[] | undefined;
   /** The function body to inline at a `CreateClosure` of `functionIndex`. */
@@ -166,7 +165,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
 
   const usedHelpers = new Set<string>();
   let needScratch = false;
-  const shapes = new Map<number, readonly string[]>();
+  // Object-literal shapes for `Put`/`GetOwnBySlotIdx`, resolved once over the
+  // CFG (`src/emit/shapes.ts`) rather than tracked in emission order.
+  const shapeAt = resolveShapes(mod, fn, cfg);
 
   // `Function.prototype.length` is observable, and a rest parameter does not
   // count towards it: `function variadicSum(...nums)` has `paramCount = 2` in
@@ -234,9 +235,6 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     closureName(functionIndex: number, offset: number): string {
       return input.closureNameAt?.get(siteKey(fn.index, offset)) ?? fnName(functionIndex);
     },
-    recordShape(register: number, keys: readonly string[]): void {
-      shapes.set(register, keys);
-    },
     loopLocalSlotsAt(offset: number): readonly string[] | undefined {
       return input.loopLocalEnvSlots.get(offset);
     },
@@ -244,10 +242,13 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       return input.inlineChildren.get(functionIndex);
     },
     shapeKeyFor(register: number, slot: number, offset: number): string {
-      const keys = shapes.get(register);
-      const key = keys?.[slot];
+      const keys = shapeAt.get(offset);
+      if (keys === undefined) {
+        throw new Hbc2jsError(ErrorCode.E_EMIT_UNSUPPORTED, `slot ${slot} of r${register} has no known object shape at offset ${offset} (no NewObjectWithBuffer for r${register} dominates it, or the paths reaching it disagree)`, { functionIndex: fn.index, offset, section: "emit" });
+      }
+      const key = keys[slot];
       if (key === undefined) {
-        throw new Hbc2jsError(ErrorCode.E_EMIT_UNSUPPORTED, `slot ${slot} of r${register} has no known object shape at offset ${offset}`, { functionIndex: fn.index, offset, section: "emit" });
+        throw new Hbc2jsError(ErrorCode.E_EMIT_UNSUPPORTED, `slot ${slot} of r${register} is out of range for its ${keys.length}-property object shape at offset ${offset}`, { functionIndex: fn.index, offset, section: "emit" });
       }
       return key;
     },
@@ -291,9 +292,6 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       lowerInstruction(f, insn, i, plan, out);
       // §16: every statement this instruction produced points back at it.
       stampFrom(out, before, originOfInsn(fn.index, insn));
-      // Keep the object-shape map honest: a register written by anything other
-      // than a `NewObjectWithBuffer` no longer holds that shape.
-      if (!insn.name.startsWith("NewObjectWithBuffer")) for (const r of writtenRegisters(insn)) shapes.delete(r);
     }
     return out;
   };

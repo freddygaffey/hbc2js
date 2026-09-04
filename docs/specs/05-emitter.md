@@ -181,6 +181,40 @@ checker compares it (`docs/EQUIVALENCE.md` §2.2).
 **Undefined has no tag** in the serialized-literal encoding; treat "string" as
 the fallback per HBC-FORMAT §6.3 and assert the resulting string id is in range.
 
+**Object shapes: `Put`/`GetOwnBySlotIdx`.** These name a property by its *slot
+index* in the hidden class the object was created with, never by name, so the
+key list has to be recovered from the `NewObjectWithBuffer*` that created the
+object in the register being read. That is a control-flow question, not a
+textual one, and `src/emit/shapes.ts` answers it with a forward **must**-analysis
+over the function's CFG (shaped like available expressions), run once per
+function before lowering:
+
+* **Lattice.** State is a register → interned key-array map. The entry block
+  starts empty; every other block starts at ⊤ ("not yet reached"); a block's IN
+  is the meet of its analysed predecessors' OUTs, iterated to a fixpoint. Meet
+  keeps a register only when both sides map it to the *same* key array, so a
+  join of two different literals resolves to nothing. Blocks still ⊤ at the
+  fixpoint are unreachable through normal edges and finalise as empty, and an
+  exception-handler entry always starts empty (a throw can arrive from anywhere
+  in the region).
+* **Transfer.** A `NewObjectWithBuffer`/`…Long`/`…AndParent` sets its
+  destination's shape; `Mov`/`MovLong` copies the source's (same object, same
+  hidden class); any other write to a register drops it.
+* **Rule.** A slot read resolves *only* when every path from the function entry
+  to it agrees on one creation shape — i.e. a creation dominates it and nothing
+  in between clobbers the register. Otherwise the emitter raises
+  `E_EMIT_UNSUPPORTED` naming the register, the slot and the offset. A property
+  name is never guessed (artifact truth, `docs/DECISIONS.md`), and per-function
+  isolation turns that refusal into one throwing stub rather than a lost module.
+
+This replaced a single mutable map advanced in *statement emission order*, which
+is not the order the VM executes blocks in: on react-navigation-example fn#8640
+the `if` arm printed first clobbered r3, so the `PutOwnBySlotIdx r3, …, 1` in
+the arm printed second saw no shape at all even though the creating
+`NewObjectWithBuffer` dominates both arms (`docs/BUGS.md` 2026-08-31). Tests:
+`tests/gate/emit/shape-across-blocks.test.ts` (the analysis' properties) and
+`tests/sweep/emit/shape-across-blocks.test.ts` (that bundle's fn#8640).
+
 ---
 
 ## 6. Environments → closure variables
