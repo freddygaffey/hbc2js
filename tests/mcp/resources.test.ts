@@ -52,10 +52,9 @@ const outDir = mkdtempSync(join(tmpdir(), "hbc2js-mcp-resources-"));
   try {
     initProjectDb(db, rows, { actorWho: "test" });
     // seed one tag revision directly against the DB (§2.2/§2.3) so
-    // `history/{target}` has a real timeline to read — `ProjectService`'s
-    // OWN write verbs still land in JSONL even for a DB-backed project
-    // (a pre-existing scope gap this READ-only pass does not touch, noted
-    // in `src/mcp/resources.ts`'s own header comment).
+    // `history/{target}` has a real timeline to read before this file's own
+    // `ProjectService` writes run (which now ALSO land in the DB — the
+    // MCP-write-tools round's `ProjectService` DB write-path prerequisite).
     dbSetTag(db, `fn:${CALLEE_FN}`, "network", { source: "tool", who: "seed" });
   } finally {
     db.close();
@@ -220,8 +219,16 @@ test("log[?who] filters by actor", () => {
 
 test("history/{target} returns the seeded tag's revision timeline", () => {
   const h = res.history(`fn:${CALLEE_FN}`);
+  // >= 1, not `=== 1`/`rows[0] is tag`: this project is DB-backed, so the
+  // earlier "annotations/for-fn, findings, finding/{id}…" test's
+  // `res.project.addFinding(...)` call now ALSO lands on this same target
+  // (this round's `ProjectService` DB write-path prerequisite closed the
+  // old "ProjectService's OWN write verbs still land in JSONL even for a
+  // DB-backed project" gap this file used to note) — history is a superset
+  // timeline across every record kind on the target, newest first, not
+  // just the one this test itself seeded.
   assert.ok(h.rows.length >= 1);
-  assert.equal(h.rows[0]!.kind, "tag");
+  assert.ok(h.rows.some((r) => r.kind === "tag"));
   assert.ok(h.rows.length <= RESOURCE_CAPS.history);
 });
 

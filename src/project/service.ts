@@ -19,11 +19,24 @@
 // ordinary writes.
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import type { ArtifactService } from "../artifact/service.ts";
 import { parseKey } from "../name-overlay/id.ts";
 import { loadProjectStore, saveProjectStore, type ProjectStore } from "./io.ts";
-import { openProjectDbReadonly } from "../projdb/artifact-read.ts";
+import { dbPath } from "../projdb/artifact-read.ts";
+import { openProjectDb } from "../projdb/db.ts";
 import { loadProjectStoreFromDb } from "../projdb/project-read.ts";
+import {
+  dbAddComment,
+  dbSetBookmark,
+  dbSetFinding,
+  dbSetName,
+  dbSetTag,
+  findingAdapter,
+  type FindingValue,
+} from "../projdb/annotations.ts";
+import { DbRevisionStore, type DbCtxSnapshot, type DbProvenance } from "../projdb/revision-store.ts";
+import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import {
   PROJECT_SCHEMA,
   type BookmarkRecord,
@@ -41,8 +54,8 @@ import {
 import { TagStore } from "./tags.ts";
 import { CommentStore } from "./comments.ts";
 import { BookmarkStore } from "./bookmarks.ts";
-import { FindingStore, type AddFindingInput, type ResolvedFinding } from "./findings.ts";
-import { ArtifactEvidenceResolver } from "./evidence-resolver.ts";
+import { FindingStore, checkStatusTransition, type AddFindingInput, type ResolvedFinding } from "./findings.ts";
+import { ArtifactEvidenceResolver, hasResolvingEvidence } from "./evidence-resolver.ts";
 import { collectOrphans, isOrphaned, type OrphanRow, type TargetIndexCheck } from "./orphans.ts";
 import { mergeStores } from "./merge.ts";
 
@@ -105,6 +118,18 @@ function provLine(prov: Provenance): string {
   return prov.run !== undefined ? `${prov.source}:${prov.who}@${prov.run}` : `${prov.source}:${prov.who}`;
 }
 
+/** `Provenance`/`CtxSnapshot` (JSONL engine shape, `run?: string`) ->
+ *  `DbProvenance`/`DbCtxSnapshot` (DB engine shape, `run?: string | null`)
+ *  — structurally compatible, this is just the explicit `?? null` normalise
+ *  `annotations.ts`'s `db*` verbs expect for their bound params. */
+function toDbProv(prov: Provenance): DbProvenance {
+  return { source: prov.source, who: prov.who, run: prov.run ?? null };
+}
+
+function toDbCtx(ctx: CtxSnapshot): DbCtxSnapshot {
+  return { name: ctx.name ?? null, loc: ctx.loc ?? null, ownerFn: ctx.ownerFn ?? null };
+}
+
 function emptyStore(dir: string, bundleSha256: string): ProjectStore {
   return {
     dir,
@@ -133,6 +158,21 @@ export class ProjectService {
 
   private readonly targetIndex: TargetIndexCheck;
 
+  /** Open, retained `.hbcproj` write handle when `artifact.dbBacked`
+   *  (prerequisite flagged by the read core, `src/mcp/resources.ts`'s own
+   *  header note: "`ProjectService`'s OWN write verbs still land in JSONL
+   *  even for a DB-backed project"). `null` for a JSONL-backed project.
+   *  Every write verb below branches on this field: DB-backed, it calls
+   *  straight through `src/projdb/annotations.ts`'s `db*` verbs (each of
+   *  which appends exactly one `revisions` row + exactly one `log` row in
+   *  one transaction, spec 16 §2.3/A3) instead of `save()`'s JSONL
+   *  round-trip, then reloads the in-memory read caches so this instance's
+   *  OWN subsequent reads see the write immediately (mirrors `applyStore`
+   *  after `mergeFrom`). Never closed by this class — the caller owns the
+   *  artifact directory's lifetime, same as `ArtifactService` never closes
+   *  its own handles either. */
+  private readonly db: DatabaseSync | null;
+
   /** `artifactDir` is the SAME directory `artifact` was built from (its
    *  `project/` subdirectory is this store, §2.2); `artifact` is the shared
    *  warm index (§3.2's "shares the warm index"). Bootstraps an empty store
@@ -157,10 +197,14 @@ export class ProjectService {
     // per §4.3's coexistence rule.
     let store: ProjectStore;
     if (artifact.dbBacked) {
-      const db = openProjectDbReadonly(artifactDir);
-      store = loadProjectStoreFromDb(db, this.storeDir, bundleSha256);
-      db.close();
+      // Writable, not readonly (§4.3's read layer opens readonly for
+      // queries; a write-capable `ProjectService` needs the same handle
+      // annotations.ts's `db*` verbs write through, retained for the life
+      // of this instance per the prerequisite above).
+      this.db = openProjectDb(dbPath(artifactDir));
+      store = loadProjectStoreFromDb(this.db, this.storeDir, bundleSha256);
     } else {
+      this.db = null;
       store = existsSync(this.storeDir) ? loadProjectStore(this.storeDir) : emptyStore(this.storeDir, bundleSha256);
     }
     this.targetIndex = {
@@ -198,12 +242,27 @@ export class ProjectService {
     });
   }
 
+  /** Re-derives the four in-memory read caches from the open DB handle —
+   *  called after every DB-backed write so THIS instance's own subsequent
+   *  reads (`forFn`, `findings`, …) see the write it just made, without
+   *  re-opening the file (mirrors `mergeFrom`'s own `applyStore` call after
+   *  a merge). No-op for a JSONL-backed project (nothing to reload; that
+   *  path's in-memory stores ARE the write target). */
+  private reloadFromDb(): void {
+    if (this.db === null) return;
+    this.applyStore(loadProjectStoreFromDb(this.db, this.storeDir, this.artifact.manifest.bundle.sha256));
+  }
+
   /** Persist every record-type file + `project.json` back to `<artifact>/
    *  project/` (creating the directory on first save, §2.2's exact file
    *  set). Every write verb below calls this so a one-shot CLI invocation
    *  round-trips to disk; a resident caller (the loop) may batch several
    *  writes and call `save()` once. */
   save(): void {
+    // DB-backed: nothing to do here — every write verb below persists its
+    // own row (+ its own `log` row) transactionally through `db.ts`'s open
+    // handle the moment it's called; there is no JSONL file to flush.
+    if (this.db !== null) return;
     if (!existsSync(this.storeDir)) mkdirSync(this.storeDir, { recursive: true });
     const comments = [...this.commentStore.allRecords(), ...this.conflictRecords.comments];
     const tags = [...this.tagStore.allRecords(), ...this.conflictRecords.tags];
@@ -393,9 +452,45 @@ export class ProjectService {
   }
 
   // --- writes -------------------------------------------------------------
+  //
+  // Every verb below branches on `this.db`: DB-backed, it writes straight
+  // through `annotations.ts`'s `db*` verb (one `revisions` row + one `log`
+  // row, transactional, spec 16 §2.3/A3) then calls `reloadFromDb()` so this
+  // instance's own subsequent reads see the write; JSONL-backed, it keeps
+  // the pre-existing in-memory-engine + `save()` path unchanged (prompt's
+  // "keep JSONL-backed projects working unchanged").
+
+  /** `set_name` (docs/specs/17-mcp-harness.md §2): DB-backed only this
+   *  round — `dbSetName`/`d_names` IS the DB-native counterpart of the
+   *  Design-D overlay's `OverlayStore.setName` (same one-append-plus-one-
+   *  log-row contract every other write verb here gets), but wiring a
+   *  JSONL-backed project's name write through the SEPARATE overlay store
+   *  (`src/name-overlay/`, its own gate/frame-body machinery, no `log`
+   *  table at all) is out of this round's scope — `ProjectService` is
+   *  constructed from just an `ArtifactService`, not the module bodies the
+   *  overlay's gate needs. Refuses cleanly rather than silently no-op'ing;
+   *  tracked in `docs/BUGS.md`. Resolves `target` against the live index
+   *  BEFORE accepting (spec 11 §3.2), same rule `record_finding`'s evidence
+   *  gate uses. */
+  setName(target: string, name: string, prov: Provenance): SetResult {
+    if (this.db === null) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, "set_name: JSONL-backed projects don't support name writes via ProjectService yet (docs/BUGS.md) — use the Design-D overlay (`hbc2js name set`) directly");
+    }
+    if (!this.resolver.resolves(target)) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, `set_name: ${target} does not resolve against the live artifact index (spec 11 §3.2)`);
+    }
+    const { record } = dbSetName(this.db, target, name, toDbProv(prov), { ctx: toDbCtx(this.captureCtx(target)) });
+    this.reloadFromDb();
+    return { rid: record.rid, line: `named ${target} "${name}" [${provLine(prov)}]` };
+  }
 
   /** §3.1 `project tag set <id> <tag> [--note]`. */
   setTag(target: string, tag: Tag, prov: Provenance, opts?: { readonly note?: string }): SetResult {
+    if (this.db !== null) {
+      const { record } = dbSetTag(this.db, target, tag, toDbProv(prov), { ...(opts?.note !== undefined ? { note: opts.note } : {}), ctx: toDbCtx(this.captureCtx(target)) });
+      this.reloadFromDb();
+      return { rid: record.rid, line: `tagged ${target} ${tag} [${provLine(prov)}]` };
+    }
     const { record } = this.tagStore.setTag(target, tag, prov, { ...(opts?.note !== undefined ? { note: opts.note } : {}), ctx: this.captureCtx(target) });
     this.save();
     return { rid: record.rid, line: `tagged ${target} ${tag} [${provLine(prov)}]` };
@@ -403,6 +498,11 @@ export class ProjectService {
 
   /** §3.1 `project comment add <target> [--range L] --body <s>`. */
   addComment(target: string, body: string, prov: Provenance, opts?: { readonly range?: CommentRange }): SetResult {
+    if (this.db !== null) {
+      const { record } = dbAddComment(this.db, target, body, toDbProv(prov), { ...(opts?.range !== undefined ? { range: opts.range } : {}), ctx: toDbCtx(this.captureCtx(target)) });
+      this.reloadFromDb();
+      return { rid: record.rid, line: `commented ${target}${opts?.range !== undefined ? ` L${opts.range.line}` : ""} [${provLine(prov)}]` };
+    }
     const { record } = this.commentStore.addComment(target, body, prov, { ...(opts?.range !== undefined ? { range: opts.range } : {}), ctx: this.captureCtx(target) });
     this.save();
     return { rid: record.rid, line: `commented ${target}${record.range !== undefined ? ` L${record.range.line}` : ""} [${provLine(prov)}]` };
@@ -412,13 +512,69 @@ export class ProjectService {
    *  verbs … finding add"): mints a fresh finding (§4.1's write-time gate —
    *  rejects zero/unresolving evidence). */
   addFinding(input: AddFindingInput): SetResult {
+    if (this.db !== null) {
+      if (!hasResolvingEvidence(input.evidence, this.resolver)) {
+        throw new Hbc2jsError(
+          ErrorCode.E_USAGE,
+          `record_finding: rejected — a finding needs >=1 evidence ref and at least one must resolve (spec 11 §4.1); got ${input.evidence.length} ref(s), none resolving`,
+        );
+      }
+      const findingNo = ((this.db.prepare("SELECT COALESCE(MAX(finding_no),0)+1 AS n FROM d_findings").get() as { n: number }).n);
+      const value: FindingValue = {
+        findingNo,
+        severity: input.severity,
+        status: "open", // a finding never self-confirms at creation (§4.1) — always minted `open`.
+        claim: input.claim,
+        evidence: input.evidence.map((e) => ({ ref: e.ref, role: e.role })),
+      };
+      const { record } = dbSetFinding(this.db, input.target, value, toDbProv(input.prov), {
+        ...(input.patternId !== undefined ? { patternId: input.patternId } : {}),
+        ctx: toDbCtx(input.ctx ?? this.captureCtx(input.target)),
+      });
+      this.reloadFromDb();
+      return { rid: record.rid, line: `finding#${findingNo} ${input.severity} open ${input.target} [${provLine(input.prov)}]` };
+    }
     const { record } = this.findingStore.addFinding({ ...input, ctx: input.ctx ?? this.captureCtx(input.target) }, this.resolver);
     this.save();
     return { rid: record.rid, line: `finding#${record.rid} ${record.severity} open ${record.target} [${provLine(record.prov)}]` };
   }
 
-  /** §3.1 `project finding set-status <id> <status> --evidence <ref…>`. */
+  /** §3.1 `project finding set-status <id> <status> --evidence <ref…>`.
+   *  DB-backed path: `revisions.kind='status'`/`d_status` (a dedicated
+   *  detail table for the transition itself) is a documented scope gap
+   *  (`docs/BUGS.md`, project-DB step 4 row) — schema.sql DDL is out of
+   *  this round's file list. Transitions are represented instead as a
+   *  FRESH `kind='finding'` revision on the SAME slot (found via `rid`'s
+   *  `slot`, so it resolves regardless of which historical rid the caller
+   *  names — the DB engine's own supersession-chain equivalent of the
+   *  JSONL engine's `finding()` chain-follow), with `status` updated and
+   *  the transition's OWN evidence refs APPENDED to (never replacing) the
+   *  finding's original evidence — so the finding's original claim
+   *  evidence stays live-resolvable on every later read, exactly as the
+   *  JSONL `finding`/`status` split keeps them independently. Still exactly
+   *  one `revisions` row + one `log` row per call (`DbRevisionStore.set`). */
   setFindingStatus(findingRid: string, to: FindingStatus, evidence: readonly EvidenceRef[], prov: Provenance): SetResult {
+    if (this.db !== null) {
+      const ridNum = Number(findingRid);
+      const row = this.db.prepare("SELECT slot, target FROM revisions WHERE rid = ? AND kind = 'finding'").get(ridNum) as { slot: string; target: string } | undefined;
+      if (row === undefined) throw new Hbc2jsError(ErrorCode.E_USAGE, `set_finding_status: no such finding ${JSON.stringify(findingRid)}`);
+      const store = new DbRevisionStore(this.db, findingAdapter);
+      const current = store.get(row.slot);
+      if (current === undefined) throw new Hbc2jsError(ErrorCode.E_USAGE, `set_finding_status: finding ${JSON.stringify(findingRid)} has no active revision (cleared)`);
+      const from = current.value.status as FindingStatus;
+      const violation = checkStatusTransition(from, to, evidence, prov, this.resolver);
+      if (violation !== null) throw new Hbc2jsError(ErrorCode.E_USAGE, `set_finding_status: rejected — ${violation}`);
+      const value: FindingValue = {
+        findingNo: current.value.findingNo,
+        severity: current.value.severity,
+        status: to,
+        claim: current.value.claim,
+        evidence: [...current.value.evidence, ...evidence.map((e) => ({ ref: e.ref, role: e.role }))],
+      };
+      const { record } = store.set(row.slot, row.target, value, toDbProv(prov), { ctx: toDbCtx(this.captureCtx(row.target)) });
+      this.reloadFromDb();
+      return { rid: record.rid, line: `finding#${current.value.findingNo} -> ${to} [${provLine(prov)}]` };
+    }
     const existing = this.findingStore.finding(findingRid, this.resolver);
     const ctx = existing !== null ? this.captureCtx(existing.record.target) : {};
     const { record } = this.findingStore.setStatus({ findingRid, to, evidence, prov, ctx }, this.resolver);
@@ -429,8 +585,80 @@ export class ProjectService {
   /** Write verb named by this step's brief, not §3.1-tabled (bookmarks is
    *  otherwise read-only in the verb table): `project bookmark add`. */
   addBookmark(target: string, prov: Provenance, opts?: { readonly label?: string }): SetResult {
+    if (this.db !== null) {
+      const { record } = dbSetBookmark(this.db, target, toDbProv(prov), { ...(opts?.label !== undefined ? { label: opts.label } : {}), ctx: toDbCtx(this.captureCtx(target)) });
+      this.reloadFromDb();
+      return { rid: record.rid, line: `bookmarked ${target}${opts?.label !== undefined ? ` "${opts.label}"` : ""} [${provLine(prov)}]` };
+    }
     const { record } = this.bookmarkStore.setBookmark(target, prov, { ...(opts?.label !== undefined ? { label: opts.label } : {}), ctx: this.captureCtx(target) });
     this.save();
     return { rid: record.rid, line: `bookmarked ${target}${record.label !== undefined ? ` "${record.label}"` : ""} [${provLine(prov)}]` };
   }
+
+  // --- log / history (spec 16 §3.2) — DB-native, prerequisite this round --
+
+  /** `log[?since&who]` — same shape/cap as `McpResources.log` (which reads
+   *  the SAME table over its own readonly handle for a JSONL-caller that
+   *  hasn't constructed a `ProjectService`); this is the resident
+   *  counterpart, over the already-open write handle, so a caller doing a
+   *  batch of writes then a `log` read never re-opens the file. Throws for
+   *  a JSONL-backed project (no `log` table exists, spec 16 §2.2). */
+  log(query: { readonly since?: string; readonly who?: string } = {}, opts: { readonly all?: boolean } = {}): Bounded<LogRow> {
+    if (this.db === null) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, "log: this project has no project.hbcproj (JSONL-backed projects do not carry a change log, spec 16 §2.2)");
+    }
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (query.since !== undefined) {
+      clauses.push("ts >= ?");
+      params.push(query.since);
+    }
+    if (query.who !== undefined) {
+      clauses.push("actor_who = ?");
+      params.push(query.who);
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const total = (this.db.prepare(`SELECT COUNT(*) AS n FROM log ${where}`).get(...params) as { n: number }).n;
+    const cap = opts.all === true ? total : LOG_CAP;
+    const rows = this.db
+      .prepare(`SELECT seq, ts, actor_who AS who, op, detail FROM log ${where} ORDER BY seq DESC LIMIT ?`)
+      .all(...params, cap + 1) as unknown as LogRow[];
+    return { rows: rows.slice(0, cap), total, truncated: rows.length > cap };
+  }
+
+  /** `history/{target}` — the full `revisions` supersession/revert timeline
+   *  for one binding-id target, newest first. Same shape/cap/scope note as
+   *  `log` above. */
+  history(target: string, opts: { readonly all?: boolean } = {}): Bounded<HistoryRow> {
+    if (this.db === null) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, "history: this project has no project.hbcproj (JSONL-backed projects do not carry a change log, spec 16 §2.2)");
+    }
+    const total = (this.db.prepare("SELECT COUNT(*) AS n FROM revisions WHERE target = ?").get(target) as { n: number }).n;
+    const cap = opts.all === true ? total : HISTORY_CAP;
+    const rows = this.db
+      .prepare(`SELECT rid, kind, ts, supersedes, reactivates, cleared, prov_who AS who FROM revisions WHERE target = ? ORDER BY rid DESC LIMIT ?`)
+      .all(target, cap + 1) as unknown as (Omit<HistoryRow, "cleared"> & { cleared: number })[];
+    return { rows: rows.slice(0, cap).map((r) => ({ ...r, cleared: r.cleared !== 0 })), total, truncated: rows.length > cap };
+  }
 }
+
+export interface LogRow {
+  readonly seq: number;
+  readonly ts: string;
+  readonly who: string;
+  readonly op: string;
+  readonly detail: string | null;
+}
+
+export interface HistoryRow {
+  readonly rid: number;
+  readonly kind: string;
+  readonly ts: string;
+  readonly supersedes: number | null;
+  readonly reactivates: number | null;
+  readonly cleared: boolean;
+  readonly who: string;
+}
+
+const LOG_CAP = 50;
+const HISTORY_CAP = 40;

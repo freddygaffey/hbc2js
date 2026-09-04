@@ -32,7 +32,7 @@ import { RevisionStore } from "./revision-store.ts";
 import type { Revision } from "./revision-store.ts";
 import { assertProvenance } from "./schema.ts";
 import type { CtxSnapshot, EvidenceRef, FindingRecord, FindingStatus, Provenance, Severity, StatusRecord } from "./schema.ts";
-import { hasResolvingEvidence, isDynamicEvidenceRef, type EvidenceResolver } from "./evidence-resolver.ts";
+import { hasResolvingEvidence, isDynamicEvidenceRef, isFidelityCheckedEvidenceRef, type EvidenceResolver } from "./evidence-resolver.ts";
 
 type FindingFields = Pick<FindingRecord, "target" | "claim" | "severity" | "evidence" | "cwe" | "patternId" | "prov" | "ctx">;
 type StatusFields = Pick<StatusRecord, "target" | "finding" | "from" | "to" | "evidence" | "prov" | "ctx">;
@@ -164,8 +164,11 @@ export function checkStatusTransition(
     return "a tool may never self-confirm a finding (spec 12 §4.3 reviewed rule, generalised to every tool producer)";
   }
   if (!hasResolvingEvidence(evidence, resolver)) return "status transition needs >=1 resolving evidence ref (§4.1)";
-  if (to === "confirmed" && !evidence.some((e) => isDynamicEvidenceRef(e) && resolver.resolves(e.ref))) {
-    return "open->confirmed requires >=1 resolving dynamic-role evidence ref (trace:/fuzz:/repro:, §4.1) — a static-only claim cannot self-promote";
+  if (
+    to === "confirmed" &&
+    !evidence.some((e) => (isDynamicEvidenceRef(e) || isFidelityCheckedEvidenceRef(e)) && resolver.resolves(e.ref))
+  ) {
+    return "open->confirmed requires >=1 resolving dynamic-role evidence ref (trace:/fuzz:/repro:) OR a resolving fidelity-checked static proof ref (role:\"fidelity-checked\") — §4.1 as revised by spec 17 §14: a static-only, non-checked claim cannot self-promote";
   }
   return null;
 }
@@ -244,11 +247,13 @@ export class FindingStore {
     return this.statusEngine.history(findingRid).map(toStatusRecord);
   }
 
-  /** §4.1/§4.3's transition rules (A-STATUS): `open->confirmed` needs a
-   *  resolving DYNAMIC-role ref; `refuted` is sticky (once refuted, never
-   *  transitions again); a tool-provenance transition can never confirm
-   *  (self-confirm is refused regardless of evidence). Throws naming the
-   *  violated rule; never silently downgrades or drops the request. */
+  /** §4.1/§4.3's transition rules (A-STATUS), broadened by spec 17 §14:
+   *  `open->confirmed` needs a resolving DYNAMIC-role ref OR a resolving
+   *  fidelity-checked static-proof ref; `refuted` is sticky (once refuted,
+   *  never transitions again); a tool-provenance transition can never
+   *  confirm (self-confirm is refused regardless of evidence). Throws
+   *  naming the violated rule; never silently downgrades or drops the
+   *  request. */
   setStatus(input: SetStatusInput, resolver: EvidenceResolver): SetStatusResult {
     assertProvenance(input.prov, "setStatus");
     const finding = this.findingsEngine.allRecords().find((r) => r.rid === input.findingRid);

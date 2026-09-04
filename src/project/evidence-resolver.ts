@@ -45,6 +45,24 @@ export function isDynamicEvidenceRef(ref: { readonly ref: string }): boolean {
   return /^(trace|fuzz|repro):/.test(ref.ref);
 }
 
+/** §14's write-side fix (docs/specs/17-mcp-harness.md §14, 2026-09-04,
+ *  BINDING): "`set_finding_status → confirmed` accepts EITHER a dynamic
+ *  repro OR a fidelity-checked STATIC proof. Dynamic-only over-constrains: a
+ *  hardcoded key, or a signature parsed-but-never-checked, is provable from
+ *  the code alone." A ref is a fidelity-checked static proof when its
+ *  `role` is stamped `"fidelity-checked"` — the marker `request_fidelity_check`
+ *  (deferred to a later round, spec 17 §2) stamps onto the STATIC ref it
+ *  independently verified, distinguishing "the assistant read this itself"
+ *  from "the spec-16 §5 checker confirmed it" without inventing a new ref
+ *  prefix (spec 11 §4.2: "the base shape is `{ref, role}`... producers may
+ *  attach extra descriptive fields", `role` is exactly that open vocabulary).
+ *  Still gated by `resolver.resolves` like every other evidence ref — a
+ *  fidelity-checked ref that no longer resolves (stale re-decompile) is not
+ *  confirming evidence either. */
+export function isFidelityCheckedEvidenceRef(ref: { readonly role: string }): boolean {
+  return ref.role === "fidelity-checked";
+}
+
 /** The four evidence-ref kinds §4.1 names as resolving against the artifact
  *  index (binding id / `sid:` / `mod:` / a use-site `fn:` ref, all covered by
  *  `fn:`/`reg:`/`sid:`/`mod:` prefixes here) vs. the trace/fuzz artifact

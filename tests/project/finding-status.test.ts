@@ -115,7 +115,18 @@ test("A-STATUS-h a write with no prov is rejected (§4.2, shared with addFinding
 
 test("A-STATUS-i checkStatusTransition is a pure pre-flight with the same verdicts", () => {
   const resolver = mockResolver(["fn:42", "trace:x"]);
-  assert.equal(checkStatusTransition("open", "confirmed", [{ ref: "fn:42", role: "context" }], human, resolver), "open->confirmed requires >=1 resolving dynamic-role evidence ref (trace:/fuzz:/repro:, §4.1) — a static-only claim cannot self-promote");
+  assert.equal(
+    checkStatusTransition("open", "confirmed", [{ ref: "fn:42", role: "context" }], human, resolver),
+    "open->confirmed requires >=1 resolving dynamic-role evidence ref (trace:/fuzz:/repro:) OR a resolving fidelity-checked static proof ref (role:\"fidelity-checked\") — §4.1 as revised by spec 17 §14: a static-only, non-checked claim cannot self-promote",
+  );
   assert.equal(checkStatusTransition("open", "confirmed", [{ ref: "trace:x", role: "dynamic" }], human, resolver), null);
   assert.equal(checkStatusTransition("refuted", "open", [{ ref: "fn:42", role: "context" }], human, resolver), "refuted is sticky — a refuted finding never transitions again (§1.5 reviewed rule)");
+});
+
+test("A-STATUS-j §14 fix: open->confirmed also accepts a resolving fidelity-checked STATIC proof ref (not just dynamic)", () => {
+  const resolver = mockResolver(["fn:42"]);
+  assert.equal(checkStatusTransition("open", "confirmed", [{ ref: "fn:42", role: "fidelity-checked" }], human, resolver), null);
+  // a static ref with any OTHER role still cannot self-promote — the fix
+  // broadens WHAT counts as confirming evidence, it doesn't drop the gate.
+  assert.notEqual(checkStatusTransition("open", "confirmed", [{ ref: "fn:42", role: "context" }], human, resolver), null);
 });
