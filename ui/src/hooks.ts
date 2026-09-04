@@ -8,7 +8,7 @@ import { API_BASE, USING_MOCK, api, ApiError } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
-  ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
+  LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
 } from "./contracts.ts";
 
 export const LOG_POLL_MS = 1000;
@@ -39,6 +39,11 @@ export const useSource = (fn: number): UseQueryResult<SourceText> =>
 
 export const useDisasm = (fn: number): UseQueryResult<SourceText> =>
   useQuery({ queryKey: ["disasm", fn], queryFn: () => api.disasm(fn), ...perFn(fn) });
+
+/** The fn's nameable registers — what a clicked identifier is resolved
+ *  against (`src/ui-core/rename-target.ts`). */
+export const useLocals = (fn: number): UseQueryResult<LocalsListing> =>
+  useQuery({ queryKey: ["locals", fn], queryFn: () => api.locals(fn), ...perFn(fn) });
 
 export const useContextResource = (fn: number): UseQueryResult<FnContext> =>
   useQuery({ queryKey: ["context", fn], queryFn: () => api.context(fn), ...perFn(fn) });

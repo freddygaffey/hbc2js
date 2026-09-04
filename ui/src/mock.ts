@@ -5,7 +5,7 @@
 import type { Api } from "./api.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
-  ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
+  LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, XrefEdge,
 } from "./contracts.ts";
 import type { ModuleSource } from "./contracts.ts";
@@ -133,6 +133,20 @@ export const mockApi: Api = {
   fn: (fn) => delay(summary(fn)),
   source: (fn): Promise<SourceText> => delay(sourceFor(fn)),
   disasm: (): Promise<SourceText> => delay({ text: DISASM, totalLines: DISASM.split("\n").length, truncated: false }),
+  locals: (fn): Promise<LocalsListing> => {
+    // The mock source is fixed text; derive its registers from it so the
+    // identifier -> `reg:F:R` join has something real to resolve against.
+    const text = sourceFor(fn).text;
+    const regs = [...new Set([...text.matchAll(/\br(\d+)\b/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+    const rows = regs.map((reg) => ({
+      reg,
+      rendered: `r${reg}`,
+      named: null,
+      role: "passed",
+      uses: text.match(new RegExp(`\\br${reg}\\b`, "g"))?.length ?? 1,
+    }));
+    return delay({ rows, total: rows.length });
+  },
   context: (fn): Promise<FnContext> => delay({
     fn,
     metadata: summary(fn),

@@ -69,6 +69,10 @@ export type ActionGroup = "navigate" | "annotate" | "review" | "view" | "ai" | "
 export interface Action {
   id: string;
   title: string;
+  /** A title that depends on what is selected — the context menu shows this
+   *  when present (`Rename "r3"` on an identifier), and falls back to
+   *  `title` everywhere else (the palette, a keyboard chord, no selection). */
+  titleFor?: (ctx: ActionContext) => string;
   group: ActionGroup;
   when?: (ctx: ActionContext) => boolean;
   run: (ctx: ActionContext) => void | Promise<void>;
@@ -160,6 +164,7 @@ export function standardActions(): Action[] {
     {
       id: "annotate.rename",
       title: "Rename",
+      titleFor: (ctx) => (ctx.selection.kind === "identifier" && (ctx.selection.name ?? "") !== "" ? `Rename "${ctx.selection.name}"` : "Rename"),
       group: "annotate",
       when: hasIdentifierTarget,
       run: (ctx) => ctx.api.setName(ctx.selection, ctx.selection.name ?? ""),
@@ -329,7 +334,7 @@ export function contextMenuFor(ctx: ActionContext, registry: Registry, keymap: {
       const chord = keymap.chordFor(action.id);
       const item: MenuItem = {
         id: action.id,
-        title: action.title,
+        title: action.titleFor?.(ctx) ?? action.title,
         group: action.group,
         separatorBefore: i === 0 && items.length > 0,
         ...(chord !== undefined ? { chord } : {}),

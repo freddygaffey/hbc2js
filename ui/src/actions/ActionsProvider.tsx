@@ -43,7 +43,12 @@ function Dialogs(): ReactNode {
     closeDialog();
     return null;
   }
-  if (dialog.kind === "rename") return <RenameDialog fn={fn} />;
+  // The clicked TOKEN, when the selection is an identifier: `RenameDialog`
+  // resolves it to a `reg:F:R` target via `/api/fn/{fn}/locals`.
+  if (dialog.kind === "rename") {
+    const ident = dialog.selection.kind === "identifier" ? dialog.selection.name : undefined;
+    return <RenameDialog fn={fn} {...(ident !== undefined ? { ident } : {})} />;
+  }
   if (dialog.kind === "comment") return <CommentDialog fn={fn} />;
   return <FindingForm fn={fn} />;
 }

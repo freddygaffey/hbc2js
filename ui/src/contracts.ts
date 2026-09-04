@@ -45,6 +45,21 @@ export interface SourceText {
   readonly truncated: boolean;
 }
 
+/** `GET /api/fn/{fn}/locals` — one nameable register of a function, with the
+ *  identifier it currently renders as (the `reg:F:R` rename join). */
+export interface LocalBinding {
+  readonly reg: number;
+  readonly rendered: string;
+  readonly named: string | null;
+  readonly role: string;
+  readonly uses: number;
+}
+
+export interface LocalsListing {
+  readonly rows: readonly LocalBinding[];
+  readonly total: number;
+}
+
 /** Inlined `{fn,name,size}` neighbour metadata on every xref row (§14). */
 export interface NeighborRef {
   readonly fn: number | string;

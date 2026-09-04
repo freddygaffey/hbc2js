@@ -40,7 +40,7 @@ export function setQueryClient(qc: QueryClient): void {
 export function invalidateFn(fn: number | undefined): void {
   const qc = queryClient;
   if (qc === null) return;
-  const keys = ["fn", "source", "disasm", "context", "who-calls", "calls-from"] as const;
+  const keys = ["fn", "source", "disasm", "context", "who-calls", "calls-from", "locals"] as const;
   if (fn !== undefined) for (const k of keys) void qc.invalidateQueries({ queryKey: [k, fn] });
   void qc.invalidateQueries({ queryKey: ["functions-all"] });
   void qc.invalidateQueries({ queryKey: ["findings"] });

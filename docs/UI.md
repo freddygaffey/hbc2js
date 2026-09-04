@@ -371,11 +371,41 @@ function plus `functions-all`, `findings` and `log-tail` are invalidated.
 place that resolves the precedence (accepted > overlay > artifact) and the
 right pane uses it — without it a rename looks like it did nothing.
 
-**Still rough here.** Rename writes the *enclosing function's* name
-(`fn:<n>`): identifier- and string-level targets (`reg:F:R`, `sid:N`) are not
-wired, so right-clicking a local and choosing Rename renames the function —
-the dialog states its target so it cannot mislead silently. `view.fold` /
-`view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs;
+**Renaming a local.** Right-clicking an identifier in the source pane renames
+THAT binding. The clicked token is resolved against `GET /api/fn/{fn}/locals`
+(`src/ui-core/rename-target.ts`, unit-tested in `tests/ui-core/`), whose
+`rendered` column is the identifier as the served source shows it — so `r3`
+(passes-off) and an already-renamed `count` both resolve to their register —
+and the write targets `reg:<fn>:<reg>`. The context menu names the token
+(`Rename "r3"`) and the dialog's subtitle always states the exact target plus
+the number of references in the frame. A token that is NOT a nameable local
+(a property, a keyword, a global) still renames the enclosing function, and the
+subtitle says why. After the write, `invalidateFn` refetches `source`,
+`context` and `locals`, so the new name is on screen immediately.
+
+Server side, the accepted `reg:F:R` names live in the project DB's `d_names`
+(the same slot every `set_name` writes). `ProjectService` injects a lookup into
+`ArtifactService` (`setActiveNames`), and `source(fn)` then serves
+`renderFn(fn)` — ONE function re-emitted through
+`src/name-overlay/render.ts`'s `renderFrame`, memoised per function and
+invalidated on write — instead of the file on disk. The name is applied as the
+same guarded frame-local alpha-rename `var-naming` uses, so renaming can never
+change what the code does, and it stops at function boundaries: an inner
+function's own `r3` is a different binding and is left alone.
+
+**Still rough here.** String targets (`sid:N`) are not wired — renaming a
+string literal is a contract change, not a binding rename, and has no store.
+The whole-module view (`GET /api/module/{id}/source`) serves the rendered file
+from disk and is NOT overlay-aware: a renamed local shows in the function
+source pane and in `/api/fn/{fn}/context`, but the module file still shows the
+old identifier until the artifact is re-rendered. The per-function re-render
+also uses this build's live decompile defaults, and stage-B passes only when
+the manifest recorded some (`src/split/index.ts` runs none unless `--passes`
+was given), so a re-rendered function can differ cosmetically from the on-disk
+text — its line numbers are its own, not the module file's. `list`'s
+`rendered` column is exact for a named register and best-effort for a
+var-named one (it classifies the same raw frame body `var-naming` classifies).
+`view.fold` / `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs;
 `view.copyDisasmOffset` copies `fn:<n>`, not a byte offset. The Package panel
 reads the real `GET /api/package-id/{mod}` (wave 4a).
 

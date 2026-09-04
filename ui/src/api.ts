@@ -7,7 +7,7 @@
 import type {
   CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
-  SourceText, WhoCalls, Bounded,
+  SourceText, WhoCalls, Bounded, LocalsListing,
 } from "./contracts.ts";
 import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
@@ -19,6 +19,9 @@ export interface Api {
   fn(fn: number): Promise<FnSummary>;
   source(fn: number): Promise<SourceText>;
   disasm(fn: number): Promise<SourceText>;
+  /** `GET /api/fn/:fn/locals` — the fn's nameable registers, for the
+   *  identifier -> `reg:F:R` rename join. */
+  locals(fn: number): Promise<LocalsListing>;
   context(fn: number): Promise<FnContext>;
   whoCalls(fn: number): Promise<WhoCalls>;
   callsFrom(fn: number): Promise<CallsFrom>;
@@ -67,6 +70,7 @@ export const httpApi: Api = {
   fn: (fn) => get(`/fn/${fn}`),
   source: (fn) => get(`/fn/${fn}/source`),
   disasm: (fn) => get(`/fn/${fn}/disasm`),
+  locals: (fn) => get(`/fn/${fn}/locals`),
   context: (fn) => get(`/fn/${fn}/context`),
   whoCalls: (fn) => get(`/fn/${fn}/callers`),
   callsFrom: (fn) => get(`/fn/${fn}/callees`),

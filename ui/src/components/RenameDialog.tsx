@@ -4,25 +4,40 @@
 // xref rows `/api/fn/{fn}/context` carries, which is exactly what the rename
 // will re-label in the listing.
 //
-// The write is `POST /api/tools/set-name` with a STRING target (`fn:7992`),
-// the same call an MCP client makes, so it lands in the log and the export.
+// The write is `POST /api/tools/set-name` with a STRING target, the same call
+// an MCP client makes, so it lands in the log and the export. The target is
+// `reg:<fn>:<reg>` when the right-click landed on one of the function's own
+// nameable locals (resolved through `GET /api/fn/{fn}/locals` by
+// `src/ui-core/rename-target.ts`) and `fn:<n>` otherwise — the subtitle always
+// states which, so a fallback to the enclosing function can never mislead.
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Modal, ErrorNote, fieldClass, labelClass } from "../actions/Modal.tsx";
-import { ToolError, fnTarget, setName } from "../actions/writes.ts";
+import { ToolError, setName } from "../actions/writes.ts";
 import { invalidateFn, setQueryClient } from "../actions/registry.ts";
 import { closeDialog, setStatus } from "../actions/store.ts";
-import { useContextResource, useWhoCalls } from "../hooks.ts";
+import { useContextResource, useLocals, useWhoCalls } from "../hooks.ts";
+import { renameTargetFor } from "@ui-core/rename-target.ts";
 import { displayName } from "../actions/names.ts";
 import { ToolButton } from "./primitives.tsx";
 
-export function RenameDialog({ fn }: { readonly fn: number }): ReactNode {
+export function RenameDialog({ fn, ident }: { readonly fn: number; readonly ident?: string }): ReactNode {
   const qc = useQueryClient();
   setQueryClient(qc);
   const ctx = useContextResource(fn);
   const callers = useWhoCalls(fn);
-  const current = displayName(ctx.data?.metadata) ?? `fn${fn}`;
-  const [name, setNameText] = useState(current);
+  const locals = useLocals(fn);
+  const resolved = renameTargetFor(fn, ident, locals.data?.rows);
+  const fnName = displayName(ctx.data?.metadata) ?? `fn${fn}`;
+  // The locals listing is a second request; until it answers, a clicked token
+  // is neither confirmed a local nor confirmed not one — show the token and
+  // say nothing about a fallback (which would flicker and then be wrong).
+  const pending = ident !== undefined && locals.data === undefined;
+  const current = resolved.kind === "reg" || pending ? (ident ?? fnName) : fnName;
+  // `null` until the field is edited, so the suggested name follows `current`
+  // once the listing lands rather than freezing at the first render's guess.
+  const [draft, setDraft] = useState<string | null>(null);
+  const name = draft ?? current;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,9 +48,10 @@ export function RenameDialog({ fn }: { readonly fn: number }): ReactNode {
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (name.trim() === "") return setError("a name is required");
+    if (pending) return setError("still resolving what that identifier is — try again in a moment");
     setBusy(true);
     try {
-      const res = await setName(fnTarget(fn), name.trim());
+      const res = await setName(resolved.target, name.trim());
       invalidateFn(fn);
       setStatus(res.line);
       closeDialog();
@@ -48,12 +64,20 @@ export function RenameDialog({ fn }: { readonly fn: number }): ReactNode {
 
   return (
     <Modal
-      title={`Rename ${current}`}
+      title={resolved.kind === "reg" || pending ? `Rename local ${current}` : `Rename ${current}`}
       subtitle={
-        <>
-          {callerCount} call site{callerCount === 1 ? "" : "s"} · {ctxRefs} xref{ctxRefs === 1 ? "" : "s"} in context
-          {unknown > 0 && <> · {unknown} unknown in scope</>} · target <span className="font-mono">{fnTarget(fn)}</span>
-        </>
+        resolved.kind === "reg" ? (
+          <>
+            local of <span className="font-mono">fn:{fn}</span> · {resolved.uses} reference{resolved.uses === 1 ? "" : "s"} in this frame
+            {" "}· target <span className="font-mono">{resolved.target}</span>
+          </>
+        ) : (
+          <>
+            {resolved.fellBack && !pending && <>“{resolved.token}” is not a nameable local here — renaming the enclosing function · </>}
+            {callerCount} call site{callerCount === 1 ? "" : "s"} · {ctxRefs} xref{ctxRefs === 1 ? "" : "s"} in context
+            {unknown > 0 && <> · {unknown} unknown in scope</>} · target <span className="font-mono">{resolved.target}</span>
+          </>
+        )
       }
       onClose={closeDialog}
     >
@@ -63,7 +87,7 @@ export function RenameDialog({ fn }: { readonly fn: number }): ReactNode {
           id="hbc-rename-input"
           className={fieldClass}
           value={name}
-          onChange={(e) => setNameText(e.target.value)}
+          onChange={(e) => setDraft(e.target.value)}
           spellCheck={false}
           autoComplete="off"
         />
