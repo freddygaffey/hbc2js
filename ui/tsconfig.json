@@ -21,7 +21,9 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": { "@ui-core/*": ["../src/ui-core/*"] }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "theme.json", "themes/*.json"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "theme.json", "themes/*.json", "keymap.json", "../src/ui-core/**/*.ts", "../src/ui-core/**/*.json"]
 }

@@ -12,6 +12,8 @@ import { RightPane } from "./panes/RightPane.tsx";
 import { BottomPane } from "./panes/BottomPane.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
 import { usePxMinSize } from "./usePxMinSize.ts";
+import { useSelection } from "./state/selection.ts";
+import { ActionsProvider } from "./actions/ActionsProvider.tsx";
 
 /** Hard minimums, in CSS pixels (see usePxMinSize). */
 export const MIN_LEFT_PX = 220;
@@ -22,18 +24,23 @@ const handleClass =
   "w-px bg-border transition-colors data-[resize-handle-state=drag]:bg-accent data-[resize-handle-state=hover]:bg-accent";
 
 export function App(): ReactNode {
-  const [fn, setFn] = useState(10);
+  // The listing's selection lives in ui/src/state/selection.ts (wave 2), so
+  // the tree, the editor, the palette and the keymap all read one store.
+  const fn = useSelection().fn ?? 0;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { ref, pct } = usePxMinSize();
 
   return (
     <Tooltip.Provider delayDuration={400}>
+      {/* ActionsProvider (wave 2, annotate track): keymap listener, Radix
+          context menu, annotate dialogs and the write-status toast. */}
+      <ActionsProvider>
       <div className="flex h-screen flex-col bg-bg text-text">
         <TopBar onOpenPalette={() => setPaletteOpen(true)} />
         <div ref={ref} className="min-h-0 flex-1">
           <PanelGroup direction="horizontal" autoSaveId="hbc2js.shell">
             <Panel defaultSize={20} minSize={pct(MIN_LEFT_PX)} className="min-w-0 border-r border-border">
-              <LeftPane selected={fn} onSelect={setFn} />
+              <LeftPane />
             </Panel>
             <PanelResizeHandle className={handleClass} />
             <Panel defaultSize={53} minSize={pct(MIN_CENTER_PX)} className="min-w-0">
@@ -48,6 +55,7 @@ export function App(): ReactNode {
         <BottomPane />
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       </div>
+      </ActionsProvider>
     </Tooltip.Provider>
   );
 }

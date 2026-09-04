@@ -2,9 +2,13 @@
 // Context / Xrefs / Findings / Package.
 import * as Tabs from "@radix-ui/react-tabs";
 import type { ReactNode } from "react";
-import { Empty, PaneHeader, Stub } from "../components/primitives.tsx";
+import { Empty, PaneHeader, Stub, ToolButton } from "../components/primitives.tsx";
 import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls } from "../hooks.ts";
-import type { Severity } from "../contracts.ts";
+import type { Severity, XrefEdge } from "../contracts.ts";
+import { displayName } from "../actions/names.ts";
+import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../actions/store.ts";
+import { keymap } from "../actions/registry.ts";
+import { select, useSelection } from "../state/selection.ts";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -17,6 +21,26 @@ const SEVERITY_CLASS: Readonly<Record<Severity, string>> = {
   low: "text-sev-ok",
 };
 
+/** One xref row: clicking it selects that function, which is what makes the
+ *  Xrefs panel a navigation surface rather than a list of numbers. */
+function XrefRow({ edge, dir }: { readonly edge: XrefEdge; readonly dir: "in" | "out" }): ReactNode {
+  // `NeighborRef.fn` is `number | string` (a native/unknown neighbour has no
+  // fn index); only a numeric one is navigable.
+  const target = typeof edge.fn === "number" ? edge.fn : Number.NaN;
+  return (
+    <button
+      type="button"
+      disabled={Number.isNaN(target)}
+      onClick={() => select({ kind: "fn", fn: target })}
+      className="flex w-full items-center gap-2 px-3 py-0.5 text-left font-mono text-xs text-text hover:bg-surface-2"
+      title={`${dir === "in" ? "called by" : "calls"} fn:${edge.fn}`}
+    >
+      <span className="truncate">{edge.name ?? edge.fn}</span>
+      <span className="ml-auto shrink-0 text-text-muted">{edge.file}:{edge.line}</span>
+    </button>
+  );
+}
+
 function KeyVal({ k, v }: { readonly k: string; readonly v: string | number | null | undefined }): ReactNode {
   return (
     <div className="flex gap-2 px-3 py-0.5 text-xs">
@@ -27,14 +51,23 @@ function KeyVal({ k, v }: { readonly k: string; readonly v: string | number | nu
 }
 
 export function RightPane({ fn }: { readonly fn: number }): ReactNode {
+  // Which panel is up is action-owned state: `navigate.xrefs` switches to
+  // Xrefs from the menu, the palette or a chord (ui/src/actions/store.ts).
+  const panel = useActionsState().rightPanel;
+  const selection = useSelection();
   const ctx = useContextResource(fn);
+  const findingChord = keymap.chordFor("annotate.finding");
   const callers = useWhoCalls(fn);
   const callees = useCallsFrom(fn);
   const findings = useFindings();
   const pkg = usePackageId(ctx.data?.metadata?.module ?? 0);
   const md = ctx.data?.metadata;
   return (
-    <Tabs.Root defaultValue="context" className="flex h-full min-w-0 flex-col bg-surface">
+    <Tabs.Root
+      value={panel}
+      onValueChange={(v) => setRightPanel(v as RightPanel)}
+      className="flex h-full min-w-0 flex-col bg-surface"
+    >
       <PaneHeader>
         <Tabs.List className="flex w-full gap-1">
           <Tabs.Trigger value="context" className={tabClass}>Context</Tabs.Trigger>
@@ -46,7 +79,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
 
       <Tabs.Content value="context" className={bodyClass}>
         <div className="py-2">
-          <KeyVal k="name" v={md?.overlayName ?? md?.name} />
+          <KeyVal k="name" v={displayName(md)} />
           <KeyVal k="fn" v={md?.fn} />
           <KeyVal k="module" v={md?.module} />
           <KeyVal k="file" v={md?.file} />
@@ -70,26 +103,36 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           called by ({callers.data?.total ?? 0})
           {callers.data !== undefined && callers.data.unknownInScope > 0 && <> · {callers.data.unknownInScope} unknown in scope</>}
         </div>
-        {(callers.data?.rows ?? []).map((e) => (
-          <div key={`in-${e.fn}`} className="px-3 py-0.5 font-mono text-xs text-text">
-            {e.name ?? e.fn} <span className="text-text-muted">{e.file}:{e.line}</span>
-          </div>
-        ))}
+        {(callers.data?.rows ?? []).map((e) => <XrefRow key={`in-${e.fn}`} edge={e} dir="in" />)}
         <div className="px-3 pt-3 pb-1 text-xs text-text-muted">calls ({callees.data?.total ?? 0})</div>
-        {(callees.data?.rows ?? []).map((e) => (
-          <div key={`out-${e.fn}`} className="px-3 py-0.5 font-mono text-xs text-text">
-            {e.name ?? e.fn} <span className="text-text-muted">{e.file}:{e.line}</span>
-          </div>
-        ))}
+        {(callees.data?.rows ?? []).map((e) => <XrefRow key={`out-${e.fn}`} edge={e} dir="out" />)}
       </Tabs.Content>
 
       <Tabs.Content value="findings" className={bodyClass}>
+        {/* Spec 22 §3.6: the same `annotate.finding` action the context menu
+            and the palette expose, with a visible button on the panel. */}
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <span className="text-xs text-text-muted">{findings.data?.total ?? 0} finding(s)</span>
+          <ToolButton
+            className="ml-auto"
+            active
+            {...(findingChord !== undefined ? { tip: findingChord } : {})}
+            onClick={() => openDialog("finding", selection.fn === undefined ? { kind: "fn", fn } : selection)}
+          >
+            Add finding
+          </ToolButton>
+        </div>
         {(findings.data?.rows ?? []).length === 0 && <Empty>No findings recorded.</Empty>}
         {(findings.data?.rows ?? []).map((f) => (
-          <div key={f.record.rid} className="border-b border-border px-3 py-2 text-xs">
+          <div
+            key={f.record.rid}
+            className="border-b border-border px-3 py-2 text-xs"
+            title={f.valid ? "evidence resolves" : "candidate — evidence does not resolve yet"}
+          >
             <div className="flex items-center gap-2">
               <span className={SEVERITY_CLASS[f.record.severity]}>{f.record.severity}</span>
               <span className="text-text-muted">{f.status}</span>
+              {!f.valid && <span className="text-text-muted">candidate</span>}
               <span className="ml-auto font-mono text-text-muted">{f.record.target}</span>
             </div>
             <div className="pt-1 text-text">{f.record.claim}</div>
