@@ -1388,6 +1388,11 @@ function edgeLine(e: { readonly fn: number | string; readonly file: string | nul
   return [target, loc, e.kind + why].filter((s) => s.length > 0).join(" ");
 }
 
+/** `query object-tables` text output shows at most this many members per
+ *  table before `… (+n more)` — the inventory is a map of the bundle, not a
+ *  dump (spec 10 §3.1). */
+const MEMBER_LINES = 20;
+
 function truncationLine(total: number, shown: number, hint: string): string | null {
   if (shown >= total) return null;
   return `… ${total - shown} more; use ${hint}`;
@@ -1469,6 +1474,36 @@ function runQuery(argv: readonly string[]): void {
         process.stdout.write(`total:${result.total}\n`);
         if (result.excludedModule !== null) process.stdout.write(`excluded exporting module: ${result.excludedModule}\n`);
       }
+    } else if (verb === "object-tables") {
+      // Bundle-wide inventory of constant object literals (spec 10 §3.1;
+      // docs/specs/hunt-tooling-backlog.md "endpoint-tables"). Live verb:
+      // the literal buffers are bytecode, so this needs `--hbc`.
+      const num = (flag: string): number | undefined => {
+        const v = flagValue(argv, flag);
+        return v === undefined ? undefined : Number(v);
+      };
+      const result = svc.objectTables({
+        ...(num("--min-props") !== undefined ? { minProps: num("--min-props")! } : {}),
+        ...(num("--string-ratio") !== undefined ? { stringRatio: num("--string-ratio")! } : {}),
+        ...(num("--module") !== undefined ? { module: num("--module")! } : {}),
+        ...(num("--limit") !== undefined ? { limit: num("--limit")! } : {}),
+        ...(flagValue(argv, "--key") !== undefined ? { key: flagValue(argv, "--key")! } : {}),
+        ...(flagValue(argv, "--value") !== undefined ? { value: flagValue(argv, "--value")! } : {}),
+        ...(all ? { limit: Number.MAX_SAFE_INTEGER } : {}),
+      });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const t of result.tables) {
+          process.stdout.write(`fn ${t.fn} @${t.offset}  module ${t.module ?? "-"}  keys=${t.members.length} strings=${t.strings}\n`);
+          for (const m of t.members.slice(0, MEMBER_LINES)) {
+            process.stdout.write(`  ${m.key}: ${m.kind === "string" ? m.value : m.kind === "computed" ? "<computed>" : `<${m.kind}>`}\n`);
+          }
+          if (t.members.length > MEMBER_LINES) process.stdout.write(`  … (+${t.members.length - MEMBER_LINES} more)\n`);
+        }
+        const tl = truncationLine(result.total, result.tables.length, "--limit N or --all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total} scanned:${result.scanned}\n`);
+      }
     } else if (verb === "string") {
       const sid = Number(positional[0]);
       const showFull = argv.includes("--full");
@@ -1524,7 +1559,7 @@ function runQuery(argv: readonly string[]): void {
       const range = linesArg !== undefined ? (linesArg.split("-").map(Number) as [number, number]) : undefined;
       process.stdout.write(svc.source(fn, range) + "\n");
     } else {
-      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|module|source> …", 2, json);
+      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|object-tables|module|source> …", 2, json);
     }
     process.exit(0);
   } catch (e) {

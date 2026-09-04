@@ -289,6 +289,7 @@ answer that looks complete would be an untruth. Default caps; `--all` pages.
 | `query string-grep <regex>` | matching `sid  head-of-value  useCount` rows | ≤ 50 lines + total |
 | `query global-uses <name>` | `fn access n file:line` rows | ≤ 50 lines + total |
 | `query native [--fn N]` | native-surface rows | ≤ 50 lines + total |
+| `query object-tables [--min-props N] [--string-ratio R] [--key <re>] [--value <re>] [--module M] [--limit N]` | bundle-wide inventory of CONSTANT object literals (`NewObjectWithBuffer*`), most members first: a `fn N @off  module M  keys=K strings=S` header then `key: value` lines (`<computed>` for a member built at runtime). Default filter ≥ 4 members and ≥ 50% string-valued; `--key`/`--value` are ECMAScript regexes and a table matches if ANY member does. Live verb (needs `--hbc`); one O(instructions) scan, memoised per service (spec 17 §14.2) | ≤ 100 tables (`--limit`/`--all`), ≤ 20 member lines each + total |
 | `query module <id>` | deps, dependents, owned fn count, file | ≤ 15 lines |
 | `query source <fn> [--lines a-b]` | rendered source of that fn (the ONLY source-emitting verb) | fn's own range |
 | `name list <fn>` | live *nameable* registers: `r7 uses:3 role:<gate's role> named:userInput\|-` | ≤ 1 line/register |

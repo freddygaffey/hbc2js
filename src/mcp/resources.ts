@@ -16,7 +16,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { LineMapEntry } from "../emit/origin.ts";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary } from "../artifact/service.ts";
+import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary, type ObjectTablesOptions } from "../artifact/service.ts";
 import { ProjectService, PROJECT_CAPS, type AnnotationRow } from "../project/service.ts";
 import type { ResolvedFinding } from "../project/findings.ts";
 import type { FindingStatus, Severity, Tag } from "../project/schema.ts";
@@ -299,6 +299,23 @@ export class McpResources {
       rows: r.rows.map((row) => {
         const nb = this.neighbor(row.fn);
         return { fn: row.fn, callerName: nb.name, size: nb.size, name: row.name, role: row.role, n: row.n, file: row.file, line: row.line, confidence: row.confidence };
+      }),
+    };
+  }
+
+  /** `object-tables` (spec 17 §14.2) — bundle-wide inventory of constant
+   *  object literals, the one-shot "show me every endpoint table" the hunt
+   *  wanted (docs/specs/hunt-tooling-backlog.md). Rows are inlined with the
+   *  CONTAINING function's name/size (`fnName`/`size`) the same way the xref
+   *  rows are; `name` is deliberately not reused here because a table row's
+   *  interesting names are its member keys. */
+  objectTables(opts: ObjectTablesOptions = {}) {
+    const r = this.artifact.objectTables(opts);
+    return {
+      ...r,
+      tables: r.tables.map((t) => {
+        const nb = this.neighbor(t.fn);
+        return { ...t, fnName: nb.name, size: nb.size };
       }),
     };
   }

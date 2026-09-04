@@ -156,6 +156,43 @@ export type WhoCallsByName = Bounded<ByNameCaller> & {
   readonly excludedModule: number | null;
 };
 
+/** One member of a constant object table (`GET /api/object-tables`, spec 17
+ *  §14.2). `value` is the constant string, truncated by the server; it is
+ *  `null` for every non-string kind, including `computed` — a member the
+ *  bytecode builds at runtime (`BASE + "/x"`), where only the KEY is known. */
+export interface ObjectTableMember {
+  readonly key: string;
+  readonly value: string | null;
+  readonly kind: "string" | "number" | "boolean" | "null" | "undefined" | "computed" | "unknown";
+}
+
+/** One constant object literal found bundle-wide. `numProps` counts the
+ *  literal-buffer members only, so `members.length - numProps` is the
+ *  computed tail. `fn`/`offset` locate the `NewObjectWithBuffer*`. */
+export interface ObjectTable {
+  readonly fn: number;
+  readonly fnName: string | null;
+  readonly size: number | null;
+  readonly offset: number;
+  readonly module: number | null;
+  readonly numProps: number;
+  readonly members: readonly ObjectTableMember[];
+  readonly strings: number;
+  readonly nonStrings: number;
+  readonly computed: number;
+}
+
+/** `GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=`
+ *  — the "endpoint tables" inventory. `scanned`/`failed` are the functions
+ *  the one-pass bytecode scan decoded / could not decode. */
+export interface ObjectTables {
+  readonly tables: readonly ObjectTable[];
+  readonly total: number;
+  readonly truncated: boolean;
+  readonly scanned: number;
+  readonly failed: number;
+}
+
 /** A `strings.json` entry, verbatim (`src/artifact/schema.ts`'s
  *  `StringRow`) — either the literal value or, for a string over 4 KB, a
  *  head + hash instead of a silent truncation (§2.3a). */

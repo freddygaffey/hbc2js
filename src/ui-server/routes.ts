@@ -309,6 +309,31 @@ const BASE_ROUTES: readonly Route[] = [
       return ok(ctx.resources.whoCallsByName({ fn }, opts));
     },
   },
+  {
+    // spec 17 §14.2 / spec 10 §3.1: bundle-wide inventory of constant object
+    // literals ("endpoint tables"). Live verb — 404-free but needs the
+    // server's artifact to have been opened with the .hbc.
+    method: "GET",
+    re: /^\/api\/object-tables$/,
+    handler: (_p, req, ctx) => {
+      const minProps = qNum(req.query.minProps);
+      const stringRatio = qNum(req.query.stringRatio);
+      const moduleId = qNum(req.query.module);
+      const limit = qNum(req.query.limit);
+      const key = req.query.key;
+      const value = req.query.value;
+      return ok(
+        ctx.resources.objectTables({
+          ...(minProps !== undefined ? { minProps } : {}),
+          ...(stringRatio !== undefined ? { stringRatio } : {}),
+          ...(moduleId !== undefined ? { module: moduleId } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+          ...(key !== undefined ? { key } : {}),
+          ...(value !== undefined ? { value } : {}),
+        }),
+      );
+    },
+  },
   // -- native / leads / findings / scan (spec 17 §1/§14) --
   {
     method: "GET",

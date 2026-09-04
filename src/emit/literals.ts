@@ -172,3 +172,46 @@ export function objectFromBuffers(mod: HbcModule, keys: readonly string[], value
 export function regExpExpr(mod: HbcModule, patternId: number, flagsId: number): Expr {
   return { k: "new", callee: { k: "ident", name: "RegExp" }, args: [stringLiteral(mod, patternId), stringLiteral(mod, flagsId)] };
 }
+
+/**
+ * The raw serialized values of a `NewObjectWithBuffer*` literal — the same
+ * two buffers `objectFromBuffers` reads (v≤96 `objValueBuffer`, v≥97
+ * `literalValueBuffer`), but returned undecorated for the ANALYSIS surfaces
+ * that want the values themselves rather than an AST
+ * (`src/artifact/object-tables.ts`, spec 10 §3.1 `query object-tables`).
+ * A member the buffer cannot supply is `null`, exactly as `readValuesTolerant`
+ * reports it — never an exception.
+ */
+export function objectBufferValues(mod: HbcModule, valueOffset: number, count: number): readonly (SerializedLiteral | null)[] {
+  const buffer = mod.header.version >= 97 ? mod.literalValueBuffer : mod.objValueBuffer;
+  return readValuesTolerant(buffer, valueOffset, count, mod.header.version);
+}
+
+/**
+ * `objectKeys` without the throw: `null` when the key buffer does not hold
+ * `numProps` decodable property names. A bundle-wide inventory scans literals
+ * it was never asked about (`query object-tables`), so one malformed key
+ * buffer must skip that literal rather than fail the whole scan; the emitter
+ * still uses `objectKeys`, whose refusal is load-bearing there.
+ */
+export function objectKeysTolerant(mod: HbcModule, keyBufferOffset: number, numProps: number): string[] | null {
+  const values = readValuesTolerant(mod.objKeyBuffer, keyBufferOffset, numProps, mod.header.version);
+  const keys: string[] = [];
+  for (const v of values) {
+    if (v === null) return null;
+    if (v.kind === "string") {
+      try {
+        keys.push(mod.strings.get(v.stringId));
+      } catch {
+        return null;
+      }
+      continue;
+    }
+    if (v.kind === "integer" || v.kind === "number") {
+      keys.push(renderNumber(v.value));
+      continue;
+    }
+    return null;
+  }
+  return keys;
+}

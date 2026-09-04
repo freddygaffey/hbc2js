@@ -40,9 +40,13 @@ PIN→jsrsasign wiring, A4 Auth0 reachability. FIX = a points-to / dataflow pass
 resolves `require(N)` even when N is register/list-indexed. Highest-value tool work.
 
 New verbs/capabilities the hunt wanted:
-- `endpoint-tables` / object-literal-group discovery by key-pattern (PATH_*) — the hunt
-  found a SECOND complete endpoint table `LicenceAPIEndpoints` only by lucky grep. Need
-  a one-shot inventory of all endpoint-constant tables.
+- ~~`endpoint-tables` / object-literal-group discovery by key-pattern (PATH_*)~~ —
+  **LANDED 2026-09-04 as `query object-tables`** (spec 10 §3.1, spec 17 §14.2;
+  `src/artifact/object-tables.ts`). One `NewObjectWithBuffer*` scan of the whole
+  bundle, filterable by `--key`/`--value` regex, `--min-props`, `--string-ratio`,
+  `--module`. On NSW both endpoint tables surface immediately from
+  `--value '^/' --min-props 4` (11 hits), including the `LicenceAPIEndpoints`
+  one the hunt found by lucky grep.
 - HTTP-method-per-path + header-origin trace (is `X-AGENCY-CODE` client- or session-
   derived?) — currently pure manual reading.
 - JSX-prop / named-component-config locator (`originWhitelist={…}` on WebView, RN

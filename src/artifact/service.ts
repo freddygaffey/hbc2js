@@ -50,6 +50,7 @@ import type {
   StringsIndex,
 } from "./schema.ts";
 import { exportedNamesOf } from "./exported-names.ts";
+import { scanObjectTables, type ObjectTableRow, type ObjectTableScan } from "./object-tables.ts";
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -143,6 +144,34 @@ const AMBIGUOUS_NAMES = new Set<string>([
  *  common to be a useful dispatch signal (§14). */
 const BY_NAME_FANOUT_LIMIT = 200;
 
+/** Options for `query object-tables` (spec 10 §3.1): the default filter keeps
+ *  literals that look like CONSTANT TABLES — at least `minProps` members, at
+ *  least `stringRatio` of them string-valued — and `key`/`value` narrow that
+ *  to the ones a hunt is actually after (`PATH_*` keys, `/…`/`http…`
+ *  values). Both patterns are ECMAScript regexes; a table matches if ANY of
+ *  its members does. */
+export interface ObjectTablesOptions {
+  readonly minProps?: number;
+  readonly stringRatio?: number;
+  readonly key?: string;
+  readonly value?: string;
+  readonly module?: number;
+  readonly limit?: number;
+}
+
+export interface ObjectTablesResult {
+  readonly tables: readonly ObjectTableRow[];
+  readonly total: number;
+  readonly truncated: boolean;
+  /** Functions the underlying scan decoded (`failed` = the ones it could
+   *  not, skipped rather than fatal). */
+  readonly scanned: number;
+  readonly failed: number;
+}
+
+/** `query object-tables` defaults (spec 10 §3.1). */
+export const OBJECT_TABLE_DEFAULTS = { minProps: 4, stringRatio: 0.5, limit: 100 } as const;
+
 export interface Bounded<T> {
   readonly rows: readonly T[];
   readonly total: number;
@@ -159,6 +188,7 @@ export const CAPS = {
   stringGrep: 50,
   globalUses: 50,
   native: 50,
+  objectTables: OBJECT_TABLE_DEFAULTS.limit,
 } as const;
 
 function fnDir(artifactDir: string): string {
@@ -543,6 +573,56 @@ export class ArtifactService {
     allRows.sort((a, b) => a.fn - b.fn || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const cap = opts.all === true ? allRows.length : CAPS.whoCallsByName;
     return { rows: allRows.slice(0, cap), total: allRows.length, truncated: allRows.length > cap, names, excludedModule };
+  }
+
+  /** The one bundle-wide `NewObjectWithBuffer*` scan, memoised: it is
+   *  O(instructions) (measured 96 ms / 15,551 functions on
+   *  react-navigation-example-0.85.3), so every later filtered query is a
+   *  filter over an array. Live verb — needs `--hbc` like `list`/`context`,
+   *  because the literal buffers are bytecode, not artifact rows. */
+  private objectTableScan: ObjectTableScan | undefined;
+  private ensureObjectTables(): ObjectTableScan {
+    if (this.objectTableScan === undefined) {
+      const module = this.ensureModule("object-tables");
+      this.objectTableScan = scanObjectTables(module, (fn) => this.moduleOfFn(fn));
+    }
+    return this.objectTableScan;
+  }
+
+  /** §3.1 `query object-tables` — a bundle-wide inventory of constant object
+   *  literals (docs/specs/hunt-tooling-backlog.md "endpoint-tables": the hunt
+   *  needs to SEE every endpoint table, not grep for the one key it already
+   *  guessed). Sorted most-members-first so the real tables lead. */
+  objectTables(opts: ObjectTablesOptions = {}): ObjectTablesResult {
+    const scan = this.ensureObjectTables();
+    const minProps = opts.minProps ?? OBJECT_TABLE_DEFAULTS.minProps;
+    const stringRatio = opts.stringRatio ?? OBJECT_TABLE_DEFAULTS.stringRatio;
+    const limit = opts.limit ?? OBJECT_TABLE_DEFAULTS.limit;
+    let keyRe: RegExp | undefined;
+    let valueRe: RegExp | undefined;
+    try {
+      if (opts.key !== undefined) keyRe = new RegExp(opts.key);
+      if (opts.value !== undefined) valueRe = new RegExp(opts.value);
+    } catch (e) {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, `object-tables: bad regex — ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const matches = scan.rows.filter((r) => {
+      const n = r.members.length;
+      if (n < minProps) return false;
+      if (n === 0 || r.strings / n < stringRatio) return false;
+      if (opts.module !== undefined && r.module !== opts.module) return false;
+      if (keyRe !== undefined && !r.members.some((m) => keyRe!.test(m.key))) return false;
+      if (valueRe !== undefined && !r.members.some((m) => m.value !== null && valueRe!.test(m.value))) return false;
+      return true;
+    });
+    matches.sort((a, b) => b.members.length - a.members.length || a.fn - b.fn || a.offset - b.offset);
+    return {
+      tables: matches.slice(0, limit),
+      total: matches.length,
+      truncated: matches.length > limit,
+      scanned: scan.scanned,
+      failed: scan.failed,
+    };
   }
 
   /** §3.1 `query native [--fn N]`. */

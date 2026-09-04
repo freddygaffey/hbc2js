@@ -80,6 +80,7 @@ resource key survives every rename and re-render (spec 10 §0).
 | `xref/string/{sid}` + `xref/string-grep/{regex}` | `sid` / regex | `query string` / `query string-grep` (spec 10 §3.1) | those verbs' caps (≤ 30 / ≤ 50 + total) |
 | `xref/global-uses/{name}` | global name | `query global-uses` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `xref/who-calls-by-name?fn=N\|name=X` | `fnIndex` OR export name | `query who-calls-by-name` (spec 10 §3.1; §14.1 below) | ≤ 50 candidate rows + total; `names[]` + `ambiguous` |
+| `object-tables?minProps&stringRatio&key&value&module&limit` | filter opts | `query object-tables` (spec 10 §3.1; §14.2 below) | ≤ 100 tables + total; rows inlined with `fnName`/`size` |
 | `native[/{fn}]` — native surface | optional `fnIndex` | `query native` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `module/{mod}` + `module-graph` | `mod` | `query module` (spec 10 §3.1) | that verb's ≤ 15 lines |
 | `package-id/{mod}` — fingerprint-DB identification result for a module | `mod` | reuse-validation two-key gate (spec 13) over the shared sigdb (spec 15) | spec-13 published cap; every row cites the sigdb match, never a guess |
@@ -364,6 +365,57 @@ Reviewed hands-on against an NSW hunt. Supersedes the §1/§2 surface where they
 **Write side — one fix, rest unchanged:**
 - **`set_finding_status → confirmed` accepts EITHER a dynamic repro OR a fidelity-checked STATIC proof.** Dynamic-only over-constrains: a hardcoded key, or a signature parsed-but-never-checked, is provable from the code alone. Broaden what counts as confirming evidence; keep the evidence gate.
 - **Keep exactly as-is:** `record_finding` requires a resolving evidence ref; no self-confirm; every write logged + replayable. This bakes truth-first in as a schema constraint, not a prompt. Distinction that is the throughline: requiring evidence for a finding is legitimate rigor; refusing a capability is crippling — the write side is the good kind.
+
+### 14.2 `object-tables` — bundle-wide constant-table inventory (2026-09-04, landed)
+
+The second Round-2 tool-gap (`docs/specs/hunt-tooling-backlog.md`): the NSW
+hunt found a SECOND complete endpoint table (`LicenceAPIEndpoints`) only by a
+lucky grep, because nothing could answer "show me every constant table in this
+bundle". This verb answers it in one pass, with no JS parsing and no
+decompilation.
+
+**How.** Every object literal whose members are compile-time constants is a
+`NewObjectWithBuffer` / `…Long` / `NewObjectWithBufferAndParent` whose keys and
+values live in the key/value buffers (v≤96 inline operands, v≥97 behind
+`mod.shapes` — `src/emit/lower.ts`'s own two shapes). `src/artifact/object-tables.ts`
+decodes every function ONCE (decode only: no CFG, no frames — measured 96 ms
+for 15,551 functions on react-navigation-example-0.85.3, ~1.1 s for 43,384 on
+Service NSW) and reports, per literal: `fn`, instruction `offset`, `module`,
+`numProps`, the members (`key`, string `value` truncated at 200 chars, `kind`),
+and the `strings`/`nonStrings` counts. A function that will not decode is
+skipped and counted in `failed`, never fatal.
+
+**Computed members (best-effort).** A member whose value is built at runtime
+(`BASE + "/x"`, a template literal) is not in the buffer; hermesc emits it as
+`PutNewOwnById`/`PutById` — or, at v≥98, `PutOwnBySlotIdx` (no string
+operand at all: the key is the shape's own `keys[slot]`) — on the literal's
+own register straight after. A tail key that already exists in the buffer
+REPLACES that member (the buffer entry was a placeholder), so a computed
+member is never listed twice. Those
+KEYS are recovered by a straight-line walk forward that stops at the first
+branch target, the first non-`normal` instruction, or the first redefinition of
+the register — so a reported key is always really this literal's. The value is
+reported as `kind: "computed"` (`<computed>` in text): proving it would need the
+decompiler, and this verb deliberately never runs one.
+
+**Shape.** `hbc2js query object-tables --artifact <dir> --hbc <in.hbc>
+[--min-props N] [--string-ratio R] [--key <re>] [--value <re>] [--module M]
+[--limit N] [--all] [--json]` / `ArtifactService.objectTables(opts)` /
+`McpResources.objectTables` / `GET /api/object-tables?minProps=&stringRatio=&key=&value=&module=&limit=`.
+
+**Filter / bounds.** Default: ≥ 4 members AND ≥ 50% of them string-valued —
+the shape of a table, as opposed to an options bag. `--key`/`--value` are
+ECMAScript regexes over member keys / string values; a table matches if ANY
+member matches. Sorted most-members-first; ≤ 100 tables by default plus
+`total`/`truncated`, ≤ 20 member lines per table in text output. The scan
+itself is memoised per `ArtifactService`, so repeated filtered queries are a
+filter over an array, not a re-scan.
+
+**Measured (Service NSW, 43,384 functions).** `--value '^(/|https?:)' --min-props 4`
+→ 486 tables; `--value '^/'` → 11, of which BOTH endpoint tables lead: fn 10635
+(module 778, 41 members, `PATH_AUTHENTICATE`/`PATH_BEARER_TOKEN`/…) and fn 11367
+(module 818, 22 members, `PATH_OLD_DRIVER_LICENCE`/`PATH_DDL_OPT_IN_STATUS`/… —
+the `LicenceAPIEndpoints` table the hunt originally found by luck).
 
 ### 14.1 `who-calls-by-name` — name-based caller recovery (2026-09-04, landed)
 
