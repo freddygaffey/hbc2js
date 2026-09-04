@@ -34,7 +34,7 @@
   },
   "density": "comfortable",
   "densities": {
-    "comfortable": { "unit": "0.25rem", "fontSize": "14px", "rowHeight": "28px" },
-    "compact": { "unit": "0.2rem", "fontSize": "12.5px", "rowHeight": "22px" }
+    "comfortable": { "unit": "0.3rem", "fontSize": "15px", "rowHeight": "32px" },
+    "compact": { "unit": "0.22rem", "fontSize": "13px", "rowHeight": "24px" }
   }
 }

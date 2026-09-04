@@ -41,6 +41,11 @@ body {
   color: var(--text);
   font-family: var(--font-sans-stack);
   -webkit-font-smoothing: antialiased;
+  /* Density polish: the shell "seems scrunched" without generous line
+     spacing — 1.5 clears the >= 1.45 floor at both densities and is what
+     makes wrapped source/log lines readable rather than stacked edge to
+     edge. */
+  line-height: 1.5;
 }
 
 /* Flat and bordered, not shadow-heavy (spec 20 §1.2). */

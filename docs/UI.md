@@ -51,6 +51,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/fn/{fn}/callees` | `CallsFrom` |
   | GET | `/api/module/{id}` | `ModuleInfo` |
   | GET | `/api/module/{id}/source` | `ModuleSource` — whole file text + every owned fn `{fn,name,lines}`; the FILE view (select a module, see all its functions; per-function focus is optional, not forced) |
+  | GET | `/api/segregation` | `SegregationResult` — the name-recovered module tree (`src/ui-server/segregation.ts`): one row per module `{id, path, bucket, package, nameSignal, nameConfidence}` sorted by id, plus disjoint `counts {screens, navigation, src, node_modules, unclassified}`. 404 when the project has no `module_<id>.js` files. Computed once per server process (0.5 s read + 4.6 s segregate on a 4 510-module bundle) and cached; restart the server to pick up new modules |
   | GET | `/api/findings` | `Bounded<ResolvedFinding>` |
   | GET | `/api/leads` | `LeadsResult` |
   | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
@@ -101,6 +102,15 @@ never a raw value.
 runtime toggle in the top bar and in the command palette. It sets the root
 font-size and Tailwind's `--spacing` unit, so every rem-based type size and
 every padding/gap utility rescales at once; no component has a density branch.
+Both densities' `unit`/`fontSize`/`rowHeight` (`ui/themes/{dark,light}.json`)
+were widened for the "feels scrunched" pass — `comfortable`'s unit moved off
+Tailwind's own 0.25rem default (which made "comfortable" indistinguishable
+from stock) to 0.3rem, `compact` to 0.22rem — and `ui/src/theme/theme.css`'s
+`body` sets `line-height: 1.5` (>= the 1.45 floor at both densities). The
+preset (dark/light) and density both persist to `localStorage`
+(`ui/src/theme/ThemeProvider.tsx`, keys `hbc2js.theme.preset`/
+`hbc2js.theme.density`), wrapped in try/catch like every other localStorage
+use in the shell.
 
 **Art direction is a placeholder** (spec 22 §1): cool slate, `--bg #0e1520`,
 `--accent #4c9be8`, IBM Plex Sans/Mono loaded from Google Fonts in
@@ -187,6 +197,19 @@ annotate actions consume. `tests/gate/ui/listing.test.ts` fails if the two
 resolves `acceptedName > overlayName > name > "fn N"` and every pane that
 shows a function name goes through it.
 
+**Screens first.** A real Metro bundle carries no module paths at all —
+`ModuleEntry.file` is `module_<id>.js` for every one of Service NSW's 4 510
+modules — so grouping the tree by `file` puts everything in one `src/` group.
+The tree therefore groups by `GET /api/segregation` instead
+(`groupModulesSegregated` in `ui/src/listing/modules.ts`): **Screens**,
+**Navigation**, **App**, one group per `node_modules/<pkg>` alphabetically,
+then **Unclassified** last and collapsed. Screens and Navigation are open by
+default, because screens are what an analyst debugs first. A module's label is
+the basename of its recovered path (`HomeScreen.js`) with `module_<id>` kept
+as a dim secondary label so the id is never lost. When `/api/segregation` is
+unavailable (404, or the mock adapter) the tree falls back to `groupModules`
+below — never a blank tree.
+
 **Bounded by construction.** The left tree lists modules from
 `GET /api/modules` grouped into the app's own `src/` modules and one group
 per `node_modules/<pkg>` (`ui/src/listing/modules.ts`), and only fetches
@@ -218,8 +241,8 @@ and stops no events, so right-clicks reach the annotate track's menu.
   vim preset are landing 4.
 - **The context menu** items are disabled; rename/comment through `McpTools`
   is landing 5.
-- **The activity pane** shows mock log rows; real 1 s polling of a live
-  project's log arrives with the server (landing 6).
+- **The activity pane** is live (see "Activity feed" below) — this bullet
+  is now historical.
 - No virtualisation (spec 22 §2 accepts it): the tree renders every open
   module's rows and the editor is capped at 5 000 lines instead. No graph
   view, no worker/jobs rail, no Playwright smoke test yet.
@@ -291,3 +314,71 @@ the dialog states its target so it cannot mislead silently. `view.fold` /
 `view.unfold`, `view.rawHermes` and `ai.*` are status-line stubs;
 `view.copyDisasmOffset` copies `fn:<n>`, not a byte offset. The Package panel
 stays on the mock (the server publishes no `/api/package-id`).
+
+## Activity feed (wave 2, track 3)
+
+The bottom pane (`ui/src/panes/BottomPane.tsx`) is collapsed to a one-line
+status bar by default and expands into two tabs, both reading the same live
+data from `useLog()` (`ui/src/hooks.ts`):
+
+- **Activity** (`ui/src/activity/ActivityFeed.tsx`) — one compact line per
+  row (`HH:MM:SS who op summary`), newest at the bottom, auto-scrolling
+  unless the viewer has scrolled up (a 24 px slop on "at the bottom", so
+  sub-pixel scroll rounding does not fight the auto-scroll). Clicking a row
+  whose `detail` names a function (`ui/src/activity/format.ts`'s
+  `targetFn()` — reads `detail.target`/`detail.fn`; today's server payloads
+  do not populate either, so this is forward-compatible rather than
+  exercised yet) selects it via `select({kind:"fn", fn})`
+  (`ui/src/state/selection.ts`).
+- **Log** (`ui/src/activity/LogTab.tsx`) — the raw rows (`seq`, `ts`, `who`,
+  `op`, `detail` verbatim) in a monospace list, filterable by a `who`/`op`
+  substring box.
+
+Collapsed state and the active tab persist to `localStorage`
+(`ui/src/activity/store.ts`, keys `hbc2js.activity.collapsed`/
+`hbc2js.activity.tab`), wrapped in try/catch so a private-browsing tab
+degrades to in-memory state rather than throwing. The header shows an
+unread-count badge whenever there is activity the viewer has not seen —
+either because the pane is collapsed, the "Log" tab is active, or the
+"Activity" tab is scrolled up; `BottomPane` and `ActivityFeed` share one
+`seenSeq` high-water mark for this (`ActivityFeed` owns it while mounted and
+reports back through `onSeenChange`, `BottomPane` computes it directly from
+`rows` otherwise) so the count never drifts out of sync with what has
+actually scrolled past.
+
+**Transport (`useLog`, `ui/src/hooks.ts`).** Prefers the server's SSE
+endpoint, `GET /api/events` (`src/ui-server/server.ts`'s `serveEvents`):
+one `EventSource` against `${API_BASE}/api/events`, listening for its `log`
+events, each a JSON `LogTail` (`{rows, cursor}`). If `EventSource` errors —
+or is unavailable, or the app is running against the mock adapter
+(`VITE_API_MOCK=1`, which has no server to connect to) — `useLog` falls
+back to polling `GET /api/log/tail?since=<cursor>` every 1 s
+(`LOG_POLL_MS`). Both paths append through the same idempotent `append()`
+(rows are filtered to `seq > cursor` before merging, so a race between a
+late poll response and a fresh SSE frame cannot double an entry), so a
+mid-session SSE hiccup that falls back to polling picks up exactly where it
+left off. Kept as a `useQuery` under the `["log-tail"]` key (rather than a
+bare interval) specifically so `ui/src/actions/registry.ts`'s post-write
+`invalidateQueries({queryKey:["log-tail"]})` still forces an immediate
+refetch while polling is the active source.
+
+**Cursor semantics.** `/api/log/tail`'s own contract (`docs/specs/22-ui-mvp.md`
+§3.5): rows oldest-first with `seq > since`, plus `cursor` (the highest
+`seq` returned, poll again with that). `useLog` keeps at most
+`LOG_FEED_MAX_ROWS` (500) rows in memory, oldest dropped first — the bottom
+pane is a live tail, not a full-session log browser (that is what the "Log"
+tab's filter, plus `GET /api/log?since=&who=`/`generate_documentation` on
+the MCP side, are for).
+
+**What a line shows.** `ui/src/activity/format.ts`'s `summarize()` turns
+`op` + `detail` (a JSON string whose shape is the writer's, not a typed
+contract — `src/projdb/ix-write.ts`'s `init`/`rebuild-index` rows,
+`src/projdb/revision-store.ts`/`rebuild.ts`'s `annotate`/`revert` rows) into
+one clause: `init` → "project initialised"; `rebuild-index` with a
+`functions` count → "project initialised: 43,384 functions"; `annotate`/
+`revert` with `{"kind":...}` → "renamed"/"commented"/"tagged"/"bookmarked"/
+"finding recorded"/"status changed" (revert prefixes "reverted (...)" ).
+Anything unrecognised falls back to the raw `op` and JSON `detail` rather
+than throwing — verified directly against the live Service NSW project
+server (`seq 1`–`4`: `init`, `rebuild-index {functions:43384,...}`,
+`annotate {kind:"name"}`, `annotate {kind:"comment"}`).

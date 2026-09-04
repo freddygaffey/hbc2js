@@ -2,11 +2,12 @@
 // resource; components never call fetch directly. Query keys are
 // `[resource, ...args]` so a write (spec 22 landing 5) can invalidate
 // precisely, and the log poll (landing 6) has its own 1 s interval.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { api, ApiError } from "./api.ts";
+import { API_BASE, USING_MOCK, api, ApiError } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
-  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
+  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
 } from "./contracts.ts";
 
@@ -60,11 +61,87 @@ export const useFindings = (): UseQueryResult<Bounded<ResolvedFinding>> =>
 export const useLeads = (): UseQueryResult<LeadsResult> =>
   useQuery({ queryKey: ["leads"], queryFn: () => api.leads() });
 
-/** Spec 22 §1/§3.5: the MVP live-update wire is a 1 s poll of
- *  `/api/log/tail?since=<seq>`. The shell polls from seq 0 (the whole tail,
- *  capped server-side); incremental cursor advance is landing 6's job. */
-export const useLog = (since = 0): UseQueryResult<LogTail> =>
-  useQuery({ queryKey: ["log-tail", since], queryFn: () => api.logTail(since), refetchInterval: LOG_POLL_MS });
+/** Rows kept in memory by {@link useLog} — the bottom pane never needs the
+ *  full session history, and an unbounded array under a live feed is a
+ *  slow leak waiting to happen. */
+export const LOG_FEED_MAX_ROWS = 500;
+
+/** Live tail of the append-only log (spec 22 §1/§3.5, wave-2 activity
+ *  landing). `LogTail`'s own cursor semantics ("oldest-first, `cursor` is
+ *  the highest `seq` returned") are exactly a `useReducer`-shaped stream:
+ *  each delivery is *appended*, never replaces, the rows already held. */
+export interface LogFeedState {
+  /** Oldest-first, capped at {@link LOG_FEED_MAX_ROWS} (oldest dropped). */
+  readonly rows: readonly LogEntry[];
+  readonly cursor: number;
+  /** `"sse"` once `GET /api/events` has delivered at least one frame,
+   *  `"poll"` while the 1 s `/api/log/tail` fallback is the active source
+   *  (also the only path under the mock adapter, which has no server),
+   *  `"connecting"` before either has spoken. */
+  readonly connected: "sse" | "poll" | "connecting";
+}
+
+/** Prefers `GET /api/events` (SSE); polls `/api/log/tail?since=<cursor>`
+ *  every {@link LOG_POLL_MS} whenever SSE has not (yet, or no longer)
+ *  confirmed itself up, so the very first second and any SSE hiccup are
+ *  still covered. Kept as one `useQuery` under the `"log-tail"` key (rather
+ *  than a bare `useEffect` poll) so `ui/src/actions/registry.ts`'s
+ *  post-write `invalidateQueries({queryKey:["log-tail"]})` still forces an
+ *  immediate refetch while polling is the active source. */
+export const useLog = (): LogFeedState => {
+  const [rows, setRows] = useState<readonly LogEntry[]>([]);
+  const [cursor, setCursor] = useState(0);
+  const [sse, setSse] = useState<"connecting" | "up" | "down">(USING_MOCK ? "down" : "connecting");
+  const cursorRef = useRef(0);
+
+  /** Idempotent under races between the SSE stream and the poll fallback:
+   *  only rows past the cursor we already hold are kept. */
+  const append = useCallback((incoming: readonly LogEntry[], newCursor: number): void => {
+    const known = cursorRef.current;
+    const fresh = incoming.filter((r) => r.seq > known);
+    if (fresh.length > 0) {
+      setRows((prev) => {
+        const merged = prev.concat(fresh);
+        return merged.length > LOG_FEED_MAX_ROWS ? merged.slice(merged.length - LOG_FEED_MAX_ROWS) : merged;
+      });
+    }
+    if (newCursor > cursorRef.current) {
+      cursorRef.current = newCursor;
+      setCursor(newCursor);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (USING_MOCK || typeof EventSource === "undefined") return undefined;
+    const es = new EventSource(`${API_BASE}/api/events`);
+    const onLog = (ev: MessageEvent<string>): void => {
+      try {
+        const data = JSON.parse(ev.data) as LogTail;
+        append(data.rows, data.cursor);
+        setSse("up");
+      } catch {
+        // malformed frame — ignore, the poll fallback below still runs.
+      }
+    };
+    es.addEventListener("log", onLog as EventListener);
+    es.onopen = () => setSse("up");
+    es.onerror = () => setSse("down");
+    return () => es.close();
+  }, [append]);
+
+  const pollEnabled = sse !== "up";
+  useQuery({
+    queryKey: ["log-tail"],
+    queryFn: () => api.logTail(cursorRef.current).then((res) => {
+      append(res.rows, res.cursor);
+      return res;
+    }),
+    enabled: pollEnabled,
+    refetchInterval: pollEnabled ? LOG_POLL_MS : false,
+  });
+
+  return { rows, cursor, connected: sse === "up" ? "sse" : sse === "down" ? "poll" : "connecting" };
+};
 
 export const useSearchFunctions = (query: string): UseQueryResult<SearchPage<FunctionMatch>> =>
   useQuery({ queryKey: ["search-functions", query], queryFn: () => api.searchFunctions(query), enabled: query.length > 0 });
