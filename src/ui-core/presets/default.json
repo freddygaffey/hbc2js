@@ -1,0 +1,10 @@
+{
+  "F2": "annotate.rename",
+  "Ctrl-/": "annotate.comment",
+  "F12": "navigate.definition",
+  "Shift-F12": "navigate.xrefs",
+  "Ctrl-P": "project.palette",
+  "Ctrl-F": "project.search",
+  "Alt-Left": "navigate.back",
+  "Alt-Right": "navigate.forward"
+}

@@ -1,0 +1,335 @@
+// src/ui-core/actions.ts — docs/specs/22-ui-mvp.md §3.1 (action registry) and
+// §3.3 (context menu). Invariant: the context menu, the command palette, and
+// the keymap are three *views* over this one registry — add an action here
+// and it appears in the menu, the palette, and (once a preset binds a chord
+// to its id) the keymap, all at once. Nothing outside this file should hold
+// its own list of commands.
+//
+// Pure TypeScript, no DOM, no React, no dependencies — importable from
+// Node tests and from the browser shell alike.
+
+export type SelectionKind = "fn" | "identifier" | "string" | "module" | "finding" | "none";
+
+export interface Selection {
+  kind: SelectionKind;
+  /** Function id/index, when kind is "fn" or the selection is inside a function. */
+  fn?: number;
+  /** Identifier/string text, when kind is "identifier" or "string". */
+  name?: string;
+  /** String-table id, when kind is "string". */
+  sid?: number;
+  /** Module id, when kind is "module". */
+  moduleId?: string;
+  /** Finding/review-row id, when kind is "finding". */
+  rid?: number;
+}
+
+export type FocusPane = "editor" | "tree" | "search" | "palette" | "graph" | "findings";
+
+/**
+ * Abstract surface the shell implements. Actions call only these methods,
+ * never touch the DOM or React state directly, so the registry stays pure
+ * and testable without a browser.
+ */
+export interface ActionApi {
+  setName(target: Selection, name: string): void | Promise<void>;
+  addComment(target: Selection, text: string): void | Promise<void>;
+  gotoFn(fn: number): void | Promise<void>;
+  showXrefs(target: Selection): void | Promise<void>;
+  search(query?: string): void | Promise<void>;
+  openPalette(): void | Promise<void>;
+  markReviewed(target: Selection): void | Promise<void>;
+  markSuspicious(target: Selection): void | Promise<void>;
+  copyDisasmOffset(target: Selection): void | Promise<void>;
+  showRawHermes(target: Selection): void | Promise<void>;
+  explain(target: Selection): void | Promise<void>;
+  suggestName(target: Selection): void | Promise<void>;
+  openGraph(target: Selection): void | Promise<void>;
+  nextFn(): void | Promise<void>;
+  prevFn(): void | Promise<void>;
+  nextModule(): void | Promise<void>;
+  prevModule(): void | Promise<void>;
+  back(): void | Promise<void>;
+  forward(): void | Promise<void>;
+  fold(): void | Promise<void>;
+  unfold(): void | Promise<void>;
+}
+
+export interface ActionContext {
+  selection: Selection;
+  focusPane: FocusPane;
+  api: ActionApi;
+}
+
+export type ActionGroup = "navigate" | "annotate" | "review" | "view" | "ai" | "project";
+
+export interface Action {
+  id: string;
+  title: string;
+  group: ActionGroup;
+  when?: (ctx: ActionContext) => boolean;
+  run: (ctx: ActionContext) => void | Promise<void>;
+  defaultChord?: string;
+}
+
+export interface Registry {
+  register(action: Action): void;
+  get(id: string): Action | undefined;
+  list(): Action[];
+  enabledFor(ctx: ActionContext): Action[];
+  run(id: string, ctx: ActionContext): void | Promise<void>;
+}
+
+function hasIdentifierTarget(ctx: ActionContext): boolean {
+  return ctx.selection.kind === "identifier" || ctx.selection.kind === "fn" || ctx.selection.kind === "string";
+}
+
+function hasFnTarget(ctx: ActionContext): boolean {
+  return ctx.selection.kind === "fn" && ctx.selection.fn !== undefined;
+}
+
+function alwaysFalse(): boolean {
+  return false;
+}
+
+/**
+ * The standard action set from spec 22 §3.3. `ai.*` and `view.graph` are
+ * registered disabled (`when: () => false`) — greyed out in menu and
+ * palette — until the AI/graph specs land; keymap resolution still finds
+ * their ids so preset JSON referencing them is not "dangling".
+ */
+export function standardActions(): Action[] {
+  return [
+    {
+      id: "navigate.definition",
+      title: "Go to definition",
+      group: "navigate",
+      when: hasIdentifierTarget,
+      run: (ctx) => {
+        const fn = ctx.selection.fn;
+        if (fn !== undefined) return ctx.api.gotoFn(fn);
+      },
+    },
+    {
+      id: "navigate.xrefs",
+      title: "Find references",
+      group: "navigate",
+      when: hasIdentifierTarget,
+      run: (ctx) => ctx.api.showXrefs(ctx.selection),
+    },
+    {
+      id: "navigate.nextFn",
+      title: "Next function",
+      group: "navigate",
+      run: (ctx) => ctx.api.nextFn(),
+    },
+    {
+      id: "navigate.prevFn",
+      title: "Previous function",
+      group: "navigate",
+      run: (ctx) => ctx.api.prevFn(),
+    },
+    {
+      id: "navigate.nextModule",
+      title: "Next module",
+      group: "navigate",
+      run: (ctx) => ctx.api.nextModule(),
+    },
+    {
+      id: "navigate.prevModule",
+      title: "Previous module",
+      group: "navigate",
+      run: (ctx) => ctx.api.prevModule(),
+    },
+    {
+      id: "navigate.back",
+      title: "Back",
+      group: "navigate",
+      run: (ctx) => ctx.api.back(),
+    },
+    {
+      id: "navigate.forward",
+      title: "Forward",
+      group: "navigate",
+      run: (ctx) => ctx.api.forward(),
+    },
+    {
+      id: "annotate.rename",
+      title: "Rename",
+      group: "annotate",
+      when: hasIdentifierTarget,
+      run: (ctx) => ctx.api.setName(ctx.selection, ctx.selection.name ?? ""),
+    },
+    {
+      id: "annotate.comment",
+      title: "Add comment",
+      group: "annotate",
+      when: hasIdentifierTarget,
+      run: (ctx) => ctx.api.addComment(ctx.selection, ""),
+    },
+    {
+      id: "review.markReviewed",
+      title: "Mark reviewed",
+      group: "review",
+      when: (ctx) => ctx.selection.kind !== "none",
+      run: (ctx) => ctx.api.markReviewed(ctx.selection),
+    },
+    {
+      id: "review.markSuspicious",
+      title: "Mark suspicious",
+      group: "review",
+      when: (ctx) => ctx.selection.kind !== "none",
+      run: (ctx) => ctx.api.markSuspicious(ctx.selection),
+    },
+    {
+      id: "view.copyDisasmOffset",
+      title: "Copy disasm offset",
+      group: "view",
+      when: hasFnTarget,
+      run: (ctx) => ctx.api.copyDisasmOffset(ctx.selection),
+    },
+    {
+      id: "view.rawHermes",
+      title: "Show raw Hermes",
+      group: "view",
+      when: hasFnTarget,
+      run: (ctx) => ctx.api.showRawHermes(ctx.selection),
+    },
+    {
+      id: "view.fold",
+      title: "Fold",
+      group: "view",
+      run: (ctx) => ctx.api.fold(),
+    },
+    {
+      id: "view.unfold",
+      title: "Unfold",
+      group: "view",
+      run: (ctx) => ctx.api.unfold(),
+    },
+    {
+      id: "view.graph",
+      title: "Open in graph",
+      group: "view",
+      when: alwaysFalse,
+      run: (ctx) => ctx.api.openGraph(ctx.selection),
+    },
+    {
+      id: "ai.explain",
+      title: "Explain",
+      group: "ai",
+      when: alwaysFalse,
+      run: (ctx) => ctx.api.explain(ctx.selection),
+    },
+    {
+      id: "ai.suggestName",
+      title: "Suggest name",
+      group: "ai",
+      when: alwaysFalse,
+      run: (ctx) => ctx.api.suggestName(ctx.selection),
+    },
+    {
+      id: "project.palette",
+      title: "Open command palette",
+      group: "project",
+      run: (ctx) => ctx.api.openPalette(),
+    },
+    {
+      id: "project.search",
+      title: "Search project",
+      group: "project",
+      run: (ctx) => ctx.api.search(),
+    },
+  ];
+}
+
+export function createRegistry(): Registry {
+  const actions = new Map<string, Action>();
+
+  function register(action: Action): void {
+    actions.set(action.id, action);
+  }
+
+  function get(id: string): Action | undefined {
+    return actions.get(id);
+  }
+
+  function list(): Action[] {
+    return [...actions.values()];
+  }
+
+  function enabledFor(ctx: ActionContext): Action[] {
+    return list().filter((a) => a.when === undefined || a.when(ctx));
+  }
+
+  function run(id: string, ctx: ActionContext): void | Promise<void> {
+    const action = actions.get(id);
+    if (!action) throw new Error(`ui-core/actions: unknown action id "${id}"`);
+    if (action.when !== undefined && !action.when(ctx)) {
+      throw new Error(`ui-core/actions: action "${id}" is not enabled for this context`);
+    }
+    return action.run(ctx);
+  }
+
+  return { register, get, list, enabledFor, run };
+}
+
+/** Registers the standard action set (§3.3) on a fresh registry. */
+export function createStandardRegistry(): Registry {
+  const registry = createRegistry();
+  for (const action of standardActions()) registry.register(action);
+  return registry;
+}
+
+const GROUP_ORDER: ActionGroup[] = ["navigate", "annotate", "review", "view", "ai", "project"];
+
+export interface MenuItem {
+  id: string;
+  title: string;
+  group: ActionGroup;
+  chord?: string;
+  separatorBefore: boolean;
+}
+
+/**
+ * Builds context-menu items (§3.3): actions enabled for `ctx`, grouped in
+ * `GROUP_ORDER`, with a separator before the first item of each new group,
+ * each item carrying its keymap chord label (if the active keymap binds one).
+ */
+export function contextMenuFor(ctx: ActionContext, registry: Registry, keymap: { chordFor(id: string): string | undefined }): MenuItem[] {
+  const enabled = registry.enabledFor(ctx);
+  const byGroup = new Map<ActionGroup, Action[]>();
+  for (const action of enabled) {
+    const bucket = byGroup.get(action.group);
+    if (bucket) bucket.push(action);
+    else byGroup.set(action.group, [action]);
+  }
+  const items: MenuItem[] = [];
+  for (const group of GROUP_ORDER) {
+    const bucket = byGroup.get(group);
+    if (!bucket || bucket.length === 0) continue;
+    bucket.forEach((action, i) => {
+      const chord = keymap.chordFor(action.id);
+      const item: MenuItem = {
+        id: action.id,
+        title: action.title,
+        group: action.group,
+        separatorBefore: i === 0 && items.length > 0,
+        ...(chord !== undefined ? { chord } : {}),
+      };
+      items.push(item);
+    });
+  }
+  return items;
+}
+
+export interface PaletteItem {
+  id: string;
+  title: string;
+  group: ActionGroup;
+}
+
+/** Command-palette items: same registry, same `enabledFor`, no grouping/separators. */
+export function paletteItems(ctx: ActionContext, registry: Registry): PaletteItem[] {
+  return registry.enabledFor(ctx).map((a) => ({ id: a.id, title: a.title, group: a.group }));
+}

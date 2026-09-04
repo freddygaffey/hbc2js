@@ -1,0 +1,6 @@
+{
+  "L": "annotate.rename",
+  "G": "project.search",
+  ";": "annotate.comment",
+  "Ctrl-Shift-F": "navigate.xrefs"
+}

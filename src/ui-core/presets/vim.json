@@ -1,0 +1,18 @@
+{
+  "gd": "navigate.definition",
+  "gr": "navigate.xrefs",
+  "gc": "annotate.comment",
+  "cr": "annotate.rename",
+  "K": "ai.explain",
+  "]f": "navigate.nextFn",
+  "[f": "navigate.prevFn",
+  "]m": "navigate.nextModule",
+  "[m": "navigate.prevModule",
+  "Ctrl-o": "navigate.back",
+  "Ctrl-i": "navigate.forward",
+  "/": "project.search",
+  ":": "project.palette",
+  "zc": "view.fold",
+  "zo": "view.unfold",
+  "<leader>r": "annotate.rename"
+}
