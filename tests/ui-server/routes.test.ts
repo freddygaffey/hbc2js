@@ -258,6 +258,23 @@ test("GET /api/xref/global matches resources.globalUses", async () => {
   assert.deepEqual(r.json, resources.globalUses("require"));
 });
 
+test("GET /api/xref/who-calls-by-name (?name=) matches resources.whoCallsByName", async () => {
+  const r = await get("/api/xref/who-calls-by-name", { name: "sendAccessibilityEvent" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.whoCallsByName({ name: "sendAccessibilityEvent" }));
+});
+
+test("GET /api/xref/who-calls-by-name (?fn=) matches resources.whoCallsByName", async () => {
+  const r = await get("/api/xref/who-calls-by-name", { fn: "180" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, resources.whoCallsByName({ fn: 180 }));
+});
+
+test("GET /api/xref/who-calls-by-name with neither fn nor name is a 400", async () => {
+  const r = await get("/api/xref/who-calls-by-name", {});
+  assert.equal(r.status, 400);
+});
+
 test("GET /api/native matches resources.native", async () => {
   const r = await get("/api/native");
   assert.equal(r.status, 200);

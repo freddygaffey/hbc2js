@@ -66,3 +66,14 @@ The manual B1 resolution found the full points-to pass may be OVERKILL. This app
 require-ONCE-into-an-env-slot then `<slot>.<exportName>`. So a **`who-calls-by-name <exportName>`
 grep-based verb** across the split module tree resolves MOST hops WITHOUT register/list-index
 points-to. Build the cheap name-based verb FIRST; reserve the full points-to pass for the residue.
+
+**LANDED (2026-09-04):** `who-calls-by-name` shipped — `hbc2js query who-calls-by-name
+<fn:N|--name X>`, `ArtifactService.whoCallsByName`, `McpResources.whoCallsByName`,
+`GET /api/xref/who-calls-by-name`. `fn:N` proves the export names from bytecode (lazy ≤2-function
+decode of the parent+factory, `src/artifact/exported-names.ts`) then scans other modules'
+`property-get` uses; `--name X` scans one name. Rows carry `confidence:"by-name"` (never a resolved
+edge); common/high-fan-out names return `ambiguous`. Spec: 17 §14.1. **Measured on rn-template: of
+3,909 functions with `who-calls total:0`, 484 (12.4%) gain ≥1 by-name candidate.** RESIDUE for the
+full points-to pass: the receiver's identity (which module a `property-get` actually targets) — the
+by-name candidates are a superset (true caller + same-named-method / barrel / same-name-in-two-modules
+false positives).

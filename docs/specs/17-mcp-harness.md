@@ -79,6 +79,7 @@ resource key survives every rename and re-render (spec 10 §0).
 | `xref/calls-from/{fn}` | `fnIndex` | `query calls-from` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `xref/string/{sid}` + `xref/string-grep/{regex}` | `sid` / regex | `query string` / `query string-grep` (spec 10 §3.1) | those verbs' caps (≤ 30 / ≤ 50 + total) |
 | `xref/global-uses/{name}` | global name | `query global-uses` (spec 10 §3.1) | that verb's ≤ 50 + total |
+| `xref/who-calls-by-name?fn=N\|name=X` | `fnIndex` OR export name | `query who-calls-by-name` (spec 10 §3.1; §14.1 below) | ≤ 50 candidate rows + total; `names[]` + `ambiguous` |
 | `native[/{fn}]` — native surface | optional `fnIndex` | `query native` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `module/{mod}` + `module-graph` | `mod` | `query module` (spec 10 §3.1) | that verb's ≤ 15 lines |
 | `package-id/{mod}` — fingerprint-DB identification result for a module | `mod` | reuse-validation two-key gate (spec 13) over the shared sigdb (spec 15) | spec-13 published cap; every row cites the sigdb match, never a guess |
@@ -363,6 +364,60 @@ Reviewed hands-on against an NSW hunt. Supersedes the §1/§2 surface where they
 **Write side — one fix, rest unchanged:**
 - **`set_finding_status → confirmed` accepts EITHER a dynamic repro OR a fidelity-checked STATIC proof.** Dynamic-only over-constrains: a hardcoded key, or a signature parsed-but-never-checked, is provable from the code alone. Broaden what counts as confirming evidence; keep the evidence gate.
 - **Keep exactly as-is:** `record_finding` requires a resolving evidence ref; no self-confirm; every write logged + replayable. This bakes truth-first in as a schema constraint, not a prompt. Distinction that is the throughline: requiring evidence for a finding is legitimate rigor; refusing a capability is crippling — the write side is the good kind.
+
+### 14.1 `who-calls-by-name` — name-based caller recovery (2026-09-04, landed)
+
+The DOMINANT tool-gap of the overnight hunt (`docs/specs/hunt-tooling-backlog.md`
+"Round 2"): on the NSW bundle, and on any Metro/RN app that does
+`const m = require(list[N])` once into an env slot then `m.export(...)`, plain
+`who-calls`/`calls-from` return `total:0` — the callee register is
+list-indexed, so the calls index records `?`. The backlog's cheaper-fix
+refinement is landed here as a NAME-based verb; the full points-to pass is
+reserved for the residue (see below).
+
+**Shape.** `hbc2js query who-calls-by-name <fn:N | --name X>` /
+`ArtifactService.whoCallsByName({fn}|{name})` /
+`McpResources.whoCallsByName` / `GET /api/xref/who-calls-by-name?fn=N|name=X&all=`.
+
+- **by fn (`fn:N`)** — step 1: prove, from the bytecode of N's lexical parent
+  and its owning module's factory (a lazy ≤2-function decode; needs `--hbc`
+  like the other live verbs), the property names N's closure is stored under
+  (`CreateClosure`→`PutById`/`PutNewOwnById` def-use: `src/artifact/exported-names.ts`).
+  Step 2: for each such name, every function that READS it as a property
+  (`property-get` string-use), EXCLUDING N's own module. `excludedModule` is
+  reported.
+- **by name (`--name X`)** — step 2 alone, no exclusion.
+
+**Caps / bounds.** ≤ 50 candidate rows + `total` + `truncated`; `--all`/`?all=`
+lifts the cap. The result also carries `names[]` (each `{name, sid, ambiguous,
+why?}`).
+
+**Confidence semantics.** Every row carries `confidence: "by-name"` — a NAME
+match on a `property-get`, NOT a resolved call edge. It says "some function
+reads a property with this export's name"; it does not prove the receiver is
+this module's export. Consumers must never treat a by-name row as a
+`who-calls` edge.
+
+**Ambiguity.** A name that is a common JS member (`default`, `get`, `map`,
+`then`, `length`, … — the `AMBIGUOUS_NAMES` set) or that is read as a property
+in more than `BY_NAME_FANOUT_LIMIT` (200) functions is returned with
+`ambiguous: true` + a `why`, and contributes NO rows (say so, don't dump
+noise).
+
+**Known false-positive classes.** (1) An unrelated object with a same-named
+method (`x.remove()` where `x` is a Map, not the exporting module) — the verb
+cannot see the receiver's type. (2) A re-export/barrel that reads the name to
+forward it. (3) Two distinct modules exporting the same name; the by-name scan
+cannot tell which one a given `property-get` targets. These are the reason the
+`confidence` marker exists and the reason common names are suppressed.
+
+**Points-to residue.** What by-name does NOT resolve: the *actual* receiver
+identity. Where the app calls `list[N].export(...)` but `N` is only known via
+register/list-index dataflow, the by-name candidates are a superset (the true
+caller plus the false-positive classes above). Resolving the receiver to a
+specific module still needs the full require-`N` points-to pass the backlog
+flags as the follow-up for the residue. Measured on rn-template: of 3,909
+functions with `who-calls total:0`, **484** gain ≥1 by-name candidate.
 
 ## 15. Provenance tier + shared service context (2026-09-04) — landed
 

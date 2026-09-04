@@ -46,8 +46,10 @@ import type {
   RangeRow,
   StringRow,
   StringUseRow,
+  StringUseRole,
   StringsIndex,
 } from "./schema.ts";
+import { exportedNamesOf } from "./exported-names.ts";
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -93,6 +95,54 @@ export interface Edge {
   readonly why?: string;
 }
 
+/** A `who-calls-by-name` candidate caller (docs/specs/17-mcp-harness.md §14):
+ *  a function that READS property `name` (`<slot>.name(...)` dispatch), which
+ *  is only a NAME-match, never a resolved call edge — `confidence: "by-name"`
+ *  says exactly that. */
+export interface ByNameCaller {
+  readonly fn: number;
+  readonly name: string;
+  readonly role: StringUseRole;
+  readonly n: number;
+  readonly file: string | null;
+  readonly line: number | null;
+  readonly confidence: "by-name";
+}
+
+/** One export name considered by `who-calls-by-name`; `ambiguous` names are
+ *  reported (with `why`) but contribute NO candidate rows (§14: say so rather
+ *  than dump noise). */
+export interface ByNameEntry {
+  readonly name: string;
+  readonly sid: number | null;
+  readonly ambiguous: boolean;
+  readonly why?: string;
+}
+
+export interface WhoCallsByNameResult extends Bounded<ByNameCaller> {
+  /** The export names the scan covered (fn form: proven from bytecode; name
+   *  form: the single `--name` argument). */
+  readonly names: readonly ByNameEntry[];
+  /** The exporting module excluded from candidates (fn form only). */
+  readonly excludedModule: number | null;
+}
+
+/** JS names so common that a `property-get` of them proves nothing about
+ *  dynamic dispatch to a specific module export (§14 known false-positive
+ *  class). A `who-calls-by-name` on any of these is `ambiguous`. */
+const AMBIGUOUS_NAMES = new Set<string>([
+  "default", "get", "set", "map", "then", "catch", "length", "name", "value",
+  "type", "id", "key", "data", "index", "push", "pop", "call", "apply", "bind",
+  "toString", "valueOf", "constructor", "prototype", "forEach", "filter",
+  "reduce", "keys", "values", "entries", "has", "add", "delete", "size",
+  "next", "done", "exports", "props", "state", "context", "child", "children",
+  "current", "target", "source", "start", "end", "close", "open", "on", "off",
+  "emit", "test", "exec", "join", "split", "slice", "concat", "indexOf",
+]);
+/** Above this many DISTINCT candidate functions, a name is treated as too
+ *  common to be a useful dispatch signal (§14). */
+const BY_NAME_FANOUT_LIMIT = 200;
+
 export interface Bounded<T> {
   readonly rows: readonly T[];
   readonly total: number;
@@ -103,6 +153,7 @@ export interface Bounded<T> {
  *  call returns; the CLI appends the `total`/truncation line on top. */
 export const CAPS = {
   whoCalls: 50,
+  whoCallsByName: 50,
   callsFrom: 50,
   string: 30,
   stringGrep: 50,
@@ -385,6 +436,113 @@ export class ArtifactService {
       });
     const cap = opts.all === true ? rows.length : CAPS.globalUses;
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  /** Reverse of the strings index: an exact (untruncated) string value -> its
+   *  sid. Names under which a module exports are short, so the truncated-head
+   *  entries are never candidates and are skipped. Built once, lazily. */
+  private valueToSidCache: Map<string, number> | undefined;
+  private valueToSid(): Map<string, number> {
+    if (this.valueToSidCache === undefined) {
+      const m = new Map<string, number>();
+      for (const [sid, e] of this.stringsById) if ("v" in e) m.set(e.v, sid);
+      this.valueToSidCache = m;
+    }
+    return this.valueToSidCache;
+  }
+
+  /** The module a function is owned by, `null` if the index does not record
+   *  one (uses `FunctionRow.module` first, then `fnOwnership`). */
+  private moduleOfFn(fn: number): number | null {
+    const row = this.functionsByFn.get(fn);
+    if (row?.module != null) return row.module;
+    const owned = this.modulesIndex.fnOwnership[String(fn)];
+    return owned ?? null;
+  }
+
+  /** All candidate callers of a single export `name`: functions that read it
+   *  as a property (`<slot>.name(...)` dispatch), grouped and summed by fn,
+   *  minus any function in `excludeModule`. Returns the raw (uncapped) rows
+   *  plus the distinct-fn count, so the caller can apply the fan-out
+   *  ambiguity rule before deciding whether to keep them. */
+  private byNameCandidates(name: string, sid: number, excludeModule: number | null): ByNameCaller[] {
+    const byFn = new Map<number, number>();
+    for (const u of this.stringUses) {
+      if (u.sid !== sid || u.role !== "property-get") continue;
+      if (excludeModule !== null && this.moduleOfFn(u.fn) === excludeModule) continue;
+      byFn.set(u.fn, (byFn.get(u.fn) ?? 0) + u.n);
+    }
+    const rows: ByNameCaller[] = [];
+    for (const [fn, n] of byFn) {
+      const r = this.range(fn);
+      rows.push({ fn, name, role: "property-get", n, file: r?.file ?? null, line: r?.lines[0] ?? null, confidence: "by-name" });
+    }
+    rows.sort((a, b) => a.fn - b.fn);
+    return rows;
+  }
+
+  /** docs/specs/17-mcp-harness.md §14: NAME-based caller recovery for the
+   *  `require-once-into-a-slot` then `<slot>.export(...)` dispatch convention
+   *  that `who-calls` returns `total:0` for. Two forms:
+   *   - `{ fn }`: prove (from bytecode, one lazy walk of the fn's lexical
+   *     parent + its module factory) the names N is exported under, then scan
+   *     every OTHER module's `property-get` uses of those names.
+   *   - `{ name }`: the same scan for one caller-supplied name (no step 1).
+   *  Every row is `confidence: "by-name"` — a name match, never a resolved
+   *  edge. Common/high-fan-out names are reported `ambiguous` with no rows. */
+  whoCallsByName(target: { readonly fn: number } | { readonly name: string }, opts: { readonly all?: boolean } = {}): WhoCallsByNameResult {
+    let excludedModule: number | null = null;
+    let exportNames: readonly string[];
+
+    if ("fn" in target) {
+      if (!this.functionsByFn.has(target.fn)) {
+        throw new Hbc2jsError(ErrorCode.E_USAGE, `who-calls-by-name: no such function ${target.fn} in this artifact`);
+      }
+      // Step 1 needs the bytecode def-use chain (live verb, §3.3) — same
+      // `--hbc` requirement as `list`/`context`.
+      const module = this.ensureModule("who-calls-by-name");
+      const { analysis } = this.ensureFrames();
+      excludedModule = this.moduleOfFn(target.fn);
+      const row = this.functionsByFn.get(target.fn)!;
+      const hosts: number[] = [];
+      if (row.parent != null) hosts.push(row.parent);
+      if (excludedModule !== null) {
+        const modEntry = this.modulesIndex.modules.find((m) => m.id === excludedModule);
+        if (modEntry?.factoryFn != null && !hosts.includes(modEntry.factoryFn)) hosts.push(modEntry.factoryFn);
+      }
+      exportNames = exportedNamesOf(module, analysis, target.fn, hosts).map((e) => e.name);
+      // Deduplicate names (property-put + property-key of the same name).
+      exportNames = [...new Set(exportNames)];
+    } else {
+      exportNames = [target.name];
+    }
+
+    const v2s = this.valueToSid();
+    const names: ByNameEntry[] = [];
+    const allRows: ByNameCaller[] = [];
+    for (const name of exportNames) {
+      const sid = v2s.get(name);
+      if (sid === undefined) {
+        names.push({ name, sid: null, ambiguous: false, why: "no such string in this bundle" });
+        continue;
+      }
+      if (AMBIGUOUS_NAMES.has(name)) {
+        names.push({ name, sid, ambiguous: true, why: "common JS name (dispatch-agnostic)" });
+        continue;
+      }
+      const rows = this.byNameCandidates(name, sid, excludedModule);
+      if (rows.length > BY_NAME_FANOUT_LIMIT) {
+        names.push({ name, sid, ambiguous: true, why: `read as a property in ${rows.length} functions (> ${BY_NAME_FANOUT_LIMIT})` });
+        continue;
+      }
+      names.push({ name, sid, ambiguous: false });
+      allRows.push(...rows);
+    }
+    // Merge duplicate (fn,name) rows that two host walks could produce, then
+    // sort by fn (stable, render-independent).
+    allRows.sort((a, b) => a.fn - b.fn || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const cap = opts.all === true ? allRows.length : CAPS.whoCallsByName;
+    return { rows: allRows.slice(0, cap), total: allRows.length, truncated: allRows.length > cap, names, excludedModule };
   }
 
   /** §3.1 `query native [--fn N]`. */

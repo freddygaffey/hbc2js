@@ -288,6 +288,21 @@ export class McpResources {
     return this.inlineEdges(this.artifact.callsFrom(fn, opts));
   }
 
+  /** `xref/who-calls-by-name` (spec-17 §14) — NAME-based caller recovery for
+   *  the `<slot>.export(...)` dispatch `who-calls` returns `total:0` for. Each
+   *  candidate row carries `confidence:"by-name"` (never a resolved edge) and
+   *  is inlined with the caller's `{name,size}` like the resolved xrefs. */
+  whoCallsByName(target: { readonly fn: number } | { readonly name: string }, opts: { readonly all?: boolean } = {}) {
+    const r = this.artifact.whoCallsByName(target, opts);
+    return {
+      ...r,
+      rows: r.rows.map((row) => {
+        const nb = this.neighbor(row.fn);
+        return { fn: row.fn, callerName: nb.name, size: nb.size, name: row.name, role: row.role, n: row.n, file: row.file, line: row.line, confidence: row.confidence };
+      }),
+    };
+  }
+
   /** `xref/string` — merges the two pre-§14 string endpoints (spec 10
    *  `query string`/`query string-grep`) behind one `mode`: `exact` reads a
    *  single sid (`key` must be a number); `substring`/`regex` grep every

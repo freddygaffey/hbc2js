@@ -283,6 +283,7 @@ answer that looks complete would be an untruth. Default caps; `--all` pages.
 |---|---|---|
 | `query fn <fn>` | one summary block: name, overlayName, module, file:lines, params, kind, edge counts in/out, native surface | ≤ 10 lines |
 | `query who-calls <fn>` | one line per caller edge: `fn:12 src/a.js:45 method` | ≤ 50 lines + total |
+| `query who-calls-by-name <fn:N \| --name X>` | NAME-based caller recovery for `<slot>.export(...)` dispatch `who-calls` can't resolve; one line per candidate: `fn:12 name:foo property-get n:1 … confidence:by-name` (spec 17 §14.1). `fn:N` proves N's export names from bytecode (needs `--hbc`) then scans other modules; `--name X` scans one name. Common/high-fan-out names → `ambiguous`, no rows. | ≤ 50 lines + total |
 | `query calls-from <fn>` | one line per callee edge (incl. `?` rows with `why`) | ≤ 50 lines + total |
 | `query string <sid>` | the value (head if >4 KB unless `--full`) + use rows `fn role n` | ≤ 30 lines |
 | `query string-grep <regex>` | matching `sid  head-of-value  useCount` rows | ≤ 50 lines + total |

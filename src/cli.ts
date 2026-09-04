@@ -1442,6 +1442,33 @@ function runQuery(argv: readonly string[]): void {
         process.stdout.write(`total:${result.total}\n`);
         if ("unknownInScope" in result && result.unknownInScope !== undefined) process.stdout.write(`unknown-callee edges in scope: ${result.unknownInScope}\n`);
       }
+    } else if (verb === "who-calls-by-name") {
+      // `who-calls-by-name <fn:N>` or `who-calls-by-name --name X` (§14).
+      const nameArg = flagValue(argv, "--name");
+      const fnArg = positional[0];
+      let result;
+      if (nameArg !== undefined) {
+        result = svc.whoCallsByName({ name: nameArg }, { all });
+      } else if (fnArg !== undefined) {
+        const fn = fnArg.startsWith("fn:") ? Number(fnArg.slice(3)) : Number(fnArg);
+        result = svc.whoCallsByName({ fn }, { all });
+      } else {
+        fail(ErrorCode.E_USAGE, "query who-calls-by-name <fn:N | --name X> …", 2, json);
+        return;
+      }
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const n of result.names) {
+          if (n.ambiguous) process.stdout.write(`! name "${n.name}" ambiguous: ${n.why}\n`);
+          else if (n.sid === null) process.stdout.write(`- name "${n.name}": ${n.why}\n`);
+          else process.stdout.write(`# name "${n.name}" (sid:${n.sid})\n`);
+        }
+        for (const r of result.rows) process.stdout.write(`fn:${r.fn} name:${r.name} ${r.role} n:${r.n} ${r.file ?? "-"}:${r.line ?? "-"} confidence:${r.confidence}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+        if (result.excludedModule !== null) process.stdout.write(`excluded exporting module: ${result.excludedModule}\n`);
+      }
     } else if (verb === "string") {
       const sid = Number(positional[0]);
       const showFull = argv.includes("--full");
@@ -1497,7 +1524,7 @@ function runQuery(argv: readonly string[]): void {
       const range = linesArg !== undefined ? (linesArg.split("-").map(Number) as [number, number]) : undefined;
       process.stdout.write(svc.source(fn, range) + "\n");
     } else {
-      fail(ErrorCode.E_USAGE, "query <fn|who-calls|calls-from|string|string-grep|global-uses|native|module|source> …", 2, json);
+      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|module|source> …", 2, json);
     }
     process.exit(0);
   } catch (e) {

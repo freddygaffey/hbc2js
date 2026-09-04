@@ -294,6 +294,21 @@ const BASE_ROUTES: readonly Route[] = [
       return ok(ctx.resources.globalUses(name, all !== undefined ? { all } : {}));
     },
   },
+  {
+    // spec 17 §14: name-based caller recovery. `?fn=N` proves N's export names
+    // from bytecode then scans other modules; `?name=X` scans one name.
+    method: "GET",
+    re: /^\/api\/xref\/who-calls-by-name$/,
+    handler: (_p, req, ctx) => {
+      const all = qBool(req.query.all);
+      const opts = all !== undefined ? { all } : {};
+      const name = req.query.name;
+      if (name !== undefined) return ok(ctx.resources.whoCallsByName({ name }, opts));
+      const fn = qNum(req.query.fn);
+      if (fn === undefined) return badRequest("xref/who-calls-by-name: ?fn=N or ?name=X is required");
+      return ok(ctx.resources.whoCallsByName({ fn }, opts));
+    },
+  },
   // -- native / leads / findings / scan (spec 17 §1/§14) --
   {
     method: "GET",
