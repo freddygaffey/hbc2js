@@ -29,6 +29,14 @@ export interface DbProvenance {
   readonly source: "human" | "llm" | "tool";
   readonly who: string;
   readonly run?: string | null;
+  /** docs/specs/17-mcp-harness.md §15 (spec 23 §4's follow-up): defaults to
+   *  `"accepted"` wherever omitted — every pre-this-round writer, and every
+   *  caller that still doesn't pass one, behaves exactly as before. Stored in
+   *  the MIGRATION 3 `revision_tier` side table (`set()`/`readTier` below),
+   *  never a column on `revisions` itself (see schema.sql's MIGRATION 3
+   *  header for why: no idempotent in-place `ALTER TABLE ADD COLUMN` in this
+   *  sqlite build). */
+  readonly tier?: "suggested" | "accepted" | null;
 }
 
 export interface DbCtxSnapshot {
@@ -194,9 +202,12 @@ export class DbRevisionStore<T> {
       );
       const rid = Number(info.lastInsertRowid);
       this.adapter.writeDetail(db, rid, value);
+      const tier = prov.tier ?? "accepted";
+      db.prepare(`INSERT INTO revision_tier (rid, tier) VALUES (?, ?)`).run(rid, tier);
       this.appendLog(prov, ts, "annotate", rid);
       db.exec("COMMIT;");
-      const record: DbRevision<T> = { rid: String(rid), target, value, ts, supersedes: toRevisionId(prior === undefined ? null : prior.payloadRid), active: true, ctx: ctx ?? {}, prov };
+      const provOut: DbProvenance = { ...prov, tier };
+      const record: DbRevision<T> = { rid: String(rid), target, value, ts, supersedes: toRevisionId(prior === undefined ? null : prior.payloadRid), active: true, ctx: ctx ?? {}, prov: provOut };
       return { record, superseded: priorRecord };
     } catch (err) {
       db.exec("ROLLBACK;");
@@ -296,6 +307,15 @@ export class DbRevisionStore<T> {
     return { headRid: row.headRid, payloadRid: row.payloadRid, target: row.target };
   }
 
+  /** MIGRATION 3's `revision_tier` side table (module header + `set()`): no
+   *  row means the `rid` predates the tier follow-up, or was written by a
+   *  caller that never named one — `'accepted'` either way (default,
+   *  backwards compatible). */
+  private readTier(rid: number): "suggested" | "accepted" {
+    const row = this.db.prepare(`SELECT tier FROM revision_tier WHERE rid = ?`).get(rid) as unknown as { tier: "suggested" | "accepted" } | undefined;
+    return row?.tier ?? "accepted";
+  }
+
   private toDbRevision(rid: number, active: boolean): DbRevision<T> {
     const row = this.db.prepare(`SELECT rid, target, ts, supersedes, ctx_name AS ctxName, ctx_loc AS ctxLoc, ctx_owner AS ctxOwner, prov_source AS provSource, prov_who AS provWho, prov_run AS provRun FROM revisions WHERE rid = ?`).get(rid) as unknown as RevisionRow;
     return this.rowToDbRevision(row, active);
@@ -308,7 +328,7 @@ export class DbRevisionStore<T> {
       ...(row.ctxLoc !== null ? { loc: row.ctxLoc } : {}),
       ...(row.ctxOwner !== null ? { ownerFn: row.ctxOwner } : {}),
     };
-    const prov: DbProvenance = { source: row.provSource, who: row.provWho, ...(row.provRun !== null ? { run: row.provRun } : {}) };
+    const prov: DbProvenance = { source: row.provSource, who: row.provWho, ...(row.provRun !== null ? { run: row.provRun } : {}), tier: this.readTier(row.rid) };
     return {
       rid: String(row.rid),
       target: row.target,

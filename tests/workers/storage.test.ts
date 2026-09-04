@@ -127,6 +127,11 @@ test("schema.sql's migration markers stay well-formed (the migration's only cont
   const ddl = readFileSync(SCHEMA_SQL, "utf8");
   assert.ok(ddl.includes(`-- >>> MIGRATION ${SCHEMA_MINOR} >>>`));
   assert.ok(ddl.includes(`-- <<< MIGRATION ${SCHEMA_MINOR} <<<`));
-  const block = migrationSql(SCHEMA_MINOR);
+  // The worker/session stratum is specifically MIGRATION 2's block (spec 23
+  // §3/§4.1) — pinned to `2`, not `SCHEMA_MINOR`, since a LATER round is free
+  // to add its own migration (docs/specs/17-mcp-harness.md §15's MIGRATION 3
+  // did, for the provenance-tier follow-up) without these worker tables
+  // moving; `SCHEMA_MINOR` only names "the current highest migration".
+  const block = migrationSql(2);
   for (const t of WORKER_TABLES) assert.ok(block.includes(`CREATE TABLE IF NOT EXISTS ${t}`), `${t} must be created IF NOT EXISTS`);
 });

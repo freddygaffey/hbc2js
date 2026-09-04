@@ -24,6 +24,12 @@ export interface Provenance {
   readonly source: "human" | "llm" | "tool";
   readonly who: string;
   readonly run?: string;
+  /** docs/specs/17-mcp-harness.md §15 (spec 23 §4's follow-up): a write
+   *  tool's proposal ("suggested") vs truth ("accepted") tier. Optional and
+   *  defaults to `"accepted"` wherever a caller omits it — every write
+   *  before this field existed, and every caller that still doesn't pass
+   *  one, behaves exactly as before. */
+  readonly tier?: "suggested" | "accepted";
 }
 
 /** The target's last-known context, snapshotted at WRITE time (§2.1, §2.5,
@@ -245,6 +251,9 @@ export function assertProvenance(prov: unknown, fileLabel: string): asserts prov
   }
   if (typeof p.who !== "string" || p.who.length === 0) throw new Error(`${fileLabel}: prov.who must be a non-empty string`);
   if (p.run !== undefined && typeof p.run !== "string") throw new Error(`${fileLabel}: prov.run must be a string`);
+  if (p.tier !== undefined && p.tier !== "suggested" && p.tier !== "accepted") {
+    throw new Error(`${fileLabel}: prov.tier must be suggested|accepted`);
+  }
 }
 
 /** Every §2.1 envelope field is present and well-typed. Throws with the

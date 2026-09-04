@@ -10,9 +10,8 @@ import type { IncomingMessage, ServerResponse, Server } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { McpResources } from "../mcp/resources.ts";
-import { McpTools } from "../mcp/tools.ts";
-import { handle, tailLog, WRITE_TOOL_PATHS, type UiServerCtx } from "./routes.ts";
+import { McpContext } from "../mcp/context.ts";
+import { handle, tailLog, type UiServerCtx } from "./routes.ts";
 
 export interface UiServerOptions {
   readonly projectDir: string;
@@ -126,9 +125,9 @@ function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerC
   });
   res.write(":connected\n\n");
   const sinceParam = query.get("since");
-  // Reads `ctx.resources` fresh on every tick (not a captured local), so a
-  // rebuild triggered by a concurrent write (see `UiServerCtx.resources`'s
-  // doc comment) is picked up on the very next poll.
+  // `tailLog` runs a fresh `log` query every call — `ctx.resources` is the
+  // one long-lived `McpContext`-shared instance (no rebuild anywhere, §15),
+  // so a concurrent write is visible on the very next poll regardless.
   let cursor = sinceParam !== null && sinceParam !== "" ? Number(sinceParam) : tailLog(ctx.resources, 0).cursor;
   const timer = setInterval(() => {
     let result;
@@ -147,9 +146,14 @@ function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerC
 
 export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
   const resourcesOpts = opts.hbc !== undefined ? { hbc: opts.hbc } : {};
+  // docs/specs/17-mcp-harness.md §15: ONE `McpContext` owns the
+  // `ArtifactService`/`ProjectService` pair `resources`/`tools` both read
+  // and write through — a write is visible to the very next read with no
+  // rebuild step (see `McpContext`'s own doc comment for why).
+  const mcp = new McpContext(opts.projectDir, resourcesOpts);
   const ctx: UiServerCtx = {
-    resources: new McpResources(opts.projectDir, resourcesOpts),
-    tools: new McpTools(opts.projectDir, resourcesOpts),
+    resources: mcp.resources,
+    tools: mcp.tools,
     artifactDir: opts.projectDir,
   };
   const host = opts.host ?? DEFAULT_HOST;
@@ -197,13 +201,6 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
     (method === "GET" ? Promise.resolve(undefined) : readBody(req))
       .then((body) => handle({ method, path, query, body }, ctx))
       .then((result) => {
-        // See `UiServerCtx.resources`'s doc comment: `McpTools` and
-        // `McpResources` each hold their own in-memory snapshot, so a
-        // landed write needs a fresh `McpResources` before the next read
-        // (including the poller inside `serveEvents`) can see it.
-        if (result.status === 200 && method === "POST" && WRITE_TOOL_PATHS.has(path)) {
-          ctx.resources = new McpResources(opts.projectDir, resourcesOpts);
-        }
         res.writeHead(result.status, { "Content-Type": "application/json", ...cors });
         res.end(JSON.stringify(result.json));
         logLine(result.status);

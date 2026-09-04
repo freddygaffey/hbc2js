@@ -29,21 +29,60 @@ export const nameAdapter: DetailAdapter<NameValue> = {
   },
 };
 
-function nameSlot(target: string): string {
-  return `name:${target}`;
+/** docs/specs/17-mcp-harness.md §15: an `'accepted'` write shares the SAME
+ *  slot every `set_name` call always used (`name:<target>`) — unchanged,
+ *  so `dbGetName`/`dbRevertName` (both hardcode `tier:"accepted"` below) and
+ *  every existing caller keep working exactly as before. A `'suggested'`
+ *  write gets its OWN slot per proposer (`name:<target>:suggested:<who>`) —
+ *  same discriminator trick `tagSlot`/`findingSlot` use for their own extra
+ *  key component — so it can never become that slot's active (displayed)
+ *  record, and so two different proposers' suggestions coexist rather than
+ *  superseding each other (one proposer suggesting twice DOES supersede
+ *  their own prior suggestion, same as any other slot). */
+function nameSlot(target: string, tier: "suggested" | "accepted", who: string): string {
+  return tier === "accepted" ? `name:${target}` : `name:${target}:suggested:${who}`;
+}
+
+/** §15's suggestion prefix, exported so `dbListSuggestedNames` (below) can
+ *  enumerate every proposer's slot for `target` without guessing at `who`. */
+function suggestedNamePrefix(target: string): string {
+  return `name:${target}:suggested:`;
 }
 
 export function dbSetName(db: DatabaseSync, target: string, name: string, prov: DbProvenance, opts?: { readonly ts?: string; readonly ctx?: DbCtxSnapshot }): DbRevisionSetResult<NameValue> {
+  const tier = prov.tier ?? "accepted";
   const store = new DbRevisionStore(db, nameAdapter);
-  return store.set(nameSlot(target), target, { name }, prov, opts);
+  return store.set(nameSlot(target, tier, prov.who), target, { name }, prov, opts);
 }
 
+/** The ACCEPTED name only (§15: "must keep showing the last accepted name")
+ *  — a `'suggested'` write is never visible through this read, regardless
+ *  of write order, because it never shares this slot (see `nameSlot`). */
 export function dbGetName(db: DatabaseSync, target: string): DbRevision<NameValue> | undefined {
-  return new DbRevisionStore(db, nameAdapter).get(nameSlot(target));
+  return new DbRevisionStore(db, nameAdapter).get(nameSlot(target, "accepted", ""));
 }
 
 export function dbRevertName(db: DatabaseSync, target: string, prov: DbProvenance, toTs?: string): DbRevision<NameValue> | null {
-  return new DbRevisionStore(db, nameAdapter).revert(nameSlot(target), prov, toTs);
+  return new DbRevisionStore(db, nameAdapter).revert(nameSlot(target, "accepted", ""), prov, toTs);
+}
+
+/** §15: "expose suggestions separately" — every proposer's currently-active
+ *  suggested-tier record for `target`, newest slot-write first is NOT
+ *  guaranteed (one row per proposer, `dbGetTags`'s own per-slot pattern
+ *  copied verbatim), but each entry IS that proposer's own latest proposal
+ *  (a proposer suggesting twice supersedes their own slot, `nameSlot`'s own
+ *  doc comment). Never includes an accepted record — different slot. */
+export function dbListSuggestedNames(db: DatabaseSync, target: string): readonly DbRevision<NameValue>[] {
+  const rows = db
+    .prepare(`SELECT DISTINCT slot FROM revisions WHERE kind = 'name' AND target = ? AND slot LIKE ? ESCAPE '\\'`)
+    .all(target, `${suggestedNamePrefix(target).replace(/[\\%_]/g, "\\$&")}%`) as unknown as { slot: string }[];
+  const store = new DbRevisionStore(db, nameAdapter);
+  const out: DbRevision<NameValue>[] = [];
+  for (const { slot } of rows) {
+    const active = store.get(slot);
+    if (active !== undefined) out.push(active);
+  }
+  return out;
 }
 
 // --- comment ------------------------------------------------------------

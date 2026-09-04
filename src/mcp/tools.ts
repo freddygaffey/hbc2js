@@ -118,10 +118,19 @@ export interface ToolResult {
   readonly line: string;
 }
 
+/** docs/specs/17-mcp-harness.md §15's `tier` — a sibling of `prov`, not a
+ *  field on it: the caller passes its own `prov` unchanged (`source`/`who`/
+ *  `run`, exactly as before) and this input's own `tier` is what the
+ *  write method folds INTO the `Provenance` that actually lands
+ *  (`{...prov, tier: tier ?? "accepted"}`), same "carried into the stored
+ *  annotation's provenance" wording the follow-up used. Defaults to
+ *  `"accepted"` — every caller that predates this field, or simply omits
+ *  it, writes exactly what it always did. */
 export interface SetNameInput {
   readonly target: string;
   readonly name: string;
   readonly prov: Provenance;
+  readonly tier?: "suggested" | "accepted";
 }
 
 export interface AddCommentInput {
@@ -129,6 +138,7 @@ export interface AddCommentInput {
   readonly body: string;
   readonly prov: Provenance;
   readonly range?: CommentRange;
+  readonly tier?: "suggested" | "accepted";
 }
 
 export interface AddTagInput {
@@ -136,6 +146,7 @@ export interface AddTagInput {
   readonly tag: Tag;
   readonly prov: Provenance;
   readonly note?: string;
+  readonly tier?: "suggested" | "accepted";
 }
 
 export interface RecordFindingInput {
@@ -152,6 +163,9 @@ export interface RecordFindingInput {
   readonly evidence: readonly EvidenceRef[];
   readonly prov: Provenance;
   readonly cwe?: string;
+  /** §15 — see `SetNameInput`'s own doc comment for the same sibling-of-
+   *  `prov`, defaults-to-`"accepted"` contract. */
+  readonly tier?: "suggested" | "accepted";
 }
 
 export interface SetFindingStatusInput {
@@ -269,6 +283,46 @@ function toToolResult(r: SetResult): ToolResult {
   return { rid: r.rid, line: r.line };
 }
 
+/** §15's fold: an input's own `prov` is never mutated, `tier` (the sibling
+ *  field, default `"accepted"`) is what decides the `Provenance` that
+ *  actually lands. */
+function withTier(prov: Provenance, tier: "suggested" | "accepted" | undefined): Provenance {
+  return { ...prov, tier: tier ?? prov.tier ?? "accepted" };
+}
+
+// --- promote (§15) ----------------------------------------------------------
+
+export interface PromoteInput {
+  /** So far only `"name"` — promoting a `'suggested'` name into the
+   *  accepted name slot (spec 23 §4's "human acceptance"/"fidelity check"
+   *  promotion). Comments/tags/findings never need promoting: a `'suggested'`
+   *  write on those kinds is additive already (never displaces anything),
+   *  so there is no truth slot for them to occupy in the first place — see
+   *  spec 23 §4 ("Comments are the right home for a suggestion ... they
+   *  never displace a human's name"). */
+  readonly kind: "name";
+  readonly target: string;
+  /** The specific suggestion to promote, by its `rid` (from
+   *  `McpResources.fn()`/`context()`'s `suggestedNames`, or
+   *  `ProjectService.listSuggestedNames`) — resolved against the CURRENT
+   *  suggestions for `target` (`rid`s never here, or already superseded,
+   *  are refused). Mutually exclusive with `name`. */
+  readonly rid?: string;
+  /** Promote an explicit value directly, bypassing any stored suggestion
+   *  (e.g. promoting a value a caller already validated out of band).
+   *  Mutually exclusive with `rid`. */
+  readonly name?: string;
+  /** The PROMOTER's own provenance (spec 23 §4: "human acceptance ... the
+   *  human's own provenance" or "a fidelity check ... `source:'tool'`") —
+   *  never the original suggester's; this is what a promoted write's
+   *  `d_names` row (and its `log` row) carries. Always lands `tier:
+   *  "accepted"` regardless of what this `prov` says (promotion IS what
+   *  makes it accepted). */
+  readonly prov: Provenance;
+}
+
+
+
 /** The transport-agnostic business-logic core of spec 17's MCP WRITE
  *  surface (§2 as revised §14) — one instance scoped to one project
  *  directory, building its own `ArtifactService`/`ProjectService` pair the
@@ -291,16 +345,19 @@ export class McpTools {
    *  history, same scope `docs/specs/17-mcp-harness.md §14` means by it. */
   private readonly recompileActions: RecompileEditActionRecord[] = [];
 
-  constructor(artifactDir: string, opts: McpToolsOpts = {}) {
-    this.artifact = new ArtifactService(artifactDir, opts);
-    this.project = new ProjectService(artifactDir, this.artifact);
+  /** `services`: same internal-only injection point as `McpResources`'
+   *  constructor (see its doc comment) — `src/mcp/context.ts`'s
+   *  `McpContext` is the only caller that passes it. */
+  constructor(artifactDir: string, opts: McpToolsOpts = {}, services?: { readonly artifact: ArtifactService; readonly project: ProjectService }) {
+    this.artifact = services?.artifact ?? new ArtifactService(artifactDir, opts);
+    this.project = services?.project ?? new ProjectService(artifactDir, this.artifact);
   }
 
   /** `set_name` (§2): binding-id + name, `ProjectService.setName` (DB-
    *  backed this round — see that method's own doc comment for the JSONL
    *  scope gap). */
   setName(input: SetNameInput): ToolResult {
-    return toToolResult(this.project.setName(input.target, input.name, input.prov));
+    return toToolResult(this.project.setName(input.target, input.name, withTier(input.prov, input.tier)));
   }
 
   /** `add_comment` (§2): target (fn/reg/env) + body + optional range,
@@ -308,7 +365,7 @@ export class McpTools {
    *  `ctx` snapshot (no separate resolve-or-reject gate; a comment is not a
    *  finding, spec 11 §1.5). */
   addComment(input: AddCommentInput): ToolResult {
-    return toToolResult(this.project.addComment(input.target, input.body, input.prov, input.range !== undefined ? { range: input.range } : undefined));
+    return toToolResult(this.project.addComment(input.target, input.body, withTier(input.prov, input.tier), input.range !== undefined ? { range: input.range } : undefined));
   }
 
   /** `add_tag` (§2): binding-id + tag + optional note,
@@ -316,7 +373,32 @@ export class McpTools {
    *  `source:"tool"` (spec 11 §4.2) — the caller's own `prov.source`
    *  decides that, this method does not second-guess it. */
   addTag(input: AddTagInput): ToolResult {
-    return toToolResult(this.project.setTag(input.target, input.tag, input.prov, input.note !== undefined ? { note: input.note } : undefined));
+    return toToolResult(this.project.setTag(input.target, input.tag, withTier(input.prov, input.tier), input.note !== undefined ? { note: input.note } : undefined));
+  }
+
+  /** `promote` (§15, spec 23 §4's "human acceptance"/"fidelity check"
+   *  promotion) — re-records a `'suggested'` value as `'accepted'` under
+   *  the PROMOTER's own provenance, via the exact same `set_name` write
+   *  path (`ProjectService.setName` -> `dbSetName`) every other accepted
+   *  name write uses; this method adds no storage logic of its own, only
+   *  resolves `rid`/`name` into the value `setName` then writes. Refuses
+   *  (throws `Hbc2jsError(E_USAGE, …)`) rather than silently promoting
+   *  nothing: `rid` given but not a live suggestion for `target`, or
+   *  neither `rid` nor `name` given. */
+  promote(input: PromoteInput): ToolResult {
+    let name: string;
+    if (input.name !== undefined) {
+      name = input.name;
+    } else if (input.rid !== undefined) {
+      const found = this.project.listSuggestedNames(input.target).find((s) => s.rid === input.rid);
+      if (found === undefined) {
+        throw new Hbc2jsError(ErrorCode.E_USAGE, `promote: rid ${input.rid} is not a live suggestion for ${input.target}`);
+      }
+      name = found.name;
+    } else {
+      throw new Hbc2jsError(ErrorCode.E_USAGE, "promote: one of rid|name is required");
+    }
+    return toToolResult(this.project.setName(input.target, name, { ...input.prov, tier: "accepted" }));
   }
 
   /** `record_finding` (§2) — TRUTH RULE 1 above: `ProjectService.addFinding`
@@ -332,7 +414,7 @@ export class McpTools {
       claim: input.claim,
       severity: input.class,
       evidence: input.evidence,
-      prov: input.prov,
+      prov: withTier(input.prov, input.tier),
       ...(input.cwe !== undefined ? { cwe: input.cwe } : {}),
     };
     return toToolResult(this.project.addFinding(addInput));

@@ -22,12 +22,14 @@ export const SCHEMA_VERSION = "hbc2js-proj/1";
 /** `meta.schema_minor` row value — the ADDITIVE schema minor within the
  *  `user_version`/`meta.schema` major. Minor 1 is the original v1 DDL; minor 2
  *  adds the worker/session operational stratum (`sessions`, `jobs`, `claims`,
- *  `worker_events` — docs/specs/23-ui-workers.md §3/§4.1). A minor bump is
+ *  `worker_events` — docs/specs/23-ui-workers.md §3/§4.1); minor 3 adds
+ *  `revision_tier` (docs/specs/17-mcp-harness.md §15 — the provenance
+ *  `tier: "suggested"|"accepted"` follow-up spec 23 §4 recorded). A minor bump is
  *  additive BY DEFINITION: it may only create new objects, never alter or drop
  *  an existing one, so an older DB is migrated forward in place (§`migrateProjectDb`)
  *  and a NEWER minor still opens read/write with this build (its extra tables are
  *  simply unused) — unlike a major mismatch, which is refused. */
-export const SCHEMA_MINOR = 2;
+export const SCHEMA_MINOR = 3;
 
 export class ProjectDbVersionError extends Error {}
 

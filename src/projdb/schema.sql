@@ -392,3 +392,28 @@ CREATE TRIGGER IF NOT EXISTS worker_events_no_update BEFORE UPDATE ON worker_eve
 CREATE TRIGGER IF NOT EXISTS worker_events_no_delete BEFORE DELETE ON worker_events
   BEGIN SELECT RAISE(ABORT,'E_APPEND_ONLY: worker_events'); END;
 -- <<< MIGRATION 2 <<<
+
+-- ===========================================================================
+-- MIGRATION 3 — provenance tier (docs/specs/17-mcp-harness.md §15; the spec 23
+-- §4 "known gap" follow-up: `set_name`/`add_comment`/`add_tag`/
+-- `record_finding` gain a `tier: "suggested"|"accepted"` so an AI proposal can
+-- be written WITHOUT occupying the truth slot). Same discipline as MIGRATION
+-- 2: a NEW table, never an ALTER on an existing v1 object — this build's
+-- sqlite has no `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (checked; syntax
+-- error), so an in-place column add cannot be made idempotent the way
+-- `CREATE TABLE IF NOT EXISTS` already is, and idempotence is a hard
+-- requirement here (`tests/workers/storage.test.ts`'s "migration block is
+-- idempotent" replays `migrationSql(SCHEMA_MINOR)` twice against a live DB).
+-- A side table sidesteps the limitation entirely.
+--
+-- One row per `revisions.rid` that named a tier explicitly; `rid`s with no
+-- row here (every pre-this-round write, and every caller that still omits
+-- `tier`) read as `'accepted'` — `src/projdb/revision-store.ts`'s `readTier`
+-- COALESCEs, so this table needs no backfill and an older DB migrates with
+-- zero rows in it, all its existing names/comments/tags/findings unchanged.
+-- >>> MIGRATION 3 >>>
+CREATE TABLE IF NOT EXISTS revision_tier (
+  rid  INTEGER PRIMARY KEY REFERENCES revisions(rid),
+  tier TEXT NOT NULL CHECK (tier IN ('suggested','accepted'))
+);
+-- <<< MIGRATION 3 <<<

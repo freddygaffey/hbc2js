@@ -29,6 +29,8 @@ import { loadProjectStoreFromDb } from "../projdb/project-read.ts";
 import { exportWriteEffect } from "../projdb/export.ts";
 import {
   dbAddComment,
+  dbGetName,
+  dbListSuggestedNames,
   dbSetBookmark,
   dbSetFinding,
   dbSetName,
@@ -124,7 +126,19 @@ function provLine(prov: Provenance): string {
  *  — structurally compatible, this is just the explicit `?? null` normalise
  *  `annotations.ts`'s `db*` verbs expect for their bound params. */
 function toDbProv(prov: Provenance): DbProvenance {
-  return { source: prov.source, who: prov.who, run: prov.run ?? null };
+  return { source: prov.source, who: prov.who, run: prov.run ?? null, tier: prov.tier ?? "accepted" };
+}
+
+/** The read-side inverse of `toDbProv`, for `getName`/`listSuggestedNames`
+ *  (§15) — `DbProvenance` (`run?: string | null`, always-present `tier`) ->
+ *  `Provenance` (`run?: string`, `tier` only when not the default). */
+function fromDbProv(prov: DbProvenance): Provenance {
+  return {
+    source: prov.source,
+    who: prov.who,
+    ...(prov.run !== undefined && prov.run !== null ? { run: prov.run } : {}),
+    ...(prov.tier !== undefined && prov.tier !== null && prov.tier !== "accepted" ? { tier: prov.tier } : {}),
+  };
 }
 
 function toDbCtx(ctx: CtxSnapshot): DbCtxSnapshot {
@@ -667,6 +681,33 @@ export class ProjectService {
       .prepare(`SELECT rid, kind, ts, supersedes, reactivates, cleared, prov_who AS who FROM revisions WHERE target = ? ORDER BY rid DESC LIMIT ?`)
       .all(target, cap + 1) as unknown as (Omit<HistoryRow, "cleared"> & { cleared: number })[];
     return { rows: rows.slice(0, cap).map((r) => ({ ...r, cleared: r.cleared !== 0 })), total, truncated: rows.length > cap };
+  }
+
+  /** docs/specs/17-mcp-harness.md §15 — the ACCEPTED name for `target` (the
+   *  "name slot", spec 23 §4's own term), or `null` if none was ever set or
+   *  this project is JSONL-backed (`setName`'s own scope gap, same as
+   *  `dbGetName`'s slot never seeing a `'suggested'` write — see that
+   *  function's doc comment). Read-only counterpart to `setName`. */
+  getName(target: string): { readonly name: string; readonly prov: Provenance; readonly ts: string } | null {
+    if (this.db === null) return null;
+    const rev = dbGetName(this.db, target);
+    if (rev === undefined) return null;
+    return { name: rev.value.name, prov: fromDbProv(rev.prov), ts: rev.ts };
+  }
+
+  /** §15 — every proposer's live `'suggested'` name for `target`, exposed
+   *  separately from `getName` (never affects it — different slot,
+   *  `dbSetName`'s own doc comment). `[]` for a JSONL-backed project or a
+   *  target with no suggestions. */
+  listSuggestedNames(target: string): readonly { readonly rid: string; readonly name: string; readonly who: string; readonly run?: string; readonly ts: string }[] {
+    if (this.db === null) return [];
+    return dbListSuggestedNames(this.db, target).map((rev) => ({
+      rid: rev.rid,
+      name: rev.value.name,
+      who: rev.prov.who,
+      ...(rev.prov.run !== undefined && rev.prov.run !== null ? { run: rev.prov.run } : {}),
+      ts: rev.ts,
+    }));
   }
 }
 

@@ -50,6 +50,25 @@ export interface XrefEdge extends NeighborRef {
   readonly why?: string;
 }
 
+/** One live `'suggested'`-tier name proposal (§15) — `ProjectService.
+ *  listSuggestedNames`'s own row shape, re-exported here since it's what
+ *  `fn`/`context` hand back. */
+export interface SuggestedNameRow {
+  readonly rid: string;
+  readonly name: string;
+  readonly who: string;
+  readonly run?: string;
+  readonly ts: string;
+}
+
+/** `FnSummary` (`ArtifactService`'s own `name`/`overlayName`) plus the
+ *  `.hbcproj` name-slot fields §15 adds — see `withAnnotatedNames`'s doc
+ *  comment for exactly what each one is and is not. */
+export interface AnnotatedFnSummary extends FnSummary {
+  readonly acceptedName?: string;
+  readonly suggestedNames?: readonly SuggestedNameRow[];
+}
+
 const SOURCE_LINE_CAP = 400; // fn's own range in practice never exceeds this on real fixtures; see `source`/`disasm` doc comments.
 
 function truncateLines(text: string, cap: number): { readonly text: string; readonly totalLines: number; readonly truncated: boolean } {
@@ -76,11 +95,41 @@ export class McpResources {
   private readonly hbcPath: string | undefined;
   private depsCache: Promise<{ readonly report: DepsReport; readonly matchReport: MatchReport; readonly guesses: readonly ModuleGuess[] } | null> | undefined;
 
-  constructor(artifactDir: string, opts: McpResourcesOpts = {}) {
+  /** `services`: internal-only injection point for `src/mcp/context.ts`'s
+   *  `McpContext` (docs/specs/17-mcp-harness.md §15's "shared service
+   *  context" round) — when given, `artifact`/`project` are THOSE
+   *  instances (the ones `McpContext.tools` also holds), never a fresh
+   *  pair, which is what makes a `McpTools` write visible to THIS
+   *  `McpResources` without rebuilding it. Every existing 2-arg call
+   *  (`new McpResources(artifactDir, opts)`) is unaffected — this
+   *  parameter is additive and optional. */
+  constructor(artifactDir: string, opts: McpResourcesOpts = {}, services?: { readonly artifact: ArtifactService; readonly project: ProjectService }) {
     this.artifactDir = artifactDir;
     this.hbcPath = opts.hbc;
-    this.artifact = new ArtifactService(artifactDir, opts);
-    this.project = new ProjectService(artifactDir, this.artifact);
+    this.artifact = services?.artifact ?? new ArtifactService(artifactDir, opts);
+    this.project = services?.project ?? new ProjectService(artifactDir, this.artifact);
+  }
+
+  /** docs/specs/17-mcp-harness.md §15: `fn`/`context`'s own `metadata` never
+   *  read the `.hbcproj` "name slot" (`d_names`/`dbGetName`) at all before
+   *  this round — only `ArtifactService.fn()`'s own `name`/`overlayName`
+   *  (the compiled name and the SEPARATE Design-D name-overlay store, out
+   *  of this file's ownership). This adds the DB-backed accepted name and
+   *  the live suggestions ADDITIVELY, as their own fields, alongside those
+   *  — never replacing `name`/`overlayName` (that merge is a follow-up for
+   *  whichever surface owns "the one name a reader sees", out of scope
+   *  here). `acceptedName`/`suggestedNames` are `undefined` for a
+   *  JSONL-backed project (`getName`/`listSuggestedNames`'s own `null`/`[]`
+   *  scope gap, `ProjectService`'s doc comments). */
+  private withAnnotatedNames(fn: number, s: FnSummary): AnnotatedFnSummary {
+    const target = `fn:${fn}`;
+    const accepted = this.project.getName(target);
+    const suggested = this.project.listSuggestedNames(target);
+    return {
+      ...s,
+      ...(accepted !== null ? { acceptedName: accepted.name } : {}),
+      ...(suggested.length > 0 ? { suggestedNames: suggested } : {}),
+    };
   }
 
   private neighbor(fnRef: number | string): NeighborRef {
@@ -100,9 +149,10 @@ export class McpResources {
 
   // -- fn / source / context (§1, §14) -----------------------------------
 
-  /** `fn/{fn}` — minimal preset: `query fn`'s own ≤ 10 lines, unchanged. */
-  fn(fn: number): FnSummary {
-    return this.artifact.fn(fn);
+  /** `fn/{fn}` — minimal preset: `query fn`'s own ≤ 10 lines, plus §15's
+   *  `acceptedName`/`suggestedNames` (`withAnnotatedNames`). */
+  fn(fn: number): AnnotatedFnSummary {
+    return this.withAnnotatedNames(fn, this.artifact.fn(fn));
   }
 
   /** `source/{fn}` — rendered source, clipped to the fn's own range (spec
@@ -136,7 +186,7 @@ export class McpResources {
     opts: { readonly include?: readonly ("metadata" | "source" | "callers" | "callees" | "strings")[]; readonly depth?: number } = {},
   ): {
     readonly fn: number;
-    readonly metadata?: FnSummary;
+    readonly metadata?: AnnotatedFnSummary;
     readonly source?: { readonly text: string; readonly totalLines: number; readonly truncated: boolean };
     readonly callers?: Bounded<XrefEdge>;
     readonly callees?: Bounded<XrefEdge>;
@@ -146,13 +196,13 @@ export class McpResources {
     const depth = Math.max(1, opts.depth ?? 1);
     const out: {
       fn: number;
-      metadata?: FnSummary;
+      metadata?: AnnotatedFnSummary;
       source?: { text: string; totalLines: number; truncated: boolean };
       callers?: Bounded<XrefEdge>;
       callees?: Bounded<XrefEdge>;
       strings?: Bounded<{ sid: number; head: string; role: string; n: number }>;
     } = { fn };
-    if (include.has("metadata")) out.metadata = this.artifact.fn(fn);
+    if (include.has("metadata")) out.metadata = this.withAnnotatedNames(fn, this.artifact.fn(fn));
     if (include.has("source")) out.source = this.source(fn) as { text: string; totalLines: number; truncated: boolean };
     if (include.has("callers")) out.callers = this.walkEdges(fn, "callers", depth) as Bounded<XrefEdge>;
     if (include.has("callees")) out.callees = this.walkEdges(fn, "callees", depth) as Bounded<XrefEdge>;
