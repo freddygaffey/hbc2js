@@ -232,6 +232,13 @@ export function LeftPane(): ReactNode {
   const body = ((): ReactNode => {
     if (searching) return searchBody;
     if (modules.isLoading) return <Empty>loading modules…</Empty>;
+    // Segregation is seconds of work on a 4,510-module bundle (the server
+    // warms it at startup, but a browser can still beat it there). Say so
+    // rather than painting the flat one-group fallback tree and then
+    // reshuffling it under the analyst's cursor — the fallback is for a
+    // server that CANNOT segregate (404/error -> `data === null`), not for
+    // one that has not answered yet.
+    if (seg.isLoading) return <Empty>recovering module names…</Empty>;
     if (modules.isError) return <Empty>could not load /api/modules</Empty>;
     if (rows.length === 0) return <Empty>no modules in this artifact</Empty>;
     return rows.map((row, i) => {

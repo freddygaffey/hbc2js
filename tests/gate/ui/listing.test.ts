@@ -17,7 +17,8 @@
 // like tests/gate/passes/imports.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { repoRoot } from "../../support/paths.ts";
@@ -269,4 +270,54 @@ test("the LeftPane tree groups by segregation, not by ModuleEntry.file", () => {
   assert.doesNotMatch(pane, /\bgroupModules\(/, "grouping by ModuleEntry.file puts all 4,510 NSW modules in one group");
   assert.match(pane, /useSegregation\(\)/, "LeftPane reads /api/segregation through its own query hook");
   assert.match(pane, /filterGroups\(/, "the search box must filter the tree, not just the fn hit list");
+});
+
+// -- 5. the jump list behind the back/forward arrows -------------------------
+// `ui/src/state/selection.ts` imports `useSyncExternalStore` from react, and
+// the gate runs with no ui/node_modules — so the store is imported as a copy
+// with that one import stubbed. Everything under test (`select`, `back`,
+// `forward`, `canBack`, `canForward`) is plain module state; the React
+// binding is not exercised and is not what these assert.
+
+async function importSelectionStore(): Promise<{ readonly mod: Record<string, Function>; readonly dir: string }> {
+  const src = readFileSync(selectionFile, "utf8").replace(
+    /^import \{ useSyncExternalStore \} from "react";$/m,
+    "const useSyncExternalStore = (_s: unknown, get: () => unknown): unknown => get();",
+  );
+  assert.doesNotMatch(src, /from "react"/, "the react stub must have replaced the only react import");
+  const dir = mkdtempSync(join(tmpdir(), "hbc2js-selection-"));
+  const file = join(dir, "selection.ts");
+  writeFileSync(file, src);
+  return { mod: (await import(pathToFileURL(file).href)) as Record<string, Function>, dir };
+}
+
+test("canBack/canForward drive the TopBar arrows: two selects, then back", async () => {
+  const { mod: s, dir } = await importSelectionStore();
+  try {
+    s.resetSelection!();
+    assert.equal(s.canBack!(), false, "nothing visited yet: Back is disabled");
+    assert.equal(s.canForward!(), false);
+
+    s.select!({ kind: "fn", fn: 10 });
+    s.select!({ kind: "fn", fn: 20 });
+    assert.equal(s.canBack!(), true);
+    assert.equal(s.canForward!(), false, "at the head of the jump list there is nowhere forward");
+
+    assert.deepEqual(s.back!(), { kind: "fn", fn: 10 });
+    assert.equal(s.canBack!(), true, "the initial no-selection entry is still behind us");
+    assert.equal(s.canForward!(), true, "back() is what enables Forward");
+
+    assert.deepEqual(s.forward!(), { kind: "fn", fn: 20 });
+    assert.equal(s.canForward!(), false);
+
+    // A re-select of the current selection is not a jump; a new one truncates
+    // the forward history, which is what makes Forward go dead again.
+    s.select!({ kind: "fn", fn: 20 });
+    assert.equal((s.jumpList!() as { entries: unknown[] }).entries.length, 3);
+    s.back!();
+    s.select!({ kind: "fn", fn: 30 });
+    assert.equal(s.canForward!(), false, "selecting after back() drops the forward branch");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

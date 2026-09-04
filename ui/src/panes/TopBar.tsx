@@ -1,6 +1,12 @@
 // ui/src/panes/TopBar.tsx — project name, breadcrumbs (module › fn), the
 // function search box, density and theme toggles, command-palette trigger.
 //
+// Back/forward are the jump list's two buttons (ui/src/state/selection.ts).
+// They dispatch `navigate.back`/`navigate.forward` through `runAction`, NOT
+// `back()`/`forward()` directly, so the buttons and the keymap are the same
+// one path through src/ui-core's registry — and their tooltips read the chord
+// out of the live keymap rather than hard-coding it.
+//
 // Search is `GET /api/search/functions` (spec 22 §3.5). The query lives in
 // ui/src/listing/search-store.ts, not in App state, because the left pane
 // filters on the same string; Enter selects the first hit, the dropdown
@@ -12,10 +18,48 @@ import { useTheme } from "../theme/ThemeProvider.tsx";
 import { API_BASE, USING_MOCK } from "../api.ts";
 import { useFn, useModule, useSearchFunctions } from "../hooks.ts";
 import { setQuery, useQueryText } from "../listing/search-store.ts";
-import { select, useSelection } from "../state/selection.ts";
+import { jumpList, select, useJumpState, useSelection } from "../state/selection.ts";
+import { keymap, runAction } from "../actions/registry.ts";
 
 /** The dropdown never grows past this many rows (spec 22 §2: bounded lists). */
 export const SEARCH_ROWS = 50;
+
+/** The jump-list arrows. Disabled state comes from the store, so a fresh
+ *  page (nothing visited yet) shows them greyed rather than silently doing
+ *  nothing when clicked. */
+function JumpButtons(): ReactNode {
+  const { canBack, canForward } = useJumpState();
+  const { entries, cursor } = jumpList();
+  const where = `${cursor + 1} of ${entries.length}`;
+  const tip = (what: string, id: string): string => {
+    const chord = keymap.chordFor(id);
+    return `${what}${chord === undefined ? "" : ` (${chord})`} — ${where}`;
+  };
+  return (
+    <div className="flex shrink-0 items-center gap-1" data-testid="jump-buttons">
+      <ToolButton
+        aria-label="back"
+        data-action="navigate.back"
+        disabled={!canBack}
+        tip={tip("Back", "navigate.back")}
+        className="disabled:opacity-40"
+        onClick={() => runAction("navigate.back")}
+      >
+        <span aria-hidden>&#8592;</span>
+      </ToolButton>
+      <ToolButton
+        aria-label="forward"
+        data-action="navigate.forward"
+        disabled={!canForward}
+        tip={tip("Forward", "navigate.forward")}
+        className="disabled:opacity-40"
+        onClick={() => runAction("navigate.forward")}
+      >
+        <span aria-hidden>&#8594;</span>
+      </ToolButton>
+    </div>
+  );
+}
 
 function Breadcrumbs(): ReactNode {
   const sel = useSelection();
@@ -99,7 +143,8 @@ export function TopBar({ onOpenPalette }: { readonly onOpenPalette: () => void }
           </div>
         )}
       </div>
-      <div className="ml-3 min-w-0 flex-1"><Breadcrumbs /></div>
+      <div className="ml-3"><JumpButtons /></div>
+      <div className="min-w-0 flex-1"><Breadcrumbs /></div>
       <div className="flex shrink-0 items-center gap-2">
         <ToolButton tip="Density (spacing + type scale)" onClick={() => setDensity(density === "compact" ? "comfortable" : "compact")}>
           {density}

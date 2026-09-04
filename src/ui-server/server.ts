@@ -18,6 +18,7 @@ import { Presence } from "../workers/presence.ts";
 import { WorkerRunner } from "../workers/runner.ts";
 import { HeuristicBackend } from "../workers/backends/heuristic.ts";
 import { handle, tailLog, type UiServerCtx } from "./routes.ts";
+import { segregation } from "./segregation.ts";
 import { tailWorkerEvents, type WorkersCtx } from "./workers-routes.ts";
 
 export interface UiServerOptions {
@@ -43,6 +44,9 @@ export interface UiServerHandle {
    *  routes.test.ts`'s SSE test uses to avoid a fixed-port collision. */
   readonly port: number;
   readonly host: string;
+  /** The ctx every route runs against. Exposed so a caller (and the tests)
+   *  can inspect server-lifetime state such as the segregation cache. */
+  readonly ctx: UiServerCtx;
   close(): Promise<void>;
 }
 
@@ -329,10 +333,24 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
     server.listen(requestedPort, host, () => {
       const addr = server.address();
       const port = typeof addr === "object" && addr !== null ? addr.port : requestedPort;
+      // Segregating a 4,510-module bundle took 70 s on a loaded box, and
+      // the left pane's tree cannot group itself until it lands. Warm it
+      // here, off the first request's critical path, so by the time a
+      // browser asks the answer is already a map lookup. Failures are
+      // swallowed on purpose: `segregation()` caches `null` for a project
+      // with no module files, and the tree falls back on its own.
+      setImmediate(() => {
+        try {
+          segregation(ctx);
+        } catch {
+          /* a project we cannot segregate is one the UI falls back for */
+        }
+      });
       resolvePromise({
         server,
         port,
         host,
+        ctx,
         close: () =>
           new Promise<void>((res2, rej2) => {
             pool?.stop();

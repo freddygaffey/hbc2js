@@ -431,3 +431,21 @@ test("GET /api/segregation 404s for a project with no module files", async () =>
     rmSync(empty, { recursive: true, force: true });
   }
 });
+
+test("the server warms the segregation cache at startup, so the first tree request is instant", async () => {
+  const { segregationCached } = await import("../../src/ui-server/segregation.ts");
+  const h = await startUiServer({ projectDir: outDir, hbc: RN_TEMPLATE, port: 0, workers: false });
+  try {
+    assert.equal(typeof h.ctx.artifactDir, "string", "the handle must expose the ctx routes run against");
+    // `setImmediate` fires after the listen callback; one macrotask is enough
+    // to have STARTED it, and `segregation()` is synchronous once entered.
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(segregationCached(h.ctx), true, "startup must not leave the first browser request to pay for segregation");
+    const started = Date.now();
+    const r = await fetch(`http://${h.host}:${h.port}/api/segregation`);
+    assert.equal(r.status, 200);
+    assert.ok(Date.now() - started < 1000, `a warmed /api/segregation must answer fast, took ${Date.now() - started}ms`);
+  } finally {
+    await h.close();
+  }
+});
