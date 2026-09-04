@@ -7,6 +7,7 @@
 // is revisited only at the "full build" (spec 19 §5.2), same row.
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse, Server } from "node:http";
+import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,7 @@ import { JobQueue } from "../workers/queue.ts";
 import { Presence } from "../workers/presence.ts";
 import { WorkerRunner } from "../workers/runner.ts";
 import { HeuristicBackend } from "../workers/backends/heuristic.ts";
-import { handle, tailLog, type UiServerCtx } from "./routes.ts";
+import { handle, tailLog, WRITE_TOOL_PATHS, type UiServerCtx } from "./routes.ts";
 import { segregation } from "./segregation.ts";
 import { tailWorkerEvents, type WorkersCtx } from "./workers-routes.ts";
 
@@ -208,14 +209,39 @@ function startWorkers(projectDir: string, mcp: McpContext, concurrency: number):
   };
 }
 
+/** Spec 21 §1.3's in-process doorbell: `server.ts`'s request handler
+ *  `emit`s `"wrote"` right after a write route lands (below, `WRITE_TOOL_
+ *  PATHS`); every open `/api/events` connection's `checkNow` (in
+ *  `serveEvents`) listens and re-checks the log immediately instead of
+ *  waiting for the next `SSE_POLL_MS` tick. One emitter per server
+ *  instance (`startUiServer` owns it) — this is a zero-latency hint, never
+ *  the source of truth: the log (`tailLog`) stays authoritative, so a
+ *  connection that started before a given `wrote()` (or a second process
+ *  with no access to this in-process emitter at all) still converges via
+ *  the poll fallback with no special-casing, per spec 21 §1.3. */
+type WriteBus = EventEmitter;
+
+function newWriteBus(): WriteBus {
+  const bus = new EventEmitter();
+  // Many SSE connections (many tabs) all listen to the same write; the
+  // default cap of 10 is a real ceiling a busy multi-tab session can hit.
+  bus.setMaxListeners(0);
+  return bus;
+}
+
 /** `GET /api/events` — Server-Sent Events convenience wrapper over
  *  `tailLog` (spec 21 §1.3's read-the-log-after-my-cursor half; the MVP
  *  default is polling, §1, so this endpoint polls the log server-side
  *  every 500 ms and forwards new rows as one `log` event — the UI may use
  *  this OR poll `/api/log/tail` itself, both walk the same cursor). Starts
  *  from `?since=` if given, else from the log's current latest `seq` (so a
- *  fresh connection does not replay the whole history). */
-function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerCtx, extraHeaders: Record<string, string>): void {
+ *  fresh connection does not replay the whole history). The `bus`'s
+ *  `"wrote"` event (above) triggers the SAME check function immediately,
+ *  so a write is forwarded within one event loop turn rather than waiting
+ *  up to `SSE_POLL_MS` — the interval stays running underneath as the
+ *  fallback for a missed/coalesced doorbell (spec 21 §1.3) and as the only
+ *  path when nothing ever emits (a second process writing the same log). */
+function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerCtx, extraHeaders: Record<string, string>, bus: WriteBus): void {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -240,7 +266,7 @@ function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerC
       : ctx.workers !== undefined
         ? tailWorkerEvents(ctx.workers.db, 0).cursor
         : 0;
-  const timer = setInterval(() => {
+  const check = (): void => {
     let result;
     try {
       result = tailLog(ctx.resources, cursor);
@@ -262,8 +288,16 @@ function serveEvents(query: URLSearchParams, res: ServerResponse, ctx: UiServerC
         /* the worker tables are disposable state; a read failure is not fatal */
       }
     }
-  }, SSE_POLL_MS);
-  res.on("close", () => clearInterval(timer));
+  };
+  const timer = setInterval(check, SSE_POLL_MS);
+  // The doorbell: same `check`, fired the moment a write lands rather than
+  // on the next tick (spec 21 §1.3). `bus` outlives no connection — always
+  // remove the listener on close, or every reconnect leaks one.
+  bus.on("wrote", check);
+  res.on("close", () => {
+    clearInterval(timer);
+    bus.off("wrote", check);
+  });
 }
 
 export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
@@ -283,6 +317,10 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
   };
   const host = opts.host ?? DEFAULT_HOST;
   const requestedPort = opts.port ?? DEFAULT_PORT;
+  // Spec 21 §1.3's zero-latency doorbell (see `serveEvents`'s doc comment
+  // above) — one bus per server instance, emitted right after a write
+  // route lands below.
+  const writeBus = newWriteBus();
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now();
@@ -303,7 +341,7 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
     }
 
     if (path === "/api/events" && method === "GET") {
-      serveEvents(url.searchParams, res, ctx, cors);
+      serveEvents(url.searchParams, res, ctx, cors, writeBus);
       logLine(200);
       return;
     }
@@ -329,6 +367,14 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
         res.writeHead(result.status, { "Content-Type": "application/json", ...cors });
         res.end(JSON.stringify(result.json));
         logLine(result.status);
+        // Spec 26 L1 (i): "after any write that lands, and after the log
+        // gains rows, emit wrote(seq, targets)". `WRITE_TOOL_PATHS` is
+        // already the routes layer's own "which routes mint a log row"
+        // classification (`routes.ts`'s own doc comment on it) — reused
+        // here rather than re-deriving it. `result.status === 200` so a
+        // REJECTED write (400/404/500 — nothing landed) never rings the
+        // doorbell for nothing.
+        if (result.status === 200 && WRITE_TOOL_PATHS.has(path)) writeBus.emit("wrote");
       })
       .catch((e: unknown) => {
         res.writeHead(500, { "Content-Type": "application/json", ...cors });

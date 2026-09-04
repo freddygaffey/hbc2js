@@ -32,10 +32,11 @@
 //     ("write-path export", R4) to close by exporting every write, not just
 //     the final state.
 //   - the `log` table verbatim: rid/ts/op/actor straight from the JSONL;
-//     `detail` is deterministically `JSON.stringify({kind})`, matching
-//     `DbRevisionStore`'s own `appendLog` exactly (revision-store.ts), so
-//     `stateBindingOf`'s hash over the whole log table reproduces byte-for-
-//     byte (export.ts).
+//     `detail` is deterministically `JSON.stringify({kind, target})` (target
+//     omitted when unknown), matching `DbRevisionStore`'s own `appendLog`
+//     exactly (revision-store.ts, since spec 26 L1) — same field order too,
+//     since `stateBindingOf`'s hash is over the log table's raw `detail`
+//     strings, not a reparsed/re-sorted form (export.ts).
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -213,7 +214,15 @@ function insertRevisionRow(
   ).run(rid, kind, target, slot, prov.source, prov.who, prov.run ?? null, ts, supersedes, reactivates, cleared);
 }
 
-function insertLogRow(db: DatabaseSync, rid: number | null, ts: string, actor: ShardProv, op: string, kind: RevisionKind | undefined): void {
+/** `target`, when known, rides along exactly as `src/projdb/revision-
+ *  store.ts`'s live `appendLog` writes it (`{kind, target}`, same field
+ *  order) — `exportLog` derives `entry.target` from the `revisions` table
+ *  independently of `detail` (it never round-trips `detail`'s raw bytes),
+ *  so passing it through here is what makes a rebuilt DB's `log` table
+ *  content — and therefore `stateBindingOf`'s hash over it — match a
+ *  freshly-written one field-for-field (`tests/projdb/rebuild-verify.
+ *  test.ts`'s byte-identical round-trip). */
+function insertLogRow(db: DatabaseSync, rid: number | null, ts: string, actor: ShardProv, op: string, kind: RevisionKind | undefined, target?: string): void {
   db.prepare(`INSERT INTO log (ts, actor_source, actor_who, actor_run, op, rid, gen, detail) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`).run(
     ts,
     actor.source,
@@ -221,7 +230,7 @@ function insertLogRow(db: DatabaseSync, rid: number | null, ts: string, actor: S
     actor.run ?? null,
     op,
     rid,
-    JSON.stringify({ kind: kind ?? null }),
+    JSON.stringify(target !== undefined && target !== "" ? { kind: kind ?? null, target } : { kind: kind ?? null }),
   );
 }
 
@@ -288,7 +297,7 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
         const supersedes = lastRidForSlot.get(slot) ?? null;
         insertRevisionRow(db, rid, entry.kind, entry.target, slot, entry.actor, entry.ts, 0, supersedes);
         (detailAdapters[entry.kind as keyof typeof detailAdapters].writeDetail as (db: DatabaseSync, rid: number, value: unknown) => void)(db, rid, entry.value);
-        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind);
+        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind, entry.target);
         lastRidForSlot.set(slot, rid);
       } else if (entry.op === "revert" && entry.reactivates !== undefined && entry.kind !== undefined && entry.target !== undefined) {
         // Likewise for a revert (step-2+ entry): `reactivates` says exactly
@@ -303,7 +312,7 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
         const cleared: 0 | 1 = reactivatesRid === null ? 1 : 0;
         const supersedes = lastRidForSlot.get(slot) ?? null;
         insertRevisionRow(db, rid, kind, target, slot, entry.actor, entry.ts, cleared, supersedes, reactivatesRid);
-        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind);
+        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind, target);
         lastRidForSlot.set(slot, rid);
       } else if (entry.op === "annotate" && activeRec !== undefined) {
         // Legacy (pre-step-2) bulk-export entry with no embedded `value`:
@@ -315,7 +324,7 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
         const slot = slotFor(rec.kind, rec.target, rec.value);
         insertRevisionRow(db, rid, rec.kind, rec.target, slot, rec.prov, rec.ts, 0);
         (detailAdapters[rec.kind as keyof typeof detailAdapters].writeDetail as (db: DatabaseSync, rid: number, value: unknown) => void)(db, rid, rec.value);
-        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, rec.kind);
+        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, rec.kind, rec.target);
         lastRidForSlot.set(slot, rid);
       } else {
         // Legacy inert placeholder: a pre-step-2 entry for a write whose
@@ -326,7 +335,7 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
         const kind = entry.kind ?? "name";
         const target = entry.target ?? "";
         insertRevisionRow(db, rid, kind, target, entry.slot ?? `hist:${kind}:${rid}`, entry.actor, entry.ts, 1);
-        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind);
+        insertLogRow(db, rid, entry.ts, entry.actor, entry.op, entry.kind, target);
       }
     }
 

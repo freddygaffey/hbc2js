@@ -431,6 +431,12 @@ export type LogPage = Bounded<LogEntry>;
 export interface LogTail {
   readonly rows: readonly LogEntry[];
   readonly cursor: number;
+  /** ADDITIVE (spec 26 L1, spec 21 §1.3): the `fn:N`/`mod:N` ids this
+   *  batch's rows name, deduped. A coarse doorbell-level hint only — the
+   *  precise per-row invalidation is `ui/src/state/log-delta.ts`'s
+   *  `applyLogDelta`, which `ui/src/hooks.ts`'s `useLog` actually calls; an
+   *  old client that does not know this field is unaffected. */
+  readonly targets?: readonly string[];
 }
 
 // -- package identification -------------------------------------------------

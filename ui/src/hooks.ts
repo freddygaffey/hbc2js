@@ -3,7 +3,7 @@
 // `[resource, ...args]` so a write (spec 22 landing 5) can invalidate
 // precisely, and the log poll (landing 6) has its own 1 s interval.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { API_BASE, USING_MOCK, api, ApiError, type ObjectTablesQuery } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
@@ -11,6 +11,7 @@ import type {
   LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
   StringExact, StringGrep, GlobalUses, WhoCallsByName, ObjectTables,
 } from "./contracts.ts";
+import { applyLogDelta } from "./state/log-delta.ts";
 
 /** Delays echoing `value` by `ms` of no further change — the Strings/Globals
  *  search inputs (spec 22 §3) use this so every keystroke does not fire an
@@ -163,14 +164,36 @@ export interface LogFeedState {
  *  than a bare `useEffect` poll) so `ui/src/actions/registry.ts`'s
  *  post-write `invalidateQueries({queryKey:["log-tail"]})` still forces an
  *  immediate refetch while polling is the active source. */
+/** Turns one `applyLogDelta` result string ("findings", "context:12", …)
+ *  into the real TanStack `queryKey` array and invalidates it. `hooks.ts` is
+ *  the one place that knows both the query-key vocabulary (the `useQuery`
+ *  calls above) and how to talk to `QueryClient` — `log-delta.ts` itself
+ *  stays framework-free (spec 26 L1 (iii)). */
+function invalidateDeltaTarget(queryClient: QueryClient, target: string): void {
+  const colon = target.indexOf(":");
+  if (colon === -1) {
+    void queryClient.invalidateQueries({ queryKey: [target] });
+    return;
+  }
+  const name = target.slice(0, colon);
+  const id = Number(target.slice(colon + 1));
+  if (!Number.isFinite(id)) return;
+  void queryClient.invalidateQueries({ queryKey: [name, id] });
+}
+
 export const useLog = (): LogFeedState => {
   const [rows, setRows] = useState<readonly LogEntry[]>([]);
   const [cursor, setCursor] = useState(0);
   const [sse, setSse] = useState<"connecting" | "up" | "down">(USING_MOCK ? "down" : "connecting");
   const cursorRef = useRef(0);
+  const queryClient = useQueryClient();
 
   /** Idempotent under races between the SSE stream and the poll fallback:
-   *  only rows past the cursor we already hold are kept. */
+   *  only rows past the cursor we already hold are kept. Spec 26 L1 (iv):
+   *  the delta apply below runs over EVERY fresh row, before
+   *  `LOG_FEED_MAX_ROWS` trims the DISPLAY array — a burst larger than the
+   *  window still invalidates every pane it touched, it just cannot show
+   *  every row of activity that caused it. */
   const append = useCallback((incoming: readonly LogEntry[], newCursor: number): void => {
     const known = cursorRef.current;
     const fresh = incoming.filter((r) => r.seq > known);
@@ -179,12 +202,15 @@ export const useLog = (): LogFeedState => {
         const merged = prev.concat(fresh);
         return merged.length > LOG_FEED_MAX_ROWS ? merged.slice(merged.length - LOG_FEED_MAX_ROWS) : merged;
       });
+      for (const row of fresh) {
+        for (const target of applyLogDelta(row)) invalidateDeltaTarget(queryClient, target);
+      }
     }
     if (newCursor > cursorRef.current) {
       cursorRef.current = newCursor;
       setCursor(newCursor);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (USING_MOCK || typeof EventSource === "undefined") return undefined;

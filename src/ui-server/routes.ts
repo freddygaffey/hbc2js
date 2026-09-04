@@ -482,16 +482,47 @@ const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES];
 export interface LogTailResult {
   readonly rows: readonly { readonly seq: number; readonly ts: string; readonly who: string; readonly op: string; readonly detail: string | null }[];
   readonly cursor: number;
+  /** ADDITIVE (spec 26 L1, spec 21 §1.3): the `fn:N`/`mod:N`(-shaped) ids
+   *  this batch's rows name, deduped, in no particular order — old clients
+   *  that only know `rows`/`cursor` are unaffected. Derived from each row's
+   *  own `detail` JSON (`{kind, target}`, written by
+   *  `src/projdb/revision-store.ts`'s `appendLog` since this landing; older
+   *  rows minted before that change, or rows with no `target` in `detail`
+   *  at all — e.g. `op:'init'` — contribute nothing here, not a wildcard).
+   *  `ui/src/state/log-delta.ts`'s `applyLogDelta` re-derives the same
+   *  per-row target independently (from the same `detail` field) to decide
+   *  which query keys to invalidate; this array is the doorbell's own
+   *  coarse hint, not the thing a client should invalidate against. */
+  readonly targets: readonly string[];
 }
 
 const LOG_TAIL_CAP = 500;
+
+/** Pulls `{target}` back out of a `log` row's own `detail` JSON, if that
+ *  row is one this landing's `appendLog` wrote (`{kind, target}`) — never
+ *  throws on an older or unrelated `detail` shape, just contributes
+ *  nothing (spec 21 §1.3: a doorbell that can't identify a target must
+ *  say so, not guess). */
+function targetOfLogRow(detail: string | null): string | undefined {
+  if (detail === null || detail === "") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(detail);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const target = (parsed as Record<string, unknown>).target;
+  return typeof target === "string" && target !== "" ? target : undefined;
+}
 
 export function tailLog(resources: McpResources, since: number): LogTailResult {
   const all = resources.project.log({}, { all: true }).rows;
   const fresh = all.filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
   const rows = fresh.slice(0, LOG_TAIL_CAP);
   const cursor = rows.length > 0 ? rows[rows.length - 1]!.seq : since;
-  return { rows, cursor };
+  const targets = [...new Set(rows.map((r) => targetOfLogRow(r.detail)).filter((t): t is string => t !== undefined))];
+  return { rows, cursor, targets };
 }
 
 /** Every `/api/tools/*` route that actually mutates project state (mints a

@@ -2,8 +2,14 @@
 // default (spec 22's layout diagram); expanded it shows two tabs, "Activity"
 // (a friendly live feed, ui/src/activity/ActivityFeed.tsx) and "Log" (raw
 // rows, ui/src/activity/LogTab.tsx). Live data is `useLog` (ui/src/hooks.ts):
-// SSE (`GET /api/events`) preferred, 1 s polling of `/api/log/tail` as the
-// fallback. Collapsed state and active tab persist to localStorage
+// SSE (`GET /api/events`, doorbell-driven since spec 26 L1 — see
+// `src/ui-server/server.ts`'s write bus) preferred, polling of
+// `/api/log/tail` as the fallback. This pane is no longer the only place a
+// write shows up: `useLog`'s own feed hook now runs every fresh row through
+// `ui/src/state/log-delta.ts`'s `applyLogDelta` and invalidates exactly the
+// other panes' query keys it names, so a rename made anywhere (another tab,
+// an agent via `McpTools` directly) reaches the Context/etc. pane too, not
+// just this feed. Collapsed state and active tab persist to localStorage
 // (ui/src/activity/store.ts).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ToolButton } from "../components/primitives.tsx";
@@ -61,7 +67,7 @@ export function BottomPane(): ReactNode {
         <ToolButton tip={open ? "Collapse activity pane" : "Expand activity pane"} onClick={toggleOpen}>
           {open ? "▾" : "▸"} activity
           {unread > 0 && (
-            <span className="ml-1 rounded-ui bg-accent px-1 text-[10px] leading-4 text-accent-fg" data-testid="activity-unread">
+            <span className="ml-1 rounded-ui bg-accent px-1 text-xs leading-4 text-accent-fg" data-testid="activity-unread">
               {unread}
             </span>
           )}

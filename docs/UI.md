@@ -58,7 +58,7 @@ Apache-2.0, dev-only, same as the root).
   | GET | `/api/leads` | `LeadsResult` |
   | GET | `/api/object-tables?minProps=&stringRatio=&key=&value=&minMatched=&module=&limit=` | `ObjectTables` — the bundle-wide constant-object-literal ("endpoint tables") inventory, spec 17 §14.2. Live: needs the server's `--hbc`; each table is inlined with the containing function's `fnName`/`size` and with `matched` (members hit by `key`/`value`). A filtered query is ranked by `matched`, then hit density, then size — not by size alone, or a 2,125-member HTML-entity table wins on `value=^/` |
   | GET | `/api/template-injections?module=&limit=` | `TemplateInjections` — bundle-wide WebView-injection anti-pattern scan (hunt lead C1), spec 17 §14.3. Live: needs the server's `--hbc`; each row is inlined with the containing function's `fnName`/`size`. Ranked by substitutions-inside-quotes desc, then `fn`. **Contracts only — no UI pane yet.** |
-  | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor`) |
+  | GET | `/api/log/tail?since={seq}` | `LogTail` (oldest-first + `cursor` + ADDITIVE `targets: string[]`, spec 26 L1 — the `fn:N`/`mod:N` ids the batch's rows name; old clients ignore it) |
   | GET | `/api/search/functions?q=&cursor=` | `SearchPage<FunctionMatch>` |
   | GET | `/api/search/source?q=&cursor=` | `SearchPage<SourceMatch>` |
   | GET | `/api/package-id/{mod}` | `PackageIdResult` — `McpResources.packageId(mod)` (spec-13's two-key gate over the module the signature DB attributes `mod` to); 400 on a non-numeric `mod`, otherwise always 200 — `{available:false, mod, reason}` is an honest answer, not a 404. Shares the SAME cached deps run `/api/segregation`'s async recompute uses (`McpResources.computeDeps()`, one run per server process) |
@@ -71,9 +71,10 @@ Apache-2.0, dev-only, same as the root).
   lands. Selected by `VITE_API_MOCK` (default `1`); run with
   `VITE_API_MOCK=0 npm run dev` to hit a real server. Its data is obviously
   fake and no component special-cases it.
-- `ui/src/hooks.ts` — one TanStack Query hook per resource. `useLog()` polls
-  `/api/log/tail` every second (spec 22 §1/§3.5's live-update wire); it polls
-  from seq 0 for now, incremental cursor advance being landing 6's job.
+- `ui/src/hooks.ts` — one TanStack Query hook per resource. `useLog()`
+  prefers `GET /api/events` (SSE, doorbell-driven since spec 26 L1 — see
+  "Live update" below), falling back to polling `/api/log/tail` with an
+  incrementally-advancing cursor.
 
 ## Cold start
 
@@ -907,6 +908,44 @@ refetch while polling is the active source.
 pane is a live tail, not a full-session log browser (that is what the "Log"
 tab's filter, plus `GET /api/log?since=&who=`/`generate_documentation` on
 the MCP side, are for).
+
+**Live update: the in-process write bus + shard-addressed delta apply
+(spec 26 L1, spec 21 §1.2/§1.3).** Before this landing, `useLog` fed every
+row to the Activity pane only — an agent's rename reached the feed and
+nowhere else. Two additive changes close that gap:
+
+- *The doorbell.* `src/ui-server/server.ts` keeps one in-process
+  `EventEmitter` per server instance. Right after a request to a route in
+  `routes.ts`'s `WRITE_TOOL_PATHS` lands (status 200), the handler emits
+  `"wrote"`; every open `/api/events` connection's poll-tick check function
+  is also registered on that event, so it re-checks the log immediately
+  instead of waiting for the next `SSE_POLL_MS` (500 ms) tick. The tick
+  itself never stops — it is the fallback for a missed/coalesced doorbell
+  and the only path when nothing in-process ever emits (a second process
+  writing the same log, or a hand edit adopted via `hbcproj adopt`). The log
+  stays the authority throughout; the bus is only ever a latency
+  optimisation over it (spec 21 §1.3).
+- *Shard-addressed delta apply.* `src/projdb/revision-store.ts`'s
+  `appendLog` now writes `{kind, target}` (not just `{kind}`) into each
+  `log` row's `detail` — `target` is the write's own `fn:N`/`mod:N`
+  binding-id. `tailLog` (`src/ui-server/routes.ts`) parses this back out
+  into an ADDITIVE `targets: string[]` field on both `LogTail` (`/api/log/
+  tail`'s JSON body) and the SSE `log` frame — a coarse, batch-level hint;
+  old clients that only know `rows`/`cursor` are unaffected. The precise
+  per-row mapping lives in `ui/src/state/log-delta.ts`'s pure
+  `applyLogDelta(entry) -> readonly string[]`, which `useLog`'s `append()`
+  runs over every fresh row (SSE or poll, same code path) and turns into
+  `queryClient.invalidateQueries` calls (`ui/src/hooks.ts`) — so a `name`
+  write on `fn:12` invalidates exactly `["context",12]`/`["fn",12]`/
+  `["who-calls-by-name",12]`, a `finding`/`status` write also invalidates
+  `["findings"]`, and a row whose target does not parse (an `op:'init'`
+  row, or one minted before this landing) invalidates NOTHING — never a
+  blanket refetch, which would defeat the whole point. This runs over the
+  full fresh-row list before `LOG_FEED_MAX_ROWS` trims the DISPLAY array, so
+  a burst larger than that window still invalidates every pane it touched.
+  The net effect: a rename made from anywhere — another browser tab, an
+  agent calling `McpTools` directly, a hand edit — now reaches the pane
+  showing that fn, not only the Activity feed.
 
 **What a line shows.** `ui/src/activity/format.ts`'s `summarize()` turns
 `op` + `detail` (a JSON string whose shape is the writer's, not a typed

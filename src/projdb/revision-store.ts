@@ -204,7 +204,7 @@ export class DbRevisionStore<T> {
       this.adapter.writeDetail(db, rid, value);
       const tier = prov.tier ?? "accepted";
       db.prepare(`INSERT INTO revision_tier (rid, tier) VALUES (?, ?)`).run(rid, tier);
-      this.appendLog(prov, ts, "annotate", rid);
+      this.appendLog(prov, ts, "annotate", rid, target);
       db.exec("COMMIT;");
       const provOut: DbProvenance = { ...prov, tier };
       const record: DbRevision<T> = { rid: String(rid), target, value, ts, supersedes: toRevisionId(prior === undefined ? null : prior.payloadRid), active: true, ctx: ctx ?? {}, prov: provOut };
@@ -273,7 +273,7 @@ export class DbRevisionStore<T> {
         next === null ? 1 : 0,
       );
       const rid = Number(info.lastInsertRowid);
-      this.appendLog(prov, ts, "revert", rid);
+      this.appendLog(prov, ts, "revert", rid, target);
       db.exec("COMMIT;");
     } catch (err) {
       db.exec("ROLLBACK;");
@@ -284,13 +284,20 @@ export class DbRevisionStore<T> {
     return this.rowToDbRevision(next, true);
   }
 
-  private appendLog(prov: DbProvenance, ts: string, op: "annotate" | "revert", rid: number): void {
+  /** `target` rides along in `detail` (additive: existing readers only ever
+   *  looked at `.kind`, spec 21 §1.3's live-update doorbell is the first
+   *  reader of `.target` — `src/ui-server/routes.ts`'s `tailLog` parses it
+   *  back out to build the SSE frame's `targets: string[]`, spec 26 L1). No
+   *  schema change: `revisions.target` already carries this per-rid, this
+   *  just spares a join for a reader that only has the log table's own
+   *  `detail` column to work with. */
+  private appendLog(prov: DbProvenance, ts: string, op: "annotate" | "revert", rid: number, target: string): void {
     this.db
       .prepare(
         `INSERT INTO log (ts, actor_source, actor_who, actor_run, op, rid, gen, detail)
          VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
       )
-      .run(ts, prov.source, prov.who, prov.run ?? null, op, rid, JSON.stringify({ kind: this.adapter.kind }));
+      .run(ts, prov.source, prov.who, prov.run ?? null, op, rid, JSON.stringify({ kind: this.adapter.kind, target }));
   }
 
   /** `v_active` joined back to `revisions` on `head_rid` to recover `slot`
