@@ -56,6 +56,35 @@ node tools/fuzz/construct-fuzz.mjs --versions 84,94,96,98,99 --count 500 \
   version passed; a missing hermesc reports `ERROR` for that version's cells
   rather than crashing the run.
 
+### Report writing is streamed (docs/BUGS.md 2026-09-03)
+
+The driver used to accumulate every divergence/error signature (unbounded
+trace-context strings) in memory and write the whole report with one
+`JSON.stringify` at the end; at campaign scale (40k programs, 201 finds)
+that threw `RangeError: Invalid string length` and lost the aggregate
+`cells` matrix after 5h of compute, even though the per-find files under
+`reports/fuzz/finds/*.js` survived. Fixed in `tools/fuzz/campaign-report.mjs`
+(used by `construct-fuzz.mjs`, unit-tested directly in
+`tests/fuzz/campaign-report.test.ts` without running a real campaign):
+
+- Every DIVERGENT/ERROR signature is appended, as it occurs, to
+  `<out>.signatures.jsonl` (one JSON object per line: `version`, `seed`,
+  `verdict`, a capped `signature` string, and the `find` path if one was
+  written) — this file is complete even if the process is killed mid-run.
+- The summary JSON at `--out` always writes successfully: it inlines a
+  capped sample of distinct signatures (`signatures[]`, `signatureCount`,
+  `signaturesFile` pointing at the JSONL) and falls back to a smaller inline
+  sample (`signaturesTruncated: true`) rather than ever failing the final
+  write.
+- `--recount [--finds-dir DIR]` re-derives a best-effort per-version
+  `cells` count from `reports/fuzz/finds/` filenames alone (`v<version>-
+  seed<seed>.js`) — the recovery path for a summary lost before this fix,
+  when only `finds/` survived. It cannot recover `n`/`pass`/`inconclusive`
+  (not encoded in a filename), only a per-version failure count, and only
+  up to the run's 200-find cap. Run against the actual campaign-1 finds
+  still on disk, it reproduces the incident's own numbers exactly:
+  `v84:50/v94:46/v96:45/v98:1/v99:59` (total 201).
+
 ## Oracle set (PUSHBACK P-12, `docs/PUSHBACK.md`)
 
 Traced versions run `syntax+trace+fuzz`, **not** the spec's literal

@@ -29,13 +29,14 @@ import { runOracleLadder, VERDICT } from "../../src/harness/ladder.ts";
 import { chooseReference } from "../../src/harness/reference-policy.ts";
 import { decompile } from "../../src/decompile.ts";
 import { modeForCell, referenceEngineBanner } from "./reference-mode.mjs";
+import { createCampaignReportWriter, recountFromFinds } from "./campaign-report.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..", "..");
 const TRACED_VERSIONS = [84, 94, 96, 99];
 
 function parseArgs(argv) {
-  const opts = { versions: [84, 94, 96, 99], count: 20, seedBase: 1000, eval: false, out: null };
+  const opts = { versions: [84, 94, 96, 99], count: 20, seedBase: 1000, eval: false, out: null, recount: false, findsDir: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--versions") opts.versions = argv[++i].split(",").map(Number);
@@ -43,6 +44,13 @@ function parseArgs(argv) {
     else if (a === "--seed-base") opts.seedBase = Number(argv[++i]);
     else if (a === "--eval") opts.eval = true;
     else if (a === "--out") opts.out = argv[++i];
+    // Recovery path (docs/BUGS.md 2026-09-03): re-derive a best-effort
+    // `cells` matrix from `reports/fuzz/finds/` filenames alone, for when a
+    // campaign's summary JSON was lost (pre-fix runs only wrote finds/, no
+    // JSONL sidecar). Does not run a campaign; prints/writes the recount
+    // and exits.
+    else if (a === "--recount") opts.recount = true;
+    else if (a === "--finds-dir") opts.findsDir = argv[++i];
   }
   return opts;
 }
@@ -114,6 +122,7 @@ async function runOne(version, seed, findsDir, findsCount) {
     });
     if (result.verdict === VERDICT.DIVERGENT || result.verdict === VERDICT.ERROR) {
       const sig = signatureOf(result);
+      let findPath = null;
       if (sig !== null && findsCount.n < 200) {
         findsCount.n++;
         try {
@@ -126,12 +135,14 @@ async function runOne(version, seed, findsDir, findsCount) {
           // deferred to a follow-up task (see docs/fuzz/CONSTRUCT-FUZZER.md
           // "Deferred"). The raw failing program is saved verbatim so a
           // human or the follow-up can minimise it offline.
-          writeFileSync(join(findsDir, `v${version}-seed${seed}.js`), program);
+          findPath = join(findsDir, `v${version}-seed${seed}.js`);
+          writeFileSync(findPath, program);
         } catch {
           // Best-effort: a find write failure must never abort the campaign.
+          findPath = null;
         }
       }
-      return { verdict: result.verdict, signature: sig !== null ? signatureKey(sig) : null };
+      return { verdict: result.verdict, signature: sig !== null ? signatureKey(sig) : null, findPath };
     }
     return { verdict: result.verdict };
   } finally {
@@ -141,12 +152,34 @@ async function runOne(version, seed, findsDir, findsCount) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+
+  if (opts.recount) {
+    const findsDir = opts.findsDir ?? join(REPO_ROOT, "reports", "fuzz", "finds");
+    const recount = recountFromFinds(findsDir);
+    const out = { schema: "fuzz-matrix/1-recount", findsDir, cells: recount.cells, total: recount.total };
+    const text = JSON.stringify(out, null, 2);
+    if (opts.out) {
+      mkdirSync(dirname(opts.out), { recursive: true });
+      writeFileSync(opts.out, text);
+      console.log(`wrote ${opts.out}`);
+    }
+    console.log(text);
+    return;
+  }
+
   const range = opts.eval ? evalRange(opts.seedBase) : workRange(opts.seedBase);
   const findsDir = join(REPO_ROOT, "reports", "fuzz", "finds");
   const findsCount = { n: existsSync(findsDir) ? readdirSync(findsDir).length : 0 };
 
+  const runId = `${opts.seedBase}-${opts.eval ? "eval" : "work"}-${Date.now()}`;
+  const outPath = opts.out ?? join(REPO_ROOT, "reports", "fuzz", `construct-${new Date().toISOString().slice(0, 10)}-${runId}.json`);
+  mkdirSync(dirname(outPath), { recursive: true });
+  // Streamed sidecar (docs/BUGS.md 2026-09-03): every DIVERGENT/ERROR
+  // signature is appended here as it occurs, so the aggregate `cells`
+  // matrix below is never the only surviving record of a large campaign.
+  const writer = createCampaignReportWriter({ jsonlPath: `${outPath}.signatures.jsonl` });
+
   const cells = {};
-  const signatures = new Set();
   for (const version of opts.versions) {
     const cell = newCell();
     const isTracedVersion = TRACED_VERSIONS.includes(version);
@@ -166,10 +199,10 @@ async function main() {
       if (r.verdict === "PASS") cell.pass++;
       else if (r.verdict === "DIVERGENT") {
         cell.divergent++;
-        if (r.signature) signatures.add(r.signature);
+        writer.recordSignature({ version, seed, verdict: r.verdict, signature: r.signature, findPath: r.findPath, repoRoot: REPO_ROOT });
       } else if (r.verdict === "ERROR") {
         cell.error++;
-        if (r.signature) signatures.add(r.signature);
+        writer.recordSignature({ version, seed, verdict: r.verdict, signature: r.signature, findPath: r.findPath, repoRoot: REPO_ROOT });
       } else cell.inconclusive++;
     }
     cells[`construct-fuzz@v${version}`] = cell;
@@ -179,16 +212,13 @@ async function main() {
     schema: "fuzz-matrix/1",
     component: "construct",
     date: new Date().toISOString(),
-    runId: `${opts.seedBase}-${opts.eval ? "eval" : "work"}-${Date.now()}`,
+    runId,
     grammarVersion: GRAMMAR_VERSION,
     seedRanges: opts.versions.map((v) => ({ version: v, kind: range.kind, start: range.start, end: range.end })),
     cells: Object.entries(cells).map(([name, cell]) => ({ name, ...cell })),
-    signatures: [...signatures],
   };
 
-  const outPath = opts.out ?? join(REPO_ROOT, "reports", "fuzz", `construct-${new Date().toISOString().slice(0, 10)}-${report.runId}.json`);
-  mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, JSON.stringify(report, null, 2));
+  writer.close({ report, outPath });
   console.log(`wrote ${outPath}`);
   console.log(JSON.stringify(report.cells, null, 2));
 }
