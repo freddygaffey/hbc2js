@@ -65,6 +65,10 @@ export interface ActionApi {
   forward(): void | Promise<void>;
   fold(): void | Promise<void>;
   unfold(): void | Promise<void>;
+  /** The keyboard cheat-sheet: every live binding, from the live keymap. */
+  openShortcuts(): void | Promise<void>;
+  /** The Settings dialog (theme preset, density, keymap preset + bindings). */
+  openSettings(): void | Promise<void>;
 }
 
 export interface ActionContext {
@@ -294,6 +298,18 @@ export function standardActions(): Action[] {
       title: "Search project",
       group: "project",
       run: (ctx) => ctx.api.search(),
+    },
+    {
+      id: "project.shortcuts",
+      title: "Keyboard shortcuts",
+      group: "project",
+      run: (ctx) => ctx.api.openShortcuts(),
+    },
+    {
+      id: "project.settings",
+      title: "Settings",
+      group: "project",
+      run: (ctx) => ctx.api.openSettings(),
     },
   ];
 }

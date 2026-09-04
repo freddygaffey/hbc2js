@@ -5,7 +5,7 @@
 // non-registry rows are the two shell PREFERENCES (density, theme), which
 // are not commands over the project and deliberately live here.
 import { Command } from "cmdk";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { paletteItems } from "@ui-core/actions.ts";
 import { actionContext, keymap, registry, runAction } from "../actions/registry.ts";
 import { setPaletteOpen, useActionsState } from "../actions/store.ts";
@@ -28,18 +28,6 @@ export function CommandPalette({
     onOpenChange(v);
     setPaletteOpen(v);
   };
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setOpen(!isOpen);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
 
   const items = paletteItems(actionContext(selection), registry);
 

@@ -8,9 +8,11 @@ import { ContextMenuHost } from "../components/ContextMenu.tsx";
 import { FindingForm } from "../components/FindingForm.tsx";
 import { RenameDialog } from "../components/RenameDialog.tsx";
 import { CommentDialog } from "./CommentDialog.tsx";
+import { KeymapHelp } from "../components/KeymapHelp.tsx";
+import { SettingsDialog } from "../components/SettingsDialog.tsx";
 import { installKeymapListener } from "./keys.ts";
 import { setQueryClient } from "./registry.ts";
-import { closeDialog, setStatus, useActionsState } from "./store.ts";
+import { closeDialog, setOverlay, setStatus, useActionsState } from "./store.ts";
 
 const STATUS_MS = 6000;
 
@@ -53,6 +55,15 @@ function Dialogs(): ReactNode {
   return <FindingForm fn={fn} />;
 }
 
+/** The two shell-wide overlays (`project.shortcuts` / `project.settings`).
+ *  They live here, not in App.tsx, so the layout file stays untouched. */
+function Overlays(): ReactNode {
+  const { overlay } = useActionsState();
+  if (overlay === "shortcuts") return <KeymapHelp onClose={() => setOverlay("none")} />;
+  if (overlay === "settings") return <SettingsDialog onClose={() => setOverlay("none")} />;
+  return null;
+}
+
 export function ActionsProvider({ children }: { readonly children: ReactNode }): ReactNode {
   const qc = useQueryClient();
   setQueryClient(qc);
@@ -61,6 +72,7 @@ export function ActionsProvider({ children }: { readonly children: ReactNode }):
     <ContextMenuHost>
       {children}
       <Dialogs />
+      <Overlays />
       <StatusToast />
     </ContextMenuHost>
   );

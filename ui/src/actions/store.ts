@@ -15,11 +15,16 @@ export interface DialogState {
   readonly selection: Selection;
 }
 
-export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "findings" | "package" | "workers";
+/** The two shell-wide overlays the project actions open (spec 22 §3.1):
+ *  the keyboard cheat-sheet and the Settings dialog. */
+export type Overlay = "none" | "shortcuts" | "settings";
+
+export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | "findings" | "package" | "workers";
 
 export interface ActionsState {
   readonly dialog: DialogState;
   readonly paletteOpen: boolean;
+  readonly overlay: Overlay;
   readonly rightPanel: RightPanel;
   /** Last write result / hint, shown in the status toast. `null` = nothing. */
   readonly status: string | null;
@@ -29,7 +34,9 @@ export interface ActionsState {
 
 const CLOSED: DialogState = { kind: "none", selection: { kind: "none" } };
 
-let state: ActionsState = { dialog: CLOSED, paletteOpen: false, rightPanel: "context", status: null, pendingChord: "" };
+const INITIAL: ActionsState = { dialog: CLOSED, paletteOpen: false, overlay: "none", rightPanel: "context", status: null, pendingChord: "" };
+
+let state: ActionsState = INITIAL;
 
 const listeners = new Set<() => void>();
 
@@ -65,6 +72,10 @@ export function setPaletteOpen(open: boolean): void {
   set({ paletteOpen: open });
 }
 
+export function setOverlay(overlay: Overlay): void {
+  set({ overlay });
+}
+
 export function setRightPanel(panel: RightPanel): void {
   set({ rightPanel: panel });
 }
@@ -79,6 +90,6 @@ export function setPendingChord(pendingChord: string): void {
 
 /** Test/dev only. */
 export function resetActionsState(): void {
-  state = { dialog: CLOSED, paletteOpen: false, rightPanel: "context", status: null, pendingChord: "" };
+  state = INITIAL;
   for (const l of [...listeners]) l();
 }

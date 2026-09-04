@@ -169,12 +169,40 @@ export function parseChord(chordStr: string, leader: string): Step[] {
   return steps;
 }
 
-function shiftSlot(key: string, shift: boolean): string {
-  return key.length > 1 ? (shift ? "1" : "0") : "x";
-}
-
+/**
+ * The lookup key a chord step and a live KeyEvent must BOTH produce for the
+ * step to match — so the normalisation below is symmetric by construction
+ * (review-2026-09-05-keys, docs/BUGS.md).
+ *
+ * Three cases, because "case is significant" only makes sense for a bare
+ * character step:
+ *   - a NAMED key ("F12", "ArrowLeft"): shift is an explicit slot, as before;
+ *   - a BARE single character ("K", "]", "/"): case-significant, shift is
+ *     implicit in the character itself, so the slot is ignored ("x") — vim's
+ *     "K" and a hypothetical "k" stay different chords;
+ *   - a single character WITH Ctrl/Alt/Meta ("Ctrl-P", "Ctrl-Shift-N"): the
+ *     character is lower-cased, because a browser reports `key: "p"` for
+ *     Ctrl+P while the chord string writes it "P" — the two used to hash
+ *     differently and the binding could never fire. Shift is then a real
+ *     slot for letters (Ctrl-N and Ctrl-Shift-N are different chords) but
+ *     ignored for punctuation and digits, whose shift state is keyboard-
+ *     layout dependent ("/" is unshifted on US, shifted elsewhere).
+ */
 function stepMapKey(step: { key: string; ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }): string {
-  return `${step.ctrl ? 1 : 0}${step.alt ? 1 : 0}${step.meta ? 1 : 0}${shiftSlot(step.key, step.shift)}:${step.key}`;
+  const hasMod = step.ctrl || step.alt || step.meta;
+  let key = step.key;
+  let slot: string;
+  if (key.length > 1) {
+    slot = step.shift ? "1" : "0";
+  } else if (!hasMod) {
+    slot = "x";
+  } else {
+    const lower = key.toLowerCase();
+    const isLetter = lower >= "a" && lower <= "z";
+    key = lower;
+    slot = isLetter ? (step.shift ? "1" : "0") : "x";
+  }
+  return `${step.ctrl ? 1 : 0}${step.alt ? 1 : 0}${step.meta ? 1 : 0}${slot}:${key}`;
 }
 
 function eventMapKey(event: KeyEvent): string {
@@ -185,6 +213,14 @@ function eventMapKey(event: KeyEvent): string {
     shift: !!event.shift,
     meta: !!event.meta,
   });
+}
+
+/** The normalised step keys of `chordStr` — the same strings `feed` hashes
+ *  live events to. Two chords collide exactly when one array is a prefix of
+ *  (or equal to) the other, which is what `keymap-resolve.ts`'s conflict
+ *  check uses to vet a chord BEFORE `createKeymap` would throw on it. */
+export function chordStepKeys(chordStr: string, leader: string = "\\"): string[] {
+  return parseChord(chordStr, leader).map(stepMapKey);
 }
 
 function firstDescendantChord(node: TrieNode): string {
@@ -230,6 +266,41 @@ function isCountDigit(event: KeyEvent, countStr: string): boolean {
   if (c < "0" || c > "9") return false;
   if (countStr === "" && c === "0") return false;
   return true;
+}
+
+/** KeyEvent key value -> the token a chord string writes it as. */
+const KEY_TO_TOKEN: Record<string, string> = {
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+  " ": "Space",
+};
+
+/**
+ * The chord string for a single live key event — what the in-app binding
+ * recorder writes into `overrides`. Round-trips: `parseChord(formatChord(e))`
+ * produces the step `e` matches.
+ *
+ * A bare printable character is written as itself (case-significant, shift
+ * implicit: "?" not "Shift-/"); anything with Ctrl/Alt/Meta, or a named key,
+ * gets the `Mod-…` form with a letter upper-cased the way the presets write
+ * it ("Ctrl-P"). Returns undefined for a modifier pressed on its own.
+ */
+export function formatChord(event: KeyEvent): string | undefined {
+  const raw = KEY_TO_TOKEN[event.key] ?? event.key;
+  if (raw === "Shift" || raw === "Control" || raw === "Alt" || raw === "Meta" || raw === "CapsLock" || raw === "Dead") {
+    return undefined;
+  }
+  const hasMod = !!event.ctrl || !!event.alt || !!event.meta;
+  if (!hasMod && raw.length === 1) return raw;
+  const parts: string[] = [];
+  if (event.ctrl) parts.push("Ctrl");
+  if (event.alt) parts.push("Alt");
+  if (event.shift) parts.push("Shift");
+  if (event.meta) parts.push("Meta");
+  parts.push(raw.length === 1 ? raw.toUpperCase() : raw);
+  return parts.join("-");
 }
 
 export function createKeymap(options: CreateKeymapOptions): Keymap {

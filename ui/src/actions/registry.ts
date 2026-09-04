@@ -8,13 +8,14 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   createStandardRegistry, type ActionApi, type ActionContext, type FocusPane, type Selection as CoreSelection,
 } from "@ui-core/actions.ts";
-import { createKeymap } from "@ui-core/keymap.ts";
-import { resolveKeymapConfigWith } from "@ui-core/keymap-resolve.ts";
+import { createKeymap, type Keymap } from "@ui-core/keymap.ts";
+import { mergeBindings, resolveKeymapConfigWith, type KeymapConfig } from "@ui-core/keymap-resolve.ts";
+import { useSyncExternalStore } from "react";
 import { formatDisasmOffset } from "@ui-core/disasm-offset.ts";
 import { PRESETS, keymapConfig } from "../keymap-config.ts";
 import type { FunctionCatalogue } from "../hooks.ts";
 import { back, forward, getSelection, select, type Selection } from "../state/selection.ts";
-import { openDialog, setPaletteOpen, setRightPanel, setStatus } from "./store.ts";
+import { openDialog, setOverlay, setPaletteOpen, setRightPanel, setStatus } from "./store.ts";
 import { addTag, fnTarget } from "./writes.ts";
 import { workersApi } from "../workers/wire.ts";
 import { api } from "../api.ts";
@@ -23,13 +24,177 @@ import { foldActive, unfoldActive } from "../listing/fold-store.ts";
 import { openDisasm } from "../panes/disasm-store.ts";
 import { setStringsPrefill } from "../panes/strings-store.ts";
 import { setTablesPrefill } from "../panes/tables-store.ts";
+import {
+  expandGraphNode, focusGraphNode, originKey as graphOriginKey, rootGraph,
+  targetForSelection as graphTargetFor,
+} from "../graph/store.ts";
 
 export const registry = createStandardRegistry();
 
-/** The active keymap: `ui/keymap.json`'s preset plus its overrides,
- *  validated against `registry` (an override naming an unknown action id
- *  throws here, at startup, rather than dying silently at keypress). */
-export const keymap = createKeymap(resolveKeymapConfigWith(keymapConfig, registry, PRESETS));
+// -- spec 25: the graph view's own actions ----------------------------------
+//
+// Registered HERE, not in `src/ui-core/actions.ts`, on purpose: the shared
+// registry's `view.graph` is deliberately `when: () => false` and
+// `tests/ui-core/actions.test.ts` asserts it stays that way until the graph
+// spec is wired into every shell. An implementation task never inverts an
+// existing test's assertion (docs/AGENT-BRIEF.md), so the browser shell adds
+// its own `graph.*` ids instead and `openGraph` below is pointed at the real
+// pane — flipping `view.graph` later is then a one-line core change plus
+// that test's update (docs/specs/25-ui-graph-view.md §4).
+function graphTarget(ctx: ActionContext): boolean {
+  return graphTargetFor(ctx.selection as Selection) !== null;
+}
+
+registry.register({
+  id: "graph.open",
+  title: "Open graph (neighbourhood)",
+  group: "view",
+  when: graphTarget,
+  run: (ctx) => openGraphOn(ctx.selection as Selection),
+});
+registry.register({
+  id: "graph.focus",
+  title: "Focus graph on selection",
+  group: "view",
+  when: graphTarget,
+  run: (ctx) => {
+    const t = graphTargetFor(ctx.selection as Selection);
+    if (t === null) return setStatus("nothing to focus the graph on");
+    focusGraphNode(t);
+    setRightPanel("graph");
+  },
+});
+registry.register({
+  id: "graph.expand",
+  title: "Expand in graph (one hop)",
+  group: "view",
+  when: (ctx) => ctx.selection.fn !== undefined && ctx.selection.fn >= 0,
+  run: (ctx) => {
+    const fn = ctx.selection.fn;
+    if (fn === undefined || fn < 0) return setStatus("select a function to expand in the graph");
+    expandGraphNode(fn);
+    setRightPanel("graph");
+  },
+});
+
+/** Root the graph pane on `sel` and bring the tab up. */
+function openGraphOn(sel: Selection): void {
+  const t = graphTargetFor(sel);
+  if (t === null) return setStatus("select a function or a module to graph");
+  rootGraph(t, graphOriginKey(t));
+  setRightPanel("graph");
+}
+
+// -- the live keymap --------------------------------------------------------
+//
+// `ui/keymap.json` is the BASE (`{preset, overrides}`); the Settings dialog's
+// key-binding editor layers a user config on top of it, persisted in
+// localStorage exactly the way the theme preset/density are. Resolution goes
+// through the one shared resolver (`@ui-core/keymap-resolve.ts`) for both, so
+// the file, the dialog and the running keymap can never disagree.
+//
+// `keymap` below is a STABLE proxy: TopBar, RightPane, the palette and the
+// context menu all imported the object directly, and a rebind must not leave
+// them holding a dead one.
+
+const PRESET_STORAGE_KEY = "hbc2js.keymap.preset";
+const OVERRIDES_STORAGE_KEY = "hbc2js.keymap.overrides";
+
+/** `ui/keymap.json` — what "reset all to preset" goes back to. */
+export const baseKeymapConfig: KeymapConfig = keymapConfig;
+
+function readStored(): KeymapConfig {
+  const base: KeymapConfig = { preset: keymapConfig.preset, overrides: { ...(keymapConfig.overrides ?? {}) } };
+  try {
+    const preset = window.localStorage.getItem(PRESET_STORAGE_KEY);
+    if (preset !== null && PRESETS[preset] !== undefined) base.preset = preset;
+    const raw = window.localStorage.getItem(OVERRIDES_STORAGE_KEY);
+    if (raw !== null) {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        base.overrides = { ...base.overrides, ...(parsed as Record<string, string | null>) };
+      }
+    }
+  } catch {
+    // private-browsing / corrupt value: fall back to ui/keymap.json.
+  }
+  return base;
+}
+
+function build(cfg: KeymapConfig): Keymap {
+  return createKeymap(resolveKeymapConfigWith(cfg, registry, PRESETS));
+}
+
+function safeConfig(): KeymapConfig {
+  const stored = readStored();
+  try {
+    build(stored);
+    return stored;
+  } catch {
+    return { preset: keymapConfig.preset, overrides: { ...(keymapConfig.overrides ?? {}) } };
+  }
+}
+
+let config: KeymapConfig = safeConfig();
+let active: Keymap = build(config);
+
+const keymapListeners = new Set<() => void>();
+
+/** The active keymap: `ui/keymap.json`'s preset plus its overrides and the
+ *  user's own rebinds, validated against `registry` (an override naming an
+ *  unknown action id throws at resolve time, not silently at keypress). */
+export const keymap: Keymap = {
+  feed: (event, now) => (now === undefined ? active.feed(event) : active.feed(event, now)),
+  reset: () => active.reset(),
+  isPending: () => active.isPending(),
+  chordFor: (id) => active.chordFor(id),
+};
+
+export function getKeymapConfig(): KeymapConfig {
+  return config;
+}
+
+/** chord -> action id, preset + overrides flattened: what the cheat-sheet,
+ *  the settings editor and the conflict check all read. */
+export function activeBindings(): Record<string, string> {
+  return mergeBindings(PRESETS[config.preset] ?? {}, config.overrides ?? {});
+}
+
+function persist(cfg: KeymapConfig): void {
+  try {
+    window.localStorage.setItem(PRESET_STORAGE_KEY, cfg.preset);
+    window.localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(cfg.overrides ?? {}));
+  } catch {
+    // best-effort, like every other localStorage use in the shell.
+  }
+}
+
+/** Applies a new keymap config live (no reload) and persists it. Throws,
+ *  without changing anything, when the config does not resolve. */
+export function setKeymapConfig(next: KeymapConfig): void {
+  const built = build(next);
+  config = next;
+  active = built;
+  persist(next);
+  for (const l of [...keymapListeners]) l();
+}
+
+/** Back to `ui/keymap.json` — drops every in-app rebind. */
+export function resetKeymapConfig(): void {
+  setKeymapConfig({ preset: keymapConfig.preset, overrides: { ...(keymapConfig.overrides ?? {}) } });
+}
+
+function subscribeKeymap(l: () => void): () => void {
+  keymapListeners.add(l);
+  return () => {
+    keymapListeners.delete(l);
+  };
+}
+
+/** React view of the live config — every chord label re-renders on a rebind. */
+export function useKeymapConfig(): KeymapConfig {
+  return useSyncExternalStore(subscribeKeymap, getKeymapConfig, getKeymapConfig);
+}
 
 // -- query client -----------------------------------------------------------
 
@@ -171,6 +336,8 @@ export const actionApi: ActionApi = {
   },
   search: () => focusSearch(),
   openPalette: () => setPaletteOpen(true),
+  openShortcuts: () => setOverlay("shortcuts"),
+  openSettings: () => setOverlay("settings"),
   markReviewed: (target) => tag(target, "reviewed"),
   markSuspicious: (target) => tag(target, "suspicious"),
   copyDisasmOffset: (target) => (target.fn === undefined ? copy("") : copyDisasmOffset(target.fn)),
@@ -180,7 +347,9 @@ export const actionApi: ActionApi = {
   },
   explain: (target) => queueJob("explain-fn", target),
   suggestName: (target) => queueJob("suggest-name", target),
-  openGraph: () => setStatus("the graph view lands with spec 23"),
+  // spec 25: the shared registry's `view.graph` is still gated off, but
+  // its binding is real now — see the `graph.*` registrations above.
+  openGraph: (target) => openGraphOn(target as Selection),
   nextFn: () => stepFn(1),
   prevFn: () => stepFn(-1),
   nextModule: () => stepModule(1),

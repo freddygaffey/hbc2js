@@ -17,5 +17,7 @@
   ":": "project.palette",
   "zc": "view.fold",
   "zo": "view.unfold",
-  "<leader>r": "annotate.rename"
+  "<leader>r": "annotate.rename",
+  "?": "project.shortcuts",
+  "Ctrl-,": "project.settings"
 }

@@ -167,6 +167,12 @@ export function TopBar({ onOpenPalette }: { readonly onOpenPalette: () => void }
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
+        <ToolButton aria-label="settings" data-action="project.settings" tip="Settings (theme, density, key bindings)" onClick={() => runAction("project.settings")}>
+          <span aria-hidden>&#9881;</span>
+        </ToolButton>
+        <ToolButton aria-label="keyboard shortcuts" data-action="project.shortcuts" tip="Keyboard shortcuts (?)" onClick={() => runAction("project.shortcuts")}>
+          <span aria-hidden>?</span>
+        </ToolButton>
         <ToolButton tip="Command palette (Cmd/Ctrl-K)" onClick={onOpenPalette}>
           <span className="font-mono">&#x2318;K</span>
         </ToolButton>

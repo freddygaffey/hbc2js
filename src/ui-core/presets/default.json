@@ -9,5 +9,8 @@
   "Ctrl-P": "project.palette",
   "Ctrl-F": "project.search",
   "Alt-Left": "navigate.back",
-  "Alt-Right": "navigate.forward"
+  "Alt-Right": "navigate.forward",
+  "Ctrl-K": "project.palette",
+  "?": "project.shortcuts",
+  "Ctrl-,": "project.settings"
 }

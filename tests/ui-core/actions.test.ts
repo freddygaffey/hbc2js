@@ -33,6 +33,8 @@ function stubApi(): ActionApi {
     forward: noop,
     fold: noop,
     unfold: noop,
+    openShortcuts: noop,
+    openSettings: noop,
   };
 }
 

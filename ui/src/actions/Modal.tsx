@@ -5,18 +5,24 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 export function Modal({
-  title, subtitle, onClose, children,
+  title, subtitle, onClose, children, wide = false,
 }: {
   readonly title: string;
   readonly subtitle?: ReactNode;
   readonly onClose: () => void;
   readonly children: ReactNode;
+  /** Settings/cheat-sheet need a wider panel than the annotate forms. */
+  readonly wide?: boolean;
 }): ReactNode {
   const panel = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
+      // The Settings key-binding recorder marks its button while it is
+      // listening; Escape there means "cancel recording", not "close the
+      // dialog", and this window-CAPTURE listener would otherwise always
+      // win the race against the button's own handler.
+      if (e.key === "Escape" && document.querySelector('[data-hbc-recording="true"]') === null) {
         e.stopPropagation();
         onClose();
       }
@@ -33,7 +39,7 @@ export function Modal({
         role="dialog"
         aria-label={title}
         data-hbc-keys="off"
-        className="w-[min(520px,92vw)] rounded-ui border border-border bg-surface text-text"
+        className={`${wide ? "w-[min(820px,94vw)]" : "w-[min(520px,92vw)]"} rounded-ui border border-border bg-surface text-text`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border px-3 py-2 text-xs">

@@ -462,6 +462,73 @@ keys typed in an `input`/`textarea`/`select`/contenteditable, anything inside
 CodeMirror editor while the vim layer is in INSERT mode (no `cm-fat-cursor`
 class). A pending multi-key sequence shows as a chord indicator bottom-right.
 
+### Keyboard shortcuts, and why none of them used to fire
+
+The owner reported on 2026-09-05 that "none of the key bindings work"
+(docs/BUGS.md, `review-2026-09-05-keys`). Two independent faults, both in the
+normalisation between a browser `KeyboardEvent` and a chord string:
+
+1. **Case.** `src/ui-core/keymap.ts` hashed a chord step and a live event
+   into the same trie key, but case-sensitively for single characters. A
+   browser reports `key: "p"` for Ctrl+P while the preset writes `"Ctrl-P"`,
+   so `Ctrl-P` (palette) and `Ctrl-F` (search) — the two chords anyone
+   actually presses — could never match. `stepMapKey` now lower-cases a
+   single character that carries Ctrl/Alt/Meta, keeps Shift significant for
+   letters (`Ctrl-N` and `Ctrl-Shift-N` stay different chords) and ignores it
+   for punctuation and digits, whose shift state is layout dependent. A BARE
+   character step is untouched: vim's `K` is still not `k`.
+2. **Modifier.** Every preset writes `Ctrl-`, the top bar advertises
+   "Cmd/Ctrl-K", and the owner is on a Mac, where nobody presses Control.
+   `ui/src/actions/keys.ts` now folds a lone COMMAND into `ctrl` on macOS
+   (`isMacPlatform`), so the whole keymap is reachable with the key Mac users
+   actually use. No preset binds a `Meta-` chord, so nothing is shadowed, and
+   an unbound Command chord still resolves to "none" and is left to the
+   browser (Cmd-R, Cmd-T, Cmd-C are untouched).
+
+`Ctrl-K` is now a real binding for `project.palette` (it was only ever a
+hard-coded `useEffect` inside `CommandPalette`, which the preset chord then
+raced; that listener is gone). Two new actions ship with it: `?` opens the
+**Keyboard shortcuts** cheat-sheet (`ui/src/components/KeymapHelp.tsx`) and
+`Ctrl-,` opens **Settings**. Both are also palette entries, both have a top
+bar affordance, and the cheat-sheet renders `activeBindings()` joined against
+the registry — it is a view over the live keymap, never a second list.
+
+Regression tests: `tests/gate/ui/keymap-default.test.ts` presses the real
+browser event for every chord in every shipped preset;
+`tests/ui-core/keymap-bindings.test.ts` covers the normalisation and the
+binding algebra; `ui/e2e/keys.spec.ts` drives the chords through Chromium,
+including with focus inside CodeMirror.
+
+### Settings dialog
+
+`ui/src/components/SettingsDialog.tsx` (`project.settings`, `Ctrl-,`, gear in
+the top bar) is the in-app config the shell was missing — the layout is
+untouched, art direction stays Fred's. Two tabs:
+
+- **appearance** — theme preset (`dark`/`light`), density
+  (`comfortable`/`compact`) and keymap preset (`default`/`vim`/`ghidra`),
+  each applied live through the existing `ThemeProvider` / live keymap and
+  persisted to `localStorage` the same wrapped way; plus a READ-ONLY view of
+  `ui/theme.json`'s resolved token overrides (tokens are edited in the file,
+  not in the app — the token lint gate is what keeps them honest).
+- **key bindings** — one row per registry action: its title, its live chord,
+  `Record` (press the chord; Escape cancels, Backspace unbinds), a per-row
+  `reset` and a `reset all to preset`. A recorded chord that collides is
+  reported inline with `swap` (the other action inherits this one's previous
+  chord), `replace` and `cancel` — the collision rule is
+  `createKeymap`'s own (equal, prefix or extension), computed BEFORE the
+  keymap is rebuilt so a bad chord can never take the shell down.
+
+The editor writes the SAME `overrides` map `ui/keymap.json` has, layered by
+the SAME resolver (`src/ui-core/keymap-resolve.ts`'s `mergeBindings` /
+`chordConflicts` / `rebind` / `unbindAction` / `resetAction`, unit-tested in
+`tests/ui-core/keymap-bindings.test.ts`); `ui/src/actions/registry.ts` holds
+the live config (`hbc2js.keymap.preset` / `hbc2js.keymap.overrides`) and
+rebuilds the keymap in place, so the cheat-sheet, the palette's chord column,
+the context menu and the running listener all re-read one source with no
+reload. `keymap` stays a stable proxy object, because four panes import it
+directly and a rebind must not leave them holding a dead keymap.
+
 **Context menu.** Radix `ContextMenu`, items from `contextMenuFor` with the
 chord at the right. It is opened from a document-level listener in the
 CAPTURE phase (`ui/src/components/ContextMenu.tsx`) rather than by wrapping
