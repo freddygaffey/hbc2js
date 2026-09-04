@@ -26,6 +26,14 @@
    "isBaseline": false
   },
   {
+   "package": "@react-navigation/material-top-tabs",
+   "version": "8.0.0-alpha.49",
+   "hbcVersion": 98,
+   "path": "@react-navigation__material-top-tabs@8.0.0-alpha.49__hbc98.json",
+   "totalFunctions": 4354,
+   "isBaseline": false
+  },
+  {
    "package": "@react-navigation/native",
    "version": "6.1.18",
    "hbcVersion": 94,
