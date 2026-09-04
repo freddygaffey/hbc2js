@@ -826,6 +826,14 @@ a real `ui-server`, not the mock adapter. Two ways to run it:
   already-running `:4173`/`:7331` rig. Playwright's own `webServer` config
   starts and stops both processes; nothing is left running after the test
   exits.
+- Ports and the throwaway root are env-overridable so two agents can run
+  the suite concurrently on one box: `HBC2JS_E2E_PORT_BASE` (API port,
+  default 7341; preview is base + 1) and `HBC2JS_E2E_ROOT` (default
+  `$TMPDIR/hbc2js-ui-e2e`, and `$TMPDIR/hbc2js-ui-e2e-<port>` whenever the
+  port base is not the default, so a second run does not fight the first
+  over the same throwaway dist). `ui/e2e/playwright.config.ts` imports both
+  from `prepare-fixture.mjs`, so setting the env var for `npm run e2e`
+  moves the whole rig.
 - `cd ui && npm run e2e:nsw` — the same spec, `PW_BASE_URL=http://127.0.0.1:4173`
   and `PW_READONLY=1`: no `webServer` entries at all (it never starts, never
   restarts, never rebuilds anything), points straight at Fred's live rig,
