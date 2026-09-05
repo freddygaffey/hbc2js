@@ -177,6 +177,27 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
   // pixels so a sub-pixel resize cannot re-run the layout forever.
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [frame, setFrame] = useState<Size | null>(null);
+
+  // BUGS.md 2026-09-05 "graph: dblclick on a non-focus neighbour node while
+  // maximised never un-maximises": `onNodeClick` re-roots the graph on a
+  // non-focus target via `focusGraphNode`, which changes `target` in the
+  // store and re-runs the whole model/layout pipeline above, moving every
+  // node (including the one just clicked) to a new position. A native
+  // double-click is two separate click events at the SAME screen
+  // coordinates; if the first one's click handler relayouts synchronously,
+  // the second lands on empty canvas (or a different node) instead of the
+  // original element, so the browser never synthesizes the `dblclick` React
+  // Flow's `onNodeDoubleClick` needs. Fix: don't relayout on the first
+  // click's `focusGraphNode` call for a beat — give a `dblclick` on the same
+  // node a chance to arrive and cancel it first via `openGraphTargetInListing`.
+  const pendingFocusRef = useRef<{ id: string; timer: number } | null>(null);
+  const clearPendingFocus = (): void => {
+    if (pendingFocusRef.current !== null) {
+      window.clearTimeout(pendingFocusRef.current.timer);
+      pendingFocusRef.current = null;
+    }
+  };
+  useEffect(() => clearPendingFocus, []);
   useEffect(() => {
     const el = canvasRef.current;
     if (el === null || typeof ResizeObserver === "undefined") return;
@@ -334,11 +355,33 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
                 if (line !== null && focusFn >= 0) select({ kind: "fn", fn: focusFn, line });
                 return;
               }
-              if (m.ref >= 0 && !m.isFocus) focusGraphNode({ kind: m.kind, ref: m.ref });
+              if (m.ref >= 0 && !m.isFocus) {
+                // See the comment above `pendingFocusRef`: delay the
+                // relayout-causing focus so a following dblclick on the same
+                // node can cancel it before the node moves out from under
+                // the second click.
+                clearPendingFocus();
+                const target = { kind: m.kind, ref: m.ref };
+                const timer = window.setTimeout(() => {
+                  pendingFocusRef.current = null;
+                  focusGraphNode(target);
+                }, 300);
+                pendingFocusRef.current = { id: node.id, timer };
+              }
             }}
             onNodeDoubleClick={(_e, node) => {
               const m = node.data.model;
               if (m.ref < 0 || m.kind === "block") return;
+              // A dblclick's first click already fired `onNodeClick` above;
+              // cancel its pending `focusGraphNode` so the graph does not
+              // relayout under the second half of this same gesture, then
+              // apply it directly here instead — the browser has already
+              // resolved both clicks against the node by the time
+              // `dblclick` fires, so re-rooting now is safe (docs/UI.md:
+              // "double-click ... jumps the listing and re-roots the graph
+              // there").
+              if (pendingFocusRef.current?.id === node.id) clearPendingFocus();
+              if (!m.isFocus) focusGraphNode({ kind: m.kind, ref: m.ref });
               // Bur 14 (docs/UI-BURS.md #14): actually land on the code —
               // select AND reveal the listing (un-maximise the graph if it
               // is covering the whole window).
