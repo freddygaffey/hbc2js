@@ -956,6 +956,21 @@ export class ArtifactService {
     return this.modulesIndex.modules.some((m) => m.id === id);
   }
 
+  /** Every string row, unbounded — same "raw table for a full-table pass"
+   *  shape as `listFns`, for a caller (the secrets scanner, docs/BUGS.md
+   *  `readStringsIndex`/`readStringUses` row) that needs every string once
+   *  regardless of backend: DB-backed or JSONL, `stringsById` is already
+   *  populated identically either way by `populateFromRows` above. */
+  allStrings(): readonly StringRow[] {
+    return [...this.stringsById.values()];
+  }
+
+  /** Every string-use row, unbounded — the xref-join source for
+   *  `allStrings()`'s callers. Same backend-unifying note applies. */
+  allStringUses(): readonly StringUseRow[] {
+    return this.stringUses;
+  }
+
   /** Every function's `{fn, name}` — a bare, uncapped name-only projection
    *  (no source/edges/anything else `fn()` computes). Not a spec-10 §3.1
    *  CLI verb of its own: it exists so callers that must WALK every
