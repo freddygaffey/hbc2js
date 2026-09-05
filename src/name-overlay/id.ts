@@ -63,3 +63,44 @@ export function parseKey(key: string): BindingId {
 export function shortForm(id: RegisterId): string {
   return `{${id.fn},${id.reg}}`;
 }
+
+// --- Native-side binding keys (docs/specs/27-native-side.md §L1) ------------
+// Namespaced siblings of the `reg:`/`env:`/`fn:` keys above: they name things
+// in the APK's native half (DEX types/methods/strings, ARSC resources) in the
+// SAME id space the project store annotates, so a finding can cite a native
+// row the way it cites a JS binding. They are deliberately NOT part of
+// `BindingId`: v1 never renames a native entity, it only refers to one, so
+// `parseKey` keeps refusing them.
+
+/** The native id kinds spec 27 §L1 defines. */
+export type NativeIdKind = "type" | "method" | "str" | "res";
+
+/** `native:<kind>:<value>` — the one place these keys are constructed. */
+export function nativeKey(kind: NativeIdKind, value: string): string {
+  return `native:${kind}:${value}`;
+}
+
+/** `native:type:Lcom/x/Foo;` for a DEX type descriptor. */
+export function nativeTypeKey(descriptor: string): string {
+  return nativeKey("type", descriptor);
+}
+
+/** `native:method:Lcom/x/Foo;->bar(I)V` — class descriptor, name, proto. */
+export function nativeMethodKey(classDescriptor: string, name: string, proto: string): string {
+  return nativeKey("method", `${classDescriptor}->${name}${proto}`);
+}
+
+/** `native:str:<dexStringIndex>`. */
+export function nativeStringKey(index: number): string {
+  return nativeKey("str", String(index));
+}
+
+/** `native:res:<pkg>/<type>/<name>`. */
+export function nativeResourceKey(pkg: string, type: string, name: string): string {
+  return nativeKey("res", `${pkg}/${type}/${name}`);
+}
+
+/** True for any key in the native namespace (the project store's guard). */
+export function isNativeKey(key: string): boolean {
+  return key.startsWith("native:");
+}
