@@ -37,6 +37,11 @@ const OPCODES = new Map<number, string>();
 const def = (reg: string, props: readonly { key: string; computed: boolean; value: Expr }[], opcode = "NewObject"): Stmt => stamped({ k: "expr", expr: { k: "assign", target: id(reg), value: obj(props) } }, opcode);
 const store = (reg: string, key: string, computed: boolean, value: Expr, opcode = "PutNewOwnByIdShort"): Stmt =>
   stamped({ k: "expr", expr: { k: "assign", target: { k: "member", obj: id(reg), prop: lit(key), computed }, value } }, opcode);
+/** §7 (c): a `PutOwnByVal`/`DefineOwnByVal` store whose key is a genuinely
+ *  dynamic expression (`prop.k !== "lit"`) — `computedStoreOf`'s territory,
+ *  not `storeOf`'s. */
+const computedStore = (reg: string, keyExpr: Expr, value: Expr, opcode = "PutOwnByVal"): Stmt =>
+  stamped({ k: "expr", expr: { k: "assign", target: { k: "member", obj: id(reg), prop: keyExpr, computed: true }, value } }, opcode);
 
 /** A `PassContext` whose `cfg` answers `opcodeAt` from `OPCODES`. */
 function ctxFor(): PassContext {
@@ -128,6 +133,93 @@ test("object-literal folds only the prefix before an accessor define", () => {
   assert.equal(after.length, 3);
   const props = ((after[0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
   assert.equal(props.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Computed keys (docs/BUGS.md `object-literal-computed-key`, §7 (c)).
+// ---------------------------------------------------------------------------
+
+test("object-literal folds a PutOwnByVal store whose key is a register/free-variable ident", () => {
+  const list = [def("r0", []), computedStore("r0", id("r5"), id("r1"))];
+  const after = fold(list);
+  assert.ok(after !== null);
+  assert.equal(after!.length, 1);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : `${p.computed}:${p.key}`)),
+    ["true:r5"],
+  );
+});
+
+test("object-literal folds a PutOwnByVal store whose key is a member-of-const chain", () => {
+  const chain: Expr = { k: "member", obj: { k: "ident", name: "Foo" }, prop: lit("bar"), computed: false };
+  const list = [def("r0", []), computedStore("r0", chain, id("r1"))];
+  const after = fold(list);
+  assert.ok(after !== null);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.equal(props.length, 1);
+  assert.equal("k" in props[0]! ? undefined : props[0]!.key, "Foo.bar");
+});
+
+test("object-literal folds a DefineOwnByVal store whose key is a call (already inlined by expr-rebuild)", () => {
+  const call: Expr = { k: "call", callee: id("f"), args: [] };
+  const after = fold([def("r0", []), computedStore("r0", call, id("r1"), "DefineOwnByVal")]);
+  assert.ok(after !== null);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.equal(props.length, 1);
+  assert.equal("k" in props[0]! ? undefined : props[0]!.key, "f()");
+});
+
+test("object-literal folds a plain key followed by a computed key (order preserved, no aliasing hazard)", () => {
+  const list = [def("r0", []), store("r0", "a", false, id("r1")), computedStore("r0", id("r5"), id("r2"))];
+  const after = fold(list);
+  assert.ok(after !== null);
+  assert.equal(after!.length, 1);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : p.key)),
+    ["a", "r5"],
+  );
+});
+
+test("object-literal folds two computed keys in a row (neither has the aliasing hazard)", () => {
+  const list = [def("r0", []), computedStore("r0", id("r5"), id("r1")), computedStore("r0", id("r6"), id("r2"))];
+  const after = fold(list);
+  assert.ok(after !== null);
+  assert.equal(after!.length, 1);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : p.key)),
+    ["r5", "r6"],
+  );
+});
+
+// docs/specs/passes/20-object-literal.md §7 (c)'s aliasing rule: a computed
+// key can alias an earlier literal key at runtime, so a computed entry only
+// folds while it is the run's last fold, or every later fold is also
+// computed. A *plain* key store after a computed one violates that — it
+// must stay a separate, trailing statement (a prefix fold, never a wrong
+// rewrite).
+test("object-literal refuses a plain key store that follows a computed key (the aliasing hazard)", () => {
+  const list = [def("r0", []), computedStore("r0", id("r5"), id("r1")), store("r0", "b", false, id("r2"))];
+  const after = fold(list);
+  assert.ok(after !== null);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : p.key)),
+    ["r5"],
+  );
+  assert.equal(after!.length, 2); // the literal, then the refused `.b =` store
+});
+
+test("object-literal refuses a computed-key store whose key reads the half-built object", () => {
+  const list = [def("r0", []), computedStore("r0", { k: "member", obj: id("r0"), prop: lit("z"), computed: false }, id("r1"))];
+  assert.equal(match(list, ctxFor()), null);
+});
+
+test("object-literal refuses a computed-key store whose value reads the half-built object", () => {
+  const list = [def("r0", []), computedStore("r0", id("r5"), { k: "member", obj: id("r0"), prop: lit("z"), computed: false })];
+  assert.equal(match(list, ctxFor()), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -317,5 +409,47 @@ for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
     assert.match(on, /Object\.defineProperty\([^\n]*\n\s*((?:let |const |var )?\w+ = [^\n]*;\n\s*)?\w+\.after = /);
     // F: the object escapes mid-run, so `second` is never folded in.
     assert.match(on, /\.second = /);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Computed-key fixture (docs/BUGS.md `object-literal-computed-key`, §7 (c)):
+// tests/fixtures/constructs/77-object-literal-computed.
+// ---------------------------------------------------------------------------
+
+const COMPUTED_FIXTURE = join(repoRoot(), "tests", "fixtures", "constructs", "77-object-literal-computed");
+
+function jsComputed(version: string, skip: readonly string[] = []): string {
+  return decompile(readFileSync(join(COMPUTED_FIXTURE, `${version}.hbc`)), { resolveV98Ambiguity: true, passes: skip.length > 0 ? { skip } : {} }).code;
+}
+
+for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
+  test(`object-literal folds computed-key stores at ${version}`, () => {
+    const on = jsComputed(version);
+    const off = jsComputed(version, ["object-literal"]);
+    // G: a single computed-key store folds into a one-property literal; no
+    // separate `[a1] = a2`-style store survives.
+    assert.match(on, /=\s*\{\[\w+\]:\s*\w+\};/);
+    assert.match(off, /\[\w+\]\s*=\s*\w+;/);
+    // H: the key expression is a call result (via `expr-rebuild`'s own
+    // single-use adjacency inline), folded the same way.
+    assert.match(on, /=\s*\{\[[^\n]*\]:\s*\w+\};/);
+    // I: a plain key followed by a computed one both fold into ONE literal
+    // with two properties, in source order.
+    assert.match(on, /\{a:\s*[^\n]+,\s*\[\w+\]:\s*100\}/);
+    // Rung-owned count: strictly fewer own-property store statements survive
+    // with the rung on than off (a count, not a literal-text comparison —
+    // CONSOLIDATION §B item 7).
+    const stores = (s: string): number => (s.match(/^\s*\w+(?:\.\w+|\[[^\n]*\]) = [^\n]*;$/gm) ?? []).length;
+    assert.ok(stores(on) < stores(off), `expected fewer property stores with the rung on (${stores(on)} vs ${stores(off)})`);
+  });
+
+  test(`object-literal refuses the aliasing hazard at ${version}`, () => {
+    const on = jsComputed(version);
+    // J: `aliasRisk` — the computed key folds into a one-property literal,
+    // but the plain `b` key AFTER it must stay a separate, trailing store
+    // (it might alias the computed key at runtime, and this rung cannot
+    // prove it does not — docs/specs/passes/20-object-literal.md §7).
+    assert.match(on, /=\s*\{\[\w+\]:\s*\w+\s*\+\s*1\};\n(?:\s*(?:let |const |var )?\w+ = [^\n]*;\n)?\s*\w+(?:\.b|\["b"\]) = /);
   });
 }

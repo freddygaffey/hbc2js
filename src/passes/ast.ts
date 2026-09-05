@@ -12,7 +12,7 @@ import vm from "node:vm";
 import type { Diagnostic } from "../errors.ts";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import type { Expr, Param, Stmt } from "../emit/ast.ts";
-import { printProgram } from "../emit/print.ts";
+import { expr as printExprAt, printProgram } from "../emit/print.ts";
 import type { AbandonedRecord, AppliedRecord, CheckResult, Pass, PassContext } from "./types.ts";
 
 // F8 gap (spec `docs/specs/passes/02-expr-rebuild.md`): a stage-B rung's
@@ -29,6 +29,24 @@ import type { Pattern, PatternElement } from "../emit/ast.ts";
 // from))`") needs `printProgram` itself, same D12a gap as the type re-export
 // above: `../../emit/print.ts` is not on the allowlist, only this file is.
 export { printProgram } from "../emit/print.ts";
+
+/**
+ * docs/specs/passes/20-object-literal.md §7 (c): `ObjectProp.key` (from
+ * `src/emit/ast.ts`) is a plain string, printed verbatim inside `[...]`
+ * when `computed` — the same contract `src/emit/print.ts`'s `classMemberKey`
+ * relies on for a recovered class's computed member key (`ClassMember.key`
+ * is a full `Expr` there). `object-literal` folds a `PutOwnByVal`/
+ * `DefineOwnByVal` key *expression* — a register, a free-variable name, a
+ * `member` chain, a call already inlined by `expr-rebuild`, … — into that
+ * same string field, so it needs the identical ASSIGNMENT-precedence
+ * render `classMemberKey` uses (bp `3`; `../emit/print.ts`'s own `ASSIGNMENT`,
+ * not re-exported, so the literal bound is repeated here — same D12a gap
+ * this file exists to close, one call site). Same D12a re-export shape as
+ * `printProgram` above: a rung may never import `../emit/print.ts` itself.
+ */
+export function renderComputedKey(e: Expr): string {
+  return printExprAt(e, 3);
+}
 
 // D20 (docs/specs/passes/08-jsx-recovery.md §3/§6): the `jsx` node's parts
 // and its exact inverse, re-exported for the same D12a reason — the

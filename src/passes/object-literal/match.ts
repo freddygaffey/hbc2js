@@ -4,7 +4,7 @@
 // `NewObjectWithBuffer`) followed by a contiguous run of own-property
 // defines into `rN`, and folds the run back into one object literal at the
 // definition.
-import { effectSequence, identUses, isPure, isRegisterName, opcodeAt, originOf } from "../ast.ts";
+import { effectSequence, identUses, isPure, isRegisterName, opcodeAt, originOf, renderComputedKey } from "../ast.ts";
 import type { Expr, ObjectProp, Stmt } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
@@ -30,15 +30,24 @@ const FRESH_OBJECT: ReadonlySet<string> = new Set(["NewObject", "NewObjectWithBu
  *    non-writable data property on `Object.prototype` observes the store
  *    (and, in strict mode, makes it throw) where a literal's own define
  *    never would. `o = {}; o.a = v` is therefore NOT `o = {a: v}`.
- *  * `PutNewOwnNEById` (non-enumerable) and `PutOwnByVal` with the
- *    non-enumerable flag — the emitter renders both as
+ *  * `PutNewOwnNEById` (non-enumerable) and `PutOwnByVal`/`DefineOwnByVal`
+ *    with the non-enumerable flag — the emitter renders all of these as
  *    `Object.defineProperty`, which is not an `assign` and so never
- *    reaches this matcher anyway.
+ *    reaches this matcher anyway (`src/emit/lower.ts`'s `PutOwnByVal`/
+ *    `DefineOwnByVal` case only reaches `assign(member(…, true), …)` — the
+ *    shape `storeOf`/`computedStoreOf` below match — when the enumerable
+ *    flag operand is set).
  *  * `PutOwnGetterSetterByVal`/`DefineOwnGetterSetterByVal` — accessors;
  *    same, they render as `Object.defineProperty` and end the run.
- *  * `PutOwnByVal`/`DefineOwnByVal` (enumerable) — a computed key whose
- *    key *expression* would have to move along with the value; deferred.
  *  * `DefineOwnInDenseArray…` — array literals, a different rung's job.
+ *
+ * `PutOwnByVal`/`DefineOwnByVal` (enumerable) ARE in this set: §7 (c),
+ * `computedStoreOf` below. When `expr-rebuild` has folded the key operand
+ * down to a literal (a compile-time-constant key, register-inlined or a
+ * canonical integer) the store looks exactly like any other own-define to
+ * `storeOf` — same `CreateDataProperty` semantics, no extra reasoning
+ * needed. When it has not, `computedStoreOf` handles the remaining,
+ * genuinely dynamic key.
  */
 const OWN_DEFINE: ReadonlySet<string> = new Set([
   "PutNewOwnById",
@@ -52,7 +61,17 @@ const OWN_DEFINE: ReadonlySet<string> = new Set([
   "DefineOwnByIndexL",
   "PutOwnBySlotIdx",
   "PutOwnBySlotIdxLong",
+  "PutOwnByVal",
+  "DefineOwnByVal",
 ]);
+
+/**
+ * docs/BUGS.md `object-literal-computed-key` (§7 (c), narrowed): the subset
+ * of {@link OWN_DEFINE} whose key operand may still be a genuinely dynamic
+ * expression once `storeOf` has already tried (and failed to find) a
+ * literal prop. See `computedStoreOf`'s doc comment for the fold rule.
+ */
+const OWN_DEFINE_COMPUTED: ReadonlySet<string> = new Set(["PutOwnByVal", "DefineOwnByVal"]);
 
 /**
  * docs/BUGS.md `object-literal-putbyid`. A `PutById`/`PutByIdLoose`/
@@ -169,6 +188,41 @@ function storeOf(s: Stmt, reg: string): { readonly key: string; readonly compute
   // refused below anyway so that one rule covers both spellings.
   if (text.startsWith('"') && text.endsWith('"')) return { key: text, computed: true, value };
   return null;
+}
+
+/**
+ * docs/BUGS.md `object-literal-computed-key` (§7 (c)). `s` is
+ * `rN[<key-expr>] = v` where `<key-expr>` is NOT a literal — `storeOf`
+ * already refused it for exactly that reason, so this is only ever called
+ * once `storeOf` has returned `null` for the same statement. Never called
+ * for anything but `PutOwnByVal`/`DefineOwnByVal` (`OWN_DEFINE_COMPUTED`),
+ * both exactly `CreateDataPropertyOrThrow` when enumerable (`OWN_DEFINE`'s
+ * doc comment) — there is no `__proto__`/prototype-chain concern here the
+ * way there is for `PUT_BY_ID`, because a computed key is never the
+ * seven-character *identifier* `__proto__` at the syntax level (it would
+ * have to evaluate to the *string* `"__proto__"` at runtime, which
+ * `Object.defineProperty`-equivalent `[[DefineOwnProperty]]` semantics
+ * never special-case the way `[[Set]]` does for the literal spelling).
+ *
+ * `keyExpr` is whatever `expr-rebuild` left in the target's `prop` field —
+ * a bare register or free-variable `ident`, a `member` chain
+ * (`Foo.bar`, "member-of-const"), or a richer expression (a `call`, …)
+ * that `expr-rebuild` already proved safe to inline at exactly this
+ * position (`docs/specs/passes/02-expr-rebuild.md`'s R1a/R1b: an impure
+ * value only ever moves when the read it fills is the *very next*
+ * statement — there is no gap for anything to have run in between). This
+ * rung does not need to re-derive that: the caller's own `identUses`
+ * check below (against `reg`, same as `storeOf`'s precondition 6 for the
+ * value) is the only thing that still has to hold once the key is folded
+ * one step earlier still, to the object's definition.
+ */
+function computedStoreOf(s: Stmt, reg: string): { readonly keyExpr: Expr; readonly value: Expr } | null {
+  if (s.k !== "expr" || s.expr.k !== "assign") return null;
+  const { target, value } = s.expr;
+  if (target.k !== "member" || !target.computed) return null;
+  if (target.obj.k !== "ident" || target.obj.name !== reg) return null;
+  if (target.prop.k === "lit") return null; // `storeOf`'s territory, not this one's.
+  return { keyExpr: target.prop, value };
 }
 
 /**
@@ -306,6 +360,27 @@ export function match(list: readonly Stmt[], ctx: PassContext): ObjectLiteralMat
     // (including the candidate store's own) has run something that could
     // reach `Object.prototype` — see `PUT_BY_ID`'s doc comment.
     let runHasEffect = false;
+    // docs/BUGS.md `object-literal-computed-key` (§7 (c)): true once a
+    // *computed*-key store has been folded into `props`. A computed key can
+    // alias an earlier literal key at runtime, and this rung cannot tell —
+    // `keyIdentity` only ever matches two *literal* spellings of the same
+    // key (see its own doc comment), never a dynamic key against anything.
+    // The one operation that could observably reorder around that unknown
+    // alias is the very next branch's `props[at] = …` — it keeps an
+    // existing entry's *printed position* (right, for two literal spellings
+    // of the same key) but a literal store folded *after* a computed one
+    // would then print, and therefore evaluate, *before* it, even though it
+    // ran later — the two writes to whatever key they actually share would
+    // swap winners. A fresh `props.push` for a new key never has this
+    // problem (push always preserves program order relative to every prior
+    // entry, computed or not — the aliasing risk is specific to jumping an
+    // existing entry's *position* backwards past an unknown key). Refusing
+    // every literal fold once any computed key has been folded — not just
+    // the ones that would `props[at] = …` — is the simpler, sufficient rule
+    // docs/specs/passes/20-object-literal.md §7 writes down: a computed
+    // entry folds only when it is the run's last fold, or every fold after
+    // it is also computed.
+    let sawComputedKey = false;
     // §4 precondition 2 (as extended by `object-literal-interleaved`): the
     // run is CONTIGUOUS *after* hoisting — a non-store statement first tries
     // to commute above the whole run (`canHoist`) and only ends the run if
@@ -314,11 +389,11 @@ export function match(list: readonly Stmt[], ctx: PassContext): ObjectLiteralMat
     // across a statement whose own effect (if any) has not been proven
     // reorderable, so the prefix collected so far is folded on its own.
     for (let j = i + 1; j < list.length; j++) {
+      const op = opcodeOf(list[j]!, ctx);
       const st = storeOf(list[j]!, def.reg);
-      const op = st === null ? null : opcodeOf(list[j]!, ctx);
       const isOwnDefine = op !== null && OWN_DEFINE.has(op);
       const isPutById = op !== null && PUT_BY_ID.has(op);
-      if (st !== null && (isOwnDefine || isPutById) && !isProtoKey(st.key, st.computed)) {
+      if (st !== null && !sawComputedKey && (isOwnDefine || isPutById) && !isProtoKey(st.key, st.computed)) {
         // §4 precondition 6: a value that reads (or writes) the half-built
         // object observes it — `r3.b = r3.a + 1` is not a literal.
         const u = identUses([{ k: "expr", expr: st.value }], def.reg);
@@ -344,6 +419,26 @@ export function match(list: readonly Stmt[], ctx: PassContext): ObjectLiteralMat
           consumed.push(list[j]!);
           runHasEffect = runHasEffect || valueHasEffect;
           continue;
+        }
+      }
+      // §7 (c): `st` is `null` for a genuinely dynamic key (`storeOf`
+      // refused it); try `computedStoreOf` before falling through to the
+      // hoist attempt. `sawComputedKey` gates nothing here — a *second*
+      // computed key never has the aliasing hazard above (`props.push`
+      // both times, program order preserved regardless of what either
+      // evaluates to at runtime).
+      if (st === null && op !== null && OWN_DEFINE_COMPUTED.has(op)) {
+        const cst = computedStoreOf(list[j]!, def.reg);
+        if (cst !== null) {
+          const keyU = identUses([{ k: "expr", expr: cst.keyExpr }], def.reg);
+          const valU = identUses([{ k: "expr", expr: cst.value }], def.reg);
+          if (keyU.reads + keyU.writes === 0 && valU.reads + valU.writes === 0) {
+            props.push({ key: renderComputedKey(cst.keyExpr), computed: true, value: cst.value });
+            n++;
+            consumed.push(list[j]!);
+            sawComputedKey = true;
+            continue;
+          }
         }
       }
       // Not a foldable store: docs/BUGS.md `object-literal-interleaved` —
