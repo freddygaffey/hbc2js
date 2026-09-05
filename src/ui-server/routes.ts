@@ -447,8 +447,11 @@ const BASE_ROUTES: readonly Route[] = [
       // Same target shapes `ProjectService.invalidateRenderFor` matches to
       // invalidate `renderFn`'s cache — the module-source splice cache
       // (`list.ts`) needs the same fn to drop the module it lives in.
-      const m = /^reg:(\d+):\d+$/.exec(input.target) ?? /^fn:(\d+)$/.exec(input.target);
-      if (m !== null) invalidateModuleSourceCache(ctx.resources.artifact, Number(m[1]));
+      const reg = /^reg:(\d+):\d+$/.exec(input.target);
+      const fnT = reg === null ? /^fn:(\d+)$/.exec(input.target) : null;
+      if (reg !== null) invalidateModuleSourceCache(ctx.resources.artifact, Number(reg[1]));
+      // A whole-function rename also restyles every caller's rendered text.
+      if (fnT !== null) invalidateModuleSourceCache(ctx.resources.artifact, Number(fnT[1]), { withCallers: true });
       return ok(result);
     },
   },

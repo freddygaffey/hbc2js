@@ -21,6 +21,7 @@ import { freeNames } from "../passes/ast.ts";
 import { astPassHook, passHook } from "../passes/index.ts";
 import type { AstPassHook, PassPipelineOptions } from "../passes/index.ts";
 import { classifyAll, declaredNames } from "../passes/var-naming/match.ts";
+import { renameIdents } from "../passes/fn-naming/rewrite.ts";
 import { isRegisterName } from "../passes/ast.ts";
 import { renameRegistersInFrame } from "../passes/var-naming/rewrite.ts";
 import type { RegisterId } from "./id.ts";
@@ -63,6 +64,12 @@ function disambiguate(wanted: string, taken: ReadonlySet<string>): string {
  *  in ascending numeric order so disambiguation is deterministic. */
 export type ActiveNames = ReadonlyMap<number, { readonly name: string }>;
 
+/** The accepted name of a whole FUNCTION (`fn:N` in the annotation id
+ *  vocabulary), keyed by Hermes function index. Unlike `ActiveNames` this is
+ *  module-scoped: it changes the function's own declaration and every
+ *  reference to it from any frame that calls it. */
+export type ActiveFnNames = ReadonlyMap<number, string>;
+
 /** The overlay applied to one raw frame body, as a pure alpha-rename: the
  *  overlaid body, the collisions that needed a suffix, and the `rN` -> rendered
  *  ident mapping that was actually applied (the UI's identifier -> `reg:F:R`
@@ -103,6 +110,21 @@ function applyOverlay(fnIndex: number, body: readonly Stmt[], store: OverlayStor
   return applyOverlayNames(fnIndex, body, store.activeNamesForFn(fnIndex));
 }
 
+/** Apply accepted FUNCTION names (`fn:N`) to one frame: `idents` maps the
+ *  ident a function is currently rendered as (`_fnG`, or the emitter's own
+ *  chosen name for it) to the accepted name, so the frame's own declaration
+ *  AND every call site / reference to a renamed function inside it change
+ *  together. Same writer `fn-naming` uses, so it is a pure alpha-rename;
+ *  a returned node is `node` itself when there is nothing to apply.
+ *  Collisions with an unrelated binding of the same name are NOT
+ *  disambiguated here (docs/BUGS.md) — the accepted name is taken as the
+ *  human's word. */
+export function renameFnIdents(node: Stmt & { readonly k: "func" }, idents: ReadonlyMap<string, string> | undefined): Stmt & { readonly k: "func" } {
+  if (idents === undefined || idents.size === 0) return node;
+  const renamed = renameIdents([node], idents)[0];
+  return renamed !== undefined && renamed.k === "func" ? renamed : node;
+}
+
 /** Render ONE function: the same overlay-then-stage-B-passes composition
  *  `render` runs per frame, but for a single function, so a resident server can
  *  answer "source of fn N with the current names" without re-emitting the whole
@@ -115,11 +137,18 @@ export function renderFrame(
   node: Stmt,
   cfg: FunctionCfg,
   names: ActiveNames,
-  opts: { readonly indent?: string } = {},
+  opts: { readonly indent?: string; readonly fnIdents?: ReadonlyMap<string, string> } = {},
 ): { readonly code: string; readonly collisions: readonly CollisionFlag[]; readonly mapping: ReadonlyMap<string, string>; readonly lineMap: readonly LineMapEntry[] } {
   if (node.k !== "func") return { code: "", collisions: [], mapping: new Map(), lineMap: [] };
-  const applied = applyOverlayNames(cfg.functionIndex, node.body, names);
-  const out = hook({ ...node, body: applied.body }, cfg);
+  // Accepted `fn:N` names first, as a module-scoped alpha-rename of the
+  // FUNCTION idents (`fn-naming`'s own `renameIdents`, which recurses into
+  // nested bodies because a `_fnN` is module-scoped, unlike a register).
+  // Before the register overlay so the new function ident is already in the
+  // frame's `taken` set, and before the stage-B hook for the same reason the
+  // register overlay is: `fn-naming`'s heuristic filter then leaves it alone.
+  const named = renameFnIdents(node, opts.fnIdents);
+  const applied = applyOverlayNames(cfg.functionIndex, named.body, names);
+  const out = hook({ ...named, body: applied.body }, cfg);
   // §16: the line map is collected from the SAME print that produces `code`,
   // so its line numbers are the served text's own by construction.
   const collector = lineMapCollector();

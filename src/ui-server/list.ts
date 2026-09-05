@@ -208,7 +208,11 @@ export function listFunctions(artifact: ArtifactService, cursor = 0, limit = FUN
   const rows: FunctionListRow[] = page.map(({ fn }) => {
     const s: FnSummary = artifact.fn(fn);
     const size = s.lines !== null ? s.lines[1] - s.lines[0] + 1 : null;
-    return { fn, name: s.overlayName ?? s.name, size, module: s.module };
+    // `name` is the ONE name to show, most human first: the accepted
+    // `fn:N` rename, then the register overlay's signal, then the bytecode
+    // name (`ui/src/listing/names.ts` runs the same precedence). Before
+    // this, a renamed function's row still showed the old name.
+    return { fn, name: artifact.acceptedFnName(fn) ?? s.overlayName ?? s.name, size, module: s.module };
   });
   const nextCursor = start + rows.length < all.length ? start + rows.length : null;
   return { rows, total: all.length, truncated: all.length > pageSize, nextCursor };
@@ -245,14 +249,25 @@ const moduleSourceCache = new WeakMap<ArtifactService, Map<number, ModuleSourceR
  *  even if a function moves module between builds). Called by the
  *  `set-name` route right after a write, mirroring `renderFn`'s own
  *  invalidation so the two caches never disagree about staleness. */
-export function invalidateModuleSourceCache(artifact: ArtifactService, fn: number): void {
+export function invalidateModuleSourceCache(artifact: ArtifactService, fn: number, opts: { readonly withCallers?: boolean } = {}): void {
   const cache = moduleSourceCache.get(artifact);
   if (cache === undefined) return;
-  const mod = artifact.fn(fn).module;
-  if (mod !== null) cache.delete(mod);
+  const drop = (f: number): void => {
+    const mod = artifact.hasFn(f) ? artifact.fn(f).module : null;
+    if (mod !== null) cache.delete(mod);
+  };
+  drop(fn);
+  // A `fn:N` rename also changes every DIRECT CALLER's text (they reference
+  // it by name), so their modules' splices are stale too. Bounded by the
+  // call graph, never the whole bundle (docs/UI.md; a reference from a
+  // function the call graph does not know about is docs/BUGS.md).
+  if (opts.withCallers === true) for (const e of artifact.whoCalls(fn, { all: true }).rows) if (typeof e.fn === "number") drop(e.fn);
 }
 
-export function moduleSource(artifact: ArtifactService, project: ProjectService, id: number): ModuleSourceResult | null {
+// `_project` is kept in the signature (every caller passes it) but no longer
+// read: the accepted-name join moved into `ArtifactService.needsNameRender`,
+// which knows about `fn:N` renames as well as `reg:F:R` ones.
+export function moduleSource(artifact: ArtifactService, _project: ProjectService, id: number): ModuleSourceResult | null {
   let cache = moduleSourceCache.get(artifact);
   if (cache === undefined) {
     cache = new Map();
@@ -264,11 +279,14 @@ export function moduleSource(artifact: ArtifactService, project: ProjectService,
   const file = artifact.module(id).file;
   if (file === null) return null;
   const functions: { fn: number; name: string | null; lines: readonly [number, number] }[] = [];
-  for (const f of artifact.ownedFns(id)) if (f.lines !== null) functions.push({ fn: f.fn, name: f.name, lines: f.lines });
+  for (const f of artifact.ownedFns(id)) if (f.lines !== null) functions.push({ fn: f.fn, name: artifact.acceptedFnName(f.fn) ?? f.name, lines: f.lines });
   functions.sort((a, b) => a.lines[0] - b.lines[0]);
 
   const diskText = readFileSync(artifact.modulePath(file), "utf8");
-  const hasActive = functions.some((f) => project.activeRegNames(f.fn).size > 0);
+  // `needsNameRender` is the artifact's own answer to "is the text on disk
+  // stale against the accepted names?" -- named registers, a `fn:N` rename
+  // of this function, or a `fn:N` rename of something it calls.
+  const hasActive = functions.some((f) => artifact.needsNameRender(f.fn));
   if (!hasActive) {
     // Untouched path stays byte-identical to disk — no split/join, no
     // render call — per this module's own doc comment above.
@@ -284,8 +302,7 @@ export function moduleSource(artifact: ArtifactService, project: ProjectService,
   for (const f of functions) {
     const adjLo = f.lines[0] + delta;
     const adjHi = f.lines[1] + delta;
-    const names = project.activeRegNames(f.fn);
-    const rendered = names.size > 0 ? artifact.renderFn(f.fn) : null;
+    const rendered = artifact.needsNameRender(f.fn) ? artifact.renderFn(f.fn) : null;
     if (rendered === null) {
       outFunctions.push({ fn: f.fn, name: f.name, lines: [adjLo, adjHi] });
       continue;

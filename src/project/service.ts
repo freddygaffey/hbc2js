@@ -187,6 +187,8 @@ export class ProjectService {
    *  artifact directory's lifetime, same as `ArtifactService` never closes
    *  its own handles either. */
   private readonly db: DatabaseSync | null;
+  /** `activeFnNames`' memo; `null` means "not computed / invalidated". */
+  private fnNamesCache: ReadonlyMap<number, string> | null = null;
 
   /** `.hbcproj`'s own directory (== `artifactDir`, `dbPath`'s convention,
    *  `src/projdb/artifact-read.ts`) — where `analysis/`+`log/` live (§3).
@@ -231,6 +233,11 @@ export class ProjectService {
       this.db = openProjectDb(dbPath(artifactDir));
       store = loadProjectStoreFromDb(this.db, this.storeDir, bundleSha256);
       artifact.setActiveNames((fn) => this.activeRegNames(fn));
+      // ... and the same for whole-function (`fn:N`) accepted names, which
+      // rename the declaration and every reference to it (docs/UI.md
+      // "rename": a `fn:N` write used to be stored and reported but never
+      // rendered).
+      artifact.setActiveFnNames(() => this.activeFnNames());
     } else {
       this.db = null;
       store = existsSync(this.storeDir) ? loadProjectStore(this.storeDir) : emptyStore(this.storeDir, bundleSha256);
@@ -278,6 +285,7 @@ export class ProjectService {
    *  path's in-memory stores ARE the write target). */
   private reloadFromDb(): void {
     if (this.db === null) return;
+    this.fnNamesCache = null;
     this.applyStore(loadProjectStoreFromDb(this.db, this.storeDir, this.artifact.manifest.bundle.sha256));
   }
 
@@ -743,12 +751,55 @@ export class ProjectService {
 
   /** A name write against `reg:F:R`/`fn:F` invalidates that function's
    *  memoised render (`ArtifactService.renderFn`) so the next source read
-   *  shows it. Any other target shape leaves the cache alone. */
+   *  shows it. A `fn:F` write additionally invalidates every DIRECT CALLER's
+   *  render: they reference `F` by name, so their text changes too (bounded
+   *  by the call graph -- never the whole bundle). Any other target shape
+   *  leaves the cache alone. */
   private invalidateRenderFor(target: string): void {
-    const m = /^reg:(\d+):\d+$/.exec(target) ?? /^fn:(\d+)$/.exec(target);
-    if (m === null) return;
-    this.artifact.invalidateRender(Number(m[1]));
+    const reg = /^reg:(\d+):\d+$/.exec(target);
+    if (reg !== null) {
+      this.artifact.invalidateRender(Number(reg[1]));
+      return;
+    }
+    const fnTarget = /^fn:(\d+)$/.exec(target);
+    if (fnTarget === null) return;
+    const fn = Number(fnTarget[1]);
+    this.fnNamesCache = null;
+    this.artifact.invalidateRender(fn);
+    for (const caller of callerFns(this.artifact, fn)) this.artifact.invalidateRender(caller);
   }
+
+  /** Every ACCEPTED `fn:<n>` name in this project, keyed by function index
+   *  -- the map `ArtifactService`'s render applies to the declaration and to
+   *  every reference (`setActiveFnNames`). Cached by identity: the artifact
+   *  memoises what it derives from this map on the map OBJECT, so the same
+   *  object must come back until a name write invalidates it. Empty for a
+   *  JSONL-backed project (no `d_names`), exactly like `activeRegNames`. */
+  activeFnNames(): ReadonlyMap<number, string> {
+    if (this.fnNamesCache !== null) return this.fnNamesCache;
+    const out = new Map<number, string>();
+    if (this.db !== null) {
+      const rows = this.db.prepare(`SELECT DISTINCT target FROM revisions WHERE kind = 'name' AND target LIKE 'fn:%'`).all() as unknown as { target: string }[];
+      for (const row of rows) {
+        const fn = Number(row.target.slice(3));
+        if (!Number.isInteger(fn)) continue;
+        const rev = dbGetName(this.db, row.target);
+        if (rev === undefined) continue;
+        out.set(fn, rev.value.name);
+      }
+    }
+    this.fnNamesCache = out;
+    return out;
+  }
+}
+
+/** The DIRECT callers of `fn` as plain function indices (points-to edges
+ *  included -- `whoCalls`' own row shape), uncapped: a rename's blast radius
+ *  is exactly the functions that reference it. */
+function callerFns(artifact: ArtifactService, fn: number): readonly number[] {
+  const out: number[] = [];
+  for (const e of artifact.whoCalls(fn, { all: true }).rows) if (typeof e.fn === "number") out.push(e.fn);
+  return out;
 }
 
 export interface LogRow {

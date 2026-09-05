@@ -143,7 +143,7 @@ export class McpResources {
     if (!this.artifact.hasFn(fnRef)) return { fn: fnRef, name: null, size: null };
     const s = this.artifact.fn(fnRef);
     const size = s.lines !== null ? s.lines[1] - s.lines[0] + 1 : null;
-    return { fn: fnRef, name: s.overlayName ?? s.name, size };
+    return { fn: fnRef, name: this.artifact.acceptedFnName(fnRef) ?? s.overlayName ?? s.name, size };
   }
 
   private inlineEdges(bounded: Bounded<Edge>): Bounded<XrefEdge> {

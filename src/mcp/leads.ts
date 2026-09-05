@@ -80,7 +80,7 @@ const SINK_PATTERNS: Record<SinkClass, ClassPattern> = {
 function nameOf(artifact: ArtifactService, fn: number): string | null {
   if (!artifact.hasFn(fn)) return null;
   const s = artifact.fn(fn);
-  return s.overlayName ?? s.name;
+  return artifact.acceptedFnName(fn) ?? s.overlayName ?? s.name;
 }
 
 /** `leads` / `security-sinks` — spec 17 §14 addition 1, the hunt's entry
@@ -192,7 +192,7 @@ export function searchFunctions(artifact: ArtifactService, query: string, opts: 
     if (name === null || !re.test(name)) continue;
     const summary = artifact.fn(fn);
     const size = summary.lines !== null ? summary.lines[1] - summary.lines[0] + 1 : null;
-    all.push({ fn, name: summary.overlayName ?? name, size });
+    all.push({ fn, name: artifact.acceptedFnName(fn) ?? summary.overlayName ?? name, size });
   }
   return paginate(all, opts.cursor ?? 0);
 }

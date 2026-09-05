@@ -20,7 +20,8 @@ import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
 import { rawFrames, type RawFrame } from "../name-overlay/frames.ts";
-import { renderFrame, renderedRegisterNames, type ActiveNames, type CollisionFlag } from "../name-overlay/render.ts";
+import { renderFrame, renderedRegisterNames, type ActiveFnNames, type ActiveNames, type CollisionFlag } from "../name-overlay/render.ts";
+import { fnName } from "../emit/names.ts";
 import { astPassHook, enabledPasses, type AstPassHook, type PassPipelineOptions } from "../passes/index.ts";
 import { OverlayStore } from "../name-overlay/store.ts";
 import { printModule } from "../disasm/print.ts";
@@ -285,6 +286,17 @@ export function compareObjectTables(filtered: boolean): (a: ObjectTableMatch, b:
   };
 }
 
+const EMPTY_FN_NAMES: ActiveFnNames = new Map();
+
+/** What `ArtifactService` derives from one accepted-`fn:N`-name map: the
+ *  functions whose rendered text it can change (`affected`) and the ident
+ *  rename it applies (`idents`, built lazily — it needs the warm frames). */
+interface FnNameDerived {
+  readonly names: ActiveFnNames;
+  readonly affected: ReadonlySet<number>;
+  idents: ReadonlyMap<string, string> | undefined;
+}
+
 export class ArtifactService {
   readonly manifest: Manifest;
   private readonly functionsByFn = new Map<number, FunctionRow>();
@@ -318,6 +330,9 @@ export class ArtifactService {
    *  for one function, read live from `d_names`. Absent = no external names,
    *  and every render path below is exactly what it was before. */
   private activeNames: ((fn: number) => ActiveNames) | undefined;
+  private activeFnNames: (() => ActiveFnNames) | undefined;
+  private fnNameDerived: FnNameDerived | undefined;
+  private frameNameCounts: ReadonlyMap<string, number> | undefined;
   private readonly renderCache = new Map<number, { readonly code: string; readonly collisions: readonly CollisionFlag[]; readonly lineMap: readonly LineMapEntry[] }>();
   private hbcModule: HbcModule | undefined;
   private overlay: OverlayStore | undefined;
@@ -1024,7 +1039,7 @@ export class ArtifactService {
     const r = this.range(fn);
     if (r === undefined) throw new Hbc2jsError(ErrorCode.E_USAGE, `query source: no range recorded for fn ${fn}`);
     const [lo, hi] = r.lines;
-    if (this.activeNamesFor(fn).size > 0) {
+    if (this.needsNameRender(fn)) {
       const rendered = this.renderFn(fn);
       if (rendered !== null) {
         const renderedLines = rendered.code.split("\n");
@@ -1169,9 +1184,97 @@ export class ArtifactService {
     this.renderCache.clear();
   }
 
+  /** Inject the accepted-name source for whole FUNCTIONS (`fn:N`), the
+   *  sibling of `setActiveNames`. Wired by `ProjectService` to the same
+   *  `d_names` slot; the provider must return the SAME map object until a
+   *  write changes it (this class memoises the derived ident map and the
+   *  affected-function set on its identity). Without this, an accepted
+   *  `fn:N` name was stored and reported but never reached the rendered
+   *  source (docs/UI.md "rename"). */
+  setActiveFnNames(provider: () => ActiveFnNames): void {
+    this.activeFnNames = provider;
+    this.fnNameDerived = undefined;
+    this.renderCache.clear();
+  }
+
+  /** Accepted `fn:N` names plus what they imply, memoised on the provider's
+   *  own map identity: `affected` is every function whose rendered text can
+   *  differ because of them (a renamed function itself, and its direct
+   *  callers, which reference it by name). `idents` is filled lazily by
+   *  `fnIdentRenames` — building it needs the warm frames. */
+  private fnNameInfo(): FnNameDerived {
+    const names = this.activeFnNames?.() ?? EMPTY_FN_NAMES;
+    if (this.fnNameDerived !== undefined && this.fnNameDerived.names === names) return this.fnNameDerived;
+    const affected = new Set<number>();
+    for (const g of names.keys()) {
+      affected.add(g);
+      // Both edge kinds `whoCalls` reports: direct call edges AND the §2.2a
+      // points-to edges (a closure passed somewhere else still names it).
+      for (const c of this.callersByCallee.get(g) ?? []) affected.add(c.caller);
+      for (const r of this.resolvedByCallee.get(g) ?? []) affected.add(r.caller);
+    }
+    const derived: FnNameDerived = { names, affected, idents: undefined };
+    this.fnNameDerived = derived;
+    return derived;
+  }
+
+  /** The `<current ident> -> <accepted name>` map a re-render of ANY frame
+   *  applies. Keys: `_fnG` (the emitter's default ident for function `G`)
+   *  and, when the emitter gave `G` its own name instead and that name is
+   *  unambiguous across the bundle, that name too — those are the two idents
+   *  a call site can refer to `G` by (`src/emit/function.ts`'s
+   *  `closureNameAt ?? fnName`). */
+  private fnIdentRenames(): ReadonlyMap<string, string> {
+    const info = this.fnNameInfo();
+    if (info.idents !== undefined) return info.idents;
+    const idents = new Map<string, string>();
+    if (info.names.size > 0) {
+      const counts = this.frameNodeNameCounts();
+      for (const [g, name] of info.names) {
+        idents.set(fnName(g), name);
+        const node = this.rawFrameMap?.get(g)?.node;
+        const own = node !== undefined && node.k === "func" ? node.name : null;
+        if (own !== null && own !== fnName(g) && counts.get(own) === 1) idents.set(own, name);
+      }
+    }
+    info.idents = idents;
+    return idents;
+  }
+
+  /** How many frames the emitter gave each declared name — an ident that
+   *  names two different functions can never be safely rewritten by name. */
+  private frameNodeNameCounts(): ReadonlyMap<string, number> {
+    if (this.frameNameCounts !== undefined) return this.frameNameCounts;
+    const counts = new Map<string, number>();
+    for (const f of this.rawFrameMap?.values() ?? []) {
+      if (f.node.k !== "func") continue;
+      counts.set(f.node.name, (counts.get(f.node.name) ?? 0) + 1);
+    }
+    this.frameNameCounts = counts;
+    return counts;
+  }
+
+  /** True when `fn`'s text on disk is stale against the accepted names —
+   *  it has named registers, it was itself renamed, or it calls a function
+   *  that was. Every read path that chooses between the rendered file and a
+   *  live re-render (`source`, `src/ui-server/list.ts`'s module splice) asks
+   *  this one question. */
+  /** The accepted `fn:N` name for one function, or `null` -- the single
+   *  place every "what is this function called?" surface joins the name slot
+   *  (`ProjectService.activeFnNames`), so a list row, an xref row and the
+   *  rendered source cannot disagree. */
+  acceptedFnName(fn: number): string | null {
+    return this.fnNameInfo().names.get(fn) ?? null;
+  }
+
+  needsNameRender(fn: number): boolean {
+    return this.activeNamesFor(fn).size > 0 || this.fnNameInfo().affected.has(fn);
+  }
+
   /** Drop the memoised per-function render — called after any name write
    *  (`ProjectService.setName`/`revertName`) so the next read re-renders. */
   invalidateRender(fn?: number): void {
+    this.fnNameDerived = undefined;
     if (fn === undefined) this.renderCache.clear();
     else this.renderCache.delete(fn);
   }
@@ -1209,7 +1312,7 @@ export class ArtifactService {
     const frame = this.rawFrameMap?.get(fn);
     if (frame === undefined) return null;
     if (this.astHook === undefined) this.astHook = astPassHook(analysis, this.renderPassOpts());
-    const r = renderFrame(this.astHook, frame.node, frame.cfg, this.activeNamesFor(fn));
+    const r = renderFrame(this.astHook, frame.node, frame.cfg, this.activeNamesFor(fn), { fnIdents: this.fnIdentRenames() });
     const out = { code: r.code, collisions: r.collisions, lineMap: r.lineMap };
     this.renderCache.set(fn, out);
     return out;
