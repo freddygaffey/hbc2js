@@ -89,3 +89,17 @@ Recommendation: treat this as a scoped follow-up with an explicit decision on
 (1), most plausibly as an **opt-in** emit mode used by the round-trip harness
 rather than a default, so readable output is not paid for a corpus metric.
 Until then the BUGS row stays open with the repro now pinned by fixture 75.
+
+## 5. Baseline measurement (no code change)
+
+`node tools/e2e/roundtrip-corpus.ts --only react-navigation-example-0.85.3 --passes on`
+on this worktree (`ecbf218` + fixture 75 only):
+
+- IDENTICAL 6178 (42.79%) of 14437, DIFFERENT 8259, RECOMPILE-ERROR 0, DECOMPILE-STUB 0
+- `diff:LoadFromEnvironment(imm)` 863 (rank 1)
+- `diff:CreateFunctionEnvironment(imm)` 619 (rank 3)
+
+The LoadFromEnvironment figure drifted down from the 925 recorded at
+`d4011d8` with nothing changed in between — the same corpus-migration effect
+the BUGS row already notes. A later "after" measurement should be compared
+against 863, not 925. There is no "after" figure in this pass: no fix landed.
