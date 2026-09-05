@@ -228,6 +228,12 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
           if (s.update !== null) walkExpr(s.update);
           walkStmts(s.body);
           break;
+        case "for-in":
+        case "for-of":
+          walkExpr(s.left);
+          walkExpr(s.right);
+          walkStmts(s.body);
+          break;
         case "labeled":
           walkStmts(s.body);
           break;
@@ -443,6 +449,13 @@ function mapStmtChildren(s: Stmt, fs: (s: Stmt) => Stmt, fx: (e: Expr) => Expr):
       const body = mapStmts(s.body, fs, fx);
       return init === s.init && test === s.test && update === s.update && body === s.body ? s : { ...s, init, test, update, body };
     }
+    case "for-in":
+    case "for-of": {
+      const left = mapExpr(s.left, fx);
+      const right = mapExpr(s.right, fx);
+      const body = mapStmts(s.body, fs, fx);
+      return left === s.left && right === s.right && body === s.body ? s : { ...s, left, right, body };
+    }
     case "labeled": {
       const body = mapStmts(s.body, fs, fx);
       return body === s.body ? s : { ...s, body };
@@ -508,6 +521,8 @@ export function stmtLists(body: readonly Stmt[]): readonly (readonly Stmt[])[] {
         case "while":
         case "do-while":
         case "for":
+        case "for-in":
+        case "for-of":
         case "labeled":
         case "iife":
           visit(s.body);
@@ -553,6 +568,8 @@ function spliceInStmt(s: Stmt, target: readonly Stmt[], repl: readonly Stmt[]): 
     case "while":
     case "do-while":
     case "for":
+    case "for-in":
+    case "for-of":
     case "labeled":
     case "iife": {
       const body = spliceList(s.body, target, repl);
@@ -606,6 +623,7 @@ export function freeNames(stmts: readonly Stmt[]): Set<string> {
       if (s.k === "decl") for (const n of s.names) bound.add(n);
       else if (s.k === "init") bound.add(s.name);
       else if (s.k === "try") { if (s.param !== null) bound.add(s.param); }
+      else if ((s.k === "for-in" || s.k === "for-of") && s.left.k === "ident") bound.add(s.left.name);
       else if (s.k === "func") {
         bound.add(s.name);
         for (const param of s.params) bound.add(param.name);
@@ -847,6 +865,15 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
           if (s.update !== null) visitExpr(s.update, inNested);
           visitStmts(s.body, inNested);
           break;
+        case "for-in":
+        case "for-of":
+          // `left` is the loop's own binding — a declaration site, same as
+          // `init`'s name, not a read of whatever it held before.
+          if (s.left.k === "ident") bump(s.left.name, inNested, true);
+          else visitExpr(s.left, inNested);
+          visitExpr(s.right, inNested);
+          visitStmts(s.body, inNested);
+          break;
         case "labeled":
           visitStmts(s.body, inNested);
           break;
@@ -1019,6 +1046,13 @@ function defUseWalk(stmts: readonly Stmt[], nextAt: (s: Stmt) => number): Map<st
           if (s.init !== null) visitExpr(s.init, at);
           visitExpr(s.test, at);
           if (s.update !== null) visitExpr(s.update, at);
+          visitStmts(s.body);
+          break;
+        case "for-in":
+        case "for-of":
+          if (s.left.k === "ident") rec(s.left.name, "defs", at);
+          else visitExpr(s.left, at);
+          visitExpr(s.right, at);
           visitStmts(s.body);
           break;
         case "labeled":
@@ -1407,6 +1441,12 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
           if (s.init !== null) visitExpr(s.init);
           visitExpr(s.test);
           if (s.update !== null) visitExpr(s.update);
+          visitStmts(s.body);
+          break;
+        case "for-in":
+        case "for-of":
+          visitExpr(s.right);
+          if (s.left.k === "ident" && isVisible(s.left.name)) out.push({ k: "assign", name: s.left.name });
           visitStmts(s.body);
           break;
         case "labeled":

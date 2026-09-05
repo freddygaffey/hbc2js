@@ -21,7 +21,7 @@ import { emitModule } from "../../../src/emit/index.ts";
 import { nodeCheck } from "../../../src/decompile.ts";
 import { runPasses } from "../../../src/passes/index.ts";
 import { postOrder, splice } from "../../../src/passes/driver.ts";
-import type { Stmt, StructuredFunction } from "../../../src/structure/ir.ts";
+import type { Stmt, StructuredFunction, WhileForm } from "../../../src/structure/ir.ts";
 
 function fixture(version: number): string {
   return join(repoRoot(), "tests", "fixtures", "constructs", "04-for-loop-basic", `v${version}.hbc`);
@@ -45,14 +45,16 @@ test("review M5-pass-1 F3: a for-header loop's init is printed, not dropped, whe
     // rewriting an inner loop rebuilds every ancestor on the path to it
     // (`splice` walks the spine), so a node reference captured before that
     // rewrite is stale for any loop that turned out to be its ancestor.
-    const isLoopWithInit = (n: Stmt): n is Stmt & { k: "loop" } => n.k === "loop" && n.form?.init !== undefined;
+    const isLoopWithInit = (n: Stmt): n is Stmt & { k: "loop" } =>
+      n.k === "loop" && n.form !== undefined && (n.form.kind === "while" || n.form.kind === "do-while") && n.form.init !== undefined;
     const targetLabels = postOrder(real.fn.root)
       .filter(isLoopWithInit)
       .map((n) => n.label);
     let root = real.fn.root;
     for (const label of targetLabels) {
       const current = postOrder(root).find((n): n is Stmt & { k: "loop" } => n.k === "loop" && n.label === label)!;
-      const corruptedLoop = { ...current, form: { ...current.form!, at: current.form!.at === "tail" ? ("head" as const) : ("tail" as const) } };
+      const form = current.form! as WhileForm;
+      const corruptedLoop = { ...current, form: { ...form, at: form.at === "tail" ? ("head" as const) : ("tail" as const) } };
       root = splice(root, current, corruptedLoop);
     }
     return { fn: { ...real.fn, root }, diagnostics: [] };

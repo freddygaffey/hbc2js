@@ -386,6 +386,14 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       printBody(s.body, depth + 1, out, opts);
       out.push(`${p}}`);
       return;
+    case "for-in":
+    case "for-of": {
+      const decl = s.decl === null ? expr(s.left, 0) : `${s.decl} ${expr(s.left, 0)}`;
+      out.push(`${p}${s.label === null ? "" : `${s.label}: `}for (${decl} ${s.k === "for-in" ? "in" : "of"} ${expr(s.right, 0)}) {`);
+      printBody(s.body, depth + 1, out, opts);
+      out.push(`${p}}`);
+      return;
+    }
     case "labeled":
       out.push(`${p}${s.label}: {`);
       printBody(s.body, depth + 1, out, opts);

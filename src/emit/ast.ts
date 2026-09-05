@@ -274,6 +274,8 @@ export type Stmt =
   | { readonly k: "do-while"; readonly label: string | null; readonly test: Expr; readonly body: readonly Stmt[]; readonly origin?: Origin }
   /** `label: for (init; test; update) { … }` — spec 07 for-header. */
   | { readonly k: "for"; readonly label: string | null; readonly init: Expr | null; readonly test: Expr; readonly update: Expr | null; readonly body: readonly Stmt[]; readonly origin?: Origin }
+  /** `label: for (const|let|var <left> in|of <right>) { … }` — spec 21 for-in/for-of. */
+  | { readonly k: "for-in" | "for-of"; readonly label: string | null; readonly decl: "const" | "let" | "var" | null; readonly left: Expr; readonly right: Expr; readonly body: readonly Stmt[]; readonly origin?: Origin }
   | { readonly k: "labeled"; readonly label: string; readonly body: readonly Stmt[] }
   | { readonly k: "break"; readonly label: string | null; readonly origin?: Origin }
   | { readonly k: "continue"; readonly label: string | null; readonly origin?: Origin }

@@ -130,6 +130,24 @@ test("negative: a formed loop's annotated test is refused (loop-test), at the ta
   assert.equal(guard.k, "if", "the tail guard was flattened out of the loop");
 });
 
+test("negative: an if that is a for-in/for-of loop's own header guard is refused (loop-test), spec 21 P0", () => {
+  // for-in/for-of run before if-chain (00-LADDER §7's ordering) and annotate
+  // an *unformed* loop with `IterForm` (spec 21 §3); `IterForm.cond` names
+  // the same field `WhileForm.cond` does, so the existing generic
+  // `s.form.cond === node.cfgBlock` check must refuse this shape too,
+  // without either rung's own code ever running.
+  const guard: Stmt = { k: "if", cfgBlock: 5, then: { k: "break", label: 0 }, else: EMPTY };
+  const loop: Stmt = {
+    k: "loop",
+    label: 1,
+    body: { k: "seq", body: [{ k: "block", cfgBlock: 5 }, guard] },
+    form: { kind: "for-in", cond: 5, at: "head", negate: true, iter: 5, setup: 0, close: [], binding: 1, source: 2 } as never,
+  };
+  const root: Stmt = { k: "seq", body: [loop] };
+  const structured = { root, graph: { blocks: [] } } as unknown as StructuredFunction;
+  assert.equal(ifChain.match(guard, bareCtx(structured)), null, "if-chain must not flatten a for-in/for-of loop's own header guard");
+});
+
 test("negative: a generator/dispatch resume function is refused whole (generator-dispatcher)", () => {
   const candidate: Stmt = { k: "if", cfgBlock: 0, then: { k: "return", cfgBlock: 1 }, else: { k: "return", cfgBlock: 2 } };
   const dispatcher: Stmt = { k: "switch", cfgBlock: 9, scrutinee: { t: "generator-state" }, cases: [], default: EMPTY };

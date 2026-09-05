@@ -11,6 +11,8 @@ import { objectLiteral } from "./object-literal/index.ts";
 import { exprRebuild } from "./expr-rebuild/index.ts";
 import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
+import { forIn } from "./for-in/index.ts";
+import { forOf } from "./for-of/index.ts";
 import { globalAccess } from "./global-access/index.ts";
 import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
@@ -88,6 +90,8 @@ import { varNaming } from "./var-naming/index.ts";
 export const REGISTRY: readonly Pass[] = [
   loopCond as Pass,
   forHeader as Pass,
+  forIn as Pass,
+  forOf as Pass,
   switchRaise as Pass,
   ifChain as Pass,
   tryShape as Pass,

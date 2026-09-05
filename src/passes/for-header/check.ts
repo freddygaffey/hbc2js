@@ -11,8 +11,11 @@ import { match } from "./match.ts";
 /** The rewrite may change nothing but the annotation. */
 export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult {
   if (!sameShape(before, after)) return { ok: false, reason: "for-header changed the tree shape" };
-  if (after.k !== "loop" || after.form?.init === undefined || after.form.step === undefined) return { ok: false, reason: "missing init/step annotation" };
+  if (after.k !== "loop" || after.form === undefined) return { ok: false, reason: "missing init/step annotation" };
+  if (after.form.kind !== "while" && after.form.kind !== "do-while") return { ok: false, reason: "for-header rewrote a non-while loop form" };
+  if (after.form.init === undefined || after.form.step === undefined) return { ok: false, reason: "missing init/step annotation" };
   if (before.k !== "loop" || before.form === undefined) return { ok: false, reason: "for-header ran on an unformed loop" };
+  if (before.form.kind !== "while" && before.form.kind !== "do-while") return { ok: false, reason: "for-header ran on a non-while loop form" };
   if (before.form.cond !== after.form.cond || before.form.at !== after.form.at || before.form.negate !== after.form.negate) return { ok: false, reason: "loop test changed" };
   if (before.form.kind === "do-while" && after.form.kind === "while") {
     const fn = ctx.structured;

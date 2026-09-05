@@ -65,7 +65,7 @@ test("PL-04: a pass that throws is E_PASS_CRASH, not a silent skip", () => {
 test("PL-07: registry order must satisfy after/before; skip/only/stage select", () => {
   assert.throws(() => enabledPasses({}, [forHeader as Pass, loopCond as Pass]), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
   assert.deepEqual(enabledPasses({ only: ["loop-cond"] }).map((p) => p.name), ["loop-cond"]);
-  assert.deepEqual(enabledPasses({ skip: ["for-header"] }).map((p) => p.name), ["loop-cond", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "try-clean", "fn-naming", "reg-split", "var-naming"]);
+  assert.deepEqual(enabledPasses({ skip: ["for-header"] }).map((p) => p.name), ["loop-cond", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "try-clean", "fn-naming", "reg-split", "var-naming"]);
   assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "try-clean", "fn-naming", "reg-split", "var-naming"]);
   for (const p of REGISTRY) assert.ok(p.catalogue.length > 0, `${p.name} declares no catalogue row`);
 });
