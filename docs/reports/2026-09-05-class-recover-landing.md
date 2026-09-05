@@ -114,3 +114,33 @@ the three acceptance tests stay skipped with that reason, none inverted.
 
 `33.obf` also refuses (`group-interrupted`): the obfuscated build interleaves
 the group differently. Not chased; it is a refusal, not a corruption.
+
+## Follow-up 2026-09-05: the --split fallout of F24-5 (agent/f24-5-regress)
+
+Landing F24-5 (26054f9) made `--split` on react-navigation-example-0.85.3 jump
+from 24.26 MB to 52.43 MB, `module_523.js` from 46 KB to 28 MB, and the
+segregate NO `--deps-report` navigator count from 6 to 7. The hosting rule
+itself is sound and stays; the defect it exposed was in `src/split/index.ts`.
+
+A split module file pulls in every `_fnN` it references but does not declare.
+That scan ran over the printed text with comments included, and `src/emit`
+prints scope-check comments that name functions by identifier, e.g.
+`// emitted identifier "_fn13844" is not declared in any enclosing scope
+(module > _fn0 > _fn525 > _fn5569 > _fn13837)`. The `_fn0` in that comment made
+module 523 pull in the bundle's **global** function. Before F24-5 the global's
+body was small, so the bug looked harmless; F24-5 made the global the lexical
+parent of most of the bundle (1833 newly hosted direct children, a subtree of
+15484 of the bundle's 15551 functions), so the same pull copied 26.4 MB into one
+module file.
+
+Fix: `scanFnIdentifiers(text)` (new export of `src/split/index.ts`) counts only
+occurrences in code, filtering matches inside line/block comments with a
+string- and template-aware comment-range scan; and the pull loop never copies
+the global function into a module file. After: split 24.12 MB, `module_523.js`
+back under 372 KB, navigator count 6 with the pin untouched. See
+`docs/BUGS.md` row `split-comment-ref-pull` and
+`tests/gate/split/comment-ref-pull.test.ts`.
+
+The gate that landed F24-5 was green because
+`tests/gate/split/segregate.test.ts`'s NO `--deps-report` test returned silently
+when the bundle was absent; it now `t.skip()`s visibly.

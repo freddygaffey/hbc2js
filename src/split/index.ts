@@ -234,6 +234,91 @@ function fileNameFor(moduleId: number): string {
   return `module_${moduleId}.js`;
 }
 
+/** Half-open [start, end) byte ranges of every `//` and block comment in
+ *  printed JS, skipping over string and template literals so a `//` inside a
+ *  string is not mistaken for a comment. Used by the reference scan below;
+ *  see `scanFnIdentifiers`. */
+function commentRanges(text: string): ReadonlyArray<readonly [number, number]> {
+  const ranges: Array<readonly [number, number]> = [];
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    const c = text[i]!;
+    if (c === '"' || c === "'" || c === "`") {
+      const quote = c;
+      i++;
+      while (i < n) {
+        const d = text[i]!;
+        if (d === "\\") {
+          i += 2;
+          continue;
+        }
+        if (d === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "/") {
+      const start = i;
+      while (i < n && text[i] !== "\n") i++;
+      ranges.push([start, i]);
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      while (i < n && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i = Math.min(n, i + 2);
+      ranges.push([start, i]);
+      continue;
+    }
+    i++;
+  }
+  return ranges;
+}
+
+function insideAny(ranges: ReadonlyArray<readonly [number, number]>, at: number): boolean {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const r = ranges[mid]!;
+    if (at < r[0]) hi = mid - 1;
+    else if (at >= r[1]) lo = mid + 1;
+    else return true;
+  }
+  return false;
+}
+
+/** The `_fn<n>` identifiers a printed body DECLARES and the ones it REFERENCES,
+ *  counting only occurrences in code.
+ *
+ *  A mention inside a comment is not a reference. `src/emit` prints provenance
+ *  and scope-check comments that name functions by their emitted identifier —
+ *  e.g. `// emitted identifier "_fn13844" is not declared in any enclosing
+ *  scope (module > _fn0 > _fn525 > ...)` — and the split file's
+ *  referenced-but-undeclared pull below used to match those, pulling the named
+ *  function (in the observed case the bundle's GLOBAL function, whose body is
+ *  the whole program) into an unrelated module file. On
+ *  react-navigation-example-0.85.3 that turned module_523.js from 46 KB into
+ *  28 MB and the whole split from 24 MB into 52 MB
+ *  (docs/BUGS.md `split-comment-ref-pull`). */
+export function scanFnIdentifiers(text: string): { readonly declared: readonly number[]; readonly referenced: readonly number[] } {
+  const ranges = commentRanges(text);
+  const declared: number[] = [];
+  const referenced: number[] = [];
+  for (const mm of text.matchAll(/function _fn(\d+)\(/g)) {
+    if (mm.index !== undefined && !insideAny(ranges, mm.index)) declared.push(Number(mm[1]));
+  }
+  for (const mm of text.matchAll(/_fn(\d+)/g)) {
+    if (mm.index !== undefined && !insideAny(ranges, mm.index)) referenced.push(Number(mm[1]));
+  }
+  return { declared, referenced };
+}
+
 export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitResult {
   const module = parseHbc(bytes);
   const inventory = buildInventoryFromModule(module);
@@ -282,8 +367,6 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
   // later modules record a diagnostic instead of guessing at sharing
   // semantics (docs/PUSHBACK.md P-7).
   const claimedBy = new Map<number, number>();
-  const declFnRe = /function _fn(\d+)\(/g;
-  const refFnRe = /_fn(\d+)/g;
 
   for (const m of inventory.modules) {
     const id = m.localModuleId;
@@ -335,9 +418,10 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     const extraStmts: Extract<Stmt, { k: "func" }>[] = [];
     const queue: number[] = [];
     const scan = (text: string): void => {
-      for (const mm of text.matchAll(declFnRe)) declaredIdx.add(Number(mm[1]));
-      for (const mm of text.matchAll(refFnRe)) {
-        const idx = Number(mm[1]);
+      // Comments never reference anything: see `scanFnIdentifiers`.
+      const found = scanFnIdentifiers(text);
+      for (const d of found.declared) declaredIdx.add(d);
+      for (const idx of found.referenced) {
         if (!declaredIdx.has(idx)) queue.push(idx);
       }
     };
@@ -345,6 +429,15 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     while (queue.length > 0) {
       const idx = queue.shift()!;
       if (declaredIdx.has(idx)) continue;
+      if (idx === module.header.globalCodeIndex) {
+        // The global function's body is the whole bundle's registration code
+        // (every `__d(...)` in the program); it is never a module-local helper,
+        // so a reference to it from one module file is a decompilation defect,
+        // not a function to copy in (docs/BUGS.md `split-comment-ref-pull`).
+        declaredIdx.add(idx);
+        diagnostics.push(`module ${id}: fn#${idx} (_fn${idx}) is the bundle's global function; left undeclared rather than copied into a module file`);
+        continue;
+      }
       const owner = claimedBy.get(idx);
       if (owner !== undefined) {
         declaredIdx.add(idx);
