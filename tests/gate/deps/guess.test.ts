@@ -186,3 +186,33 @@ test("online mode falls back to the injected npm search when no direct clue exis
   assert.equal(guesses[0]!.candidates[0]!.package, "found-package");
   assert.equal(guesses[0]!.candidates[0]!.version, "1.2.3");
 });
+
+// docs/BUGS.md "did not finish in 10 minutes" row: on the Service NSW
+// bundle, hundreds of unattributed modules independently picked the same
+// generic minified-property-name string as their npm-search query lead,
+// each issuing its own sequential network round-trip (2068 calls for only
+// 345 distinct queries). Two modules sharing a query lead must invoke the
+// injected `search` only once between them.
+test("npm-search queries are deduped: two modules with the same lead string call search once", async () => {
+  const modA = invModule({ factoryFunctionIndex: 1, localModuleId: 1, stringConstants: ["some-shared-lead"] });
+  const modB = invModule({ factoryFunctionIndex: 2, localModuleId: 2, stringConstants: ["some-shared-lead"] });
+  const { inventory, matchReport } = makeInventoryAndReport(
+    [modA, modB],
+    [attribution({ factoryFunctionIndex: 1, localModuleId: 1 }), attribution({ factoryFunctionIndex: 2, localModuleId: 2 })],
+  );
+
+  let calls = 0;
+  const guesses = await guessModules(inventory, matchReport, {
+    offline: false,
+    search: async (query) => {
+      calls++;
+      assert.equal(query, "some-shared-lead");
+      return [{ name: "found-package", version: "1.2.3", description: undefined }];
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(guesses.length, 2);
+  assert.equal(guesses[0]!.candidates[0]!.package, "found-package");
+  assert.equal(guesses[1]!.candidates[0]!.package, "found-package");
+});
