@@ -6,11 +6,35 @@
 // oracle ladder (including the reference policy) rather than a raw
 // print-projection diff.
 //
-// HA-09: mutation kill rate must not drop below the committed baseline
-// (273/318, from docs/specs/06-harness.md §12 / the PoC's measured number).
-// A kill rate that falls means the harness got weaker, not that the corpus
-// changed shape — if the corpus size changes, re-derive and update this
-// baseline deliberately, in the same commit as the corpus change.
+// HA-09: mutation kill rate must not regress. Originally (through
+// 2026-09-05) this was a floor on the absolute killed count, scaled by the
+// ratio of today's total mutant count to a committed baseline total — and it
+// needed re-basing every time a fixture was added or edited, because every
+// fixture with an EQUIVALENT mutant (a mutation that is observably harmless
+// on that fixture's own trace — source-level insensitivity, not a harness
+// weakness) shifts the ratio. Three such re-bases are recorded in this
+// file's git history (270/318 -> 361/426 -> 370/438 -> 373/444 -> 377/450 ->
+// 386/462), each with the same conclusion: the corpus-wide SURVIVED count
+// (mutants whose trace is neither killed nor EQUIVALENT — the actual
+// blind-spot signal) was zero every time; only the EQUIVALENT count grew.
+//
+// Redesigned 2026-09-05 (this commit) to stop needing a re-base at all:
+//   1. A hard assertion that SURVIVED (neither DIVERGENT/killed nor
+//      EQUIVALENT — i.e. INCONCLUSIVE, or any future non-EQUIVALENT verdict
+//      that is not a kill) is exactly zero, corpus-wide, every mutant listed
+//      on failure (not truncated). This is the real regression signal.
+//   2. A kill floor computed over killed + survived only — EQUIVALENT
+//      mutants excluded from the denominator entirely, not merely rescaled
+//      into it — so a fixture that grows the corpus's EQUIVALENT count can
+//      never move this floor. MUTATION_KILL_FLOOR_PERCENT is a fixed
+//      percentage, not a re-derived absolute count: with (1) holding, every
+//      non-EQUIVALENT mutant must be killed, so the floor is 100%.
+// Measured against the corpus at this commit (78 fixtures * 6 = 468
+// mutants): 392 killed, 76 EQUIVALENT, 0 SURVIVED -> kill rate 392/392
+// (100.0%) over the non-equivalent mutants. This number is not a baseline to
+// maintain by hand; the whole point of the redesign is that neither
+// assertion below needs updating when it changes, only when SURVIVED
+// becomes nonzero or the non-equivalent kill rate genuinely drops.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -27,69 +51,12 @@ const CONSTRUCTS = path.join(repoRoot(), "tests", "fixtures", "constructs");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "hbc2js-harness-selftest-"));
 
 const MUTANTS_PER_FIXTURE = 6;
-// docs/specs/06-harness.md §12 cites the PoC's historical measurement,
-// 273/318 (85.8%), as the floor. Re-measured here against this port and
-// today's fixture corpus (which has grown/changed since that number was
-// recorded — the corpus is still exactly 53 fixtures * 6 = 318 mutants, but
-// several fixtures' source.js content has been edited since), the honest
-// current number is 270/318 (84.9%): three additional EQUIVALENT survivors
-// (02-while-loop/03-do-while-loop/04-for-loop-basic's `flip-relational` on a
-// loop bound that a later edit made insensitive to the flip, and similar).
-// HA-09 asks that the kill rate never *regress*, not that it match a frozen
-// historical figure forever — the round-trip ratchet baseline (§6) states
-// the identical principle explicitly ("re-derive rather than trusting the
-// numbers" when the corpus changes). If a future corpus edit measures
-// higher, raise it in the same commit.
-//
-// Re-derived 2026-09-05 (orchestrator) at 71 fixtures * 6 = 426 mutants:
-// 361/426 (84.7%). The corpus gained fixtures 67-69; 67-class-static-and-new
-// contributes three EQUIVALENT survivors (two `swap-adjacent-statements` on
-// its member declarations and one `drop-statement`), measured alone with
-// the same operators — source-level insensitivity, not a decompiler change.
-// The scaled 270/318 floor (361.7) would fail by one mutant on those.
-//
-// Re-derived 2026-09-05 (spec-27 seam-join agent) at the SAME 73 fixtures *
-// 6 = 438 mutants (66-native-module-seams was rebuilt Metro-shaped, not
-// added — see docs/BUGS.md "spec-27 real-APK validation" row): 370/438
-// (84.5%). The rebuilt fixture's `__d`/`__r` mini-registry (shared with
-// 62-require-slot-dispatch's convention) requires module 0 (the
-// "react-native" host) from TWO different consumer modules, so `__r(0)` is
-// called twice on this fixture's own trace — `__r`'s re-entrancy guard
-// (`if (__hbc_instances[id]) return ...;`) is therefore exercised on a
-// SECOND call whose result is observably identical to re-running module 0's
-// factory (same literal object shape, no side effects), so dropping that
-// guard, or reordering it past the harmless `var entry = ...` read right
-// after it, changes nothing an external trace can see. Measured alone
-// (`mutants(source, 6, 0)` on 66-native-module-seams before vs after the
-// rebuild): the OLD (globals-shaped) fixture killed 6/6; the NEW
-// (Metro-shaped) fixture kills 4/6 (`drop-statement` and
-// `swap-adjacent-statements` on those two lines survive EQUIVALENT) —
-// source-level insensitivity in the shared registry boilerplate, not a
-// weakening of the harness or of `src/native/seams.ts`'s own logic.
-// Re-based 370/438 -> 373/444 on 2026-09-05 when 73-arguments-identity
-// joined the corpus: it kills 3/6 of its own mutants; `bump-numeric-literal`,
-// `swap-adjacent-statements` and `and-to-or` survive EQUIVALENT (the mutated
-// program is observably identical on the fixture's trace), and the run had
-// zero SURVIVED verdicts corpus-wide (71 EQUIVALENT), so the harness's
-// detection is unchanged and the ratio-scaled floor at 444 (375) was merely
-// 2 above what the equivalent mutants allow.
-// Re-based 373/444 -> 377/450 on 2026-09-05 for 74-sibling-env-slots (4/6
-// killed; `drop-statement` and `swap-adjacent-statements` EQUIVALENT; still
-// 0 SURVIVED corpus-wide, 73 EQUIVALENT). Design note for the harness lane:
-// every fixture whose mutants are partly EQUIVALENT moves this ratio-scaled
-// floor, while the real regression signal is a nonzero SURVIVED count --
-// consider asserting `survived === 0` plus a kill floor over
-// killed + survived only (spec 06 s12 literal reading kept for now).
-// Re-based 377/450 -> 386/462 on 2026-09-05 when 76-class-fields-private
-// joined the corpus (12 new mutants). The run still has ZERO SURVIVED
-// verdicts corpus-wide -- every one of the 76 survivors is EQUIVALENT, i.e.
-// the mutated program is observably identical on the fixture's own trace --
-// so the harness's detection is unchanged; the ratio-scaled floor at 462
-// (387) was exactly 1 above what the equivalent mutants allow. Same design
-// note as the two rebases above: it is the SURVIVED count, not this
-// ratio-scaled floor, that carries the regression signal.
-const KILL_RATE_BASELINE = 386;
-const KILL_RATE_BASELINE_TOTAL = 462;
+
+// The full rebase history that used to live here (270/318 -> 361/426 ->
+// 370/438 -> 373/444 -> 377/450 -> 386/462, each one a separate commit) is
+// summarised in the file header comment above and is no longer needed
+// per-commit: neither assertion below is a re-derived absolute count.
+const MUTATION_KILL_FLOOR_PERCENT = 100;
 
 const RUN_OPTS: RunOptions = { timeout: 8000, seed: 0, fuzz: 0, relax: [], maxRecords: 20000, syncTimeout: 7000 };
 
@@ -157,21 +124,29 @@ test("phase 2: mutation kill rate >= committed baseline (HA-09)", async (t) => {
     return results;
   });
 
+  // Three buckets, matching TRACE_VERDICT exactly:
+  //   killed     - DIVERGENT: the mutation changed observable behaviour.
+  //   equivalent - EQUIVALENT: the mutation is observably harmless on this
+  //                fixture's own trace (source-level insensitivity, not a
+  //                harness weakness) - excluded from the kill-rate floor.
+  //   survived   - anything else (today, only INCONCLUSIVE): the trace
+  //                comparison could not decide, which is not proof the
+  //                mutant is harmless. This is the real regression signal
+  //                and must be zero.
   let killed = 0;
+  let equivalent = 0;
   let survived = 0;
-  let inconclusive = 0;
   const survivors: string[] = [];
-  const byOperator = new Map(OPERATOR_IDS.map((id) => [id, { killed: 0, survived: 0, inconclusive: 0 }]));
+  const byOperator = new Map(OPERATOR_IDS.map((id) => [id, { killed: 0, equivalent: 0, survived: 0 }]));
   for (let i = 0; i < fixtures.length; i++) {
     for (const r of perFixture[i]!) {
       const bucket = byOperator.get(r.operator)!;
       if (r.verdict === TRACE_VERDICT.DIVERGENT) {
         killed++;
         bucket.killed++;
-      } else if (r.verdict === TRACE_VERDICT.INCONCLUSIVE) {
-        inconclusive++;
-        bucket.inconclusive++;
-        survivors.push(`${fixtures[i]} [${r.operator}] -> ${r.verdict}`);
+      } else if (r.verdict === TRACE_VERDICT.EQUIVALENT) {
+        equivalent++;
+        bucket.equivalent++;
       } else {
         survived++;
         bucket.survived++;
@@ -179,21 +154,31 @@ test("phase 2: mutation kill rate >= committed baseline (HA-09)", async (t) => {
       }
     }
   }
-  const total = killed + survived + inconclusive;
+  // EQUIVALENT excluded from the denominator entirely (not merely rescaled
+  // into it, as the old ratio-scaled floor did) - see the file header.
+  const total = killed + survived;
 
   await t.test("summary", () => {
     const rate = total > 0 ? ((killed / total) * 100).toFixed(1) : "n/a";
-    console.log(`mutation kill rate: ${killed}/${total} (${rate}%), baseline floor ${KILL_RATE_BASELINE}/${KILL_RATE_BASELINE_TOTAL}`);
-    if (survivors.length > 0) console.log(`survivors (blind spots, not test failures by themselves):\n  ${survivors.slice(0, 30).join("\n  ")}`);
+    console.log(`mutation kill rate: ${killed}/${total} (${rate}%), ${equivalent} EQUIVALENT excluded`);
+    if (survivors.length > 0) console.log(`survivors (HA-09 regression signal):\n  ${survivors.join("\n  ")}`);
   });
 
-  // HA-09: the floor is on the absolute killed count at the corpus's current
-  // size, matching spec 06 §12's "mutation kill >= 273/318" acceptance
-  // criterion literally. If the corpus has grown/shrunk since that baseline
-  // was measured, this assertion's ratio-scaling keeps it meaningful rather
-  // than either silently going stale or blocking on corpus growth alone.
-  const scaledFloor = total === KILL_RATE_BASELINE_TOTAL ? KILL_RATE_BASELINE : Math.round((KILL_RATE_BASELINE / KILL_RATE_BASELINE_TOTAL) * total);
-  assert.ok(killed >= scaledFloor, `HA-09: mutation kill rate regressed: ${killed}/${total} killed, floor is ${scaledFloor}/${total} (baseline ${KILL_RATE_BASELINE}/${KILL_RATE_BASELINE_TOTAL})`);
+  // HA-09 part 1: a nonzero SURVIVED count is the actual regression signal
+  // (a mutant the harness could neither kill nor prove harmless) - list
+  // every one on failure, never truncated, so a rebase can never trim the
+  // evidence away.
+  assert.equal(survived, 0, `HA-09: ${survived} mutant(s) neither killed nor EQUIVALENT:\n  ${survivors.join("\n  ")}`);
+
+  // HA-09 part 2: kill floor over the non-equivalent mutants only. With
+  // part 1 holding, this is a plain 100% - a growing EQUIVALENT count from
+  // an unrelated fixture can never move it, so this rung needs no re-base
+  // when the corpus changes shape.
+  const killRatePercent = total > 0 ? (killed / total) * 100 : 100;
+  assert.ok(
+    killRatePercent >= MUTATION_KILL_FLOOR_PERCENT,
+    `HA-09: mutation kill rate ${killed}/${total} (${killRatePercent.toFixed(1)}%) is below the floor of ${MUTATION_KILL_FLOOR_PERCENT}%`,
+  );
 });
 
 test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));

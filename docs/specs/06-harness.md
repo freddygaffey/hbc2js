@@ -426,9 +426,23 @@ Per spec 00 §8 (`ci.yml` gate, `sweep.yml` nightly):
 * **harness self-test** — the PoC's three phases become a gate test:
   determinism (every fixture traced twice in independent processes must be
   identical), fidelity (the print projection equals `expected.txt`), and
-  **mutation kill rate** with a floor. The baseline was 273/318 (85.8%) at the PoC and is re-derived when the corpus changes (270/318 for this port, then 361/426 on 2026-09-05 when fixtures 67-69 landed -- see the test's header comment); CI fails
-  if it drops. A kill rate that falls means the harness got weaker
-  (`docs/EQUIVALENCE.md` §9 item 5).
+  **mutation kill rate** (HA-09). The PoC's original floor, 273/318 (85.8%),
+  was a ratio-scaled absolute count that needed re-deriving every time the
+  fixture corpus changed shape (`tests/gate/harness/selftest.test.ts` records
+  four such re-bases through 2026-09-05, each one caused not by a real
+  regression but by a new fixture contributing EQUIVALENT mutants — mutations
+  that are observably harmless on that fixture's own trace, source-level
+  insensitivity rather than a harness weakness). Redesigned 2026-09-05 into
+  two assertions that never need a re-base: (1) SURVIVED — mutants whose
+  trace is neither killed (DIVERGENT) nor EQUIVALENT — must be exactly zero
+  corpus-wide, every one listed on failure; and (2) the kill rate computed
+  over killed + survived only, with EQUIVALENT mutants excluded from the
+  denominator rather than merely rescaled into it, must meet a fixed
+  percentage floor (100%, since (1) already forces every non-equivalent
+  mutant to be killed). A fixture that adds EQUIVALENT mutants can now grow
+  the corpus without moving either assertion; a genuine regression still
+  fails loudly via (1). CI fails if either assertion fails. A kill rate that
+  falls means the harness got weaker (`docs/EQUIVALENCE.md` §9 item 5).
 * **VM availability** — CI builds or caches the Hermes VMs
   (`tools/build-hermes-vm.sh`) keyed on the script hash; if unavailable, the
   gate runs with `--reference expected-txt` and the job summary says so loudly.
