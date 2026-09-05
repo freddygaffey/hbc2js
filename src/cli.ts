@@ -1613,6 +1613,67 @@ function runQuery(argv: readonly string[]): void {
         if (tl !== null) process.stdout.write(`${tl}\n`);
         process.stdout.write(`total:${result.total}\n`);
       }
+    } else if (verb === "native" && ["modules", "module", "seams", "manifest", "resources"].includes(positional[0] ?? "")) {
+      // spec 27 §L5: `query native modules|module <X>|seams|manifest|
+      // resources`, over the native/ tables (L1-L4) — a DIFFERENT surface
+      // from the legacy `query native --fn N` branch below (that one is
+      // spec 10's own JS-side host-access surface, `native.jsonl`; this one
+      // reads `native/*.jsonl` -- the APK-ingested tables). Distinguished by
+      // the first positional token so both stay reachable.
+      const sub = positional[0];
+      if (sub === "modules") {
+        const result = svc.nativeModules({ all });
+        if (json) process.stdout.write(JSON.stringify(result) + "\n");
+        else {
+          for (const m of result.rows) process.stdout.write(`${m.key} jsName:${m.jsName ?? "-"} kind:${m.kind} firstParty:${m.firstParty ?? "-"} methods:${m.methods.length}\n`);
+          const tl = truncationLine(result.total, result.rows.length, "--all");
+          if (tl !== null) process.stdout.write(`${tl}\n`);
+          process.stdout.write(`total:${result.total}\n`);
+        }
+      } else if (sub === "module") {
+        const x = positional[1];
+        if (x === undefined) fail(ErrorCode.E_USAGE, "query native module <X> --artifact <dir>", 2, json);
+        const result = svc.nativeModule(x as string);
+        if (json) process.stdout.write(JSON.stringify(result) + "\n");
+        else if (result === null) process.stdout.write(`no such native module: ${x}\n`);
+        else {
+          const m = result.module;
+          process.stdout.write(`${m.key} jsName:${m.jsName ?? "-"} kind:${m.kind} implClass:${m.implClass} nameEvidence:${m.nameEvidence} firstParty:${m.firstParty ?? "-"}\n`);
+          for (const meth of m.methods) process.stdout.write(`  method ${meth.jsName} -> ${meth.nativeMethod}\n`);
+          for (const s of result.seams) process.stdout.write(`  seam ${s.key} status:${s.status}\n`);
+        }
+      } else if (sub === "seams") {
+        const status = flagValue(argv, "--status");
+        const firstParty = argv.includes("--first-party") ? true : undefined;
+        const result = svc.seams({
+          ...(status !== undefined ? { status: status as "linked" | "js-only" | "native-only" } : {}),
+          ...(firstParty !== undefined ? { firstParty } : {}),
+          all,
+        });
+        if (json) process.stdout.write(JSON.stringify(result) + "\n");
+        else {
+          for (const s of result.rows) process.stdout.write(`${s.key} status:${s.status} jsName:${s.jsName ?? "-"} native:${s.native?.module ?? "-"} firstParty:${s.firstParty ?? "-"}\n`);
+          const tl = truncationLine(result.total, result.rows.length, "--all");
+          if (tl !== null) process.stdout.write(`${tl}\n`);
+          process.stdout.write(`total:${result.total}\n`);
+        }
+      } else if (sub === "manifest") {
+        const result = svc.nativeManifest();
+        if (json) process.stdout.write(JSON.stringify(result) + "\n");
+        else if (result === null) process.stdout.write("no native side ingested into this artifact\n");
+        else process.stdout.write(`package:${result.package ?? "-"} versionName:${result.versionName ?? "-"} versionCode:${result.versionCode ?? "-"} permissions:${result.permissions.length} components:${result.components.length}\n`);
+      } else {
+        const key = flagValue(argv, "--key");
+        if (key === undefined) fail(ErrorCode.E_USAGE, "query native resources --key <re> --artifact <dir>", 2, json);
+        const result = svc.nativeResources(key as string, { all });
+        if (json) process.stdout.write(JSON.stringify(result) + "\n");
+        else {
+          for (const r of result.rows) process.stdout.write(`${r.key} = ${JSON.stringify(r.value)} [${r.config}]\n`);
+          const tl = truncationLine(result.total, result.rows.length, "--all");
+          if (tl !== null) process.stdout.write(`${tl}\n`);
+          process.stdout.write(`total:${result.total}\n`);
+        }
+      }
     } else if (verb === "native") {
       const fnFilter = flagValue(argv, "--fn");
       const result = svc.native({ ...(fnFilter !== undefined ? { fn: Number(fnFilter) } : {}), all });

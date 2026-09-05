@@ -53,6 +53,7 @@ import type {
 import { exportedNamesOf } from "./exported-names.ts";
 import { scanObjectTables, type ObjectTableRow, type ObjectTableScan } from "./object-tables.ts";
 import { compareTemplateInjections, scanTemplateInjections, type TemplateInjectionRow, type TemplateInjectionScan } from "./template-injections.ts";
+import { parseNativeJsonl, type NativeManifest, type NativeModuleRow, type NativeResourceRow, type SeamRow, type SeamStatus } from "../native/schema.ts";
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -240,6 +241,9 @@ export const CAPS = {
   globalUses: 50,
   native: 50,
   objectTables: OBJECT_TABLE_DEFAULTS.limit,
+  nativeModules: 100,
+  seams: 100,
+  nativeResources: 50,
 } as const;
 
 function fnDir(artifactDir: string): string {
@@ -773,6 +777,112 @@ export class ArtifactService {
     const rows = opts.fn !== undefined ? this.nativeRows.filter((n) => n.fn === opts.fn) : this.nativeRows;
     const cap = opts.all === true ? rows.length : CAPS.native;
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  // -- spec 27 L5 -- read verbs over the native/ tables (L1-L4) -----------
+  // `native/` is optional-by-construction (spec 27 §1.4): an artifact
+  // written from JS bytes alone has no such directory. Every reader here
+  // returns `null`/empty rather than throwing on its absence -- "no native
+  // side ingested" is a fact, never an error (mirrors `renderedRegisterNames`
+  // etc.'s null-is-a-fact idiom elsewhere in this file). Read once, cached,
+  // same resident-service shape as every other index below.
+
+  private nativeModulesCache: readonly NativeModuleRow[] | undefined;
+  private nativeSeamsCache: readonly SeamRow[] | undefined;
+  private nativeManifestCache: NativeManifest | null | undefined;
+  private nativeResourcesCache: readonly NativeResourceRow[] | undefined;
+
+  private readNativeJsonl<T>(file: string): readonly T[] {
+    const path = join(this.artifactDir, "native", file);
+    if (!existsSync(path)) return [];
+    return parseNativeJsonl(readFileSync(path, "utf8")).rows as T[];
+  }
+
+  private ensureNativeModules(): readonly NativeModuleRow[] {
+    if (this.nativeModulesCache === undefined) this.nativeModulesCache = this.readNativeJsonl<NativeModuleRow>("react-modules.jsonl");
+    return this.nativeModulesCache;
+  }
+
+  private ensureNativeSeams(): readonly SeamRow[] {
+    if (this.nativeSeamsCache === undefined) this.nativeSeamsCache = this.readNativeJsonl<SeamRow>("seams.jsonl");
+    return this.nativeSeamsCache;
+  }
+
+  private ensureNativeResourceRows(): readonly NativeResourceRow[] {
+    if (this.nativeResourcesCache === undefined) this.nativeResourcesCache = this.readNativeJsonl<NativeResourceRow>("resources.jsonl");
+    return this.nativeResourcesCache;
+  }
+
+  /** `native/manifest.json` (the AXML-derived `NativeManifest`, spec 27
+   *  §L1) -- NOT this class's own artifact `manifest.json`. `null` when no
+   *  native side was ingested into this artifact. */
+  ensureNativeManifest(): NativeManifest | null {
+    if (this.nativeManifestCache === undefined) {
+      const path = join(this.artifactDir, "native", "manifest.json");
+      this.nativeManifestCache = existsSync(path) ? readJson<NativeManifest>(path) : null;
+    }
+    return this.nativeManifestCache;
+  }
+
+  /** `query native modules` -- every `native/react-modules.jsonl` row, spec
+   *  10 §3.2 shape (`Bounded<T>`, `CAPS.nativeModules` = 100 rows/call). */
+  nativeModules(opts: { readonly all?: boolean } = {}): Bounded<NativeModuleRow> {
+    const rows = [...this.ensureNativeModules()].sort((a, b) => a.key.localeCompare(b.key));
+    const cap = opts.all === true ? rows.length : CAPS.nativeModules;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  /** `query native module <X>` -- one module by its `jsName` (or its raw
+   *  `native:module:...` key when `jsName` is `unresolved`), plus every seam
+   *  row that names it -- one call, no N+1 follow-up (mirrors §14's xref
+   *  fix). `null` when no such module exists in this artifact. */
+  nativeModule(x: string): { readonly module: NativeModuleRow; readonly seams: readonly SeamRow[] } | null {
+    const mod = this.ensureNativeModules().find((m) => m.jsName === x || m.key === x);
+    if (mod === undefined) return null;
+    const seams = this.ensureNativeSeams().filter((s) => s.native?.module === mod.key);
+    return { module: mod, seams };
+  }
+
+  /** `query native seams [--status ...] [--first-party]` -- spec 27 §L5,
+   *  `Bounded<SeamRow>` (`CAPS.seams` = 100 rows/call). */
+  seams(filter: { readonly status?: SeamStatus; readonly firstParty?: boolean; readonly all?: boolean } = {}): Bounded<SeamRow> {
+    let rows = [...this.ensureNativeSeams()];
+    if (filter.status !== undefined) rows = rows.filter((r) => r.status === filter.status);
+    if (filter.firstParty !== undefined) rows = rows.filter((r) => r.firstParty === filter.firstParty);
+    rows.sort((a, b) => a.key.localeCompare(b.key));
+    const cap = filter.all === true ? rows.length : CAPS.seams;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  /** `query native manifest` -- the whole `NativeManifest`; small and
+   *  singular, so it is never bounded/paginated (same shape as `module()`
+   *  below). `null` when no native side was ingested. */
+  nativeManifest(): NativeManifest | null {
+    return this.ensureNativeManifest();
+  }
+
+  /** `query native resources --key <re>` -- `native/resources.jsonl` rows
+   *  whose `key` matches `pattern` (`CAPS.nativeResources` = 50 rows/call). */
+  nativeResources(pattern: string, opts: { readonly all?: boolean } = {}): Bounded<NativeResourceRow> {
+    const re = new RegExp(pattern);
+    const rows = this.ensureNativeResourceRows()
+      .filter((r) => re.test(r.key))
+      .sort((a, b) => a.key.localeCompare(b.key));
+    const cap = opts.all === true ? rows.length : CAPS.nativeResources;
+    return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  /** The one native-impl fact the UI Context pane needs for `fn:N` (spec 27
+   *  §L5): every seam whose JS evidence cites this function as a call site,
+   *  each paired with its native module row when `status:"linked"`. Empty
+   *  when this fn participates in no seam, or when no native side was
+   *  ingested -- both honest "nothing to show", never an error. */
+  nativeImplFor(fn: number): readonly { readonly seam: SeamRow; readonly module: NativeModuleRow | null }[] {
+    const modules = new Map(this.ensureNativeModules().map((m) => [m.key, m]));
+    const tag = `fn:${fn}`;
+    return this.ensureNativeSeams()
+      .filter((s) => s.jsEvidence?.callSites.includes(tag) === true)
+      .map((s) => ({ seam: s, module: s.native !== null ? (modules.get(s.native.module) ?? null) : null }));
   }
 
   /** True iff `fn` is a real function index in this artifact — the cheap,
