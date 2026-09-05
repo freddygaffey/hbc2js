@@ -8,7 +8,7 @@
 // Mock mode (`VITE_API_MOCK=1`, the default with no server) answers from a
 // tiny in-memory pool so the pane can be looked at without a backend; a WRITE
 // in mock mode refuses loudly, same rule `ui/src/actions/writes.ts` follows.
-import { API_BASE, USING_MOCK } from "../api.ts";
+import { API_BASE, USING_MOCK, authHeaders } from "../api.ts";
 
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
@@ -99,7 +99,7 @@ export class WorkersApiError extends Error {
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(new URL(`/api${path}`, API_BASE), {
     ...init,
-    headers: { accept: "application/json", ...(init?.body !== undefined ? { "content-type": "application/json" } : {}) },
+    headers: { accept: "application/json", ...authHeaders(), ...(init?.body !== undefined ? { "content-type": "application/json" } : {}) },
   });
   const text = await res.text();
   let parsed: unknown;

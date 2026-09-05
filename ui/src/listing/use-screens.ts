@@ -3,7 +3,7 @@
 // per SERVER process and is near-immutable for the life of the page, except
 // while the segregation it derives from is still computing.
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { API_BASE, USING_MOCK } from "../api.ts";
+import { API_BASE, USING_MOCK, authHeaders } from "../api.ts";
 import type { ScreensPage } from "./screens.ts";
 
 /** `GET /api/screens`. `null` (mock mode, 404, a server without the route)
@@ -13,7 +13,7 @@ import type { ScreensPage } from "./screens.ts";
  *  dependency at all. */
 export async function fetchScreens(): Promise<ScreensPage | null> {
   if (USING_MOCK) return null;
-  const res = await fetch(`${API_BASE}/api/screens`);
+  const res = await fetch(`${API_BASE}/api/screens`, { headers: { accept: "application/json", ...authHeaders() } });
   if (!res.ok) return null;
   return (await res.json()) as ScreensPage;
 }

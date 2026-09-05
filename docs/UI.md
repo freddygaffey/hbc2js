@@ -18,6 +18,26 @@ npm run dev        # http://127.0.0.1:5173
 Other scripts: `npm run typecheck` (tsc --noEmit), `npm run build` (to
 `ui/dist`, gitignored), `npm run preview`.
 
+**Auth (spec 26 L2).** `hbc2js ui-server <projectDir> --hbc <bundle> --port
+7331` mints a per-run bearer token and prints it in the launch URL:
+`hbc2js ui-server: listening on http://127.0.0.1:7331/?token=<hex> (...)`.
+Open THAT URL, not a bare `http://host:port/` — the SPA lifts `?token=` out
+of `location` into `sessionStorage` on first load (`ui/src/api.ts`'s
+`bootstrapToken()`) and sends it back as `Authorization: Bearer` on every
+`fetch` from then on (`EventSource`, which cannot set headers, sends it as
+`?token=` instead — `src/ui-server/server.ts`'s `isAuthorized` accepts
+either form on every `/api/*` route). A request with neither is a 401.
+`--no-auth` mints no token and serves every route unauthenticated — the mode
+`ui/e2e/playwright.config.ts`'s own rig runs in, since it is a throwaway
+project on loopback for the life of one test run. `--port` defaults to `0`
+(kernel-assigned) when omitted; pin it with `--port N` (the NSW rig's own
+`--port 7331` keeps working unchanged). `--origin <url>` narrows CORS to
+that one exact origin instead of the default loopback-any match — useful
+when the launcher and the separately-served SPA (`vite preview`/`vite dev`)
+are started by the same coordinating script and it knows the SPA's origin
+up front; omitted, CORS keeps accepting any `http(s)://(localhost|
+127.0.0.1)(:port)?` origin, same as before this landing.
+
 `ui/node_modules` and `ui/dist` are covered by the root `.gitignore`'s
 `node_modules/` and `dist/` patterns; `ui/package-lock.json` is committed and
 every dependency is pinned to an exact version (all MIT; TypeScript is

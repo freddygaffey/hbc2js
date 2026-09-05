@@ -47,7 +47,10 @@ export default defineConfig({
             // `--hbc` is needed for the live verbs (disasm, locals, and
             // spec 17 §14.1's who-calls-by-name) — without it those 400,
             // same as against a plain `--split` artifact with no bytecode.
-            command: `node ${join(repoRoot, "src/cli.ts")} ui-server ${PROJECT_DIR} --port ${API_PORT} --hbc ${BUNDLE}`,
+            // `--no-auth` (spec 26 L2): this rig is a throwaway project on
+            // loopback for the life of one Playwright run — no token
+            // ceremony needed, and the client build below never sets one.
+            command: `node ${join(repoRoot, "src/cli.ts")} ui-server ${PROJECT_DIR} --port ${API_PORT} --hbc ${BUNDLE} --no-auth`,
             url: `http://127.0.0.1:${API_PORT}/api/segregation`,
             reuseExistingServer: false,
             timeout: 30_000,

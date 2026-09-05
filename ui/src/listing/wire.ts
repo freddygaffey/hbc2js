@@ -5,7 +5,7 @@
 // these mirror `ModuleListResult` / `FunctionListPage` in
 // src/ui-server/list.ts (and `ModuleEntry` in src/artifact/schema.ts).
 // Structural copies, never imports: ui/ is a separate package.
-import { API_BASE, USING_MOCK } from "../api.ts";
+import { API_BASE, USING_MOCK, authHeaders } from "../api.ts";
 
 /** `ModuleEntry` — src/artifact/schema.ts. */
 export interface ModuleEntry {
@@ -88,7 +88,7 @@ export interface SegregationPage {
 export async function fetchSegregation(): Promise<SegregationPage | null> {
   if (USING_MOCK) return null;
   try {
-    const res = await fetch(new URL("/api/segregation", API_BASE), { headers: { accept: "application/json" } });
+    const res = await fetch(new URL("/api/segregation", API_BASE), { headers: { accept: "application/json", ...authHeaders() } });
     if (!res.ok) return null;
     return (await res.json()) as SegregationPage;
   } catch {
