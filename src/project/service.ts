@@ -598,7 +598,14 @@ export class ProjectService {
    *  finding's original evidence — so the finding's original claim
    *  evidence stays live-resolvable on every later read, exactly as the
    *  JSONL `finding`/`status` split keeps them independently. Still exactly
-   *  one `revisions` row + one `log` row per call (`DbRevisionStore.set`). */
+   *  one `revisions` row + one `log` row per call (`DbRevisionStore.set`).
+   *  The READ half undoes this folding: `src/projdb/project-read.ts`'s
+   *  `splitFindingRevisions` reclassifies the revision this call writes into
+   *  a synthetic `StatusRecord` (its `finding` being the claim revision it
+   *  supersedes, which stays the live `active` `FindingRecord`), so
+   *  `FindingStore.statusOf` sees a real transition chain and both backends
+   *  answer identically -- without it the new status persisted but was
+   *  invisible on every later read (docs/BUGS.md 2026-09-05, fixed). */
   setFindingStatus(findingRid: string, to: FindingStatus, evidence: readonly EvidenceRef[], prov: Provenance): SetResult {
     if (this.db !== null) {
       const ridNum = Number(findingRid);
