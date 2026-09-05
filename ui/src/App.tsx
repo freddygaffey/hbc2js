@@ -14,6 +14,7 @@ import { CommandPalette } from "./components/CommandPalette.tsx";
 import { usePxMinSize } from "./usePxMinSize.ts";
 import { useSelection } from "./state/selection.ts";
 import { initUrlSync } from "./state/url.ts";
+import { initUiSession } from "./workers/wire.ts";
 import { ActionsProvider } from "./actions/ActionsProvider.tsx";
 
 /** Hard minimums, in CSS pixels (see usePxMinSize). */
@@ -40,6 +41,12 @@ export function App(): ReactNode {
   // wiring for the life of the shell (the app never unmounts `App`, but the
   // cleanup exists for tests that do).
   useEffect(() => initUrlSync(), []);
+
+  // spec 23 §3 Presence / docs/BUGS.md "UI enqueues jobs without a session
+  // id": register this tab as a `kind: "human"` session once and heartbeat
+  // it for the life of the shell, so every AI job it queues carries a real
+  // `createdBy` (ui/src/workers/wire.ts's `initUiSession`).
+  useEffect(() => initUiSession(), []);
 
   return (
     <Tooltip.Provider delayDuration={400}>

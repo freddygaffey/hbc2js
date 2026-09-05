@@ -38,3 +38,28 @@ test("no source file under ui/src ever sends a literal createdBy: \"ui\" style i
     "no literal, non-session createdBy string may reach POST /api/jobs",
   );
 });
+
+// -- follow-up: the UI now registers its own session (docs/BUGS.md "UI
+// enqueues jobs without a session id") -------------------------------------
+//
+// The two tests above still pass unmodified: `enqueue()`'s body is built by
+// spreading a helper (`createdByField()`), so the literal text "createdBy:"
+// never appears on the `call("/jobs", …)` line, and nothing sends a
+// hardcoded "ui" id. These tests pin the NEW half of the invariant: a real
+// session id is what reaches the wire, sourced from a registration function,
+// never a literal.
+const appSrc = readFileSync(join(repoRoot(), "ui", "src", "App.tsx"), "utf8");
+
+test("wire.ts exposes a session-registration function whose id feeds enqueue()", () => {
+  assert.match(wireSrc, /export function initUiSession\(\)/, "expected an exported initUiSession() to register this tab's session");
+  assert.match(wireSrc, /kind:\s*"human"/, "the UI registers itself as a kind: \"human\" session (spec 23 §3)");
+  assert.match(
+    wireSrc,
+    /\.\.\.createdByField\(\)/,
+    "enqueue() must spread the registered session id in, not inline a literal createdBy key",
+  );
+});
+
+test("App mounts the session registration once, alongside the other one-time effects", () => {
+  assert.match(appSrc, /initUiSession/, "App.tsx must call initUiSession() so a session actually gets registered");
+});

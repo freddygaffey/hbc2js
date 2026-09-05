@@ -138,6 +138,69 @@ function mockWrite(): never {
   throw new WorkersApiError(0, "the shell is in mock mode — start src/ui-server and run the dev server with VITE_API_MOCK=0 to queue work");
 }
 
+// -- this tab's own session (spec 23 §3 Presence) ---------------------------
+//
+// docs/BUGS.md "UI enqueues jobs without a session id": the UI polled
+// GET /api/sessions for presence chips but never opened one of its own, so
+// every job it queued had no `createdBy` and the jobs rail could not show
+// who queued it. `initUiSession()` registers ONE `kind: "human"` session on
+// load and heartbeats it for as long as the tab is open (spec: TTL 30 s,
+// "the UI beats every 10 s"); `enqueue()` below reads the id back through
+// `uiSessionId()` and sends it as `createdBy`, or omits the field entirely
+// before the session opens (still a real, supported shape server-side).
+//
+// Module-level singleton state, like ui/src/state/url.ts's `initUrlSync`:
+// `App` never unmounts in production, but a test harness does, so the
+// returned cleanup stops the heartbeat and forgets the id rather than
+// leaving a timer running (or a later test heartbeating a session THIS
+// process's teardown closed).
+const UI_HEARTBEAT_MS = 10_000;
+
+let uiSessionIdValue: string | null = null;
+let uiSessionOpening: Promise<void> | null = null;
+let uiHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+export function uiSessionId(): string | null {
+  return uiSessionIdValue;
+}
+
+/** `{ createdBy: id }` once the session is open, `{}` before it is (or in
+ *  mock mode, which never opens one) — never a hardcoded session-id literal
+ *  (the previous shortcut, a bare "ui" string no session owned, 500ed every
+ *  enqueue with a foreign-key failure). */
+function createdByField(): { readonly createdBy: string } | Record<string, never> {
+  return uiSessionIdValue !== null ? { createdBy: uiSessionIdValue } : {};
+}
+
+export function initUiSession(): () => void {
+  if (!USING_MOCK && uiSessionIdValue === null && uiSessionOpening === null) {
+    uiSessionOpening = call<SessionRow>("/sessions", { method: "POST", body: JSON.stringify({ kind: "human", who: "ui" }) })
+      .then((row) => {
+        uiSessionIdValue = row.id;
+        if (uiHeartbeatTimer === null) {
+          uiHeartbeatTimer = setInterval(() => {
+            const id = uiSessionIdValue;
+            if (id !== null) void call(`/sessions/${encodeURIComponent(id)}/heartbeat`, { method: "POST", body: "{}" }).catch(() => {});
+          }, UI_HEARTBEAT_MS);
+        }
+      })
+      .catch(() => {
+        // Presence is best-effort: a failed registration just means jobs
+        // keep enqueuing with no createdBy, same as before this landed.
+      })
+      .finally(() => {
+        uiSessionOpening = null;
+      });
+  }
+  return () => {
+    if (uiHeartbeatTimer !== null) {
+      clearInterval(uiHeartbeatTimer);
+      uiHeartbeatTimer = null;
+    }
+    uiSessionIdValue = null;
+  };
+}
+
 export const workersApi = {
   jobs: (status?: JobStatus): Promise<JobsResult> =>
     USING_MOCK ? Promise.resolve(MOCK_JOBS) : call(`/jobs${status !== undefined ? `?status=${status}` : ""}`),
@@ -146,13 +209,14 @@ export const workersApi = {
     USING_MOCK ? Promise.resolve({ rows: [], total: 0 }) : call(`/suggestions${fn !== undefined ? `?fn=${fn}` : ""}`),
   workerEvents: (since: number): Promise<WorkerEventsTail> =>
     USING_MOCK ? Promise.resolve({ rows: [], cursor: since }) : call(`/worker-events?since=${since}`),
-  // `createdBy` is a `jobs.created_by TEXT REFERENCES sessions(id)` FK — the
-  // UI does not register a session for itself yet (docs/BUGS.md), so it must
-  // omit the field rather than send a literal like `"ui"` that no session
-  // owns (that 500ed every enqueue: FOREIGN KEY constraint failed). Omitting
-  // it is a real, supported shape server-side (`created_by` is nullable).
+  // `createdBy` is a `jobs.created_by TEXT REFERENCES sessions(id)` FK.
+  // `createdByField()` (above) sends the id THIS tab registered via
+  // `initUiSession()`, or omits the field before that registration settles
+  // — never a literal like `"ui"` that no session owns (that 500ed every
+  // enqueue: FOREIGN KEY constraint failed). Omitting it is a real,
+  // supported shape server-side (`created_by` is nullable).
   enqueue: (kind: string, input: Record<string, unknown>): Promise<{ readonly job: JobRow; readonly deduped: boolean }> =>
-    USING_MOCK ? mockWrite() : call("/jobs", { method: "POST", body: JSON.stringify({ kind, input }) }),
+    USING_MOCK ? mockWrite() : call("/jobs", { method: "POST", body: JSON.stringify({ kind, input, ...createdByField() }) }),
   cancel: (id: string): Promise<{ readonly cancelled: boolean; readonly job: JobRow }> =>
     USING_MOCK ? mockWrite() : call(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" }),
   promote: (target: string, rid: string): Promise<{ readonly rid: string; readonly line: string }> =>
