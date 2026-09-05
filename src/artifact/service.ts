@@ -52,6 +52,7 @@ import type {
 } from "./schema.ts";
 import { exportedNamesOf } from "./exported-names.ts";
 import { scanObjectTables, type ObjectTableRow, type ObjectTableScan } from "./object-tables.ts";
+import { walkFunction, type StringUseSite as WalkStringUseSite } from "./semantic-walk.ts";
 import { compareTemplateInjections, scanTemplateInjections, type TemplateInjectionRow, type TemplateInjectionScan } from "./template-injections.ts";
 import { parseNativeJsonl, type NativeManifest, type NativeModuleRow, type NativeResourceRow, type SeamRow, type SeamStatus } from "../native/schema.ts";
 
@@ -133,6 +134,18 @@ export interface ByNameEntry {
   readonly sid: number | null;
   readonly ambiguous: boolean;
   readonly why?: string;
+}
+
+/** §3.1 `query string-uses <sid>` row (hunt-tooling-backlog gap #2): one
+ *  instruction-level use site, sorted `(fn, pc)`. `moduleId` is `null` when
+ *  `fnOwnership`/`FunctionRow.module` records none for `fn` (`moduleOfFn`). */
+export interface StringUseSite {
+  readonly fn: number;
+  readonly fnName: string | null;
+  readonly pc: number;
+  readonly opcode: string;
+  readonly role: StringUseRole;
+  readonly moduleId: number | null;
 }
 
 export interface WhoCallsByNameResult extends Bounded<ByNameCaller> {
@@ -237,6 +250,7 @@ export const CAPS = {
   whoCallsByName: 50,
   callsFrom: 50,
   string: 30,
+  stringUses: 50,
   stringGrep: 50,
   globalUses: 50,
   native: 50,
@@ -541,6 +555,42 @@ export class ArtifactService {
       });
     const cap = opts.all === true ? rows.length : CAPS.string;
     return { rows: rows.slice(0, cap), total: rows.length, truncated: rows.length > cap };
+  }
+
+  /** §3.1 `query string-uses <sid>` (hunt-tooling-backlog gap #2): the use
+   *  SITES, not just the `(fn, role) -> n` counts `string(sid).uses`
+   *  already gives. The artifact format is unchanged (spec 10 §2.3b keeps
+   *  site detail off disk on purpose) — this computes sites ON DEMAND by
+   *  re-walking each candidate function's bytecode with the SAME classifier
+   *  that produced `string-uses.jsonl` (`walkFunction`'s `bumpString`
+   *  call sites, via its `onSite` hook), so it can never disagree with the
+   *  counts. Live verb: needs `--hbc` (`ensureModule`/`ensureAnalysis`
+   *  throw the usual `E_USAGE` otherwise). `opts.fn` narrows to one
+   *  function (scanned even if `string-uses.jsonl` has no row for it —
+   *  an explicit `--fn` is the caller vouching for the candidate); default
+   *  scans every fn `string-uses.jsonl` lists for this `sid`. */
+  stringUseSites(sid: number, opts: { readonly fn?: number; readonly all?: boolean } = {}): Bounded<StringUseSite> {
+    const module = this.ensureModule("string-uses");
+    const analysis = this.ensureAnalysis("string-uses");
+    const fnsToScan =
+      opts.fn !== undefined ? [opts.fn] : [...new Set(this.stringUses.filter((r) => r.sid === sid).map((r) => r.fn))].sort((a, b) => a - b);
+    const sites: StringUseSite[] = [];
+    for (const fnIndex of fnsToScan) {
+      walkFunction(module, analysis, fnIndex, undefined, (u: WalkStringUseSite) => {
+        if (u.sid !== sid) return;
+        sites.push({
+          fn: fnIndex,
+          fnName: this.functionsByFn.get(fnIndex)?.name ?? null,
+          pc: u.pc,
+          opcode: u.opcode,
+          role: u.role,
+          moduleId: this.moduleOfFn(fnIndex),
+        });
+      });
+    }
+    sites.sort((a, b) => a.fn - b.fn || a.pc - b.pc);
+    const cap = opts.all === true ? sites.length : CAPS.stringUses;
+    return { rows: sites.slice(0, cap), total: sites.length, truncated: sites.length > cap };
   }
 
   /** §3.1 `query string-grep <regex>`. */

@@ -82,6 +82,7 @@ resource key survives every rename and re-render (spec 10 §0).
 | `xref/who-calls-by-name?fn=N\|name=X` | `fnIndex` OR export name | `query who-calls-by-name` (spec 10 §3.1; §14.1 below) | ≤ 50 candidate rows + total; `names[]` + `ambiguous` |
 | `object-tables?minProps&stringRatio&key&value&minMatched&module&limit` | filter opts | `query object-tables` (spec 10 §3.1; §14.2 below) | ≤ 100 tables + total; rows inlined with `fnName`/`size` |
 | `template-injections?module&limit` | filter opts | `query template-injections` (spec 10 §3.1; §14.3 below) | ≤ 100 rows + total; rows inlined with `fnName`/`size` |
+| `string-uses?sid=N&fn=N&all` | `sid`, optional `fn` | `query string-uses` (spec 10 §3.1; §14.5 below) | ≤ 50 sites (`CAPS.stringUses`) + total; rows inlined with `size` (`fnName` already on the row) |
 | `native[/{fn}]` — native surface | optional `fnIndex` | `query native` (spec 10 §3.1) | that verb's ≤ 50 + total |
 | `native/modules` + `native/module/{x}` + `native/seams[?status&firstParty]` + `native/manifest` — the APK-ingested tables (spec 27 §L1-L4) | `jsName`/module key, or filter opts | `query native modules\|module\|seams\|manifest` (spec 10 §3.1, spec 27 §L5) | those verbs' caps (modules/seams ≤ 100 + total; module/manifest one block); a seam is a first-class read object citing both a JS call site and a native module/method |
 
@@ -630,6 +631,33 @@ in total — the class is structurally invisible to a by-name scan, because a
 **Service NSW** (counts only): 4,510 modules / 43,384 functions → 6,789
 resolved edges, 2,164 proven environment slots, 2,629 distinct callers, 86
 functions lifted out of `who-calls total:0`.
+
+### 14.5 `string-uses` — instruction-level use sites for a sid (2026-09-05, landed)
+
+Hunt-tooling-backlog gap #2 ("easy, high-value"): `query string`/`xref/string`
+gave `fn role n` counts, never the sites themselves, forcing a whole-function
+render just to find where a hit string is actually used. The artifact format
+is unchanged (spec 10 §2.3b's `string-uses.jsonl` stays a count, on purpose —
+materialising every site on disk was rejected there for size). `stringUseSites`
+(`ArtifactService`) computes sites ON DEMAND: `walkFunction`
+(`src/artifact/semantic-walk.ts`) already classifies every string-table
+operand into a role as it builds `string-uses.jsonl`; an optional `onSite`
+callback lets a caller observe each classified use at its own `pc`/`opcode`
+without a second opcode->role table. Default scans every fn
+`string-uses.jsonl` lists for the sid; `--fn` narrows to (or forces) one.
+Live verb — needs `--hbc`, same `E_USAGE` shape as `object-tables`/`disasm`.
+
+**Shape.** `hbc2js query string-uses <sid> [--fn N] [--all] --artifact <dir>
+--hbc <in.hbc>`; rows `fn:N fnName pc:P opcode role module:M`, sorted
+`(fn, pc)`, capped at `CAPS.stringUses` (50) like the other xref verbs.
+`McpResources.stringUseSites` / `GET /api/string-uses?sid=&fn=&all=`, rows
+inlined with the containing function's `size` (`fnName` is already on the
+row from the service).
+
+**Cross-check.** For any `(sid, fn, role)`, the number of sites this verb
+returns for that function and role equals `string-uses.jsonl`'s own `n` —
+enforced by `tests/gate/artifact/string-uses.test.ts`, since both come from
+the exact same `bumpString` call sites.
 
 ## 15. Provenance tier + shared service context (2026-09-04) — landed
 

@@ -349,6 +349,20 @@ export class McpResources {
     };
   }
 
+  /** `string-uses` (spec 17 mirror of spec 10 §3.1 `query string-uses`,
+   *  hunt-tooling-backlog gap #2) — instruction-level use SITES for a sid,
+   *  computed on demand (never stored on disk — spec 10 §2.3b keeps
+   *  `string-uses.jsonl` at `(sid, fn, role) -> n`). Rows already carry
+   *  `fnName` from the service; inlined with the containing function's
+   *  `size` too, same convention as `objectTables`/`templateInjections`. */
+  stringUseSites(sid: number, opts: { readonly fn?: number; readonly all?: boolean } = {}) {
+    const r = this.artifact.stringUseSites(sid, opts);
+    return {
+      ...r,
+      rows: r.rows.map((row) => ({ ...row, size: this.neighbor(row.fn).size })),
+    };
+  }
+
   /** `xref/string` — merges the two pre-§14 string endpoints (spec 10
    *  `query string`/`query string-grep`) behind one `mode`: `exact` reads a
    *  single sid (`key` must be a number); `substring`/`regex` grep every

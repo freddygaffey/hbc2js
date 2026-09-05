@@ -289,6 +289,20 @@ const BASE_ROUTES: readonly Route[] = [
     },
   },
   {
+    // hunt-tooling-backlog gap #2 / spec 10 §3.1 `query string-uses <sid>`:
+    // instruction-level use SITES for a sid (never `string`'s counts-only
+    // rows). Live verb — needs the server's artifact opened with `--hbc`.
+    method: "GET",
+    re: /^\/api\/string-uses$/,
+    handler: (_p, req, ctx) => {
+      const sid = qNum(req.query.sid);
+      if (sid === undefined) return badRequest("string-uses: ?sid=N is required");
+      const fn = qNum(req.query.fn);
+      const all = qBool(req.query.all);
+      return ok(ctx.resources.stringUseSites(sid, { ...(fn !== undefined ? { fn } : {}), ...(all !== undefined ? { all } : {}) }));
+    },
+  },
+  {
     method: "GET",
     re: /^\/api\/xref\/global$/,
     handler: (_p, req, ctx) => {
