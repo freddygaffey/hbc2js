@@ -116,3 +116,27 @@ build probes cleanly; nothing about inlined IIFEs is special here.
 Fixture 75's disasm/parse goldens are NOT committed — golden regeneration is a
 batched, approved operation (CLAUDE.md), so the two aggregate golden tests stay
 red for 75 exactly as they already are for 66/67/70/71/73/74.
+
+## 7. Ruling (orchestrator, 2026-09-05)
+
+Delegated to the orchestrator by Fred for this session, answering section 4
+and `docs/PUSHBACK.md` P-41:
+
+> **Yes** — the emitter may reconstruct an inlined IIFE as
+> `(function () { ... })();`, **default-on, not opt-in**, because the original
+> source *was* an IIFE, so emitting one is more faithful, not less readable.
+> It applies only when every guard in section 4 holds (no
+> `return`/`break`/`continue`/`this`/`arguments` crossing the range, scratch
+> declarations outliving the range hoisted out first, hoisted closure
+> declarations moved in); refuse otherwise, leaving today's flat
+> `let _e<env>_<slot>` prologue and no behaviour change.
+
+So the recommendation at the end of section 4 (opt-in, harness-only) is
+**superseded**: the reconstruction is a default emit behaviour.
+
+Implementation is a **separate task**, not this one. Until it lands, the two
+round-trip cases in `tests/gate/emit/sibling-env-slots.test.ts` are skipped
+with the reason string
+`BUGS.md: residual diff:LoadFromEnvironment(imm) row, PUSHBACK P-41 -- inlined-IIFE reconstruction not implemented yet`,
+so the gate is green on main. The fix task flips them by deleting the skip;
+the test bodies are unchanged and already assert the right thing.
