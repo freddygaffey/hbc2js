@@ -659,3 +659,84 @@ no `_e<env>_<slot>`).
    whole-emitter change and needs its own spec. The guarded rule that did land
    is live for the case it is sound for (a child that names only environments
    every site shares) and is covered synthetically.
+
+## 6. The join's subtree is creation-based (2026-09-05, later still)
+
+Leftover 7, closed — but not where leftover 7 said to look. The three children
+that stay behind (`_fn14790` in fn#13056, `_fn15473` in fn#15251, `_fn15478` in
+fn#15275) are not a placement problem at all: their creators should never have
+been **joined**.
+
+`namesAgreeAcrossSites` (`src/cfg/env-graph.ts`) joins a conflicted function `f`
+when nothing in `f`'s lexical subtree names an environment `f`'s creation sites
+disagree about. It built that subtree from `childrenOf`, i.e. the `closureEnvOf`
+relation — and that is precisely the relation that puts a child created *inside*
+`f` over an environment `f` merely **captured** beside `f` rather than under it.
+So the reads of exactly the children that matter were never counted, the join
+fired, one body was emitted, item 4 moved it to the LCA of its sites, and item 5
+measured that the child cannot follow (moving all three traded 3 unbound
+`_fn<n>` for 4 unbound `_e<env>_<slot>`, 22 -> 23). Item 5 already named the
+alternative: "a creation-based `lexicalSubtree` in `namesAgreeAcrossSites` so
+the join never fires for them and they are duplicated instead". That is what
+landed.
+
+**The rule.** `lexicalSubtree(root)` is now the `closureEnvOf` descendants of
+`root` **plus**, to a fixed point, every function whose `Create*Closure` sites
+(from `closureCreationSites`' `siteKey(creator, offset)` keys) all lie inside
+the set already — with their own `closureEnvOf` descendants. A child created
+both inside and outside the subtree is *not* pulled in: it is shared, it stays
+where it is, and its reads are not `f`'s to answer for. The fixed point is what
+reaches a grandchild: fn#4 joins because its only creator is fn#3, and only then
+does fn#5, whose only creator is fn#4.
+
+Nothing else changes. The subtree is read **only** by the join test, so a larger
+subtree can only make *fewer* functions join — never more, and never a different
+copy set for a function that was already duplicated. Everything downstream (the
+positional remap, per-copy travel, recursion groups, loop-local inlining) is
+untouched and does the rest: each of the three children is created only inside
+its creator, so item 1's per-copy travel gives it one instance per copy under
+that copy's remap.
+
+Measured on react-navigation-example-0.85.3 (`strictEnv: false`), macOS /
+node 25, same tree, only `src/cfg/env-graph.ts` differing:
+
+| | ambiguous | duplicated fns | extra bodies | isolated | unbound names | orphans hosted | `_fn<n>` | `_e<env>_<slot>` | joined re-hosted | bytes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| item 5 (before) | 18 | 156 | 335 | 10 | 22 | 13 | 16 | 6 | 3 | 19,993,556 |
+| creation-based subtree | 18 | **160** | 343 | **7** | **19** | 13 | **13** | 6 | **0** | 20,021,403 |
+
+`--passes=none` gives the same 7 / 19 (28,275,646 bytes). `MAX_STILL_AMBIGUOUS`
+is untouched at 18: the four functions that stop joining all have aligned
+chains, so they become copies, not orphans. Round-trip equivalence improves:
+`tools/e2e/roundtrip-corpus.ts --only react-navigation-example-0.85.3
+--passes on` reports 43.10 percent IDENTICAL (6,222 of 14,437 functions), up
+from the 43.05 percent / 6,215 baseline, with 0 DECOMPILE-STUB and 0
+RECOMPILE-ERROR.
+
+Control: `rn-template-0.72/index.android.hbc` (4,199 functions, 0 ambiguous, no
+joined function) is **`cmp`-identical** before and after — 4,714,749 bytes,
+measured in this worktree with only `src/cfg/env-graph.ts` swapped between the
+two runs. It cannot be otherwise: with `closureEnvConflict` empty the copy
+builder never runs, so `lexicalSubtree` is never called.
+
+**What is left: 19 names in one bucket.** Every remaining unbound name is
+Fred's item — the 18 unaligned chains (leftover 4). 13 are `_fn13838`…`_fn13844`,
+`_fn13914`…`_fn13917`, `_fn14001`/`_fn14002` referenced from a creation site the
+cost rule did not host them at; 6 are `_e4551_0` x3, `_e4551_1` x2, `_e4551_2`
+x1, i.e. fn#14984/14985/14986 reading slots of the very environment their four
+creation sites disagree about. Both need a remap that tolerates chains of
+different depth (alignment by owner function rather than by position), or an
+explicit decision to leave them `W_AMBIGUOUS_CLOSURE_ENV` forever. Leftover 6
+(`closureNameAt` instance keying) remains unobservable.
+
+**One existing assertion changed** — `tests/gate/emit/closure-copies.test.ts`'s
+"a child that reads the environment its creator's sites disagree about stays
+where it is" pinned item 5's visibility guard on `joinedChildFunctions("pinned")`,
+a fixture that under the corrected join is not a joined function at all. Its
+`W_JOINED_REHOSTED === 1` and "residue is exactly one unbound `_fn4`" assertions
+are strictly weaker than what now holds (0 re-hosted, 0 unbound, 0 stubs), so the
+test asserts the stronger property under a name that says so. Recorded as
+PUSHBACK P-46. The guard itself (`W_JOINED_CHILD_MOVED` only where the child's
+own reads stay visible) is unchanged and still covered by
+`joinedChildFunctions("movable")`; its *negative* case now has no fixture,
+because the shape that produced one is duplicated instead of joined.

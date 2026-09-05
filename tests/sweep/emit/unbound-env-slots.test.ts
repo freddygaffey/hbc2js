@@ -43,9 +43,12 @@ const HBC = join(repoRoot(), "tests", "fixtures", "bundles", "react-navigation-e
  *  loop-local environment was emitted at its creation site, and **10** once a
  *  JOINED function (several aligned creation sites its body cannot tell apart,
  *  so one body) was hosted at the lowest common ancestor of those sites instead
- *  of beside the first one (report §5 "Landing item 4"). Ratchet: lower is fine, a rise is a
+ *  of beside the first one (report §5 "Landing item 4"), and **7** once the
+ *  join's subtree became creation-based, so a function whose creation-only
+ *  child names an environment its sites disagree about is duplicated rather
+ *  than joined (report §6). Ratchet: lower is fine, a rise is a
  *  regression. */
-const MAX_ISOLATED = 10;
+const MAX_ISOLATED = 7;
 /** Individual unbound *names* behind those isolated functions (one isolated
  *  function can carry several). 158 before per-creation-context bodies, 155
  *  after, **63** once placement became a property of the emitted *instance*
@@ -67,10 +70,14 @@ const MAX_ISOLATED = 10;
  *  environment their creator's sites disagree about, so moving them with their
  *  creator only trades the 3 `_fn<n>` for 4 `_e<env>_<slot>` (measured 23).
  *  The rule that landed moves a child only where its own reads stay visible,
- *  which is none of these three on this bundle — they need per-instance
- *  `parentOf` (leftover 7). Same ratchet rule as above: it may go down,
+ *  which is none of these three on this bundle. **19** once report §6 made the
+ *  join's lexical subtree creation-based: fn#13056, fn#15251 and fn#15275 name
+ *  (through those very children) an environment their sites disagree about, so
+ *  they are no longer joined at all — they get one body per creation context
+ *  and each child travels into its copy, taking `_fn14790`, `_fn15473` and
+ *  `_fn15478` to 0. Same ratchet rule as above: it may go down,
  *  never up. */
-const MAX_UNBOUND_NAMES = 22;
+const MAX_UNBOUND_NAMES = 19;
 /** Orphans `resolveOrphanHosts` moves off module level on this fixture: 111 when
  *  every `W_AMBIGUOUS_CLOSURE_ENV` function was an orphan, **13** now that they
  *  are not. That drop is the point of per-creation-context bodies
@@ -133,9 +140,12 @@ const MIN_KNOWN_EMPTY_ENV = 4000;
  *  Measured: 178 ambiguous -> 156 duplicated (335 extra bodies) + 4 joined by
  *  report §3 + **18** left ambiguous, which are exactly the ones whose creation
  *  sites have environment chains of *different length*, where no positional
- *  remap is defined. Ratchets in both directions: duplication must not silently
- *  stop happening, and the unaligned residual must not grow. */
-const MIN_DUPLICATED = 150;
+ *  remap is defined. Report §6 took the join's subtree creation-based, which
+ *  moves 4 of those 4 joined functions into duplication: **160** duplicated,
+ *  343 extra bodies, 0 joined, the same 18 ambiguous. Ratchets in both
+ *  directions: duplication must not silently stop happening, and the unaligned
+ *  residual must not grow. */
+const MIN_DUPLICATED = 158;
 const MAX_STILL_AMBIGUOUS = 18;
 
 test("react-navigation-example-0.85.3: a closure created with an undefined environment operand is not an orphan", (t) => {
@@ -177,7 +187,8 @@ test("react-navigation-example-0.85.3: a closure created with an undefined envir
 
 // docs/BUGS.md 2026-09-04 (E_UNBOUND_IDENT hunt), re-measured 2026-09-05 after
 // F24-5 (`W_NO_CAPTURE_HOSTED`) and per-creation-context closure copies: the
-// residual on this bundle is UNCHANGED at 10 isolated / 22 unbound names
+// residual on this bundle is UNCHANGED at 10 isolated / 22 unbound names, and
+// 7 isolated / 19 unbound after report §6 (bucket 2 below is closed)
 // (F24-5 hosts exactly 1 function on this bundle, `W_NO_CAPTURE_HOSTED`, and
 // it was never part of the isolated residual). Bucketing the 10 by root cause
 // (`src/cfg/env-graph.ts closureEnvOf`/`closureCreationSites`, cross-referenced
@@ -196,20 +207,22 @@ test("react-navigation-example-0.85.3: a closure created with an undefined envir
 //    docs/reports/2026-09-05-ambiguous-closure-env.md §4 test plan already
 //    flags this as the unaligned residual, and no small `source.js` reproduces
 //    it, so it is not a "<100 line" fix.
-//  - BUCKET 2 (3 of 10 — `_fn15251`,`_fn15275`,`queryFn` i.e. `_fn13056`,
-//    referencing `_fn15473`/`_fn15478`/`_fn14790`): report §5 "leftover 7" —
-//    a JOINED function (`W_JOINED_REHOSTED`) moved to the lowest common
-//    ancestor of its creation sites, but one child it creates over an
-//    environment it merely CAPTURED (not created) stayed behind at the OLD
-//    home, because that child's own reads are not visible from the new host
-//    either. The report's own conclusion stands: this needs per-instance
-//    `parentOf` (placement keyed by emitted copy, not by function index),
-//    which is a design change, not a safe small patch.
+//  - BUCKET 2 (was 3 of 10 — `_fn15251`,`_fn15275`,`queryFn` i.e. `_fn13056`,
+//    referencing `_fn15473`/`_fn15478`/`_fn14790`): **closed by report §6.**
+//    Those three were JOINED functions (`W_JOINED_REHOSTED`) moved to the
+//    lowest common ancestor of their creation sites, each leaving behind one
+//    child created over an environment the creator merely CAPTURED. The join
+//    should never have fired: `namesAgreeAcrossSites` walked the
+//    `closureEnvOf` subtree, which is exactly the relation that leaves such a
+//    child outside, so the child's read of the disagreed-about environment was
+//    not counted. With the subtree creation-based (to a fixed point) the three
+//    are duplicated instead, each child travels into its copy under that
+//    copy's remap, and `W_JOINED_REHOSTED` is 0 on this bundle.
 //
-// Neither bucket has a safe fix under ~100 lines, so nothing was landed for
-// them this pass; this test pins the measured buckets as a ceiling, split by
-// referenced-name kind, so a regression is caught even if the isolated/unbound
-// TOTALS above happen to stay flat while the mix shifts.
+// Bucket 1 has no safe fix under ~100 lines (it is Fred's unaligned-chains
+// item); this test pins the measured buckets as a ceiling, split by referenced-
+// name kind, so a regression is caught even if the isolated/unbound TOTALS
+// above happen to stay flat while the mix shifts.
 //
 // This also regression-tests `src/decompile.ts`: `analysis.envGraph` is a
 // lazy getter whose OWN diagnostics (`W_AMBIGUOUS_CLOSURE_ENV`, among others)
@@ -238,7 +251,7 @@ test("react-navigation-example-0.85.3: the residual E_UNBOUND_IDENT isolations b
   assert.equal(isolated.length, names.length === 0 ? 0 : isolated.length, "sanity: isolated diagnostics parsed");
   assert.ok(isolated.length <= MAX_ISOLATED, `${isolated.length} isolated functions, ceiling is ${MAX_ISOLATED} (this test's own bucket table)`);
   assert.ok(eSlotNames.length <= 6, `${eSlotNames.length} _e<env>_<slot> references unbound, was 6 (bucket 1's 3 self-reading ambiguous functions) — must only go down`);
-  assert.ok(fnRefNames.length <= 16, `${fnRefNames.length} _fn<n> references unbound, was 16 (13 bucket 1 + 3 bucket 2) — must only go down`);
+  assert.ok(fnRefNames.length <= 13, `${fnRefNames.length} _fn<n> references unbound, was 13 (bucket 1 only; bucket 2's 3 were closed by report §6) — must only go down`);
 
   // Regression for src/decompile.ts's diagnostic-assembly ordering: envGraph's
   // lazy diagnostics must survive into decompile()'s own result.

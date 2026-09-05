@@ -504,15 +504,56 @@ export function buildEnvGraph(input: EnvGraphInput): EnvGraph {
       if (list === undefined) childrenOf.set(owner, [g]);
       else list.push(g);
     }
-    /** `f` and every function nested inside it: a copy takes all of them. */
+    /** The functions whose bodies hold a `Create*Closure` for a given function,
+     *  from `closureCreationSites`' `siteKey(creator, offset)` keys. */
+    const creatorsOf = new Map<number, number[]>();
+    for (const [g, sites] of closureCreationSites) {
+      const cs = new Set<number>();
+      for (const key of sites.keys()) {
+        const c = Number(key.slice(0, key.indexOf(":")));
+        if (Number.isInteger(c)) cs.add(c);
+      }
+      if (cs.size > 0) creatorsOf.set(g, [...cs]);
+    }
+
+    /** `f` and every function nested inside it: a copy takes all of them.
+     *
+     *  "Nested inside" is the `closureEnvOf` relation (the owner of the
+     *  environment the child captured) PLUS creation: a function every one of
+     *  whose `Create*Closure` sites is already inside the set was written
+     *  inside `f`'s text even when the environment it captured belongs to an
+     *  ancestor, so `closureEnvOf` puts it beside `f` rather than under it.
+     *  Leaving those out undercounts what the subtree names — report
+     *  2026-09-05 §5 "Landing item 5": the three children that stayed behind
+     *  (`_fn14790`, `_fn15473`, `_fn15478`) each read a slot of the very
+     *  environment their creator's sites disagree about, and the join fired
+     *  regardless because their reads were never counted. The creation half is
+     *  a fixed point: whether a child qualifies depends on where its *other*
+     *  creation sites landed. */
     const lexicalSubtree = (root: number): Set<number> => {
       const out = new Set<number>();
-      const stack = [root];
-      while (stack.length > 0) {
-        const n = stack.pop()!;
-        if (out.has(n)) continue;
-        out.add(n);
-        for (const c of childrenOf.get(n) ?? []) stack.push(c);
+      const addOwned = (n: number): void => {
+        const stack = [n];
+        while (stack.length > 0) {
+          const m = stack.pop()!;
+          if (out.has(m)) continue;
+          out.add(m);
+          for (const c of childrenOf.get(m) ?? []) stack.push(c);
+        }
+      };
+      addOwned(root);
+      for (;;) {
+        let grew = false;
+        for (const [c, cs] of creatorsOf) {
+          if (out.has(c) || c === mod.header.globalCodeIndex) continue;
+          // At least one site inside, every site inside (a self-creating site
+          // does not count against it), or the child is shared with a site
+          // outside `f` and stays where it is.
+          if (!cs.some((x) => out.has(x)) || !cs.every((x) => out.has(x) || x === c)) continue;
+          addOwned(c);
+          grew = true;
+        }
+        if (!grew) break;
       }
       return out;
     };

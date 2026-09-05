@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { EnvGraph } from "../../../src/cfg/types.ts";
 import type { Op } from "../../support/synth-module.ts";
-import { bucketA, bucketB, bucketC, graphOf, loadSlot, mkClosure, mkEnv, ret, selfEnv } from "../../support/synth-module.ts";
+import { bucketA, bucketB, bucketC, graphOf, joinedChildFunctions, loadSlot, mkClosure, mkEnv, ret, selfEnv } from "../../support/synth-module.ts";
 
 const ambiguous = (g: EnvGraph): number[] => g.diagnostics.filter((d) => d.code === "W_AMBIGUOUS_CLOSURE_ENV").map((d) => (d.context as { functionIndex?: number }).functionIndex!);
 
@@ -77,4 +77,40 @@ test("a site with the *undefined* environment operand is still ambiguous: there 
   );
   assert.equal(g.closureCopies.get(1), undefined);
   assert.deepEqual(ambiguous(g), [1]);
+});
+
+// docs/reports/2026-09-05-ambiguous-closure-env.md §6 — the join's subtree is
+// creation-based, not `closureEnvOf`-based.
+//
+// `namesAgreeAcrossSites` (the test above) decides "nothing in `f`'s lexical
+// subtree names an environment the sites disagree about" and then emits ONE
+// body. It used to walk only the `closureEnvOf` relation, which is exactly the
+// relation that leaves a child created inside `f` over an environment `f`
+// merely CAPTURED outside `f`'s subtree — so that child's reads were never
+// counted and the join fired over them. On react-navigation that produced one
+// body whose child read `_e3141_0` at six sites that disagree about which
+// environment position 0 is: an unbound `_fn<n>` at best, a silent
+// wrong-binding at worst (report §5 "Landing item 5" measured the three).
+test("the join does not fire when a creation-only child names an environment the sites disagree about", () => {
+  const joined = graphOf(joinedChildFunctions("movable"));
+  assert.equal(joined.closureCopies.get(3), undefined, "the child reads nothing, so one body still is enough");
+  assert.deepEqual(ambiguous(joined), [], "…and fn#3 keeps a real lexical home");
+
+  const g = graphOf(joinedChildFunctions("pinned"));
+  const copies = g.closureCopies.get(3);
+  assert.ok(copies !== undefined, "fn#4 is created only inside fn#3 and reads slot 0 of the environment fn#3 captured, which is env 1 at one site and env 2 at the other: the sites are NOT indistinguishable");
+  assert.equal(copies.length, 2, "one body per creation context, so each context's child reads its own environment");
+  assert.deepEqual([...copies[1]!.envRemap], [[1, 2]], "copy 1 rewrites the leaf of copy 0's chain, which is what the child's read resolves against");
+  assert.deepEqual(ambiguous(g), [], "duplication, not ambiguity: the chains align");
+});
+
+test("the creation-based subtree runs to a fixed point: a grandchild's read defeats the join too", () => {
+  // fn#4 is in fn#3's subtree only because its one creation site is fn#3;
+  // fn#5 only because its one creation site is fn#4. A single pass that tested
+  // membership against the `closureEnvOf` descendants would reach neither.
+  const g = graphOf(joinedChildFunctions("grandchild"));
+  const copies = g.closureCopies.get(3);
+  assert.ok(copies !== undefined, "the grandchild reads the environment the two sites disagree about");
+  assert.equal(copies.length, 2);
+  assert.deepEqual(ambiguous(g), []);
 });

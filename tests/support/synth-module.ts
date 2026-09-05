@@ -266,12 +266,23 @@ export function loopLocalCopyFunctions(): Map<number, readonly Op[]> {
  * declaration. (Both are index 4: `emitSynth` indexes its function array by
  * position, so the indices have to be contiguous.)
  */
-export function joinedChildFunctions(pull: "movable" | "pinned"): Map<number, readonly Op[]> {
-  return new Map<number, readonly Op[]>([
+export function joinedChildFunctions(pull: "movable" | "pinned" | "grandchild"): Map<number, readonly Op[]> {
+  const bodies = new Map<number, readonly Op[]>([
     [0, [mkEnv(0), mkClosure(1, 0, 1), mkClosure(2, 0, 2), ret(1)]],
     [1, [mkEnv(0), mkClosure(1, 0, 3), ret(1)]],
     [2, [mkEnv(0), mkClosure(1, 0, 3), ret(1)]],
     [3, [selfEnv(0), mkClosure(1, 0, 4), ret(1)]],
     [4, pull === "movable" ? [ret(0)] : [selfEnv(0), loadSlot(1, 0, 0), ret(1)]],
   ]);
+  // "grandchild": the read that decides the join sits one level further down —
+  // fn#4 creates fn#5 over the environment IT captured (fn#3's captured
+  // environment, i.e. the one fn#1 and fn#2 disagree about) and fn#5 is what
+  // reads it. Neither fn#4 nor fn#5 is a `closureEnvOf` child of fn#3, so
+  // reaching fn#5 needs the creation-based subtree to run to a FIXED POINT:
+  // fn#4 joins because its only creator is fn#3, and only then does fn#5.
+  if (pull === "grandchild") {
+    bodies.set(4, [selfEnv(0), mkClosure(1, 0, 5), ret(1)]);
+    bodies.set(5, [selfEnv(0), loadSlot(1, 0, 0), ret(1)]);
+  }
+  return bodies;
 }

@@ -293,22 +293,54 @@ test("a child a joined function creates travels with it when its own names allow
   assert.doesNotMatch(bodyOf(result.code, "_fn1"), /function _fn4\(/, "…not at the home `closureEnvOf` gave it");
 });
 
-test("a child that reads the environment its creator's sites disagree about stays where it is", (t) => {
+test("a child that reads the environment its creator's sites disagree about is duplicated with it, not pinned", (t) => {
   if (!existsSync(DONOR)) {
     t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
     return;
   }
-  // The guard on the rule above. fn#5 reads slot 0 of the environment fn#3
-  // captured — env 1 at one site, env 2 at the other — so no single home can
-  // bind it and moving it into fn#3 only trades one unbound name for another.
-  // Measured on react-navigation: moving these children unconditionally took
-  // the 3 unbound `_fn<n>` to 0 and introduced 4 unbound `_e<env>_<slot>`
-  // (22 -> 23 names). They need per-instance `parentOf` instead — leftover 7.
+  // Report §6 (PUSHBACK P-46). fn#4 reads slot 0 of the environment fn#3
+  // captured — env 1 at one site, env 2 at the other — so the two sites are
+  // NOT indistinguishable and fn#3 must not be joined at all. It used to be:
+  // `namesAgreeAcrossSites` walked the `closureEnvOf` subtree, which does not
+  // contain fn#4, so one body was emitted, moved to the LCA of its sites, and
+  // the child stayed behind (`W_JOINED_REHOSTED` + one unbound `_fn4` — the
+  // react-navigation `_fn14790`/`_fn15473`/`_fn15478` shape, report §5
+  // "Landing item 5", where moving it unconditionally traded 3 unbound
+  // `_fn<n>` for 4 unbound `_e<env>_<slot>`). With the subtree creation-based
+  // the sites conflict, fn#3 gets one body per creation context, and the child
+  // travels into each copy under that copy's remap — so BOTH names bind and
+  // neither copy's child reads the other context's environment.
   const result = emitSynth(joinedChildFunctions("pinned"));
 
-  assert.deepEqual(result.diagnostics.filter((d) => d.code === "W_JOINED_CHILD_MOVED"), [], "a child whose reads are not visible at the new host must not be moved");
-  assert.equal(result.diagnostics.filter((d) => d.code === "W_JOINED_REHOSTED").length, 1);
-  assert.match(bodyOf(result.code, "_fn1"), /function _fn4\(/, "it stays at the home `closureEnvOf` gave it, where `_e1_0` is declared");
-  const unbound = result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").flatMap((d) => [...d.message.matchAll(/emitted identifier "([^"]+)"/g)].map((m) => m[1]));
-  assert.deepEqual(unbound, ["_fn4"], "the residue is exactly one reference to the pinned child, not an unbound env slot as well");
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").flatMap((d) => [...d.message.matchAll(/emitted identifier "([^"]+)"/g)].map((m) => m[1])),
+    [],
+    "nothing is left unbound: the child is no longer a joined function's orphaned descendant",
+  );
+  assert.equal(result.stubbedFunctions, 0);
+  assert.deepEqual(result.diagnostics.filter((d) => d.code === "W_JOINED_REHOSTED"), [], "fn#3 is duplicated, so there is no single body to re-host");
+  assert.deepEqual(result.diagnostics.filter((d) => d.code === "W_JOINED_CHILD_MOVED"), [], "…and no joined child to move either");
+  assert.match(result.code, /function _fn3__c1\(/, "one body per creation context");
+  assert.match(bodyOf(result.code, "_fn3__c1"), /_e2_0/, "copy 1's travelling child reads env 2, the environment copy 1 captured");
+  assert.doesNotMatch(bodyOf(result.code, "_fn3__c1"), /_e1_0/, "…and never env 1, which is copy 0's");
+});
+
+test("the creation-based subtree runs to a fixed point in the emitter too: a grandchild travels with its copy", (t) => {
+  if (!existsSync(DONOR)) {
+    t.skip(`${DONOR} not present — run tests/fixtures/constructs/build.sh (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  // Same shape one level deeper: fn#4 creates fn#5 over the environment fn#4
+  // captured, and fn#5 is the reader. fn#4 belongs to fn#3's subtree only by
+  // creation, and fn#5 only by fn#4's membership.
+  const result = emitSynth(joinedChildFunctions("grandchild"));
+
+  assert.deepEqual(
+    result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED").flatMap((d) => [...d.message.matchAll(/emitted identifier "([^"]+)"/g)].map((m) => m[1])),
+    [],
+    "a travelling child's own travelling child must reach the copy too",
+  );
+  assert.equal(result.stubbedFunctions, 0);
+  assert.match(result.code, /function _fn3__c1\(/);
+  assert.match(bodyOf(result.code, "_fn3__c1"), /_e2_0/, "the grandchild's read is remapped for copy 1's context");
 });
