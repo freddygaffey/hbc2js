@@ -13,7 +13,7 @@ row, or a deliberate design choice). New bugs are appended to Open with a
 `cluster` and `verdict` from the start — no more thin "why no test yet"
 placeholders. Triage history: docs/QUEUE.md item 4, 2026-09-01.
 
-## Open — 36 rows
+## Open — 35 rows
 
 | date | source | component | description | why no test yet | owner | status | cluster | verdict |
 |---|---|---|---|---|---|---|---|---|
@@ -53,7 +53,7 @@ placeholders. Triage history: docs/QUEUE.md item 4, 2026-09-01.
 | 2026-09-05 | spec 26 L10 landing, discovered while regression-running the pre-existing e2e suite (not caused by L10 — reproduced identically on `agent/l5`'s HEAD, `e9f8339`, before any L10 change) | `ui/e2e/smoke.spec.ts` command palette flow | Two smoke tests (`"fold gutter present; Cmd-K Fold folds the listing; Show raw Hermes opens the disasm panel"`, `"Strings tab: search, expand a hit, jump to a use, centre pane follows"`) time out clicking a palette result (`getByText("Show raw Hermes", ...)`, `getByText("Find string uses…", ...)`) after filling the "Run a command" box — the filtered palette apparently never shows the expected row (or shows it too late) in this environment/fixture combination; not investigated further, out of scope for L10. | not yet minimised — needs a run with the palette's actual filtered list captured (screenshot or DOM dump) at the moment of timeout to tell whether the row is absent, mis-labelled, or just slow | UI lane (unassigned) | open | real-app | prove fixed: with the same fixture rig, filling "Run a command" with "raw Hermes" (resp. "string uses") shows a clickable "Show raw Hermes" (resp. "Find string uses…") row within the test's existing timeout, on a clean local run and on CI |
 | 2026-09-05 | spec 23 (`arguments-form`) evidence pass, reading `src/emit/lower.ts` `ReifyArguments` against `src/runtime/helpers.ts` §8 | `src/runtime/helpers.ts` `__hbc_arguments` (the reification helper) | The helper returns a FRESH unmapped copy on every call, so two `Reify*` instructions in one function print two distinct objects where Hermes reifies ONE arguments object. `var a = arguments, b = arguments; a === b` is `true` under Hermes and `false` in the decompiled output. Object identity is the only observable difference; contents and `length` agree. Real: `49-arguments-object` has 3 reify sites at v98/v99, 2 at v84/94/96. | No construct fixture asserts arguments-object identity today; the fix is the `arguments-form` rung itself (a bare `arguments` is the one object), so the regression fixture is queued with that rung rather than written against a helper that is about to stop being used | `arguments-form` rung, `docs/specs/passes/23-arguments-form-literal-forms.md` §1.1 and §5 | open | semantics | A new construct fixture (`a === b` for two `arguments` reads plus a `slice.call` on each) PASSes through the equivalence harness at every version once `arguments-form` lands; until then the fixture would DIVERGE |
 
-## Resolved — 70 rows
+## Resolved — 71 rows
 
 | date | source | component | description | resolution | owner | status | cluster |
 |---|---|---|---|---|---|---|---|
