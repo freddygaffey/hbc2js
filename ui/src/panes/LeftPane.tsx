@@ -223,33 +223,46 @@ export function LeftPane(): ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel.kind, sel.moduleId, sel.fn, rows, searching]);
 
-  // Nothing is selected on load, and fn 0 (the global function) has no
-  // recorded source range — opening it returns 400, not a listing. Land on
-  // the first module's FILE instead: the file view is the listing.
+  // Land on the first module's FILE by default: the file view is the
+  // listing, and fn 0 (the global function) has no recorded source range —
+  // opening it returns 400, not a listing.
+  //
+  // One-shot (`openedFirstModule`, same idiom as `openedDefaults` just
+  // above): NOT gated on `sel.kind === "none"` any more. Spec 26 L10 seeds
+  // the selection from the URL in App.tsx's OWN mount effect, which (React
+  // runs child effects before parent effects on the same commit) fires
+  // AFTER this one — so on a deep link's first paint `sel.kind` is already
+  // "fn"/"module" by the time this effect's SECOND pass would otherwise
+  // run, and a `sel.kind !== "none"` guard would permanently skip opening
+  // any group at all (bug found by ui/e2e/keys.spec.ts's "rebinding an
+  // action … survives reload" — reload restores a URL-addressed selection,
+  // and the tree must still open to something). Only the SELECT is
+  // conditional on `sel.kind === "none"` now: opening the default group is
+  // always safe (worst case, it is not the group the restored selection is
+  // in — no worse than the pre-L10 fully-collapsed state it replaces), but
+  // stomping a just-restored selection back to module 0 would not be.
   //
   // Wait for segregation to settle first: while `seg.isLoading` is true,
   // `groups` is computed from `groupModulesSegregated(rows, null)`, which
   // FALLS BACK to `groupModules` — a different key scheme (`"app"` vs the
-  // segregated `APP_KEY` `"seg:app"`, `ui/src/listing/modules.ts`). Firing
-  // this effect against the fallback opens/selects the fallback's group
-  // key; once the real segregation answer lands moments later, `groups` is
-  // recomputed with the segregated keys and the guard above (`sel.kind !==
-  // "none"`) stops the effect from ever running again — stranding the
-  // analyst on a permanently-collapsed group in the tree they can see is
-  // selected. Playwright regression: ui/e2e/smoke.spec.ts's "right-click"/
-  // "back-forward"/"rename" steps all depend on the first group being open.
+  // segregated `APP_KEY` `"seg:app"`, `ui/src/listing/modules.ts`) — so
+  // firing while loading would open a group key that is about to stop
+  // existing.
+  const openedFirstModule = useRef(false);
   useEffect(() => {
-    if (sel.kind !== "none") return;
+    if (openedFirstModule.current) return;
     if (seg.isLoading) return;
     const first = groups[0];
     const m = first?.modules[0];
     if (first === undefined || m === undefined) return;
+    openedFirstModule.current = true;
     toggleGroup(first.key, true);
     toggleModule(`m:${m.id}`, true);
-    select({ kind: "module", moduleId: String(m.id) });
-    // `toggle*` are stable setState wrappers; `groups` is the real input.
+    if (sel.kind === "none") select({ kind: "module", moduleId: String(m.id) });
+    // `toggle*`/`sel.kind` read is intentionally fresh, not a dep: this must
+    // run exactly once, driven by `groups` settling, not by selection churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groups, sel.kind, seg.isLoading]);
+  }, [groups, seg.isLoading]);
 
   const activate = (row: TreeRow): void => {
     if (row.kind === "group") toggleGroup(row.key);
