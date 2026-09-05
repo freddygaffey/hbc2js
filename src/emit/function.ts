@@ -18,6 +18,7 @@ import { EXC_VALUE, envSlot, excName, fnName, GEN_DONE, GEN_STATE, labelName, PC
 import { writtenRegisters } from "../cfg/reg-effects.ts";
 import { argSlotBase } from "./semantics.ts";
 import { resolveShapes } from "./shapes.ts";
+import { reconstructIifes } from "./iife-reconstruct.ts";
 
 export interface FunctionEmitter {
   readonly analysis: ModuleAnalysis;
@@ -841,7 +842,26 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     // never treat it as a register-frame boundary.
     return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: [p("__sent"), p("__isReturn"), p("__isThrow")], body, sameFrame: true } }] };
   }
-  return { k: "func", name, params, body: [label, ...prologue, ...body] };
+  const rebuilt = reconstructIifes({
+    header: [label, ...prologue],
+    body,
+    ownedEnvSlots: input.ownedEnvSlots,
+    envParent: envParentMap(input.envGraph),
+  });
+  for (const r of rebuilt.refusals) {
+    input.diagnostic({ severity: "info", code: "W_IIFE_REFUSED", message: `iife-reconstruct left env ${r.env} of fn#${fn.index} flat: ${r.reason}`, context: { functionIndex: fn.index, reason: r.reason } });
+  }
+  if (rebuilt.wrapped.length > 0) {
+    input.diagnostic({ severity: "info", code: "W_IIFE_RECONSTRUCTED", message: `iife-reconstruct wrapped ${rebuilt.wrapped.length} inlined IIFE(s) in fn#${fn.index}`, context: { functionIndex: fn.index, count: rebuilt.wrapped.length } });
+  }
+  return { k: "func", name, params, body: rebuilt.stmts };
+}
+
+/** env id -> parent env id, for spec 27's "parent of a sibling" guard. */
+function envParentMap(envGraph: EnvGraph): Map<number, number | null> {
+  const out = new Map<number, number | null>();
+  for (const node of envGraph.nodes) out.set(node.id, node.parent);
+  return out;
 }
 
 /**
