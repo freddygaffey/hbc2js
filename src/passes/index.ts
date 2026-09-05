@@ -134,6 +134,14 @@ export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions 
     // default (`init`, F15) or is a rest parameter (F17) — `Param` has no
     // destructuring-pattern field, so those two are the whole condition.
     const fnParams = { names: fn.params.map((p) => p.name), simple: fn.params.every((p) => p.init === undefined && p.rest !== true) };
+    // F24-4: the function-table name and the `prohibitInvoke` role, which
+    // together are the version-native confirmation that a `CreateBaseClass`
+    // operand really is a class constructor (spec 24 section 2).
+    const functionMeta = (fnIdx: number): { readonly name: string; readonly role: "ctor" | "nc" | "plain" } | null => {
+      const header = mod.functions[fnIdx];
+      if (header === undefined) return null;
+      return { name: header.name, role: header.header.prohibitInvoke === "call" ? "ctor" : header.header.prohibitInvoke === "construct" ? "nc" : "plain" };
+    };
     const r: AstApplyResult = applyAstPasses(fn.body, passes, {
       analysis,
       functionIndex: cfg.functionIndex,
@@ -142,6 +150,7 @@ export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions 
       layoutClass: mod.layout.layoutClass,
       module: moduleView,
       fnParams,
+      functionMeta,
       diagnostic: (d) => diagnostics.push(d),
     });
     onResult?.(cfg.functionIndex, r);

@@ -57,6 +57,22 @@ export function jsxParts(e: Extract<Expr, { k: "jsx" }>): readonly Expr[] {
   return out;
 }
 
+export type { ClassMember } from "../emit/ast.ts";
+
+/** F24-1: every sub-expression of a `class` node that is *evaluated when the
+ *  class is defined*, in evaluation order: the `extends` expression, then per
+ *  member its computed key and (for a field) its initialiser. A method body is
+ *  not evaluated and is deliberately absent. */
+export function classParts(e: Extract<Expr, { k: "class" }>): readonly Expr[] {
+  const out: Expr[] = [];
+  if (e.superClass !== null) out.push(e.superClass);
+  for (const m of e.members) {
+    if (m.computed) out.push(m.key);
+    if (m.kind === "field" && m.value !== null) out.push(m.value);
+  }
+  return out;
+}
+
 /** F16 (docs/specs/passes/16-destructure.md §3): read-only recursion into a
  *  pattern's own expressions. A `pid` leaf is reported to `onExpr` as a
  *  synthetic `{k:"ident"}` node (never a real tree node, never recursed into
@@ -197,6 +213,10 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
         walkExpr(e.source);
         walkPattern(e.pattern, walkExpr);
         return;
+      case "class": // F24-1
+        classParts(e).forEach(walkExpr);
+        for (const m of e.members) if (m.value !== null && m.value.k === "func") walkStmts(m.value.body);
+        return;
       case "func":
         for (const param of e.params) if (param.init !== undefined) walkExpr(param.init);
         walkStmts(e.body);
@@ -259,6 +279,9 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
             if (c.test !== null) walkExpr(c.test);
             walkStmts(c.body);
           }
+          break;
+        case "classdecl": // F24-1
+          walkExpr(s.value);
           break;
         case "func":
           for (const param of s.params) if (param.init !== undefined) walkExpr(param.init);
@@ -402,6 +425,19 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
       rebuilt = source === e.source && pattern === e.pattern ? e : { ...e, source, pattern };
       break;
     }
+    case "class": { // F24-1
+      const superClass = e.superClass === null ? null : mapExpr(e.superClass, fx);
+      let changed = superClass !== e.superClass;
+      const members = e.members.map((m) => {
+        const key = mapExpr(m.key, fx);
+        const value = m.value === null ? null : mapExpr(m.value, fx);
+        if (key === m.key && value === m.value) return m;
+        changed = true;
+        return { ...m, key, value };
+      });
+      rebuilt = changed ? { ...e, superClass, members } : e;
+      break;
+    }
     case "func": {
       const params = mapParams(e.params, fx);
       const body = mapStmts(e.body, (s) => s, fx);
@@ -499,6 +535,10 @@ function mapStmtChildren(s: Stmt, fs: (s: Stmt) => Stmt, fx: (e: Expr) => Expr):
         return test === c.test && body === c.body ? c : { ...c, test, body };
       });
       return changed ? { ...s, disc, cases } : s;
+    }
+    case "classdecl": { // F24-1
+      const value = mapExpr(s.value, fx);
+      return value === s.value ? s : { ...s, value };
     }
     case "func": {
       const params = mapParams(s.params, fx);
@@ -824,6 +864,10 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
       case "jsx": // D20
         jsxParts(e).forEach((x) => visitExpr(x, inNested));
         return;
+      case "class": // F24-1: same frame boundary as a `func` member body.
+        classParts(e).forEach((x) => visitExpr(x, inNested));
+        if (followNested) for (const m of e.members) if (m.value !== null && m.value.k === "func") visitStmts(m.value.body, true);
+        return;
       case "func":
         // `sameFrame` (see `Expr`'s `func` doc, `src/emit/ast.ts`): the
         // generator/async resume closure is not a second Hermes function —
@@ -909,6 +953,9 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
             if (c.test !== null) visitExpr(c.test, inNested);
             visitStmts(c.body, inNested);
           }
+          break;
+        case "classdecl": // F24-1
+          visitExpr(s.value, inNested);
           break;
         case "func":
           // Same boundary as the `Expr` "func" case above.
@@ -1332,6 +1379,15 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
         visitExpr(e.obj);
         if (e.computed) visitExpr(e.prop);
         out.push(withDepth({ k: "member-read" }, e));
+        return;
+      case "class":
+        // F24-1. Defining a class evaluates its `extends` expression, its
+        // computed keys and its field initialisers, in that order, and
+        // nothing else -- a method body is not run. The own-property
+        // definitions the class performs are exactly the ones the
+        // `class-recover` rung declares it deleted, so they are accounted for
+        // by that rung's class-shape checker (spec 24 section 3.4), not here.
+        classParts(e).forEach(visitExpr);
         return;
       case "await": // F25-1: a suspension is observable and never reorderable.
         visitExpr(e.arg);
@@ -1892,6 +1948,59 @@ export function opcodeAt(cfg: FunctionCfg, offset: number): string | null {
     for (const b of cfg.blocks) for (const insn of b.instructions) m.set(insn.offset, insn.name);
     index = m;
     OPCODE_INDEX.set(cfg, index);
+  }
+  return index.get(offset) ?? null;
+}
+
+/**
+ * F24-2 (docs/specs/passes/24-class-recover.md section 2): class-creation
+ * *provenance*, read straight off the instruction the emitter stamped on the
+ * statement. Shape alone cannot tell a real class from an ES5-transpiled one
+ * (spec 24 sections 1.5 and 1.8) -- both are `Object.defineProperty` on a
+ * `.prototype` -- so the `class-recover` rung keys on this and nothing else.
+ * `null` when no `CreateBaseClass`/`CreateDerivedClass` starts at `offset`.
+ */
+export interface ClassSite {
+  readonly derived: boolean;
+  /** Operand 0: the register the constructor value lands in. */
+  readonly ctorReg: number;
+  /** Operand 1: the register the prototype object lands in. Equal to
+   *  `ctorReg` when hermesc aliased them (spec 24 section 1.4 / F24-3). */
+  readonly protoReg: number;
+  /** Derived form only: the register holding the superclass value. */
+  readonly superReg: number | null;
+  /** The function-table index of the constructor. */
+  readonly ctorFnIdx: number;
+  readonly offset: number;
+}
+
+const CLASS_SITE_INDEX = new WeakMap<FunctionCfg, ReadonlyMap<number, ClassSite>>();
+
+export function classSiteAt(cfg: FunctionCfg, offset: number): ClassSite | null {
+  let index = CLASS_SITE_INDEX.get(cfg);
+  if (index === undefined) {
+    const m = new Map<number, ClassSite>();
+    for (const b of cfg.blocks) {
+      for (const insn of b.instructions) {
+        const derived = insn.name === "CreateDerivedClass" || insn.name === "CreateDerivedClassLongIndex";
+        const base = insn.name === "CreateBaseClass" || insn.name === "CreateBaseClassLongIndex";
+        if (!derived && !base) continue;
+        // Operand layout (src/emit/lower.ts): base is
+        // `dst_ctor, dst_prototype, env, fnIdx`; derived inserts the
+        // superclass register before the function index.
+        const ops = insn.operands.map((o) => o.value as number);
+        m.set(insn.offset, {
+          derived,
+          ctorReg: ops[0]!,
+          protoReg: ops[1]!,
+          superReg: derived ? ops[3]! : null,
+          ctorFnIdx: derived ? ops[4]! : ops[3]!,
+          offset: insn.offset,
+        });
+      }
+    }
+    index = m;
+    CLASS_SITE_INDEX.set(cfg, index);
   }
   return index.get(offset) ?? null;
 }
