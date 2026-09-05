@@ -66,8 +66,15 @@ const MUTANTS_PER_FIXTURE = 6;
 // `swap-adjacent-statements` on those two lines survive EQUIVALENT) —
 // source-level insensitivity in the shared registry boilerplate, not a
 // weakening of the harness or of `src/native/seams.ts`'s own logic.
-const KILL_RATE_BASELINE = 370;
-const KILL_RATE_BASELINE_TOTAL = 438;
+// Re-based 370/438 -> 373/444 on 2026-09-05 when 73-arguments-identity
+// joined the corpus: it kills 3/6 of its own mutants; `bump-numeric-literal`,
+// `swap-adjacent-statements` and `and-to-or` survive EQUIVALENT (the mutated
+// program is observably identical on the fixture's trace), and the run had
+// zero SURVIVED verdicts corpus-wide (71 EQUIVALENT), so the harness's
+// detection is unchanged and the ratio-scaled floor at 444 (375) was merely
+// 2 above what the equivalent mutants allow.
+const KILL_RATE_BASELINE = 373;
+const KILL_RATE_BASELINE_TOTAL = 444;
 
 const RUN_OPTS: RunOptions = { timeout: 8000, seed: 0, fuzz: 0, relax: [], maxRecords: 20000, syncTimeout: 7000 };
 
