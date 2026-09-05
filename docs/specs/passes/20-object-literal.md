@@ -171,7 +171,7 @@ structure-recovery block.
   every register still carries its original bytecode identity.
 
 **Resolved, under a condition** (docs/BUGS.md `object-literal-putbyid`,
-`object-literal-interleaved`):
+`object-literal-interleaved`, `object-literal-computed-key`):
 
 * **`PutById`/`PutByIdLoose`/`PutByIdStrict`/`TryPutById` on a fresh object**
   now folds like an own-define for a plain data key, **unless** the key is
@@ -207,19 +207,64 @@ structure-recovery block.
   *generation* of a reused register a later statement reads, which this
   rung does not attempt.
 
+* **`PutOwnByVal`/`DefineOwnByVal` (a computed key)** (docs/BUGS.md
+  `object-literal-computed-key`) now folds too — unlike `PutNewOwnById`/
+  `PutById`, this opcode is only ever emitted for an object-literal
+  *syntax* property (`{[k]: v, ...}`); a later, separate `o[k] = v`
+  assignment statement compiles to a full-`[[Set]]` `PutByVal` this rung
+  does not touch, so there is no `object-literal-putbyid`-style
+  prototype-chain question here at all. `storeOf` already handles the case
+  where `expr-rebuild` inlined the key down to a literal (a compile-time
+  constant, treated exactly like any other own-define). For a key that is
+  still a genuinely dynamic expression — a register, a free-variable read,
+  a `member` chain ("member-of-const"), or a richer expression (a call, …)
+  that `expr-rebuild` already proved safe to inline at exactly that
+  position via its own R1a/R1b adjacency rule (`docs/specs/passes/
+  02-expr-rebuild.md`) — a new `computedStoreOf` recognises the store and
+  folds key and value together once each passes the same "does not read or
+  write the object's own register" check every other store's value
+  already gets (`match.ts`'s `computedStoreOf` doc comment); the key is
+  rendered into `ObjectProp.key`'s string field at ASSIGNMENT precedence by
+  a new `renderComputedKey` (`src/passes/ast.ts`, the same D12a
+  `print.ts`-re-export gap `printProgram` already uses — `ClassMember.key`'s
+  `classMemberKey` renderer is the precedent, same bound). **Duplicate-key
+  aliasing**: a computed key's runtime value can coincide with an
+  already-declared literal key, and this rung cannot prove it does not. A
+  *later* plain-key store's own fold (`props[at] = …`) keeps that entry's
+  *printed position* — correct when the two entries are provably the same
+  literal spelling, but if a **computed** key sits between them and might
+  alias that same runtime key, printing the later plain store's replace
+  ahead of the computed entry (in the run's *textual* position, though it
+  ran chronologically *after* it) would let the wrong write win: `{a:
+  <placeholder>}` then `o[k]=5` then `o.a=10`, if `k==="a"`, must end at
+  `a: 10` (the last chronological write) — folding all three naively as
+  `{a: 10, [k]: 5}` evaluates `k` *after* `a`'s replace and ends at `a: 5`
+  instead. So a computed key may fold only while it is the run's last
+  fold, or every fold after it is also computed — a fresh `props.push` for
+  a *new* key, computed or not, never has this problem (it always
+  preserves program order relative to every earlier entry; only the
+  *replace-in-place* shortcut can jump a later chronological write ahead
+  of an unproven-non-aliasing computed one). `match.ts`'s `sawComputedKey`
+  flag enforces exactly this: once true, no further literal-key fold is
+  attempted in the run — a prefix-fold, same as every other refusal here.
+
 **Refusals left open** (each a prefix-fold, never a wrong rewrite):
 
 | Shape | Why refused | Ledger |
 |---|---|---|
 | `PutById`-family key `__proto__`, or a run that has already had an effect | still a full `[[Set]]` on `Object.prototype`, or the prototype chain may have changed since the object was created | `docs/BUGS.md` `object-literal-putbyid` |
 | an interleaved statement that is not a *pure register def*, or one `canHoist` refuses (reads the object being built, or redefines a register an earlier fold already read) | commuting it above the run is not proven safe | `docs/BUGS.md` `object-literal-interleaved` |
-| `PutOwnByVal`/`DefineOwnByVal` (a computed key expression) | the key expression would have to move with the value | `docs/BUGS.md` `object-literal-computed-key` |
+| a computed-key store whose key or value reads/writes the object's own register | precondition 6, same as every other store | `docs/BUGS.md` `object-literal-computed-key` |
+| a plain-key store that follows an already-folded computed-key store in the same run | the computed key might alias it at runtime; folding both risks the wrong write winning (see above) | same row |
 | accessor properties (`get`/`set`) | no literal AST for them; run ends there, prefix folds | same row |
 
 **Fixtures.** `63-object-literal`: A plain data literal, B literal with
 closure values, C integer keys, D negative (intervening read), E negative
-(accessor mid-literal), F negative (the object escapes mid-run). All five
-HBC versions.
+(accessor mid-literal), F negative (the object escapes mid-run).
+`77-object-literal-computed`: G computed key from a parameter, H computed
+key from a call result, I a plain key folding together with a following
+computed one, J negative (a plain key after a computed one — the aliasing
+hazard). All five HBC versions.
 
 **Metrics.** rn-template and Service NSW `diff:PutNewOwnById/PutById`
 bucket counts, before/after — reported in the landing report and
