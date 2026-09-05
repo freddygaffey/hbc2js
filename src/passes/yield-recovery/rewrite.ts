@@ -1,7 +1,7 @@
 // §3.3 — the group collapses to one `function*` statement at the stub's
 // position. Every surviving sub-expression is carried over by reference, never
 // rebuilt, so `check` can compare by re-derivation.
-import type { Stmt } from "../../emit/ast.ts";
+import type { Stmt } from "../ast.ts";
 import type { Match } from "../types.ts";
 import type { YieldSite } from "./match.ts";
 

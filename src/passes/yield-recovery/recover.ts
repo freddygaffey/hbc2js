@@ -10,7 +10,7 @@
 // carrying the suspend/resume map) is NOT implemented: `sameFrame` plus the
 // exact shim shape below is the provenance this rung uses. The consequence is
 // recorded in the spec's landed note and in docs/BUGS.md.
-import type { Expr, Param, Stmt } from "../../emit/ast.ts";
+import type { Expr, Param, Stmt } from "../ast.ts";
 import { identUses, mapStmts, walk } from "../ast.ts";
 
 /** §4: every refusal is a distinct counted `abandoned` reason. */

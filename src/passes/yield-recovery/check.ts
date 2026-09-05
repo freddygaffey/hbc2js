@@ -11,7 +11,7 @@
 // because the third of those -- "return completes at the yield, running
 // enclosing finalizers" -- is not satisfiable while a finalizer body is
 // duplicated into the forced-return arm.
-import type { Stmt } from "../../emit/ast.ts";
+import type { Stmt } from "../ast.ts";
 import { freeNames, parses, walk } from "../ast.ts";
 import type { CheckResult } from "../types.ts";
 import { recover } from "./recover.ts";

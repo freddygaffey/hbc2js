@@ -1,4 +1,4 @@
-import type { Stmt } from "../../emit/ast.ts";
+import type { Stmt } from "../ast.ts";
 import type { Pass } from "../types.ts";
 import { check } from "./check.ts";
 import { match } from "./match.ts";

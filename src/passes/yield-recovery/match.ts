@@ -3,7 +3,7 @@
 // declares the stub, because the whole group (the stub, the factory it
 // declares, and the `sameFrame` step closure that factory returns) is visible
 // from there and nowhere else.
-import type { Stmt } from "../../emit/ast.ts";
+import type { Stmt } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 import { recover } from "./recover.ts";
 import type { Recovered } from "./recover.ts";

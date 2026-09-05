@@ -1,6 +1,6 @@
 // §3.4 — the same generator-shape obligation as `yield-recovery`, plus R-A5:
 // this rung never turns a `yield` it did not account for into an `await`.
-import type { Stmt } from "../../emit/ast.ts";
+import type { Stmt } from "../ast.ts";
 import { freeNames, parses, walk } from "../ast.ts";
 import type { CheckResult } from "../types.ts";
 import { recover } from "./recover.ts";

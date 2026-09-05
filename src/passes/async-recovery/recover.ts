@@ -1,7 +1,7 @@
 // docs/specs/passes/25-yield-async-recovery.md §3.1/§3.3 — the async spawn
 // wrapper. Pure; returns the recovered `async function` or one of §4's named
 // R-A refusals.
-import type { Expr, Stmt } from "../../emit/ast.ts";
+import type { Expr, Stmt } from "../ast.ts";
 import { identUses, mapStmts } from "../ast.ts";
 
 export type Refusal = "no-async-site" | "driver-name" | "this-coercion" | "factory-escapes" | "inner-not-recovered" | "yield-not-await" | "driver-result-used";

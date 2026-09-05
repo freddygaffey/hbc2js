@@ -1,7 +1,7 @@
 // §3.1 — one site per async group: the spawn wrapper, the `generator: true`
 // factory `yield-recovery` produced inside it, and the driver call. F1: the
 // site is the statement list that declares the stub.
-import type { Stmt } from "../../emit/ast.ts";
+import type { Stmt } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 import { recover } from "./recover.ts";
 import type { Recovered } from "./recover.ts";
