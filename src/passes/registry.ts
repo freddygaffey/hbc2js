@@ -33,6 +33,7 @@ import { tryClean } from "./try-clean/index.ts";
 import { tryShape } from "./try-shape/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
+import { yieldLoop } from "./yield-loop/index.ts";
 import { yieldRecovery } from "./yield-recovery/index.ts";
 
 /** Order is explicit data (§2.3). Stage A first; within a stage, dependency
@@ -116,6 +117,10 @@ export const REGISTRY: readonly Pass[] = [
   optionalChain as Pass,
   objectLiteral as Pass,
   yieldRecovery as Pass,
+  // R15 (docs/specs/passes/29-yield-loop.md): the cyclic form of the same
+  // idiom, straight after the acyclic rung and before `async-recovery`, whose
+  // R-A4 asks whether the generator it wraps was recovered at all.
+  yieldLoop as Pass,
   asyncRecovery as Pass,
   // Spec 23 section 2 / 00-LADDER.md batch 4: both are surface rungs on
   // emitter output (no new bytecode fact), registered after `object-literal`

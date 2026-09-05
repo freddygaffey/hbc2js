@@ -100,10 +100,19 @@ test("baseline: measured dispatcher and suspend-site counts (spec 25 section 1.2
 // property the test was reaching for -- and the one that IS permanent -- is
 // that no rung *other* than `yield-recovery` touches the idiom, so the
 // comparison is now made with this rung, and only this rung, skipped.
-test("baseline: the generator idiom is untouched by every rung except yield-recovery", () => {
+// PUSHBACK P-47: the four tests below were written against the DEFAULT
+// pipeline, so the ladder's own follow-up rung `yield-loop`
+// (docs/specs/passes/29-yield-loop.md, spec 25 section 6.2) moves them. Every
+// assertion is kept verbatim; each is merely scoped to the rung it is about by
+// skipping `yield-loop`, so it still measures exactly what `yield-recovery`
+// does and nothing else.
+const NO_LOOP = ["yield-loop"] as const;
+const NO_GEN = ["yield-recovery", "yield-loop"] as const;
+
+test("baseline: the generator idiom is untouched by every rung except the generator rungs", () => {
   for (const version of [...OPCODE_ERA, ...LOWERED_ERA]) {
     for (const fixture of GENERATOR_FIXTURES) {
-      const on = js(fixture, version, ["yield-recovery"]);
+      const on = js(fixture, version, NO_GEN);
       const off = base(fixture, version);
       for (const [what, re] of [
         ["makeGenerator sites", MAKE],
@@ -228,8 +237,8 @@ test("yield-recovery: a body with no generator group is a fixed point without co
 
 test("yield-recovery recovers 23-generator-basic's acyclic `sequence` and leaves the cyclic `counter` alone", () => {
   for (const version of OPCODE_ERA) {
-    const on = js("23-generator-basic", version);
-    const off = js("23-generator-basic", version, ["yield-recovery"]);
+    const on = js("23-generator-basic", version, NO_LOOP);
+    const off = js("23-generator-basic", version, NO_GEN);
     assert.equal(count(on, MAKE), count(off, MAKE) - 1, `${version}: exactly one of the two sites is recovered`);
     assert.ok(count(on, /function\* /g) >= 1, `${version}: a real generator function is emitted`);
     assert.equal(count(on, /\byield /g), 4, `${version}: sequence has four yields`);
@@ -264,8 +273,8 @@ test("docs/specs/passes/25-yield-async-recovery.md §5: g1's R-Y4 refusal surfac
 // instead, and more tightly: every group that *does* delegate stays a shim.
 test("yield-recovery refuses 25-generator-delegation's delegating groups with R-Y6 at every opcode-era version", () => {
   for (const version of OPCODE_ERA) {
-    const on = js("25-generator-delegation", version);
-    const off = js("25-generator-delegation", version, ["yield-recovery"]);
+    const on = js("25-generator-delegation", version, NO_LOOP);
+    const off = js("25-generator-delegation", version, NO_GEN);
     // `inner` (no delegation, acyclic) is the one group R-Y6 does not claim.
     assert.equal(count(on, MAKE), count(off, MAKE) - 1, `${version}: only the non-delegating group is rewritten`);
     assert.match(on, /function\* inner\(/, `${version}`);
@@ -279,8 +288,8 @@ test("yield-recovery refuses 25-generator-delegation's delegating groups with R-
 
 test("yield-recovery refuses 26-infinite-generator-take with R-Y5 (cyclic suspend graph)", () => {
   for (const version of OPCODE_ERA) {
-    const on = js("26-infinite-generator-take", version);
-    const off = js("26-infinite-generator-take", version, ["yield-recovery"]);
+    const on = js("26-infinite-generator-take", version, NO_LOOP);
+    const off = js("26-infinite-generator-take", version, NO_GEN);
     assert.equal(count(on, DISPATCH), count(off, DISPATCH), `${version}: the cyclic dispatcher survives`);
   }
 });
