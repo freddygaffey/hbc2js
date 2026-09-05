@@ -208,11 +208,21 @@ export function buildDex(classes) {
 
   const staticValuesOff = new Map();
   for (const c of classes) {
-    const withValues = (c.staticFields ?? []).filter((f) => f.value !== undefined);
-    if (withValues.length === 0) continue;
+    // static_values is positional over the static fields IN class_data ORDER
+    // (i.e. sorted by field index), not in declaration order.
+    const statics = (c.staticFields ?? [])
+      .slice()
+      .sort((a, b) => fIdx.get(`${c.name}->${a.name}:${a.type}`) - fIdx.get(`${c.name}->${b.name}:${b.type}`));
+    let last = -1;
+    statics.forEach((f, i) => {
+      if (f.value !== undefined) last = i;
+    });
+    if (last < 0) continue;
+    const values = statics.slice(0, last + 1);
+    if (values.some((f) => f.value === undefined)) throw new Error(`${c.name}: static_values must cover a prefix of the sorted static fields`);
     const off = at();
-    d.uleb(withValues.length);
-    for (const f of withValues) encodeValue(d, f.value);
+    d.uleb(values.length);
+    for (const f of values) encodeValue(d, f.value);
     staticValuesOff.set(c.name, off);
   }
 
