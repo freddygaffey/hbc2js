@@ -703,7 +703,13 @@ the whole-module file view uses the much higher `MAX_RENDER_LINES_MODULE`
 (200,000) instead — see "What is stubbed" below for why. The
 top bar's search is `GET /api/search/functions`: a dropdown of at most 50
 hits, `Enter` takes the first, and while a query is present the left pane
-shows the hits as a flat list instead of the tree.
+shows the hits as a flat list instead of the tree. Every keystroke sends an
+explicit `?limit=` (`ui/src/api.ts`'s `SEARCH_TYPEAHEAD_LIMIT`, 50 — the
+same number the route defaults to unrequested, made explicit so the client
+side of the contract does not silently rely on the server's default); the
+dropdown shows "N more not shown" from the route's exact `total`, or, for
+the (not yet UI-wired) `search/source` scan, a `partial: true` page's honest
+"more matches than shown" instead of a count that would be a lower bound.
 
 **Virtualised.** The tree is windowed by `@tanstack/react-virtual` (pinned
 exact, `ui/package.json`): `ui/src/listing/modules.ts`'s `flattenTree` turns
@@ -1154,9 +1160,9 @@ A `fn:N` rename reaches references the CALL GRAPH knows about; a reference
 from a function with no recorded edge (an unresolved dynamic reference) keeps
 the old ident, and an accepted function name that collides with an unrelated
 binding in a caller is applied as typed rather than disambiguated — both are
-docs/BUGS.md rows. `/api/search/functions` still matches the BYTECODE name
-only (it displays the accepted one), so a renamed function is not yet findable
-by its new name.
+docs/BUGS.md rows. `/api/search/functions` matches EITHER the bytecode name
+or the accepted one (fixed 2026-09-05, agent/ui-followups), so a renamed
+function is findable by either name.
 `list`'s `rendered` column is exact for a named register and best-effort for a
 var-named one (it classifies the same raw frame body `var-naming` classifies).
 `view.fold` / `view.unfold` fold-all/unfold-all the current listing editor
@@ -1522,7 +1528,10 @@ backend id and the concurrency cap the pool runs at.
 **Presence.** A chip per live participant from `/api/sessions` — humans,
 the worker pool, and any external MCP client that opened a session. "Live"
 is computed on read against the TTL, so a crashed UI cannot leave a ghost
-sitting in the list.
+sitting in the list. The UI is one of those participants: `App` calls
+`ui/src/workers/wire.ts`'s `initUiSession()` once on load, which registers a
+`kind: "human"` / `who: "ui"` session and heartbeats it every 10 s (the TTL
+defaults to 30 s) for as long as the tab is open.
 
 **Suggestions.** For the selected function, the `tier:"suggested"` names and
 the `[ai-suggested]` comments. `Accept` on a name calls
@@ -1536,12 +1545,12 @@ reaches a shard).
 **Queuing work.** "Suggest name" and "Explain" enqueue a job for the selected
 function. They are also the `ai.suggestName` / `ai.explain` actions, so the
 command palette, the context menu and any keybinding pointed at them do the
-same thing — enabled as of spec 23, on an fn target only. The UI does not
-register its own session yet (docs/BUGS.md, "UI enqueues jobs without a
-session id"), so it enqueues with no `createdBy` rather than a hardcoded id
-no session owns — `jobs.created_by` is a `sessions(id)` foreign key, and the
-server answers 400 (never a raw constraint-failure 500) for an id it does
-not recognise.
+same thing — enabled as of spec 23, on an fn target only. The enqueue sends
+`createdBy: <this tab's registered session id>` (the Presence session above)
+once registration has settled, or omits the field before then — never a
+hardcoded id no session owns; `jobs.created_by` is a `sessions(id)` foreign
+key, and the server answers 400 (never a raw constraint-failure 500) for an
+id it does not recognise.
 
 The default backend is offline and deterministic (`HeuristicBackend`: names
 from the function's own callees and strings), so the loop works with no API
