@@ -276,7 +276,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
    * [from, to) — a loop head's init/step slices. The block prelude (pc, provenance)
    * belongs to the first slice only.
    */
-  const lowerBlock = (blockId: BlockId, range?: { readonly from?: number; readonly to?: number }): Stmt[] => {
+  const lowerBlock = (blockId: BlockId, range?: { readonly from?: number; readonly to?: number; readonly skip?: ReadonlySet<number> }): Stmt[] => {
     const out: Stmt[] = [];
     // `cfgBlock: -1` is §4.4's dispatch switch, which stands for no CFG block.
     if (blockId < 0) return out;
@@ -288,7 +288,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     if (from === 0 && input.provenanceComments && aug.block.start >= 0) out.push({ k: "comment", text: `@0x${aug.block.start.toString(16)}` });
     const plan = planBlock(aug.block, fn.instructions);
     for (const [i, insn] of aug.block.instructions.entries()) {
-      if (i < from || i >= to) continue;
+      if (i < from || i >= to || range?.skip?.has(i) === true) continue;
       const before = out.length;
       lowerInstruction(f, insn, i, plan, out);
       // §16: every statement this instruction produced points back at it.
@@ -370,6 +370,17 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   let pendingInit: Expr | null = null;
   /** spec 21 for-of: handler blocks whose enclosing `try` prints as its body alone (the handler is the compiler's synthesized `IteratorClose`/`Throw` cleanup). */
   const dropTryHandlers = new Set<BlockId>();
+  /** spec 21 for-of: individual instructions of a block that print nowhere —
+   *  the setup block's `IteratorBegin`, which v96/v98/v99 do *not* schedule
+   *  last (`IteratorBegin r4,r6 ; LoadConstUInt8 r5,30`), so a `trims` range
+   *  cannot express it without swallowing the constant load beside it. */
+  const dropInsns = new Map<BlockId, Set<number>>();
+  /** spec 21 for-of, merge-point cleanup shape (docs/BUGS.md
+   *  `for-of-break-handler-shape`): `IterForm.mergeLabel` — the `labeled`
+   *  wrapper both synthesized `try`s `break` to instead of naming the cleanup
+   *  block as their own handler. The wrapper prints as its body alone and
+   *  every `try` whose handler is that `break` prints as *its* body alone. */
+  const dropLabels = new Set<number>();
 
   /** Narrows `LoopForm` for the "loop" case below (a plain `.kind` comparison
    *  chain does not reliably narrow a two-branch discriminated union across
@@ -521,6 +532,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       const handlerBlock = form.close[form.close.length - 1];
       if (handlerBlock !== undefined) dropTryHandlers.add(handlerBlock);
       for (const c of form.close.slice(0, -1)) trims.set(c, 0);
+      if (form.mergeLabel !== undefined) dropLabels.add(form.mergeLabel);
     }
 
     // The Ramsey structurer sinks the loop's *exit* continuation inside it
@@ -565,8 +577,8 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       if (form.kind !== "for-in" && form.kind !== "for-of") continue;
       const prev = list[i - 1];
       if (form.kind === "for-of" && prev?.k === "block" && prev.cfgBlock === form.setup) {
-        const to = setupTrimPoint(form.setup, "for-of");
-        if (to !== null) trims.set(form.setup, to);
+        const at = setupTrimPoint(form.setup, "for-of");
+        if (at !== null) dropInsns.set(form.setup, new Set([at]));
       } else if (form.kind === "for-in") {
         const guardStmt = list[i - 1];
         const blockStmt = list[i - 2];
@@ -604,7 +616,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   const setupTrimPoint = (block: BlockId, kind: "for-in" | "for-of"): number | null => {
     const insns = structured.graph.blocks[block]?.block?.instructions;
     if (insns === undefined || insns.length === 0) return null;
-    if (kind === "for-of") return insns[insns.length - 1]!.name === "IteratorBegin" ? insns.length - 1 : null;
+    if (kind === "for-of") {
+      const at = insns.findLastIndex((i) => i.name === "IteratorBegin");
+      return at < 0 ? null : at;
+    }
     return insns.length >= 2 && insns[insns.length - 2]!.name === "GetPNameList" ? insns.length - 2 : null;
   };
 
@@ -613,7 +628,8 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       case "block": {
         const to = trims.get(node.cfgBlock);
         const from = fromTrims.get(node.cfgBlock);
-        const range = to === undefined && from === undefined ? undefined : { ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) };
+        const skip = dropInsns.get(node.cfgBlock);
+        const range = to === undefined && from === undefined && skip === undefined ? undefined : { ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), ...(skip === undefined ? {} : { skip }) };
         out.push(...lowerBlock(node.cfgBlock, range));
         return;
       }
@@ -621,6 +637,13 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         lowerItems(node.body, out);
         return;
       case "labeled": {
+        // spec 21 for-of: a merge-point cleanup wrapper. Every `break` to it
+        // belonged to a synthesized `try` whose handler this rung is deleting,
+        // so the wrapper has no remaining use and prints as its body alone.
+        if (dropLabels.has(node.label)) {
+          lowerTree(node.body, out);
+          return;
+        }
         const body: Stmt[] = [];
         lowerTree(node.body, body);
         out.push({ k: "labeled", label: labelName(node.label), body });
@@ -693,6 +716,11 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         out.push(withOrigin({ k: "return", arg: isOpcodeGeneratorBody ? { k: "array", elements: [returnValueOf(node.cfgBlock), id(GEN_DONE)] } : returnValueOf(node.cfgBlock) } as Stmt, terminatorOrigin(node.cfgBlock, isRet)));
         return;
       case "throw":
+        // spec 21 for-of, merge-point shape: the shared `Catch rX ;
+        // IteratorClose state, 1 ; Throw rX` cleanup sits as a *sibling* of
+        // the wrapper rather than as either `try`'s own handler. It is the
+        // same statement `dropTryHandlers` deletes in the ordinary shape.
+        if (dropTryHandlers.has(node.cfgBlock)) return;
         out.push(...lowerBlock(node.cfgBlock));
         out.push(withOrigin({ k: "throw", arg: throwValueOf(node.cfgBlock) } as Stmt, terminatorOrigin(node.cfgBlock, isThrow)));
         return;
@@ -727,6 +755,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         // recorded — prints as its body alone, no `try`/`catch` at all.
         const handlerBlock = soleBlockOf(node.handler);
         if (handlerBlock !== null && dropTryHandlers.has(handlerBlock)) {
+          lowerTree(node.body, out);
+          return;
+        }
+        if (node.handler.k === "break" && dropLabels.has(node.handler.label)) {
           lowerTree(node.body, out);
           return;
         }

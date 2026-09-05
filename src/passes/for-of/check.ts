@@ -2,7 +2,7 @@
 import type { Stmt } from "../../structure/ir.ts";
 import type { CheckResult, PassContext } from "../types.ts";
 import { registerLiveAfter, sameShape } from "../tree.ts";
-import { match } from "./match.ts";
+import { closeStateOf, match } from "./match.ts";
 
 export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult {
   if (!sameShape(before, after)) return { ok: false, reason: "for-of changed the tree shape" };
@@ -14,7 +14,7 @@ export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult 
   const m = match(before, ctx);
   if (m === null) return { ok: false, reason: "for-of rewrite has no matching site to re-derive the annotation from" };
   const want = m.data.form;
-  if (form.cond !== want.cond || form.iter !== want.iter || form.setup !== want.setup || form.negate !== want.negate || form.binding !== want.binding || form.source !== want.source) {
+  if (form.cond !== want.cond || form.iter !== want.iter || form.setup !== want.setup || form.negate !== want.negate || form.binding !== want.binding || form.source !== want.source || form.mergeLabel !== want.mergeLabel) {
     return { ok: false, reason: "for-of annotation does not match the recomputed site" };
   }
   if (form.close.length !== want.close.length || form.close.some((b, i) => b !== want.close[i])) {
@@ -32,10 +32,14 @@ export function check(before: Stmt, after: Stmt, ctx: PassContext): CheckResult 
   for (const b of form.close) {
     const insns = fn.graph.blocks[b]?.block?.instructions;
     const closeIdx = insns?.findIndex((i) => i.name === "IteratorClose") ?? -1;
-    const state = closeIdx < 0 ? undefined : insns![closeIdx]!.operands[0];
-    if (state === undefined || state.role !== "reg") return { ok: false, reason: "for-of close block has no resolvable IteratorClose" };
-    if (registerLiveAfter(fn, exit, 0, state.value)) return { ok: false, reason: "for-of iteration state is live after the loop" };
-    if (registerLiveAfter(fn, b, closeIdx + 1, state.value)) return { ok: false, reason: "for-of iteration state is read after a dropped IteratorClose" };
+    // Resolved through the block's own `Mov`s, exactly as `match` resolves it
+    // (v99 spells the close `Mov r0, state ; IteratorClose r0, 0`): asking a
+    // different register here than the matcher asked would refuse sites the
+    // matcher soundly accepted.
+    const state = closeIdx < 0 || insns === undefined ? undefined : closeStateOf(insns, closeIdx);
+    if (state === undefined) return { ok: false, reason: "for-of close block has no resolvable IteratorClose" };
+    if (registerLiveAfter(fn, exit, 0, state)) return { ok: false, reason: "for-of iteration state is live after the loop" };
+    if (registerLiveAfter(fn, b, closeIdx + 1, state)) return { ok: false, reason: "for-of iteration state is read after a dropped IteratorClose" };
   }
   return { ok: true };
 }

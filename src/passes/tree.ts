@@ -365,7 +365,15 @@ export function registerLiveAfter(fn: StructuredFunction, block: BlockId, index:
   const visited = new Set<string>();
   const walk = (b: BlockId, from: number): boolean => {
     const key = `${b}:${from}`;
-    if (visited.has(key)) return true; // a revisited (block, from) pair is a cycle we cannot resolve
+    // A revisited (block, from) pair contributes no new read: the query is
+    // "does *some* forward path reach a read of `register` before a write of
+    // it", and the in-progress visit of this pair already scanned its own
+    // instructions and is exploring its own successors. Answering `true` here
+    // (as this did until 2026-09-05) made every register spuriously live
+    // whenever *any* loop was reachable downstream — which is every loop's own
+    // exit block — and refused sound `for-of` sites at v84/v94
+    // (docs/BUGS.md `for-of-break-handler-shape`).
+    if (visited.has(key)) return false;
     visited.add(key);
     const bb = cfg.blocks[b];
     if (bb === undefined) return true;

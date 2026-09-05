@@ -116,6 +116,12 @@ export interface IterForm {
   readonly binding: number;
   /** Register holding the enumerated object / the iterable. */
   readonly source: number;
+  /** `for-of` only, and only in the merge-point cleanup shape v84/v94/v96 emit
+   *  for a loop with a source `break` (docs/BUGS.md `for-of-break-handler-shape`):
+   *  the label of the `labeled` wrapper both synthesized `try`s carry a
+   *  `break` to instead of naming the cleanup block as their own `handler`.
+   *  The emitter drops that wrapper, both handlers and the cleanup block. */
+  readonly mergeLabel?: LabelId;
 }
 
 export type LoopForm = WhileForm | IterForm;

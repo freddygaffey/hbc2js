@@ -1,10 +1,10 @@
 // ACCEPTANCE: spec 21 (docs/specs/passes/21-for-in-for-of.md) — the `for-of`
 // stage-A rung, catalogue row 10.
 //
-// Written BEFORE `src/passes/for-of/` exists and marked `{ skip: SKIP }` so the
-// gate stays green until the rung lands. The implementer removes the `skip`
-// option from every `test(...)` here in the landing commit and changes nothing
-// else (spec 21 §8).
+// Written BEFORE `src/passes/for-of/` existed and marked `{ skip: SKIP }` so
+// the gate stayed green until the rung landed. The `skip` option was removed
+// from every `test(...)` here in the landing commit, nothing else changed
+// (spec 21 §8).
 //
 // Testing rules (CLAUDE.md): counts, regexes over the decompiled text,
 // structural checks and equivalence verdicts only — no literal comparison
@@ -21,8 +21,6 @@ import { seq } from "../../../src/structure/ir.ts";
 import type { Stmt } from "../../../src/structure/ir.ts";
 import type { CheckResult, Match, PassContext } from "../../../src/passes/types.ts";
 import { addr, imm, insn, reg, synthCfg } from "./synth.ts";
-
-const SKIP = "spec 21 acceptance — unimplemented";
 
 /** Runtime specifier: unresolvable at type-check time on purpose (spec 21 §8). */
 const passModule = async (file: string): Promise<Record<string, unknown>> =>
@@ -76,9 +74,15 @@ function forOfSynth(opts: ForOfOpts = {}) {
   const handlerInsns = opts.userHandler === true
     ? [insn("Catch", reg(0)), insn("Mov", reg(1), reg(0)), insn("Throw", reg(0))]
     : [insn("Catch", reg(0)), insn("IteratorClose", reg(opts.closeWrongRegister === true ? 9 : 4), imm(1)), insn("Throw", reg(0))];
+  // PUSHBACK P-18a: the plain exit must not read the binding register `r7`
+  // either — spec 21 §4.2 P8 / §6.4 make `registerLiveAfter(binding) === false`
+  // a precondition of the site, so `Ret r7` (this fixture's original spelling)
+  // was itself a shape the rung is required to refuse. `Ret r2` keeps the exit
+  // exactly as trivial and stays parallel with the `stateLiveAfter` variant,
+  // which perturbs it by reading `r4` instead. Every assertion is unchanged.
   const exitInsns = opts.stateLiveAfter === true
     ? [insn("Mov", reg(2), reg(4)), insn("Ret", reg(2))]
-    : [insn("Ret", reg(7))];
+    : [insn("Mov", reg(2), reg(3)), insn("Ret", reg(2))];
   const cfg = synthCfg([
     { succs: [1], insns: [insn("LoadConstUndefined", reg(3)), insn("Mov", reg(6), reg(9)), insn("IteratorBegin", reg(4), reg(6))] },
     { succs: [3, 2], insns: [insn("Mov", reg(7), reg(6)), insn("IteratorNext", reg(7), reg(4), reg(7)), insn("Mov", reg(8), reg(4)), insn("JStrictEqual", addr(12), reg(8), reg(3))] },
@@ -113,7 +117,7 @@ function forOfSynth(opts: ForOfOpts = {}) {
 
 // ---------------------------------------------------------------------------
 
-test("ACCEPTANCE spec 21: for-of is a registered stage-A rung on catalogue row 10", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: for-of is a registered stage-A rung on catalogue row 10", async () => {
   const { forOf } = (await passModule("index")) as { forOf: { name: string; stage: string; catalogue: readonly (number | string)[]; after?: readonly string[]; before?: readonly string[] } };
   const { REGISTRY } = await import("../../../src/passes/registry.ts");
   assert.equal(forOf.name, "for-of");
@@ -128,7 +132,7 @@ test("ACCEPTANCE spec 21: for-of is a registered stage-A rung on catalogue row 1
   assert.ok(names.indexOf("for-of") < names.indexOf("label-clean"), "registered before label-clean");
 });
 
-test("ACCEPTANCE spec 21: fixtures 06 and 07 print one `for (… of …)` per source loop, at every version", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: fixtures 06 and 07 print one `for (… of …)` per source loop, at every version", async () => {
   // 06-for-of-array: three loops (break, plain, sparse). 07-for-of-iterable:
   // three loops (Map with entry destructuring, Set, hand-rolled iterator).
   for (const name of ["06-for-of-array", "07-for-of-iterable"]) {
@@ -139,7 +143,7 @@ test("ACCEPTANCE spec 21: fixtures 06 and 07 print one `for (… of …)` per so
   }
 });
 
-test("ACCEPTANCE spec 21: the nested destructuring iterator in fixture 07 is not claimed as a fourth loop", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the nested destructuring iterator in fixture 07 is not claimed as a fourth loop", async () => {
   // §4.4: `for (const [k, v] of m)` lowers to an OUTER for-of whose body holds
   // a second IteratorBegin/IteratorNext pair for the `[k, v]` entry. That pair
   // is `destructure`'s row 22 site, has no `loop` node, and must not become a
@@ -147,7 +151,7 @@ test("ACCEPTANCE spec 21: the nested destructuring iterator in fixture 07 is not
   for (const v of ["v94", "v99"]) assert.equal(forOfHeads(decompiled("07-for-of-iterable", v)), 3, `${v}: exactly the three source loops`);
 });
 
-test("ACCEPTANCE spec 21: no iterator machinery survives in fixture 06's output", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: no iterator machinery survives in fixture 06's output", async () => {
   // 06 has no destructuring and no spread, so every iterator helper call in it
   // belongs to a for-of loop and must be gone.
   for (const v of ["v94", "v99"]) {
@@ -158,13 +162,13 @@ test("ACCEPTANCE spec 21: no iterator machinery survives in fixture 06's output"
   }
 });
 
-test("ACCEPTANCE spec 21: fixtures 06 and 07 still pass the equivalence oracle at every version", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: fixtures 06 and 07 still pass the equivalence oracle at every version", async () => {
   const report = await runTier({ tier: "gate", decompiler: hbc2jsDecompiler, only: ["06-for-of-array", "07-for-of-iterable"] });
   assert.deepEqual(report.results.filter((r) => r.verdict !== "PASS").map((r) => `${r.fixture.name}: ${r.verdict}`), []);
   assert.ok(report.summary.pass >= 10, `expected both fixtures at all 5 versions, got ${report.summary.pass}`);
 });
 
-test("ACCEPTANCE spec 21: the matcher accepts the v99 Mov-aliased header and refuses a user catch", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the matcher accepts the v99 Mov-aliased header and refuses a user catch", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const control = forOfSynth();
   assert.notEqual(match(control.loop, control.ctx), null, "control: the measured v99 for-of shape must match (Mov-refreshed source aliasing the destination register)");
@@ -175,7 +179,7 @@ test("ACCEPTANCE spec 21: the matcher accepts the v99 Mov-aliased header and ref
   assert.equal(match(bad.loop, bad.ctx), null, "a user catch must not be dropped as iterator cleanup");
 });
 
-test("ACCEPTANCE spec 21: the matcher refuses an IteratorClose on a register that is not the state", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the matcher refuses an IteratorClose on a register that is not the state", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const control = forOfSynth();
   assert.notEqual(match(control.loop, control.ctx), null, "control: the measured v99 for-of shape must match");
@@ -183,7 +187,7 @@ test("ACCEPTANCE spec 21: the matcher refuses an IteratorClose on a register tha
   assert.equal(match(bad.loop, bad.ctx), null, "§4.2 P6: every close must name the state register");
 });
 
-test("ACCEPTANCE spec 21: the matcher refuses when the iteration state is live after the loop", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the matcher refuses when the iteration state is live after the loop", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const control = forOfSynth();
   assert.notEqual(match(control.loop, control.ctx), null, "control: the measured v99 for-of shape must match");
@@ -193,7 +197,7 @@ test("ACCEPTANCE spec 21: the matcher refuses when the iteration state is live a
   assert.equal(match(bad.loop, bad.ctx), null, "iteration state read after the loop must refuse the site");
 });
 
-test("ACCEPTANCE spec 21: the rung is idempotent — an already-annotated loop does not match again", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the rung is idempotent — an already-annotated loop does not match again", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const { rewrite } = (await passModule("rewrite")) as { rewrite: (m: Match<Stmt, unknown>) => Stmt };
   const control = forOfSynth();
@@ -205,7 +209,7 @@ test("ACCEPTANCE spec 21: the rung is idempotent — an already-annotated loop d
   assert.equal(match(after, ctx2), null, "PL-08: a second run must rewrite nothing");
 });
 
-test("ACCEPTANCE spec 21: the checker refuses a rewrite that changed the tree shape", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the checker refuses a rewrite that changed the tree shape", async () => {
   const { check } = (await passModule("check")) as { check: CheckFn };
   const control = forOfSynth();
   // Annotation-only (LADDER §4.3): the try node may NOT be deleted by the
