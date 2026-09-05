@@ -1986,7 +1986,22 @@ function runSecrets(argv: readonly string[]): void {
 
   let svc: SecretsService;
   try {
-    svc = new SecretsService({ artifactDir });
+    // Open the same ArtifactService every other artifact-reading CLI verb
+    // opens (e.g. `runProject` above) so a DB-backed (.hbcproj-only, spec 16
+    // §2.4) artifact works here too — `SecretsService`'s legacy direct-disk
+    // path (no `artifact` passed) only understands `index/strings.json` +
+    // `index/string-uses.jsonl` on disk and throws ENOENT against a
+    // DB-backed project (docs/BUGS.md `SecretsService` row). Fall back to
+    // the legacy path only for the narrow index-only fixtures that have
+    // neither a `manifest.json` nor a `.hbcproj` — `ArtifactService` cannot
+    // open those at all (module header, src/secrets/service.ts).
+    let artifact: ArtifactService | undefined;
+    try {
+      artifact = new ArtifactService(artifactDir);
+    } catch {
+      artifact = undefined;
+    }
+    svc = new SecretsService(artifact !== undefined ? { artifactDir, artifact } : { artifactDir });
   } catch (e) {
     const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
     if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");
