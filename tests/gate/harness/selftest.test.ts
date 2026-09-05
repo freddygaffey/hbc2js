@@ -73,8 +73,15 @@ const MUTANTS_PER_FIXTURE = 6;
 // zero SURVIVED verdicts corpus-wide (71 EQUIVALENT), so the harness's
 // detection is unchanged and the ratio-scaled floor at 444 (375) was merely
 // 2 above what the equivalent mutants allow.
-const KILL_RATE_BASELINE = 373;
-const KILL_RATE_BASELINE_TOTAL = 444;
+// Re-based 373/444 -> 377/450 on 2026-09-05 for 74-sibling-env-slots (4/6
+// killed; `drop-statement` and `swap-adjacent-statements` EQUIVALENT; still
+// 0 SURVIVED corpus-wide, 73 EQUIVALENT). Design note for the harness lane:
+// every fixture whose mutants are partly EQUIVALENT moves this ratio-scaled
+// floor, while the real regression signal is a nonzero SURVIVED count --
+// consider asserting `survived === 0` plus a kill floor over
+// killed + survived only (spec 06 s12 literal reading kept for now).
+const KILL_RATE_BASELINE = 377;
+const KILL_RATE_BASELINE_TOTAL = 450;
 
 const RUN_OPTS: RunOptions = { timeout: 8000, seed: 0, fuzz: 0, relax: [], maxRecords: 20000, syncTimeout: 7000 };
 
