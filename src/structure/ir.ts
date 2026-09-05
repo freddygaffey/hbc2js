@@ -65,7 +65,7 @@ export type Stmt =
   | { readonly k: "setState"; readonly variable: DispatchVar; readonly value: number };
 
 /** See the `loop` node. Written by src/passes, read by src/emit. */
-export interface LoopForm {
+export interface WhileForm {
   /** "while": the test runs before every iteration; "do-while": after. */
   readonly kind: "while" | "do-while";
   /** The `if` block (inside `body`) whose terminator is the test. */
@@ -86,19 +86,39 @@ export interface LoopForm {
    */
   readonly init?: { readonly cfgBlock: BlockId; readonly from: number };
   readonly step?: { readonly cfgBlock: BlockId; readonly from: number };
-  /**
-   * `for-in`/`for-of` (spec `docs/specs/passes/01-framework-fixes.md` F5):
-   * `iterBlock` is the block holding the per-iteration advance-and-test
-   * (`GetNextPName`/`IteratorNext` followed by the exhaustion jump);
-   * `close` names blocks that are the compiler's iterator-protocol cleanup
-   * (`for-of`'s `break`/exception `IteratorClose`), implied by the `for...of`
-   * form and dropped rather than printed. The emitter prints `for (k in o)` /
-   * `for (v of it)` only when it finds `iterBlock` exactly where declared,
-   * else it falls back to `while`, exactly as `init`/`step` do. Nothing sets
-   * it in batch 1.
-   */
-  readonly iter?: { readonly kind: "for-in" | "for-of"; readonly iterBlock: BlockId; readonly close: readonly BlockId[] };
 }
+
+/**
+ * `for-in`/`for-of` (docs/specs/passes/21-for-in-for-of.md §3). Annotation
+ * only — nothing is moved, added or removed in the tree; the emitter derives
+ * the printed `for (… in …)` / `for (… of …)` from these fields and falls
+ * back to `while` when any of them is not exactly where declared, the same
+ * discipline `WhileForm.init`/`step` use.
+ */
+export interface IterForm {
+  readonly kind: "for-in" | "for-of";
+  /** The block whose terminator is the exhaustion test (the `if`'s block). */
+  readonly cond: BlockId;
+  readonly at: "head";
+  /** True when the taken edge of `cond` leaves the loop. */
+  readonly negate: boolean;
+  /** Block holding GetNextPName / IteratorNext. Equal to `cond` in every
+   *  shape measured; kept separate so a future split header still works. */
+  readonly iter: BlockId;
+  /** Block whose tail holds GetPNameList / IteratorBegin (the loop's
+   *  preceding `block` sibling, or the enclosing labeled block's first). */
+  readonly setup: BlockId;
+  /** Blocks ending in `IteratorClose` that the rung is dropping. Empty for
+   *  `for-in`; 1..2 entries for `for-of` (normal close per `break`, plus
+   *  the one abrupt close in the handler). */
+  readonly close: readonly BlockId[];
+  /** Register the per-iteration binding lands in (`k` / `v`). */
+  readonly binding: number;
+  /** Register holding the enumerated object / the iterable. */
+  readonly source: number;
+}
+
+export type LoopForm = WhileForm | IterForm;
 
 export type Scrutinee =
   | { readonly t: "jumptable"; readonly table: SwitchTable }

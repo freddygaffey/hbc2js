@@ -7,7 +7,7 @@ import { siteKey } from "../cfg/types.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { BuiltinTable, TypeOfIsTable } from "../tables/types.ts";
 import { typeOfIsTableFor } from "./typeofis.ts";
-import type { LabelId, Stmt as IrStmt, StructuredFunction, SwitchArm } from "../structure/ir.ts";
+import type { IterForm, LabelId, Stmt as IrStmt, StructuredFunction, SwitchArm, WhileForm } from "../structure/ir.ts";
 import type { Expr, Param, Stmt } from "./ast.ts";
 import { assign, bin, call, id, lit, num, p, un, UNDEF } from "./ast.ts";
 import { conditionFor, isConditionalJump } from "./conds.ts";
@@ -15,6 +15,7 @@ import { resolveBuiltin } from "./builtins.ts";
 import { lowerInstruction, planBlock, prop } from "./lower.ts";
 import { originOfInsn, stampFrom, withOrigin, type Origin } from "./origin.ts";
 import { EXC_VALUE, envSlot, excName, fnName, GEN_DONE, GEN_STATE, labelName, PC_VAR, quote, reg, SCRATCH, stateVar } from "./names.ts";
+import { writtenRegisters } from "../cfg/reg-effects.ts";
 import { argSlotBase } from "./semantics.ts";
 import { resolveShapes } from "./shapes.ts";
 
@@ -363,6 +364,21 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   // once, in the head, and trimmed where they would otherwise appear.
   const trims = new Map<BlockId, number>();
   let pendingInit: Expr | null = null;
+  /** spec 21 for-of: handler blocks whose enclosing `try` prints as its body alone (the handler is the compiler's synthesized `IteratorClose`/`Throw` cleanup). */
+  const dropTryHandlers = new Set<BlockId>();
+
+  /** Narrows `LoopForm` for the "loop" case below (a plain `.kind` comparison
+   *  chain does not reliably narrow a two-branch discriminated union across
+   *  two separate `if`s in this function's control flow). */
+  const isIterForm = (f: IterForm | WhileForm): f is IterForm => f.kind === "for-in" || f.kind === "for-of";
+
+  /** The one CFG block `s` reduces to (`seq` of one, or a bare leaf), else `null`. */
+  const soleBlockOf = (s: IrStmt): BlockId | null => {
+    const it = s.k === "seq" ? s.body : [s];
+    if (it.length !== 1) return null;
+    const only = it[0]!;
+    return "cfgBlock" in only ? (only as { cfgBlock: BlockId }).cfgBlock : null;
+  };
 
   /** All plain expression statements, or null. */
   const asExprs = (stmts: readonly Stmt[]): Expr | null => {
@@ -383,7 +399,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
    * prints nothing — when the tree is not the shape the annotation promises,
    * in which case the caller prints the plain `while (true)`.
    */
-  const lowerFormedLoop = (node: IrStmt & { k: "loop" }, form: NonNullable<(IrStmt & { k: "loop" })["form"]>, init: Expr | null, out: Stmt[]): boolean => {
+  const lowerFormedLoop = (node: IrStmt & { k: "loop" }, form: WhileForm, init: Expr | null, out: Stmt[]): boolean => {
     const items = node.body.k === "seq" ? node.body.body : [node.body];
     const gi = items.findIndex((s) => s.k === "if" && s.cfgBlock === form.cond);
     if (gi < 1 || items[gi - 1]!.k !== "block" || (items[gi - 1] as IrStmt & { k: "block" }).cfgBlock !== form.cond) return false;
@@ -424,11 +440,129 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     return true;
   };
 
+  /** `const`: written by nothing else and evidently not reassigned. `let`
+   *  otherwise — spec 21 §5 (the "not live after the loop" / "not captured"
+   *  refinements to `let` live in the matcher's refusal table for v1: a site
+   *  that would need either is refused before this ever runs). */
+  const bindingDecl = (binding: number): "const" | "let" => {
+    for (const b of structured.graph.cfg.blocks) {
+      for (const insn of b.instructions) {
+        if (insn.name === "GetNextPName" || insn.name === "IteratorNext") continue;
+        if (writtenRegisters(insn).includes(binding)) return "let";
+      }
+    }
+    return "const";
+  };
+
+  /** Rewrites `break <label>` (the structurer's internal exit target for a
+   *  source-level `break` inside a for-of/for-in body, spec 21 §2.2) into a
+   *  bare `break` — correct because, once printed, the loop this rung forms
+   *  is the *immediately* enclosing loop of every such break. */
+  const unlabelBreaks = (list: readonly Stmt[], label: string): Stmt[] =>
+    list.map((s): Stmt => {
+      if (s.k === "break" && s.label === label) return { ...s, label: null };
+      switch (s.k) {
+        case "if":
+          return { ...s, then: unlabelBreaks(s.then, label), else: unlabelBreaks(s.else, label) };
+        case "while":
+        case "do-while":
+        case "for":
+        case "for-in":
+        case "for-of":
+        case "labeled":
+          return { ...s, body: unlabelBreaks(s.body, label) } as Stmt;
+        case "try":
+          return { ...s, block: unlabelBreaks(s.block, label), handler: unlabelBreaks(s.handler, label) };
+        case "switch":
+          return { ...s, cases: s.cases.map((c) => ({ ...c, body: unlabelBreaks(c.body, label) })) };
+        default:
+          return s;
+      }
+    });
+
+  /**
+   * spec 21 §3 item 3: `for (const|let <name> in|of <src>) { … }`. Annotation
+   * only — the tree still holds the header block/guard, the setup, and (for
+   * for-of) the try/handler this prints without. Refuses (returns `false`,
+   * so the caller prints the plain `while (true)`) the instant `cond`/`iter`
+   * is not exactly where the annotation declares — nothing is ever dropped
+   * on the strength of an annotation the emitter cannot re-find.
+   */
+  const lowerIterLoop = (node: IrStmt & { k: "loop" }, form: IterForm, out: Stmt[]): boolean => {
+    const items = node.body.k === "seq" ? node.body.body : [node.body];
+    // for-of, with a source `break`: the structurer wraps the header in a
+    // `labeled` block so the exhaustion exit (this guard) and a source
+    // `break` share a target distinct from the loop's own `continue`.
+    let headerItems = items;
+    let wrapperLabel: string | null = null;
+    const first = items[0];
+    if (first !== undefined && first.k === "labeled") {
+      const inner = first.body.k === "seq" ? first.body.body : [first.body];
+      if (inner.length === 2 && inner[0]!.k === "block" && inner[0]!.cfgBlock === form.cond) {
+        headerItems = inner;
+        wrapperLabel = labelOf(first.label);
+      }
+    }
+    if (headerItems.length < 2 || headerItems[0]!.k !== "block" || headerItems[0]!.cfgBlock !== form.cond) return false;
+    const guard = headerItems[1];
+    if (guard === undefined || guard.k !== "if" || guard.cfgBlock !== form.cond) return false;
+    // Unlike `WhileForm`'s head test, the header block here is never printed
+    // at all — `GetNextPName`/`IteratorNext` is enumerator plumbing implied
+    // by the `for...in`/`for...of` syntax, not a side effect that has to be
+    // proven absent (contrast `lowerFormedLoop`'s "only the jump may live in
+    // the head block" check just above, which is about a *value* test).
+
+    if (form.kind === "for-of") {
+      const handlerBlock = form.close[form.close.length - 1];
+      if (handlerBlock !== undefined) dropTryHandlers.add(handlerBlock);
+      for (const c of form.close.slice(0, -1)) trims.set(c, 0);
+    }
+
+    let body: Stmt[] = [];
+    lowerTree(form.negate ? guard.else : guard.then, body);
+    if (wrapperLabel === null) lowerItems(items.slice(2), body);
+    else body = unlabelBreaks(body, wrapperLabel);
+
+    const decl = bindingDecl(form.binding);
+    const stmt = { k: form.kind, label: labelOf(node.label), decl, left: id(reg(form.binding)), right: id(reg(form.source)), body } as Stmt;
+    out.push(withOrigin(stmt, terminatorOrigin(form.cond, isConditionalJump)));
+    return true;
+  };
+
   /** A statement list; a block followed by a `for`-form loop hands its init slice to the loop. */
   const lowerItems = (list: readonly IrStmt[], out: Stmt[]): void => {
+    // spec 21 §3 item 3: `form.setup`'s trailing `GetPNameList`/`IteratorBegin`
+    // is suppressed when the setup block is a flat preceding sibling of the
+    // loop it feeds (for-of, always; for-in, only in the flatter of its two
+    // measured shapes — the usual nested one is handled in the `if` case
+    // below). Computed as a pre-pass: the setup block is processed *before*
+    // the loop is reached, so its trim has to be known ahead of time.
+    const skip = new Set<number>();
+    for (const [i, it] of list.entries()) {
+      if (it.k !== "loop" || it.form === undefined) continue;
+      const form = it.form;
+      if (form.kind !== "for-in" && form.kind !== "for-of") continue;
+      const prev = list[i - 1];
+      if (form.kind === "for-of" && prev?.k === "block" && prev.cfgBlock === form.setup) {
+        const to = setupTrimPoint(form.setup, "for-of");
+        if (to !== null) trims.set(form.setup, to);
+      } else if (form.kind === "for-in") {
+        const guardStmt = list[i - 1];
+        const blockStmt = list[i - 2];
+        if (guardStmt?.k === "if" && blockStmt?.k === "block" && guardStmt.cfgBlock === form.setup && blockStmt.cfgBlock === form.setup) {
+          const to = setupTrimPoint(form.setup, "for-in");
+          if (to !== null) {
+            trims.set(form.setup, to);
+            skip.add(i - 1);
+          }
+        }
+      }
+    }
     for (const [i, c] of list.entries()) {
+      if (skip.has(i)) continue;
       const next = list[i + 1];
-      const init = next?.k === "loop" ? next.form?.init : undefined;
+      const nextForm = next?.k === "loop" ? next.form : undefined;
+      const init = nextForm !== undefined && (nextForm.kind === "while" || nextForm.kind === "do-while") ? nextForm.init : undefined;
       if (c.k === "block" && init !== undefined && init.cfgBlock === c.cfgBlock) {
         const head = asExprs(lowerBlock(c.cfgBlock, { from: init.from }));
         if (head !== null) {
@@ -439,6 +573,18 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       }
       lowerTree(c, out);
     }
+  };
+
+  /** The instruction index a `for-in`/`for-of` setup block should be trimmed
+   *  to — everything from there on (the `GetPNameList`/`IteratorBegin` and,
+   *  for `for-in`, the `JmpUndefined` beside it) is enumerator plumbing with
+   *  no JS value, and is dropped rather than printed. `null` when the block
+   *  does not end the way the annotation says (fallback: print it whole). */
+  const setupTrimPoint = (block: BlockId, kind: "for-in" | "for-of"): number | null => {
+    const insns = structured.graph.blocks[block]?.block?.instructions;
+    if (insns === undefined || insns.length === 0) return null;
+    if (kind === "for-of") return insns[insns.length - 1]!.name === "IteratorBegin" ? insns.length - 1 : null;
+    return insns.length >= 2 && insns[insns.length - 2]!.name === "GetPNameList" ? insns.length - 2 : null;
   };
 
   const lowerTree = (node: IrStmt, out: Stmt[]): void => {
@@ -460,7 +606,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       case "loop": {
         const init = pendingInit;
         pendingInit = null;
-        if (node.form !== undefined && lowerFormedLoop(node, node.form, init, out)) return;
+        const form = node.form;
+        if (form !== undefined && isIterForm(form) && lowerIterLoop(node, form, out)) return;
+        if (form !== undefined && !isIterForm(form) && lowerFormedLoop(node, form, init, out)) return;
         // review M5-pass-1 F3: `lowerItems` already trimmed the preceding block
         // to `{ to: init.from }` on the assumption the loop would print as a
         // `for`. On this false path it did not, so the tail slice `init` was
@@ -473,6 +621,35 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       }
       case "if": {
+        // spec 21 §3 item 3 / for-in's §2.1 shape: the Ramsey structurer
+        // usually sinks a for-in loop into one arm of the "still enumerable"
+        // guard, fusing "block bS; if bS {...}" into this one node. When that
+        // guard is exactly `form.setup` for the loop it holds, print the
+        // trimmed setup block, the for-in statement itself, and then the
+        // other arm (the outer exit, `break L0` in every measured shape) —
+        // never the `if` around it.
+        const soleItem = (s: IrStmt): IrStmt | undefined => {
+          const it = s.k === "seq" ? s.body : [s];
+          return it.length === 1 ? it[0] : undefined;
+        };
+        const thenSole = soleItem(node.then);
+        const elseSole = soleItem(node.else);
+        const iterLoop =
+          thenSole?.k === "loop" && thenSole.form?.kind === "for-in" && thenSole.form.setup === node.cfgBlock
+            ? thenSole
+            : elseSole?.k === "loop" && elseSole.form?.kind === "for-in" && elseSole.form.setup === node.cfgBlock
+              ? elseSole
+              : undefined;
+        if (iterLoop !== undefined) {
+          const to = setupTrimPoint(node.cfgBlock, "for-in");
+          if (to !== null) {
+            out.push(...lowerBlock(node.cfgBlock, { to }));
+            if (lowerIterLoop(iterLoop as IrStmt & { k: "loop" }, iterLoop.form as IterForm, out)) {
+              lowerTree(iterLoop === thenSole ? node.else : node.then, out);
+              return;
+            }
+          }
+        }
         const then: Stmt[] = [];
         const els: Stmt[] = [];
         lowerTree(node.then, then);
@@ -522,6 +699,14 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       }
       case "try": {
+        // spec 21 §3 item 3: a for-of's synthesized cleanup try — its handler
+        // is exactly the abrupt `IteratorClose` block `lowerIterLoop` already
+        // recorded — prints as its body alone, no `try`/`catch` at all.
+        const handlerBlock = soleBlockOf(node.handler);
+        if (handlerBlock !== null && dropTryHandlers.has(handlerBlock)) {
+          lowerTree(node.body, out);
+          return;
+        }
         const block: Stmt[] = [];
         lowerTree(node.body, block);
         const handler: Stmt[] = [];

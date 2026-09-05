@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { structure } from "../../../src/structure/index.ts";
-import type { Stmt } from "../../../src/structure/ir.ts";
+import type { Stmt, WhileForm } from "../../../src/structure/ir.ts";
 import { applyPasses } from "../../../src/passes/driver.ts";
 import { forHeader } from "../../../src/passes/for-header/index.ts";
 import type { ForMatch } from "../../../src/passes/for-header/match.ts";
@@ -65,7 +65,7 @@ test("for-header/check rejects a rewrite with the init and step blocks swapped",
   // step (e.g. an operand-order slip building the ForSite).
   const swapInitStep = (m: ForMatch, ctx: PassContext): Stmt => {
     const real = forHeader.rewrite(m, ctx) as Stmt & { k: "loop" };
-    const form = real.form!;
+    const form = real.form! as WhileForm;
     return { ...real, form: { ...form, init: form.step, step: form.init } } as unknown as Stmt;
   };
   const wrapped: Pass<Stmt> = { ...(forHeader as Pass<Stmt>), rewrite: swapInitStep };
@@ -89,7 +89,7 @@ test("for-header/check rejects a rewrite whose step points at a block/offset the
   const fn2 = afterLoopCond.fn;
   const wrongStep = (m: ForMatch, ctx: PassContext): Stmt => {
     const real = forHeader.rewrite(m, ctx) as Stmt & { k: "loop" };
-    const form = real.form!;
+    const form = real.form! as WhileForm;
     return { ...real, form: { ...form, step: { cfgBlock: 99, from: 0 } } } as unknown as Stmt;
   };
   const wrapped: Pass<Stmt> = { ...(forHeader as Pass<Stmt>), rewrite: wrongStep };

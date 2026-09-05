@@ -11,6 +11,8 @@ import { objectLiteral } from "./object-literal/index.ts";
 import { exprRebuild } from "./expr-rebuild/index.ts";
 import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
+// for-in/for-of are implemented but not registered yet — see the note above
+// REGISTRY.
 import { globalAccess } from "./global-access/index.ts";
 import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
@@ -83,6 +85,15 @@ import { varNaming } from "./var-naming/index.ts";
  *  already in its collision set, and needs `call-shape` to have turned a
  *  disguised call back into a real callee so its call-result heuristic
  *  sees one. */
+// for-in/for-of (spec 21) are implemented (src/passes/for-in, src/passes/for-of)
+// and unit-tested against hand-built trees, but NOT YET registered here: the
+// stage-B AST framework (src/emit/ast.ts's `walk`/`mapStmts`/etc.) has no case
+// for the new `for-in`/`for-of` Stmt kind, so `expr-rebuild`/`reg-split`/
+// `var-naming` silently skip into their `body`/`left`/`right` — a register
+// renamed or inlined everywhere else in the function is left stale inside the
+// loop, which is a correctness bug (confirmed DIVERGENT on 05-for-in-object),
+// not a readability one. Landing needs that stage-B traversal support first.
+// See the AGENT-LOG entry and handoff for 2026-09-05 (agent/forin).
 export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, objectLiteral as Pass, jsxRecover as Pass, fnNaming as Pass, regSplit as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {

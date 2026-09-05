@@ -11,10 +11,11 @@ import type { Expr } from "../emit/ast.ts";
 import type { Instruction } from "../disasm/decode.ts";
 import type { BlockId } from "../cfg/types.ts";
 import type { ModuleAnalysis } from "../cfg/types.ts";
-import { writtenRegisters } from "../cfg/reg-effects.ts";
+import { hasDestOperand0, writtenRegisters } from "../cfg/reg-effects.ts";
 import { children } from "../structure/ir.ts";
 import type { LabelId, Stmt, StructuredFunction } from "../structure/ir.ts";
 import { postOrder } from "./driver.ts";
+import type { PassContext } from "./types.ts";
 
 export type { BlockId } from "../cfg/types.ts";
 export type { Instruction } from "../disasm/decode.ts";
@@ -306,4 +307,76 @@ function evaluate(e: Expr, env: ReadonlyMap<string, number | boolean>): boolean 
     default:
       return undefined;
   }
+}
+
+/**
+ * The instruction ending `block` (its terminator), or `null` for a synthetic
+ * try-head / a block with no instructions. Ladder §4.1: replaces the private
+ * `instructionsOf(...).at(-1)!` idiom.
+ */
+export function lastInstruction(fn: StructuredFunction, block: BlockId): Instruction | null {
+  const insns = instructionsOf(fn, block);
+  return insns === null || insns.length === 0 ? null : insns[insns.length - 1]!;
+}
+
+/**
+ * The statement immediately preceding `node` in its parent's `seq`, or
+ * `null` when `node` is not inside a flat statement list (its parent is an
+ * `if`/`labeled`/`loop` arm holding it directly) or is the first item.
+ * Ladder §4.1: hoisted from the `parentOf` dance `for-header/match.ts` and
+ * `for-header/check.ts` both open-coded.
+ */
+export function precedingSibling(ctx: PassContext, node: Stmt): Stmt | null {
+  const at = ctx.parentOf?.(node);
+  if (at === undefined || at === null) return null;
+  const parent = at.parent as Stmt;
+  if (parent.k !== "seq") return null;
+  return parent.body[at.index - 1] ?? null;
+}
+
+/** Register operands `insn` reads (as opposed to merely writes). Operand 0 is
+ *  a pure destination unless `hasDestOperand0` says otherwise (write-only
+ *  opcodes with no destination, or read-only-op0 opcodes); every other `reg`
+ *  operand is a read. Deliberately conservative — an operand that is really
+ *  "write only" but not operand 0 is still counted as a read here, which only
+ *  ever pushes `registerLiveAfter` toward `true` (its own safe direction). */
+function readRegisters(insn: Instruction): number[] {
+  const out: number[] = [];
+  const destOnly = hasDestOperand0(insn) ? insn.operands[0]!.value : undefined;
+  for (const [i, op] of insn.operands.entries()) {
+    if (op.role !== "reg") continue;
+    if (i === 0 && op.value === destOnly) continue;
+    if (!out.includes(op.value)) out.push(op.value);
+  }
+  return out;
+}
+
+/**
+ * Conservative forward liveness (ladder §4.1): is `reg` read on some path
+ * starting at instruction `index` of `block` (inclusive) before it is
+ * (re)written? Walks the CFG forward from `(block, index)`; a write to `reg`
+ * with no prior read on that path kills it; a read anywhere before such a
+ * write makes the register live. Cycles and unresolved paths answer `true`
+ * (unknown -> live -> the caller refuses the site), per the spec's
+ * "conservative = refuse" rule.
+ */
+export function registerLiveAfter(fn: StructuredFunction, block: BlockId, index: number, register: number): boolean {
+  const cfg = fn.graph.cfg;
+  const visited = new Set<string>();
+  const walk = (b: BlockId, from: number): boolean => {
+    const key = `${b}:${from}`;
+    if (visited.has(key)) return true; // a revisited (block, from) pair is a cycle we cannot resolve
+    visited.add(key);
+    const bb = cfg.blocks[b];
+    if (bb === undefined) return true;
+    for (let i = from; i < bb.instructions.length; i++) {
+      const insn = bb.instructions[i]!;
+      if (readRegisters(insn).includes(register)) return true;
+      if (writtenRegisters(insn).includes(register)) return false; // killed on this path
+    }
+    const succs = [...bb.succs.map((e) => e.to), ...(cfg.exceptionSuccs.get(b) ?? [])];
+    if (succs.length === 0) return false; // falls off the end of the function: dead
+    return succs.some((s) => walk(s, 0));
+  };
+  return walk(block, index);
 }
