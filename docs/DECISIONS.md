@@ -365,3 +365,43 @@ half-implemented:
 No code changes; this entry exists so `docs/specs/27-native-side.md` §L9's
 text has a `docs/DECISIONS.md` cross-reference per this repo's own
 convention (every landing's decision gets one).
+
+## D33 — A long ui-server scan yields the event loop; it does not get a worker, and it does not get an index (2026-09-05, Claude Opus 5, agent/search-perf)
+
+Three shapes were on the table for `GET /api/search/source`, which froze the
+whole server for 83 s on a real 12 MB app (docs/BUGS.md, 2026-09-05 rows).
+
+1. **A `node:worker_threads` worker**, the pattern `/api/segregation` and
+   `/api/leads` already use. Rejected for search: those computes take one
+   input (`artifactDir`) and are cached forever after, so paying an
+   `ArtifactService` rebuild per compute is fine. A search is per-QUERY, so
+   the rebuild (seconds) would be paid on every keystroke, and the worker
+   would answer without the caller's overlay — a renamed function would
+   match on its pre-rename text. The worker pattern stays right for the
+   whole-artifact, cache-once computes; it is wrong for per-query reads.
+2. **A persisted source-text index in the project DB.** Not needed, on the
+   numbers: the scan was slow because it re-read each module file once per
+   function it owns and called `artifact.fn(fn)` (O(native rows) + an
+   overlay query) per function, not because grepping the text is expensive.
+   Reading each module once and taking the cheap `listRanges` rows took the
+   rn-template fixture (4,199 fns) from 5,349 ms to 132 ms for `q=function`
+   — a 40x cut with no new store, no schema change and nothing to
+   invalidate. Extrapolated to the 15k-fn app that measured 83 s, that is
+   ~2 s. An index would buy the next order of magnitude and cost a write
+   path, an invalidation rule and a migration; it is not worth it until a
+   measurement says a ~2 s scan is the bottleneck. Revisit with numbers.
+3. **Yield the event loop** (chosen). A scan is written ONCE as a generator
+   that `yield`s between units of work (`src/incremental.ts`); `drainSync`
+   runs it straight through for CLI/MCP callers and `drainAsync` hands the
+   loop back every 8 ms for the ui-server. One implementation, so the two
+   drains cannot disagree; the guarantee is independent of how big the
+   bundle is, which the 40x speed-up alone would not be.
+
+Corollary on `limit`: push it into the scan where the answer allows it and
+say so when it changes what `total` means. `search/source` stops as soon as
+the page plus one row is filled and marks the page `partial: true` (`total`
+is then a lower bound). `template-injections` does NOT push `limit` down —
+its rows are ranked, so the top `limit` of them is only known after every
+function has been scanned; pushing it down would change the answer rather
+than its cost. A cheaper answer is never worth a wrong one.
+
