@@ -16,9 +16,9 @@ import { expressionOnlyCheck, isPure, isRegisterName, registerUses } from "../as
 
 const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { CheckResult, PassContext } from "../types.ts";
-import type { ExprRebuildMatch, ExprRebuildSite } from "./match.ts";
+import type { ExprRebuildSite } from "./match.ts";
 import { classifySite, exprCounts } from "./match.ts";
-import { rewrite } from "./rewrite.ts";
+import { impureStoreRemnant, substituteTopLevel } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b); // identity first: rewrite keeps every untouched statement (P-1)
@@ -36,44 +36,81 @@ function firstDivergence(before: readonly Stmt[], after: readonly Stmt[]): numbe
 
 /**
  * `registerUses(before).get(reg)` minus `registerUses(after).get(reg)`,
- * without ever walking either list in full. `registerUses` (`../ast.ts`) is
- * a plain left-to-right accumulation over `stmts` with no cross-statement
+ * computed from the touched window alone. `registerUses` (`../ast.ts`) is a
+ * plain left-to-right accumulation over `stmts` with no cross-statement
  * state, so it is concatenative: `registerUses(A ++ B ++ C) =
  * registerUses(A) + registerUses(B) + registerUses(C)` (componentwise).
- * This rewrite only ever touches a bounded region — one store, replaced or
- * removed, plus at most one other statement it folds into — so
- * `before`/`after` share a reference-identical prefix and a
- * reference-identical suffix (found below by scanning in from both ends).
- * Write `before = pre ++ beforeMid ++ post` and `after = pre ++ afterMid ++
- * post` for that shared `pre`/`post`; then `registerUses(before) =
- * registerUses(pre) + registerUses(beforeMid) + registerUses(post)` and
- * likewise for `after`, so `registerUses(pre)`/`registerUses(post)` cancel
- * out of the subtraction exactly, leaving `registerUses(beforeMid) -
- * registerUses(afterMid)` — computable from the changed region alone,
- * without ever computing (or needing) `registerUses(before)` /
- * `registerUses(after)` over the *whole* list. That whole-list walk (once
- * per applied site, since `spliceList` gives an edited list — and every
- * list containing it — a fresh array identity, so `registerUsesMemo` in
- * `../ast.ts` is cold for it every time, e.g. every time a top-level site
- * is matched) was the last superlinear term in the 946 s Service NSW
- * profile spent here: `docs/BUGS.md`'s superlinear-pass row, part 2 (part 1
- * fixed the sibling `listIndex` rebuild in `match.ts` and the whole-list
- * `expressionOnlyCheck` walk this file's `check` also does). `O(changed
- * region)` per applied site, not `O(list.length)`.
+ * `verifyExpectedShape` above has already proven, element by element over
+ * the whole list, that `after` is exactly `before` with the region
+ * `[lo, hiBefore)` replaced by `[lo, hiAfter)` and *nothing else changed*,
+ * so writing `before = pre ++ beforeMid ++ post` and `after = pre ++
+ * afterMid ++ post` for that same `pre`/`post`, the `registerUses(pre)` and
+ * `registerUses(post)` terms cancel out of the subtraction exactly, leaving
+ * `registerUses(beforeMid) - registerUses(afterMid)`.
+ *
+ * The window is derived from the re-classified site (`i`, and `j` for R1a),
+ * so it is `O(j - i)` - the fold distance, short by construction, since
+ * `match` only folds a read that is reachable without crossing an effect it
+ * cannot commute with. Earlier revisions found the same window by scanning
+ * in from both ends of the list for the reference-identical prefix/suffix,
+ * which is `O(list.length)` per applied site; that whole-list walk (once per
+ * applied site, since `spliceList` gives an edited list a fresh array
+ * identity, so `registerUsesMemo` in `../ast.ts` is cold for it every time)
+ * was a term in the 946 s Service NSW profile - `docs/BUGS.md`'s
+ * superlinear-pass row, parts 2 and 4.
  */
-function registerUseDelta(before: readonly Stmt[], after: readonly Stmt[], reg: string): { readonly reads: number; readonly writes: number } {
-  const minLen = Math.min(before.length, after.length);
-  let head = 0;
-  while (head < minLen && before[head] === after[head]) head++;
-  let tailBefore = before.length;
-  let tailAfter = after.length;
-  while (tailBefore > head && tailAfter > head && before[tailBefore - 1] === after[tailAfter - 1]) {
-    tailBefore--;
-    tailAfter--;
-  }
-  const beforeMid = registerUses(before.slice(head, tailBefore)).get(reg) ?? NO_USES;
-  const afterMid = registerUses(after.slice(head, tailAfter)).get(reg) ?? NO_USES;
+function registerUseDelta(before: readonly Stmt[], after: readonly Stmt[], reg: string, lo: number, hiBefore: number, hiAfter: number): { readonly reads: number; readonly writes: number } {
+  const beforeMid = registerUses(before.slice(lo, hiBefore)).get(reg) ?? NO_USES;
+  const afterMid = registerUses(after.slice(lo, hiAfter)).get(reg) ?? NO_USES;
   return { reads: beforeMid.reads - afterMid.reads, writes: beforeMid.writes - afterMid.writes };
+}
+
+/**
+ * Item: the exact substituted *value*, re-derived and compared a window at a
+ * time. Classification and the read/write count delta both prove the rewrite
+ * has the right *shape* (which rule, which statement dropped, how many reads
+ * and writes moved) but neither looks at what got folded in - a mutated
+ * writer that substitutes a wrong constant (or any other same-arity
+ * expression) at the read site passes both unchanged (docs/BUGS.md,
+ * 2026-09-01 checker-mutation row).
+ *
+ * This re-derives what `rewrite.ts` would build from the re-classified site
+ * (`rule`, `i`, `j`, `reg`, `value`, all already re-proven from `before`
+ * alone, never trusted from the writer's own call) and compares it against
+ * the actual `after` position by position - the same guarantee the earlier
+ * `expected = rewrite(...); expected.every(sameStmt)` form gave, since
+ * `rewrite` is a pure function of `(root, data)` and the mapping below is
+ * exactly its definition. The difference is cost: the earlier form rebuilt
+ * the whole immutable statement array a second time per applied site (three
+ * more array allocations and ~2x `list.length` element copies) to produce a
+ * list whose every element outside the touched window is already
+ * reference-identical to `after`'s. Here nothing is allocated at all: the
+ * expected element at each position is `before`'s own object, except at the
+ * one or two positions the rule actually rewrites, so the comparison is a
+ * pointer test per position plus at most one structural comparison, and it
+ * still covers every position (a writer that also perturbed some far-away
+ * statement is still caught). `docs/BUGS.md`'s superlinear-pass row, part 4.
+ */
+function verifyExpectedShape(before: readonly Stmt[], after: readonly Stmt[], rule: ExprRebuildSite["rule"], i: number, j: number, reg: string, value: Expr): boolean {
+  const impureStore = rule === "R1b" && !isPure(value);
+  const expectedLength = impureStore ? before.length : before.length - 1;
+  if (after.length !== expectedLength) return false;
+  for (let k = 0; k < i; k++) {
+    if (!sameStmt(before[k]!, after[k]!)) return false;
+  }
+  if (impureStore) {
+    if (!sameStmt(impureStoreRemnant(value), after[i]!)) return false;
+    for (let k = i + 1; k < after.length; k++) {
+      if (!sameStmt(before[k]!, after[k]!)) return false;
+    }
+    return true;
+  }
+  const newJ = rule === "R1a" ? j - 1 : -1;
+  for (let k = i; k < after.length; k++) {
+    const expected = k === newJ ? substituteTopLevel(before[k + 1]!, reg, value) : before[k + 1]!;
+    if (!sameStmt(expected, after[k]!)) return false;
+  }
+  return true;
 }
 
 export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: PassContext): CheckResult {
@@ -100,37 +137,28 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   const verdict = classifySite(before, fnBody, i, reg, value);
   if (!verdict.ok) return { ok: false, reason: verdict.reason };
 
-  // Item 4: the exact read/write delta. Writes always drop by one (the store
-  // itself). Reads drop by one for R1a (the folded read is now gone — E's own
-  // reads of `reg`, if any, simply relocate from `i` to `j`, netting zero);
-  // for R1b/R1c reads drop only by however many times `E` itself read `reg`
-  // and got *deleted* (pure) — an impure R1b keeps `E` (and its reads) alive.
-  const eSelfReads = exprCounts(value, reg).reads;
-  const expectedReadDelta = verdict.rule === "R1a" ? 1 : isPure(value) ? eSelfReads : 0;
-  const delta = registerUseDelta(before, after, reg);
-  if (delta.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
-  if (delta.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
-
-  // Item: the exact substituted *value*. Classification and the read/write
-  // count delta above both prove the rewrite has the right *shape* (which
-  // rule, which statement dropped, how many reads/writes moved) but neither
-  // looks at what got folded in — a mutated writer that substitutes a wrong
-  // constant (or any other same-arity expression) at the read site passes
-  // both unchanged (docs/BUGS.md, 2026-09-01 checker-mutation row). Re-derive
-  // the expected `after` the same way `rewrite.ts` would build it from the
-  // re-classified site (`{ rule, i, j, reg, value }`, all already re-proven
-  // above from `before` alone — never trusted from the writer's own call),
-  // and compare structurally, byte-for-byte, against the actual `after`.
-  // `rewrite` is a pure function of `(root, data)` — same code path the real
-  // writer used — so this is exact, not an approximation: any legitimate
-  // transform the writer performs (including folding into a nested
-  // expression at `j`) is reproduced identically here, because it is
-  // reproduced by calling the very same builder.
-  const site: ExprRebuildSite = { rule: verdict.rule, i, j: verdict.j, reg, value };
-  const expected = rewrite({ root: before, data: site } as unknown as ExprRebuildMatch);
-  if (expected.length !== after.length || !expected.every((s, idx) => sameStmt(s, after[idx]!))) {
+  // The exact substituted value, over the whole list but without rebuilding
+  // it (see `verifyExpectedShape`): after this, `after` is known to be
+  // `before` with the region `[i, hiBefore)` replaced by `[i, hiAfter)` and
+  // every other position unchanged, which is what the bounded read/write
+  // delta below relies on.
+  if (!verifyExpectedShape(before, after, verdict.rule, i, verdict.j, reg, value)) {
     return { ok: false, reason: "the rewrite did not fold in the expected value" };
   }
+
+  // Item 4: the exact read/write delta. Writes always drop by one (the store
+  // itself). Reads drop by one for R1a (the folded read is now gone - E's own
+  // reads of `reg`, if any, simply relocate from `i` to `j`, netting zero);
+  // for R1b/R1c reads drop only by however many times `E` itself read `reg`
+  // and got *deleted* (pure) - an impure R1b keeps `E` (and its reads) alive.
+  const eSelfReads = exprCounts(value, reg).reads;
+  const expectedReadDelta = verdict.rule === "R1a" ? 1 : isPure(value) ? eSelfReads : 0;
+  const impureStore = verdict.rule === "R1b" && !isPure(value);
+  const hiBefore = verdict.rule === "R1a" ? verdict.j + 1 : i + 1;
+  const hiAfter = verdict.rule === "R1a" ? verdict.j : impureStore ? i + 1 : i;
+  const delta = registerUseDelta(before, after, reg, i, hiBefore, hiAfter);
+  if (delta.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
+  if (delta.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
 
   return { ok: true };
 }

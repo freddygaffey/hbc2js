@@ -6,7 +6,7 @@ import type { ExprRebuildMatch } from "./match.ts";
 /** Rebuilds `s`'s one R1a-eligible field (mirrors `match.ts`'s
  *  `topLevelExprOf`) with `rX` replaced by `value` at the single read
  *  `match` found. */
-function substituteTopLevel(s: Stmt, reg: string, value: Expr): Stmt {
+export function substituteTopLevel(s: Stmt, reg: string, value: Expr): Stmt {
   switch (s.k) {
     case "expr":
       return { ...s, expr: replaceRead(s.expr, reg, value) };
@@ -101,21 +101,45 @@ function replaceRead(e: Expr, reg: string, value: Expr): Expr {
   }
 }
 
+/** `list` with index `i` removed, in a single allocation and a single pass.
+ *  The old `[...list.slice(0, i), ...list.slice(i + 1)]` form allocated two
+ *  intermediate slices *and* the spread target, i.e. three arrays and ~2x
+ *  `list.length` element copies per call, and `check` called `rewrite` a
+ *  second time per site to re-derive the expected `after` - eight array
+ *  allocations per applied site on a module-root-shaped function. One
+ *  allocation and one copy is the floor for an immutable statement array
+ *  (docs/BUGS.md's superlinear-pass row, part 4; the rest needs a persistent
+ *  list representation - docs/PUSHBACK.md P-32/P-33). */
+function withoutAt(list: readonly Stmt[], i: number): Stmt[] {
+  const out = new Array<Stmt>(list.length - 1);
+  for (let k = 0; k < i; k++) out[k] = list[k]!;
+  for (let k = i + 1; k < list.length; k++) out[k - 1] = list[k]!;
+  return out;
+}
+
+/** The statement an impure R1b leaves behind at `i`: the store is dropped,
+ *  its value expression kept for its effects. Shared with `check.ts`, which
+ *  re-derives the expected `after` a window at a time rather than by
+ *  rebuilding the whole list. */
+export function impureStoreRemnant(value: Expr): Stmt {
+  return { k: "expr", expr: value };
+}
+
 export function rewrite(m: ExprRebuildMatch): readonly Stmt[] {
   const { rule, i, j, reg, value } = m.data;
   const list = m.root;
 
-  if (rule === "R1c") {
-    return [...list.slice(0, i), ...list.slice(i + 1)];
-  }
+  if (rule === "R1c") return withoutAt(list, i);
   if (rule === "R1b") {
-    if (isPure(value)) return [...list.slice(0, i), ...list.slice(i + 1)];
-    const replaced: Stmt = { k: "expr", expr: value }; // keep the effect, drop the store
-    return [...list.slice(0, i), replaced, ...list.slice(i + 1)];
+    if (isPure(value)) return withoutAt(list, i);
+    const out = list.slice(); // keep the effect, drop the store
+    out[i] = impureStoreRemnant(value);
+    return out;
   }
-  // R1a
-  const withoutStore = [...list.slice(0, i), ...list.slice(i + 1)];
-  const newJ = j - 1; // j > i always for R1a, so this always shifts down by exactly one
-  const rewritten = substituteTopLevel(withoutStore[newJ]!, reg, value);
-  return [...withoutStore.slice(0, newJ), rewritten, ...withoutStore.slice(newJ + 1)];
+  // R1a: drop the store at `i` and fold `value` into the read at `j`; `j > i`
+  // always, so the read shifts down by exactly one.
+  const out = withoutAt(list, i);
+  const newJ = j - 1;
+  out[newJ] = substituteTopLevel(out[newJ]!, reg, value);
+  return out;
 }
