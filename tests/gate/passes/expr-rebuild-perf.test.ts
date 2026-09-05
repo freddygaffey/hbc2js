@@ -24,8 +24,9 @@ import assert from "node:assert/strict";
 import { timeScale } from "../../support/tiers.ts";
 import type { Stmt } from "../../../src/emit/ast.ts";
 import { id, lit } from "../../../src/emit/ast.ts";
-import { applyAstPasses, defUse, expressionOnlyCheck, isPure } from "../../../src/passes/ast.ts";
+import { applyAstPasses, defUse, expressionOnlyCheck, isPure, registerUses } from "../../../src/passes/ast.ts";
 import type { ExprRebuildSite } from "../../../src/passes/expr-rebuild/match.ts";
+import { classifySite } from "../../../src/passes/expr-rebuild/match.ts";
 import { substituteTopLevel } from "../../../src/passes/expr-rebuild/rewrite.ts";
 import { exprRebuild } from "../../../src/passes/expr-rebuild/index.ts";
 import type { ModuleView } from "../../../src/passes/tree.ts";
@@ -279,4 +280,76 @@ test("expr-rebuild's writer and checker cost less than the whole-list rebuild-an
         `scores above 100% here by construction: its total was this denominator plus everything the numerator still does.`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// docs/BUGS.md's same superlinear row, part 5: the classify/scan layer.
+// docs/reports/2026-09-05-nsw-retime.md's `--cpu-prof` of the Service NSW
+// whole-file run put `match.ts`'s `classifySite`/`nextRelevant`/`scanFrom`/
+// `stmtInterest` at the top after GC, and
+// docs/reports/2026-09-05-perf5-match-scan.md reproduced why: for the shape a
+// module-root function is made of - a register stored once, read once and
+// never mentioned again - `isDeadAfter` ran its liveness scan *first*, and
+// that scan has to walk every remaining statement to the end of the list
+// before it can conclude anything. One full tail walk per site.
+//
+// The fix asks D-b's whole-function register counts first whenever that map
+// is already memoised (`registerUsesIfMemoised`), which it now always is
+// because `check.ts` carries it across each splice. Same two pure
+// predicates, same `||`, same verdict - only the evaluation order changes.
+//
+// The property that proves it is exactly the one the row's remaining scope
+// needs: **cost per site independent of list length**. Fixed site count,
+// growing inert tail that no site needs to look at (no register mention, no
+// jump anywhere in it). Pre-fix this ratio is proportional to the tail
+// length (a ~50x growth for the sizes below); post-fix it is flat.
+const INERT_TAIL = 20_000;
+const TAIL_SITES = 500;
+
+function uniqueRegSites(sites: number, tail: number): readonly Stmt[] {
+  const body: Stmt[] = [];
+  for (let n = 0; n < sites; n++) {
+    const reg = `r${n}`;
+    body.push({ k: "expr", expr: { k: "assign", target: id(reg), value: { k: "call", callee: id("source"), args: [lit(String(n))] } } });
+    body.push({ k: "expr", expr: { k: "call", callee: id("use"), args: [id(reg)] } });
+  }
+  for (let n = 0; n < tail; n++) body.push({ k: "expr", expr: { k: "call", callee: id("inert"), args: [lit(String(n))] } });
+  return body;
+}
+
+/** Time `classifySite` over every store in `list`'s site region, with the
+ *  whole-function register map already warm - which is the state the driver
+ *  always hands the matcher after its first site (see `check.ts`'s
+ *  `noteRegisterUsesSplice`). The list itself is never rewritten here, so
+ *  the *only* thing that differs between the two measurements is how much
+ *  list sits behind the last site. */
+const CLASSIFY_SWEEPS = 100;
+
+function classifyAll(sites: number, tail: number): number {
+  const list = uniqueRegSites(sites, tail);
+  registerUses(list);
+  const sweep = (): void => {
+    for (let i = 0; i < sites * 2; i += 2) {
+      const s = list[i]!;
+      assert.equal(s.k, "expr");
+      const e = (s as { expr: { k: string; target: { name: string }; value: unknown } }).expr;
+      const v = classifySite(list, list, i, e.target.name, e.value as Parameters<typeof classifySite>[4]);
+      assert.ok(v.ok, `site ${i} should classify, got ${JSON.stringify(v)}`);
+    }
+  };
+  sweep(); // untimed: warms JIT and the per-node `stmtInterest`/`topLevelReads` memos, which is the steady state the driver sees
+  return cpuMs(() => {
+    for (let n = 0; n < CLASSIFY_SWEEPS; n++) sweep();
+  });
+}
+
+test("expr-rebuild's classify layer costs the same per site however long the list behind it is", () => {
+  const short = classifyAll(TAIL_SITES, 0);
+  const long = classifyAll(TAIL_SITES, INERT_TAIL);
+  const ratio = long / Math.max(short, 1);
+  const budget = 4 * timeScale();
+  assert.ok(
+    ratio < budget,
+    `classifying ${TAIL_SITES} sites cost ${long.toFixed(1)} ms with a ${INERT_TAIL}-statement inert tail behind them and ${short.toFixed(1)} ms with none - ${ratio.toFixed(1)}x, budget ${budget.toFixed(1)}x. Cost per site must not depend on list length: a pre-fix isDeadAfter walks that whole tail once per site, which lands near 50x here.`,
+  );
 });

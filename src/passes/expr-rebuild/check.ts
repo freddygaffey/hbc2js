@@ -12,7 +12,8 @@
 // independently below since it is about `after`, which classification never
 // sees.
 import type { Expr, Stmt } from "../ast.ts";
-import { expressionOnlyCheck, isPure, isRegisterName, registerUses } from "../ast.ts";
+import type { IdentUses } from "../ast.ts";
+import { expressionOnlyCheck, isPure, isRegisterName, noteRegisterUsesSplice, registerUses } from "../ast.ts";
 
 const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { CheckResult, PassContext } from "../types.ts";
@@ -59,10 +60,10 @@ function firstDivergence(before: readonly Stmt[], after: readonly Stmt[]): numbe
  * was a term in the 946 s Service NSW profile - `docs/BUGS.md`'s
  * superlinear-pass row, parts 2 and 4.
  */
-function registerUseDelta(before: readonly Stmt[], after: readonly Stmt[], reg: string, lo: number, hiBefore: number, hiAfter: number): { readonly reads: number; readonly writes: number } {
-  const beforeMid = registerUses(before.slice(lo, hiBefore)).get(reg) ?? NO_USES;
-  const afterMid = registerUses(after.slice(lo, hiAfter)).get(reg) ?? NO_USES;
-  return { reads: beforeMid.reads - afterMid.reads, writes: beforeMid.writes - afterMid.writes };
+function registerUseDelta(beforeMid: ReadonlyMap<string, IdentUses>, afterMid: ReadonlyMap<string, IdentUses>, reg: string): { readonly reads: number; readonly writes: number } {
+  const b = beforeMid.get(reg) ?? NO_USES;
+  const a = afterMid.get(reg) ?? NO_USES;
+  return { reads: b.reads - a.reads, writes: b.writes - a.writes };
 }
 
 /**
@@ -156,9 +157,21 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   const impureStore = verdict.rule === "R1b" && !isPure(value);
   const hiBefore = verdict.rule === "R1a" ? verdict.j + 1 : i + 1;
   const hiAfter = verdict.rule === "R1a" ? verdict.j : impureStore ? i + 1 : i;
-  const delta = registerUseDelta(before, after, reg, i, hiBefore, hiAfter);
+  const beforeMid = registerUses(before.slice(i, hiBefore));
+  const afterMid = registerUses(after.slice(i, hiAfter));
+  const delta = registerUseDelta(beforeMid, afterMid, reg);
   if (delta.writes !== 1) return { ok: false, reason: `rewrite did not remove exactly one write of ${reg}` };
   if (delta.reads !== expectedReadDelta) return { ok: false, reason: `rewrite did not remove the expected read of ${reg}` };
+
+  // The site is accepted, so the driver is about to make `after` the new
+  // `ctx.fnBody`. Carry the whole-function register-use map across the
+  // splice rather than letting the next iteration rebuild it: the same two
+  // window maps the delta above just used are exactly what
+  // `noteRegisterUsesSplice` needs, and `verifyExpectedShape` has already
+  // proven every position outside `[i, hiBefore)`/`[i, hiAfter)` unchanged,
+  // which is that derivation's whole premise. `docs/BUGS.md`'s
+  // superlinear-pass row, part 5.
+  noteRegisterUsesSplice(before, after, beforeMid, afterMid);
 
   return { ok: true };
 }
