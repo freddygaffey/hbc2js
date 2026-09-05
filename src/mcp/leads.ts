@@ -217,10 +217,21 @@ export function searchFunctions(artifact: ArtifactService, query: string, opts: 
   let scanned = 0;
   for (const { fn, name } of artifact.listFns()) {
     if (scanned++ >= SEARCH_SCAN_CAP) break;
-    if (name === null || !re.test(name)) continue;
+    // docs/BUGS.md "search/functions matches the bytecode name only": a
+    // renamed function DISPLAYS its accepted `fn:N` name (below), so typing
+    // that new name must find the row too, not just the pre-rename bytecode
+    // name (which keeps matching too, deliberately — a search someone had
+    // already relied on must not go dead the moment a function is renamed).
+    // `acceptedFnName` is a memoised map lookup (`fnNameInfo()`, cheap per
+    // scanned row) — unlike `overlayNameOf` below, which stays
+    // matched-rows-only per its own docstring (a real per-fn index query).
+    const accepted = artifact.acceptedFnName(fn);
+    const matchesBytecodeName = name !== null && re.test(name);
+    const matchesAcceptedName = accepted !== null && re.test(accepted);
+    if (!matchesBytecodeName && !matchesAcceptedName) continue;
     const summary = artifact.fn(fn);
     const size = summary.lines !== null ? summary.lines[1] - summary.lines[0] + 1 : null;
-    all.push({ fn, name: artifact.acceptedFnName(fn) ?? summary.overlayName ?? name, size });
+    all.push({ fn, name: accepted ?? summary.overlayName ?? name, size });
   }
   return paginate(all, opts.cursor ?? 0, clampSearchLimit(opts.limit));
 }
