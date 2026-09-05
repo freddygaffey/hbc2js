@@ -21,6 +21,9 @@ import { matchInventory } from "./match.ts";
 import type { MatchReport } from "./match.ts";
 import { buildReport } from "./report.ts";
 import type { DepsReport } from "./report.ts";
+import { buildNativeChannel } from "../native/native-deps.ts";
+import type { NativeChannelReport } from "../native/native-deps.ts";
+import { buildNativeTables, openApk } from "../native/ingest.ts";
 
 export interface DepsOptions {
   readonly out?: string;
@@ -147,8 +150,31 @@ export async function runDeps(inputPath: string, opts: DepsOptions = {}): Promis
     classification = classifyInventory(inventory, commonalityIndex);
   }
 
-  const report = buildReport(inputPath, matchReport, guesses, confirmResults, classification);
+  const reportWithoutNativeChannel = buildReport(inputPath, matchReport, guesses, confirmResults, classification);
+  const nativeChannel = extname(inputPath).toLowerCase() === ".apk" ? nativeChannelForApk(inputPath, reportWithoutNativeChannel) : null;
+  const report = nativeChannel === null ? reportWithoutNativeChannel : { ...reportWithoutNativeChannel, nativeChannel };
   return { report, inventory, matchReport, guesses, confirmResults, apkEvidence, classification };
+}
+
+/** spec 27 §L7's merge hook: read the native side of the same `.apk`
+ *  (independently of the JS-bundle read above — a native ingestion failure
+ *  never fails a deps run, §1.4 "native is optional-by-construction") and
+ *  merge its third-party-package findings against the JS-fingerprint
+ *  channel `report` already computed. `null` when the container has no
+ *  usable native side at all (not an Android APK layout, or no react
+ *  modules found) rather than an empty `{deps:[]}` — keeps `null` meaning
+ *  "nothing to report" consistent with `DepsReport.nativeChannel`'s own
+ *  doc comment. */
+function nativeChannelForApk(apkPath: string, report: DepsReport): NativeChannelReport | null {
+  let reactModules;
+  try {
+    reactModules = buildNativeTables(openApk(apkPath)).reactModules;
+  } catch {
+    return null;
+  }
+  if (reactModules.length === 0) return null;
+  const jsFoundPackages = new Set<string>([...report.confirmedDeps.map((d) => d.package), ...report.guessedDeps.map((d) => d.package), ...report.hintedDeps.map((d) => d.package)]);
+  return buildNativeChannel(reactModules, jsFoundPackages);
 }
 
 export type { DepsReport } from "./report.ts";
