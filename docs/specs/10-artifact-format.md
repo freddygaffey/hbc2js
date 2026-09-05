@@ -316,8 +316,9 @@ Header carries `{"renderHash":"…"}`. One row per **function**:
 ### 2.8 `native/*` — the APK's native half (spec 27)
 
 Written by `src/native/ingest.ts` (spec 27 L1), **beside** `index/`, never
-inside it: `native/{classes,methods,strings,resources,assets}.jsonl` +
-`native/manifest.json` (the decoded AndroidManifest) + `native/ingest.json`
+inside it: `native/{classes,methods,strings,resources,assets,react-modules,
+seams,env}.jsonl` + `native/manifest.json` (the decoded AndroidManifest) +
+`native/ingest.json`
 (the provenance block, also merged into this artifact's `manifest.json` under
 `native` when one exists). Header schema is `hbc2js-native/1` with a `source`
 of `dex|axml|arsc|zip`; rows are sorted by primary key so a diff is a line
@@ -403,6 +404,27 @@ classify and stays `null`. See L2's paragraph above for the label's rule.)
   never fabricate a seam. Closing the gap is a JS-side change (a distinct
   host-member string-use role, or a receiver on a resolved call edge), not an
   L3 one — L3 never invents a signal.
+
+`native/env.jsonl` (spec 27 §L6, `src/native/env.ts`) is `.env` recovery from
+two channels, joined over tables L1 already materialised (header `source` is
+`join`, like `seams.jsonl` — nothing is re-derived from bytes here): a
+**strings.xml** row for every `resources.jsonl` `"string"`-type resource whose
+name looks like an env key (all-caps + underscores — a label/filter on THIS
+derived table only; the resource itself is always still a normal
+`resources.jsonl` row regardless) and resolves to a plain string value; a
+**BuildConfig** row for every `static final String` field of a class named
+`BuildConfig` (`Lx/y/BuildConfig;`), read from the DEX `static_values`
+compile-time-constant table alongside `classes.jsonl`/`methods.jsonl` during
+the same DEX pass. Row: `{"key":"API_URL","value":"https://...",
+"source":"strings.xml","resolvedBy":"own-parser"}`. `strings.xml` values are
+always plain ARSC data, so that channel either produces a real value or no row
+at all — never `"unresolved"`. A `BuildConfig` field's value lives in
+`static_values` when it is a compile-time constant; when it is not (only ever
+assigned in `<clinit>`, a method body the minimal parser does not read — spec
+27 §1.2's documented gap) the row is still emitted with `value:"unresolved"`,
+`resolvedBy:"none"` — the key is a real, honest fact even when the value is
+not. `resolvedBy:"baksmali"` is reserved for the optional external oracle
+(§1.2); v1 never sets it.
 
 ## 3. Query surface
 

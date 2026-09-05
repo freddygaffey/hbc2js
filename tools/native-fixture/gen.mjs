@@ -354,6 +354,33 @@ const RN_MODULES_MANIFEST = {
   children: [{ name: "uses-sdk", attrs: [a("minSdkVersion", { int: 24 }), a("targetSdkVersion", { int: 34 })] }],
 };
 
+/** classes.dex for `env.apk` (docs/specs/27-native-side.md §L6's own fixture
+ *  -- deliberately separate bytes from every fixture above, none of them
+ *  touched): a `BuildConfig` class with one `static final String` field that
+ *  carries NO `static_values` literal (no `value` key below), the honest
+ *  shape of a field only ever assigned from a `<clinit>` this parser does not
+ *  read -- the L6 "unresolved, key present" acceptance case. */
+const ENV_DEX = [
+  {
+    name: "Lcom/example/envapp/BuildConfig;",
+    super: "Ljava/lang/Object;",
+    access: 0x11,
+    sourceFile: "BuildConfig.java",
+    staticFields: [{ name: "API_SECRET", type: STRING, access: 0x19 }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+  },
+];
+
+/** resources.arsc entries for `env.apk`: an APIGEE-shaped env key/value (the
+ *  proven-recoverable headline case, `cross-platform-reconstruction-IDEAS.md`)
+ *  plus a lower-case, non-env-shaped string resource that must never be
+ *  mislabelled as env. Value is an obviously synthetic placeholder, not
+ *  NSW-derived. */
+const ENV_RESOURCES = [
+  { type: "string", name: "app_label", value: { s: "Env Example App" } },
+  { type: "string", name: "API_URL", value: { s: "https://api.example.test" } },
+];
+
 const ASSET_INDEX = Buffer.from('{"hello":"native"}\n', "utf8");
 const ASSET_FONT = Buffer.from("EXAMPLE-TTF-PLACEHOLDER\n", "utf8");
 
@@ -410,13 +437,31 @@ export function generate(outDir) {
   ]);
   writeFileSync(join(outDir, "party.apk"), partyApk);
 
+  // The L6-owned sixth fixture (docs/specs/27-native-side.md §L6): an
+  // APIGEE-shaped strings.xml env entry, a non-env string resource, and a
+  // BuildConfig class with an unresolved static final String field -- none of
+  // the fixtures above touched. No AndroidManifest.xml: L6 does not read one.
+  const envApk = buildZip([
+    { name: "classes.dex", data: buildDex(ENV_DEX) },
+    { name: "resources.arsc", data: buildArsc(0x7f, "com.example.envapp", ENV_RESOURCES) },
+  ]);
+  writeFileSync(join(outDir, "env.apk"), envApk);
+
   return {
     apk: join(outDir, "synthetic.apk"),
     bare: join(outDir, "no-resources.apk"),
     rnModules: join(outDir, "rn-modules.apk"),
     seams: join(outDir, "seams.apk"),
     party: join(outDir, "party.apk"),
-    sizes: { apk: apk.length, bare: bare.length, rnModules: rnModules.length, seams: seamsApk.length, party: partyApk.length },
+    env: join(outDir, "env.apk"),
+    sizes: {
+      apk: apk.length,
+      bare: bare.length,
+      rnModules: rnModules.length,
+      seams: seamsApk.length,
+      party: partyApk.length,
+      env: envApk.length,
+    },
   };
 }
 
@@ -425,6 +470,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const out = process.argv[2] ?? join(root, "tests", "fixtures", "native");
   const r = generate(out);
   process.stdout.write(
-    `wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes), ${r.rnModules} (${r.sizes.rnModules} bytes), ${r.seams} (${r.sizes.seams} bytes) and ${r.party} (${r.sizes.party} bytes)\n`,
+    `wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes), ${r.rnModules} (${r.sizes.rnModules} bytes), ${r.seams} (${r.sizes.seams} bytes), ${r.party} (${r.sizes.party} bytes) and ${r.env} (${r.sizes.env} bytes)\n`,
   );
 }
