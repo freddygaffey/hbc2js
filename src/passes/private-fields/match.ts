@@ -183,6 +183,28 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
   // reference (`Object.defineProperty(r1, r3, {value: r0, ...})`), not the
   // literal initialiser -- resolved the same way, forked the same way.
   const resolve = (regs: ReadonlyMap<string, Expr>, e: Expr): Expr => (isIdent(e) ? (regs.get(e.name) ?? e) : e);
+  // A `AddOwnPrivateBySym`/`Object.defineProperty` install is only safe to
+  // fold into a real class-field declaration when its target resolves to
+  // the literal `this` -- native private fields can only ever be added to
+  // an object during ITS OWN class's [[Construct]] (auto-initialised on
+  // `this` before the constructor body runs, or by `this.#x = v` field
+  // syntax executed while `this` is bound to that exact object). Several of
+  // this codebase's decompiled base-class constructors instead build a
+  // *separate* plain object (`let r1 = Object.create(new.target.prototype);
+  // ...; return r1;`) and explicitly return it, discarding the real `this`
+  // -- a completely valid, common Hermes lowering (support for
+  // `Reflect.construct`/`new.target` polymorphism), but one where `r1`
+  // never receives the class's private-field brand at all. Folding
+  // `Object.defineProperty(r1, sym, {...})` into `#x;` there is a silent
+  // behaviour change: `r1.#x = v` throws `TypeError: Cannot write private
+  // member #x to an object whose class did not declare it` (found by the
+  // T2 equivalence gate, tests/gate/decompile/equivalence.test.ts,
+  // fixture 35 -- traces diverge at record 0, the `new BankAccount(...)`
+  // call itself). `Object.defineProperty` with a `Symbol` key has no such
+  // restriction (it writes to whatever object it is given), which is
+  // exactly why that shape is the correct, safe fallback and this rung
+  // must refuse rather than "fix" it.
+  const isThisArg = (e: Expr, regs: ReadonlyMap<string, Expr>): boolean => resolve(regs, e).k === "this";
   const regSources = new Map<string, Stmt>();
   const claimedSources = new Set<Stmt>();
   const resolveClaim = (regs: ReadonlyMap<string, Expr>, e: Expr): Expr => {
@@ -224,7 +246,7 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
         }
         if (allowInstall) {
           const defineArgs = objectCall(n, "defineProperty");
-          if (defineArgs !== null && defineArgs.length === 3 && isIdent(defineArgs[1]!) && aliases.has((defineArgs[1] as Ident).name)) {
+          if (defineArgs !== null && defineArgs.length === 3 && isIdent(defineArgs[1]!) && aliases.has((defineArgs[1] as Ident).name) && isThisArg(defineArgs[0]!, regs)) {
             const value = privateInstallValue(defineArgs);
             if (value !== null) {
               consumed.add(defineArgs[1]!);
@@ -287,7 +309,7 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
     if (s.k === "expr") {
       if (allowInstall) {
         const defineArgs = objectCall(s.expr, "defineProperty");
-        if (defineArgs !== null && defineArgs.length === 3 && isIdent(defineArgs[1]!) && aliases.has((defineArgs[1] as Ident).name) && privateInstallValue(defineArgs) !== null) {
+        if (defineArgs !== null && defineArgs.length === 3 && isIdent(defineArgs[1]!) && aliases.has((defineArgs[1] as Ident).name) && isThisArg(defineArgs[0]!, regs) && privateInstallValue(defineArgs) !== null) {
           processExpr(s.expr, aliases, regs, assignTarget); // records initExpr/installs, consumes the key
           return { stmt: null, aliasesOut: nextAliases, regsOut: nextRegs };
         }
