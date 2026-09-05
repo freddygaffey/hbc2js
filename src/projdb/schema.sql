@@ -458,3 +458,25 @@ CREATE TABLE IF NOT EXISTS seg_meta (
   value TEXT NOT NULL
 ) WITHOUT ROWID;
 -- <<< MIGRATION 4 <<<
+
+-- MIGRATION 5 — points-to edges (docs/BUGS.md 2026-09-05 `ix_calls_resolved`
+-- row; docs/specs/10-artifact-format.md §2.2a, `src/artifact/points-to.ts`).
+-- `index/calls-resolved.jsonl` is the `require(N)` points-to pass's own
+-- JSONL kind, separate from `ix_calls` for the same reason the JSONL side
+-- keeps it a separate file: an edge here is a PROVEN reconstruction of a
+-- `calls.jsonl` `callee:'?' why:'computed-callee'` row, never a rewrite of
+-- it, so an older reader of `ix_calls` keeps reading exactly what it always
+-- did. Same discipline as MIGRATION 2/3/4: new tables only, `IF NOT EXISTS`
+-- on every object, never an ALTER on an existing v1-v4 object.
+-- >>> MIGRATION 5 >>>
+CREATE TABLE IF NOT EXISTS ix_calls_resolved (
+  caller     INTEGER NOT NULL,           -- ResolvedCallRow.caller
+  site       INTEGER NOT NULL,           -- ResolvedCallRow.site (pc offset, not an ordinal)
+  callee     INTEGER NOT NULL,           -- ResolvedCallRow.callee
+  module     INTEGER NOT NULL,           -- ResolvedCallRow.module
+  name       TEXT NOT NULL,              -- ResolvedCallRow.name
+  confidence TEXT NOT NULL,              -- always 'points-to' (ResolvedCallRow.confidence)
+  PRIMARY KEY (caller, site)
+);
+CREATE INDEX IF NOT EXISTS ix_calls_resolved_callee ON ix_calls_resolved(callee); -- who-calls inversion
+-- <<< MIGRATION 5 <<<

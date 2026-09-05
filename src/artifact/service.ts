@@ -291,8 +291,10 @@ export class ArtifactService {
   private readonly callersByCallee = new Map<number, CallRow[]>();
   private readonly callsByCaller = new Map<number, CallRow[]>();
   /** §2.2a points-to edges, indexed both ways. Empty when the artifact has no
-   *  `index/calls-resolved.jsonl` (an artifact built before the pass existed,
-   *  or a DB-backed one) — every query then behaves exactly as it did. */
+   *  `index/calls-resolved.jsonl` (JSONL-backed, built before the pass
+   *  existed) or no `ix_calls_resolved` rows (DB-backed, built before
+   *  MIGRATION 5, docs/BUGS.md 2026-09-05 `ix_calls_resolved` row) — every
+   *  query then behaves exactly as it did before the pass. */
   private readonly resolvedByCallee = new Map<number, ResolvedCallRow[]>();
   private readonly resolvedByCaller = new Map<number, ResolvedCallRow[]>();
   private readonly stringsById = new Map<number, StringRow>();
@@ -353,7 +355,7 @@ export class ArtifactService {
       if (manifestExists) checkDbStaleness(artifactDir, meta, this.manifest);
       const rows = loadIndexRowsFromDb(db);
       db.close();
-      this.populateFromRows(rows);
+      this.populateFromRows(rows, rows.resolvedCallRows);
     } else {
       this.manifest = readJson<Manifest>(manifestPath);
 
