@@ -138,9 +138,20 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
   const strictEnv = opts.strictEnv ?? true;
   const analysis = analyseModule(module, { strictEnv, ...opts.analysis });
   const t2 = timings ? performance.now() : 0;
-  const diagnostics: Diagnostic[] = [...analysis.diagnostics];
+  // `analysis.envGraph` is a lazy getter (src/cfg/index.ts): it pushes its own
+  // diagnostics (`W_AMBIGUOUS_CLOSURE_ENV`, `W_ORPHAN_FUNCTION`, …) into
+  // `analysis.diagnostics` only the FIRST time something reads `.envGraph` —
+  // which normally happens deep inside the `emitModule` call below. Snapshotting
+  // `analysis.diagnostics` here, before that happens, silently drops every
+  // envGraph diagnostic from this function's result: `[...analysis.diagnostics]`
+  // copies today's (empty) contents, and the array `analysis.diagnostics`
+  // itself is mutated in place afterwards, but nothing re-reads it. Collecting
+  // extra pre-emit diagnostics separately and re-spreading `analysis.diagnostics`
+  // fresh at the end (below) means it is read only once the whole pipeline —
+  // including emitModule's `.envGraph` access — has run.
+  const preDiagnostics: Diagnostic[] = [];
   if (forced) {
-    diagnostics.push({
+    preDiagnostics.push({
       severity: "warn",
       code: "W_FORCED_OPCODE_TABLE",
       message: `opcode table forced to ${module.layout.opcodeTable ?? "?"}; the auto-probe found the file ambiguous`,
@@ -212,7 +223,7 @@ export function decompile(bytes: Uint8Array, opts: DecompileOptions = {}): Decom
     code: result.code,
     module,
     helpersUsed: result.helpersUsed,
-    diagnostics: [...diagnostics, ...result.diagnostics],
+    diagnostics: [...analysis.diagnostics, ...preDiagnostics, ...result.diagnostics],
     forcedOpcodeTable: forced,
     decompileDiagnostics: result.stubbedFunctions,
   };
