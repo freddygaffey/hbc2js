@@ -607,3 +607,38 @@ rn-template output hash unchanged.
    requirement ("read at the versions listed, including at least one
    cross-version comparison") is met — but the upgrade is what unblocks PL-06,
    so it is worth someone else confirming rather than taking on trust.
+
+---
+
+## 7. Landed (2026-09-05, `agent/class-recover`)
+
+* **Sub-form C2 (the derived form) landed.** Fixture 33's `Dog` and `Puppy`
+  recover at v98 and v99: both `Object.setPrototypeOf` calls and all three
+  method installs are consumed, `extends` comes from the ctor-link call's
+  second argument, the class name from F24-4.
+* **C1, C3 and C4 refuse**, with two new counted reasons
+  (`ctor-not-in-body`, `method-not-in-body`) in the R-C11/R-C12 slots. The
+  cause is F24-5, not the matcher: a class method or constructor that
+  captures nothing is emitted at *module* level by `emitModule`'s `parentOf`
+  (it nests by captured environment, and such a closure has none), so for
+  fixtures 32, 34 and 36 the declarations the class body must hold are not in
+  `ctx.fnBody`. PUSHBACK **P-38**, `docs/BUGS.md` row
+  `class-recover-orphan-methods`. The three acceptance tests that need them
+  stay `skip`ped with that reason; none was inverted or deleted.
+* **C5 and `super` remain out of scope**, exactly as section 6.5 proposed:
+  R-C8 (`super-shape`) and R-C9 (`ctor-allocates`) stay refusals, the
+  constructor is carried into the class body verbatim including its
+  `new.target.prototype` allocation prologue, and fixture 35 is refused
+  wholesale (R-C6). Sections 1.6/1.7 are unchanged.
+* **Section 3.3's writer form changed** — a `class` *expression* substituted
+  into the head statement's assignment, not a `classdecl`, because the
+  constructor value is register-bound and read after the group. PUSHBACK
+  **P-37**.
+* **Rulings applied**: P-21 (D23 wins; the ladder row and
+  `src/passes/fn-naming/index.ts`'s comment are corrected), P-22 (v >= 98,
+  layout E), P-23 (`00-LADDER.md` section 4.3 gains a *class-shape* checker
+  row).
+* **Section 1.0 re-checked by a second reader** (this landing): all five
+  fixtures decompile at v98; 32/33/34 are byte-identical to v99 below the
+  header, 36 differs at exactly the three accessor-name comments, 35 only in
+  register allocation. Row 20's `verified` grade stands.
