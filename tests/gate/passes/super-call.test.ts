@@ -272,6 +272,45 @@ test("super-call: a second read of `arguments` in a forwarding constructor is re
   assert.equal("code" in out && out.code, "R-SC9");
 });
 
+// --- R-SC9 residue: `argumentsUses` is frame-aware (spec 28 section 9.5) ---
+
+test("super-call: a hosted function's own `arguments` is not the constructor's, and still folds", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  // The real react-navigation shape (136 of 147 R-SC9 rows before this): the
+  // hosted declaration reads its own `arguments`, which must not be mistaken
+  // for a second read of the constructor's.
+  const hosted: Stmt = { k: "func", name: "_fn9", params: [], body: [{ k: "return", arg: { k: "argumentsObject" } }] } as unknown as Stmt;
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, hosted, FORWARD_BODY[2]!];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+  assert.deepEqual(out.body.map((s) => s.k), ["comment", "func", "expr"]);
+});
+
+test("super-call: a nested arrow's `arguments` is the constructor's own, and is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  // An arrow has no `arguments` of its own (ES2024 10.2.4): a lexical read
+  // of the enclosing frame's binding surfaces as a plain `ident{name:
+  // "arguments"}`, never `argumentsObject` -- `arguments-form/match.ts`'s
+  // own recognition of the two shapes as equivalent.
+  const arrow: Stmt = { k: "expr", expr: { k: "func", name: null, params: [], body: [{ k: "return", arg: ident("arguments") }] } as unknown as Expr };
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, arrow, FORWARD_BODY[2]!];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+  assert.match("code" in out ? out.reason : "", /arguments/);
+});
+
+test("super-call: a `sameFrame` closure's `arguments` is still the constructor's own, and is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  // The generator-resume closure (`src/emit/ast.ts`'s `func.sameFrame`)
+  // shares this frame's own registers and its own `arguments`, so its read
+  // is a second read of the same object, exactly like one written inline.
+  const resume: Stmt = { k: "expr", expr: { k: "func", name: null, params: [], sameFrame: true, body: [{ k: "return", arg: { k: "argumentsObject" } }] } as unknown as Expr };
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, resume, FORWARD_BODY[2]!];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+  assert.match("code" in out ? out.reason : "", /arguments/);
+});
+
 test("super-call: a forward whose target is not this class's own binding is refused (R-SC8)", () => {
   const { module, cls } = moduleWith(FORWARD_BODY);
   const body: readonly Stmt[] = [forward([{ k: "argumentsObject" }, getProto(ident("_e0_9")), lit("undefined"), lit("new.target")])];

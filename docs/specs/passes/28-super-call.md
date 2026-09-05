@@ -329,3 +329,42 @@ object, so the count should skip nested frames unless `sameFrame === true`
 (the generator-resume closure, `src/emit/ast.ts`) -- the same distinction
 `countUses` already makes. Not done here: it changes what the rung claims on
 136 real constructors and deserves its own measurement.
+
+**Done (agent/super-forward-2)**: `argumentsUses` is now frame-aware, mirroring
+`countUses`'s `func`/`sameFrame` distinction (`src/passes/super-call/match.ts`).
+A bare `argumentsObject` read counts only in this frame or a `sameFrame`
+closure; an `ident{name:"arguments"}` read counts everywhere however deep,
+because that shape is never a non-arrow nested `function`'s own (which always
+reifies its own `argumentsObject`, a separate frame) -- it is only how a
+nested arrow surfaces a lexical read of an enclosing frame's `arguments`
+(`arguments-form/match.ts`'s own recognition of the two shapes as
+equivalent). Three unit tests pin the three cases (`tests/gate/passes/
+super-call.test.ts`): a hosted function's own `arguments` no longer counts
+and the constructor folds; a nested arrow's `arguments` (the `ident` shape)
+still counts and refuses; a `sameFrame` closure's `arguments` (the
+`argumentsObject` shape, still this frame) still counts and refuses.
+
+**Measured, and it does not move react-navigation-example-0.85.3**:
+`node tools/passes/ctor-this-refusals.ts` before -> after is unchanged, FOLD
+52, R-SC9 147 (`R-SC9 func` 136 of them). Dumping the actual refused bodies
+(a spied `foldSuperBody`, not committed) shows why: none of the 136 are
+blocked by `argumentsUses` at all -- they fail the *earlier* "the
+applyArguments forward is not the constructor's last statement" check,
+because their last statement is `return r0;` with `r0 = __hbc_b_applyArguments(
+...)` assigned on the *previous* statement, not `return
+__hbc_b_applyArguments(...)` directly. `foldForwardBody` (section 9.4) only
+ever matches the latter -- there is no dereference of a `return <ident>`
+back through a preceding store, unlike the operand moves *into* the call,
+which `derefChain` already chases. So section 9.5's original diagnosis was
+half right (the hosted declaration's own `arguments` is real conservatism,
+now fixed and independently correct/tested) but named the wrong blocker for
+this bundle's 136: the store-then-return split gates them first, and
+`argumentsUses` is never reached. This is a materially different, larger
+change (deref through a `return`, with the same conservatism `derefChain`
+already has about a register reused after its move) and is not done here --
+tracked as its own residue in `docs/BUGS.md`'s `diff:GetOwnPrivateBySym/
+GetByVal` row (tail), since the corpus payoff cannot be checked until it
+lands. `node tools/e2e/roundtrip-corpus.ts --only react-navigation-example-
+0.85.3 --passes on` before -> after: IDENTICAL count and the `diff:
+GetOwnPrivateBySym/GetByVal` bucket unchanged, exactly as expected from a
+fix whose own real-bundle payoff is still gated by the residue above.
