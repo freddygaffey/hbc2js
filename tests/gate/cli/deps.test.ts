@@ -133,6 +133,12 @@ test("deps <apk> --out <dir>, single run: native/*.jsonl + .env + package.json d
 
     const r = runCli(["deps", combinedApk, "--offline", "--out", outDir]);
     assert.equal(r.status, 0, r.stderr);
+    // docs/BUGS.md "deps --out native-ingest path (stale dist)" row: a
+    // successful native ingestion must ALWAYS say so on stderr, so a build
+    // missing the L9 wiring entirely (silence) is visibly different from a
+    // build that ran it. No exact-count assertion (fixture-specific numbers
+    // are not the point) -- just that the positive line is there.
+    assert.match(r.stderr, /hbc2js deps --out: native ingestion — \d+ modules, \d+ tables written/, r.stderr);
 
     const nativeFiles = readdirSync(join(outDir, "native"));
     for (const f of ["classes.jsonl", "methods.jsonl", "react-modules.jsonl", "env.jsonl", "manifest.json"]) {

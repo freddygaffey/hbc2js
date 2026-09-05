@@ -3,10 +3,28 @@
 // One `native/seams.jsonl` row per seam, each citing BOTH sides' evidence.
 // This file is a JOIN and nothing else: every JS-side signal it reads is
 // already materialised by `src/artifact/*` (`index/strings.json`,
-// `index/string-uses.jsonl`, `index/globals.jsonl`), and every native-side
-// signal by `src/native/react-modules.ts` (`native/react-modules.jsonl`).
-// Nothing is re-derived from bytecode or DEX bytes here (§L3 "all already
-// materialised — never re-derived here").
+// `index/string-uses.jsonl`, `index/globals.jsonl`, `index/functions.jsonl`
+// for `parent` only), and every native-side signal by
+// `src/native/react-modules.ts` (`native/react-modules.jsonl`). Nothing is
+// re-derived from bytecode or DEX bytes here (§L3 "all already materialised
+// — never re-derived here").
+//
+// Anchoring (which functions are "in scope" for a channel, §4.2): a real
+// Metro bundle NEVER binds `NativeModules`/`TurboModuleRegistry`/
+// `requireNativeComponent` as a global — `require("react-native")` is
+// always a local (`_reactNative.NativeModules.Crypto.x()`, or
+// `var {NativeModules} = require(...)`), so gating on a `globals.jsonl`
+// GLOBAL read (as this file used to) finds nothing on a real bundle and
+// silently reports every native module `native-only`. `anchorFns` below
+// anchors a function on whichever of these actually appears: a materialised
+// GLOBAL read (kept for bundles/fixtures that really do use one), OR an
+// exact `property-get`/`global-name` string-use of the channel's host name
+// (`"NativeModules"` etc) in that function itself OR in ANY of its lexical
+// ancestors (`index/functions.jsonl` `parent`, walked to full depth) — this
+// covers both real shapes: the inline chain (anchor and candidate name in
+// the same function) and the module-top capture consumed from a nested
+// closure that carries no string-use of the host name at all (only its own
+// ancestor does).
 //
 // Truth rules (spec 27 §4.2/§4.3):
 //   - Exact name equality or nothing. A JS `Crypto` never links to a native
@@ -33,7 +51,7 @@
 //     fabricate a seam (§4.3's "a false seam is worse than a missing one").
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { GlobalRow, StringRow, StringUseRow, StringUseRole } from "../artifact/schema.ts";
+import type { FunctionRow, GlobalRow, StringRow, StringUseRow, StringUseRole } from "../artifact/schema.ts";
 import { labelSeamParty } from "./classify-party.ts";
 import {
   nativeHeader,
@@ -51,6 +69,11 @@ export interface SeamJsTables {
   readonly strings: ReadonlyMap<number, string>;
   readonly stringUses: readonly StringUseRow[];
   readonly globals: readonly GlobalRow[];
+  /** `index/functions.jsonl` — read ONLY for `parent` (the immediate lexical
+   *  ancestor, per docs/specs/10-artifact-format.md §2.1), so a function that
+   *  merely reads a captured local can still be anchored via the ancestor
+   *  that bound it (see `anchorFns` below). */
+  readonly functions: readonly FunctionRow[];
 }
 
 /** The host anchors, and which string-use role carries a module NAME for each.
@@ -66,25 +89,62 @@ const CHANNELS: readonly { readonly channel: SeamChannel; readonly global: strin
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Functions that read/call `global` (a write to it is shadowing, not a use —
- *  same rule `src/artifact/native.ts` applies to the host-global surface). */
-function anchorFns(globals: readonly GlobalRow[], global: string): Set<number> {
-  const out = new Set<number>();
-  for (const g of globals) {
-    if (g.g !== global || g.access === "write") continue;
-    out.add(g.fn);
+ *  same rule `src/artifact/native.ts` applies to the host-global surface):
+ *  either a materialised GLOBAL read of `global` (a bundle that never
+ *  bundles the RN runtime — a plain script, or a fixture that declares the
+ *  host as a top-level `var`), OR a `property-get`/`global-name` string-use
+ *  of the literal text `global` in that function or ANY of its lexical
+ *  ancestors (`index/functions.jsonl` `parent`, walked to whatever depth the
+ *  bundle nests to — real Metro output is `require("react-native")` bound
+ *  to a local, never a global, so `_rn.NativeModules...` or
+ *  `var {NativeModules} = _rn;` used from a nested closure are both exact
+ *  string-use matches, no substring/fuzzy matching, ever). Walking the FULL
+ *  ancestor chain (not just one level) is deliberate: the depth a bundler
+ *  nests a captured host reference at is not part of this join's contract. */
+function anchorFns(js: SeamJsTables, global: string): Set<number> {
+  const direct = new Set<number>();
+  for (const g of js.globals) {
+    if (g.g === global && g.access !== "write") direct.add(g.fn);
   }
+  for (const use of js.stringUses) {
+    if (use.role !== "property-get" && use.role !== "global-name") continue;
+    if (js.strings.get(use.sid) === global) direct.add(use.fn);
+  }
+
+  const parentOf = new Map<number, number | null>();
+  for (const f of js.functions) parentOf.set(f.fn, f.parent);
+
+  const memo = new Map<number, boolean>();
+  const isAnchored = (fn: number): boolean => {
+    if (direct.has(fn)) return true;
+    const cached = memo.get(fn);
+    if (cached !== undefined) return cached;
+    memo.set(fn, false); // cycle guard: an in-progress fn is provisionally "not anchored"
+    const parent = parentOf.get(fn) ?? null;
+    const result = parent !== null && isAnchored(parent);
+    memo.set(fn, result);
+    return result;
+  };
+
+  const out = new Set<number>();
+  const candidates = new Set<number>([...direct, ...parentOf.keys()]);
+  for (const fn of candidates) if (isAnchored(fn)) out.add(fn);
   return out;
 }
 
 /** fn -> (candidate name -> the sid it was seen as), for one channel. */
 function candidatesByFn(js: SeamJsTables, channel: (typeof CHANNELS)[number]): Map<number, Map<string, number>> {
-  const fns = anchorFns(js.globals, channel.global);
+  const fns = anchorFns(js, channel.global);
   const out = new Map<number, Map<string, number>>();
   if (fns.size === 0) return out;
   for (const use of js.stringUses) {
     if (!fns.has(use.fn) || !channel.roles.includes(use.role)) continue;
     const text = js.strings.get(use.sid);
-    if (text === undefined || text.length === 0) continue;
+    // The anchor's own name (e.g. "NativeModules" itself, read as a
+    // property-get off the captured host local) is never a candidate module
+    // name — only relevant when it shares a role with real candidates (the
+    // NativeModules channel's own `property-get` role).
+    if (text === undefined || text.length === 0 || text === channel.global) continue;
     const perFn = out.get(use.fn) ?? new Map<string, number>();
     if (!perFn.has(text)) perFn.set(text, use.sid);
     out.set(use.fn, perFn);
@@ -249,7 +309,8 @@ export function readJsSeamTables(artifactDir: string): SeamJsTables | null {
   const stringsPath = join(artifactDir, "index", "strings.json");
   const usesPath = join(artifactDir, "index", "string-uses.jsonl");
   const globalsPath = join(artifactDir, "index", "globals.jsonl");
-  if (!existsSync(stringsPath) || !existsSync(usesPath) || !existsSync(globalsPath)) return null;
+  const functionsPath = join(artifactDir, "index", "functions.jsonl");
+  if (!existsSync(stringsPath) || !existsSync(usesPath) || !existsSync(globalsPath) || !existsSync(functionsPath)) return null;
   const parsed = JSON.parse(readFileSync(stringsPath, "utf8")) as { entries?: readonly StringRow[] };
   const strings = new Map<number, string>();
   for (const e of parsed.entries ?? []) {
@@ -259,6 +320,7 @@ export function readJsSeamTables(artifactDir: string): SeamJsTables | null {
     strings,
     stringUses: parseJsonl(readFileSync(usesPath, "utf8")) as StringUseRow[],
     globals: parseJsonl(readFileSync(globalsPath, "utf8")) as GlobalRow[],
+    functions: parseJsonl(readFileSync(functionsPath, "utf8")) as FunctionRow[],
   };
 }
 

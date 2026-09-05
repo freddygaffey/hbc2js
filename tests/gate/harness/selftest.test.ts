@@ -47,8 +47,27 @@ const MUTANTS_PER_FIXTURE = 6;
 // its member declarations and one `drop-statement`), measured alone with
 // the same operators — source-level insensitivity, not a decompiler change.
 // The scaled 270/318 floor (361.7) would fail by one mutant on those.
-const KILL_RATE_BASELINE = 361;
-const KILL_RATE_BASELINE_TOTAL = 426;
+//
+// Re-derived 2026-09-05 (spec-27 seam-join agent) at the SAME 73 fixtures *
+// 6 = 438 mutants (66-native-module-seams was rebuilt Metro-shaped, not
+// added — see docs/BUGS.md "spec-27 real-APK validation" row): 370/438
+// (84.5%). The rebuilt fixture's `__d`/`__r` mini-registry (shared with
+// 62-require-slot-dispatch's convention) requires module 0 (the
+// "react-native" host) from TWO different consumer modules, so `__r(0)` is
+// called twice on this fixture's own trace — `__r`'s re-entrancy guard
+// (`if (__hbc_instances[id]) return ...;`) is therefore exercised on a
+// SECOND call whose result is observably identical to re-running module 0's
+// factory (same literal object shape, no side effects), so dropping that
+// guard, or reordering it past the harmless `var entry = ...` read right
+// after it, changes nothing an external trace can see. Measured alone
+// (`mutants(source, 6, 0)` on 66-native-module-seams before vs after the
+// rebuild): the OLD (globals-shaped) fixture killed 6/6; the NEW
+// (Metro-shaped) fixture kills 4/6 (`drop-statement` and
+// `swap-adjacent-statements` on those two lines survive EQUIVALENT) —
+// source-level insensitivity in the shared registry boilerplate, not a
+// weakening of the harness or of `src/native/seams.ts`'s own logic.
+const KILL_RATE_BASELINE = 370;
+const KILL_RATE_BASELINE_TOTAL = 438;
 
 const RUN_OPTS: RunOptions = { timeout: 8000, seed: 0, fuzz: 0, relax: [], maxRecords: 20000, syncTimeout: 7000 };
 

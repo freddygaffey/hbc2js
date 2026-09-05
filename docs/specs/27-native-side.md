@@ -380,6 +380,26 @@ unreachable until a JS-side signal exists), and an unmatched `NativeModules`
 member string is emitted `js-only` rather than dropped — over-reporting a
 method name as a candidate module, never fabricating a link.
 
+**Anchor fix (2026-09-05, real-APK validation).** The anchor that decides
+"which functions are in scope for a channel" was originally gated on
+`index/globals.jsonl` carrying a true GLOBAL read of `NativeModules`/
+`TurboModuleRegistry`/`requireNativeComponent` — but a real Metro bundle
+never binds these as globals (`require("react-native")` is always bound to a
+local, e.g. `_reactNative.NativeModules.Crypto.x()` or
+`var {NativeModules} = require(...)`), so on a real bundle the anchor set was
+always empty and every native module was reported `native-only`. `anchorFns`
+in `src/native/seams.ts` now also anchors a function on an exact
+`property-get`/`global-name` string-use of the channel's host name
+(`"NativeModules"` etc) in that function OR any of its lexical ancestors
+(`index/functions.jsonl` `parent`, walked to full depth — real nesting depth
+is not part of this join's contract). This covers both real shapes: the
+inline member chain (anchor and candidate name in the same function) and a
+module-top `var NativeModules = _rn.NativeModules;` capture consumed from a
+nested closure that itself carries no string-use of the host name at all.
+Fixture `66-native-module-seams` was rebuilt Metro-shaped (`__d`/`__r`
+mini-registry) to exercise both shapes; the old fixture declared the hosts as
+top-level `var`s, which Hermes compiles as globals and so never caught this.
+
 ---
 
 ### L4 — First-party vs third-party labelling · Sonnet
