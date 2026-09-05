@@ -272,8 +272,14 @@ test("class-recover refuses the object-literal accessors and the private-field i
   for (const version of CLASS_VERSIONS) {
     // R-C1: fixture 36's enumerable accessors have no class provenance.
     assert.equal(count(js("36-class-getters-setters", version), ENUMERABLE_INSTALL), 2, `${version}: R-C1`);
-    // R-C6: fixture 35's Symbol-keyed instance installs stay exactly as they are.
-    const on = js("35-class-private-fields", version);
+    // R-C6: class-recover itself never folds a Symbol-keyed instance install
+    // into a class member (it is not a method/getter/setter descriptor
+    // shape) -- observed with the `private-fields` follow-up rung (spec 24's
+    // private-name recovery, docs/BUGS.md 2026-09-01 "class private fields",
+    // PUSHBACK P-40) switched off, since *that* rung, not class-recover, is
+    // what folds this shape into real `#name` syntax under the default
+    // pipeline (see tests/gate/passes/private-fields.test.ts).
+    const on = decompile(readFileSync(join(CONSTRUCTS, "35-class-private-fields", `${version}.hbc`)), { resolveV98Ambiguity: true, passes: { skip: ["private-fields"] } }).code;
     assert.match(on, /Symbol\("#balance"\)/, `${version}: R-C6`);
     assert.match(on, /writable: true, enumerable: false, configurable: false/, `${version}: R-C6`);
   }

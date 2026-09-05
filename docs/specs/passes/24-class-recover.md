@@ -500,7 +500,17 @@ Each is a distinct counted `abandoned` reason.
   (`toString: <name>` cannot be written as a class member, so in this case
   refuse the *member*, which by R-C3 refuses the group).
 * **R-C6 `private-members`** — any install whose key is a `Symbol("#…")`
-  value, or any install inside the constructor body (§1.7). Fixture 35.
+  value, or any install inside the constructor body (§1.7). Fixture 35. This
+  rung's own refusal here is unconditional and permanent (a private-name
+  install is never a class-body member/accessor shape, R-C6 is not "not yet");
+  the `Symbol`/computed-member shape it leaves behind is instead folded back
+  into real `#name` syntax by a *separate* follow-up rung, `private-fields`
+  (`after: [class-recover]`, docs/BUGS.md 2026-09-01 "class private fields",
+  landed 2026-09-05) — one recognised private name at a time, refusing (and
+  leaving this rung's Symbol/computed-member output untouched) whenever a
+  name's reference set is not exactly `CreatePrivateName`/`AddOwnPrivateBySym`/
+  `Get`/`PutOwnPrivateBySym`/`PrivateIsIn`. See docs/specs/passes/00-LADDER.md's
+  `private-fields` row and `tests/gate/passes/private-fields.test.ts`.
 * **R-C7 `enumerable-member`** — a descriptor with `enumerable: true` for a
   method/accessor. Class members are non-enumerable; an enumerable one did not
   come from a class body even if the target has provenance.

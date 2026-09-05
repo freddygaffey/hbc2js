@@ -12,6 +12,7 @@ import { destructure } from "./destructure/index.ts";
 import { spreadRest } from "./spread-rest/index.ts";
 import { optionalChain } from "./optional-chain/index.ts";
 import { objectLiteral } from "./object-literal/index.ts";
+import { privateFields } from "./private-fields/index.ts";
 import { exprRebuild } from "./expr-rebuild/index.ts";
 import { fnNaming } from "./fn-naming/index.ts";
 import { forHeader } from "./for-header/index.ts";
@@ -126,6 +127,10 @@ export const REGISTRY: readonly Pass[] = [
   // registered after `object-literal` (its descriptor argument must already be
   // an `object` node) and before every renaming rung.
   classRecover as Pass,
+  // Private-name follow-up (docs/BUGS.md 2026-09-01 "class private fields"):
+  // needs the `class` node `classRecover` just built, and the same register
+  // identity, so it sits immediately after it and before every renaming rung.
+  privateFields as Pass,
   jsxRecover as Pass,
   fnNaming as Pass,
   regSplit as Pass,
