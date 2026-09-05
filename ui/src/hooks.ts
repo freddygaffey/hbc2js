@@ -9,7 +9,7 @@ import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listin
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogEntry, LogTail,
   LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
-  StringExact, StringGrep, GlobalUses, WhoCallsByName, ObjectTables,
+  StringExact, StringGrep, GlobalUses, WhoCallsByName, ObjectTables, NativeImpl,
 } from "./contracts.ts";
 import { applyLogDelta } from "./state/log-delta.ts";
 
@@ -66,6 +66,14 @@ export const useLocals = (fn: number): UseQueryResult<LocalsListing> =>
 
 export const useContextResource = (fn: number): UseQueryResult<FnContext> =>
   useQuery({ queryKey: ["context", fn], queryFn: () => api.context(fn), ...perFn(fn) });
+
+/** `GET /api/native/impl/:fn` (spec 27 §L5) — the Context pane's
+ *  "native impl" row. Same skip-when-unselected policy as every other
+ *  per-fn resource; a project with no native side ingested answers `{fn,
+ *  rows:[]}` for every fn, which the component treats as "nothing to show",
+ *  not an error. */
+export const useNativeImpl = (fn: number): UseQueryResult<NativeImpl> =>
+  useQuery({ queryKey: ["native-impl", fn], queryFn: () => api.nativeImpl(fn), ...perFn(fn) });
 
 export const useWhoCalls = (fn: number): UseQueryResult<WhoCalls> =>
   useQuery({ queryKey: ["who-calls", fn], queryFn: () => api.whoCalls(fn), ...perFn(fn) });

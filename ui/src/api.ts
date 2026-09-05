@@ -8,7 +8,7 @@ import type {
   CallsFrom, FnCfg, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, Bounded, LocalsListing, LineMap, StringExact, StringGrep, GlobalUses,
-  WhoCallsByName, ObjectTables,
+  WhoCallsByName, ObjectTables, NativeImpl,
 } from "./contracts.ts";
 import type { FunctionListPage, ModuleListPage } from "./listing/wire.ts";
 import { mockApi } from "./mock.ts";
@@ -145,6 +145,11 @@ export interface Api {
    *  limit=` — the bundle-wide constant object-literal inventory (spec 17
    *  §14.2), the Tables tab's search. */
   objectTables(query: ObjectTablesQuery): Promise<ObjectTables>;
+  /** `GET /api/native/impl/:fn` (spec 27 §L5) — the Context pane's
+   *  "native impl" row: every seam this fn participates in, each paired
+   *  with its native module when linked. Empty, never 404, when the
+   *  function is in scope but touches no seam. */
+  nativeImpl(fn: number): Promise<NativeImpl>;
 }
 
 export class ApiError extends Error {
@@ -197,6 +202,7 @@ export const httpApi: Api = {
   xrefStringUses: (sid) => get(`/xref/string`, { mode: "exact", key: sid }),
   xrefGlobal: (name) => get(`/xref/global`, { name }),
   objectTables: (query) => get(`/object-tables`, { ...query }),
+  nativeImpl: (fn) => get(`/native/impl/${fn}`),
 };
 
 export const api: Api = USING_MOCK ? mockApi : httpApi;

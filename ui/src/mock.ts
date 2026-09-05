@@ -7,7 +7,7 @@ import type {
   Bounded, CallsFrom, FnCfg, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry, StringExact, StringGrep, GlobalUses,
-  WhoCallsByName, ObjectTable, ObjectTables,
+  WhoCallsByName, ObjectTable, ObjectTables, NativeImpl,
 } from "./contracts.ts";
 import type { ModuleSource } from "./contracts.ts";
 import type { FunctionListPage, FunctionListRow, ModuleEntry, ModuleListPage } from "./listing/wire.ts";
@@ -48,6 +48,12 @@ const MODULE_BY_ID = new Map(MOCK_MODULES.map((m) => [m.id, m]));
 /** The one deliberately huge function, so the "truncated, N more" bar has
  *  something to show without a real bundle. */
 const BIG_FN = 42;
+
+/** fn 30 = module 3's `decryptPayload` (spec 27 §L5) — the one mock fn with
+ *  a native-impl row, so the Context pane's link has something to show
+ *  without a real APK-ingested artifact. Every other fn's row list is
+ *  empty, same as "no native side ingested" for real. */
+const NATIVE_DEMO_FN = 30;
 const BIG_TEXT_LINES = 6000;
 const BIG_TOTAL_LINES = 6200;
 
@@ -404,4 +410,18 @@ export const mockApi: Api = {
     }));
     return delay({ rows, total: rows.length, truncated: false });
   },
+  nativeImpl: (fn): Promise<NativeImpl> =>
+    delay(
+      fn === NATIVE_DEMO_FN
+        ? {
+            fn,
+            rows: [
+              {
+                seam: { key: "seam:Crypto.generateKey", jsName: "Crypto", jsMethod: "generateKey", status: "linked", firstParty: true },
+                module: { key: "native:module:Crypto", jsName: "Crypto", kind: "bridge", firstParty: true },
+              },
+            ],
+          }
+        : { fn, rows: [] },
+    ),
 };

@@ -468,6 +468,26 @@ fn*.
 
 **Depends on:** L3.
 
+**Landed (2026-09-05).** `ArtifactService.nativeModules()`/`.nativeModule(x)`/
+`.seams(filter)`/`.nativeManifest()`/`.nativeResources(pattern)` in
+`src/artifact/service.ts` (plus `.nativeImplFor(fn)`, the Context-pane's own
+bounded-by-fn projection — not one of the four route names above but needed
+so the pane never misses a seam past `seams`'s 100-row cap); mirrored on
+`McpResources` (`src/mcp/resources.ts`), the CLI (`src/cli.ts`'s `native`
+verb branch, disambiguated from the pre-existing `query native [--fn N]`
+JS-host-surface verb by the first positional token), and
+`GET /api/native/{modules,module/:x,seams,manifest,impl/:fn}`
+(`src/ui-server/native.ts`, spliced into `routes.ts`'s `ROUTES` as
+`NATIVE_ROUTES`). UI: `ui/src/panes/context-native.ts` (the pure label/
+detail logic) + `ui/src/panes/RightPane.tsx`'s Context tab (not
+`ContextPane.tsx` — no such file exists; the Context tab lives inside
+`RightPane.tsx`'s `RightPanelBody`), `ui/src/contracts.ts`'s `NativeImpl`
+type, `ui/src/api.ts`/`ui/src/mock.ts`/`ui/src/hooks.ts`'s `nativeImpl`/
+`useNativeImpl`. Every reader is null/empty-tolerant (native/ is
+optional-by-construction, §1.4); staleness needs no new check — `E_STALE_
+INDEX` already fires at `ArtifactService` construction, before any native
+verb runs.
+
 ---
 
 ### L6 — `.env` recovery from strings.xml / BuildConfig · Sonnet

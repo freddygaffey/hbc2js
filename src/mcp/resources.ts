@@ -476,6 +476,56 @@ export class McpResources {
     return this.artifact.native(opts);
   }
 
+  // -- spec 27 §L5 -- native-side (APK) read verbs -------------------------
+  // A THIN re-projection of `ArtifactService`'s own §L5 methods, same idiom
+  // as every resource above (this class never re-derives a native fact).
+  // `native/` is optional-by-construction: every method below answers
+  // empty/null rather than throwing when this artifact ingested no native
+  // side, so an agent loop can always call these speculatively.
+
+  /** `native/modules` — spec 27 §L5, `ArtifactService.nativeModules()`'s own
+   *  cap (100 rows/call). */
+  nativeModules(opts: { readonly all?: boolean } = {}) {
+    return this.artifact.nativeModules(opts);
+  }
+
+  /** `native/module/{x}` — one module (by `jsName`, or its raw key), its
+   *  methods, and every seam that names it, in one call — the seam is a
+   *  first-class read object so an agent can pull "the native impl of this
+   *  JS call" in one cheap hop (spec 27 §L5's own framing). `null` when no
+   *  such module exists in this artifact. */
+  nativeModule(x: string) {
+    return this.artifact.nativeModule(x);
+  }
+
+  /** `native/seams` — spec 27 §L5, `ArtifactService.seams()`'s own cap (100
+   *  rows/call). A seam is a first-class read object: `status:"linked"`
+   *  cites both a JS call site and a native module/method, `"js-only"`/
+   *  `"native-only"` cite one side and `null` the other — never a guess. */
+  seams(filter: { readonly status?: "linked" | "js-only" | "native-only"; readonly firstParty?: boolean; readonly all?: boolean } = {}) {
+    return this.artifact.seams(filter);
+  }
+
+  /** `native/manifest` — the AXML-derived package/permissions/components
+   *  block (`native/manifest.json`, spec 27 §L1). `null` when no native
+   *  side was ingested. Small and singular: never paginated. */
+  nativeManifest() {
+    return this.artifact.nativeManifest();
+  }
+
+  /** `native/resources` — `native/resources.jsonl` rows whose key matches
+   *  `pattern` (`ArtifactService.nativeResources()`'s own cap, 50/call). */
+  nativeResources(pattern: string, opts: { readonly all?: boolean } = {}) {
+    return this.artifact.nativeResources(pattern, opts);
+  }
+
+  /** The Context-pane native-impl link (spec 27 §L5): every seam whose JS
+   *  evidence cites `fn` as a call site, paired with its native module row
+   *  when linked. Empty when `fn` participates in no seam. */
+  nativeImplFor(fn: number) {
+    return this.artifact.nativeImplFor(fn);
+  }
+
   // -- leads / search (§14 additions 1 + 3) --------------------------------
 
   /** `leads` / `security-sinks` — spec 17 §14 addition 1: every security-

@@ -8,7 +8,7 @@ import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Empty, PaneHeader, ToolButton } from "../components/primitives.tsx";
 import { ResultTable, type ColumnDef } from "../components/ResultTable.tsx";
-import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls, useWhoCallsByName } from "../hooks.ts";
+import { useCallsFrom, useContextResource, useFindings, useNativeImpl, usePackageId, useWhoCalls, useWhoCallsByName } from "../hooks.ts";
 import { useSegregation } from "../listing/use-segregation.ts";
 import type { ByNameCaller, FindingStatus, ResolvedFinding, Severity, XrefEdge } from "../contracts.ts";
 import { displayName } from "../actions/names.ts";
@@ -24,6 +24,7 @@ import { StringsPane } from "./StringsPane.tsx";
 import { TablesPane } from "./TablesPane.tsx";
 import { GraphPane } from "../graph/GraphPane.tsx";
 import { EditPane } from "./EditPane.tsx";
+import { hasNativeImpl, nativeImplDetail, nativeImplLabel } from "./context-native.ts";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -220,6 +221,11 @@ function RightPanelBody({
   const findings = useFindings();
   const pkg = usePackageId(hasFn ? (ctx.data?.metadata?.module ?? 0) : -1);
   const md = ctx.data?.metadata;
+  // spec 27 §L5: the native-impl row, read-only — no Seams pane yet
+  // (deferred), just the fact that this fn is one side of a JS<->native
+  // seam. Empty for every fn that touches no seam or when the project has
+  // no native side ingested.
+  const nativeImpl = useNativeImpl(fn);
   // segregation.ts attributes a module to `node_modules/<pkg>/…` from path
   // shape alone (no two-key gate) — a WEAKER claim than `packageId`'s, so
   // it is shown only as a fallback labelled as such, never in place of a
@@ -285,6 +291,16 @@ function RightPanelBody({
                 </div>
               ))}
             </div>
+            {hasNativeImpl(nativeImpl.data) && (
+              <div className="border-t border-border py-2" data-testid="right-panel-native-impl">
+                <div className="px-3 pb-1 text-xs text-text-muted">native impl</div>
+                {nativeImpl.data!.rows.map((r) => (
+                  <div key={r.seam.key} className="px-3 py-0.5 font-mono text-xs text-text">
+                    {nativeImplLabel(r)} <span className="text-text-muted">{nativeImplDetail(r)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </Tabs.Content>

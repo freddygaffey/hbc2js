@@ -1302,6 +1302,29 @@ than throwing — verified directly against the live Service NSW project
 server (`seq 1`–`4`: `init`, `rebuild-index {functions:43384,...}`,
 `annotate {kind:"name"}`, `annotate {kind:"comment"}`).
 
+## Context
+
+The right pane's **Context** tab (`ui/src/panes/RightPane.tsx`'s
+`RightPanelBody`) shows the selected function's metadata block (name,
+module, file:lines, params, kind, edge counts) and its string uses, both
+from `GET /api/fn/:fn/context` (`useContextResource`).
+
+**Native impl (spec 27 §L5).** When the selected fn participates in a
+JS<->native seam (`NativeModules.X.method`/`TurboModuleRegistry.get("X")`/
+`requireNativeComponent("X")`), a "native impl" row appears below strings:
+`jsName.jsMethod` (or bare `jsName` for a view-manager seam with no method),
+then the seam's status, the native module's kind when linked (`-> bridge`/
+`turbo`/`viewmanager`), and a first/third-party label when known — never
+guessed, so an unresolved package prints nothing extra. Read from
+`GET /api/native/impl/:fn` (`useNativeImpl`), which is empty (not 404) for
+every fn outside a seam or for a project with no native side ingested. The
+label/detail text is pure logic in `ui/src/panes/context-native.ts`
+(`nativeImplLabel`/`nativeImplDetail`/`hasNativeImpl`), tested without a
+browser in `tests/ui-core/context-native.test.ts`. This is a read-only row,
+one click deep — clicking it selects nothing; a dedicated Seams pane (a
+sortable/filterable table over `GET /api/native/seams`) is deferred to a
+later UI landing, spec 27 §L5's own framing.
+
 ## Xrefs
 
 The right pane's **Xrefs** tab (`ui/src/panes/RightPane.tsx`) shows the
