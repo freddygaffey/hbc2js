@@ -30,7 +30,7 @@
 // which would (wrongly) call a register that held a *different* private name
 // earlier in the same list an alias of this one too.
 import type { Expr, Stmt } from "../ast.ts";
-import { mapStmts, walk } from "../ast.ts";
+import { identUses, mapStmts, walk } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
 export interface PrivateFieldsGroup {
@@ -177,6 +177,7 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
   let initExpr: Expr | null = null;
   let installs = 0;
   let escaped = false;
+  const droppedInits: string[] = [];
 
   // General register-value resolution (class-recover's own `regValues`
   // technique) for the install's `value` argument, which is a bare register
@@ -204,6 +205,13 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
   // restriction (it writes to whatever object it is given), which is
   // exactly why that shape is the correct, safe fallback and this rung
   // must refuse rather than "fix" it.
+  //
+  // Fixing it is a *different* rung's job, and it is now done upstream:
+  // `ctor-this` (docs/specs/passes/26-ctor-this.md, R12) proves that in a
+  // BASE class that stand-in IS the object `[[Construct]]` bound to `this`
+  // and substitutes the literal `this` before this rung ever runs. So this
+  // guard is unchanged and still exactly as strict; its input changed, and
+  // fixture 35 folds.
   const isThisArg = (e: Expr, regs: ReadonlyMap<string, Expr>): boolean => resolve(regs, e).k === "this";
   const regSources = new Map<string, Stmt>();
   const claimedSources = new Set<Stmt>();
@@ -286,6 +294,17 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
     // (a) A pure copy of a live alias into a fresh register: extend the
     // alias set and drop the statement (see the doc comment above).
     if (store !== null && isIdent(store.value) && aliases.has(store.value.name)) {
+      // The dropped statement may be the register's *declaration* (`let r0 =
+      // _e0_0;`, the `k:"init"` spelling) while a later statement in the same
+      // body repurposes the same register for something else (`withdraw`'s
+      // `r0 = globalThis;` on fixture 35's throwing arm). Dropping the
+      // declaration with the statement leaves that assignment undeclared,
+      // which in a class body -- always strict -- is a ReferenceError at run
+      // time. Remembered here and re-declared once, as a bare `let`, in front
+      // of the folded body, but only if a reference really does survive the
+      // fold (see `redeclare` below). Found when `ctor-this` first let this
+      // rung fire on a real fixture.
+      if (s.k === "init") droppedInits.push(s.name);
       return { stmt: null, aliasesOut: new Set(aliases).add(store.name), regsOut: regs };
     }
     let nextAliases = aliases;
@@ -365,8 +384,26 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
 
   const result = fold(body, new Set([envName]), new Map());
   if (escaped || installs > 1) return null;
-  const finalBody = claimedSources.size === 0 ? result.stmts : result.stmts.filter((s) => !claimedSources.has(s));
+  const folded = claimedSources.size === 0 ? result.stmts : result.stmts.filter((s) => !claimedSources.has(s));
+  const finalBody = redeclare(folded, droppedInits);
   return { body: finalBody, initExpr };
+}
+
+/** Re-declare every name whose `k:"init"` declaration this fold dropped and
+ *  which some surviving statement still reads or writes. One `let` prologue,
+ *  placed after any leading directive/comment (a `"use strict"` directive
+ *  must stay first) -- the same shape and position the emitter's own register
+ *  prologue uses, so `pruneRegisterDecls`/`hoistRegisterInits` can still
+ *  recognise it. */
+function redeclare(body: readonly Stmt[], droppedInits: readonly string[]): readonly Stmt[] {
+  const names = [...new Set(droppedInits)].filter((n) => {
+    const u = identUses(body, n);
+    return u.reads + u.writes > 0;
+  });
+  if (names.length === 0) return body;
+  let at = 0;
+  while (at < body.length && (body[at]!.k === "comment" || body[at]!.k === "directive")) at++;
+  return [...body.slice(0, at), { k: "decl", kind: "let", names }, ...body.slice(at)];
 }
 
 /** Folds one candidate across the whole function tree: the constructor (the
