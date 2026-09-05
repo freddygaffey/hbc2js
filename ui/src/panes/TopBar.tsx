@@ -11,7 +11,6 @@
 // ui/src/listing/search-store.ts, not in App state, because the left pane
 // filters on the same string; Enter selects the first hit, the dropdown
 // shows at most SEARCH_ROWS of them.
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useRef, useState, type ReactNode } from "react";
 import { ToolButton } from "../components/primitives.tsx";
 import { useTheme } from "../theme/ThemeProvider.tsx";
@@ -80,7 +79,7 @@ function Breadcrumbs(): ReactNode {
 }
 
 export function TopBar({ onOpenPalette }: { readonly onOpenPalette: () => void }): ReactNode {
-  const { preset, presets, setPreset, density, setDensity } = useTheme();
+  const { mode, toggle, density, setDensity } = useTheme();
   const query = useQueryText();
   const hits = useSearchFunctions(query);
   const [open, setOpen] = useState(false);
@@ -149,24 +148,15 @@ export function TopBar({ onOpenPalette }: { readonly onOpenPalette: () => void }
         <ToolButton tip="Density (spacing + type scale)" onClick={() => setDensity(density === "compact" ? "comfortable" : "compact")}>
           {density}
         </ToolButton>
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <ToolButton tip="Theme preset (ui/theme.json)">{preset}</ToolButton>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content sideOffset={4} align="end" className="min-w-32 rounded-ui border border-border bg-surface p-1 text-xs text-text">
-              {presets.map((p) => (
-                <DropdownMenu.Item
-                  key={p}
-                  onSelect={() => setPreset(p)}
-                  className="flex h-7 cursor-pointer items-center rounded-ui px-2 outline-none data-[highlighted]:bg-surface-2"
-                >
-                  {p}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
+        <ToolButton
+          aria-label="toggle light/dark theme"
+          data-testid="theme-toggle"
+          data-mode={mode}
+          tip="Toggle light/dark theme (set the actual presets in Settings)"
+          onClick={toggle}
+        >
+          {mode === "light" ? "Light" : "Dark"}
+        </ToolButton>
         <ToolButton aria-label="settings" data-action="project.settings" tip="Settings (theme, density, key bindings)" onClick={() => runAction("project.settings")}>
           <span aria-hidden>&#9881;</span>
         </ToolButton>

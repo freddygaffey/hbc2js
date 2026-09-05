@@ -6,16 +6,28 @@
 // `view.themeToggle` keymap action and the `:set theme <preset>` command
 // (docs/UI-BURS.md #5/#6) — read and change the SAME theme the Settings
 // dialog does. This component is now a thin React view over that store.
+//
+// bur 12 (docs/UI-BURS.md #12): the context exposes the two persisted
+// slots (`light`, `dark`) and the active `mode`, plus each mode's preset
+// list (for Settings' two selects) — never one flat list of every preset.
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
-import { PRESET_NAMES } from "./apply.ts";
-import { getThemeState, setThemeDensity, setThemePreset, subscribeTheme } from "./store.ts";
+import { activePreset } from "@ui-core/theme-slots.ts";
+import { presetsOfMode } from "./apply.ts";
+import { getThemeState, setThemeDensity, setThemeSlot, subscribeTheme, toggleTheme } from "./store.ts";
 import type { Density } from "./tokens.ts";
 
 interface ThemeCtx {
+  readonly light: string;
+  readonly dark: string;
+  readonly mode: "light" | "dark";
+  /** The preset actually on screen (the active slot's value). */
   readonly preset: string;
-  readonly presets: readonly string[];
+  readonly lightPresets: readonly string[];
+  readonly darkPresets: readonly string[];
   readonly density: Density;
-  setPreset: (name: string) => void;
+  setLight: (name: string) => void;
+  setDark: (name: string) => void;
+  toggle: () => void;
   setDensity: (d: Density) => void;
 }
 
@@ -26,10 +38,16 @@ export function ThemeProvider({ children }: { readonly children: ReactNode }): R
 
   const value = useMemo<ThemeCtx>(
     () => ({
-      preset: state.preset,
-      presets: PRESET_NAMES,
+      light: state.light,
+      dark: state.dark,
+      mode: state.mode,
+      preset: activePreset(state),
+      lightPresets: presetsOfMode("light"),
+      darkPresets: presetsOfMode("dark"),
       density: state.density,
-      setPreset: setThemePreset,
+      setLight: (name: string) => setThemeSlot("light", name),
+      setDark: (name: string) => setThemeSlot("dark", name),
+      toggle: toggleTheme,
       setDensity: setThemeDensity,
     }),
     [state],

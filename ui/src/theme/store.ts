@@ -5,23 +5,51 @@
 // (docs/UI-BURS.md #5/#6) — can read and change the SAME theme state the
 // Settings dialog does, through exactly one persistence path (localStorage,
 // wrapped) and one CSS-variable apply path.
-import { applyTheme, DEFAULT_PRESET, PRESET_NAMES, partnerPreset, presetOf, resolveTheme } from "./apply.ts";
+//
+// bur 12 (docs/UI-BURS.md #12): the state is now two persisted SLOTS
+// (`light`, `dark`, one preset name each) plus which slot is active. The
+// toolbar button and `view.themeToggle` flip the active slot only
+// (`toggleTheme`/`toggled`); Settings assigns each slot a preset from that
+// mode's presets only (`setThemeSlot`/`withSlot`). The slot-selection LOGIC
+// lives in `src/ui-core/theme-slots.ts` (pure, no DOM) so it is unit
+// testable; this module owns persistence + CSS application only.
+import { modeOf, presetOf, applyTheme, DEFAULT_PRESET, resolveTheme } from "./apply.ts";
+import { activePreset, toggled, withPresetActive, withSlot, type ThemeMode, type ThemeSlots } from "@ui-core/theme-slots.ts";
 import type { Density } from "./tokens.ts";
 
-const PRESET_KEY = "hbc2js.theme.preset";
+const LIGHT_KEY = "hbc2js.theme.light";
+const DARK_KEY = "hbc2js.theme.dark";
+const MODE_KEY = "hbc2js.theme.mode";
 const DENSITY_KEY = "hbc2js.theme.density";
 
-export interface ThemeState {
-  readonly preset: string;
+// "light"/"dark" are guaranteed to exist with these modes
+// (tests/gate/ui/tokens.test.ts: "every family that ships only one mode
+// must be able to fall back to a base dark/light preset").
+const DEFAULT_LIGHT = "light";
+const DEFAULT_DARK = "dark";
+const DEFAULT_MODE: ThemeMode = presetOf(DEFAULT_PRESET).mode;
+
+const lookup = { modeOf };
+
+export interface ThemeState extends ThemeSlots {
   readonly density: Density;
 }
 
-function loadPreset(): string {
+function loadSlot(key: string, mode: ThemeMode, fallback: string): string {
   try {
-    const v = window.localStorage.getItem(PRESET_KEY);
-    return v !== null && PRESET_NAMES.includes(v) ? v : DEFAULT_PRESET;
+    const v = window.localStorage.getItem(key);
+    return v !== null && modeOf(v) === mode ? v : fallback;
   } catch {
-    return DEFAULT_PRESET;
+    return fallback;
+  }
+}
+
+function loadMode(): ThemeMode {
+  try {
+    const v = window.localStorage.getItem(MODE_KEY);
+    return v === "light" || v === "dark" ? v : DEFAULT_MODE;
+  } catch {
+    return DEFAULT_MODE;
   }
 }
 
@@ -42,7 +70,12 @@ function save(key: string, value: string): void {
   }
 }
 
-let state: ThemeState = { preset: loadPreset(), density: loadDensity(resolveTheme(loadPreset()).density) };
+let state: ThemeState = {
+  light: loadSlot(LIGHT_KEY, "light", DEFAULT_LIGHT),
+  dark: loadSlot(DARK_KEY, "dark", DEFAULT_DARK),
+  mode: loadMode(),
+  density: loadDensity(resolveTheme(DEFAULT_PRESET).density),
+};
 
 const listeners = new Set<() => void>();
 
@@ -51,7 +84,7 @@ function notify(): void {
 }
 
 function apply(): void {
-  applyTheme(resolveTheme(state.preset), state.density);
+  applyTheme(resolveTheme(activePreset(state)), state.density);
 }
 
 // Applied once at module load (not just on ThemeProvider's first render), so
@@ -69,14 +102,26 @@ export function subscribeTheme(l: () => void): () => void {
   };
 }
 
-/** Throws (leaving state unchanged) when `name` is not a known preset —
- *  same contract as `setKeymapConfig`. */
-export function setThemePreset(name: string): void {
-  presetOf(name);
-  state = { ...state, preset: name };
-  save(PRESET_KEY, name);
+function commit(slots: ThemeSlots): void {
+  state = { ...state, ...slots };
+  save(LIGHT_KEY, state.light);
+  save(DARK_KEY, state.dark);
+  save(MODE_KEY, state.mode);
   apply();
   notify();
+}
+
+/** Assigns `name` to `mode`'s slot (Settings' "Light theme"/"Dark theme"
+ *  selects). Throws — leaving state unchanged — when `name` is not a known
+ *  preset of that mode. */
+export function setThemeSlot(mode: ThemeMode, name: string): void {
+  commit(withSlot(state, mode, name, lookup));
+}
+
+/** `:set theme <preset>` (bur 5): names a preset directly, which both fills
+ *  its slot and makes it active. Throws on an unknown preset name. */
+export function setThemePreset(name: string): void {
+  commit(withPresetActive(state, name, lookup));
 }
 
 export function setThemeDensity(d: Density): void {
@@ -86,8 +131,9 @@ export function setThemeDensity(d: Density): void {
   notify();
 }
 
-/** Bur 6 (docs/UI-BURS.md #6): flips to the active preset's dark/light
- *  partner (`partnerPreset`, ui/src/theme/apply.ts). */
+/** Bur 12 (docs/UI-BURS.md #12): flips the active slot — the toolbar
+ *  button, `view.themeToggle`, and the command palette's "Toggle theme" row
+ *  all call this. */
 export function toggleTheme(): void {
-  setThemePreset(partnerPreset(state.preset));
+  commit(toggled(state));
 }

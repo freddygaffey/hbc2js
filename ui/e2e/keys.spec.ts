@@ -1,8 +1,9 @@
 // ui/e2e/keys.spec.ts — review-2026-09-05-keys (docs/BUGS.md): the owner
 // reported "there is no theme conf; none of the key bindings work". This
 // spec presses the DEFAULT chords and asserts the visible effect, opens the
-// cheat-sheet, and drives the Settings dialog (theme, density, and the
-// key-binding editor) including persistence across a reload.
+// cheat-sheet, and drives the Settings dialog's key-binding editor,
+// including persistence across a reload. Theme/density coverage lives in
+// ui/e2e/theme.spec.ts (docs/UI-BURS.md #12).
 //
 // It runs read-only: every chord it fires opens a dialog or switches a
 // panel, and each dialog is dismissed with Escape — nothing is submitted, so
@@ -118,34 +119,6 @@ test.describe("command mode (bur 4/5)", () => {
 });
 
 test.describe("settings", () => {
-  test("theme mode toggle switches live and survives a reload (bur 6)", async ({ page }) => {
-    await page.goto("/");
-    await page.keyboard.press(`${MOD}+,`);
-    const dialog = page.getByRole("dialog", { name: "Settings" });
-    await expect(dialog).toBeVisible({ timeout: SHORT });
-
-    const bg = async (): Promise<string> =>
-      page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
-    const before = await bg();
-    // bur 6: light/dark is a switch, not a dropdown entry — the family
-    // dropdown (bur 3) is left on its default ("default": ui/themes/dark.json
-    // + light.json) and only the mode toggle flips.
-    const modeToggle = dialog.locator('[data-testid="theme-mode-toggle"]');
-    await expect(modeToggle).toHaveAttribute("data-mode", "dark");
-    await modeToggle.click();
-    await expect(modeToggle).toHaveAttribute("data-mode", "light");
-    await expect.poll(bg, { timeout: SHORT }).not.toBe(before);
-    const after = await bg();
-
-    await page.reload();
-    await expect.poll(bg, { timeout: WAIT }).toBe(after);
-
-    // Put it back so the next test starts from the shipped preset.
-    await page.keyboard.press(`${MOD}+,`);
-    await page.getByRole("dialog", { name: "Settings" }).locator('[data-testid="theme-mode-toggle"]').click();
-    await expect.poll(bg, { timeout: SHORT }).toBe(before);
-  });
-
   test("rebinding an action: new chord works, old one does not, survives reload, resets", async ({ page }) => {
     await page.goto("/");
     await openFirstFn(page);

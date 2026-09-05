@@ -20,7 +20,6 @@ import { describeCommand, fuzzyMatchIds, isCommandQuery, parseCommand } from "@u
 import { actionContext, keymap, registry, runAction, runCommand } from "../actions/registry.ts";
 import { setPaletteOpen, useActionsState } from "../actions/store.ts";
 import { useSelection } from "../state/selection.ts";
-import { partnerPreset } from "../theme/apply.ts";
 import { useTheme } from "../theme/ThemeProvider.tsx";
 
 const PREF_TOGGLE_DENSITY = "pref.density";
@@ -30,7 +29,7 @@ const COMMAND_ROW = "__command__";
 export function CommandPalette({
   open, onOpenChange,
 }: { readonly open: boolean; readonly onOpenChange: (v: boolean) => void }): ReactNode {
-  const { density, setDensity, preset, setPreset } = useTheme();
+  const { density, setDensity, preset, toggle } = useTheme();
   const [value, setValue] = useState("");
   const selection = useSelection();
   const { paletteOpen: storeOpen, paletteMode } = useActionsState();
@@ -60,7 +59,7 @@ export function CommandPalette({
   const run = (id: string): void => {
     setOpen(false);
     if (id === PREF_TOGGLE_DENSITY) return setDensity(density === "compact" ? "comfortable" : "compact");
-    if (id === PREF_TOGGLE_THEME) return setPreset(partnerPreset(preset));
+    if (id === PREF_TOGGLE_THEME) return toggle();
     if (id === COMMAND_ROW) return runCommand(value);
     runAction(id, selection);
   };
