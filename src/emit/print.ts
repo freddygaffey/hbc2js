@@ -111,7 +111,10 @@ function precedence(e: Expr): number {
       return CONDITIONAL;
     case "assign":
     case "destructure": // F16: printed at assignment precedence, like `assign`
+    case "yield": // F25-1: `yield` binds looser than every operator; assignment level
       return ASSIGNMENT;
+    case "await": // F25-1: a unary operator
+      return UNARY;
     case "seq":
       return SEQUENCE;
   }
@@ -420,7 +423,7 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       return;
     case "func": {
       const startIdx = out.length;
-      out.push(`${p}function ${s.name}(${paramList(s.params)}) {`);
+      out.push(`${p}${s.async === true ? "async " : ""}function${s.generator === true ? "*" : ""} ${s.name}(${paramList(s.params)}) {`);
       printBody(s.body, depth + 1, out, opts);
       out.push(`${p}}`);
       if (funcMarks !== undefined) funcMarks.push({ name: s.name, startIdx, endIdxExclusive: out.length });
@@ -495,6 +498,10 @@ function render(e: Expr): string {
     }
     case "assign":
       return `${expr(e.target, MEMBER)} = ${expr(e.value, ASSIGNMENT)}`;
+    case "yield": // F25-1
+      return e.arg === null ? (e.delegate ? "yield*" : "yield") : `yield${e.delegate ? "*" : ""} ${expr(e.arg, ASSIGNMENT)}`;
+    case "await": // F25-1
+      return `await ${expr(e.arg, UNARY)}`;
     case "destructure": // F16
       return `${renderPattern(e.pattern)} = ${expr(e.source, ASSIGNMENT)}`;
     case "cond":
@@ -524,7 +531,7 @@ function render(e: Expr): string {
       return jsxOutput ? renderJsx(e) : render(jsxToCall(e));
     case "func": {
       const out: string[] = [];
-      const header = `function ${e.name ?? ""}(${paramList(e.params)}) {`;
+      const header = `${e.async === true ? "async " : ""}function${e.generator === true ? "*" : ""} ${e.name ?? ""}(${paramList(e.params)}) {`;
       // §16.2: this body prints into a SEPARATE array whose text is then
       // spliced into the middle of an enclosing `out` entry, so a mark taken
       // here cannot name a physical line. With no hook live there is nothing

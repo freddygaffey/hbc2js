@@ -97,6 +97,18 @@ export type Expr =
    * assignment must be in real JS.
    */
   | { readonly k: "destructure"; readonly pattern: Pattern; readonly source: Expr }
+  /**
+   * F25-1 (docs/specs/passes/25-yield-async-recovery.md §2): a suspension.
+   * `yield <arg>` / `yield* <arg>` / bare `yield` (`arg: null`); `await
+   * <arg>`. Produced only by the `yield-recovery` / `async-recovery` rungs
+   * when they collapse a generator group back into the `function*` /
+   * `async function` it was lowered from. Never pure (`src/passes/ast.ts`'s
+   * `isPure` returns false by default for both) and always an effect in
+   * `effectSequence`: a suspension is observable and may never be reordered
+   * past anything.
+   */
+  | { readonly k: "yield"; readonly arg: Expr | null; readonly delegate: boolean }
+  | { readonly k: "await"; readonly arg: Expr }
   | {
       readonly k: "func";
       readonly name: string | null;
@@ -120,6 +132,10 @@ export type Expr =
        *  from under a live read.
        */
       readonly sameFrame?: true;
+      /** F25-1: `function*` / `async function`. Set only by the spec-25
+       *  rungs; an emitted Hermes closure never carries either. */
+      readonly generator?: true;
+      readonly async?: true;
     };
 
 /** `name={value}` (a string `lit` value prints bare, `name="text"`, when it
@@ -281,7 +297,9 @@ export type Stmt =
   | { readonly k: "throw"; readonly arg: Expr; readonly origin?: Origin }
   | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string; readonly handler: readonly Stmt[] }
   | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[]; readonly origin?: Origin }
-  | { readonly k: "func"; readonly name: string; readonly params: readonly Param[]; readonly body: readonly Stmt[] }
+  /** F25-1: `generator`/`async` mark a `function*` / `async function`
+   *  declaration recovered by the spec-25 rungs. */
+  | { readonly k: "func"; readonly name: string; readonly params: readonly Param[]; readonly body: readonly Stmt[]; readonly generator?: true; readonly async?: true }
   | { readonly k: "directive"; readonly text: string }
   /**
    * `(function () { … })();` — the whole module's wrapper. Without it every

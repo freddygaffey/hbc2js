@@ -16,7 +16,6 @@ import { join } from "node:path";
 import { decompile } from "../../../src/decompile.ts";
 import { repoRoot } from "../../support/paths.ts";
 
-const SKIP = "spec 25 acceptance -- unimplemented";
 const DIR = ["..", "..", "..", "src", "passes", "async-recovery"].join("/");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -117,17 +116,23 @@ test("baseline: 28-async-await-error suspends inside its try region (R-Y7 eviden
   }
 });
 
-test("baseline: the async idiom is identical with passes on and off (PL-05)", () => {
+// PUSHBACK P-29 (see tests/gate/passes/yield-recovery.test.ts): comparing the
+// default pipeline against `--passes=none` and requiring the driver counts to
+// be equal is not PL-05, and it asserts that this rung does nothing. Re-pointed
+// at the permanent property: no rung *other* than the two spec-25 rungs touches
+// the async idiom.
+test("baseline: the async idiom is untouched by every rung except yield-recovery/async-recovery", () => {
   for (const version of ALL_VERSIONS) {
     for (const fixture of ASYNC_FIXTURES) {
       for (const [what, re] of [
         ["driver references", SPAWN],
-        // Zero on both sides since docs/BUGS.md "LoadThisNS lowering" landed; kept
-        // so a rung that reintroduces an explicit coercion on one side is caught.
+        // `DRIVER_THIS` is a passes-OFF shape (it spells the receiver into a
+        // `Reflect.apply` argument list); `call-shape` rewrites that call, so it
+        // is not a pipeline-invariant marker and is asserted above instead.
         ["this coercions", THIS_COERCION],
         ["reified arguments", REIFIED_ARGS],
       ] as const) {
-        assert.equal(count(js(fixture, version), re), count(base(fixture, version), re), `${fixture} ${version}: ${what}`);
+        assert.equal(count(js(fixture, version, ["yield-recovery", "async-recovery"]), re), count(base(fixture, version), re), `${fixture} ${version}: ${what}`);
       }
     }
   }
@@ -137,10 +142,13 @@ test("baseline: the async idiom is identical with passes on and off (PL-05)", ()
 // Framework and registration premises.
 // ---------------------------------------------------------------------------
 
-test("F25-1 premise: src/emit/ast.ts has no await node today", () => {
+// PUSHBACK P-28 (see tests/gate/passes/yield-recovery.test.ts): the shipped
+// form asserted F25-1 had not been implemented yet, which cannot hold once the
+// rung it exists for lands. Same two facts, asserted positively.
+test("F25-1: src/emit/ast.ts declares the await node and the async flag", () => {
   const ast = readFileSync(join(repoRoot(), "src", "emit", "ast.ts"), "utf8");
-  assert.doesNotMatch(ast, /k: "await"/);
-  assert.doesNotMatch(ast, /readonly async\?/);
+  assert.match(ast, /k: "await"/);
+  assert.match(ast, /readonly async\?/);
 });
 
 test("PL-06 premise: catalogue row 19 is verified and points at spec 25", () => {
@@ -162,7 +170,7 @@ test("spec 25 section 1.8: the rn-template bundle contains no async driver, so t
 // Skipped until the rung exists (spec 25 section 5).
 // ---------------------------------------------------------------------------
 
-test("async-recovery is a stage-B rung on catalogue row 19, after yield-recovery and before renaming", { skip: SKIP }, async () => {
+test("async-recovery is a stage-B rung on catalogue row 19, after yield-recovery and before renaming", async () => {
   const { asyncRecovery } = await rung();
   assert.equal(asyncRecovery.stage, "B");
   assert.deepEqual([...(asyncRecovery.catalogue as (number | string)[])], [19]);
@@ -178,18 +186,18 @@ test("async-recovery is a stage-B rung on catalogue row 19, after yield-recovery
   assert.doesNotThrow(() => enabledPasses({}));
 });
 
-test("async-recovery's versions predicate accepts every version", { skip: SKIP }, async () => {
+test("async-recovery's versions predicate accepts every version", async () => {
   const { asyncRecovery } = await rung();
   const v = asyncRecovery.versions as ((n: number, layout: string) => boolean) | undefined;
   for (const n of [84, 94, 96, 98, 99]) assert.equal(v === undefined || v(n, "C"), true, `v${n}`);
 });
 
-test("async-recovery: a body with no spawn wrapper is a fixed point (PL-08, R-A0)", { skip: SKIP }, async () => {
+test("async-recovery: a body with no spawn wrapper is a fixed point (PL-08, R-A0)", async () => {
   const { match } = await rung();
   assert.equal(match([{ k: "return", arg: null }] as Any, {} as Any), null);
 });
 
-test("async-recovery recovers 27-async-await-basic into async/await at v84/v94/v96", { skip: SKIP }, () => {
+test("async-recovery recovers 27-async-await-basic into async/await at v84/v94/v96", () => {
   for (const version of ["v84", "v94", "v96"] as const) {
     const on = js("27-async-await-basic", version);
     const off = js("27-async-await-basic", version, ["async-recovery"]);
@@ -200,14 +208,14 @@ test("async-recovery recovers 27-async-await-basic into async/await at v84/v94/v
   }
 });
 
-test("async-recovery keeps 28-async-await-error's await inside its try (R-Y7)", { skip: SKIP }, () => {
+test("async-recovery keeps 28-async-await-error's await inside its try (R-Y7)", () => {
   const on = js("28-async-await-error", "v94");
   const off = js("28-async-await-error", "v94", ["async-recovery"]);
   assert.equal(count(on, /\btry \{/g), count(off, /\btry \{/g), "no try region may be added or removed");
   assert.match(on, /try \{[\s\S]*await /);
 });
 
-test("async-recovery refuses at v98/v99 with R-A4 until gen-lowered lands", { skip: SKIP }, () => {
+test("async-recovery refuses at v98/v99 with R-A4 until gen-lowered lands", () => {
   for (const version of ["v98", "v99"] as const) {
     for (const fixture of ASYNC_FIXTURES) {
       const on = js(fixture, version);
@@ -218,7 +226,7 @@ test("async-recovery refuses at v98/v99 with R-A4 until gen-lowered lands", { sk
   }
 });
 
-test("async-recovery's checker rejects an `after` carrying a yield it did not produce (R-A5)", { skip: SKIP }, async () => {
+test("async-recovery's checker rejects an `after` carrying a yield it did not produce (R-A5)", async () => {
   const { check } = await rung();
   const before = { k: "func", name: "f", params: [], body: [] };
   const after = { k: "func", name: "f", params: [], body: [{ k: "expr", expr: { k: "yield", arg: null, delegate: false } }], async: true };

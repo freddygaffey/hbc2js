@@ -2,6 +2,7 @@
 // only place a pass is switched on. `--passes=none` reproduces the M4 baseline
 // exactly, which is the required capability (PL-05).
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import { asyncRecovery } from "./async-recovery/index.ts";
 import { callShape } from "./call-shape/index.ts";
 import { defaultParams } from "./default-params/index.ts";
 import { destructure } from "./destructure/index.ts";
@@ -21,6 +22,7 @@ import { jsxRecover } from "./jsx-recover/index.ts";
 import { templateLiteral } from "./template-literal/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
+import { yieldRecovery } from "./yield-recovery/index.ts";
 
 /** Order is explicit data (§2.3). Stage A first; within a stage, dependency
  *  order — `expr-rebuild` is first in stage B (PL-11), enforced below by
@@ -83,7 +85,7 @@ import { varNaming } from "./var-naming/index.ts";
  *  already in its collision set, and needs `call-shape` to have turned a
  *  disguised call back into a real callee so its call-result heuristic
  *  sees one. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, objectLiteral as Pass, jsxRecover as Pass, fnNaming as Pass, regSplit as Pass, varNaming as Pass];
+export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, objectLiteral as Pass, yieldRecovery as Pass, asyncRecovery as Pass, jsxRecover as Pass, fnNaming as Pass, regSplit as Pass, varNaming as Pass];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
