@@ -217,30 +217,56 @@ Every file carries exactly `dark.json`'s token key set
 dark.json's token key set") — the gate fails a new preset that is missing a
 token dark.json has, or that adds one it doesn't.
 
-### One state, three ways to change it (theme family, mode, `:set theme`)
+### Two slots, one toggle (bur 12, docs/UI-BURS.md #12)
 
-The theme's runtime state is `ui/src/theme/store.ts` — a vanilla
-`useSyncExternalStore` store (the same pattern as `ui/src/actions/store.ts`),
-not React state, precisely so it has exactly one persistence path
-(`localStorage`, wrapped) and can be read/changed from OUTSIDE React:
+Bur 12 replaced bur 6's family dropdown + mode switch: a menu of every
+preset (even split by family) is still "too many choices in one menu" for a
+light/dark toggle. The theme's runtime state (`ui/src/theme/store.ts` — a
+vanilla `useSyncExternalStore` store, the same pattern as
+`ui/src/actions/store.ts`, not React state, so it has exactly one
+persistence path — `localStorage`, wrapped — and can be read/changed from
+OUTSIDE React) now keeps:
 
-- **Settings → Theme** (bur 3 + bur 6): a "theme family" dropdown
-  (`ui/src/theme/apply.ts`'s `families()` — the distinct `family` values
-  across every preset, e.g. `default`, `gruvbox`, `catppuccin`, …) and a
-  separate light/dark **switch** (`data-testid="theme-mode-toggle"`). The
-  dropdown only ever picks the family; the switch flips `mode` within it
-  (`presetForFamily(family, mode)`). A family with only one mode (the four
-  dark-only nvim presets) keeps that preset selected regardless of the
-  switch's position until another family restores a real choice.
-- **The `view.themeToggle` keymap action** (bur 6): flips the active preset
-  to its `partnerPreset` — same `family`, opposite `mode`, when one exists;
-  otherwise the base `dark`/`light` preset for the opposite mode (every
-  preset ships one of the two, so this is always defined). Bound in every
-  preset (see "Keyboard shortcuts" below).
-- **`:set theme <preset>`** (bur 5, command mode) — sets the preset by name
-  directly, e.g. `:set theme dracula`.
+- **Two persisted slots**, `light` and `dark` (`hbc2js.theme.light` /
+  `hbc2js.theme.dark`), each one preset name. Defaults are the shipped
+  `light`/`dark` presets. Assigning a slot a preset of the wrong mode throws
+  (`src/ui-core/theme-slots.ts`'s `withSlot`) — a light theme can never sit
+  in the dark slot.
+- **Which slot is active** (`mode`, persisted as `hbc2js.theme.mode`). The
+  preset actually on screen is whichever slot `mode` names
+  (`activePreset()`).
 
-`ThemeProvider.tsx` is now a thin React view over the store (`useSyncExternalStore`); `main.tsx` no longer applies a hardcoded default at
+Three ways to change it, all going through the SAME store so they can never
+disagree:
+
+- **The toolbar button** (`data-testid="theme-toggle"`, top bar, replacing
+  bur 3/6's preset dropdown there) — one click flips `mode`
+  (`toggled()`/`toggleTheme()`). It shows "Light"/"Dark" text, never a menu.
+- **The `view.themeToggle` keymap action** (bur 6, still bound in every
+  preset — `Ctrl-Shift-L` in `default`) — the same flip.
+- **`:set theme <preset>`** (bur 5, command mode) — names a preset directly,
+  e.g. `:set theme dracula`; this fills that preset's OWN slot (by its
+  `mode`) and makes it active in one step (`withPresetActive`), so naming a
+  preset still both configures and shows it immediately.
+
+**Settings → Theme** (bur 12) is now the ONLY place the full preset list
+appears — split into two selects, "Light theme" and "Dark theme"
+(`data-testid="theme-light-select"`/`"theme-dark-select"`), each listing
+only `ui/src/theme/apply.ts`'s `presetsOfMode("light"|"dark")`. Picking a
+preset here fills that slot; it does not change which slot is active (only
+the toggle does that) — so editing the dark slot while looking at the light
+theme takes effect the next time you toggle to dark.
+
+The slot-selection logic (`withSlot`/`withPresetActive`/`toggled`/
+`activePreset`) lives in `src/ui-core/theme-slots.ts`, dependency-free (no
+DOM, no `import.meta.glob`), so it is unit tested under plain `node --test`
+(`tests/ui-core/theme-slots.test.ts`) the same way `keymap-resolve.ts` is;
+`ui/src/theme/store.ts` is the thin DOM-facing wrapper (persistence + CSS
+application via `applyTheme`/`resolveTheme`), exercised end to end by
+`ui/e2e/theme.spec.ts`.
+
+`ThemeProvider.tsx` is a thin React view over the store
+(`useSyncExternalStore`); `main.tsx` no longer applies a hardcoded default at
 startup — the store's own module-load side effect applies the PERSISTED
 theme before React renders, so there is nothing left for `main.tsx` to do
 (applying a second, hardcoded default there used to be needed only because
@@ -728,10 +754,10 @@ cmdk's own filtering (`shouldFilter`) and renders the action list filtered by
 and the fuzzy matcher; `ui/e2e/keys.spec.ts` drives `:` → `:fn 74` end to end
 against the e2e fixture (`rn-template-0.72`, which has an fn 74).
 
-**`view.themeToggle`** (bur 6, docs/UI-BURS.md #6) flips the active theme
-preset to its dark/light partner (see "One state, three ways to change it"
-above) — bound in every preset so switching modes never requires opening
-Settings:
+**`view.themeToggle`** (bur 6, docs/UI-BURS.md #6; slot semantics rewritten
+by bur 12, docs/UI-BURS.md #12) flips the active slot — see "Two slots, one
+toggle" above — bound in every preset so switching modes never requires
+opening Settings:
 
 | Preset | Chord |
 |---|---|
@@ -740,9 +766,10 @@ Settings:
 | `vim` | `<leader>t` |
 
 `tests/gate/ui/keymap-default.test.ts` asserts every preset binds a chord to
-`view.themeToggle`; `ui/e2e/keys.spec.ts` drives the Settings switch
-(`data-testid="theme-mode-toggle"`) and checks `--bg` changes and persists
-across a reload.
+`view.themeToggle`; `ui/e2e/theme.spec.ts` drives the toolbar button and this
+chord, checks `--bg` changes and persists across a reload, and checks
+Settings assigning a different preset to a slot changes what the toggle
+shows.
 
 ### Settings dialog
 
@@ -750,13 +777,12 @@ across a reload.
 the top bar) is the in-app config the shell was missing — the layout is
 untouched, art direction stays Fred's. Two tabs:
 
-- **appearance** — a "theme family" dropdown (bur 3: `default`, `gruvbox`,
-  `catppuccin`, `tokyonight`, `nord`, `dracula`, `one-dark`, `solarized`,
-  `ui/src/theme/apply.ts`'s `families()`) plus a light/dark **switch** (bur
-  6, `data-testid="theme-mode-toggle"`, `role="switch"`) that flips `mode`
-  within the chosen family (`presetForFamily`) — the dropdown never lists
-  `dark`/`light` themselves any more, only families, precisely so it cannot
-  regress back into being "a dropdown with light and dark in it"; density
+- **appearance** — bur 12's two mode-filtered selects, "Light theme"
+  (`data-testid="theme-light-select"`, `ui/src/theme/apply.ts`'s
+  `presetsOfMode("light")`) and "Dark theme"
+  (`data-testid="theme-dark-select"`, `presetsOfMode("dark")`) — the ONLY
+  place the full preset list appears, and even there split by mode so
+  neither select can offer a mismatched preset; density
   (`comfortable`/`compact`) and keymap preset (`default`/`vim`/`ghidra`),
   each applied live through `ui/src/theme/store.ts` / the live keymap and
   persisted to `localStorage` the same wrapped way; plus a READ-ONLY view of

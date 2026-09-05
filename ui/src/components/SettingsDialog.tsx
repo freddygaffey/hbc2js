@@ -17,7 +17,6 @@ import {
   activeBindings, getKeymapConfig, registry, resetKeymapConfig, setKeymapConfig, useKeymapConfig,
 } from "../actions/registry.ts";
 import { PRESETS } from "../keymap-config.ts";
-import { families, partnerPreset, presetForFamily, presetOf } from "../theme/apply.ts";
 import { useTheme } from "../theme/ThemeProvider.tsx";
 import { chordLabel } from "./KeymapHelp.tsx";
 import themeConfig from "../../theme.json";
@@ -170,28 +169,35 @@ function Bindings(): ReactNode {
   );
 }
 
-/** Bur 6 (docs/UI-BURS.md #6): light/dark is a SWITCH, not a dropdown entry
- *  — the dropdown (`Choice` above, "theme family") only picks the palette
- *  family (bur 3); this flips within it. Same `partnerPreset` the
- *  `view.themeToggle` keymap action and the `:set theme` command use, so
- *  all three ways to change it can never disagree. */
-function ModeToggle({ preset, setPreset }: { readonly preset: string; readonly setPreset: (p: string) => void }): ReactNode {
-  const mode = presetOf(preset).mode;
+/** Bur 12 (docs/UI-BURS.md #12): the ONLY place the full preset list
+ *  appears — but split into the two mode-filtered slot selects, never one
+ *  menu of everything. Picking a preset here fills that slot; it does not
+ *  change which slot (`light`/`dark`) is currently active — only the
+ *  toolbar button / `view.themeToggle` do that. */
+function SlotSelect({
+  label, testid, options, value, onChange,
+}: {
+  readonly label: string;
+  readonly testid: string;
+  readonly options: readonly string[];
+  readonly value: string;
+  readonly onChange: (v: string) => void;
+}): ReactNode {
   return (
     <div className="flex items-center gap-3 py-1">
-      <span className="w-32 shrink-0 text-text-muted">mode</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={mode === "light"}
-        aria-label="Toggle light/dark theme"
-        data-testid="theme-mode-toggle"
-        data-mode={mode}
-        className={rowBtn}
-        onClick={() => setPreset(partnerPreset(preset))}
+      <span className="w-32 shrink-0 text-text-muted">{label}</span>
+      <select
+        data-testid={testid}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 rounded-ui border border-border bg-surface-2 px-1 text-xs text-text outline-none focus-visible:border-accent"
       >
-        {mode} (click to toggle)
-      </button>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -216,7 +222,7 @@ function TokenOverrides(): ReactNode {
 }
 
 export function SettingsDialog({ onClose }: { readonly onClose: () => void }): ReactNode {
-  const { preset, density, setPreset, setDensity } = useTheme();
+  const { light, dark, lightPresets, darkPresets, density, setLight, setDark, setDensity } = useTheme();
   const keymapCfg = useKeymapConfig();
   const [tab, setTab] = useState<"appearance" | "keys">("appearance");
 
@@ -231,14 +237,8 @@ export function SettingsDialog({ onClose }: { readonly onClose: () => void }): R
       </div>
       {tab === "appearance" ? (
         <div>
-          <Choice
-            label="theme family"
-            testid="theme-family"
-            options={families() as readonly string[]}
-            value={presetOf(preset).family}
-            onChange={(f) => setPreset(presetForFamily(f, presetOf(preset).mode))}
-          />
-          <ModeToggle preset={preset} setPreset={setPreset} />
+          <SlotSelect label="Light theme" testid="theme-light-select" options={lightPresets} value={light} onChange={setLight} />
+          <SlotSelect label="Dark theme" testid="theme-dark-select" options={darkPresets} value={dark} onChange={setDark} />
           <Choice label="density" testid="theme-density" options={["comfortable", "compact"] as const} value={density} onChange={setDensity} />
           <Choice
             label="keymap preset"

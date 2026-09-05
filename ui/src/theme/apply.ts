@@ -51,45 +51,19 @@ export function resolveTheme(name: string = config.preset): ThemePreset {
 
 export const DEFAULT_PRESET = config.preset;
 
-/** bur 3/6: the distinct `family` values across every shipped preset, in
- *  `PRESET_NAMES` order, each listed once — what the Settings "theme
- *  family" dropdown offers (the family's dark/light variant, if any, is
- *  then picked by the mode toggle, never by this list). */
-export function families(): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const name of PRESET_NAMES) {
-    const f = presetOf(name).family;
-    if (!seen.has(f)) {
-      seen.add(f);
-      out.push(f);
-    }
-  }
-  return out;
+/** bur 12 (docs/UI-BURS.md #12): every preset whose `mode` matches, in
+ *  `PRESET_NAMES` order — what Settings' "Light theme"/"Dark theme" selects
+ *  each offer. Never the full preset list in one menu (that was the
+ *  complaint bur 12 replaces bur 6's family dropdown for). */
+export function presetsOfMode(mode: "dark" | "light"): string[] {
+  return PRESET_NAMES.filter((name) => presetOf(name).mode === mode);
 }
 
-/** The preset in `family` matching `mode`; if the family has no such variant
- *  (a dark-only preset like "one-dark"), whichever preset the family does
- *  have; if the family is unknown, the base `mode` preset ("dark"/"light",
- *  which always exist). */
-export function presetForFamily(family: string, mode: "dark" | "light"): string {
-  const exact = Object.entries(PRESETS).find(([, p]) => p.family === family && p.mode === mode);
-  if (exact !== undefined) return exact[0];
-  const any = Object.entries(PRESETS).find(([, p]) => p.family === family);
-  if (any !== undefined) return any[0];
-  return mode;
-}
-
-/** bur 6 (docs/UI-BURS.md #6): the dark/light "partner" of `name` — the
- *  theme.toggle action and Settings' mode switch both flip to this. Same
- *  family, opposite mode, when one exists; otherwise the base `dark`/`light`
- *  preset for the opposite mode (every preset ships one of the two modes, so
- *  this is always defined). */
-export function partnerPreset(name: string): string {
-  const p = presetOf(name);
-  const wantMode: "dark" | "light" = p.mode === "dark" ? "light" : "dark";
-  const sibling = Object.entries(PRESETS).find(([, q]) => q.family === p.family && q.mode === wantMode);
-  return sibling !== undefined ? sibling[0] : wantMode;
+/** `PresetLookup` for `src/ui-core/theme-slots.ts`'s pure slot logic —
+ *  `undefined` for an unknown name, otherwise the preset's `mode`. */
+export function modeOf(name: string): "dark" | "light" | undefined {
+  const p = PRESETS[name];
+  return p === undefined ? undefined : p.mode;
 }
 
 /** Writes one resolved theme + density to `:root`. Inline custom properties
