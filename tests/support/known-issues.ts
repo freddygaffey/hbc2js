@@ -25,6 +25,11 @@ export const KNOWN_AMBIGUOUS_V98: readonly string[] = [
   // `--opcode-table=hbc98-late` resolves it the same way. Nothing about the
   // fixture's own construct is special here.
   "64-computed-method-names",
+  // Added 2026-09-05 with the fixture itself (F24-3 regression, two aliased
+  // class-creation opcodes): same v98 hbc98-late/hbc99-mar2026 function-id
+  // disagreement as 34-class-static-members above, resolved the same way by
+  // `--opcode-table=hbc98-late`.
+  "67-class-static-and-new",
 ];
 
 export function isKnownAmbiguousV98(group: string, name: string, version: number): boolean {

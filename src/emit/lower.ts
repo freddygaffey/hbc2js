@@ -653,21 +653,45 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
     }
     case "CreateBaseClass":
     case "CreateBaseClassLongIndex": {
+      // F24-3: hermesc's interpreter writes the prototype object to op1 first
+      // and the constructor to op0 *last* ("Write the result last in case it
+      // is the same register as the prototype", Interpreter-slowpaths.cpp),
+      // so whenever a class has no instance members and the register
+      // allocator aliases op0 == op1, the register ends up holding the
+      // constructor, not the prototype. Mirror that: only materialise the
+      // prototype into its own binding when it is a genuinely separate
+      // register; when aliased, leave the register holding the constructor
+      // and let any use of the aliased register read the constructor,
+      // matching the VM. See docs/BUGS.md (class-ctor-proto-alias) and
+      // docs/specs/passes/24-class-recover.md section 1.4/6.6.
       const fnId = V(insn, 3);
-      set(V(insn, 0), id(f.closureName(fnId, insn.offset)));
-      set(V(insn, 1), prop(R(V(insn, 0)), "prototype"));
+      const ctorReg = V(insn, 0);
+      const protoReg = V(insn, 1);
+      set(ctorReg, id(f.closureName(fnId, insn.offset)));
+      if (protoReg !== ctorReg) set(protoReg, prop(R(ctorReg), "prototype"));
       return;
     }
     case "CreateDerivedClass":
     case "CreateDerivedClassLongIndex": {
+      // Same aliasing hazard as CreateBaseClass above (F24-3): op0 (ctor) and
+      // op1 (prototype) can be the same register. The real prototype object
+      // still needs `Object.setPrototypeOf` applied to it -- that is a side
+      // effect on the object itself, independent of which register holds it
+      // -- so when aliased, address it via `<ctor>.prototype` (read lazily,
+      // right before the register gets overwritten with the constructor)
+      // instead of through a dedicated binding that would never be observed.
       const fnId = V(insn, 4);
       const superReg = RG(insn, 3);
-      set(V(insn, 0), id(f.closureName(fnId, insn.offset)));
-      out.push({ k: "expr", expr: call(prop(id("Object"), "setPrototypeOf"), [R(V(insn, 0)), superReg]) });
-      set(V(insn, 1), prop(R(V(insn, 0)), "prototype"));
+      const ctorReg = V(insn, 0);
+      const protoReg = V(insn, 1);
+      const aliased = protoReg === ctorReg;
+      set(ctorReg, id(f.closureName(fnId, insn.offset)));
+      out.push({ k: "expr", expr: call(prop(id("Object"), "setPrototypeOf"), [R(ctorReg), superReg]) });
+      if (!aliased) set(protoReg, prop(R(ctorReg), "prototype"));
+      const protoTarget = aliased ? prop(R(ctorReg), "prototype") : R(protoReg);
       out.push({
         k: "expr",
-        expr: call(prop(id("Object"), "setPrototypeOf"), [R(V(insn, 1)), { k: "cond", test: bin("===", superReg, lit("null")), then: lit("null"), else: prop(superReg, "prototype") }]),
+        expr: call(prop(id("Object"), "setPrototypeOf"), [protoTarget, { k: "cond", test: bin("===", superReg, lit("null")), then: lit("null"), else: prop(superReg, "prototype") }]),
       });
       return;
     }

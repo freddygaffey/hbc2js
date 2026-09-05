@@ -1,0 +1,16 @@
+v84: FAILS - hermesc rejects the `class` keyword entirely: "invalid statement
+     encountered" pointing at the class declaration itself. This is not a
+     parser limitation -- it is IRGen: this hermesc build (HBC v84) has no
+     lowering at all for ClassDeclaration/ClassExpression nodes to bytecode.
+     Same root cause as 32-class-basic/versions.txt.
+v94: FAILS - identical "invalid statement encountered" error, same root cause
+     (react-native@0.72.17's bundled hermesc also lacks class lowering in
+     IRGen).
+v96: FAILS - identical "invalid statement encountered" error, same root cause
+     (react-native@0.73.11's bundled hermesc, classic-Hermes `main` lineage,
+     still has no class lowering in IRGen).
+v98: OK - confirmed by disassembly to alias dst_ctor/dst_prototype for both
+     `CreateBaseClass` (the Base class) and `CreateDerivedClass` (the Sub
+     class), exercising both branches of the F24-3 fix.
+v99: OK - same aliasing shape confirmed by disassembly; hermes-compiler
+     fully supports `class`.
