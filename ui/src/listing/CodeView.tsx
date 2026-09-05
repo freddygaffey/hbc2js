@@ -18,10 +18,15 @@
 //      pane, which turns it into `select({kind:"identifier", …})` — exactly
 //      what the context menu's Rename and the palette's annotate actions
 //      consume (they read `ActionContext.selection`);
-//   4. double-click ACTIVATES the token (bur 7). This component only
-//      resolves and reports it; whether it names anything navigable is the
-//      pane's call (`CenterPane`), because only the pane has the symbol
-//      map. A keyword, a literal or punctuation must never navigate.
+//   4. bur 15 (docs/UI-BURS.md #15): double-click opens the rename dialog
+//      for the token (never navigates); TRIPLE-click ACTIVATES it — go to
+//      what it names (bur 7's gate: a keyword, a literal or punctuation
+//      must never navigate). This component only resolves and reports the
+//      token; whether it names anything renameable/navigable is the pane's
+//      call (`CenterPane`), because only the pane has the symbol map. The
+//      native `dblclick` event fires before a third click can, so a
+//      genuine dblclick's rename is DEFERRED `RENAME_DEBOUNCE_MS` and
+//      cancelled if a `click` with `detail === 3` arrives in time.
 //
 // The vim layer is mounted only when `ui/keymap.json` says
 // `"preset": "vim"` (./../keymap-config.ts); its block cursor is
@@ -48,6 +53,14 @@ import { classifyWord, isWordChar, kindFromNodeName, wordOccurrences, type Listi
 // events. Right-clicking the listing must reach the document-level listener
 // the annotate track's ContextMenu owns; a `preventDefault` here would take
 // the menu away from it.
+
+/** Bur 15: how long a double-click's rename waits before firing, so a
+ *  third click (triple-click = activate/navigate, not rename) can cancel
+ *  it. Comfortably above the gap between synthetic clicks (Playwright's
+ *  `click({clickCount:3})`/`dblclick()`) and well under a real double
+ *  click's own multi-click window, so neither a genuine double-click nor a
+ *  genuine triple-click is ever mistaken for the other. */
+const RENAME_DEBOUNCE_MS = 250;
 
 /** Set (or clear, with null) the decorated line. 1-based, like the gutter. */
 const setLineHighlight = StateEffect.define<number | null>();
@@ -198,9 +211,14 @@ export interface CodeViewProps {
   /** Single click: the token under the pointer (null on punctuation or
    *  whitespace) and the 1-based line it is on. */
   readonly onSelectToken?: (token: ListingToken | null, line: number) => void;
-  /** Double click on the same: "go to this". The pane decides whether the
+  /** Triple click (bur 15): "go to this". The pane decides whether the
    *  token names anything (bur 7) — this component never navigates. */
   readonly onActivateToken?: (token: ListingToken | null, line: number) => void;
+  /** Double click (bur 15): open the rename dialog for this token. The
+   *  pane decides whether the token is renameable at all — this component
+   *  never opens anything itself, and never fires this when a third click
+   *  arrived in time to make it a triple click instead. */
+  readonly onRenameToken?: (token: ListingToken | null, line: number) => void;
   /** 1-based lines that start a function, marked in the file view. */
   readonly markedLines?: readonly number[];
   readonly ariaLabel: string;
@@ -210,13 +228,22 @@ export interface CodeViewProps {
   readonly registerFold?: boolean;
 }
 
-export function CodeView({ text, language, highlightLine, onSelectToken, onActivateToken, markedLines, ariaLabel, registerFold }: CodeViewProps): ReactNode {
+export function CodeView({
+  text, language, highlightLine, onSelectToken, onActivateToken, onRenameToken, markedLines, ariaLabel, registerFold,
+}: CodeViewProps): ReactNode {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
   // Handlers live behind refs: the extension array is built once, but the
   // callbacks close over React state that changes every selection.
-  const handlers = useRef<{ select?: CodeViewProps["onSelectToken"]; activate?: CodeViewProps["onActivateToken"] }>({});
-  handlers.current = { ...(onSelectToken ? { select: onSelectToken } : {}), ...(onActivateToken ? { activate: onActivateToken } : {}) };
+  const handlers = useRef<{
+    select?: CodeViewProps["onSelectToken"]; activate?: CodeViewProps["onActivateToken"];
+    rename?: CodeViewProps["onRenameToken"];
+  }>({});
+  handlers.current = {
+    ...(onSelectToken ? { select: onSelectToken } : {}),
+    ...(onActivateToken ? { activate: onActivateToken } : {}),
+    ...(onRenameToken ? { rename: onRenameToken } : {}),
+  };
 
   useEffect(() => {
     if (host.current === null) return undefined;
@@ -233,8 +260,25 @@ export function CodeView({ text, language, highlightLine, onSelectToken, onActiv
       }
       if (hit !== null) hostEl.setAttribute("data-selected-line", String(hit.line));
     };
+    // Bur 15: the third click of a triple-click still fires `dblclick`
+    // first (the DOM fires `click`(detail 2), then `dblclick`, then
+    // `click`(detail 3) — never a second `dblclick`), so a genuine
+    // double-click's rename is scheduled here and cancelled by `click`'s
+    // `detail === 3` branch below if a third click follows in time.
+    let renameTimer: ReturnType<typeof setTimeout> | null = null;
     const pointer = EditorView.domEventHandlers({
       click(event, v) {
+        if (event.detail === 3) {
+          if (renameTimer !== null) {
+            clearTimeout(renameTimer);
+            renameTimer = null;
+          }
+          const hit = pointerHit(v, event.clientX, event.clientY);
+          if (hit === null) return false;
+          show(v, hit);
+          handlers.current.activate?.(hit.token, hit.line);
+          return false;
+        }
         // The second click of a double-click arrives here too (detail 2);
         // it selects the same token, so let `dblclick` handle it alone.
         if (event.detail > 1) return false;
@@ -248,7 +292,11 @@ export function CodeView({ text, language, highlightLine, onSelectToken, onActiv
         const hit = pointerHit(v, event.clientX, event.clientY);
         if (hit === null) return false;
         show(v, hit);
-        handlers.current.activate?.(hit.token, hit.line);
+        if (renameTimer !== null) clearTimeout(renameTimer);
+        renameTimer = setTimeout(() => {
+          renameTimer = null;
+          handlers.current.rename?.(hit.token, hit.line);
+        }, RENAME_DEBOUNCE_MS);
         return false;
       },
     });
@@ -326,6 +374,7 @@ export function CodeView({ text, language, highlightLine, onSelectToken, onActiv
       setActiveListingNav({ moveLine: (delta) => moveLine(v, delta), moveToken: (delta) => moveToken(v, delta) });
     }
     return () => {
+      if (renameTimer !== null) clearTimeout(renameTimer);
       v.destroy();
       view.current = null;
       if (registerFold) {

@@ -4,9 +4,13 @@
 // Bur 2: the listing must not look editable — no text caret, nothing
 // contenteditable — and one click must select a whole TOKEN, not a
 // character offset, exposed on the code-view host as `data-selected-token`.
-// Bur 7: double-click navigates only when the token actually names
+// Bur 7: activating a token navigates only when it actually names
 // something; on the keyword `function` it must stay exactly where it is
-// (it used to jump to a blank page).
+// (it used to jump to a blank page). Bur 15 (docs/UI-BURS.md #15) moved
+// the activate trigger from double-click to TRIPLE-click — a plain
+// double-click now opens the rename dialog instead (see
+// ./code-pane-rename.spec.ts for those assertions) — so these two tests
+// use `mouse.click(..., {clickCount: 3})`, not `mouse.dblclick`.
 //
 // Everything here asserts STATE (attributes, the selected fn as the disasm
 // bar reports it), never timing, and the navigable-identifier case is
@@ -125,17 +129,17 @@ test.describe("code pane: read-only, token selection, guarded navigation", () =>
     expect(await page.locator(".hbc-token-selected").count()).toBeGreaterThan(0);
   });
 
-  test("double-click on the keyword `function` does not navigate (bur 7)", async ({ page }) => {
+  test("triple-click on the keyword `function` does not navigate (bur 7, bur 15)", async ({ page }) => {
     await page.goto("/");
     const firstFn = await openFirstModuleAndFn(page);
     await firstFn.click();
     await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
     const before = await selectedFn(page);
-    expect(before, "a function should be selected before the double-click").not.toBeNull();
+    expect(before, "a function should be selected before the triple-click").not.toBeNull();
 
     const point = await wordPoint(page, "function");
     expect(point, "the listing should show the keyword `function`").not.toBeNull();
-    await page.mouse.dblclick(point!.x, point!.y);
+    await page.mouse.click(point!.x, point!.y, { clickCount: 3 });
 
     // The token was resolved — and resolved as a keyword, which has no
     // target, so the selection must not have moved.
@@ -145,7 +149,7 @@ test.describe("code pane: read-only, token selection, guarded navigation", () =>
     expect(await selectedFn(page)).toBe(before);
   });
 
-  test("double-click on an identifier with a target navigates to it (bur 7)", async ({ page }) => {
+  test("triple-click on an identifier with a target navigates to it (bur 7, bur 15)", async ({ page }) => {
     await page.goto("/");
     const firstFn = await openFirstModuleAndFn(page);
     await firstFn.click();
@@ -160,7 +164,7 @@ test.describe("code pane: read-only, token selection, guarded navigation", () =>
     const emitted = /(^|[^A-Za-z0-9_$])(_fn([0-9]+))(?![A-Za-z0-9_$])/m.exec(text);
     if (emitted !== null && (await wordPoint(page, emitted[2]!)) !== null) {
       const point0 = await wordPoint(page, emitted[2]!);
-      await page.mouse.dblclick(point0!.x, point0!.y);
+      await page.mouse.click(point0!.x, point0!.y, { clickCount: 3 });
       await expect.poll(async () => selectedFn(page), { timeout: WAIT }).toBe(emitted[3]!);
       await expect(page.getByTestId("code-no-target")).toBeHidden();
       return;
@@ -185,7 +189,7 @@ test.describe("code pane: read-only, token selection, guarded navigation", () =>
     expect(target, "the fixture should contain a call to a named function").not.toBeNull();
 
     const point = await wordPoint(page, target!.name);
-    await page.mouse.dblclick(point!.x, point!.y);
+    await page.mouse.click(point!.x, point!.y, { clickCount: 3 });
     await expect(page.getByTestId("disasm-fold")).toContainText(/fn \d+/, { timeout: WAIT });
     await expect
       .poll(async () => selectedFn(page), { timeout: WAIT })

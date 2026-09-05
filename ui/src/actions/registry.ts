@@ -33,8 +33,8 @@ import { openDisasm } from "../panes/disasm-store.ts";
 import { setStringsPrefill } from "../panes/strings-store.ts";
 import { setTablesPrefill } from "../panes/tables-store.ts";
 import {
-  cycleGraphLod, expandGraphNode, focusGraphNode, getGraphState, originKey as graphOriginKey, rootGraph,
-  setGraphFollow, targetForSelection as graphTargetFor,
+  cycleGraphLod, expandGraphNode, focusGraphNode, getGraphState, openGraphTargetInListing, originKey as graphOriginKey,
+  rootGraph, setGraphFollow, targetForSelection as graphTargetFor,
 } from "../graph/store.ts";
 
 export const registry = createStandardRegistry();
@@ -70,6 +70,17 @@ registry.register({
     if (t === null) return setStatus("nothing to focus the graph on");
     focusGraphNode(t);
     setRightPanel("graph");
+  },
+});
+registry.register({
+  id: "graph.openInListing",
+  title: "Open graph focus in the listing",
+  group: "view",
+  when: () => getGraphState().target !== null,
+  run: () => {
+    const t = getGraphState().target;
+    if (t === null) return setStatus("nothing focused in the graph to open");
+    openGraphTargetInListing(t);
   },
 });
 registry.register({

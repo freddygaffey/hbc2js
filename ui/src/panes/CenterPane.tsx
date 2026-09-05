@@ -16,10 +16,13 @@
 // what the context menu's Rename and the palette's annotate actions read out
 // of `ActionContext.selection`.
 //
-// Double-click ACTIVATES the token: go to what it names (bur 7). It never
-// navigates blindly — a keyword (`function`), a literal or punctuation is
-// refused before any lookup, and a name that resolves to no function flashes
-// "no target" in the header instead of moving the selection.
+// Bur 15 (docs/UI-BURS.md #15): double-click opens the rename dialog for
+// the token (never navigates — a keyword, literal or punctuation is
+// refused before the dialog opens). TRIPLE-click ACTIVATES the token: go
+// to what it names (bur 7). It never navigates blindly — a keyword
+// (`function`), a literal or punctuation is refused before any lookup, and
+// a name that resolves to no function flashes "no target" in the header
+// instead of moving the selection.
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -34,6 +37,7 @@ import { select, useSelection } from "../state/selection.ts";
 import { api } from "../api.ts";
 import { isNameLike, isNavigable, type ListingToken } from "../listing/token.ts";
 import type { FunctionMatch, ModuleSourceFn, SearchPage } from "../contracts.ts";
+import { openDialog } from "../actions/store.ts";
 import { setDisasmOpen, useDisasmOpen } from "./disasm-store.ts";
 import { disasmLineForOffset, fnLocalLine, rowForLineAcrossFns } from "../listing/line-map.ts";
 
@@ -258,12 +262,34 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
     else if (moduleId !== null) select({ kind: "module", ...base });
   };
 
-  /** Double click: go to what the token names, or nowhere (bur 7). The
-   *  token must be name-like (never the keyword `function`, a literal or
-   *  punctuation) AND resolve to a real function — this module's own
-   *  declarations first, then an exact name match from
-   *  `/api/search/functions`, fetched on demand so the pane never pulls the
-   *  whole function catalogue just to be ready for a double-click. */
+  /** Double click (bur 15, docs/UI-BURS.md #15): open the rename dialog
+   *  for the token under the pointer — never navigates. Selects the token
+   *  first (same as a plain click), then refuses (does nothing, no dialog)
+   *  when the token is not name-like (a keyword, a literal, punctuation)
+   *  or the line belongs to neither a function nor a module, exactly the
+   *  same gate `isNameLike` already states doubles as (../listing/
+   *  token.ts). Reuses the SAME dialog the context menu's Rename and the
+   *  palette's `annotate.rename` action open (`ctx.api.setName` ->
+   *  `openDialog("rename", …)`, ../actions/registry.ts) — one rename flow,
+   *  not a second one built just for double-click. */
+  const renameToken = (token: ListingToken | null, at: number): void => {
+    selectToken(token, at);
+    if (token === null || !isNameLike(token.kind)) return;
+    const hit = useFileView ? fnAtLine(fns, at) : null;
+    const containing = hit?.fn ?? (hasFn ? fnId : undefined);
+    if (containing === undefined || containing < 0) return;
+    openDialog("rename", {
+      kind: "identifier", name: token.text, fn: containing, line: at,
+      ...(moduleId !== null ? { moduleId: String(moduleId) } : {}),
+    });
+  };
+
+  /** Triple click (bur 15): go to what the token names, or nowhere (bur
+   *  7). The token must be name-like (never the keyword `function`, a
+   *  literal or punctuation) AND resolve to a real function — this
+   *  module's own declarations first, then an exact name match from
+   *  `/api/search/functions`, fetched on demand so the pane never pulls
+   *  the whole function catalogue just to be ready for a triple-click. */
   const activateToken = (token: ListingToken | null, at: number): void => {
     selectToken(token, at);
     if (token === null || !isNavigable(token)) {
@@ -332,6 +358,7 @@ export function CenterPane({ fn }: { readonly fn: number }): ReactNode {
         registerFold
         onSelectToken={selectToken}
         onActivateToken={activateToken}
+        onRenameToken={renameToken}
       />
     );
   })();
