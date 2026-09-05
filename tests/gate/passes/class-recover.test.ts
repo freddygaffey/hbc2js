@@ -18,7 +18,13 @@ import { decompile } from "../../../src/decompile.ts";
 import { parseCatalogueIndex } from "../../../src/passes/catalogue.ts";
 import { repoRoot } from "../../support/paths.ts";
 
-const SKIP = "spec 24 acceptance -- unimplemented";
+// Sub-forms C1/C3/C4 need F24-5 (spec 24 section 2): the emitter places a
+// method or constructor closure that captures nothing at MODULE level, not
+// inside the function whose `CreateClosure` made it, so for fixtures 32, 34
+// and 36 the declarations the class body must hold are not in `ctx.fnBody`
+// and the rung refuses (`ctor-not-in-body` / `method-not-in-body`). See
+// PUSHBACK P-38 and the docs/BUGS.md row `class-recover-orphan-methods`.
+const SKIP_F24_5 = "spec 24 C1/C3/C4 blocked on F24-5 -- PUSHBACK P-38, docs/BUGS.md class-recover-orphan-methods";
 const DIR = ["..", "..", "..", "src", "passes", "class-recover"].join("/");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -172,13 +178,15 @@ test("spec 24 section 1.8: the committed rn-template bundle is v94, so it has no
   assert.ok(version < 98, "a bundle below v98 cannot carry CreateBaseClass/CreateDerivedClass");
 });
 
-test("F24-1 premise: src/emit/ast.ts declares no class node today", () => {
-  // The spec's first framework item exists because there is nowhere to put a
-  // recovered class. If this ever fails, F24-1 has landed (or been duplicated)
-  // and spec 24 section 2's framework list needs re-reading before implementing.
+test("F24-1 has landed: src/emit/ast.ts declares the class node the rung writes into", () => {
+  // Written as the premise "there is nowhere to put a recovered class", whose
+  // own comment says "if this ever fails, F24-1 has landed": it has, in this
+  // commit, so the premise becomes the postcondition. Both node kinds are
+  // required -- the `class` expression the rung emits, and the `classdecl`
+  // statement the AST owes the language (PUSHBACK P-37).
   const ast = readFileSync(join(repoRoot(), "src", "emit", "ast.ts"), "utf8");
-  assert.doesNotMatch(ast, /k: "class"/);
-  assert.doesNotMatch(ast, /k: "classdecl"/);
+  assert.match(ast, /k: "class"/);
+  assert.match(ast, /k: "classdecl"/);
 });
 
 test("PL-06: catalogue row 20 exists and is verified", () => {
@@ -195,7 +203,7 @@ test("PL-06: catalogue row 20 exists and is verified", () => {
 // Rung shape and ordering (spec 24 section 2).
 // ---------------------------------------------------------------------------
 
-test("class-recover is a stage-B structure rung on catalogue row 20, before the naming rungs (P-21)", { skip: SKIP }, async () => {
+test("class-recover is a stage-B structure rung on catalogue row 20, before the naming rungs (P-21)", {}, async () => {
   const { classRecover } = await rung();
   assert.equal(classRecover.stage, "B");
   assert.deepEqual([...(classRecover.catalogue as (number | string)[])], [20]);
@@ -210,7 +218,7 @@ test("class-recover is a stage-B structure rung on catalogue row 20, before the 
   assert.doesNotThrow(() => enabledPasses({}));
 });
 
-test("class-recover restricts itself to the versions it was measured at: 98 and 99, layout E (spec 24 section 2)", { skip: SKIP }, async () => {
+test("class-recover restricts itself to the versions it was measured at: 98 and 99, layout E (spec 24 section 2)", {}, async () => {
   const { classRecover } = await rung();
   const ok = classRecover.versions as (v: number, layout: string) => boolean;
   assert.ok(typeof ok === "function", "F7: the rung must declare a versions predicate");
@@ -218,7 +226,7 @@ test("class-recover restricts itself to the versions it was measured at: 98 and 
   for (const v of [98, 99]) assert.equal(ok(v, "E"), true, `v${v} was measured (spec 24 section 1.0)`);
 });
 
-test("class-recover: a body with no class-creation site is a fixed point (R-C0/PL-08)", { skip: SKIP }, async () => {
+test("class-recover: a body with no class-creation site is a fixed point (R-C0/PL-08)", {}, async () => {
   const { match } = await rung();
   const body = [{ k: "expr", expr: { k: "call", callee: { k: "member", obj: { k: "ident", name: "Object" }, prop: { k: "ident", name: "defineProperty" }, computed: false }, args: [] } }];
   assert.equal(match(body as Any, { fnBody: body } as Any), null);
@@ -228,7 +236,7 @@ test("class-recover: a body with no class-creation site is a fixed point (R-C0/P
 // Fixture properties (spec 24 section 5).
 // ---------------------------------------------------------------------------
 
-test("class-recover recovers the base form and consumes every owned install", { skip: SKIP }, () => {
+test("class-recover recovers the base form and consumes every owned install", { skip: SKIP_F24_5 }, () => {
   for (const version of CLASS_VERSIONS) {
     const on = js("32-class-basic", version);
     const off = js("32-class-basic", version, "off");
@@ -241,7 +249,7 @@ test("class-recover recovers the base form and consumes every owned install", { 
   }
 });
 
-test("class-recover recovers `extends` from the setPrototypeOf pair", { skip: SKIP }, () => {
+test("class-recover recovers `extends` from the setPrototypeOf pair", {}, () => {
   for (const version of CLASS_VERSIONS) {
     const on = js("33-class-inheritance-super", version);
     assert.equal(count(on, /(^|\s)class\s+\w+\s+extends\s+\w+/g), 2, `${version}: Dog extends Animal, Puppy extends Dog`);
@@ -251,7 +259,7 @@ test("class-recover recovers `extends` from the setPrototypeOf pair", { skip: SK
   }
 });
 
-test("class-recover merges a split get/set pair into two accessor members", { skip: SKIP }, () => {
+test("class-recover merges a split get/set pair into two accessor members", { skip: SKIP_F24_5 }, () => {
   for (const version of CLASS_VERSIONS) {
     const on = js("36-class-getters-setters", version);
     assert.match(on, /get area\(\)/, `${version}`);
@@ -260,7 +268,7 @@ test("class-recover merges a split get/set pair into two accessor members", { sk
   }
 });
 
-test("class-recover refuses the object-literal accessors and the private-field installs (R-C1, R-C6)", { skip: SKIP }, () => {
+test("class-recover refuses the object-literal accessors and the private-field installs (R-C1, R-C6)", {}, () => {
   for (const version of CLASS_VERSIONS) {
     // R-C1: fixture 36's enumerable accessors have no class provenance.
     assert.equal(count(js("36-class-getters-setters", version), ENUMERABLE_INSTALL), 2, `${version}: R-C1`);
@@ -271,7 +279,7 @@ test("class-recover refuses the object-literal accessors and the private-field i
   }
 });
 
-test("class-recover puts statics on the class object, never the prototype (R-C10, needs F24-3)", { skip: SKIP }, () => {
+test("class-recover puts statics on the class object, never the prototype (R-C10, needs F24-3)", { skip: SKIP_F24_5 }, () => {
   // Fixture 34's CreateBaseClass aliases dst_ctor and dst_prototype
   // (`CreateBaseClass r2, r2, r1, 1`), and src/emit/lower.ts clobbers the
   // constructor with `<ctor>.prototype`, so today every static lands on the
@@ -285,7 +293,7 @@ test("class-recover puts statics on the class object, never the prototype (R-C10
   }
 });
 
-test("class-recover's checker rejects an `after` whose member order differs from the install order", { skip: SKIP }, async () => {
+test("class-recover's checker rejects an `after` whose member order differs from the install order", {}, async () => {
   const { check } = await rung();
   const method = (name: string) => ({ kind: "method", static: false, computed: false, key: { k: "lit", text: `"${name}"` }, value: { k: "func", name: "", params: [], body: [] } });
   const before = [{ k: "expr", expr: { k: "lit", text: "0" } }];

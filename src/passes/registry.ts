@@ -6,6 +6,7 @@ import { argumentsForm } from "./arguments-form/index.ts";
 import { asyncRecovery } from "./async-recovery/index.ts";
 import { literalForms } from "./literal-forms/index.ts";
 import { callShape } from "./call-shape/index.ts";
+import { classRecover } from "./class-recover/index.ts";
 import { defaultParams } from "./default-params/index.ts";
 import { destructure } from "./destructure/index.ts";
 import { spreadRest } from "./spread-rest/index.ts";
@@ -118,6 +119,11 @@ export const REGISTRY: readonly Pass[] = [
   argumentsForm as Pass,
   literalForms as Pass,
   tryClean as Pass,
+  // Spec 24 section 2 (P-21/D23): the class rung is a structure-recovery rung
+  // and must see registers with their original bytecode identity, so it is
+  // registered after `object-literal` (its descriptor argument must already be
+  // an `object` node) and before every renaming rung.
+  classRecover as Pass,
   jsxRecover as Pass,
   fnNaming as Pass,
   regSplit as Pass,

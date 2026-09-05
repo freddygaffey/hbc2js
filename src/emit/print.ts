@@ -500,6 +500,14 @@ function renderClass(e: Extract<Expr, { k: "class" }>): string {
 function classMemberKey(m: ClassMember): string {
   if (m.computed) return `[${expr(m.key, ASSIGNMENT)}]`;
   if (m.key.k === "ident") return m.key.name;
+  // A member key arrives as the string literal the install used. Print it
+  // bare when it is a valid identifier -- `speak() {}`, not `"speak"() {}` --
+  // and as the string literal otherwise (which a class body also accepts).
+  if (m.key.k === "lit") {
+    const text = m.key.text;
+    const bare = text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : null;
+    if (bare !== null && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(bare)) return bare;
+  }
   return render(m.key);
 }
 

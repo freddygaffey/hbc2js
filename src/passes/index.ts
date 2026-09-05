@@ -140,7 +140,7 @@ export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions 
     const functionMeta = (fnIdx: number): { readonly name: string; readonly role: "ctor" | "nc" | "plain" } | null => {
       const header = mod.functions[fnIdx];
       if (header === undefined) return null;
-      return { name: header.name, role: header.header.prohibitInvoke === "call" ? "ctor" : header.header.prohibitInvoke === "construct" ? "nc" : "plain" };
+      return { name: header.name, role: header.header.flags.prohibitInvoke === "call" ? "ctor" : header.header.flags.prohibitInvoke === "construct" ? "nc" : "plain" };
     };
     const r: AstApplyResult = applyAstPasses(fn.body, passes, {
       analysis,

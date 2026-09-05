@@ -215,7 +215,10 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
         return;
       case "class": // F24-1
         classParts(e).forEach(walkExpr);
-        for (const m of e.members) if (m.value !== null && m.value.k === "func") walkStmts(m.value.body);
+        // A method/accessor value is walked as the `func` expression it is, so
+        // every consumer's own binding rules (`freeNames`'s parameter scope)
+        // apply to it unchanged.
+        for (const m of e.members) if (m.value !== null && m.kind !== "field") walkExpr(m.value);
         return;
       case "func":
         for (const param of e.params) if (param.init !== undefined) walkExpr(param.init);
@@ -864,9 +867,9 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
       case "jsx": // D20
         jsxParts(e).forEach((x) => visitExpr(x, inNested));
         return;
-      case "class": // F24-1: same frame boundary as a `func` member body.
+      case "class": // F24-1: a member value is the `func` expression it is.
         classParts(e).forEach((x) => visitExpr(x, inNested));
-        if (followNested) for (const m of e.members) if (m.value !== null && m.value.k === "func") visitStmts(m.value.body, true);
+        for (const m of e.members) if (m.value !== null && m.kind !== "field") visitExpr(m.value, inNested);
         return;
       case "func":
         // `sameFrame` (see `Expr`'s `func` doc, `src/emit/ast.ts`): the
