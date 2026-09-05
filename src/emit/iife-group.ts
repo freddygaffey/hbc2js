@@ -17,14 +17,19 @@
 // commute:
 //
 //   * both are inert or a simple `x = <ident|literal>` / `let x` / `let x = ...`
-//     store -- no call, no member access (a getter is a side effect), no
-//     `new`/`delete`/`throw`, no operator that could reach `valueOf`, and
+//     store -- no call, no `new`/`delete`/`throw`, no operator that could reach
+//     `valueOf`, and no member access EXCEPT one whose base spec 27 section 9's
+//     escape analysis (`src/emit/iife-escape.ts`) proves is a fresh, unescaped
+//     allocation of this function, where no getter, setter or proxy exists to
+//     observe the order, and
 //   * their read/write footprints are disjoint (no W-W, W-R or R-W pair).
 //
 // Anything else refuses, and a refusal leaves the statement list exactly as it
 // was, so it is never a behaviour change. Conservative by construction: we
 // never try to prove that a call is pure.
 import type { Expr, Stmt } from "./ast.ts";
+import type { EscapeCode, EscapeInfo } from "./iife-escape.ts";
+import { analyseEscapes } from "./iife-escape.ts";
 
 /** One environment of an overlapping group, with the range it occupies. */
 export interface GroupMember {
@@ -45,7 +50,15 @@ export interface GroupPlan {
   readonly envs: readonly number[];
 }
 
-export type GroupOutcome = { readonly plan: GroupPlan } | { readonly reason: string };
+export type GroupOutcome =
+  | { readonly plan: GroupPlan; readonly codes?: ReadonlyMap<string, EscapeCode> }
+  | { readonly reason: string; readonly codes?: ReadonlyMap<string, EscapeCode> };
+
+/** Extra statements of the same function that are not in `body` (the
+ *  emitter's header): scanned by the escape analysis for captures only. */
+export interface GroupOptions {
+  readonly outer?: readonly Stmt[];
+}
 
 /** Regions bigger than this are refused rather than pair-checked (the swap
  *  check is quadratic and a region this long is never one inlined IIFE). */
@@ -56,11 +69,35 @@ interface Footprint {
   readonly writes: ReadonlySet<string>;
 }
 
+/** Where a statement sits, so a member access can be tested against the
+ *  allocation that made its base fresh (spec 27 section 9.1). */
+export interface FootprintCtx {
+  readonly escapes: EscapeInfo;
+  readonly index: number;
+}
+
+function freshAt(ctx: FootprintCtx | undefined, base: Expr): boolean {
+  if (ctx === undefined || base.k !== "ident") return false;
+  const at = ctx.escapes.fresh.get(base.name);
+  return at !== undefined && ctx.index > at;
+}
+
+/** The pseudo-name a member access writes/reads: section 9.2. Literal keys
+ *  only -- proving two register keys distinct is a separate argument. */
+function memberSlot(e: Expr, reads: Set<string>): string | null {
+  if (e.k !== "member" || e.obj.k !== "ident") return null;
+  const key = e.prop.k === "lit" ? e.prop.text : null;
+  if (key === null) return null;
+  reads.add(e.obj.name);
+  return `${e.obj.name}#${key}`;
+}
+
 /**
  * An expression with no observable effect and no way to reach user code:
- * identifiers, literals, and array/object literals built only from those. A
- * member access can fire a getter or throw, a call can do anything, a spread
- * runs an iterator or the source's getters, a computed key can hit
+ * identifiers, literals, array/object literals built only from those, and the
+ * intrinsic `NewArray` allocation (`fromNewArray`, section 9.1 F1). A member
+ * access can fire a getter or throw, a call can do anything, a spread runs an
+ * iterator or the source's getters, a computed key can hit
  * `Symbol.toPrimitive` -- all of those refuse.
  */
 function pureValue(e: Expr, reads: Set<string>): boolean {
@@ -74,6 +111,8 @@ function pureValue(e: Expr, reads: Set<string>): boolean {
       return e.elements.every((el) => pureValue(el, reads));
     case "object":
       return e.props.every((prop) => ("k" in prop ? false : !prop.computed && pureValue(prop.value, reads)));
+    case "new":
+      return e.fromNewArray === true && e.args.every((a) => a.k === "lit");
     default:
       return false;
   }
@@ -81,11 +120,12 @@ function pureValue(e: Expr, reads: Set<string>): boolean {
 
 /**
  * The names a statement reads and writes, or null when it may have any effect
- * beyond that (a call, a property access, a control-flow statement, a nested
- * function, anything unclassified). Deliberately tiny: the store-shaped
- * statements that make up an inlined IIFE's tail are the only ones we move.
+ * beyond that (a call, an unproven property access, a control-flow statement,
+ * a nested function, anything unclassified). Deliberately tiny: the
+ * store-shaped statements that make up an inlined IIFE's tail are the only
+ * ones we move.
  */
-export function pureFootprint(s: Stmt): Footprint | null {
+export function pureFootprint(s: Stmt, ctx?: FootprintCtx): Footprint | null {
   const reads = new Set<string>();
   const writes = new Set<string>();
   switch (s.k) {
@@ -95,13 +135,23 @@ export function pureFootprint(s: Stmt): Footprint | null {
       for (const n of s.names) writes.add(n);
       return { reads, writes };
     case "init":
-      if (!pureValue(s.value, reads)) return null;
+      if (!valueInto(s.value, reads, ctx)) return null;
       writes.add(s.name);
       return { reads, writes };
     case "expr": {
       const e = s.expr;
-      if (e.k !== "assign" || e.target.k !== "ident") return null;
-      if (!pureValue(e.value, reads)) return null;
+      if (e.k !== "assign") return null;
+      if (e.target.k === "member") {
+        // Section 9.2: a store into a proven-fresh, unescaped allocation.
+        if (!freshAt(ctx, e.target.obj)) return null;
+        const slot = memberSlot(e.target, reads);
+        if (slot === null) return null;
+        if (!pureValue(e.value, reads)) return null;
+        writes.add(slot);
+        return { reads, writes };
+      }
+      if (e.target.k !== "ident") return null;
+      if (!valueInto(e.value, reads, ctx)) return null;
       writes.add(e.target.name);
       return { reads, writes };
     }
@@ -110,11 +160,23 @@ export function pureFootprint(s: Stmt): Footprint | null {
   }
 }
 
+/** A value expression: pure, or a load from a proven-fresh base. */
+function valueInto(value: Expr, reads: Set<string>, ctx: FootprintCtx | undefined): boolean {
+  if (value.k === "member") {
+    if (!freshAt(ctx, value.obj)) return false;
+    const slot = memberSlot(value, reads);
+    if (slot === null) return false;
+    reads.add(slot);
+    return true;
+  }
+  return pureValue(value, reads);
+}
+
 /** May `a` and `b` be swapped without changing what the function does? */
-export function commutes(a: Stmt, b: Stmt): boolean {
-  const fa = pureFootprint(a);
+export function commutes(a: Stmt, b: Stmt, ctxA?: FootprintCtx, ctxB?: FootprintCtx): boolean {
+  const fa = pureFootprint(a, ctxA);
   if (fa === null) return false;
-  const fb = pureFootprint(b);
+  const fb = pureFootprint(b, ctxB);
   if (fb === null) return false;
   for (const w of fa.writes) if (fb.reads.has(w) || fb.writes.has(w)) return false;
   for (const w of fb.writes) if (fa.reads.has(w)) return false;
@@ -137,7 +199,7 @@ export function stmtShape(s: Stmt): string {
  * `mentions(i, names)` reports whether body statement `i` names any of
  * `names` -- the caller owns that walk (`src/emit/iife-reconstruct.ts`).
  */
-export function planGrouping(body: readonly Stmt[], members: readonly GroupMember[], mentions: (index: number, names: ReadonlySet<string>) => boolean): GroupOutcome {
+export function planGrouping(body: readonly Stmt[], members: readonly GroupMember[], mentions: (index: number, names: ReadonlySet<string>) => boolean, opts: GroupOptions = {}): GroupOutcome {
   if (members.length < 2) return { reason: "not a group" };
   let lo = members[0]!.from;
   let hi = members[0]!.to;
@@ -148,43 +210,84 @@ export function planGrouping(body: readonly Stmt[], members: readonly GroupMembe
   if (hi - lo + 1 > MAX_REGION) return { reason: "region too large" };
 
   // Owner of every statement in the region: the one environment it names, or
-  // the previous statement's owner for the filler between two of them (which
-  // is what the flat emitter already puts inside an accepted range).
-  const owner: number[] = [];
-  let cur = -1;
+  // NONE (a "filler" -- `r0 = a2`, the allocation an inlined IIFE fills in).
+  const owner: (number | null)[] = [];
   for (let i = lo; i <= hi; i++) {
-    let hit = -1;
+    let hit: number | null = null;
     for (let m = 0; m < members.length; m++) {
       if (!mentions(i, members[m]!.names)) continue;
-      if (hit >= 0) return { reason: "statement in two environments" };
+      if (hit !== null) return { reason: "statement in two environments" };
       hit = m;
     }
-    if (hit >= 0) cur = hit;
-    if (cur < 0) return { reason: "region does not open on an owned statement" };
-    owner.push(cur);
+    owner.push(hit);
   }
+  if (owner[0] === null) return { reason: "region does not open on an owned statement" };
 
-  // Blocks in order of first appearance, statements stable inside a block.
+  // Blocks in order of first appearance of an OWNED statement.
   const seen: number[] = [];
-  for (const m of owner) if (!seen.includes(m)) seen.push(m);
+  for (const m of owner) if (m !== null && !seen.includes(m)) seen.push(m);
   if (seen.length < 2) return { reason: "one owner covers the region" };
   const rank = new Map(seen.map((m, i) => [m, i] as const));
-  const order: number[] = [];
-  for (const m of seen) {
-    for (let i = lo; i <= hi; i++) if (owner[i - lo] === m) order.push(i);
+
+  // Section 9: which member bases in the region are provably fresh.
+  const escapes = analyseEscapes(body, lo, hi, opts.outer ?? []);
+  const codes = escapes.codes;
+  const ctx = (i: number): FootprintCtx => ({ escapes, index: i });
+
+  // Section 9.3: a filler starts attached to the preceding block and is moved
+  // to the other side of a blocking swap when that is what blocks the group.
+  // Soundness does not depend on the repair: the labelling is verified pair by
+  // pair below whatever the repair chose.
+  const label: number[] = [];
+  let cur = owner[0]!;
+  for (const m of owner) {
+    if (m !== null) cur = m;
+    label.push(cur);
   }
 
-  // Every pair the partition swaps must commute.
-  for (let i = lo; i <= hi; i++) {
-    const oi = owner[i - lo]!;
-    for (let j = i + 1; j <= hi; j++) {
-      const oj = owner[j - lo]!;
-      if (oi === oj) continue;
-      if (rank.get(oj)! > rank.get(oi)!) continue; // stays in order
-      if (!commutes(body[i]!, body[j]!)) return { reason: `swap ${stmtShape(body[i]!)} / ${stmtShape(body[j]!)}` };
+  const firstBlocked = (): readonly [number, number] | null => {
+    for (let i = lo; i <= hi; i++) {
+      for (let j = i + 1; j <= hi; j++) {
+        const li = label[i - lo]!;
+        const lj = label[j - lo]!;
+        if (li === lj) continue;
+        if (rank.get(lj)! > rank.get(li)!) continue; // stays in order
+        if (!commutes(body[i]!, body[j]!, ctx(i), ctx(j))) return [i, j];
+      }
     }
+    return null;
+  };
+
+  // A filler is moved at most once per destination block: a filler that has
+  // already been tried on both sides of a blocking swap is a real blocker, and
+  // reporting the swap is more useful to `tools/passes/iife-overlap.ts` than
+  // reporting the loop. The budget is the backstop.
+  const tried = new Map<number, Set<number>>();
+  const flip = (at: number, to: number): boolean => {
+    const seenLabels = tried.get(at) ?? new Set<number>([label[at - lo]!]);
+    tried.set(at, seenLabels);
+    if (seenLabels.has(to)) return false;
+    seenLabels.add(to);
+    label[at - lo] = to;
+    return true;
+  };
+  const budget = 2 * (hi - lo + 1);
+  for (let round = 0; ; round++) {
+    const bad = firstBlocked();
+    if (bad === null) break;
+    const [i, j] = bad;
+    const blocked = { reason: `swap ${stmtShape(body[i]!)} / ${stmtShape(body[j]!)}`, codes };
+    if (round >= budget) return { reason: "regrouping did not converge", codes };
+    if (owner[j - lo] === null && flip(j, label[i - lo]!)) continue;
+    if (owner[i - lo] === null && flip(i, label[j - lo]!)) continue;
+    return blocked;
   }
-  return { plan: { lo, hi, order, envs: seen.map((m) => members[m]!.env) } };
+
+  const order: number[] = [];
+  for (const m of seen) {
+    for (let i = lo; i <= hi; i++) if (label[i - lo] === m) order.push(i);
+  }
+  return { plan: { lo, hi, order, envs: seen.map((m) => members[m]!.env) }, codes };
 }
 
 /** Applies proved plans (disjoint regions) to a statement list. */
@@ -201,4 +304,4 @@ export function applyPlans(body: readonly Stmt[], plans: readonly GroupPlan[]): 
  * bundle without a diagnostic channel (`tools/passes/iife-overlap.ts`), the
  * same shape `tools/passes/ctor-this-refusals.ts` uses for `ctorThis.match`.
  */
-export const grouping = { plan: planGrouping };
+export const grouping: { plan: typeof planGrouping } = { plan: planGrouping };

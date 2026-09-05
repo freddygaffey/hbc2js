@@ -15,10 +15,10 @@
 // react-navigation-example-0.85.3 (757 environments).
 //
 // src/emit/iife-group.ts can reorder such a group apart only when every pair
-// the regrouping swaps provably commutes. Here it does not: `arr[0] = x` is a
-// property store, which may run a setter, so this fixture pins the REFUSAL
-// (the flat `let _e<env>_<slot>` prologue survives untouched, which is never a
-// behaviour change) as well as the interleaved shape itself at v98/v99.
+// the regrouping swaps provably commutes. `arr[0] = x` is a property store, so
+// it moves only once section 9's escape analysis has proved `arr` a fresh
+// allocation this function never lets out of its hands; the fixture pins that
+// both environments ARE wrapped back into IIFEs at v98/v99 (and none at 84/94/96).
 function pair(p, q) {
   var x, y;
   (function () {

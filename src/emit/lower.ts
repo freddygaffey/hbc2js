@@ -570,7 +570,9 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
     }
     case "NewArray":
     case "NewFastArray":
-      return set(V(insn, 0), { k: "new", callee: id("Array"), args: [num(V(insn, 1))] });
+      // `fromNewArray`: an intrinsic allocation, not a construct call on
+      // `globalThis.Array` (docs/specs/passes/27-iife-reconstruct.md 9.1 F1).
+      return set(V(insn, 0), { k: "new", callee: id("Array"), args: [num(V(insn, 1))], fromNewArray: true });
     case "NewArrayWithBuffer":
     case "NewArrayWithBufferLong": {
       const sizeHint = V(insn, 1);

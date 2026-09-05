@@ -14,6 +14,7 @@ import { repoRoot } from "../../support/paths.ts";
 import { decompile } from "../../../src/decompile.ts";
 import type { Stmt } from "../../../src/emit/ast.ts";
 import { reconstructIifes } from "../../../src/emit/iife-reconstruct.ts";
+import { analyseEscapes } from "../../../src/emit/iife-escape.ts";
 
 const FIXTURE = join(repoRoot(), "tests", "fixtures", "constructs", "75-sibling-envs");
 
@@ -234,17 +235,93 @@ function decompiled79(version: number): string {
 }
 
 for (const version of [98, 99]) {
-  test(`79-interleaved-envs v${version}: the interleaved group stays flat`, () => {
+  test(`79-interleaved-envs v${version}: the interleaved group is regrouped and wrapped`, () => {
     if (!existsSync(join(FIXTURE79, `v${version}.hbc`))) return;
     const code = decompiled79(version);
-    // Sibling environments are there (the fixture's point) ...
-    const flat = code.split("\n").filter((line) => {
-      if (!/^\s*let /.test(line)) return false;
-      return new Set([...line.matchAll(/_e(\d+)_\d+/g)].map((m) => m[1])).size > 1;
-    });
-    assert.ok(flat.length > 0, `v${version}: expected a flat prologue spanning two environments`);
-    // ... and none of them is wrapped: every swap the regrouping would need
-    // moves a property store past an environment store.
-    assert.equal(innerIifes(code), 0, `v${version}: an interleaved group was wrapped`);
+    // Section 9: `arr` is a fresh `NewArray` this function never lets out of
+    // its hands, so `arr[0] = x` moves and both `pair`'s two and `trio`'s
+    // three environments come back as wrappers.
+    assert.equal(innerIifes(code), 5, `v${version}: expected two + three reconstructed IIFEs`);
+    // No flat prologue spanning two environments is left behind.
+    for (const line of code.split("\n")) {
+      if (!/^\s*let /.test(line)) continue;
+      const slots = new Set([...line.matchAll(/_e(\d+)_\d+/g)].map((m) => m[1]));
+      assert.ok(slots.size <= 1, `v${version}: a declaration still spans two environments: ${line.trim()}`);
+    }
   });
 }
+
+for (const version of [84, 94, 96]) {
+  test(`79-interleaved-envs v${version}: nothing is wrapped where hermesc does not inline`, () => {
+    if (!existsSync(join(FIXTURE79, `v${version}.hbc`))) return;
+    assert.equal(innerIifes(decompiled79(version)), 0, `v${version}: unexpected reconstructed IIFE`);
+  });
+}
+
+// --- section 9: escape analysis (docs/specs/passes/27-iife-reconstruct.md) --
+
+const alloc = (name: string): Stmt => ({ k: "expr", expr: { k: "assign", target: ident(name), value: { k: "new", callee: ident("Array"), args: [{ k: "lit", text: "2" }], fromNewArray: true } } });
+const propSet = (base: string, key: string, from: string): Stmt => ({ k: "expr", expr: { k: "assign", target: { k: "member", obj: ident(base), prop: { k: "lit", text: key }, computed: true }, value: ident(from) } });
+
+/** Fixture 79's shape: two environments whose stores interleave and hand their
+ *  reader closures back through one freshly allocated array. Each property
+ *  store NAMES a hoisted child, so it is owned by that environment and the
+ *  partition really does have to move it past the other's store. */
+function interleavedWithArray(extra: readonly Stmt[] = [], tail: readonly Stmt[] = []): Stmt[] {
+  return [store("_e1_0", "a"), store("r", "b"), store("_e2_0", "r"), alloc("arr"), ...extra, propSet("arr", "0", "_fn1"), propSet("arr", "1", "_fn2"), ...tail];
+}
+
+const escapesOf = (body: readonly Stmt[]): ReturnType<typeof analyseEscapes> => analyseEscapes(body, 0, body.length - 1);
+
+test("iife-escape: a store into a freshly allocated, unescaped array is regrouped and wrapped", () => {
+  const body = interleavedWithArray();
+  const info = escapesOf(body);
+  assert.deepEqual([...info.fresh.keys()], ["arr"], `expected arr proved fresh, codes: ${JSON.stringify([...info.codes])}`);
+  const r = twoEnvs(body);
+  assert.deepEqual(r.wrapped, [1, 2], `expected both environments wrapped, refusals: ${JSON.stringify(r.refusals)}`);
+  assert.equal(r.stmts.filter((s) => s.k === "iife").length, 2);
+  // Each wrapper holds one environment's statements and no other's.
+  for (const s of r.stmts) {
+    if (s.k !== "iife") continue;
+    const envs = new Set([...JSON.stringify(s.body).matchAll(/_e(\d+)_\d+/g)].map((m) => m[1]));
+    assert.ok(envs.size <= 1, `a wrapper spans two environments: ${[...envs].join(",")}`);
+  }
+});
+
+test("iife-escape: F3 -- a base passed to a call inside the region escapes", () => {
+  const body = interleavedWithArray([{ k: "expr", expr: { k: "call", callee: ident("sink"), args: [ident("arr")] } }]);
+  assert.equal(escapesOf(body).codes.get("arr"), "E_ESCAPES_CALL");
+  assert.deepEqual(twoEnvs(body).wrapped, []);
+});
+
+test("iife-escape: F3 -- a base stored into another name inside the region escapes", () => {
+  const body = interleavedWithArray([set("out", "arr")]);
+  assert.equal(escapesOf(body).codes.get("arr"), "E_ESCAPES_STORE");
+  assert.deepEqual(twoEnvs(body).wrapped, []);
+});
+
+test("iife-escape: F2 -- a base rewritten after its allocation is not fresh", () => {
+  const body = interleavedWithArray([], [set("arr", "other"), { k: "expr", expr: ident("_fn2") }]);
+  assert.equal(escapesOf(body).codes.get("arr"), "E_REASSIGNED");
+  assert.deepEqual(twoEnvs(body).wrapped, []);
+});
+
+test("iife-escape: F4 -- a base named by a nested closure is captured", () => {
+  const body = interleavedWithArray([{ k: "func", name: "_fnX", params: [], body: [{ k: "return", arg: ident("arr") }] }]);
+  assert.equal(escapesOf(body).codes.get("arr"), "E_ESCAPES_CLOSURE");
+  assert.deepEqual(twoEnvs(body).wrapped, []);
+});
+
+test("iife-escape: F1 -- a base that is not a fresh allocation refuses", () => {
+  const body = interleavedWithArray().map((s) => (s.k === "expr" && s.expr.k === "assign" && s.expr.target.k === "ident" && s.expr.target.name === "arr" ? set("arr", "given") : s));
+  assert.equal(escapesOf(body).codes.get("arr"), "E_NOT_FRESH");
+  assert.deepEqual(twoEnvs(body).wrapped, []);
+});
+
+test("iife-escape: 9.2 -- a non-literal key is never proved distinct", () => {
+  const computed = (from: string): Stmt => ({ k: "expr", expr: { k: "assign", target: { k: "member", obj: ident("arr"), prop: ident("i"), computed: true }, value: ident(from) } });
+  const body = [store("_e1_0", "a"), store("r", "b"), store("_e2_0", "r"), alloc("arr"), computed("_fn1"), computed("_fn2")];
+  // The base is still fresh; it is the KEY the proof cannot separate.
+  assert.deepEqual([...escapesOf(body).fresh.keys()], ["arr"]);
+  assert.deepEqual(twoEnvs(body).wrapped, []);
+});
