@@ -107,7 +107,10 @@ curl -s http://deb.local:8787/load
 4. `npm ci`, cached by `package-lock.json` hash: the resulting
    `node_modules` is moved into `~/hbc2js-ci/nm-cache/<hash>/` once and
    symlinked back for every job sharing that lockfile, so repeat runs skip
-   the install.
+   the install. The same is then done for `ui/` (`npm ci --ignore-scripts`,
+   its own lock hash): `tests/ui-core/*.test.ts` import `@dagrejs/dagre` and
+   `react` from `ui/node_modules`, and without it the full gate fails on
+   `tests/ui-core/graph-layout.test.ts` (seen 2026-09-05).
 5. Runs `cmd` via `bash -lc` with `PATH` pointed at a Node 22 resolved once
    at server startup via `fnm exec --using 22`, under `timeoutMin` (default
    30; SIGKILL on timeout).

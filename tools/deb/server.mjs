@@ -157,45 +157,53 @@ async function runJob(m) {
       if (fs.existsSync(src) && !fs.existsSync(dst)) fs.symlinkSync(src, dst);
     }
 
-    const lockFile = path.join(jobDir, "package-lock.json");
-    let installed = false;
-    if (fs.existsSync(lockFile)) {
+    // Root install, then `ui/` (tests/ui-core imports @dagrejs/dagre and react
+    // from ui/node_modules; without it the full gate fails on
+    // tests/ui-core/graph-layout.test.ts). Each is cached by its own lock hash.
+    for (const sub of ["", "ui"]) {
+      const dir = sub === "" ? jobDir : path.join(jobDir, sub);
+      const lockFile = path.join(dir, "package-lock.json");
+      const label = sub === "" ? "npm ci" : `npm ci (${sub}/)`;
+      if (!fs.existsSync(lockFile)) {
+        log.write(`[deb-ci] no ${sub === "" ? "" : sub + "/"}package-lock.json, skipping ${label}\n`);
+        continue;
+      }
       const hash = crypto.createHash("sha256").update(fs.readFileSync(lockFile)).digest("hex").slice(0, 16);
       // The cache dir MUST itself be named `node_modules`: TypeScript (and
       // Node) resolve through the symlink to the real path and then walk up
       // looking for an ancestor `node_modules/<pkg>`. A cache laid out as
       // nm-cache/<hash>/<pkg> made `@types/node`'s `undici-types` import fail
-      // silently on Linux only (macOS has no symlink) → `Response.ok` errors.
+      // silently on Linux only (macOS has no symlink) -> `Response.ok` errors.
       const cacheDir = path.join(NM_CACHE, hash, "node_modules");
-      const nodeModules = path.join(jobDir, "node_modules");
+      const nodeModules = path.join(dir, "node_modules");
       if (fs.existsSync(cacheDir)) {
-        log.write(`[deb-ci] node_modules cache hit ${hash}\n`);
+        log.write(`[deb-ci] node_modules cache hit ${hash}${sub === "" ? "" : ` (${sub}/)`}\n`);
         fs.symlinkSync(cacheDir, nodeModules);
-        installed = true;
-      } else {
-        log.write(`[deb-ci] npm ci (cache miss ${hash})\n`);
-        await new Promise((resolve, reject) => {
-          const env = { ...process.env, ...(m.env || {}) };
-          if (NODE22_BIN_DIR) env.PATH = `${NODE22_BIN_DIR}:${env.PATH}`;
-          // Absolute npm from the node-22 dir: `bash -l` profiles and a PATH-only
-          // prepend both lost to fnm's default (node 18 / npm 9 → incomplete
-          // node_modules, e.g. no undici-types → `Response.ok` typecheck errors).
-          const npmBin = NODE22_BIN_DIR ? path.join(NODE22_BIN_DIR, "npm") : "npm";
-          const p = spawn(npmBin, ["ci"], { cwd: jobDir, env });
-          p.stdout.pipe(log, { end: false });
-          p.stderr.pipe(log, { end: false });
-          p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`npm ci exit ${code}`))));
-          p.on("error", reject);
-        });
-        if (fs.existsSync(nodeModules)) {
-          fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
-          fs.renameSync(nodeModules, cacheDir);
-          fs.symlinkSync(cacheDir, nodeModules);
-        }
-        installed = true;
+        continue;
+      }
+      log.write(`[deb-ci] ${label} (cache miss ${hash})\n`);
+      await new Promise((resolve, reject) => {
+        const env = { ...process.env, ...(m.env || {}) };
+        if (NODE22_BIN_DIR) env.PATH = `${NODE22_BIN_DIR}:${env.PATH}`;
+        // Absolute npm from the node-22 dir: `bash -l` profiles and a PATH-only
+        // prepend both lost to fnm's default (node 18 / npm 9 -> incomplete
+        // node_modules, e.g. no undici-types -> `Response.ok` typecheck errors).
+        const npmBin = NODE22_BIN_DIR ? path.join(NODE22_BIN_DIR, "npm") : "npm";
+        // ui/ gets --ignore-scripts: its only lifecycle script is a Playwright
+        // browser download the gate does not need on a compute node.
+        const args = sub === "" ? ["ci"] : ["ci", "--ignore-scripts"];
+        const p = spawn(npmBin, args, { cwd: dir, env });
+        p.stdout.pipe(log, { end: false });
+        p.stderr.pipe(log, { end: false });
+        p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${label} exit ${code}`))));
+        p.on("error", reject);
+      });
+      if (fs.existsSync(nodeModules)) {
+        fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
+        fs.renameSync(nodeModules, cacheDir);
+        fs.symlinkSync(cacheDir, nodeModules);
       }
     }
-    if (!installed) log.write(`[deb-ci] no package-lock.json, skipping npm ci\n`);
 
     log.write(`[deb-ci] running: ${m.cmd}\n`);
     exitCode = await new Promise((resolve) => {
