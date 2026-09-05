@@ -226,9 +226,42 @@ test("super-call: a forwarding constructor with declared parameters is refused (
   assert.equal("code" in out && out.code, "R-SC9");
 });
 
-test("super-call: a forwarding constructor that does anything else is refused (R-SC9)", () => {
+test("super-call: a forwarding constructor that runs anything else is refused (R-SC9)", () => {
   const { module, cls } = moduleWith(FORWARD_BODY);
-  const out = foldSuperBody(module, cls, [store("r0", lit("1")), ...FORWARD_BODY], []);
+  const effect: Stmt = { k: "expr", expr: { k: "call", callee: ident("sideEffect"), args: [] } };
+  const out = foldSuperBody(module, cls, [effect, ...FORWARD_BODY], []);
+  assert.equal("code" in out && out.code, "R-SC9");
+});
+
+test("super-call: the forward's own operand moves are deleted, hoisted declarations are kept", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  // The shape a real bundle shows (react-navigation, 136 of 147 R-SC9 rows
+  // before this was allowed): the emitter hosts a hoisted `function` in the
+  // constructor's frame and moves the forward's operands into registers.
+  const hosted: Stmt = { k: "func", name: "_fn9", params: [], body: [{ k: "return", arg: lit("1") }] } as unknown as Stmt;
+  const body: readonly Stmt[] = [
+    { k: "comment", text: 'fn#7 "Derived"' },
+    { k: "directive", text: "use strict" },
+    hosted,
+    { k: "decl", kind: "let", names: ["r0", "r2", "r3", "r4", "r5"] } as unknown as Stmt,
+    store("r0", ident("_e0_1")),
+    store("r2", getProto(ident("r0"))),
+    store("r3", lit("new.target")),
+    store("r4", lit("undefined")),
+    store("r5", ident("r2")),
+    forward([{ k: "argumentsObject" }, ident("r5"), ident("r4"), ident("r3")]),
+  ];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+  assert.deepEqual(out.body.map((s) => s.k), ["comment", "func", "expr"]);
+  assert.equal(out.params?.[0]?.rest, true);
+});
+
+test("super-call: a forwarding constructor whose operand store is still read is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  const nested: Stmt = { k: "func", name: "_fn9", params: [], body: [{ k: "return", arg: ident("r0") }] } as unknown as Stmt;
+  const body: readonly Stmt[] = [store("r0", ident("_e0_1")), nested, forward([{ k: "argumentsObject" }, getProto(ident("_e0_1")), lit("undefined"), lit("new.target")])];
+  const out = foldSuperBody(module, cls, body, []);
   assert.equal("code" in out && out.code, "R-SC9");
 });
 

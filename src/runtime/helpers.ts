@@ -324,7 +324,14 @@ function __hbc_b_apply(fn, args, thisVal) {
   h(
     "__hbc_b_applyWithNewTarget",
     `
-function __hbc_b_applyWithNewTarget(fn, args, newTarget) {
+function __hbc_b_applyWithNewTarget(fn, args, thisArg, newTarget) {
+  // HermesBuiltin.applyWithNewTarget(func, argArray, thisArg, newTarget) --
+  // four arguments, and the CallBuiltin lowering passes all four
+  // (src/emit/lower.ts). The receiver is unused on the construct path, exactly
+  // as in __hbc_b_applyArguments below; measured on
+  // 78-class-implicit-derived-ctor (an explicit constructor(...a){super(...a)})
+  // at v98/v99, where a three-parameter helper took thisArg as the
+  // newTarget and threw "undefined is not a constructor".
   return Reflect.construct(fn, args, newTarget);
 }
 `,

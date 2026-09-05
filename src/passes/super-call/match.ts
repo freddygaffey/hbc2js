@@ -125,6 +125,29 @@ function deref(body: readonly Stmt[], upto: number, e: Expr): Expr | null {
   return lastStoreBefore(body, upto, e.name);
 }
 
+/** `deref`, chased through the emitter's register-to-register moves: the
+ *  forward's operands reach the call through up to a few `Mov`s
+ *  (`r5 = r2; r3 = r1; applyArguments(arguments, r5, r4, r3)`). Each hop
+ *  resolves against the stores that precede the hop it came from, never a
+ *  later one, so a register reused after its move is never followed. Stops at
+ *  an identifier with no preceding store (an env slot, a parameter) and
+ *  returns it. */
+function derefChain(body: readonly Stmt[], upto: number, e: Expr): Expr {
+  let cur = e;
+  let bound = upto;
+  for (let hop = 0; hop < 4 && cur.k === "ident"; hop++) {
+    let found = -1;
+    for (let i = bound - 1; i >= 0; i--) {
+      const st = simpleStore(body[i]!);
+      if (st !== null && st.name === (cur as { name: string }).name) { found = i; break; }
+    }
+    if (found < 0) return cur;
+    cur = simpleStore(body[found]!)!.value;
+    bound = found;
+  }
+  return cur;
+}
+
 /** True when `name` appears as an identifier inside ANY nested `func` body
  *  reachable from `body` -- there it is a different frame's local, and this
  *  rung's frame-blind substitution would be a silent miscompile (R-SC5). */
@@ -245,42 +268,72 @@ function argumentsUses(stmts: readonly Stmt[]): number {
  * parameters of its own.
  */
 function foldForwardBody(module: readonly Stmt[], cls: ClassExpr, body: readonly Stmt[], params: readonly Param[]): { readonly body: readonly Stmt[]; readonly params: readonly Param[] } | SuperRefusal {
-  // Shape: a prefix of non-executable statements (the `// fn#N` provenance
-  // comment and the "use strict" directive the emitter always prints) and then
-  // the forward, as the constructor's only executable statement. The comments
-  // are kept (they are this function's provenance); the "use strict" directive
-  // is DROPPED, because the rebuilt constructor has a non-simple parameter
-  // list and ES2024 15.2.1 makes a directive prologue illegal there -- a
-  // no-op deletion, since a class body is strict code already (ES2024 15.7,
-  // ClassBody is always strict). Any other directive is refused instead.
-  const prefix: Stmt[] = [];
-  let at = 0;
-  while (at < body.length && (body[at]!.k === "comment" || body[at]!.k === "directive")) {
-    const s = body[at++]!;
-    if (s.k === "comment") prefix.push(s);
-    else if (s.text !== "use strict") return { code: "R-SC9", reason: `the forwarding constructor carries the directive "${s.text}", which the rebuilt non-simple parameter list cannot keep` };
-  }
-  if (at !== body.length - 1) return { code: "R-SC9", reason: "the forwarding constructor has statements besides the applyArguments forward" };
-  const ret = body[at]!;
-  if (ret.k !== "return" || ret.arg === null || ret.arg.k !== "call") return { code: "R-SC9", reason: "the applyArguments forward is not the constructor's returned expression" };
+  // Shape: the forward is the constructor's LAST statement, and everything
+  // before it is inert -- the `// fn#N` provenance comment (kept), the
+  // "use strict" directive (DROPPED: the rebuilt constructor has a non-simple
+  // parameter list and ES2024 15.2.1 forbids a directive prologue there; a
+  // no-op, since a class body is strict code already, ES2024 15.7), a hoisted
+  // `function` declaration this frame merely hosts (kept -- a declaration runs
+  // no user code and is legal before `super()`), a register `let` (kept only
+  // if something still reads it), and the operand moves the forward itself
+  // consumed (deleted, exactly as the main path deletes its own). Anything
+  // else is refused rather than guessed at.
+  const at = body.length - 1;
+  const ret = body[at];
+  if (ret === undefined || ret.k !== "return" || ret.arg === null || ret.arg.k !== "call") return { code: "R-SC9", reason: "the applyArguments forward is not the constructor's last statement" };
   const call = ret.arg;
+  if (!isIdentNamed(call.callee, APPLY_ARGUMENTS)) return { code: "R-SC9", reason: "the constructor's last statement is not the applyArguments forward" };
   if (params.length > 0) return { code: "R-SC9", reason: `the forwarding constructor declares ${params.length} parameter(s) of its own` };
   if (argumentsUses(body) !== 1) return { code: "R-SC9", reason: "`arguments` is read somewhere other than the forward itself" };
+  let head: readonly Stmt[] = [];
+  for (let i = 0; i < at; i++) {
+    const st = body[i]!;
+    if (st.k === "comment" || st.k === "func" || st.k === "decl") { head = [...head, st]; continue; }
+    if (st.k === "directive") {
+      if (st.text !== "use strict") return { code: "R-SC9", reason: `the forwarding constructor carries the directive "${st.text}", which the rebuilt non-simple parameter list cannot keep` };
+      continue;
+    }
+    const store = simpleStore(st);
+    if (store === null || (!isInertValue(store.value) && !isObjectCall(store.value, "getPrototypeOf", 1))) return { code: "R-SC9", reason: "the forwarding constructor runs a statement the forward did not consume" };
+    head = [...head, st];
+  }
+
   if (call.args.length !== 4) return { code: "R-SC8", reason: `the applyArguments forward takes ${call.args.length} arguments, not the measured 4` };
   const [callerArgs, target, thisArg, newTarget] = call.args as readonly Expr[];
   if (callerArgs!.k !== "argumentsObject") return { code: "R-SC8", reason: "the forwarded argument list is not the constructor's own arguments object" };
-  if (thisArg!.k !== "lit" || thisArg!.text !== "undefined") return { code: "R-SC8", reason: "the forward passes a receiver, so it is not the construct path" };
-  if (newTarget!.k !== "lit" || newTarget!.text !== "new.target") return { code: "R-SC8", reason: "the new.target argument is not the constructor's own new.target" };
-  const callee = deref(body, at, target!);
-  if (callee === null || !isObjectCall(callee, "getPrototypeOf", 1)) return { code: "R-SC8", reason: "the forwarded target is not Object.getPrototypeOf(<class>)" };
+  const ta = derefChain(body, at, thisArg!);
+  if (ta.k !== "lit" || ta.text !== "undefined") return { code: "R-SC8", reason: "the forward passes a receiver, so it is not the construct path" };
+  const nt = derefChain(body, at, newTarget!);
+  if (nt.k !== "lit" || nt.text !== "new.target") return { code: "R-SC8", reason: "the new.target argument is not the constructor's own new.target" };
+  const callee = derefChain(body, at, target!);
+  if (!isObjectCall(callee, "getPrototypeOf", 1)) return { code: "R-SC8", reason: "the forwarded target is not Object.getPrototypeOf(<class>)" };
   const bindingRef = callee.args[0]!;
-  const binding = bindingRef.k === "ident" && ENV_SLOT.test(bindingRef.name) ? bindingRef : deref(body, at, bindingRef);
-  if (binding === null || binding.k !== "ident") return { code: "R-SC8", reason: "the forwarded target is not a single binding this rung can resolve" };
+  const binding = bindingRef.k === "ident" && ENV_SLOT.test(bindingRef.name) ? bindingRef : derefChain(body, at, bindingRef);
+  if (binding.k !== "ident") return { code: "R-SC8", reason: "the forwarded target is not a single binding this rung can resolve" };
   if (!classBindingSlots(module, cls).has(binding.name)) return { code: "R-SC8", reason: `the forwarded target reads ${binding.name}, which is not provably this class's own binding` };
 
-  const spread: Expr = { k: "spread", arg: { k: "ident", name: FORWARD_PARAM } };
+  // The operand moves are dead once the forward is a `super(...)`. Deleted one
+  // at a time, in reverse, and only when nothing that survives -- a later head
+  // statement, a nested closure -- still reads the target. A store that cannot
+  // be deleted is a store this rung does not understand: refuse rather than
+  // leave it (R-SC9).
+  for (let i = head.length - 1; i >= 0; i--) {
+    const st = simpleStore(head[i]!);
+    if (st === null) continue;
+    const rest = head.slice(i + 1);
+    if (identUses(rest, st.name).reads > 0 || mentionedInNestedFunction(rest, st.name)) return { code: "R-SC9", reason: `the forwarding constructor's store to ${st.name} is still read after the forward is rebuilt` };
+    head = [...head.slice(0, i), ...rest];
+  }
+  // Register declarations nothing reads any more go with them.
+  head = head.filter((st) => st.k !== "decl" || st.names.some((n) => identUses(head, n).reads + identUses(head, n).writes > 0));
+
+  // The rest parameter must shadow nothing a surviving statement reads.
+  let param = FORWARD_PARAM;
+  for (let n = 2; identUses(head, param).reads + identUses(head, param).writes > 0; n++) param = `${FORWARD_PARAM}${n}`;
+
+  const spread: Expr = { k: "spread", arg: { k: "ident", name: param } };
   const superStmt: Stmt = { k: "expr", expr: { k: "call", callee: SUPER, args: [spread] } };
-  return { body: [...prefix, superStmt], params: [{ name: FORWARD_PARAM, rest: true }] };
+  return { body: [...head, superStmt], params: [{ name: param, rest: true }] };
 }
 
 /** Rewrites one derived-class constructor body, or explains why not. Pure. */
