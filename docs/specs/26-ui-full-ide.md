@@ -292,6 +292,34 @@ is the same idiom `CenterPane.tsx` and spec 25 §5 already use.
 
 **Depends on:** L3 (tokens the table reads).
 
+**Landed 2026-09-05** (Claude Sonnet 5, lean worker). `ui/src/components/ResultTable.tsx`
+(new) — `@tanstack/react-table@8.21.3` pinned exact (the well-known, stable
+v8 API: `useReactTable`/`getCoreRowModel`/`getSortedRowModel`/`flexRender`;
+v9, npm's current `latest` tag, ships a rewritten hook-store API with no
+`useReactTable` at all — too large a surface change to adopt sight-unseen in
+this landing) + the existing `@tanstack/react-virtual`. `LeftPane.tsx`'s
+`slice(0, 100)`/`slice(0, 200)` search-hit caps are gone: module hits render
+uncapped (a client-side filter, `ResultTable` just virtualises the full
+match set) and function hits carry the server's own `truncated`/`total`
+(`search/functions`'s `SEARCH_PAGE_CAP`) in the bar. Converted: `LeftPane.tsx`
+(search hits, Leads tab), `RightPane.tsx` (Xrefs' called-by/calls lists,
+Findings), `StringsPane.tsx` (string-grep hits, globals uses — each row's
+own uses list moved to a master/detail panel below the table rather than
+growing the row in place, so rows stay one fixed height and virtualise),
+`TablesPane.tsx` (object-table inventory, same master/detail split for a
+table's members), `WorkersPane.tsx` (jobs rail), `LogTab.tsx` (activity log,
+now sortable). Left alone: Xrefs' by-name heuristic candidates list (not in
+the file's named scope, and already has an e2e selector on its exact
+`<button data-fn>` markup). Tests: `tests/gate/ui/result-table.test.ts` (4
+tests, source-scan style), `ui/e2e/tables.spec.ts` extended with the 3 named
+acceptance tests (the 10k-row test intercepts `GET /api/object-tables` with
+a synthetic page — no real fixture bundle carries that many constant
+tables). `docs/test-count-baseline.json` bumped 1264 -> 1268. Needs Fred:
+row height / header styling used the existing `--row-height` token and
+`text-xs`/`text-text-muted` defaults already in use elsewhere (no new art
+direction invented); the findings/leads tables collapse each record to one
+line (claim/detail truncated) pending L6's fuller evidence UI.
+
 ---
 
 ### L6 — Findings and leads: the full evidence-gated workflow · Sonnet

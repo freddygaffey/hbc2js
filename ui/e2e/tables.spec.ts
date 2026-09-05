@@ -102,3 +102,96 @@ test.describe("Tables tab: bundle-wide object-literal inventory (spec 17 §14.2)
     }
   });
 });
+
+// spec 26 L5: the shared `ResultTable` (`ui/src/components/ResultTable.tsx`)
+// every result list in the shell now uses — client-side sort (never a
+// refetch), an honest truncation bar reading the contract's own cap, and
+// virtualisation that never scales DOM node count with row count. Exercised
+// here through the Tables tab because it is the one `ResultTable` consumer
+// whose backing endpoint (`GET /api/object-tables`) is easy to intercept
+// with a large synthetic page — real fixture bundles rarely carry 10k
+// constant tables, and a virtualiser bug only shows up at that scale.
+test.describe("ResultTable (spec 26 L5)", () => {
+  test("sorting a column reorders rows without refetching", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    await page.getByRole("tab", { name: "Tables" }).click();
+
+    const api = (await (await request.get(`${API}/api/object-tables`)).json()) as ObjectTablesResult;
+    test.skip(api.tables.length < 2, "fixture has fewer than two tables — nothing to reorder");
+
+    const header = page.locator('[data-testid="result-table-header"][data-column="fn"]');
+    await expect(header).toBeVisible({ timeout: WAIT });
+
+    let requests = 0;
+    page.on("request", (req) => {
+      if (new URL(req.url()).pathname === "/api/object-tables") requests++;
+    });
+
+    await header.click();
+    await expect(header).toContainText(/\^|v/);
+    await page.waitForTimeout(200);
+
+    await header.click();
+    await expect(header).toContainText(/\^|v/);
+    await page.waitForTimeout(200);
+
+    // Sorting is a client-side reorder of already-fetched rows — clicking
+    // the header twice (asc, then desc) must never re-ask the server.
+    expect(requests).toBe(0);
+  });
+
+  test("a capped result renders the truncation bar with the cap's own number", async ({ page }) => {
+    // Intercepts the SAME endpoint the tab calls with a synthetic, honestly
+    // capped page (`total` far above `tables.length`) — proves the bar
+    // reads `truncated`/`total` off the response, not a client constant.
+    const total = 500;
+    const shown = 50;
+    await page.route("**/api/object-tables*", async (route) => {
+      const tables = Array.from({ length: shown }, (_, i) => ({
+        fn: i, fnName: `fn${i}`, size: null, offset: i * 4, module: 0, numProps: 1,
+        members: [{ key: "k", value: "v", kind: "string" }], strings: 1, nonStrings: 0, computed: 0, matched: 1,
+      }));
+      await route.fulfill({ json: { tables, total, truncated: true, scanned: total, failed: 0 } });
+    });
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    await page.getByRole("tab", { name: "Tables" }).click();
+
+    const bar = page.getByTestId("truncation-bar");
+    await expect(bar).toBeVisible({ timeout: WAIT });
+    await expect(bar).toContainText(`of ${total}`);
+    await expect(bar).toContainText("(truncated)");
+  });
+
+  test("10k rows scroll without mounting 10k DOM nodes", async ({ page }) => {
+    const total = 10_000;
+    await page.route("**/api/object-tables*", async (route) => {
+      const tables = Array.from({ length: total }, (_, i) => ({
+        fn: i, fnName: `fn${i}`, size: null, offset: i * 4, module: 0, numProps: 1,
+        members: [{ key: "k", value: "v", kind: "string" }], strings: 1, nonStrings: 0, computed: 0, matched: 1,
+      }));
+      await route.fulfill({ json: { tables, total, truncated: false, scanned: total, failed: 0 } });
+    });
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    await page.getByRole("tab", { name: "Tables" }).click();
+
+    const firstRow = page.locator('[data-testid="result-table"] [data-index]').first();
+    await expect(firstRow).toBeVisible({ timeout: WAIT });
+
+    const mounted = await page.locator('[data-testid="result-table"] [data-index]').count();
+    expect(mounted).toBeGreaterThan(0);
+    // The whole point of virtualisation: far fewer DOM rows than data rows.
+    expect(mounted).toBeLessThan(200);
+
+    // The virtualiser still sized its scroll region for all 10k rows (the
+    // inner sizer div's height), not just the mounted subset — otherwise
+    // this "pass" would just be an under-fetch, not real virtualisation.
+    const sizerHeight = await page
+      .locator('[data-testid="result-table"] .hbc-scroll > div')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(sizerHeight).toBeGreaterThan(total * 10); // >=10px/row is a very loose floor
+  });
+});

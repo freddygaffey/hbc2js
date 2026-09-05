@@ -625,8 +625,9 @@ the pre-virtualisation tree had keeps working against the flattened rows:
 expand/collapse, selection highlight, the roving-focus keyboard cursor
 (`ArrowUp`/`ArrowDown` call `virtualizer.scrollToIndex` so the cursor never
 walks off-screen), the search filter (`filterGroups` still runs over the
-WHOLE grouped tree, not the rendered window — search results are a separate
-non-virtualised list, capped at 100 modules / 200 functions same as before),
+WHOLE grouped tree, not the rendered window — search results are now a
+`ResultTable` per spec 26 L5 below, uncapped for modules and reading the
+server's own honest cap for functions rather than a client-invented one),
 the right-click context menu, and the `!seg.isLoading` auto-select-first-
 module guard. New: picking a module from a search hit now also opens its
 group (`toggleGroup`), and a `scrolledForSelection` effect calls
@@ -675,6 +676,50 @@ track can drive the list without a React handle. The vim layer is present
 but mounted only when `ui/keymap.json` says `"preset": "vim"`
 (`ui/src/keymap-config.ts`). The listing installs no `contextmenu` handler
 and stops no events, so right-clicks reach the annotate track's menu.
+
+### Result tables (spec 26 L5)
+
+One shared component, `ui/src/components/ResultTable.tsx`, composed from
+`@tanstack/react-table` (pinned exact, `ui/package.json`) for sortable
+columns and `@tanstack/react-virtual` for the body, plus the token
+primitives — no result list in the shell hand-rolls its own row markup,
+sorting, or truncation copy any more. Every consumer gets, for free:
+
+- **Client-side sort.** Clicking a column header sorts the already-fetched
+  rows in place (`getSortedRowModel`) — never a refetch. Sorting is a UI
+  presentation concern (spec 19 §1.4's division of labor: the UI holds no
+  analysis logic), so it operates on the page of rows the contract already
+  returned, not the whole resource.
+- **Virtualisation.** Only the rows the viewport (plus overscan) can show
+  are ever mounted, the same discipline `ui/src/panes/LeftPane.tsx`'s module
+  tree already used for the tree itself (see "Virtualised" above) — a
+  10,000-row result stays a few dozen DOM nodes.
+- **An honest cap line** (`TruncationBar`, exported from the same file, the
+  same always-visible "N of M rows" idiom `StringsPane.tsx`/`TablesPane.tsx`'s
+  own `BoundedLine` used before this landing) instead of a silently-invented
+  cap: always reads the contract's own `shown`/`total`, never a client
+  constant, and adds a `(truncated)` suffix only when the contract's own
+  `truncated` flag is set. This is what replaced `LeftPane.tsx`'s old
+  `slice(0, 100)` / `slice(0, 200)` search-hit caps — module hits are no
+  longer capped at all (they are a client-side filter over an
+  already-fetched list, so `ResultTable` just virtualises the full match
+  set), and function hits show the line reading `search/functions`' own
+  `truncated`/`total` (`SEARCH_PAGE_CAP` in `src/mcp/leads.ts`).
+
+**Consumers:** `LeftPane.tsx` (search-hit modules/functions, the Leads tab),
+`RightPane.tsx` (Xrefs' "called by"/"calls" lists, Findings), `StringsPane.tsx`
+(the string-grep hit list and the globals-use list — each hit's own uses
+list is a master/detail split below the table, not grown in place, so the
+table row stays one fixed height and virtualises cleanly), `TablesPane.tsx`
+(the object-table inventory, same master/detail split for a table's
+members), `WorkersPane.tsx` (the jobs rail), and `LogTab.tsx` (the activity
+log, now sortable by any column). A row that needs to stay a `<button>` for
+an existing e2e selector (`ui/e2e/xref-by-name.spec.ts`'s
+`button[data-fn=...]`, `ui/e2e/tables.spec.ts`'s
+`button[data-fn=...][data-offset]`) passes `rowElement="button"` and its own
+`rowProps` — the by-name heuristic candidates list in `RightPane.tsx` was
+left as its own hand-rolled list rather than risk that selector, since it is
+not named in spec 26 L5's file list.
 
 ## What is stubbed (landing 1 is the shell, not the app)
 

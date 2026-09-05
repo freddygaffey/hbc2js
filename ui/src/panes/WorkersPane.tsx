@@ -9,6 +9,7 @@
 // writes nothing: the suggestion stays as history, greyed.
 import type { ReactNode } from "react";
 import { Empty, ToolButton } from "../components/primitives.tsx";
+import { ResultTable } from "../components/ResultTable.tsx";
 import { useSelection } from "../state/selection.ts";
 import { setStatus } from "../actions/store.ts";
 import { invalidateFn } from "../actions/registry.ts";
@@ -44,23 +45,6 @@ function SessionChip({ s }: { readonly s: SessionRow }): ReactNode {
       <span className="font-mono text-text-muted">{initials(s.who)}</span>
       <span className="truncate">{s.who}</span>
     </span>
-  );
-}
-
-function JobRowView({ job, onCancel }: { readonly job: JobRow; readonly onCancel: (id: string) => void }): ReactNode {
-  const cancellable = job.status === "queued" || job.status === "running";
-  return (
-    <div className="flex items-center gap-2 border-b border-border px-3 py-1 text-xs" title={job.error ?? job.id}>
-      <span className={STATUS_CLASS[job.status]}>{job.status}</span>
-      <span className="truncate text-text">{job.kind}</span>
-      <span className="font-mono text-text-muted">{job.target}</span>
-      <span className="ml-auto shrink-0 text-text-muted">{elapsed(job.elapsedMs)}</span>
-      {cancellable && (
-        <ToolButton onClick={() => onCancel(job.id)} tip="cancel">
-          Cancel
-        </ToolButton>
-      )}
-    </div>
   );
 }
 
@@ -182,14 +166,38 @@ export function WorkersPane({ fn }: { readonly fn: number }): ReactNode {
           ))}
 
           <div className="px-3 pt-3 pb-1 text-xs text-text-muted">jobs ({jobs.data?.total ?? 0})</div>
-          {(jobs.data?.rows ?? []).length === 0 && <Empty>No jobs queued.</Empty>}
-          {(jobs.data?.rows ?? []).map((job) => (
-            <JobRowView
-              key={job.id}
-              job={job}
-              onCancel={(id) => cancel.mutate(id, { onSuccess: () => setStatus(`cancelled ${id}`), onError: (e) => setStatus(errorLine(e)) })}
+          <div className="h-64 min-h-0 shrink-0">
+            <ResultTable
+              data={jobs.data?.rows ?? []}
+              getRowId={(job) => job.id}
+              emptyMessage="No jobs queued."
+              columns={[
+                { id: "status", header: "status", accessorFn: (job: JobRow) => job.status, cell: (info) => <span className={STATUS_CLASS[info.getValue() as JobStatus]}>{info.getValue() as string}</span> },
+                { id: "kind", header: "kind", accessorFn: (job: JobRow) => job.kind, cell: (info) => <span className="text-text">{info.getValue() as string}</span> },
+                { id: "target", header: "target", accessorFn: (job: JobRow) => job.target, cell: (info) => <span className="font-mono text-text-muted">{info.getValue() as string}</span> },
+                { id: "elapsed", header: "elapsed", accessorFn: (job: JobRow) => job.elapsedMs ?? -1, cell: (info) => <span className="text-text-muted">{elapsed(info.getValue() === -1 ? null : (info.getValue() as number))}</span> },
+                {
+                  id: "cancel",
+                  header: "",
+                  cell: (info) => {
+                    const job = info.row.original;
+                    const cancellable = job.status === "queued" || job.status === "running";
+                    return cancellable ? (
+                      <ToolButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cancel.mutate(job.id, { onSuccess: () => setStatus(`cancelled ${job.id}`), onError: (err) => setStatus(errorLine(err)) });
+                        }}
+                        tip="cancel"
+                      >
+                        Cancel
+                      </ToolButton>
+                    ) : null;
+                  },
+                },
+              ]}
             />
-          ))}
+          </div>
         </div>
       )}
     </div>
