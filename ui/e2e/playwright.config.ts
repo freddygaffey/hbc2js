@@ -38,6 +38,25 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    // Visual determinism (spec 26 L7): fixed viewport so a screenshot never
+    // depends on the runner's window size, and reduced motion so a CSS
+    // transition never lands mid-animation in the captured frame.
+    viewport: { width: 1280, height: 800 },
+    reducedMotion: "reduce",
+  },
+  // ui/e2e/visual.spec.ts's baselines (spec 26 L7). Kept under
+  // ui/e2e/__screenshots__ (the path the spec names) rather than
+  // Playwright's default <spec>-snapshots/ sibling directory.
+  snapshotPathTemplate: "{testDir}/__screenshots__/{testFilePath}/{arg}{ext}",
+  expect: {
+    toHaveScreenshot: {
+      // Cross-platform font rendering (Linux CI vs macOS) is the known
+      // source of pixel noise here — tolerant on purpose, and the pixel
+      // assertion itself is gated behind HBC2JS_E2E_VISUAL (see
+      // visual.spec.ts); this threshold only matters when that flag is set.
+      maxDiffPixelRatio: 0.03,
+      animations: "disabled",
+    },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   ...(usingFixture

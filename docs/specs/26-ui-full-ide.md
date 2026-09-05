@@ -346,6 +346,26 @@ shared fixtures" rule is not violated — record that explicitly in
 **Depends on:** L3, L4, L5, L6 (baseline a view once it has stopped moving).
 **Needs Fred:** §4.2.
 
+**Landed 2026-09-05** (Sonnet, lean worker). Layer 2:
+`@testing-library/react`/`@testing-library/dom` + `jsdom` + `vitest` as
+`ui/`-only devDependencies (`ui/vitest.config.ts`, `npm run test:dom` inside
+`ui/`; not part of the root gate). Layer 4: `ui/e2e/visual.spec.ts`, five
+tests named exactly as this section lists. Every one of the five asserts DOM
+structure unconditionally (never flakes on macOS-vs-Linux font rendering);
+the pixel `toHaveScreenshot` comparison inside each test is gated behind
+`HBC2JS_E2E_VISUAL=1` (`maxDiffPixelRatio: 0.03`,
+`ui/e2e/playwright.config.ts`), so CI's default run never fails on
+antialiasing noise. `ui/src/components/KitchenSink.tsx` (new), reached at
+`index.html?kitchen-sink` (`ui/src/main.tsx` swaps it in for `<App/>` — a
+query flag, not a router dependency), self-contained with its own
+`Tooltip.Provider` and the only consumer of `ui/src/mock.ts`'s `mockApi`
+outside `./api.ts`. Five baselines committed under
+`ui/e2e/__screenshots__/visual.spec.ts/` (496 KB total): kitchen sink ×
+(dark, light) — the two default preset slots, bur 12 — plus listing, xrefs
+and graph on the dark default only, per this section's "keep them small"
+instruction. **Needs Fred §4.2 updated below: this specific 5-baseline set
+is the batch awaiting approval.**
+
 ---
 
 ### L8 — Worktree-backed speculative edits (`recompile_edit`) · **Opus**
@@ -496,7 +516,7 @@ Four items. Everything else specs 19–21 reserved is decided by D29.
 | # | Item | Why it cannot be an agent's call | Cheapest form of the answer |
 |---|---|---|---|
 | 4.1 | **The art-direction seed** (spec 20 §1.5) — and, with it, which reference screenshots go in `docs/ui-refs/` and how strict "match the reference" is (§1.4/§4.5) | An agent can propagate and match taste; it cannot originate it. This is the one input the whole §1 aesthetics playbook rests on | Either edit `ui/themes/dark.json`'s ~20 values, **or** name a theme ("Darcula-like"), **or** drop 2–3 screenshots into `docs/ui-refs/`. Any one of the three unblocks L3 |
-| 4.2 | **Visual-baseline approval** (spec 19 §5.4 + CLAUDE.md golden rule) | Baselines are golden artifacts; the rule already says regeneration is Fred-approved and reviewed as a batch. The *first* commit of them is the same decision | "Yes, land baselines for these N views" once, at L7; regenerations queue as a batch thereafter |
+| 4.2 | **Visual-baseline approval** (spec 19 §5.4 + CLAUDE.md golden rule) — **now concrete**: L7 landed 5 PNGs under `ui/e2e/__screenshots__/visual.spec.ts/` (kitchen sink × dark/light, plus listing/xrefs/graph on dark only), 496 KB total, generated with fonts/animations fixed and a 1280×800 viewport | Baselines are golden artifacts; the rule already says regeneration is Fred-approved and reviewed as a batch. The *first* commit of them is the same decision | "Yes, keep these 5" / "drop N, they'll re-baseline once view X settles" / "the pixel diff threshold (0.03) is too loose/tight" |
 | 4.3 | **Whether `recompile_edit` may be driven from the UI at all**, and worktree vs scratch-copy for its sandbox (spec 17 §13 fenced this to the owner; spec 21 §5.2) | It is the one operation that produces a modified binary. Its sandboxing policy was explicitly reserved, twice | "UI may run it, attended, in a git worktree" / "…in a temp copy" / "not from the UI at all" |
 | 4.4 | **First-run information hierarchy** (spec 20 §1.6) — which panes are open on opening a project, and what is one click vs three | Product judgment, not styling; tokens do not touch it and no test can decide it | One sentence, or a screenshot of the layout you want as the default |
 | 4.5 | **How a navigation arrow should look in the tree** (spec 26 L4, landed) — arrows currently render as an indented `-> TargetScreen` row under an open screen, with `resolved` / `by-name` (italic, dashed marker) as the provenance label | Structure and provenance are decided by the data; whether an arrow is a row, a badge on the screen row, or only a graph-pane affordance is art direction | "rows are fine" / "make it a badge" / a screenshot |

@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./theme/theme.css";
 import { App } from "./App.tsx";
+import { KitchenSink } from "./components/KitchenSink.tsx";
 import { ThemeProvider } from "./theme/ThemeProvider.tsx";
 
 const queryClient = new QueryClient({
@@ -22,11 +23,16 @@ const queryClient = new QueryClient({
 const rootEl = document.getElementById("root");
 if (rootEl === null) throw new Error("index.html is missing #root");
 
+// spec 20 §1.7 step 2 / spec 26 L7: `?kitchen-sink` renders every primitive
+// once instead of the shell — a query flag, not a router dependency, since
+// this is the only route the shell has.
+const isKitchenSink = new URLSearchParams(window.location.search).has("kitchen-sink");
+
 createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <App />
+        {isKitchenSink ? <KitchenSink /> : <App />}
       </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>,
