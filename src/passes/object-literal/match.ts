@@ -4,7 +4,7 @@
 // `NewObjectWithBuffer`) followed by a contiguous run of own-property
 // defines into `rN`, and folds the run back into one object literal at the
 // definition.
-import { identUses, isRegisterName, opcodeAt, originOf } from "../ast.ts";
+import { effectSequence, identUses, isPure, isRegisterName, opcodeAt, originOf } from "../ast.ts";
 import type { Expr, ObjectProp, Stmt } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
@@ -54,6 +54,44 @@ const OWN_DEFINE: ReadonlySet<string> = new Set([
   "PutOwnBySlotIdxLong",
 ]);
 
+/**
+ * docs/BUGS.md `object-literal-putbyid`. A `PutById`/`PutByIdLoose`/
+ * `PutByIdStrict`/`TryPutById` store is a full `[[Set]]` — it is *not*
+ * unconditionally an own-property define, because `[[Set]]` walks the
+ * prototype chain and would run an inherited accessor (or throw on an
+ * inherited non-writable data property) where a literal never would.
+ *
+ * But on a *fresh* object with nothing yet able to have changed
+ * `Object.prototype` since that object was created, `[[Set]]` on a plain
+ * data key **is** observably a define: `OrdinarySet` (ECMA-262 10.1.9.2)
+ * finds no own property (the object is fresh), walks to the prototype,
+ * finds neither an accessor nor a non-writable data property named `key`
+ * there (nothing has run that could have put one there — see below), and
+ * falls through to `CreateDataProperty` on the receiver — exactly
+ * `[[DefineOwnProperty]]`'s own outcome. The one case that is never a
+ * define regardless is `key === "__proto__"` (`isProtoKey`, checked as for
+ * every other store) — `Object.prototype`'s own `__proto__` **is** an
+ * accessor by spec, so `o.__proto__ = v` always calls it and never
+ * defines an own `__proto__` data property, fresh object or not.
+ *
+ * "Nothing has run that could have changed `Object.prototype`" is checked
+ * *locally*, over the run being folded, not over the whole program: the
+ * matcher already restricts everything between the definition and a store
+ * to either (a) an own-property store into this same object (`storeOf`) or
+ * (b) a hoistable pure register def (`freshRegisterDef` — no calls, no
+ * member reads, by construction of `isPure`), so the only way the run
+ * itself could run arbitrary code is a **call inside a store's own value
+ * expression** (`o.a = f()`) — `effectSequence` catches that, and any
+ * other effect (`new`, a member read that could be a getter, etc.) besides.
+ * `runHasEffect` in `match` below is true from the first such value onward,
+ * and a `PutById`-family store folds only while it is still false — for
+ * every earlier value in the run *and* for its own. A call from *before*
+ * the object was even created is out of scope for this rung the same way
+ * it always has been: nothing here claims a fresh `{}` proves anything
+ * about code that ran before it existed.
+ */
+const PUT_BY_ID: ReadonlySet<string> = new Set(["PutById", "PutByIdLoose", "PutByIdStrict", "TryPutById"]);
+
 /** `{ a: 1 }`'s `a` — the exact set `src/emit`'s `isSafePropertyName` lets
  *  through as a bare (non-computed) member name. Kept as a regex here rather
  *  than imported, because a *narrower* test than the emitter's is always
@@ -67,10 +105,22 @@ export interface ObjectLiteralSite {
   readonly reg: string;
   /** Index, in the matched statement list, of the `rN = {…}` definition. */
   readonly defIndex: number;
-  /** How many statements after `defIndex` were folded in (always >= 1). */
+  /** How many statements after `defIndex` were folded into a property
+   *  (always >= 1) — **not** counting `hoisted` (below). This is the count
+   *  the writer/checker use to size the run: `hoisted.length` statements
+   *  are moved, not deleted, so they do not change `after.length`. */
   readonly storeCount: number;
   /** The rebuilt property list, in source order. */
   readonly props: readonly ObjectProp[];
+  /**
+   * docs/BUGS.md `object-literal-interleaved`. Statements found *inside*
+   * the run (between `defIndex` and its last fold) that are not stores into
+   * `reg` at all, but were proven safe to hoist above the definition — see
+   * `canHoist`'s doc comment for the exact commutation rule. In source
+   * order; the writer places them, unmodified and in this order, directly
+   * before the rebuilt literal.
+   */
+  readonly hoisted: readonly Stmt[];
 }
 
 export type ObjectLiteralMatch = Match<readonly Stmt[], ObjectLiteralSite>;
@@ -130,6 +180,112 @@ function isProtoKey(key: string, computed: boolean): boolean {
   return (!computed && key === "__proto__") || (computed && key === '"__proto__"');
 }
 
+/**
+ * The identity a property's `(key, computed)` pair means, for matching a
+ * store against an already-declared `NewObjectWithBuffer` placeholder. The
+ * two never spell a canonical integer key the same way: `src/emit/literals`
+ * renders it as a *computed*, quoted placeholder (`["1"]`, because `"1"` is
+ * not `isSafePropertyName`), while `storeOf`'s `INDEX_KEY` branch always
+ * returns it *non-computed* (`1`, per §5 — integer keys are written bare).
+ * Without this, the dedup lookup in `match` below would never find the
+ * placeholder for an integer key and would wrongly duplicate it instead of
+ * replacing it in place (`63-object-literal`'s `table`, v98/v99). Any other
+ * key never collides across the two spellings: a non-computed key is always
+ * a bare identifier, never equal to a computed key's *quoted* text.
+ */
+const CANONICAL_INT_KEY = /^"(0|[1-9][0-9]*)"$/;
+function keyIdentity(key: string, computed: boolean): string {
+  if (computed) {
+    const m = CANONICAL_INT_KEY.exec(key);
+    if (m !== null) return m[1]!;
+  }
+  return key;
+}
+
+/**
+ * docs/BUGS.md `object-literal-interleaved`. `s` is `rX = <pure expr>` —
+ * `isPure` (no calls, no member access, no `in`/`instanceof`) means the
+ * only things `s` can possibly do are (a) write `rX` and (b) read whatever
+ * registers/names appear in the expression; it cannot call anything, throw,
+ * or touch a property. That is exactly the shape `canHoist` needs: a
+ * candidate whose entire observable behaviour is a register-to-register
+ * dataflow edge.
+ */
+function freshRegisterDef(s: Stmt): { readonly reg: string; readonly value: Expr } | null {
+  if (s.k !== "expr" || s.expr.k !== "assign") return null;
+  const { target, value } = s.expr;
+  if (target.k !== "ident" || !isRegisterName(target.name)) return null;
+  if (!isPure(value)) return null;
+  return { reg: target.name, value };
+}
+
+/** Every register name `e` reads — `e` is proven `isPure`, so this is a
+ *  complete, terminating walk of a `lit`/`ident`/`unary`/`bin`/`logical`/
+ *  `cond` tree (the only kinds `isPure` accepts). */
+function pureExprRegisterReads(e: Expr, out: string[]): void {
+  switch (e.k) {
+    case "ident":
+      if (isRegisterName(e.name)) out.push(e.name);
+      return;
+    case "unary":
+      pureExprRegisterReads(e.arg, out);
+      return;
+    case "bin":
+    case "logical":
+      pureExprRegisterReads(e.left, out);
+      pureExprRegisterReads(e.right, out);
+      return;
+    case "cond":
+      pureExprRegisterReads(e.test, out);
+      pureExprRegisterReads(e.then, out);
+      pureExprRegisterReads(e.else, out);
+      return;
+    default:
+      return;
+  }
+}
+
+/**
+ * docs/BUGS.md `object-literal-interleaved`'s commutation check, written
+ * down exactly: a candidate `rX = <pure expr>` sitting at `list[j]`, inside
+ * a run that starts at `list[i]` (the definition), commutes above the
+ * *whole run collected so far* — `list[i..j)` — iff:
+ *
+ *  1. `rX` is read nowhere in `list[0..j)` — nothing before it (the
+ *     definition, an earlier fold's value, an earlier hoisted statement)
+ *     observes its value, so writing it earlier changes nothing anyone
+ *     already looked at. (Scoped to *this* statement list only: `match` is
+ *     called per list, `list[j]` only ever moves within it, so a read in a
+ *     different list — necessarily reached later in control flow either
+ *     way — is untouched by moving `list[j]` earlier inside this one.)
+ *  2. Every register `rX`'s value expression reads has zero writes in
+ *     `runNonHoisted` — the definition plus every store *already folded*
+ *     (not an earlier hoisted candidate: those move together with `list[j]`
+ *     and keep their relative order, so a dependency on one of *them* is
+ *     exactly what hoisting is for, not a hazard). If it did, hoisting
+ *     `list[j]` above them would make it read a value one of them was the
+ *     one to produce, in program order, before `list[j]` ever read it.
+ *  3. `rX !== reg` — a candidate may not silently redefine the object being
+ *     built.
+ *
+ * `isPure` already rules out every other way `list[j]` could matter (no
+ * call, no throw, no property read/write), so 1–3 are the whole proof:
+ * nothing before `j` sees a different value (1), and `list[j]` itself sees
+ * the same values it always did, because nothing it reads was written by
+ * anything it is hoisted past (2), and it never usurps the object register
+ * itself (3).
+ */
+function canHoist(list: readonly Stmt[], j: number, reg: string, runNonHoisted: readonly Stmt[], candidate: { readonly reg: string; readonly value: Expr }): boolean {
+  if (candidate.reg === reg) return false;
+  if (identUses(list.slice(0, j), candidate.reg).reads > 0) return false;
+  const reads: string[] = [];
+  pureExprRegisterReads(candidate.value, reads);
+  for (const r of reads) {
+    if (identUses(runNonHoisted, r).writes > 0) return false;
+  }
+  return true;
+}
+
 export function match(list: readonly Stmt[], ctx: PassContext): ObjectLiteralMatch | null {
   for (let i = 0; i < list.length; i++) {
     const def = defOf(list[i]!);
@@ -139,37 +295,68 @@ export function match(list: readonly Stmt[], ctx: PassContext): ObjectLiteralMat
 
     const props: ObjectProp[] = [...def.props];
     let n = 0;
-    // §4 precondition 2: the run is CONTIGUOUS. Everything a folded value
-    // expression crosses on its way to the definition is the definition
-    // itself, and creating an object is unobservable — so no effect can be
-    // reordered. A non-store statement (or a refused store) ends the run and
-    // the prefix collected so far is folded on its own.
+    const hoisted: Stmt[] = [];
+    // Everything the run has consumed so far that is NOT a hoisted
+    // candidate — the definition plus every store already folded — used by
+    // `canHoist`'s precondition 2. A store's target is always a `member`
+    // expression, never a plain register, so the only statement in here
+    // that ever counts as *writing* a register is the definition itself.
+    const consumed: Stmt[] = [list[i]!];
+    // docs/BUGS.md `object-literal-putbyid`: true once any value in the run
+    // (including the candidate store's own) has run something that could
+    // reach `Object.prototype` — see `PUT_BY_ID`'s doc comment.
+    let runHasEffect = false;
+    // §4 precondition 2 (as extended by `object-literal-interleaved`): the
+    // run is CONTIGUOUS *after* hoisting — a non-store statement first tries
+    // to commute above the whole run (`canHoist`) and only ends the run if
+    // it cannot. Folding a value across a hoisted statement is sound by
+    // `canHoist`'s proof; folding across anything else would move an effect
+    // across a statement whose own effect (if any) has not been proven
+    // reorderable, so the prefix collected so far is folded on its own.
     for (let j = i + 1; j < list.length; j++) {
       const st = storeOf(list[j]!, def.reg);
-      if (st === null) break;
-      const op = opcodeOf(list[j]!, ctx);
-      if (op === null || !OWN_DEFINE.has(op)) break;
-      if (isProtoKey(st.key, st.computed)) break;
-      // §4 precondition 6: a value that reads (or writes) the half-built
-      // object observes it — `r3.b = r3.a + 1` is not a literal.
-      const u = identUses([{ k: "expr", expr: st.value }], def.reg);
-      if (u.reads + u.writes > 0) break;
-      const at = props.findIndex((p) => p.key === st.key && p.computed === st.computed);
-      if (at >= 0) {
-        // `NewObjectWithBuffer` (v>=97) pre-declares every key with a
-        // placeholder literal and fills the non-constant ones in afterwards.
-        // Re-defining an existing own data property keeps its *position* and
-        // replaces its value, which is exactly what `{k: lit, …, k: v}`
-        // means — and the placeholder is a literal, so nothing observable is
-        // dropped by not evaluating it twice.
-        props[at] = { key: st.key, computed: st.computed, value: st.value };
-      } else {
-        props.push({ key: st.key, computed: st.computed, value: st.value });
+      const op = st === null ? null : opcodeOf(list[j]!, ctx);
+      const isOwnDefine = op !== null && OWN_DEFINE.has(op);
+      const isPutById = op !== null && PUT_BY_ID.has(op);
+      if (st !== null && (isOwnDefine || isPutById) && !isProtoKey(st.key, st.computed)) {
+        // §4 precondition 6: a value that reads (or writes) the half-built
+        // object observes it — `r3.b = r3.a + 1` is not a literal.
+        const u = identUses([{ k: "expr", expr: st.value }], def.reg);
+        const valueHasEffect = effectSequence([{ k: "expr", expr: st.value }]).length > 0;
+        // `object-literal-putbyid`: a `PutById`-family store folds only
+        // while nothing in the run — including its own value — has had a
+        // chance to reach `Object.prototype` yet.
+        const putByIdOk = isOwnDefine || (!runHasEffect && !valueHasEffect);
+        if (u.reads + u.writes === 0 && putByIdOk) {
+          const at = props.findIndex((p) => keyIdentity(p.key, p.computed) === keyIdentity(st.key, st.computed));
+          if (at >= 0) {
+            // `NewObjectWithBuffer` (v>=97) pre-declares every key with a
+            // placeholder literal and fills the non-constant ones in
+            // afterwards. Re-defining an existing own data property keeps
+            // its *position* and replaces its value, which is exactly what
+            // `{k: lit, …, k: v}` means — and the placeholder is a literal,
+            // so nothing observable is dropped by not evaluating it twice.
+            props[at] = { key: st.key, computed: st.computed, value: st.value };
+          } else {
+            props.push({ key: st.key, computed: st.computed, value: st.value });
+          }
+          n++;
+          consumed.push(list[j]!);
+          runHasEffect = runHasEffect || valueHasEffect;
+          continue;
+        }
       }
-      n++;
+      // Not a foldable store: docs/BUGS.md `object-literal-interleaved` —
+      // try to hoist it above the run instead of ending the run outright.
+      const fresh = freshRegisterDef(list[j]!);
+      if (fresh !== null && canHoist(list, j, def.reg, consumed, fresh)) {
+        hoisted.push(list[j]!);
+        continue;
+      }
+      break;
     }
     if (n === 0) continue;
-    return { root: list, nodes: [list], data: { reg: def.reg, defIndex: i, storeCount: n, props }, at: { functionIndex: ctx.functionIndex, offset: originOf(list[i]!)?.start ?? 0 } };
+    return { root: list, nodes: [list], data: { reg: def.reg, defIndex: i, storeCount: n, props, hoisted }, at: { functionIndex: ctx.functionIndex, offset: originOf(list[i]!)?.start ?? 0 } };
   }
   return null;
 }

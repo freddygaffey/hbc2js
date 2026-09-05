@@ -20,15 +20,22 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   if (rescan === null) return { ok: false, reason: "no object-literal site recomputed from before" };
   const site = rescan.data;
 
+  // `hoisted` statements are relocated, not deleted, so they do not change
+  // `after.length` — only the `storeCount` real folds do.
   if (after.length !== before.length - site.storeCount) return { ok: false, reason: "object-literal did not remove exactly the folded stores" };
   for (let i = 0; i < site.defIndex; i++) {
     if (before[i] !== after[i]) return { ok: false, reason: "object-literal changed a statement before the definition" };
   }
-  for (let i = site.defIndex + 1; i < after.length; i++) {
-    if (after[i] !== before[i + site.storeCount]) return { ok: false, reason: "object-literal changed a statement after the folded run" };
+  for (let k = 0; k < site.hoisted.length; k++) {
+    if (after[site.defIndex + k] !== site.hoisted[k]) return { ok: false, reason: "object-literal did not hoist the interleaved statement verbatim, in order" };
+  }
+  const replIndex = site.defIndex + site.hoisted.length;
+  const span = site.storeCount + site.hoisted.length;
+  for (let i = replIndex + 1, origI = site.defIndex + 1 + span; i < after.length; i++, origI++) {
+    if (after[i] !== before[origI]) return { ok: false, reason: "object-literal changed a statement after the folded run" };
   }
 
-  const repl = after[site.defIndex];
+  const repl = after[replIndex];
   if (repl === undefined || repl.k !== "expr" || repl.expr.k !== "assign" || repl.expr.target.k !== "ident" || repl.expr.target.name !== site.reg) {
     return { ok: false, reason: "object-literal replacement is not `rN = <object>`" };
   }

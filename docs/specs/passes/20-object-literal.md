@@ -170,12 +170,49 @@ structure-recovery block.
   the bytecode origin of the statements it deletes, so it must run while
   every register still carries its original bytecode identity.
 
+**Resolved, under a condition** (docs/BUGS.md `object-literal-putbyid`,
+`object-literal-interleaved`):
+
+* **`PutById`/`PutByIdLoose`/`PutByIdStrict`/`TryPutById` on a fresh object**
+  now folds like an own-define for a plain data key, **unless** the key is
+  `__proto__` (still a `[[Set]]` that hits `Object.prototype`'s own
+  accessor, never a define) **or** anything in the run so far — including
+  the store's own value — has an `effectSequence` (a call, `new`, a member
+  read, …): `OrdinarySet` on a fresh object with an unmodified prototype
+  chain falls through to `CreateDataProperty`, exactly `[[DefineOwnProperty]]`'s
+  outcome, but only while nothing has had a chance to have put an accessor
+  or non-writable data property on `Object.prototype` first. See
+  `src/passes/object-literal/match.ts`'s `PUT_BY_ID` doc comment for the
+  full argument. Scope: this is a *local* proof over the run being folded,
+  not a whole-program one — code that mutates `Object.prototype` earlier in
+  the same function, before the object is even created, is out of scope the
+  same way it always has been.
+* **An interleaved statement inside the run** (v98/v99 `NewObjectWithBuffer`
+  computing a value *between* two stores, `63-object-literal` fn `table`) no
+  longer ends the run outright: a **pure register def** (`rX = <expr>` with
+  no call/member access — `isPure`) commutes above the whole run when
+  `canHoist`'s three-part check proves it safe (no earlier fold already read
+  `rX`; nothing `rX`'s value reads was written by the run so far; `rX` is
+  not the object's own register) — see `match.ts`'s `canHoist` doc comment
+  for the exact rule and its unit tests for both directions. **Residual**: a
+  register *reused* for a self-referential redefinition (`r2 = r3 + r2`,
+  `table`'s `len` property at v98/v99) correctly still refuses — hoisting it
+  would change what an earlier fold in the same run read from that same
+  register — so `table` folds 3 of its 4 properties into the literal at
+  v98/v99 (`len` stays a trailing store) and 2 of 4 at v84/v96 (a different,
+  unrelated register-reuse shape for the `10` key); only v94's register
+  allocation happens to give every value its own register, folding all 4.
+  This is a real, permanent limit of the sound local commutation rule, not
+  an unimplemented case — folding it would require reasoning about which
+  *generation* of a reused register a later statement reads, which this
+  rung does not attempt.
+
 **Refusals left open** (each a prefix-fold, never a wrong rewrite):
 
 | Shape | Why refused | Ledger |
 |---|---|---|
-| `PutById` run on a fresh `{}` (`o = {}; o.a = 1;` in the source) | full `[[Set]]`, prototype-chain observable | `docs/BUGS.md` `object-literal-putbyid` |
-| v99 runs with a value computed **between** two stores (`63-object-literal` fn `table` at v99) | folding would move a value expression across an interleaved statement | `docs/BUGS.md` `object-literal-interleaved` |
+| `PutById`-family key `__proto__`, or a run that has already had an effect | still a full `[[Set]]` on `Object.prototype`, or the prototype chain may have changed since the object was created | `docs/BUGS.md` `object-literal-putbyid` |
+| an interleaved statement that is not a *pure register def*, or one `canHoist` refuses (reads the object being built, or redefines a register an earlier fold already read) | commuting it above the run is not proven safe | `docs/BUGS.md` `object-literal-interleaved` |
 | `PutOwnByVal`/`DefineOwnByVal` (a computed key expression) | the key expression would have to move with the value | `docs/BUGS.md` `object-literal-computed-key` |
 | accessor properties (`get`/`set`) | no literal AST for them; run ends there, prefix folds | same row |
 
