@@ -1205,7 +1205,15 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
       // input bytes").
       if (extname(args.input).toLowerCase() === ".apk") {
         try {
-          ingestNative(openApk(args.input), args.out);
+          const ingested = ingestNative(openApk(args.input), args.out);
+          // Always one positive line on success, not just on failure — a
+          // silent success looks identical to a build that never wired L9 in
+          // the first place (docs/BUGS.md "deps --out native-ingest path
+          // (stale dist)" row). `ingested.files` is the exact set of
+          // `native/*.jsonl` files just written; `seams` is `null` only when
+          // this directory has no JS artifact (yet) to join against.
+          const seamsNote = ingested.seams === null ? "no JS artifact yet, seams pending" : `${ingested.seams.length} seams`;
+          process.stderr.write(`hbc2js deps --out: native ingestion — ${ingested.tables.reactModules.length} modules, ${ingested.files.size} tables written, ${seamsNote}\n`);
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           process.stderr.write(`hbc2js deps --out: native ingestion skipped — ${message}\n`);
