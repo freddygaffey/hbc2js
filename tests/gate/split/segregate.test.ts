@@ -882,9 +882,15 @@ void test("segregate: detects real navigators/screens on react-navigation-exampl
 // `deps` run takes >10 min, so navigator/screen detection has to work with
 // NO deps report at all, not just a slow one. Same real fixture as above,
 // `segregateSplitTree(split.files, null)` this time.
-void test("segregate: detects navigators/screens on react-navigation-example-0.85.3 with NO --deps-report (call/config shape alone)", () => {
+void test("segregate: detects navigators/screens on react-navigation-example-0.85.3 with NO --deps-report (call/config shape alone)", (t) => {
   if (!existsSync(REACT_NAV_EXAMPLE)) {
-    return; // covered by the WITH-deps test's own skip above; avoid a duplicate skip line
+    // Skip VISIBLY, like the WITH-deps test above. This used to `return`
+    // silently, and that silence hid the F24-5 split regression (module_523
+    // 46 KB -> 28 MB, navigator count 6 -> 7) from the gate that landed it:
+    // the bundle was absent when the gate ran, so the pin never fired
+    // (docs/BUGS.md `split-comment-ref-pull`).
+    t.skip("react-navigation-example-0.85.3 not fetched (run tests/fixtures/bundles/react-navigation-example-0.85.3/fetch.sh)");
+    return;
   }
   const bytes = readFileSync(REACT_NAV_EXAMPLE);
   const split = splitProject(bytes, { moduleName: "react-navigation-example.hbc" });
