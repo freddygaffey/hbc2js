@@ -30,6 +30,12 @@ export const KNOWN_AMBIGUOUS_V98: readonly string[] = [
   // disagreement as 34-class-static-members above, resolved the same way by
   // `--opcode-table=hbc98-late`.
   "67-class-static-and-new",
+  // Added 2026-09-05 with the fixture itself (the env-slot-order fix): its v98
+  // build hits exactly the ambiguity above -- hbc98-late and hbc99-mar2026 both
+  // verify structurally but disagree on function id 0 -- and
+  // `--opcode-table=hbc98-late` resolves it the same way. Nothing about
+  // `arr[i++]` over a captured environment is special here.
+  "71-env-slot-captured-index",
 ];
 
 export function isKnownAmbiguousV98(group: string, name: string, version: number): boolean {
