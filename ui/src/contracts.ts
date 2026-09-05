@@ -27,6 +27,12 @@ export interface FnSummary {
   readonly fn: number;
   readonly name: string | null;
   readonly overlayName: string | null;
+  /** The ACCEPTED `fn:N` rename (`McpResources.withAnnotatedNames`), absent
+   *  when the function was never renamed or the project is JSONL-backed.
+   *  It outranks `overlayName`/`name` everywhere a function is named —
+   *  `ui/src/listing/names.ts`'s `displayName` is the one place that
+   *  decides, and the server applies the same name to the rendered source. */
+  readonly acceptedName?: string;
   readonly module: number | null;
   readonly file: string | null;
   readonly lines: readonly [number, number] | null;

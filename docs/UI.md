@@ -1066,6 +1066,39 @@ oldest-first (the natural reading order for a timeline).
 `name`/`overlayName`; `ui/src/actions/names.ts`'s `displayName()` is the one
 place that resolves the precedence (accepted > overlay > artifact) and the
 right pane uses it — without it a rename looks like it did nothing.
+`ui/src/contracts.ts`'s `FnSummary` declares `acceptedName`, so every pane
+that has a summary can resolve it; the TopBar breadcrumb goes through
+`ui/src/listing/names.ts`'s `displayName(fn, meta.data)` for the same reason
+(it used to merge `overlayName`/`name` itself and so ignored renames —
+`tests/gate/ui/fn-rename-name-surfaces.test.ts` now forbids any pane
+re-implementing the precedence).
+
+**What renaming a FUNCTION (`fn:N`) changes on screen.** Everything that
+names it, and the code itself:
+
+- its own rendered source (`GET /api/fn/{fn}/source` and the `source` block of
+  `/api/fn/{fn}/context`) declares `function <newName>(...)`;
+- every DIRECT CALLER's rendered source refers to it by the new name, wherever
+  the emitter named it by function ident (`_fnN`, or the one unambiguous name
+  the emitter chose for it);
+- the catalogue row `GET /api/functions` serves (so the tree, the search rows
+  and `next/prev function` all show it), the xref rows in Callers/Callees, and
+  the `functions[]` list of the whole-module file view;
+- the whole-module FILE view of its own module AND of each caller's module,
+  which are re-spliced with the new text.
+
+Server side this is the sibling of the register path below:
+`ProjectService.activeFnNames()` reads the same `d_names` slot for `fn:N`
+targets and is injected into `ArtifactService.setActiveFnNames`;
+`renderFrame` applies it with `fn-naming`'s own module-scoped `renameIdents`,
+so declaration and references move together and the rewrite is a pure
+alpha-rename. `ArtifactService.needsNameRender(fn)` is the one answer to "is
+the text on disk stale against the accepted names?" (named registers, this
+function renamed, or a function it calls renamed) and
+`ArtifactService.acceptedFnName(fn)` the one join for every name surface. A
+`fn:N` write invalidates the render and the module-source splice of the
+function and of its direct callers — bounded by the call graph, never the
+whole bundle.
 
 **Renaming a local.** Right-clicking an identifier in the source pane renames
 THAT binding. The clicked token is resolved against `GET /api/fn/{fn}/locals`
@@ -1117,6 +1150,13 @@ already true of `/api/fn/{fn}/source` and is unchanged here.
 
 **Still rough here.** String targets (`sid:N`) are not wired — renaming a
 string literal is a contract change, not a binding rename, and has no store.
+A `fn:N` rename reaches references the CALL GRAPH knows about; a reference
+from a function with no recorded edge (an unresolved dynamic reference) keeps
+the old ident, and an accepted function name that collides with an unrelated
+binding in a caller is applied as typed rather than disambiguated — both are
+docs/BUGS.md rows. `/api/search/functions` still matches the BYTECODE name
+only (it displays the accepted one), so a renamed function is not yet findable
+by its new name.
 `list`'s `rendered` column is exact for a named register and best-effort for a
 var-named one (it classifies the same raw frame body `var-naming` classifies).
 `view.fold` / `view.unfold` fold-all/unfold-all the current listing editor

@@ -26,6 +26,9 @@ export interface ModuleListPage {
 /** `FunctionListRow` — src/ui-server/list.ts. */
 export interface FunctionListRow {
   readonly fn: number;
+  /** Already the name to SHOW, not the bytecode name: the server folds the
+   *  accepted `fn:N` rename and the overlay signal in, in the same
+   *  precedence `displayName` uses (`src/ui-server/list.ts`). */
   readonly name: string | null;
   readonly size: number | null;
   readonly module: number | null;

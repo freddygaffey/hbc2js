@@ -17,6 +17,7 @@ import { useTheme } from "../theme/ThemeProvider.tsx";
 import { API_BASE, USING_MOCK } from "../api.ts";
 import { useFn, useModule, useSearchFunctions } from "../hooks.ts";
 import { setQuery, useQueryText } from "../listing/search-store.ts";
+import { displayName } from "../listing/names.ts";
 import { jumpList, select, useJumpState, useSelection } from "../state/selection.ts";
 import { keymap, runAction } from "../actions/registry.ts";
 
@@ -68,7 +69,11 @@ function Breadcrumbs(): ReactNode {
   const mod = useModule(moduleId ?? -1);
   if (fn === undefined) return <span className="truncate text-xs text-text-muted">no selection</span>;
   const file = mod.data?.file ?? meta.data?.file ?? null;
-  const name = meta.data?.overlayName ?? meta.data?.name ?? `fn ${fn}`;
+  // One precedence for every pane (`acceptedName > overlayName > name`):
+  // merging the overlay name with the bytecode name here (and never looking
+  // at the accepted rename) meant a renamed function still showed its old
+  // name in the breadcrumb (Fred, 2026-09-05: "Rename doesn't work").
+  const name = displayName(fn, meta.data);
   return (
     <span className="flex min-w-0 items-center gap-1 text-xs text-text-muted" data-testid="breadcrumbs">
       <span className="truncate" title={file ?? undefined}>{file ?? (moduleId !== null ? `module ${moduleId}` : "—")}</span>

@@ -69,6 +69,7 @@ function summary(fn: number): FnSummary {
   const row = FN_BY_ID.get(fn);
   const mod = row?.module ?? fn % MOCK_MODULES.length;
   return {
+    // Mock mode has no annotation DB, so no accepted rename either.
     fn, name: row?.name ?? fnName(fn), overlayName: null, module: mod,
     file: MODULE_BY_ID.get(mod)?.file ?? null,
     lines: [10, 42], params: fn % 3, kind: "function", edgesIn: 3, edgesOut: 5,
