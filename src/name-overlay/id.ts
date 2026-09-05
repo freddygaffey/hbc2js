@@ -72,8 +72,8 @@ export function shortForm(id: RegisterId): string {
 // `BindingId`: v1 never renames a native entity, it only refers to one, so
 // `parseKey` keeps refusing them.
 
-/** The native id kinds spec 27 §L1 defines. */
-export type NativeIdKind = "type" | "method" | "str" | "res";
+/** The native id kinds spec 27 §L1 (+ §L2's `module`) defines. */
+export type NativeIdKind = "type" | "method" | "str" | "res" | "module";
 
 /** `native:<kind>:<value>` — the one place these keys are constructed. */
 export function nativeKey(kind: NativeIdKind, value: string): string {
@@ -98,6 +98,13 @@ export function nativeStringKey(index: number): string {
 /** `native:res:<pkg>/<type>/<name>`. */
 export function nativeResourceKey(pkg: string, type: string, name: string): string {
   return nativeKey("res", `${pkg}/${type}/${name}`);
+}
+
+/** `native:module:X` (spec 27 §L2) — `X` is the resolved JS module name when
+ *  one was recovered, else the implementing class's descriptor (still a real,
+ *  unguessed identity — never a fabricated name). */
+export function nativeModuleKey(jsNameOrClassDescriptor: string): string {
+  return nativeKey("module", jsNameOrClassDescriptor);
 }
 
 /** True for any key in the native namespace (the project store's guard). */

@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 /** §1.4: the header schema id shared by every `native/*.jsonl` file. */
 export const NATIVE_SCHEMA = "hbc2js-native/1";
 
-export type NativeKind = "classes" | "methods" | "strings" | "resources" | "assets";
+export type NativeKind = "classes" | "methods" | "strings" | "resources" | "assets" | "react-modules";
 export type NativeSource = "dex" | "axml" | "arsc" | "zip";
 
 /** §1.4: the first line of every native table. */
@@ -50,6 +50,12 @@ export interface NativeMethodRow {
   readonly access: readonly string[];
   readonly annotations: readonly NativeAnnotation[];
   readonly dex: number;
+  /** §L2's bounded getName()-const channel (see `dex.ts`'s
+   *  `decodeTrivialStringReturn`): `undefined` when the method has no code
+   *  item, `null` when it has one that is not the trivial
+   *  const-string+return-object shape, the string when it is. Never a general
+   *  method-body value. */
+  readonly constStringReturn?: string | null;
 }
 
 /** `native/strings.jsonl` — the raw DEX string pool, the evidence itself. */
@@ -133,6 +139,40 @@ export function parseNativeJsonl(text: string): { header: NativeHeader; rows: un
     throw new Error(`unknown native schema ${JSON.stringify(header.schema)} (expected ${NATIVE_SCHEMA}) — refused, not guessed`);
   }
   return { header, rows: lines.slice(1).map((l) => JSON.parse(l) as unknown) };
+}
+
+// --- spec 27 §L2 — RN native-module registration extraction ----------------
+
+/** How a module's JS-visible name was recovered.
+ *  - `annotation`: an `@ReactModule(name=...)` class annotation value.
+ *  - `getName-const`: the sole const-string a trivial `getName()` returns
+ *    (`dex.ts`'s `decodeTrivialStringReturn`).
+ *  - `classname`: a codegen naming convention (`Native<X>Spec` -> `X`) —
+ *    deterministic, not a body read, not a guess; a fourth, additive evidence
+ *    kind beyond the three the spec text lists inline, used only for
+ *    TurboModule spec classes that carry no `@ReactModule` annotation.
+ *  - `unresolved`: no channel above applies; the row is still emitted (a
+ *    module with no recoverable name is a real, honest fact), `jsName` is
+ *    `null`. */
+export type NativeModuleNameEvidence = "annotation" | "getName-const" | "classname" | "unresolved";
+
+export type NativeModuleKind = "bridge" | "turbo" | "viewmanager";
+
+export interface NativeModuleMethodRow {
+  readonly jsName: string;
+  readonly nativeMethod: string; // native:method:...
+}
+
+/** `native/react-modules.jsonl` (spec 27 §L2). */
+export interface NativeModuleRow {
+  readonly key: string; // native:module:X (or native:module:<class descriptor> when unresolved)
+  readonly jsName: string | null;
+  readonly kind: NativeModuleKind;
+  readonly implClass: string; // native:type:...
+  readonly methods: readonly NativeModuleMethodRow[];
+  readonly nameEvidence: NativeModuleNameEvidence;
+  /** Filled by L4 (first/third-party labelling); always `null` at L2. */
+  readonly firstParty: boolean | null;
 }
 
 /** Asset kind by extension — a classification of the *path*, never of bytes. */

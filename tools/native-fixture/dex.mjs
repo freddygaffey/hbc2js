@@ -81,6 +81,7 @@ export function buildDex(classes) {
       if (!protoSet.has(key)) protoSet.set(key, proto);
       methodSet.set(`${c.name}->${m.name}${key}`, { class: c.name, name: m.name, protoKey: key });
       collectAnnotationStrings(m.annotations, addStr, addType);
+      if (m.body?.constString !== undefined) addStr(m.body.constString);
     }
   }
 
@@ -226,6 +227,27 @@ export function buildDex(classes) {
     staticValuesOff.set(c.name, off);
   }
 
+  // code_item for a method with `body: { constString: "X" }` — the ONE
+  // trivial two-instruction body shape src/native/dex.ts's
+  // `decodeTrivialStringReturn` recognises (spec 27 §L2): `const-string v0,
+  // "X"` (format 21c, opcode 0x1a) then `return-object v0` (format 11x,
+  // opcode 0x11). Every other method keeps code_off 0 (no bodies, §1.2).
+  const codeItemOff = new Map();
+  for (const c of classes) {
+    for (const m of [...(c.directMethods ?? []), ...(c.virtualMethods ?? [])]) {
+      if (m.body?.constString === undefined) continue;
+      d.align(4);
+      const off = at();
+      d.u2(1).u2(1).u2(0).u2(0); // registers_size, ins_size, outs_size, tries_size
+      d.u4(0); // debug_info_off
+      d.u4(3); // insns_size (code units)
+      d.u2((0 << 8) | 0x1a); // const-string v0, string@BBBB
+      d.u2(sIdx.get(m.body.constString));
+      d.u2((0 << 8) | 0x11); // return-object v0
+      codeItemOff.set(`${c.name}->${m.name}(${(m.params ?? []).join("")})${m.ret}`, off);
+    }
+  }
+
   const classDataOff = new Map();
   for (const c of classes) {
     const statics = (c.staticFields ?? []).slice().sort((a, b) => fIdx.get(`${c.name}->${a.name}:${a.type}`) - fIdx.get(`${c.name}->${b.name}:${b.type}`));
@@ -246,7 +268,8 @@ export function buildDex(classes) {
         .sort((a, b) => a.idx - b.idx);
       let p = 0;
       for (const { m, idx } of sorted) {
-        d.uleb(idx - p).uleb(m.access ?? 0x1).uleb(0); // code_off 0: no bodies
+        const codeOff = codeItemOff.get(`${c.name}->${m.name}(${(m.params ?? []).join("")})${m.ret}`) ?? 0;
+        d.uleb(idx - p).uleb(m.access ?? 0x1).uleb(codeOff);
         p = idx;
       }
     }

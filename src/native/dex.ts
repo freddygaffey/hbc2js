@@ -61,6 +61,16 @@ export interface DexMethod {
   readonly annotations: readonly DexAnnotation[];
   /** `true` for direct methods (static/private/constructor). */
   readonly direct: boolean;
+  /** §1.2's one narrow, bounded exception to "no method bodies": when the
+   *  method has a code item that is EXACTLY the two-instruction sequence
+   *  `const-string vAA, "..."` followed by `return-object vAA`, the returned
+   *  string is read straight from the string pool (spec 27 §L2 "recovered as
+   *  the sole const-string such a one-line method returns"). This is a fixed
+   *  6-byte pattern match, never a general instruction interpreter: any other
+   *  shape of body (or none) leaves this `undefined`/`null` — unresolved, not
+   *  guessed. `undefined` = no code item at all; `null` = a code item present
+   *  but not this exact shape. */
+  readonly constStringReturn?: string | null;
 }
 
 export interface DexClass {
@@ -338,6 +348,28 @@ function readAnnotationSet(b: Uint8Array, off: number, strings: readonly string[
   return out;
 }
 
+/** §1.2 / §L2's one bounded body read: a `code_item` at `off` that is exactly
+ *  `const-string vAA, string@BBBB` (opcode 0x1a, format 21c) immediately
+ *  followed by `return-object vAA` (opcode 0x11, format 11x) on the SAME
+ *  register, and nothing else. Returns the string when it matches, `null`
+ *  when a code item exists but is any other shape. Never decodes further. */
+function decodeTrivialStringReturn(b: Uint8Array, off: number, strings: readonly string[]): string | null {
+  // code_item header: registers_size, ins_size, outs_size, tries_size (u2
+  // each), debug_info_off (u4), insns_size (u4), then insns_size * u2 insns.
+  const insnsSize = u32(b, off + 12);
+  const insnsOff = off + 16;
+  if (insnsSize !== 3) return null;
+  const cu0 = u16(b, insnsOff);
+  const cu1 = u16(b, insnsOff + 2);
+  const cu2 = u16(b, insnsOff + 4);
+  const op0 = cu0 & 0xff;
+  const reg0 = (cu0 >> 8) & 0xff;
+  const op2 = cu2 & 0xff;
+  const reg2 = (cu2 >> 8) & 0xff;
+  if (op0 !== 0x1a || op2 !== 0x11 || reg0 !== reg2) return null;
+  return strings[cu1] ?? null;
+}
+
 /** Parse one `classes*.dex` blob. Throws `Hbc2jsError` on anything it cannot
  *  read; never returns a partial image (spec 27 §1.4). */
 export function parseDex(bytes: Uint8Array): DexImage {
@@ -466,7 +498,11 @@ export function parseDex(bytes: Uint8Array): DexImage {
         for (let m = 0; m < count; m++) {
           methodIdx += c.uleb();
           const flags = c.uleb();
-          c.uleb(); // code_off — deliberately not followed (§1.2: no bodies)
+          // code_off is read but deliberately not followed as a general
+          // instruction stream (§1.2: no bodies) — the ONE bounded exception
+          // is `decodeTrivialStringReturn` (spec 27 §L2), a fixed 6-byte
+          // pattern match, not an interpreter.
+          const codeOff = c.uleb();
           const mid = methods[methodIdx];
           if (mid === undefined) throw bad(ErrorCode.E_BAD_FUNCTION_ID, `class_data names method ${methodIdx}, out of range`, classDataOff);
           classMethods.push({
@@ -477,6 +513,7 @@ export function parseDex(bytes: Uint8Array): DexImage {
             accessFlags: flags,
             annotations: methodAnnotations.get(methodIdx) ?? [],
             direct,
+            ...(codeOff === 0 ? {} : { constStringReturn: decodeTrivialStringReturn(bytes, codeOff, strings) }),
           });
         }
       }

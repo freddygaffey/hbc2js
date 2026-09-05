@@ -324,14 +324,29 @@ of `dex|axml|arsc|zip`; rows are sorted by primary key so a diff is a line
 diff, exactly like `index/`.
 
 Native binding keys (`native:type:`, `native:method:`, `native:str:`,
-`native:res:`) are namespaced siblings of `src/name-overlay/id.ts`'s
-`reg:`/`env:`/`fn:` keys and are constructed only by that file's `nativeKey()`
-helpers. §4's truth rules apply unchanged, plus two native-specific ones
-(spec 27 §4): a method-body value the minimal DEX parser cannot read stays
-unresolved rather than being guessed, and asset/resource **bytes are never
-copied into a table** — assets are inventory only (path/size/sha256/kind).
-Full contract, landing sequence and refusal posture: `docs/specs/27-native-
-side.md`.
+`native:res:`, `native:module:`) are namespaced siblings of `src/name-overlay/
+id.ts`'s `reg:`/`env:`/`fn:` keys and are constructed only by that file's
+`nativeKey()` helpers. §4's truth rules apply unchanged, plus two
+native-specific ones (spec 27 §4): a method-body value the minimal DEX parser
+cannot read stays unresolved rather than being guessed, and asset/resource
+**bytes are never copied into a table** — assets are inventory only
+(path/size/sha256/kind). Full contract, landing sequence and refusal posture:
+`docs/specs/27-native-side.md`.
+
+`native/react-modules.jsonl` (spec 27 L2, `src/native/react-modules.ts`) is
+derived purely from `classes.jsonl` + `methods.jsonl` above (never from raw
+DEX bytes again): one row per recognised React Native module registration
+(`bridge`/`turbo`/`viewmanager`), keyed `native:module:<jsName>` (or
+`native:module:<implClass descriptor>` when the name is unresolved — still a
+real, unguessed identity, never a fabricated one). `nameEvidence` is
+`annotation` (`@ReactModule(name=...)`), `getName-const` (the one bounded
+method-body exception: a `getName()` whose entire body is
+`const-string`+`return-object` on the same register — a fixed 6-byte pattern
+match, not a general instruction interpreter — see `dex.ts`'s
+`decodeTrivialStringReturn`), `classname` (RN codegen's `Native<X>Spec` ->
+`X` naming convention for TurboModule spec classes with no annotation), or
+`unresolved` (the row is still emitted, `jsName:null` — never dropped, never
+invented). `firstParty` is always `null` at L2; L4 fills it.
 
 ## 3. Query surface
 

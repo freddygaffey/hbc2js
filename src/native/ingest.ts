@@ -12,6 +12,7 @@ import { nativeMethodKey, nativeTypeKey } from "../name-overlay/id.ts";
 import { emptyManifest, looksLikeAxml, manifestFromAxml, parseAxml } from "./axml.ts";
 import { looksLikeArsc, parseArsc, resourceRows } from "./arsc.ts";
 import { parseDex } from "./dex.ts";
+import { buildReactModules } from "./react-modules.ts";
 import {
   assetKind,
   nativeHeader,
@@ -21,6 +22,7 @@ import {
   type NativeClassRow,
   type NativeManifest,
   type NativeMethodRow,
+  type NativeModuleRow,
   type NativeProvenance,
   type NativeResourceRow,
   type NativeStringRow,
@@ -82,6 +84,7 @@ export interface NativeTables {
   readonly strings: readonly NativeStringRow[];
   readonly resources: readonly NativeResourceRow[];
   readonly assets: readonly NativeAssetRow[];
+  readonly reactModules: readonly NativeModuleRow[];
   readonly manifest: NativeManifest;
   readonly dexFiles: readonly string[];
   readonly notes: readonly string[];
@@ -137,6 +140,7 @@ export function buildNativeTables(container: NativeContainer): NativeTables {
           access: m.access,
           annotations: m.annotations.map((a) => ({ type: a.type, elements: a.elements })),
           dex: dexIndex,
+          ...(m.constStringReturn === undefined ? {} : { constStringReturn: m.constStringReturn }),
         });
       }
     }
@@ -181,7 +185,11 @@ export function buildNativeTables(container: NativeContainer): NativeTables {
   strings.sort((a, b) => a.dex - b.dex || a.i - b.i);
   assets.sort((a, b) => cmp(a.path, b.path));
 
-  return { classes, methods, strings, resources, assets, manifest, dexFiles, notes };
+  // spec 27 §L2: derived from the classes/methods tables above, never from
+  // raw DEX bytes directly (react-modules.ts only ever reads these rows).
+  const reactModules = buildReactModules(classes, methods);
+
+  return { classes, methods, strings, resources, assets, reactModules, manifest, dexFiles, notes };
 }
 
 /** §L1.2's documented fallback: when AndroidManifest.xml carries no AXML chunk
@@ -223,6 +231,7 @@ export function serialiseNativeTables(tables: NativeTables): Map<string, string>
     ["native/strings.jsonl", toNativeJsonl(nativeHeader("strings", "dex"), tables.strings)],
     ["native/resources.jsonl", toNativeJsonl(nativeHeader("resources", "arsc"), tables.resources)],
     ["native/assets.jsonl", toNativeJsonl(nativeHeader("assets", "zip"), tables.assets)],
+    ["native/react-modules.jsonl", toNativeJsonl(nativeHeader("react-modules", "dex"), tables.reactModules)],
     ["native/manifest.json", JSON.stringify({ ...tables.manifest, notes: tables.manifest.notes }, null, 2) + "\n"],
   ]);
 }
@@ -246,6 +255,7 @@ export function nativeProvenance(container: NativeContainer, tables: NativeTable
       strings: tables.strings.length,
       resources: tables.resources.length,
       assets: tables.assets.length,
+      reactModules: tables.reactModules.length,
       components: tables.manifest.components.length,
     },
     notes: tables.notes,

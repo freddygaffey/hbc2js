@@ -23,6 +23,7 @@ const REACT_METHOD_ANN = "Lcom/facebook/react/bridge/ReactMethod;";
 const PROMISE = "Lcom/facebook/react/bridge/Promise;";
 const STRING = "Ljava/lang/String;";
 const TURBO_MARKER = "Lcom/facebook/react/turbomodule/core/interfaces/TurboModule;";
+const SIMPLE_VIEW_MANAGER = "Lcom/facebook/react/uimanager/SimpleViewManager;";
 
 /** classes.dex: the first-party bridge module (the CryptoModule-shaped
  *  regression for L3) + BuildConfig (the L6 `.env` channel). */
@@ -134,6 +135,96 @@ const RESOURCES = [
   { type: "string", name: "api_url_alias", value: { ref: 0x7f010001 } },
 ];
 
+/** classes.dex for `rn-modules.apk` (docs/specs/27-native-side.md §L2's own
+ *  fixture — deliberately separate from `synthetic.apk`/`no-resources.apk`,
+ *  which L1's tests pin). Every shape §L2's acceptance tests need, one class
+ *  each: an annotated bridge module with both @ReactMethod and a plain
+ *  method, a bridge module whose name only comes from a trivial getName()
+ *  const-string body, a TurboModule spec class, a (Simple)ViewManager, a
+ *  bridge module whose getName() has no decodable body (unresolvable), and an
+ *  ordinary class that is not an RN module at all. */
+const RN_MODULES_DEX = [
+  {
+    name: "Lcom/example/rn/CryptoBridge;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "CryptoBridge.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "CryptoBridge" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [
+      { name: "getName", ret: STRING, params: [], access: 0x1, body: { constString: "ShouldNeverWin" } },
+      {
+        name: "doWork",
+        ret: "V",
+        params: [STRING, PROMISE],
+        access: 0x1,
+        annotations: [{ type: REACT_METHOD_ANN, visibility: 1, elements: {} }],
+      },
+      { name: "internalOnly", ret: "V", params: [], access: 0x2 },
+    ],
+  },
+  {
+    name: "Lcom/example/rn/TrivialNameModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "TrivialNameModule.java",
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [
+      { name: "getName", ret: STRING, params: [], access: 0x1, body: { constString: "TrivialName" } },
+      {
+        name: "ping",
+        ret: "V",
+        params: [],
+        access: 0x1,
+        annotations: [{ type: REACT_METHOD_ANN, visibility: 1, elements: {} }],
+      },
+    ],
+  },
+  {
+    name: "Lcom/example/rn/NativeStatsSpec;",
+    super: RCBJM,
+    interfaces: [TURBO_MARKER],
+    access: 0x401, // public abstract
+    sourceFile: "NativeStatsSpec.java",
+    virtualMethods: [
+      { name: "getStats", ret: STRING, params: [], access: 0x401 },
+      { name: "reset", ret: "V", params: [], access: 0x401 },
+    ],
+  },
+  {
+    name: "Lcom/example/rn/StatsViewManager;",
+    super: SIMPLE_VIEW_MANAGER,
+    access: 0x11,
+    sourceFile: "StatsViewManager.java",
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [{ name: "getName", ret: STRING, params: [], access: 0x1, body: { constString: "StatsView" } }],
+  },
+  {
+    name: "Lcom/example/rn/UnresolvedModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "UnresolvedModule.java",
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    // getName() with NO body at all: code_off stays 0, exactly like every
+    // other non-trivial method — the honest "we cannot read this" case.
+    virtualMethods: [{ name: "getName", ret: STRING, params: [], access: 0x1 }],
+  },
+  {
+    name: "Lcom/example/rn/PlainUtil;",
+    super: "Ljava/lang/Object;",
+    access: 0x11,
+    sourceFile: "PlainUtil.java",
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [{ name: "helperMethod", ret: "V", params: [], access: 0x1 }],
+  },
+];
+
+const RN_MODULES_MANIFEST = {
+  name: "manifest",
+  attrs: [{ ns: null, name: "package", value: { s: "com.example.rn" } }],
+  children: [{ name: "uses-sdk", attrs: [a("minSdkVersion", { int: 24 }), a("targetSdkVersion", { int: 34 })] }],
+};
+
 const ASSET_INDEX = Buffer.from('{"hello":"native"}\n', "utf8");
 const ASSET_FONT = Buffer.from("EXAMPLE-TTF-PLACEHOLDER\n", "utf8");
 
@@ -162,12 +253,28 @@ export function generate(outDir) {
     { name: "classes.dex", data: dex1 },
   ]);
   writeFileSync(join(outDir, "no-resources.apk"), bare);
-  return { apk: join(outDir, "synthetic.apk"), bare: join(outDir, "no-resources.apk"), sizes: { apk: apk.length, bare: bare.length } };
+
+  // The L2-owned third fixture (docs/specs/27-native-side.md §L2): every RN
+  // module-registration shape, none of the L1-pinned bytes above touched.
+  const rnManifest = buildAxml(RN_MODULES_MANIFEST);
+  const rnDex = buildDex(RN_MODULES_DEX);
+  const rnModules = buildZip([
+    { name: "AndroidManifest.xml", data: rnManifest },
+    { name: "classes.dex", data: rnDex },
+  ]);
+  writeFileSync(join(outDir, "rn-modules.apk"), rnModules);
+
+  return {
+    apk: join(outDir, "synthetic.apk"),
+    bare: join(outDir, "no-resources.apk"),
+    rnModules: join(outDir, "rn-modules.apk"),
+    sizes: { apk: apk.length, bare: bare.length, rnModules: rnModules.length },
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const out = process.argv[2] ?? join(root, "tests", "fixtures", "native");
   const r = generate(out);
-  process.stdout.write(`wrote ${r.apk} (${r.sizes.apk} bytes) and ${r.bare} (${r.sizes.bare} bytes)\n`);
+  process.stdout.write(`wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes) and ${r.rnModules} (${r.sizes.rnModules} bytes)\n`);
 }
