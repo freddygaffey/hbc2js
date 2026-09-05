@@ -193,7 +193,7 @@ Versions: `hbcVersion >= 98 && layoutClass === "E"`, the same gate
 | R-SC6 | *(retired 2026-09-05 -- the implicit/forwarding derived constructor is now folded; section 9)* | was: `return __hbc_b_applyArguments(...)`. The code is not reused for anything else, so an old report's R-SC6 still reads as this shape |
 | R-SC7 | the super arguments are not a plain array literal, or contain a spread element | `docs/BUGS.md`. Fixture 78's `Explicit` is this shape at v98/v99 (hermesc reaches it through `copyRestArgs` + `arraySpread` + `applyWithNewTarget`, so today it lands in R-SC0 -- no `Reflect.construct` site at all -- rather than in R-SC7 itself) |
 | R-SC8 | in the section 9 forward, an operand is not provably the constructor's own: the target is not `Object.getPrototypeOf(B)` with `B` this class's own binding, the `new.target` argument is not the frame's own `new.target` literal, the forwarded list is not the frame's own `arguments`, or a receiver is passed (the helper's *apply* path, not the construct path) | R-SC1's twin, for the forward |
-| R-SC9 | the forward is not the constructor's whole body: another statement, another `arguments` read (in the constructor or a nested arrow), a declared parameter, a returned expression that is not the forward, or a directive other than `"use strict"` | shape, not correctness |
+| R-SC9 | the forward is not the constructor's whole body: another statement, another `arguments` read (in the constructor or a nested arrow), a declared parameter, a returned expression that is not the forward, or a directive other than `"use strict"` | shape, not correctness. Section 9.6: `return <ident>` also refuses here when the immediately-preceding statement does not store the forward into that identifier, when the identifier is read or written anywhere else in the body, or when the immediately-preceding statement's stored value is not the forward call itself |
 
 Reads of the stand-in register *before* the super call are not refused and not
 rewritten: the register is reused by the operand sequence itself
@@ -368,3 +368,49 @@ lands. `node tools/e2e/roundtrip-corpus.ts --only react-navigation-example-
 0.85.3 --passes on` before -> after: IDENTICAL count and the `diff:
 GetOwnPrivateBySym/GetByVal` bucket unchanged, exactly as expected from a
 fix whose own real-bundle payoff is still gated by the residue above.
+
+### 9.6 The store-then-return dereference, and the corrected diagnosis of the 136
+
+`foldForwardBody` now dereferences `return <ident>` back through exactly one
+immediately-preceding `<ident> = <call>` store when `<ident>` has no other
+read or write anywhere in the body (`identUses`, which -- for a register name
+-- already never follows into a nested closure, so no separate
+`mentionedInNestedFunction` check is needed here the way section 9.4's
+operand-store deletion needs one). This is the same one-hop conservatism
+`derefChain` already applies to the forward's *operand* moves (section 9.4):
+a register reused after its move is never followed, because nothing can
+prove which of two conflicting writes the read actually observed. Once
+dereferenced, the found call is treated exactly as `return call(...)` would
+be -- the store statement itself is simply excluded from `head`, the same way
+the direct shape excludes its own `return`. Three unit tests pin fold /
+refuse (store not immediately before the return) / refuse (the identifier is
+read elsewhere) / refuse (the immediately-preceding store is not the forward
+call) (`tests/gate/passes/super-call.test.ts`).
+
+**Measured, and the diagnosis in section 9.5 was wrong about the shape, not
+just the blocker**: dumping the actual 136 `R-SC9 func` bodies on
+react-navigation-example-0.85.3 (a spied `foldSuperBody`, not committed)
+shows their tail is not `r0 = __hbc_b_applyArguments(...); return r0;` with
+nothing else -- it is `super(...args)` (via `applyArguments`, stored into a
+register) followed by **several more statements that read that register**:
+`r0.someBoundMethod = someBoundMethod; r0.otherBoundMethod = otherBoundMethod;
+...; return r0;`, i.e. a derived constructor whose source really is
+`constructor(...args) { super(...args); this.method = () => {...}; ... }`
+(arrow class fields, installed onto the constructed object after `super()`
+returns). That is real user code after the forward, not an artifact of how
+the forward's *own* result reaches `return` -- so it is correctly refused by
+the very check section 9.6 adds (`the identifier is used elsewhere in the
+body`), not merely by a still-too-strict adjacency requirement. Folding this
+shape is not "one more hop" of the dereference above; it needs `foldForwardBody`
+to accept `this.<name> = <name>;` field-install statements between the
+forward and the `return`, in the same way section 9.4 already accepts a
+hosted `function` declaration -- a materially different, larger change than
+this section's, and not done here. `node tools/passes/ctor-this-refusals.ts`
+before -> after this section's fix: FOLD and R-SC9 unchanged (52 / 147, `R-SC9
+func` still 136 of them) -- none of the 136 are the pure adjacency shape this
+section folds. `node tools/e2e/roundtrip-corpus.ts --only
+react-navigation-example-0.85.3 --passes on` before -> after: IDENTICAL 6222
+(43.10 percent) of 14437 both times, `diff:GetOwnPrivateBySym/GetByVal` 177
+both times. Tracked in `docs/BUGS.md`'s `diff:GetOwnPrivateBySym/GetByVal`
+row (tail): the next step is field-install statements after the forward, not
+a further dereference hop.
