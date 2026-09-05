@@ -746,7 +746,16 @@ export class McpResources {
       const callers = this.inlineEdges(this.artifact.whoCalls(calleeFn, { all: true }));
       for (const caller of callers.rows) {
         for (const f of fs) {
-          rows.push({ caller, calleeFn, finding: { rid: f.record.rid, severity: f.record.severity, status: f.record.status } });
+          // `f.status` (the LIVE `ResolvedFinding.status`, from `StatusStore`/
+          // the DB transition chain) — NOT `f.record.status`, which is
+          // always `"open"` on the frozen finding record itself (§1.5;
+          // `src/project/findings.ts` `toFindingRecord`). Using the record's
+          // own field reported a stale status here even though the
+          // `status` FILTER just above (`this.project.findings(query, ...)`)
+          // already uses the live one, so a confirmed/refuted finding's row
+          // was filtered correctly but LABELLED as still open
+          // (docs/BUGS.md 2026-09-05, fixed).
+          rows.push({ caller, calleeFn, finding: { rid: f.record.rid, severity: f.record.severity, status: f.status } });
         }
       }
     }
