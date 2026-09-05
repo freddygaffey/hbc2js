@@ -267,7 +267,16 @@ before it is built.
 | R-FD4 | `F` contains its own `try` (a nested region whose `bodyBlocks` intersect a copy range) | the inner region would be printed twice |
 | R-FD5 | the `try` node is inside a dispatch nest (`cfgBlock < 0`, fixture 16 at every version, fixture 100) | the copies are switch arms of an irreducible dispatcher, not exits; no exit structure to key on |
 | R-FD6 | the function is a generator/async dispatcher | coordinate with `docs/BUGS.md` R-Y4 `forced-return-body`; the generator side is out of scope here |
-| R-FD7 | the region's handler is not `Catch`-first / transfer-last | not the synthesized shape |
+| R-FD7 | the region's handler is not `Catch`-first / transfer-last, or the `try` node's `handler` subtree is not that one block | not the synthesized shape; if the handler is not a single leaf, printing it as the `finally` body would print more than `F` |
+| R-FD8 | a copy-range instruction defines a register the exit still reads, and it is not a `Mov` that can be retained in place | added 2026-09-05: at v96 the copy's leading `Mov <exitValue>, <param>` both feeds the finalizer call and defines what the exit's `Ret` returns. It is retained (`FinallyRange.retained`) when it is a `Mov` whose source no other instruction of the range writes and whose destination the `source` range never touches, which makes its position relative to the finalizer body unobservable; anything else refuses |
+
+**Measured refusal codes per fixture (2026-09-05, all five versions unless
+noted).** `13` `risky` R-FD1; `12` `f1`/`f3` R-FD7 (no `try` node survives
+`-O`, so the region that is left is not the synthesized shape); `100` R-FD7;
+`24` R-FD6; `54` `applyWithGuard` R-FD3. Fixture `16` is **version
+dependent**: R-FD5 (dispatch nest) at v84/v94/v96 and R-FD3 (the four regions
+share one merge-point handler) at v98/v99 -- section 7 item 4 asks for a named
+refusal and unchanged output, and gets both at every version.
 
 ## 7. Acceptance tests (rung-owned, no whole-output comparison)
 
@@ -321,6 +330,17 @@ noted):
 | `54-try-catch-finally-shared-range` | 5 (k=3 x2, k=4 x3) | 5 | 5 | 4 (k=3 x4) | 4 |
 | `100-irreducible-try-retry` | 0 | 0 | 0 | 0 | 0 |
 | `24-generator-return-throw` | 3 (k=4 x2, k=5) | 3 | 3 | 0 | 0 |
+
+**v96 diagnosis (2026-09-05, closing the `docs/BUGS.md` row this table
+opened).** The v96 copies are opcode-for-opcode equal after all. The evidence
+detector above uses ONE bijection over the whole range; v96 keeps the
+parameter in `r1` and then reuses `r1` as a scratch destination inside the
+finalizer, so no single bijection exists. Rebinding the bijection at each
+definition -- which is what "isomorphic modulo scratch registers" has to mean
+once a register is reused -- makes v96 match, and it folds like the other four
+versions. A second obstacle at v96 only: the copy's leading `Mov r0, r1` also
+defines the register the exit's `Ret` reads, so it is retained at the copy
+site (R-FD8).
 
 Which copy holds which terminator, fixture 13 `cleanup` (all five versions):
 copy 1 = `b2[0,3)`, terminator `Ret r3`; copy 2 = `b3[1,4)`, terminator
