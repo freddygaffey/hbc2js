@@ -38,10 +38,17 @@ const MUTANTS_PER_FIXTURE = 6;
 // HA-09 asks that the kill rate never *regress*, not that it match a frozen
 // historical figure forever — the round-trip ratchet baseline (§6) states
 // the identical principle explicitly ("re-derive rather than trusting the
-// numbers" when the corpus changes). 270 is this port's own floor; if a
-// future corpus edit measures higher, raise it in the same commit.
-const KILL_RATE_BASELINE = 270;
-const KILL_RATE_BASELINE_TOTAL = 318;
+// numbers" when the corpus changes). If a future corpus edit measures
+// higher, raise it in the same commit.
+//
+// Re-derived 2026-09-05 (orchestrator) at 71 fixtures * 6 = 426 mutants:
+// 361/426 (84.7%). The corpus gained fixtures 67-69; 67-class-static-and-new
+// contributes three EQUIVALENT survivors (two `swap-adjacent-statements` on
+// its member declarations and one `drop-statement`), measured alone with
+// the same operators — source-level insensitivity, not a decompiler change.
+// The scaled 270/318 floor (361.7) would fail by one mutant on those.
+const KILL_RATE_BASELINE = 361;
+const KILL_RATE_BASELINE_TOTAL = 426;
 
 const RUN_OPTS: RunOptions = { timeout: 8000, seed: 0, fuzz: 0, relax: [], maxRecords: 20000, syncTimeout: 7000 };
 
