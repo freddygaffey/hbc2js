@@ -266,6 +266,20 @@ CREATE TABLE ix_ranges (fn INTEGER PRIMARY KEY, file TEXT NOT NULL,
   -- render-coupled: valid only while meta.render_hash matches the live render (§5.2)
 ```
 
+**MIGRATION 5 (docs/BUGS.md 2026-09-05 `ix_calls_resolved` row) adds
+`ix_calls_resolved`** — `index/calls-resolved.jsonl`'s own kind (§2.2a, the
+`require(N)` points-to pass), a separate table for the same reason it is a
+separate JSONL file: it reconstructs a `calls.jsonl` `callee:'?'`
+`why:'computed-callee'` edge, never rewrites it.
+
+```sql
+CREATE TABLE IF NOT EXISTS ix_calls_resolved (
+  caller INTEGER NOT NULL, site INTEGER NOT NULL, callee INTEGER NOT NULL,
+  module INTEGER NOT NULL, name TEXT NOT NULL, confidence TEXT NOT NULL,
+  PRIMARY KEY (caller, site));
+CREATE INDEX IF NOT EXISTS ix_calls_resolved_callee ON ix_calls_resolved(callee);
+```
+
 (`fnOwnership` is `ix_functions.module`; spec 10 §2.6 already derives one from
 the other.) The `renderIndependent` header bit becomes structural: `ix_ranges`
 is the only render-coupled table, and §5.2 keys its staleness to

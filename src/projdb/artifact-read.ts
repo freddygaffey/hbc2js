@@ -25,6 +25,7 @@ import {
   type ModulesIndex,
   type NativeRow,
   type RangeRow,
+  type ResolvedCallRow,
   type StringRow,
   type StringUseRow,
   type StringsIndex,
@@ -130,6 +131,13 @@ export function checkDbStaleness(artifactDir: string, meta: Map<string, string>,
 export interface DbIndexRows {
   readonly functionRows: readonly FunctionRow[];
   readonly callRows: readonly CallRow[];
+  /** §2.2a `ix_calls_resolved` (MIGRATION 5) — the `require(N)` points-to
+   *  pass's edges, read back exactly as `ArtifactService`'s JSONL path reads
+   *  `index/calls-resolved.jsonl` (docs/BUGS.md 2026-09-05 `ix_calls_resolved`
+   *  row). A DB written before MIGRATION 5 is migrated forward on open
+   *  (`migrateProjectDb`), so this table always exists here, though it may be
+   *  empty for a bundle the pass found no edges in. */
+  readonly resolvedCallRows?: readonly ResolvedCallRow[];
   readonly stringsIndex: StringsIndex;
   readonly stringUseRows: readonly StringUseRow[];
   readonly globalRows: readonly GlobalRow[];
@@ -173,6 +181,20 @@ export function loadIndexRowsFromDb(db: DatabaseSync): DbIndexRows {
     ...(r.via !== null ? { via: r.via } : {}),
     ...(r.why !== null ? { why: r.why } : {}),
   }));
+
+  // §2.2a: a DB opened read-only (this function's only caller,
+  // `openProjectDbReadonly`) is never migrated forward in place — migration
+  // needs a writable connection (`db.ts`'s `migrateProjectDb`, run by
+  // `openProjectDb`). A project DB written before MIGRATION 5 therefore has
+  // no `ix_calls_resolved` table yet; treated exactly like the JSONL path's
+  // own `existsSync(resolvedPath) ? … : []` fallback for an artifact built
+  // before the points-to pass existed (§2.2a) — empty, never an error.
+  let resolvedCallRows: readonly ResolvedCallRow[] = [];
+  try {
+    resolvedCallRows = db.prepare("SELECT caller, site, callee, module, name, confidence FROM ix_calls_resolved ORDER BY caller, site").all() as unknown as ResolvedCallRow[];
+  } catch {
+    resolvedCallRows = [];
+  }
 
   const stringRowsRaw = db.prepare("SELECT sid, v, len, sha256, head FROM ix_strings ORDER BY sid").all() as {
     sid: number;
@@ -219,5 +241,5 @@ export function loadIndexRowsFromDb(db: DatabaseSync): DbIndexRows {
   }[];
   const rangeRows: RangeRow[] = rangeRowsRaw.map((r) => ({ fn: r.fn, file: r.file, lines: [r.line_start, r.line_end] }));
 
-  return { functionRows, callRows, stringsIndex, stringUseRows, globalRows, nativeRows, modulesIndex, rangeRows };
+  return { functionRows, callRows, resolvedCallRows, stringsIndex, stringUseRows, globalRows, nativeRows, modulesIndex, rangeRows };
 }

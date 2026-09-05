@@ -5,7 +5,7 @@
 // `rebuild-index` `log` rows §4.1 steps 2/4 require. One transaction: a
 // partial write can never be observed.
 import type { DatabaseSync } from "node:sqlite";
-import { sha256Hex, type CallRow, type FunctionRow, type GlobalRow, type ModulesIndex, type NativeRow, type RangeRow, type StringsIndex, type StringUseRow } from "../artifact/schema.ts";
+import { sha256Hex, type CallRow, type FunctionRow, type GlobalRow, type ModulesIndex, type NativeRow, type RangeRow, type ResolvedCallRow, type StringsIndex, type StringUseRow } from "../artifact/schema.ts";
 import { HOST_GLOBALS } from "../artifact/host-globals.ts";
 import type { IndexRows } from "../artifact/index-rows.ts";
 
@@ -65,6 +65,15 @@ function writeModules(db: DatabaseSync, index: ModulesIndex): void {
   }
 }
 
+/** §2.2a `ix_calls_resolved` rows (MIGRATION 5, docs/BUGS.md 2026-09-05
+ *  `ix_calls_resolved` row) — the `require(N)` points-to pass's edges,
+ *  `IndexRows.resolvedCallRows`, mirroring `index/calls-resolved.jsonl`
+ *  exactly (own table, never a rewrite of `ix_calls`). */
+function writeResolvedCalls(db: DatabaseSync, rows: readonly ResolvedCallRow[]): void {
+  const stmt = db.prepare("INSERT INTO ix_calls_resolved (caller,site,callee,module,name,confidence) VALUES (?,?,?,?,?,?)");
+  for (const r of rows) stmt.run(r.caller, r.site, r.callee, r.module, r.name, r.confidence);
+}
+
 function writeRanges(db: DatabaseSync, rows: readonly RangeRow[]): void {
   const stmt = db.prepare("INSERT INTO ix_ranges (fn,file,line_start,line_end) VALUES (?,?,?,?)");
   for (const r of rows) stmt.run(r.fn, r.file, r.lines[0], r.lines[1]);
@@ -76,6 +85,7 @@ function writeRanges(db: DatabaseSync, rows: readonly RangeRow[]): void {
 export function writeIxRows(db: DatabaseSync, rows: IndexRows): void {
   writeFunctions(db, rows.functionRows);
   writeCalls(db, rows.callRows);
+  writeResolvedCalls(db, rows.resolvedCallRows);
   writeStrings(db, rows.stringsIndex);
   writeStringUses(db, rows.stringUseRows);
   writeGlobals(db, rows.globalRows);
