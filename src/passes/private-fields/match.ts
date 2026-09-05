@@ -68,7 +68,7 @@ function simpleStore(s: Stmt): { readonly name: string; readonly value: Expr } |
  *  emitter's lowering of `CreatePrivateName` followed by its `StoreToEnvironment`
  *  (`src/emit/lower.ts`'s "private names" block keeps the two as one AST
  *  store, same as every other env-slot write). */
-function findCandidates(before: readonly Stmt[]): readonly { readonly envName: string; readonly displayName: string }[] {
+export function findCandidates(before: readonly Stmt[]): readonly { readonly envName: string; readonly displayName: string }[] {
   const out: { envName: string; displayName: string }[] = [];
   for (const s of before) {
     const store = simpleStore(s);
@@ -89,7 +89,7 @@ export function findClass(before: readonly Stmt[]): ClassExpr | null {
   return found.length === 1 ? found[0]! : null;
 }
 
-function ctorBody(cls: ClassExpr): readonly Stmt[] | null {
+export function ctorBody(cls: ClassExpr): readonly Stmt[] | null {
   const m = cls.members.find((m) => m.kind === "method" && !m.static && m.key.k === "ident" && m.key.name === "constructor");
   return m !== undefined && m.value !== null && m.value.k === "func" ? m.value.body : null;
 }
@@ -165,7 +165,7 @@ interface FoldOutcome {
  *  extended to match, not a silent wrong rewrite, because the escape scan
  *  below still runs over its full (unrecursed) subtree and refuses any
  *  reference it cannot place. */
-function foldInBody(body: readonly Stmt[], envName: string, displayName: string, allowInstall: boolean): FoldOutcome | null {
+export function foldInBody(body: readonly Stmt[], envName: string, displayName: string, allowInstall: boolean): FoldOutcome | null {
   // A `lit` node, not an `ident`: `member`'s non-computed printer reads
   // `.text` off whatever `prop` is regardless of its `k` (`src/emit/print.ts`),
   // and `walk`'s "member" case visits `prop` unconditionally, so an `ident`
