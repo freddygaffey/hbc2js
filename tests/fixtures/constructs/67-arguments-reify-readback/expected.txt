@@ -1,0 +1,10 @@
+write then read: written|1
+write then read, no args: written|0
+beyond arity: a0|beyond|2
+grown: 1|undefined|grown
+length write: 1|1
+delete then read: undefined|1
+copy then read: copy|copy
+conditional reify, taken: cond
+conditional reify, not taken: given
+read only: 6:3

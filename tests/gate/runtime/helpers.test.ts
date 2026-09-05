@@ -166,6 +166,21 @@ test("review-M4-H3: __hbc_arguments builds an UNMAPPED arguments object (D14)", 
   assert.equal(a[0], "z");
 });
 
+test("review-M4-H3: __hbc_argsLive picks the reified object once one exists, the frame's arguments before", () => {
+  const h = load("__hbc_argsLive");
+  const raw = ["frame"];
+  const reified = ["reified"];
+  // The lazy-arguments register holds `undefined` until a `ReifyArguments*`
+  // writes the materialised object into it (docs/BUGS.md
+  // `arity/arguments-aliasing`), so `undefined` means "read the frame".
+  assert.equal(h["__hbc_argsLive"](undefined, raw), raw);
+  assert.equal(h["__hbc_argsLive"](reified, raw), reified);
+  // Anything else the register can hold is the object, including falsy values
+  // -- only `undefined` is the unmaterialised sentinel.
+  assert.equal(h["__hbc_argsLive"](null, raw), null);
+  assert.equal(h["__hbc_argsLive"](0, raw), 0);
+});
+
 // --- iteration opcodes -------------------------------------------------------
 
 test("review-M4-H3: __hbc_notIterable reproduces the real Hermes VM's wording (measured on tools/hermesc/v84,v96/hermes and tools/hermes-vm/v99/bin/hermes, not V8/Node's), shared by __hbc_iterBegin and __hbc_b_arraySpread", () => {

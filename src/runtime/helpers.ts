@@ -192,6 +192,24 @@ var __hbc_arguments = (function () {
 `,
   ),
 
+  // §8 -- `GetArgumentsLength`/`GetArgumentsPropByVal` do NOT always read the
+  // frame's incoming arguments: their last operand is the function's
+  // *lazy-arguments register*, which holds `undefined` while the object is
+  // still unmaterialised and the reified object once a `ReifyArguments` has
+  // run (measured at v84: `function k(m){ arguments[0]='K'; m='M'; return
+  // arguments[0]+'|'+m; }` compiles to ReifyArguments r1 / PutByVal /
+  // GetArgumentsPropByVal r1, r0, r1 and the real VM prints `K|M`, i.e. the
+  // read goes through the written object). Emitting the host `arguments`
+  // unconditionally lost every such write (docs/BUGS.md
+  // `arity/arguments-aliasing`), so a function that reifies routes its lazy
+  // reads through this selector instead.
+  h(
+    "__hbc_argsLive",
+    `
+var __hbc_argsLive = function (lazy, raw) { return lazy === undefined ? raw : lazy; };
+`,
+  ),
+
   // IteratorBegin/Next/Close. Hermes has a fast path that represents the state
   // of an unmodified array iteration as an integer index; taking the ordinary
   // iterator every time is observationally the same and much simpler. Both

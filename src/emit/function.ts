@@ -28,6 +28,11 @@ export interface FunctionEmitter {
   readonly builtins: BuiltinTable;
   readonly thisExpr: Expr;
   readonly argsExpr: Expr;
+  /** True when the function contains a `ReifyArguments*`, i.e. its lazy-arguments
+   *  register can hold a materialised object that later `GetArguments*` reads
+   *  must go through rather than the host `arguments` (docs/BUGS.md
+   *  `arity/arguments-aliasing`). */
+  readonly argumentsReified: boolean;
   readonly newTargetExpr: Expr;
   useHelper(name: string): void;
   needScratch(): void;
@@ -184,6 +189,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
 
   const thisExpr: Expr = isOpcodeGeneratorBody ? id("__this") : { k: "this" };
   const argsExpr: Expr = isOpcodeGeneratorBody ? id("__args") : { k: "argumentsObject" };
+  const argumentsReified = fn.instructions.some((i) => i.name.startsWith("ReifyArguments"));
 
   const tryPlan = planTries(structured);
 
@@ -213,6 +219,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     builtins,
     thisExpr,
     argsExpr,
+    argumentsReified,
     newTargetExpr: lit("new.target"),
     useHelper(name: string): void {
       usedHelpers.add(name);
