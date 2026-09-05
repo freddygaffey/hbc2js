@@ -39,6 +39,14 @@ const SPAWN = /__hbc_b_spawnAsync/g;
 const MAKE = /__hbc_makeGenerator\(/g;
 const LOWERED = /__hbc_makeGeneratorLowered\(/g;
 const THIS_COERCION = /this === null \|\| this === undefined \? globalThis : Object\(this\)/g;
+// The stub hands the driver its own receiver: `rN = this;` immediately before
+// the `Reflect.apply` that calls the driver with rN as its second argument.
+// Until 2026-09-05 that receiver printed as THIS_COERCION; inside a sloppy
+// function the call protocol has already applied exactly that coercion
+// (ES2024 10.2.1.2), so the emitter now prints it bare -- same value, shorter,
+// and it round-trips back through hermesc (docs/BUGS.md 2026-09-01 "LoadThisNS
+// lowering"; cross-rung edit recorded as PUSHBACK P-31).
+const DRIVER_THIS = /(\w+) = this;\s*\w+ = Reflect\.apply\(\w+, \w+, \[\w+, \1, \w+\]\);/g;
 const REIFIED_ARGS = /__hbc_arguments\(arguments\)/g;
 
 const ALL_VERSIONS = ["v84", "v94", "v96", "v98", "v99"] as const;
@@ -64,7 +72,8 @@ test("baseline: the async driver is __hbc_b_spawnAsync at ALL five versions (spe
 test("baseline: the driver call shape is d(factory, coercedThis, reifiedArguments) at every version", () => {
   for (const version of ALL_VERSIONS) {
     const s = base("27-async-await-basic", version);
-    assert.equal(count(s, THIS_COERCION), 1, `${version}: the stub coerces its own this`);
+    assert.equal(count(s, DRIVER_THIS), 1, `${version}: the stub hands the driver its own this`);
+    assert.equal(count(s, THIS_COERCION), 0, `${version}: a sloppy stub's receiver needs no explicit coercion`);
     assert.equal(count(s, REIFIED_ARGS), 1, `${version}: the stub reifies its own arguments`);
   }
 });
@@ -113,6 +122,8 @@ test("baseline: the async idiom is identical with passes on and off (PL-05)", ()
     for (const fixture of ASYNC_FIXTURES) {
       for (const [what, re] of [
         ["driver references", SPAWN],
+        // Zero on both sides since docs/BUGS.md "LoadThisNS lowering" landed; kept
+        // so a rung that reintroduces an explicit coercion on one side is caught.
         ["this coercions", THIS_COERCION],
         ["reified arguments", REIFIED_ARGS],
       ] as const) {
