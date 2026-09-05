@@ -72,7 +72,15 @@ export default defineConfig({
             command: `node ${join(repoRoot, "src/cli.ts")} ui-server ${PROJECT_DIR} --port ${API_PORT} --hbc ${BUNDLE} --no-auth`,
             url: `http://127.0.0.1:${API_PORT}/api/segregation`,
             reuseExistingServer: false,
-            timeout: 30_000,
+            // The route answers as soon as the server listens, but the box
+            // measured this at ~30-45s of whole-bundle "warming analysis"
+            // work happening concurrently (see the ui-server log line) even
+            // on the 435-module fixture bundle; under load (other agents'
+            // test runs sharing the same CPU) 30s was observed to time out
+            // here even though the route itself responds in a few seconds
+            // once the process is up. 90s keeps `npm run e2e` well inside
+            // the < 4 min budget while giving the warm real headroom.
+            timeout: 90_000,
           },
           {
             command: `npx vite preview --outDir ${DIST_DIR} --port ${PREVIEW_PORT} --strictPort`,

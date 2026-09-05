@@ -95,7 +95,18 @@ export function CommandPalette({
           visibleItems.map((it) => (
             <Command.Item
               key={it.id}
-              value={it.id}
+              // cmdk's built-in filter (active whenever shouldFilter is
+              // true, i.e. outside ":" command mode) scores the `value`
+              // prop, not the rendered children — it was `it.id` here
+              // (e.g. "view.rawHermes", "navigate.strings"), so typing the
+              // *visible* title ("raw Hermes", "Find string uses…") could
+              // never match it: those characters (spaces, "…") do not
+              // appear in the dotted id at all. Use the title, which is
+              // what the placeholder ("Run a command") and the user's eyes
+              // both promise is searched; dispatch still keys off `it.id`
+              // via the explicit `onSelect` below, so this has no effect on
+              // which action actually runs.
+              value={it.title}
               onSelect={() => run(it.id)}
               className="flex h-7 cursor-pointer items-center justify-between rounded-ui px-2 text-xs data-[selected=true]:bg-surface-2"
             >
