@@ -1,0 +1,190 @@
+; hbc2js disassembly of 68-babel-default-export-prologue/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=11 strings=22 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=0 flags=dbg  @0x00000250 size=239
+  0000  DeclareGlobalVar     s11 "__hbc_registry"
+  0005  DeclareGlobalVar     s13 "__hbc_instances"
+  000a  DeclareGlobalVar     s9 "__d"
+  000f  DeclareGlobalVar     s14 "__r"
+  0014  CreateEnvironment    r1
+  0016  CreateClosure        r2, r1, f1 "__d"
+  001b  GetGlobalObject      r0
+  001d  PutById              r0, r2, #c1, s9 "__d"
+  0023  CreateClosure        r2, r1, f2 "__r"
+  0028  PutById              r0, r2, #c2, s14 "__r"
+  002e  NewObject            r2
+  0030  PutById              r0, r2, #c3, s11 "__hbc_registry"
+  0036  NewObject            r2
+  0038  PutById              r0, r2, #c4, s13 "__hbc_instances"
+  003e  GetByIdShort         r6, r0, #c1, s9 "__d"
+  0043  LoadConstUndefined   r2
+  0045  CreateClosure        r5, r1, f3 ""
+  004a  LoadConstZero        r4
+  004c  NewArray             r3, 0
+  0050  Call4                r3, r6, r2, r5, r4, r3
+  0057  GetByIdShort         r6, r0, #c1, s9 "__d"
+  005c  CreateClosure        r5, r1, f5 ""
+  0061  LoadConstUInt8       r4, 1
+  0064  NewArray             r3, 0
+  0068  Call4                r3, r6, r2, r5, r4, r3
+  006f  GetByIdShort         r6, r0, #c1, s9 "__d"
+  0074  CreateClosure        r4, r1, f7 ""
+  0079  LoadConstUInt8       r5, 2
+  007c  NewArrayWithBuffer   r3, 1, 1, lit@0x0000
+  0084  Call4                r3, r6, r2, r4, r5, r3
+  008b  GetByIdShort         r6, r0, #c1, s9 "__d"
+  0090  CreateClosure        r4, r1, f9 ""
+  0095  LoadConstUInt8       r3, 3
+  0098  NewArrayWithBuffer   r1, 1, 1, lit@0x0005
+  00a0  Call4                r1, r6, r2, r4, r3, r1
+  00a7  TryGetById           r4, r0, #c2, s21 "print"
+  00ad  GetByIdShort         r1, r0, #c3, s14 "__r"
+  00b2  Call2                r6, r1, r2, r5
+  00b7  GetByIdShort         r5, r6, #c4, s15 "callDefault"
+  00bc  LoadConstString      r1, s6 "x"
+  00c0  Call2                r1, r5, r6, r1
+  00c5  Call2                r1, r4, r2, r1
+  00ca  TryGetById           r1, r0, #c2, s21 "print"
+  00d0  GetByIdShort         r0, r0, #c3, s14 "__r"
+  00d5  Call2                r4, r0, r2, r3
+  00da  GetByIdShort         r3, r4, #c4, s15 "callDefault"
+  00df  LoadConstString      r0, s7 "y"
+  00e3  Call2                r0, r3, r4, r0
+  00e8  Call2                r0, r1, r2, r0
+  00ed  Ret                  r0
+
+function #1 "__d"  params=4 frame=3 env=0 flags=dbg  @0x0000033f size=34
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r2, r0, #c1, s11 "__hbc_registry"
+  0007  NewObject            r1
+  0009  LoadParam            r0, 1
+  000c  PutNewOwnByIdShort   r1, r0, s20 "factory"
+  0010  LoadParam            r0, 3
+  0013  PutNewOwnByIdShort   r1, r0, s17 "deps"
+  0017  LoadParam            r0, 2
+  001a  PutByVal             r2, r0, r1
+  001e  LoadConstUndefined   r0
+  0020  Ret                  r0
+
+function #2 "__r"  params=2 frame=21 env=0 flags=dbg  @0x00000361 size=98
+  0000  LoadParam            r1, 1
+  0003  GetGlobalObject      r0
+  0005  GetByIdShort         r2, r0, #c1, s13 "__hbc_instances"
+  000a  GetByVal             r2, r2, r1
+  000e  JmpTrue              L1, r2
+  0011  GetByIdShort         r2, r0, #c2, s11 "__hbc_registry"
+  0016  GetByVal             r8, r2, r1
+  001a  NewObject            r2
+  001c  NewObject            r3
+  001e  PutNewOwnByIdShort   r2, r3, s19 "exports"
+  0022  GetByIdShort         r3, r0, #c1, s13 "__hbc_instances"
+  0027  PutByVal             r3, r1, r2
+  002b  GetByIdShort         r7, r8, #c3, s20 "factory"
+  0030  GetByIdShort         r12, r0, #c4, s14 "__r"
+  0035  GetByIdShort         r10, r2, #c5, s19 "exports"
+  003a  GetByIdShort         r9, r8, #c6, s17 "deps"
+  003f  LoadThisNS           r13
+  0041  Mov                  r14, r8
+  0044  Mov                  r11, r2
+  0047  Call                 r3, r7, 6
+  004b  GetByIdShort         r2, r2, #c5, s19 "exports"
+  0050  Ret                  r2
+L1:
+  0052  GetByIdShort         r0, r0, #c1, s13 "__hbc_instances"
+  0057  GetByVal             r0, r0, r1
+  005b  GetByIdShort         r0, r0, #c5, s19 "exports"
+  0060  Ret                  r0
+
+function #3 ""  params=6 frame=15 env=0 flags=dbg  @0x000003c3 size=58
+  0000  LoadParam            r2, 4
+  0003  GetGlobalObject      r0
+  0005  TryGetById           r4, r0, #c1, s12 "Object"
+  000b  GetByIdShort         r3, r4, #c2, s16 "defineProperty"
+  0010  NewObject            r1
+  0012  LoadConstTrue        r0
+  0014  PutNewOwnByIdShort   r1, r0, s18 "value"
+  0018  LoadConstString      r0, s3 "__esModule"
+  001c  Call4                r0, r3, r4, r2, r0, r1
+  0023  LoadConstUndefined   r0
+  0025  PutById              r2, r0, #c1, s10 "default"
+  002b  CreateEnvironment    r1
+  002d  CreateClosure        r1, r1, f4 "_default"
+  0032  PutById              r2, r1, #c1, s10 "default"
+  0038  Ret                  r0
+
+function #4 "_default"  params=2 frame=2 env=0 flags=dbg  @0x000003fd size=13
+  0000  LoadConstString      r1, s2 "D:"
+  0004  LoadParam            r0, 1
+  0007  Add                  r0, r1, r0
+  000b  Ret                  r0
+
+function #5 ""  params=6 frame=15 env=0 flags=dbg  @0x0000040a size=73
+  0000  LoadParam            r2, 4
+  0003  GetGlobalObject      r0
+  0005  TryGetById           r4, r0, #c1, s12 "Object"
+  000b  GetByIdShort         r3, r4, #c2, s16 "defineProperty"
+  0010  NewObject            r1
+  0012  LoadConstTrue        r0
+  0014  PutNewOwnByIdShort   r1, r0, s18 "value"
+  0018  LoadConstString      r0, s3 "__esModule"
+  001c  Call4                r0, r3, r4, r2, r0, r1
+  0023  LoadConstUndefined   r0
+  0025  PutById              r2, r0, #c1, s10 "default"
+  002b  LoadParam            r1, 5
+  002e  GetByIdShort         r3, r1, #c3, s8 "length"
+  0033  LoadConstUInt8       r1, 1
+  0036  JNotLess             L1, r3, r1
+  003a  CreateEnvironment    r1
+  003c  CreateClosure        r1, r1, f6 ""
+  0041  PutById              r2, r1, #c1, s10 "default"
+L1:
+  0047  Ret                  r0
+
+function #6 ""  params=2 frame=2 env=0 flags=dbg  @0x00000453 size=13
+  0000  LoadConstString      r1, s1 "C:"
+  0004  LoadParam            r0, 1
+  0007  Add                  r0, r1, r0
+  000b  Ret                  r0
+
+function #7 ""  params=6 frame=12 env=1 flags=dbg  @0x00000460 size=41
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r2, 5
+  0005  LoadConstZero        r0
+  0007  GetByVal             r3, r2, r0
+  000b  LoadParam            r2, 2
+  000e  LoadConstUndefined   r0
+  0010  Call2                r2, r2, r0, r3
+  0015  StoreToEnvironment   r1, 0, r2
+  0019  CreateClosure        r2, r1, f8 ""
+  001e  LoadParam            r1, 4
+  0021  PutById              r1, r2, #c1, s15 "callDefault"
+  0027  Ret                  r0
+
+function #8 ""  params=2 frame=11 env=0 flags=dbg  @0x00000489 size=22
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s10 "default"
+  000c  LoadParam            r0, 1
+  000f  Call2                r0, r1, r2, r0
+  0014  Ret                  r0
+
+function #9 ""  params=6 frame=12 env=1 flags=dbg  @0x0000049f size=41
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r2, 5
+  0005  LoadConstZero        r0
+  0007  GetByVal             r3, r2, r0
+  000b  LoadParam            r2, 2
+  000e  LoadConstUndefined   r0
+  0010  Call2                r2, r2, r0, r3
+  0015  StoreToEnvironment   r1, 0, r2
+  0019  CreateClosure        r2, r1, f10 ""
+  001e  LoadParam            r1, 4
+  0021  PutById              r1, r2, #c1, s15 "callDefault"
+  0027  Ret                  r0
+
+function #10 ""  params=2 frame=11 env=0 flags=dbg  @0x00000489 size=22
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s10 "default"
+  000c  LoadParam            r0, 1
+  000f  Call2                r0, r1, r2, r0
+  0014  Ret                  r0

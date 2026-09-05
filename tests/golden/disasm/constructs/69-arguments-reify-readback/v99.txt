@@ -1,0 +1,235 @@
+; hbc2js disassembly of 69-arguments-reify-readback/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=9 strings=36 globalCodeIndex=0
+function #0 "global"  params=1 frame=21 env=0 flags=dbg,overflowed  @0x000002f0 size=441
+  0000  DeclareGlobalVar     s35 "writeThenRead"
+  0005  DeclareGlobalVar     s34 "writeBeyondArity"
+  000a  DeclareGlobalVar     s30 "growThenRead"
+  000f  DeclareGlobalVar     s32 "lengthWrite"
+  0014  DeclareGlobalVar     s31 "deleteThenRead"
+  0019  DeclareGlobalVar     s25 "copyThenRead"
+  001e  DeclareGlobalVar     s29 "conditionalReify"
+  0023  DeclareGlobalVar     s28 "neverReified"
+  0028  GetGlobalObject      r5
+  002a  LoadConstUndefined   r3
+  002c  CreateClosure        r6, r3, f1 "writeThenRead"
+  0031  PutByIdLoose         r5, r6, #c0, s35 "writeThenRead"
+  0037  CreateClosure        r6, r3, f2 "writeBeyondArity"
+  003c  PutByIdLoose         r5, r6, #c1, s34 "writeBeyondArity"
+  0042  CreateClosure        r6, r3, f3 "growThenRead"
+  0047  PutByIdLoose         r5, r6, #c2, s30 "growThenRead"
+  004d  CreateClosure        r6, r3, f4 "lengthWrite"
+  0052  PutByIdLoose         r5, r6, #c3, s32 "lengthWrite"
+  0058  CreateClosure        r6, r3, f5 "deleteThenRead"
+  005d  PutByIdLoose         r5, r6, #c4, s31 "deleteThenRead"
+  0063  CreateClosure        r6, r3, f6 "copyThenRead"
+  0068  PutByIdLoose         r5, r6, #c5, s25 "copyThenRead"
+  006e  CreateClosure        r6, r3, f7 "conditionalReify"
+  0073  PutByIdLoose         r5, r6, #c6, s29 "conditionalReify"
+  0079  CreateClosure        r6, r3, f8 "neverReified"
+  007e  PutByIdLoose         r5, r6, #c7, s28 "neverReified"
+  0084  TryGetById           r8, r5, #c0, s33 "print"
+  008a  GetByIdShort         r7, r5, #c1, s35 "writeThenRead"
+  008f  LoadConstString      r6, s11 "incoming"
+  0093  Call2                r7, r7, r3, r6
+  0098  LoadConstString      r6, s21 "write then read:"
+  009c  Call3                r6, r8, r3, r6, r7
+  00a2  TryGetById           r8, r5, #c0, s33 "print"
+  00a8  GetByIdShort         r6, r5, #c1, s35 "writeThenRead"
+  00ad  Call1                r7, r6, r3
+  00b1  LoadConstString      r6, s20 "write then read, no args:"
+  00b5  Call3                r6, r8, r3, r6, r7
+  00bb  TryGetById           r8, r5, #c0, s33 "print"
+  00c1  GetByIdShort         r9, r5, #c2, s34 "writeBeyondArity"
+  00c6  LoadConstString      r7, s4 "b0"
+  00ca  LoadConstString      r6, s3 "a0"
+  00ce  Call3                r7, r9, r3, r6, r7
+  00d4  LoadConstString      r6, s1 "beyond arity:"
+  00d8  Call3                r6, r8, r3, r6, r7
+  00de  TryGetById           r8, r5, #c0, s33 "print"
+  00e4  GetByIdShort         r7, r5, #c3, s30 "growThenRead"
+  00e9  LoadConstString      r6, s23 "x"
+  00ed  Call2                r7, r7, r3, r6
+  00f2  LoadConstString      r6, s18 "grown:"
+  00f6  Call3                r6, r8, r3, r6, r7
+  00fc  TryGetById           r8, r5, #c0, s33 "print"
+  0102  GetByIdShort         r6, r5, #c4, s32 "lengthWrite"
+  0107  LoadConstUInt8       r0, 3
+  010a  LoadConstUInt8       r1, 2
+  010d  LoadConstUInt8       r2, 1
+  0110  Call4                r7, r6, r3, r2, r1, r0
+  0117  LoadConstString      r6, s15 "length write:"
+  011b  Call3                r6, r8, r3, r6, r7
+  0121  TryGetById           r8, r5, #c0, s33 "print"
+  0127  GetByIdShort         r7, r5, #c5, s31 "deleteThenRead"
+  012c  LoadConstString      r6, s16 "gone"
+  0130  Call2                r7, r7, r3, r6
+  0135  LoadConstString      r6, s10 "delete then read:"
+  0139  Call3                r6, r8, r3, r6, r7
+  013f  TryGetById           r8, r5, #c0, s33 "print"
+  0145  GetByIdShort         r7, r5, #c6, s25 "copyThenRead"
+  014a  LoadConstString      r6, s13 "orig"
+  014e  Call2                r7, r7, r3, r6
+  0153  LoadConstString      r6, s9 "copy then read:"
+  0157  Call3                r6, r8, r3, r6, r7
+  015d  TryGetById           r9, r5, #c0, s33 "print"
+  0163  GetByIdShort         r6, r5, #c7, s29 "conditionalReify"
+  0168  LoadConstString      r7, s12 "given"
+  016c  LoadConstTrue        r4
+  016e  Call3                r8, r6, r3, r4, r7
+  0174  LoadConstString      r6, s7 "conditional reify, taken:"
+  0178  Call3                r6, r9, r3, r6, r8
+  017e  TryGetById           r8, r5, #c0, s33 "print"
+  0184  GetByIdShort         r6, r5, #c7, s29 "conditionalReify"
+  0189  LoadConstFalse       r4
+  018b  Call3                r7, r6, r3, r4, r7
+  0191  LoadConstString      r6, s6 "conditional reify, not taken:"
+  0195  Call3                r6, r8, r3, r6, r7
+  019b  TryGetById           r7, r5, #c0, s33 "print"
+  01a1  GetByIdShort         r5, r5, #c8, s28 "neverReified"
+  01a6  Call4                r6, r5, r3, r2, r1, r0
+  01ad  LoadConstString      r5, s19 "read only:"
+  01b1  Call3                r5, r7, r3, r5, r6
+  01b7  Ret                  r5
+
+function #1 "writeThenRead"  params=1 frame=5 env=0 flags=dbg,overflowed  @0x000004a9 size=38
+  0000  LoadConstUndefined   r2
+  0002  ReifyArgumentsLoose  r2
+  0004  Mov                  r3, r2
+  0007  LoadConstZero        r0
+  0009  LoadConstString      r4, s22 "written"
+  000d  PutByValLoose        r3, r0, r4
+  0011  GetArgumentsPropByValLoose r4, r0, r2
+  0015  LoadConstString      r3, s24 "|"
+  0019  Add                  r3, r4, r3
+  001d  GetArgumentsLength   r2, r2
+  0020  Add                  r2, r3, r2
+  0024  Ret                  r2
+
+function #2 "writeBeyondArity"  params=2 frame=6 env=0 flags=dbg,overflowed  @0x000004cf size=50
+  0000  LoadConstUndefined   r3
+  0002  ReifyArgumentsLoose  r3
+  0004  Mov                  r2, r3
+  0007  LoadConstUInt8       r0, 1
+  000a  LoadConstString      r4, s0 "beyond"
+  000e  PutByValLoose        r2, r0, r4
+  0012  LoadConstString      r4, s24 "|"
+  0016  LoadParam            r2, 1
+  0019  Add                  r5, r2, r4
+  001d  GetArgumentsPropByValLoose r2, r0, r3
+  0021  Add                  r2, r5, r2
+  0025  GetArgumentsLength   r3, r3
+  0028  AddS                 r2, r2, r4
+  002c  Add                  r2, r2, r3
+  0030  Ret                  r2
+
+function #3 "growThenRead"  params=1 frame=17 env=0 flags=dbg,overflowed  @0x00000501 size=72
+  0000  LoadConstUndefined   r2
+  0002  LoadConstUndefined   r4
+  0004  ReifyArgumentsLoose  r4
+  0006  Mov                  r3, r4
+  0009  LoadConstUInt8       r1, 3
+  000c  LoadConstString      r5, s17 "grown"
+  0010  PutByValLoose        r3, r1, r5
+  0014  Mov                  r3, r4
+  0017  GetArgumentsLength   r3, r3
+  001a  LoadConstString      r5, s24 "|"
+  001e  Add                  r6, r3, r5
+  0022  GetGlobalObject      r3
+  0024  TryGetById           r7, r3, #c0, s27 "String"
+  002a  LoadConstUInt8       r0, 2
+  002d  GetArgumentsPropByValLoose r3, r0, r4
+  0031  Call2                r3, r7, r2, r3
+  0036  Add                  r3, r6, r3
+  003a  GetArgumentsPropByValLoose r4, r1, r4
+  003e  AddS                 r3, r3, r5
+  0042  Add                  r3, r3, r4
+  0046  Ret                  r3
+
+function #4 "lengthWrite"  params=1 frame=5 env=0 flags=dbg,overflowed  @0x00000549 size=39
+  0000  LoadConstUndefined   r2
+  0002  ReifyArgumentsLoose  r2
+  0004  Mov                  r3, r2
+  0007  LoadConstUInt8       r0, 1
+  000a  PutByIdLoose         r3, r0, #c0, s26 "length"
+  0010  Mov                  r3, r2
+  0013  GetArgumentsLength   r4, r3
+  0016  LoadConstString      r3, s24 "|"
+  001a  Add                  r3, r4, r3
+  001e  GetArgumentsLength   r2, r2
+  0021  Add                  r2, r3, r2
+  0025  Ret                  r2
+
+function #5 "deleteThenRead"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x00000570 size=50
+  0000  LoadConstUndefined   r1
+  0002  LoadConstUndefined   r3
+  0004  ReifyArgumentsLoose  r3
+  0006  Mov                  r4, r3
+  0009  LoadConstZero        r0
+  000b  DelByVal             r2, r4, r0, 0
+  0010  GetGlobalObject      r4
+  0012  TryGetById           r5, r4, #c0, s27 "String"
+  0018  GetArgumentsPropByValLoose r4, r0, r3
+  001c  Call2                r5, r5, r1, r4
+  0021  LoadConstString      r4, s24 "|"
+  0025  Add                  r4, r5, r4
+  0029  GetArgumentsLength   r3, r3
+  002c  Add                  r3, r4, r3
+  0030  Ret                  r3
+
+function #6 "copyThenRead"  params=1 frame=5 env=0 flags=dbg,overflowed  @0x000005a2 size=39
+  0000  LoadConstUndefined   r2
+  0002  ReifyArgumentsLoose  r2
+  0004  Mov                  r3, r2
+  0007  LoadConstZero        r0
+  0009  LoadConstString      r4, s8 "copy"
+  000d  PutByValLoose        r3, r0, r4
+  0011  GetArgumentsPropByValLoose r4, r0, r2
+  0015  LoadConstString      r3, s24 "|"
+  0019  Add                  r3, r4, r3
+  001d  GetArgumentsPropByValLoose r2, r0, r2
+  0021  Add                  r2, r3, r2
+  0025  Ret                  r2
+
+function #7 "conditionalReify"  params=2 frame=14 env=0 flags=dbg,overflowed  @0x000005c9 size=48
+  0000  LoadConstUndefined   r1
+  0002  LoadConstUndefined   r2
+  0004  LoadParam            r3, 1
+  0007  JmpFalse             L1, r3
+  000a  ReifyArgumentsLoose  r2
+  000c  Mov                  r3, r2
+  000f  LoadConstUInt8       r0, 1
+  0012  LoadConstString      r4, s5 "cond"
+  0016  PutByValLoose        r3, r0, r4
+L1:
+  001a  GetGlobalObject      r3
+  001c  TryGetById           r3, r3, #c0, s27 "String"
+  0022  LoadConstUInt8       r0, 1
+  0025  GetArgumentsPropByValLoose r2, r0, r2
+  0029  Call2                r2, r3, r1, r2
+  002e  Ret                  r2
+
+function #8 "neverReified"  params=1 frame=9 env=0 flags=dbg,overflowed  @0x000005f9 size=68
+  0000  LoadConstUndefined   r4
+  0002  Mov                  r5, r4
+  0005  GetArgumentsLength   r5, r5
+  0008  LoadConstZero        r2
+  000a  Less                 r3, r2, r5
+  000e  LoadConstUInt8       r1, 1
+  0011  LoadConstZero        r0
+  0013  LoadConstZero        r7
+  0015  LoadConstZero        r6
+  0017  JmpFalse             L2, r3
+L1:
+  001a  GetArgumentsPropByValLoose r5, r0, r4
+  001e  Add                  r7, r7, r5
+  0022  AddN                 r0, r0, r1
+  0026  Mov                  r5, r4
+  0029  GetArgumentsLength   r5, r5
+  002c  Mov                  r6, r7
+  002f  JLess                L1, r0, r5
+L2:
+  0033  GetArgumentsLength   r5, r4
+  0036  LoadConstString      r4, s2 ":"
+  003a  Add                  r4, r6, r4
+  003e  Add                  r4, r4, r5
+  0042  Ret                  r4
