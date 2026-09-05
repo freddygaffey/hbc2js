@@ -5,7 +5,7 @@
 // allow-listed below with a docs/BUGS.md citation, not silently dropped.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 
@@ -250,4 +250,32 @@ test("testing rule 10: every src/harness/tiers.ts exclusion-table entry cites a 
     for (const entry of entries) if (!bugsText.includes(entry)) uncited.push(`${name}: ${JSON.stringify(entry)}`);
   }
   assert.deepEqual(uncited, [], `src/harness/tiers.ts exclusion-table entries with no docs/BUGS.md citation: ${uncited.join(", ")}`);
+});
+
+/**
+ * Spec 26 L7 acceptance test: visual regression baselines are a UI-private
+ * fixture, not a shared one — rule 7 ("no exact-output assertions on shared
+ * fixtures") is declared not to apply to them, and that declaration lives
+ * in `docs/CONSOLIDATION.md`, not just in a code comment nobody re-checks.
+ * Pure file scanning, same discipline as the rest of this file: it does not
+ * import from `ui/`, so it runs under the root gate with no `ui/node_modules`
+ * present.
+ */
+test("visual baselines live under ui/e2e and are declared UI-private in docs/CONSOLIDATION.md", () => {
+  const screenshotsDir = join(repoRoot(), "ui", "e2e", "__screenshots__");
+  if (!existsSync(screenshotsDir)) return; // nothing landed yet — vacuous pass, same style as rule 10's test.
+  const pngs = walk(screenshotsDir).filter((p) => p.endsWith(".png"));
+  assert.ok(pngs.length > 0, "ui/e2e/__screenshots__ exists but contains no baseline PNGs");
+
+  const consolidationText = readFileSync(join(repoRoot(), "docs", "CONSOLIDATION.md"), "utf8");
+  assert.match(
+    consolidationText,
+    /UI-private/,
+    "docs/CONSOLIDATION.md must explicitly declare visual baselines UI-private (spec 26 L7 / spec 19 §2 layer 4)",
+  );
+  assert.match(
+    consolidationText,
+    /ui\/e2e\/__screenshots__/,
+    "docs/CONSOLIDATION.md's UI-private declaration must name the actual baseline path, ui/e2e/__screenshots__",
+  );
 });

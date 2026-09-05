@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test:dom": "vitest run",
     "e2e": "node e2e/prepare-fixture.mjs && playwright test --config e2e/playwright.config.ts",
     "e2e:nsw": "PW_BASE_URL=http://127.0.0.1:4173 PW_READONLY=1 playwright test --config e2e/playwright.config.ts"
   },
@@ -40,11 +41,15 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.1.13",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.3",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "@vitejs/plugin-react": "5.0.4",
+    "jsdom": "30.0.1",
     "tailwindcss": "4.1.13",
     "typescript": "5.9.2",
-    "vite": "7.1.7"
+    "vite": "7.1.7",
+    "vitest": "5.0.0"
   }
 }

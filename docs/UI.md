@@ -1405,3 +1405,66 @@ moments later the effect's `sel.kind !== "none"` guard stopped it from ever
 re-running, so the analyst landed on a module that LOOKED selected but whose
 group stayed permanently collapsed. The effect now also waits on
 `!seg.isLoading`, same as the tree body's own render gate.
+
+## Component/DOM tests, kitchen sink, and visual regression (spec 26 L7)
+
+Spec 19 §2 named six test layers; L7 landed the two that were missing,
+layers 2 and 4.
+
+**Layer 2 — component/DOM tests.** `@testing-library/react`,
+`@testing-library/dom` and `jsdom` are `ui/`-only devDependencies (the root
+package's zero-runtime-dependency rule is untouched — nothing under `src/`
+imports them); `vitest` is the runner (`ui/vitest.config.ts`,
+`npm run test:dom` inside `ui/`), reusing the same Vite/Tailwind/React
+plugin config the app itself builds with rather than a second bundler
+config. These tests are not part of the root `npm test` gate — they run
+under `ui/`, same as `ui/e2e/*` does. Discipline: assert semantics (roles,
+accessible names, structure), never pixels — `ui/src/components/
+KitchenSink.dom.test.tsx` is the example to copy from.
+
+**The kitchen sink.** `index.html?kitchen-sink` (a query flag read once in
+`ui/src/main.tsx`, not a router dependency — the shell has exactly one other
+route) renders `ui/src/components/KitchenSink.tsx`: every primitive
+(`ToolButton`, `PaneHeader`, `Row`, `Empty`, `Stub`), every severity colour,
+the full type ramp, both elevation levels, the accent swatch and the syntax
+palette, once each, plus one sample `FnSummary` fetched from `mockApi`
+directly (never `./api.ts`) — it is the only consumer of `ui/src/mock.ts`
+outside the api module. Because it needs no live project, it is the fastest
+way to eyeball a token change across both theme slots before any real view
+is touched (spec 20 §1.7 step 2).
+
+**Layer 4 — visual regression.** `ui/e2e/visual.spec.ts` covers five views:
+kitchen sink × (dark, light) — bur 12's two default slots — plus listing,
+the Xrefs tab and the Graph tab on the dark default only. Two rules keep
+this from flaking or ballooning:
+
+- **DOM structure is asserted unconditionally, in every test, before any
+  pixel comparison.** A font-rendering difference between macOS and Linux
+  CI can never fail these tests outright — at worst it fails only the
+  pixel step, which is opt-in (below).
+- **The pixel comparison (`expect(page).toHaveScreenshot(...)`) runs only
+  when `HBC2JS_E2E_VISUAL=1` is set.** `ui/e2e/playwright.config.ts` sets a
+  3% `maxDiffPixelRatio` and disables CSS animations for the comparison;
+  the suite also fixes the viewport (1280×800) and `reducedMotion: "reduce"`
+  globally so a screenshot never depends on window size or lands mid
+  transition. Regenerate with `HBC2JS_E2E_VISUAL=1 npx playwright test
+  --config e2e/playwright.config.ts e2e/visual.spec.ts --update-snapshots`
+  against the throwaway fixture rig only (never `PW_BASE_URL`, so a
+  baseline can never drift with whatever bundle Fred happens to have open).
+
+**Golden rule.** Baselines under `ui/e2e/__screenshots__/**` are golden
+artifacts: the first commit and every regeneration are a Fred-approved
+batch (CLAUDE.md testing rules, `docs/CONSOLIDATION.md` §B item 9). They are
+a UI-private fixture — nothing under `tests/fixtures/constructs/**` feeds
+them — so the "no exact-output assertions on shared fixtures" rule (item 7)
+does not apply, but item 9's approval-as-a-batch rule still does.
+
+**The reference-driven screenshot loop** (spec 20 §1.4, `docs/ui-refs/
+README.md`), mechanically: implement a view → screenshot it → sit it next
+to the matching reference in `docs/ui-refs/` → answer the four-question
+checklist there (flat chrome? dense code pane? tight tree indent? exactly
+one accent?) → any "no" is a token value (`ui/themes/*.json`) or a
+structural fix, never a taste call → re-screenshot → repeat until every
+question is "yes" → only then does the view get a `ui/e2e/visual.spec.ts`
+baseline (spec 19 §1.2's bandwidth rule: screenshot at checkpoints, not per
+tweak).
