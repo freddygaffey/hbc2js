@@ -15,6 +15,7 @@ import { WorkersPane } from "./WorkersPane.tsx";
 import { StringsPane } from "./StringsPane.tsx";
 import { TablesPane } from "./TablesPane.tsx";
 import { GraphPane } from "../graph/GraphPane.tsx";
+import { EditPane } from "./EditPane.tsx";
 
 const tabClass =
   "h-7 flex-1 rounded-ui px-2 text-xs text-text-muted outline-none data-[state=active]:bg-surface-2 data-[state=active]:text-text";
@@ -110,6 +111,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <Tabs.Trigger value="findings" className={tabClass}>Findings</Tabs.Trigger>
           <Tabs.Trigger value="package" className={tabClass}>Package</Tabs.Trigger>
           <Tabs.Trigger value="workers" className={tabClass}>AI</Tabs.Trigger>
+          <Tabs.Trigger value="edit" className={tabClass}>Edit</Tabs.Trigger>
         </Tabs.List>
       </PaneHeader>
 
@@ -302,6 +304,10 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           ui/src/panes/WorkersPane.tsx. */}
       <Tabs.Content value="workers" className={bodyClass}>
         <WorkersPane fn={fn} />
+      </Tabs.Content>
+
+      <Tabs.Content value="edit" className={bodyClass}>
+        <EditPane fn={fn} />
       </Tabs.Content>
     </Tabs.Root>
   );

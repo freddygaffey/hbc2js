@@ -948,6 +948,7 @@ function plus `functions-all`, `findings` and `log-tail` are invalidated.
 | `annotate.comment` (`Ctrl-/`, vim `gc`) | textarea dialog | `POST /api/tools/add-comment` |
 | `annotate.finding` (`Ctrl-Shift-N`, vim `cf`) | "Add finding" button in the Findings panel, plus menu and palette | `POST /api/tools/record-finding` |
 | `review.markReviewed` / `markSuspicious` | menu, palette | `POST /api/tools/add-tag` |
+| `edit.recompile` (no chord, on purpose) | the "Edit" tab of the right pane, plus menu and palette | `POST /api/tools/recompile-edit` |
 
 **Names.** `McpResources.fn` adds `acceptedName` on top of the artifact's
 `name`/`overlayName`; `ui/src/actions/names.ts`'s `displayName()` is the one
@@ -1018,6 +1019,70 @@ The Package panel reads the real `GET /api/package-id/{mod}` (wave 4a).
 by every build path; `@ui-core/disasm-offset.ts`'s `formatDisasmOffset` does
 the formatting and falls back to the old `fn:<n>` shape if no offset is
 known yet (mock mode fabricates a deterministic `fn * 64`, not a real one).
+
+## Edit & recompile (spec 26 L8)
+
+The one operation in the whole tool that **produces a modified binary**:
+`recompile_edit` (spec 17 §13). It compiles an edited version of one
+function's source with `tools/hermesc/vNN` for this bundle's version and
+writes the result into a scratch copy — never the original bundle, never
+inside the `.hbcproj`. The UI surface is the right pane's **Edit** tab
+(`ui/src/panes/EditPane.tsx`), reached by `edit.recompile` in the menu and
+the palette. It has **no keyboard chord**: a keystroke away is too close for
+this one.
+
+**Attended-only, twice over.**
+
+1. In the browser: type the edited source, press "Recompile...", then confirm
+   a second time. The first press posts nothing (the Playwright spec asserts
+   that, by watching the network).
+2. On the server: `POST /api/tools/recompile-edit` **refuses** a request whose
+   provenance is a worker (`source: "llm"`, or a `who` of `worker:<kind>`)
+   with a 403 before any sandbox exists — spec 23 §7's "no worker may call it
+   unattended; `poc-finding` proposes the edit and the human runs it". The
+   refusal is a route-level check, not an after-the-fact log audit.
+
+**The sandbox** (`src/ui-server/sandbox.ts`, spec 21 §2.1/§2.4). The
+speculative edited source is materialised inside a disposable directory
+created per experiment and destroyed afterwards — on success, on throw, and
+on `exit`/`SIGINT`/`SIGTERM` while any sandbox is live. Two kinds:
+
+| kind | what it is | when |
+|---|---|---|
+| `copy` (**default**) | a `mkdtemp` directory | `recompile_edit` is a single-file patch, which spec 21 §2.4 explicitly allows a plain temp copy for; it also works when the project is not in a git checkout at all |
+| `worktree` | `git worktree add --detach`, torn down with `git worktree remove --force` + `prune` | an experiment that wants the whole tree and git's own diff. Requires a git checkout; it errors rather than silently degrading to a copy |
+
+Send `{"sandbox":{"kind":"worktree"}}` in the body to ask for the other one.
+Spec 26 §4.3 reserves the final word on this default for Fred; both kinds are
+implemented, so his answer is a one-word change.
+
+What is **not** torn down, deliberately: `RecompileEditResult.outputPath`,
+the recompiled `.hbc` copy. That path is the experiment's artifact and the
+caller is told to go and look at it, so it lives in `McpTools`' own scratch
+directory (already, by that method's NO-MUTATE PROOF, never the bundle and
+never inside the project) and outlives the sandbox.
+
+**Response** (additive; every field `McpTools` returned is unchanged):
+
+```
+{ rid, line, warning, watermark: {kind:"edited-and-recompiled", baseBundleSha256, fn, editSha256},
+  outputPath, sandbox: { id, kind, tornDown, teardownError? } }
+```
+
+`warning` and `watermark` are rendered **verbatim** in `<pre>` blocks — no
+rewording, no truncation, no icon standing in for the words — the same rule
+`ToolError.reason` already follows. `tornDown: false` is shown as a loud
+`NO - <error>`, because a sandbox that outlived its experiment is a fact the
+operator must see, not a detail to hide. **Cancel writes nothing**: it is a
+pure client-side reset that never posts, so nothing is compiled, no scratch
+binary exists and no `.hbcproj` row is written.
+
+Tests: `tests/ui-server/sandbox.test.ts` (teardown on success and on throw,
+the bundle byte-identical after an experiment, 16 concurrent sandboxes never
+sharing a path, the worker refusal, and the git-worktree kind),
+`ui/e2e/recompile.spec.ts` (the verbatim warning/watermark through the real
+server, and cancel posting nothing). The e2e skips loudly, never silently,
+on a machine with no `tools/hermesc` for this bundle's version.
 
 ## Activity feed (wave 2, track 3)
 

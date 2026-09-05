@@ -419,6 +419,20 @@ attended-only, and is never reachable from a worker (spec 23 §7).
 **Depends on:** L2 (nothing that produces a binary ships before auth does).
 **Needs Fred:** §4.3.
 
+**Landed 2026-09-05** (Claude Opus 5, lean worker). `src/ui-server/sandbox.ts`
+owns both the sandbox primitives (`createSandbox`/`destroySandbox`/
+`withSandbox`/`liveSandboxPaths`, kinds `copy` (default) and `worktree`,
+teardown guaranteed on success, on throw and on process exit) and the
+`POST /api/tools/recompile-edit` handler, exported as `RECOMPILE_ROUTES` and
+spliced into `routes.ts`'s single table by one line (the old inline handler
+there is gone; the route's shape is unchanged apart from the additive
+`sandbox: {id, kind, tornDown, teardownError?}` field). The worker refusal is
+a 403 from `refusalForProvenance` before any sandbox is created. UI:
+`ui/src/panes/EditPane.tsx` in a new right-pane "Edit" tab, one registry
+entry `edit.recompile` with **no** default chord, a two-step confirm, and the
+warning/watermark rendered verbatim. Default sandbox kind is `copy`
+(**D31**), which §4.3 leaves Fred free to change to `worktree` in one word.
+
 ---
 
 ### L9 — Graph CFG mode + `GET /api/fn/{fn}/cfg` · **Opus**
