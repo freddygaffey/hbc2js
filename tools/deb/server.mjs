@@ -8,9 +8,16 @@
 // GET  /jobs/:id                                        -> {id, status, exitCode, durationS, tail}
 // GET  /jobs/:id/log                                    -> full log text
 // GET  /jobs                                            -> [{id, status, ref, cmd, exitCode, durationS, createdAt}]
+// GET  /load                                            -> {host, platform, nproc, loadavg, running, queued, maxParallel, score}
+//   (docs/DEB-CI.md "Load-aware picking" -- consumed by tools/deb/pick.mjs)
+//
+// Runs on Linux (`deb`) or macOS (a Mac instance, see tools/deb/start-local.sh):
+// HBC2JS_TOOLCHAIN_DIR (default ~/hbc2js-dev/tools), HBC2JS_CI_DIR (default
+// ~/hbc2js-ci) and PORT (default 8787) are all configurable so more than one
+// node can run this file with different state/toolchain locations.
 //
 // A job: fetch <ref> into a shared bare mirror, `git worktree add` the sha,
-// symlink tools/hermesc + tools/hermes-vm from DEV_CLONE if present, npm ci
+// symlink tools/hermesc + tools/hermes-vm from HBC2JS_TOOLCHAIN_DIR if present, npm ci
 // (cached by lockfile hash), run `cmd` under bash -lc with a timeout, log to
 // disk, remove the worktree unless `keep`. Job metadata is persisted as JSON
 // so a server restart doesn't lose history (in-flight jobs are marked
@@ -22,13 +29,20 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
+import { computeLoadScore } from "./pick.mjs";
 
 const HOME = os.homedir();
 const PORT = Number(process.env.PORT || 8787);
 const MAX_PARALLEL = Number(process.env.MAX_PARALLEL || 4);
-const CI_HOME = process.env.CI_HOME || path.join(HOME, "hbc2js-ci");
+// HBC2JS_CI_DIR is the documented name (docs/DEB-CI.md); CI_HOME is kept as
+// a fallback so an already-deployed unit that only sets CI_HOME keeps working.
+const CI_HOME = process.env.HBC2JS_CI_DIR || process.env.CI_HOME || path.join(HOME, "hbc2js-ci");
 const REPO_URL = process.env.REPO_URL || "https://github.com/freddygaffey/hbc2js.git";
-const DEV_CLONE = process.env.DEV_CLONE || path.join(HOME, "hbc2js-dev");
+// HBC2JS_TOOLCHAIN_DIR points *at* the tools dir directly (unlike the old
+// DEV_CLONE, which pointed at the repo checkout containing tools/) so a
+// non-`deb` node (e.g. this repo's own tools/ on the Mac) can be used as-is.
+const TOOLCHAIN_DIR = process.env.HBC2JS_TOOLCHAIN_DIR
+  || (process.env.DEV_CLONE ? path.join(process.env.DEV_CLONE, "tools") : path.join(HOME, "hbc2js-dev", "tools"));
 const DEFAULT_TIMEOUT_MIN = Number(process.env.DEFAULT_TIMEOUT_MIN || 30);
 const LOG_RETENTION_DAYS = Number(process.env.LOG_RETENTION_DAYS || 14);
 
@@ -66,7 +80,11 @@ async function resolveNode22() {
     const { stdout } = await sh("fnm", ["exec", "--using", "22", "--", "node", "-e", "console.log(process.execPath)"], { env });
     NODE22_BIN_DIR = path.dirname(stdout.trim());
   } catch {
-    NODE22_BIN_DIR = null; // fall back to whatever `node` is on PATH
+    // fnm not installed, or no node 22 pinned via fnm (e.g. a Mac instance
+    // started directly with `node` -- see tools/deb/start-local.sh). Fall
+    // back to this process's own binary directory so jobs still get a
+    // consistent, known-good node instead of whatever happens to be on PATH.
+    NODE22_BIN_DIR = path.dirname(process.execPath);
   }
 }
 
@@ -134,50 +152,58 @@ async function runJob(m) {
     await sh("git", ["worktree", "add", "--detach", jobDir, m.sha], { cwd: MIRROR });
 
     for (const name of ["hermesc", "hermes-vm"]) {
-      const src = path.join(DEV_CLONE, "tools", name);
+      const src = path.join(TOOLCHAIN_DIR, name);
       const dst = path.join(jobDir, "tools", name);
       if (fs.existsSync(src) && !fs.existsSync(dst)) fs.symlinkSync(src, dst);
     }
 
-    const lockFile = path.join(jobDir, "package-lock.json");
-    let installed = false;
-    if (fs.existsSync(lockFile)) {
+    // Root install, then `ui/` (tests/ui-core imports @dagrejs/dagre and react
+    // from ui/node_modules; without it the full gate fails on
+    // tests/ui-core/graph-layout.test.ts). Each is cached by its own lock hash.
+    for (const sub of ["", "ui"]) {
+      const dir = sub === "" ? jobDir : path.join(jobDir, sub);
+      const lockFile = path.join(dir, "package-lock.json");
+      const label = sub === "" ? "npm ci" : `npm ci (${sub}/)`;
+      if (!fs.existsSync(lockFile)) {
+        log.write(`[deb-ci] no ${sub === "" ? "" : sub + "/"}package-lock.json, skipping ${label}\n`);
+        continue;
+      }
       const hash = crypto.createHash("sha256").update(fs.readFileSync(lockFile)).digest("hex").slice(0, 16);
       // The cache dir MUST itself be named `node_modules`: TypeScript (and
       // Node) resolve through the symlink to the real path and then walk up
       // looking for an ancestor `node_modules/<pkg>`. A cache laid out as
       // nm-cache/<hash>/<pkg> made `@types/node`'s `undici-types` import fail
-      // silently on Linux only (macOS has no symlink) → `Response.ok` errors.
+      // silently on Linux only (macOS has no symlink) -> `Response.ok` errors.
       const cacheDir = path.join(NM_CACHE, hash, "node_modules");
-      const nodeModules = path.join(jobDir, "node_modules");
+      const nodeModules = path.join(dir, "node_modules");
       if (fs.existsSync(cacheDir)) {
-        log.write(`[deb-ci] node_modules cache hit ${hash}\n`);
+        log.write(`[deb-ci] node_modules cache hit ${hash}${sub === "" ? "" : ` (${sub}/)`}\n`);
         fs.symlinkSync(cacheDir, nodeModules);
-        installed = true;
-      } else {
-        log.write(`[deb-ci] npm ci (cache miss ${hash})\n`);
-        await new Promise((resolve, reject) => {
-          const env = { ...process.env, ...(m.env || {}) };
-          if (NODE22_BIN_DIR) env.PATH = `${NODE22_BIN_DIR}:${env.PATH}`;
-          // Absolute npm from the node-22 dir: `bash -l` profiles and a PATH-only
-          // prepend both lost to fnm's default (node 18 / npm 9 → incomplete
-          // node_modules, e.g. no undici-types → `Response.ok` typecheck errors).
-          const npmBin = NODE22_BIN_DIR ? path.join(NODE22_BIN_DIR, "npm") : "npm";
-          const p = spawn(npmBin, ["ci"], { cwd: jobDir, env });
-          p.stdout.pipe(log, { end: false });
-          p.stderr.pipe(log, { end: false });
-          p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`npm ci exit ${code}`))));
-          p.on("error", reject);
-        });
-        if (fs.existsSync(nodeModules)) {
-          fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
-          fs.renameSync(nodeModules, cacheDir);
-          fs.symlinkSync(cacheDir, nodeModules);
-        }
-        installed = true;
+        continue;
+      }
+      log.write(`[deb-ci] ${label} (cache miss ${hash})\n`);
+      await new Promise((resolve, reject) => {
+        const env = { ...process.env, ...(m.env || {}) };
+        if (NODE22_BIN_DIR) env.PATH = `${NODE22_BIN_DIR}:${env.PATH}`;
+        // Absolute npm from the node-22 dir: `bash -l` profiles and a PATH-only
+        // prepend both lost to fnm's default (node 18 / npm 9 -> incomplete
+        // node_modules, e.g. no undici-types -> `Response.ok` typecheck errors).
+        const npmBin = NODE22_BIN_DIR ? path.join(NODE22_BIN_DIR, "npm") : "npm";
+        // ui/ gets --ignore-scripts: its only lifecycle script is a Playwright
+        // browser download the gate does not need on a compute node.
+        const args = sub === "" ? ["ci"] : ["ci", "--ignore-scripts"];
+        const p = spawn(npmBin, args, { cwd: dir, env });
+        p.stdout.pipe(log, { end: false });
+        p.stderr.pipe(log, { end: false });
+        p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${label} exit ${code}`))));
+        p.on("error", reject);
+      });
+      if (fs.existsSync(nodeModules)) {
+        fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
+        fs.renameSync(nodeModules, cacheDir);
+        fs.symlinkSync(cacheDir, nodeModules);
       }
     }
-    if (!installed) log.write(`[deb-ci] no package-lock.json, skipping npm ci\n`);
 
     log.write(`[deb-ci] running: ${m.cmd}\n`);
     exitCode = await new Promise((resolve) => {
@@ -295,6 +321,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/jobs") {
       const list = [...jobs.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 100);
       return json(res, 200, list.map(summarize));
+    }
+    if (req.method === "GET" && url.pathname === "/load") {
+      const nproc = os.cpus().length || 1;
+      const loadavg = os.loadavg();
+      const queued = queue.length;
+      const running = activeCount;
+      const score = computeLoadScore(loadavg[0], nproc, queued, running, MAX_PARALLEL);
+      return json(res, 200, {
+        host: os.hostname(), platform: os.platform(), nproc, loadavg,
+        running, queued, maxParallel: MAX_PARALLEL, score,
+      });
     }
     json(res, 404, { error: "not found" });
   } catch (e) {

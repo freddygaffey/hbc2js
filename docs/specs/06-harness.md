@@ -426,7 +426,7 @@ Per spec 00 §8 (`ci.yml` gate, `sweep.yml` nightly):
 * **harness self-test** — the PoC's three phases become a gate test:
   determinism (every fixture traced twice in independent processes must be
   identical), fidelity (the print projection equals `expected.txt`), and
-  **mutation kill rate** with a floor. The baseline is 273/318 (85.8%); CI fails
+  **mutation kill rate** with a floor. The baseline was 273/318 (85.8%) at the PoC and is re-derived when the corpus changes (270/318 for this port, then 361/426 on 2026-09-05 when fixtures 67-69 landed -- see the test's header comment); CI fails
   if it drops. A kill rate that falls means the harness got weaker
   (`docs/EQUIVALENCE.md` §9 item 5).
 * **VM availability** — CI builds or caches the Hermes VMs

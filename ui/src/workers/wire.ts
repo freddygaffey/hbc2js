@@ -146,8 +146,13 @@ export const workersApi = {
     USING_MOCK ? Promise.resolve({ rows: [], total: 0 }) : call(`/suggestions${fn !== undefined ? `?fn=${fn}` : ""}`),
   workerEvents: (since: number): Promise<WorkerEventsTail> =>
     USING_MOCK ? Promise.resolve({ rows: [], cursor: since }) : call(`/worker-events?since=${since}`),
+  // `createdBy` is a `jobs.created_by TEXT REFERENCES sessions(id)` FK — the
+  // UI does not register a session for itself yet (docs/BUGS.md), so it must
+  // omit the field rather than send a literal like `"ui"` that no session
+  // owns (that 500ed every enqueue: FOREIGN KEY constraint failed). Omitting
+  // it is a real, supported shape server-side (`created_by` is nullable).
   enqueue: (kind: string, input: Record<string, unknown>): Promise<{ readonly job: JobRow; readonly deduped: boolean }> =>
-    USING_MOCK ? mockWrite() : call("/jobs", { method: "POST", body: JSON.stringify({ kind, input, createdBy: "ui" }) }),
+    USING_MOCK ? mockWrite() : call("/jobs", { method: "POST", body: JSON.stringify({ kind, input }) }),
   cancel: (id: string): Promise<{ readonly cancelled: boolean; readonly job: JobRow }> =>
     USING_MOCK ? mockWrite() : call(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" }),
   promote: (target: string, rid: string): Promise<{ readonly rid: string; readonly line: string }> =>

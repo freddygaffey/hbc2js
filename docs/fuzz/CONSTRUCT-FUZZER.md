@@ -389,4 +389,12 @@ a seed base campaign-2 never touched.
   `v98-*` files are stale smoke-test leftovers (shared finds-dir race,
   already documented in the campaign-2 rediff report), not campaign 3 v96
   output. Full detail: `docs/reports/2026-09-05-campaign3-signatures.md`.
-  Re-harvest v84 once it reaches its own target.
+- **v84 harvest, complete (2026-09-05):** v84 reached its own `--target
+  10000` (40 report chunks) later the same day. Re-diff: 9,855 pass / 2
+  divergent / 143 inconclusive (98.6%), 0/64 known signatures fired, both
+  divergent reports collapse into the same `-Infinity`-bound-loop
+  fuzzer/VM-capacity-limit artifact already diagnosed for v96/v99 above —
+  not a decompiler bug, no new `docs/BUGS.md` row. All four campaign-3
+  versions (84/94/96/99) are now fully harvested with the same conclusion:
+  0 genuinely-new decompiler-bug families. See the "v84 (complete)" section
+  of `docs/reports/2026-09-05-campaign3-signatures.md` for detail.
