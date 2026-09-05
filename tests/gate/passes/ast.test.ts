@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Expr, Stmt } from "../../../src/emit/ast.ts";
-import { id, lit } from "../../../src/emit/ast.ts";
+import { bin, id, lit } from "../../../src/emit/ast.ts";
 import {
   applyAstPasses,
   defUse,
@@ -23,7 +23,7 @@ import {
   stmtLists,
   walk,
 } from "../../../src/passes/ast.ts";
-import { pruneRegisterDecls } from "../../../src/passes/index.ts";
+import { hoistRegisterInits, pruneRegisterDecls } from "../../../src/passes/index.ts";
 import type { CheckResult, Match, Pass, PassContext } from "../../../src/passes/types.ts";
 import { ErrorCode, Hbc2jsError } from "../../../src/errors.ts";
 
@@ -303,6 +303,61 @@ test("pruneRegisterDecls: shrinks to the registers still used, drops the decl en
 
   const noDecl: readonly Stmt[] = [exprStmt(call(id("f"), []))];
   assert.equal(pruneRegisterDecls(noDecl), noDecl);
+});
+
+// ---------------------------------------------------------------------------
+// F26 (docs/BUGS.md 2026-09-01 "register prologue") — inline-init finaliser
+// ---------------------------------------------------------------------------
+
+test("hoistRegisterInits: a top-level first write with no earlier occurrence becomes its declaration, decl drops entirely once every name is hoisted", () => {
+  const body: readonly Stmt[] = [
+    { k: "decl", kind: "let", names: ["r0", "r1"] },
+    exprStmt(assignExpr(id("r0"), lit("1"))),
+    exprStmt(call(id("f"), [id("r0")])),
+    exprStmt(assignExpr(id("r1"), call(id("g"), []))),
+    exprStmt(call(id("h"), [id("r1")])),
+  ];
+  const out = hoistRegisterInits(body);
+  assert.equal(out.some((s) => s.k === "decl"), false, "both registers hoisted: no decl left");
+  assert.deepEqual(out[0], { k: "init", kind: "let", name: "r0", value: lit("1") });
+  assert.deepEqual(out[2], { k: "init", kind: "let", name: "r1", value: call(id("g"), []) });
+});
+
+test("hoistRegisterInits: partial hoist shrinks the decl to the names left behind", () => {
+  const body: readonly Stmt[] = [
+    { k: "decl", kind: "let", names: ["r0", "r1"] },
+    exprStmt(assignExpr(id("r0"), lit("1"))),
+    { k: "if", test: id("cond"), then: [exprStmt(assignExpr(id("r1"), lit("2")))], else: [exprStmt(call(id("f"), [id("r1")]))] },
+  ];
+  const out = hoistRegisterInits(body);
+  assert.deepEqual((out[0] as Stmt & { k: "decl" }).names, ["r1"], "r1's only write is nested inside an if — not a top-level definition, stays declared");
+  assert.deepEqual(out[1], { k: "init", kind: "let", name: "r0", value: lit("1") });
+});
+
+test("hoistRegisterInits: a register read on some path before its top-level write is left alone (soundness: the read must still see undefined, never a TDZ)", () => {
+  const body: readonly Stmt[] = [
+    { k: "decl", kind: "let", names: ["r0"] },
+    { k: "if", test: id("cond"), then: [exprStmt(call(id("f"), [id("r0")]))], else: [] },
+    exprStmt(assignExpr(id("r0"), lit("1"))),
+  ];
+  assert.equal(hoistRegisterInits(body), body, "same object back: nothing to hoist");
+});
+
+test("hoistRegisterInits: a self-referential first occurrence (r0 = r0 + 1) is not a fresh definition", () => {
+  const body: readonly Stmt[] = [{ k: "decl", kind: "let", names: ["r0"] }, exprStmt(assignExpr(id("r0"), bin("+", id("r0"), lit("1"))))];
+  assert.equal(hoistRegisterInits(body), body);
+});
+
+test("hoistRegisterInits: a write nested inside a block is never hoisted, even when every use is inside that same block", () => {
+  const body: readonly Stmt[] = [{ k: "decl", kind: "let", names: ["r0"] }, { k: "if", test: id("cond"), then: [exprStmt(assignExpr(id("r0"), lit("1"))), exprStmt(call(id("f"), [id("r0")]))], else: [] }];
+  assert.equal(hoistRegisterInits(body), body);
+});
+
+test("hoistRegisterInits: no decl, or a decl with no register names, passes through unchanged", () => {
+  const noDecl: readonly Stmt[] = [exprStmt(call(id("f"), []))];
+  assert.equal(hoistRegisterInits(noDecl), noDecl);
+  const nonRegisterDecl: readonly Stmt[] = [{ k: "decl", kind: "let", names: ["arr"] }, exprStmt(assignExpr(id("arr"), lit("1")))];
+  assert.equal(hoistRegisterInits(nonRegisterDecl), nonRegisterDecl);
 });
 
 // ---------------------------------------------------------------------------

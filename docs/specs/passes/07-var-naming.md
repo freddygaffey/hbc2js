@@ -57,10 +57,20 @@ The emitter declares a function's live registers in one leading statement
 `{k:"decl", kind:"let", names:["r0","r1",…]}` (`src/emit/function.ts`) and
 writes each as `{k:"init"|"assign"}` with target `{k:"ident", name:"rN"}` and
 reads as `{k:"ident", name:"rN"}`. `src/passes/index.ts`'s F10 finaliser has
-already dropped any leading `let rN` that ended up dead. Parameters are a
-*separate* class the emitter already names `a1…aN` (`function.ts:168`); they are
-not `rN`. Nested functions restart register numbering from `r0` in their own
-frame (AGENT-BRIEF: Hermes restarts `r0` per function).
+already dropped any leading `let rN` that ended up dead, and its F26 finaliser
+(docs/BUGS.md 2026-09-01 "register prologue") runs right after F10: a
+surviving name whose first occurrence anywhere in the function is a plain
+top-level `name = value;` becomes an inline `let name = value;` at that same
+statement, in place of staying hoisted uninitialised in the leading decl. So
+by the time this rung's matcher ever sees a function, a live register may
+already be sitting in either shape — `decl.names` still lists every register
+this rung may rewrite, whether or not F26 later moves *another* register's
+declaration inline; this rung itself never runs before F26 (it is the last
+rung of stage B, F26 is a post-pipeline finaliser) so it always sees the
+pre-F26 shape described above. Parameters are a *separate* class the emitter
+already names `a1…aN` (`function.ts:168`); they are not `rN`. Nested functions
+restart register numbering from `r0` in their own frame (AGENT-BRIEF: Hermes
+restarts `r0` per function).
 
 ## 3. AST shape the rung owns
 

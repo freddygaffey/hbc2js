@@ -236,7 +236,13 @@ for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
     // E: the accessor still goes through Object.defineProperty, and the
     // property after it is still a separate store.
     assert.match(on, /Object\.defineProperty\([^\n]*"doubled"/);
-    assert.match(on, /Object\.defineProperty\([^\n]*\n\s*(\w+ = [^\n]*;\n\s*)?\w+\.after = /);
+    // docs/BUGS.md 2026-09-01 "register prologue" (F26): the intervening
+    // store may now be a register's own first-definition `let rN = …;`
+    // instead of a bare `rN = …;` (the prologue no longer hoists a register
+    // whose first def is this plain a top-level statement) — either form is
+    // fine, the property under test is only that `.after` is still a
+    // separate statement.
+    assert.match(on, /Object\.defineProperty\([^\n]*\n\s*((?:let |const |var )?\w+ = [^\n]*;\n\s*)?\w+\.after = /);
     // F: the object escapes mid-run, so `second` is never folded in.
     assert.match(on, /\.second = /);
   });
