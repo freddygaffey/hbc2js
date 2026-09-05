@@ -111,3 +111,20 @@ edge); common/high-fan-out names return `ambiguous`. Spec: 17 §14.1. **Measured
 full points-to pass: the receiver's identity (which module a `property-get` actually targets) — the
 by-name candidates are a superset (true caller + same-named-method / barrel / same-name-in-two-modules
 false positives).
+
+## SPEC 27 REAL-APK VALIDATION (2026-09-05) — 1 PASS-set, 1 hard bug
+Ran native ingestion on the REAL NSW APK (base.apk) in a fresh project. Results:
+- PASS: all 9 first-party modules detected + labelled first-party; .env recovery exact
+  (APIGEE_DOMAIN=https://api.g.service.nsw.gov.au + 144 more keys); module extraction/labelling solid.
+- **HARD BUG (L3 JS↔native seam join): 0/9 modules linked on the real bundle.** Root cause:
+  `src/native/seams.ts` `anchorFns` requires NativeModules/TurboModuleRegistry/requireNativeComponent
+  to appear as JS GLOBALS in index/globals.jsonl — true ONLY in the hand-written acceptance fixture
+  (tests/fixtures/constructs/66-native-module-seams), NEVER in a real Metro bundle where these are
+  require()-bound LOCALS. The evidence IS present (NativeModules+Crypto co-occur in fn:8871, matches
+  manual NATIVE-SEAM.md) in index/string-uses.jsonl — the join just never reads it. FIX: seam join must
+  resolve require-bound locals (use string-uses/points-to), not only globals. AND make fixture 66
+  Metro-shaped (require-bound) so the regression test actually catches real bundles. Classic
+  fixture-overfit / local-maximum — the "test on real apps" rule catching it again.
+- TRAP: `hbc2js deps --out` on a STALE dist silently no-ops native ingestion (exit 0, no error, no
+  native/ dir). Add a guard/warning. Bit the validation worker.
+Full report: /Users/fred/nsw-hunt/NATIVE-INGEST-TEST.md
