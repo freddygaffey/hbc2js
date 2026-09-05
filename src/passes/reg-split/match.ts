@@ -337,6 +337,25 @@ function walkExpr(e: Expr, onOcc: (reg: string, kind: OccKind, strong: boolean, 
       const pattern = walkPattern(e.pattern, onOcc);
       return source === e.source && pattern === e.pattern ? e : { ...e, source, pattern };
     }
+    case "class": {
+      // F24-1 (spec 24): a class node's *evaluated* parts are its `extends`
+      // expression, its computed keys and its field initialisers -- those hold
+      // registers of this frame and must be renamed. A method body is a
+      // separate frame with its own register file, exactly like `func` below,
+      // and is never recursed into. Missing this silently left a register read
+      // inside `extends` pointing at the pre-split name (caught by the T2
+      // equivalence gate on 33-class-inheritance-super before it landed).
+      const superClass = e.superClass === null ? null : walkExpr(e.superClass, onOcc, false);
+      let changed = superClass !== e.superClass;
+      const members = e.members.map((m) => {
+        const key = m.computed ? walkExpr(m.key, onOcc, false) : m.key;
+        const value = m.kind === "field" && m.value !== null ? walkExpr(m.value, onOcc, false) : m.value;
+        if (key === m.key && value === m.value) return m;
+        changed = true;
+        return { ...m, key, value };
+      });
+      return changed ? { ...e, superClass, members } : e;
+    }
     default:
       return e; // lit, this, argumentsObject, func (separate frame — never recurse), jsx (not yet present)
   }
