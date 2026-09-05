@@ -53,8 +53,30 @@ function isOwnThis(e: Expr): boolean {
   return nullish(t.left) && nullish(t.right);
 }
 
-/** §3.1: `__hbc_arguments(arguments)` — the stub's own reified arguments. */
+/**
+ * §3.1: the stub's own reified arguments, in either of the two forms the
+ * emitter and the pass ladder can hand this rung.
+ *
+ * 1. `__hbc_arguments(arguments)` -- the raw emitter form (`src/emit/lower.ts`
+ *    `ReifyArguments`), which is what this rung saw before spec 23 landed.
+ * 2. a bare `arguments` -- the *canonical readable* form spec 23's
+ *    `arguments-form` rung rewrites form 1 into.
+ *
+ * Both are the stub's own `arguments` and nobody else's, exactly as `this`
+ * in `isOwnThis` is the stub's own receiver: `arguments` inside the stub can
+ * only denote the stub's own arguments object, and `__hbc_arguments` is that
+ * same object copied. Accepting only form 1 made this rung lose the whole
+ * async idiom on any tree `arguments-form` had already canonicalised, which
+ * it always has: the stage-B hook runs per *function*, innermost first
+ * (`src/emit/index.ts` runs `opts.astPasses` on each emitted function, and a
+ * nested function is emitted before its parent), so `arguments-form` reaches
+ * the async stub's own body one whole hook invocation before `async-recovery`
+ * -- which matches the stub from its *parent's* body -- ever sees it. Registry
+ * order cannot fix that; it only orders passes within one function.
+ * docs/BUGS.md 2026-09-05 `arguments-form` vs `async-recovery`.
+ */
 function isOwnArguments(e: Expr): boolean {
+  if (e.k === "argumentsObject") return true;
   return e.k === "call" && isIdent(e.callee, "__hbc_arguments") && e.args.length === 1 && e.args[0]!.k === "argumentsObject";
 }
 
@@ -113,7 +135,7 @@ export function recover(stub: FuncStmt): Recovery {
   const [aFactory, aThis, aArgs] = driverCall.args.map(resolve) as [Expr, Expr, Expr];
   if (!isIdent(aFactory, factory.name)) return no("driver-name", "the driver's first argument is not the group's factory (R-A1)");
   if (!isOwnThis(aThis)) return no("this-coercion", "the driver's second argument is not the stub's own `this` (R-A2)");
-  if (!isOwnArguments(aArgs)) return no("this-coercion", "the driver's third argument is not __hbc_arguments(arguments) (R-A2)");
+  if (!isOwnArguments(aArgs)) return no("this-coercion", "the driver's third argument is not the stub's own arguments (bare `arguments` or __hbc_arguments(arguments)) (R-A2)");
   // R-A3: the factory escapes nowhere else.
   const uses = identUses(body.filter((s) => s !== factory), factory.name);
   if (uses.reads + uses.writes + uses.nested !== 1) return no("factory-escapes", `the factory is referenced ${uses.reads + uses.writes + uses.nested} times outside its own declaration, not once (R-A3)`);

@@ -494,6 +494,18 @@ a read of `__hbc_b_spawnAsync`/`__hbc_b_makeAsyncIterator`, a read of the
 factory `F`, the `this === null || this === undefined ? globalThis : Object(this)`
 coercion, the driver call `d(F, t, args)` and its `return`.
 
+> **Amendment, 2026-09-05 (ladder fix, docs/BUGS.md `arguments-form` vs
+> `async-recovery`).** The arguments operand has *two* accepted forms, not one:
+> `__hbc_arguments(arguments)` as written above, and a bare `arguments`, which
+> is what spec 23's `arguments-form` (catalogue row R10) rewrites the first
+> into. `arguments-form` always wins the race -- the stage-B hook runs per
+> function, innermost first, so it reaches the async stub's own body before
+> `async-recovery` (which matches the stub from its *parent's* statement list)
+> ever sees it -- and its output is the canonical readable form. Both denote
+> the stub's own arguments object, exactly as bare `this` and the coercion both
+> denote the stub's own receiver (PUSHBACK P-31), so accepting both keeps R-A2
+> sound. Anything else is still R-A2.
+
 `Match.data` carries: the group kind, the suspend/resume map from F25-2, the
 per-arm `<sentReg>`/`<retReg>` pair, the entry segment, the topological order
 of the suspend graph, and the exact statement indices to delete.
@@ -613,8 +625,10 @@ Each is a distinct counted `abandoned` reason.
   `d(F, thisArg, args)` with exactly those three arguments in that order.
 * **R-A2 `this-coercion`** — the second argument is not the
   `this === null || this === undefined ? globalThis : Object(this)` coercion
-  the emitter writes, or the third is not `__hbc_arguments(arguments)`. An
-  async function's `this`/`arguments` must be the stub's own.
+  the emitter writes (or bare `this`, PUSHBACK P-31), or the third is neither
+  `__hbc_arguments(arguments)` nor the bare `arguments` that `arguments-form`
+  rewrites it into (amendment above). An async function's `this`/`arguments`
+  must be the stub's own.
 * **R-A3 `factory-escapes`** — the factory `F` is referenced anywhere other
   than the driver call.
 * **R-A4 `inner-not-recovered`** — `F` is not a `generator: true` function,
