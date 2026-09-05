@@ -124,16 +124,34 @@ test("baseline: 28-async-await-error suspends inside its try region (R-Y7 eviden
 test("baseline: the async idiom is untouched by every rung except yield-recovery/async-recovery", () => {
   for (const version of ALL_VERSIONS) {
     for (const fixture of ASYNC_FIXTURES) {
-      for (const [what, re] of [
-        ["driver references", SPAWN],
+      for (const [what, re, alsoSkip] of [
+        ["driver references", SPAWN, []],
         // `DRIVER_THIS` is a passes-OFF shape (it spells the receiver into a
         // `Reflect.apply` argument list); `call-shape` rewrites that call, so it
         // is not a pipeline-invariant marker and is asserted above instead.
-        ["this coercions", THIS_COERCION],
-        ["reified arguments", REIFIED_ARGS],
+        ["this coercions", THIS_COERCION, []],
+        // PUSHBACK P-35: spec 23's `arguments-form` (catalogue row R10) owns
+        // exactly this expression -- rewriting `__hbc_arguments(arguments)` to
+        // a bare `arguments` is its whole purpose -- so it is the one further
+        // rung that legitimately touches this marker. Narrowed, not weakened:
+        // the loop below still proves no *other* rung does.
+        ["reified arguments", REIFIED_ARGS, ["arguments-form"]],
       ] as const) {
-        assert.equal(count(js(fixture, version, ["yield-recovery", "async-recovery"]), re), count(base(fixture, version), re), `${fixture} ${version}: ${what}`);
+        assert.equal(count(js(fixture, version, ["yield-recovery", "async-recovery", ...alsoSkip]), re), count(base(fixture, version), re), `${fixture} ${version}: ${what}`);
       }
+    }
+  }
+});
+
+// PUSHBACK P-35, second half: `arguments-form` is the ONLY rung besides the
+// two spec-25 rungs that may move the reified-arguments marker. Skipping it
+// alone restores the passes-off count on every async fixture at every version.
+test("baseline: `arguments-form` is the only other rung that rewrites the async stub's reified arguments", () => {
+  for (const version of ALL_VERSIONS) {
+    for (const fixture of ASYNC_FIXTURES) {
+      const off = count(base(fixture, version), REIFIED_ARGS);
+      assert.equal(count(js(fixture, version, ["yield-recovery", "async-recovery", "arguments-form"]), REIFIED_ARGS), off, `${fixture} ${version}: with arguments-form skipped`);
+      assert.ok(count(js(fixture, version, ["yield-recovery", "async-recovery"]), REIFIED_ARGS) < off, `${fixture} ${version}: arguments-form does rewrite it`);
     }
   }
 });
@@ -233,4 +251,50 @@ test("async-recovery's checker rejects an `after` carrying a yield it did not pr
   const result = check(before as Any, after as Any, { applied: [] } as Any) as { ok: boolean; reason?: string };
   assert.equal(result.ok, false);
   assert.match(String(result.reason), /yield|await/i);
+});
+
+// ---------------------------------------------------------------------------
+// Regression: docs/BUGS.md 2026-09-05 `arguments-form` vs `async-recovery`.
+// The stage-B hook runs per function, innermost first (`src/emit/index.ts`
+// emits a nested function before its parent and runs `opts.astPasses` on
+// each), so `arguments-form` has already canonicalised the async stub's own
+// body by the time `async-recovery` -- which matches the stub from its
+// *parent's* statement list -- ever sees it. Registry order cannot change
+// that. Both operand forms are therefore the stub's own arguments and both
+// must be accepted. RED before the `isOwnArguments` fix (reason
+// `this-coercion`), green after.
+// ---------------------------------------------------------------------------
+
+const asyncStub = (argsOperand: Any): Any => ({
+  k: "func",
+  name: "f",
+  params: [],
+  body: [
+    { k: "func", name: "g", params: [], generator: true, body: [{ k: "expr", expr: { k: "yield", arg: { k: "lit", text: "1" }, delegate: false } }] },
+    { k: "return", arg: { k: "call", callee: { k: "ident", name: "__hbc_b_spawnAsync" }, args: [{ k: "ident", name: "g" }, { k: "this" }, argsOperand] } },
+  ],
+});
+
+test("R-A2 accepts both arguments operands: `arguments-form`'s bare read and the raw reify call", async () => {
+  const { recover } = (await import(`${DIR}/recover.ts`)) as Any;
+  const bare = recover(asyncStub({ k: "argumentsObject" })) as { ok: boolean; reason?: string; awaits?: number };
+  assert.equal(bare.ok, true, `bare \`arguments\` must be accepted (got ${String(bare.reason)})`);
+  assert.equal(bare.awaits, 1);
+  const reified = recover(asyncStub({ k: "call", callee: { k: "ident", name: "__hbc_arguments" }, args: [{ k: "argumentsObject" }] })) as { ok: boolean };
+  assert.equal(reified.ok, true, "the raw emitter form must still be accepted");
+  const alien = recover(asyncStub({ k: "ident", name: "someoneElsesArgs" })) as { ok: boolean; reason?: string };
+  assert.equal(alien.ok, false, "R-A2 stays sound: a foreign value is not the stub's own arguments");
+  assert.equal(alien.reason, "this-coercion");
+});
+
+test("cross-spec: async-recovery still recovers 27/28 with `arguments-form` enabled (BUGS 2026-09-05)", () => {
+  for (const version of ["v84", "v94", "v96"] as const) {
+    const on = js("27-async-await-basic", version);
+    assert.equal(count(on, REIFIED_ARGS), 0, `${version}: arguments-form ran on the stub`);
+    assert.match(on, /async function /, `${version}: and the async idiom survived it`);
+    const without = js("27-async-await-basic", version, ["arguments-form"]);
+    assert.equal(count(on, SPAWN), count(without, SPAWN), `${version}: the same number of driver calls is consumed either way`);
+  }
+  const err = js("28-async-await-error", "v94");
+  assert.match(err, /try \{[\s\S]*await /, "28's await stays inside its try with arguments-form on");
 });

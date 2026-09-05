@@ -40,6 +40,16 @@ export interface PassContext {
    * (liveness, free names) from one statement list.
    */
   readonly fnBody?: readonly AstStmt[];
+  /**
+   * F23-1 (docs/specs/passes/23-arguments-form-literal-forms.md section 2):
+   * stage B only — the emitted parameter identifiers of the current function
+   * (`a1…aN`, `src/emit/function.ts:265`) and whether the list is *simple*
+   * (no rest, no default, no destructuring pattern — `src/emit/ast.ts`'s
+   * `Param` has no pattern field, so "simple" here is exactly "no `init`,
+   * no `rest`"). Populated wherever `fnBody` is. Absent is a refusal, never
+   * a guess (R-A1).
+   */
+  readonly fnParams?: { readonly names: readonly string[]; readonly simple: boolean };
 }
 
 export interface Match<TNode, TData = unknown> {

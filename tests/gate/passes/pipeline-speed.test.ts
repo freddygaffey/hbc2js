@@ -260,9 +260,19 @@ test("P-1: on rn-template, decompiling with every pass on costs at most 12x pass
 // plus three `tests/fixtures/constructs/**` fixtures (01-if-else-chain,
 // 04-for-loop-basic, 23-generator-basic, all v94, passes on) gave the exact
 // same hash before and after.
+//
+// Pin moved 2026-09-05 at the specs 21+22+23 ladder landing (Fred delegated
+// golden/pin decisions to the orchestrator on 2026-09-05). Old hash
+// fa54d8f2..., new hash 6c2f2dbe.... The move is not a check.ts regression:
+// `decompileTree` prints the stage-A tree, and this landing adds three stage-A
+// rungs (`for-in`, `for-of`, `try-shape`). Reviewed before/after diff:
+// docs/reports/2026-09-05-ladder-landing-rn-template-diff.md -- 38 `if-chain`
+// sites become exactly 26 `for-of` + 12 `for-in` sites, `try-shape` claims 163
+// sites, `loop-cond`/`for-header`/`label-clean` counts are unchanged, and no
+// `try`/`catch` or `__hbc_*` helper appears or disappears anywhere.
 test("P-1/part-2: rn-template passes-on output hash is unchanged by the check.ts register-delta rewrite", () => {
   const bytes = new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc")));
   const text = decompileTree(bytes, { passes: {}, analysis: { strictEnv: false }, verify: false, resolveV98Ambiguity: true });
   const hash = createHash("sha256").update(text).digest("hex");
-  assert.equal(hash, "fa54d8f22ba3ccf07ab00dc07d3374a1443d45ae52d7f3027e321ce5b758d7d8");
+  assert.equal(hash, "6c2f2dbe2bbae0aeaa33514ba59153930da48bcdc870bfd1006d36c65d074de1");
 });

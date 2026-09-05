@@ -30,7 +30,11 @@ export type ForMatch = Match<Stmt, ForSite>;
 const HEAD_OPS = /^(LoadConst(Zero|UInt8|Int|Double|True|False|Null|Undefined|String)|Mov|Inc|Dec|Add|AddN|Sub|SubN|Mul|MulN|Div|DivN|Add32|Sub32|Inc32|Dec32|ToNumber|ToNumeric|Negate)$/;
 
 export function match(node: Stmt, ctx: PassContext): ForMatch | null {
-  if (node.k !== "loop" || node.form === undefined || node.form.init !== undefined || node.form.step !== undefined) return null;
+  if (node.k !== "loop" || node.form === undefined) return null;
+  // for-in/for-of annotate an unformed loop and never reach for-header
+  // (§7 ordering), but the type is a union now: narrow explicitly.
+  if (node.form.kind !== "while" && node.form.kind !== "do-while") return null;
+  if (node.form.init !== undefined || node.form.step !== undefined) return null;
   const fn = ctx.structured;
   if (fn === undefined) return null;
   if (usesOf(node.body, node.label).continues > 1) return null;

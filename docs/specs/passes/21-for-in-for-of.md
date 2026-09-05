@@ -237,10 +237,17 @@ Both matchers run on a `loop` node in post-order, and both begin:
    nothing else. `src'` resolves through the header `Mov`s to `src`.
    Either operand order of the `JStrictEqual` is accepted; `JStrictNotEqual`
    with the opposite polarity is accepted too.
-4. **Setup.** The loop's preceding sibling is `block bS` whose last
-   instruction is `IteratorBegin state', src''` with `state' === state`, and
-   `src''` the same register `src'` resolved to. Nothing between the
-   `IteratorBegin` and the loop.
+4. **Setup.** The loop's preceding sibling is `block bS` holding
+   `IteratorBegin state', src''` with `state' === state`, and
+   `src''` the same register `src'` resolved to.
+   *Corrected 2026-09-05, landing measurement:* it is the block's **last**
+   instruction only at v84/v94. v96/v98/v99 schedule the body's own constant
+   loads after it (`IteratorBegin r4,r6 ; LoadConstUInt8 r5,30`,
+   `06-for-of-array`), so the rung takes the **last** `IteratorBegin state,
+   src` in the block and requires only that nothing after it names either
+   register — which is what "nothing between the `IteratorBegin` and the
+   loop" was really asserting. The emitter drops that one instruction
+   (a per-block skip set), not a trailing range.
 5. **Abrupt close.** The body's `try` node (the outermost one whose body
    holds the back edge) has a handler that, ignoring nothing, is exactly
    `Catch rX` ; `IteratorClose state, 1` ; `Throw rX` — three instructions,
@@ -249,12 +256,33 @@ Both matchers run on a `loop` node in post-order, and both begin:
    lowering doc's §6 rule; `try-shape` owns that region, not this rung).
    A `for-of` with **no** such handler is refused: it means the compiler did
    not emit iterator cleanup, i.e. this is not the measured idiom.
+   *Added 2026-09-05, landing measurement:* a loop containing a source
+   `break` gets, at **v84/v94/v96**, a second `try` around the break path
+   (its own `IteratorClose`-then-`break` needs exception safety too), and the
+   two regions then **share one handler**. Neither `try` names it as its own
+   `handler` field: both carry `break <mergeLabel>` to a `labeled` wrapper
+   whose *following sibling* is the real `Catch; IteratorClose state, 1;
+   Throw` — the `AugmentedCfg` "a handler shared by several regions becomes a
+   merge point" case. The rung descends one `labeled` level to find the `try`,
+   resolves the handler through the wrapper, records the wrapper's label as
+   `IterForm.mergeLabel`, and **refuses the whole site** if any nested `try`
+   in the body resolves to a different cleanup block (that is a user `try`).
+   The emitter drops the wrapper, both handlers and the sibling `throw`.
+   v98/v99 emit the ordinary single-`try` shape for the same source.
 6. **Normal closes.** Every other `IteratorClose state, 0` reachable in the
-   body must be the **last** instruction of a `block` that is immediately
-   followed by a `break` out of the loop (possibly through a labeled block),
-   with only `Mov`s between the close and the block's other instructions
-   (v99, §2.2). Any `IteratorClose` that is not one of these, or that names
-   a register other than `state`, refuses the site.
+   body must sit in a `block` that is immediately followed by a `break` out
+   of the loop (possibly through a labeled block), with only `Mov`s between
+   the close and the block's other instructions (v99, §2.2).
+   Any `IteratorClose` that is not one of these, or that names a register
+   other than `state`, refuses the site.
+   *Refined 2026-09-05, landing measurement:* v99 spells the close
+   `Mov r0, state ; IteratorClose r0, 0 ; Jmp`, so (a) the close's operand is
+   resolved through the block's own leading `Mov`s before it is compared with
+   `state` — `closeStateOf`, shared with §6's checker so both stages ask the
+   same register — and (b) the close need not be the block's literal last
+   instruction, but the block is deleted whole, so it may hold **nothing but**
+   `Mov`s, the close, and its own unconditional jump, and every scratch
+   register those `Mov`s write must be dead after the block.
 7. **State is private and dead after.** `state` is written only by
    `IteratorBegin`/`IteratorNext`, read only by
    `IteratorNext`/`IteratorClose` and the header's exhaustion `Mov`, and

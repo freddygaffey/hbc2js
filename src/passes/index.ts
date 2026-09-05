@@ -130,6 +130,10 @@ export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions 
     const diagnostics: Diagnostic[] = [];
     const base = enabledPasses({ ...opts, stage: "B" }) as readonly Pass<readonly AstStmt[]>[];
     const passes = filterByVersion(base, mod.header.version, mod.layout.layoutClass, (d) => diagnostics.push(d));
+    // F23-1: the emitted parameter list is simple iff no param carries a
+    // default (`init`, F15) or is a rest parameter (F17) — `Param` has no
+    // destructuring-pattern field, so those two are the whole condition.
+    const fnParams = { names: fn.params.map((p) => p.name), simple: fn.params.every((p) => p.init === undefined && p.rest !== true) };
     const r: AstApplyResult = applyAstPasses(fn.body, passes, {
       analysis,
       functionIndex: cfg.functionIndex,
@@ -137,6 +141,7 @@ export function astPassHook(analysis: ModuleAnalysis, opts: PassPipelineOptions 
       hbcVersion: mod.header.version,
       layoutClass: mod.layout.layoutClass,
       module: moduleView,
+      fnParams,
       diagnostic: (d) => diagnostics.push(d),
     });
     onResult?.(cfg.functionIndex, r);

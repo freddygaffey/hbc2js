@@ -37,7 +37,27 @@ export type Expr =
    *  future writer/checker step that needs to tell `a.b?.()` (this = `a`)
    *  from a detached call can use it. */
   | { readonly k: "optcall"; readonly callee: Expr; readonly args: readonly Expr[]; readonly thisIsBase: boolean }
-  | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[] }
+  /**
+   * F23-2 (docs/specs/passes/23-arguments-form-literal-forms.md section 2):
+   * `fromRegExpTable` marks a `new RegExp(pattern, flags)` node built by
+   * `literals.ts`'s `regExpExpr` from a `CreateRegExp` bytecode instruction's
+   * string-table ids — the only provenance the `literal-forms` rung (L-R) may
+   * rely on to raise it to a `/pattern/flags` literal. A genuine source-level
+   * `new RegExp(...)` (no flag) is a real `RegExp` global read that a literal
+   * would erase, so it must never be rewritten. Printing, `sameShape` and
+   * `effectSequence` ignore the flag entirely: it changes no observable
+   * behaviour by itself.
+   */
+  | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[]; readonly fromRegExpTable?: true }
+  /**
+   * F23-3: a regex literal `/pattern/flags`, the `literal-forms` rung's (L-R)
+   * sole writer output for a `fromRegExpTable` `new RegExp` node. `pattern`/
+   * `flags` are the literal's raw source text (never re-escaped by the
+   * printer — the rung itself computed the escaped form via
+   * `new RegExp(p, f).source`). Printed at `PRIMARY` precedence: `/x/g.test(s)`
+   * is valid JS with no parentheses needed as a member base.
+   */
+  | { readonly k: "regex"; readonly pattern: string; readonly flags: string }
   | { readonly k: "bin"; readonly op: BinaryOp; readonly left: Expr; readonly right: Expr }
   | { readonly k: "logical"; readonly op: "&&" | "||" | "??"; readonly left: Expr; readonly right: Expr }
   | { readonly k: "unary"; readonly op: "!" | "-" | "+" | "~" | "typeof " | "void " | "delete "; readonly arg: Expr }
@@ -290,12 +310,17 @@ export type Stmt =
   | { readonly k: "do-while"; readonly label: string | null; readonly test: Expr; readonly body: readonly Stmt[]; readonly origin?: Origin }
   /** `label: for (init; test; update) { … }` — spec 07 for-header. */
   | { readonly k: "for"; readonly label: string | null; readonly init: Expr | null; readonly test: Expr; readonly update: Expr | null; readonly body: readonly Stmt[]; readonly origin?: Origin }
+  /** `label: for (const|let|var <left> in|of <right>) { … }` — spec 21 for-in/for-of. */
+  | { readonly k: "for-in" | "for-of"; readonly label: string | null; readonly decl: "const" | "let" | "var" | null; readonly left: Expr; readonly right: Expr; readonly body: readonly Stmt[]; readonly origin?: Origin }
   | { readonly k: "labeled"; readonly label: string; readonly body: readonly Stmt[] }
   | { readonly k: "break"; readonly label: string | null; readonly origin?: Origin }
   | { readonly k: "continue"; readonly label: string | null; readonly origin?: Origin }
   | { readonly k: "return"; readonly arg: Expr | null; readonly origin?: Origin }
   | { readonly k: "throw"; readonly arg: Expr; readonly origin?: Origin }
-  | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string; readonly handler: readonly Stmt[] }
+  /** `param: null` prints `catch { }` (try-clean/try-shape §3.2, an unread
+   *  catch binding — the emitter's own `Catch r = __exc` lowering still runs
+   *  inside `handler`; only the surface binding name is dropped). */
+  | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string | null; readonly handler: readonly Stmt[] }
   | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[]; readonly origin?: Origin }
   /** F25-1: `generator`/`async` mark a `function*` / `async function`
    *  declaration recovered by the spec-25 rungs. */

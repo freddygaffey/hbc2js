@@ -19,7 +19,6 @@ import { getTypeOfIsTable } from "../../../src/tables/registry.ts";
 import type { OpcodeTableId } from "../../../src/tables/types.ts";
 import { repoRoot } from "../../support/paths.ts";
 
-const SKIP = "spec 23 acceptance -- unimplemented";
 const DIR = ["..", "..", "..", "src", "passes", "literal-forms"].join("/");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -151,7 +150,7 @@ test("PL-06: catalogue rows 29 and 30 exist and are verified", () => {
 // Rung shape and ordering (spec 23 section 2).
 // ---------------------------------------------------------------------------
 
-test("literal-forms is a stage-B rung on catalogue rows 29 and 30, before the naming rungs", { skip: SKIP }, async () => {
+test("literal-forms is a stage-B rung on catalogue rows 29 and 30, before the naming rungs", async () => {
   const { literalForms } = await rung();
   assert.equal(literalForms.stage, "B");
   assert.deepEqual([...(literalForms.catalogue as (number | string)[])], [29, 30]);
@@ -163,7 +162,7 @@ test("literal-forms is a stage-B rung on catalogue rows 29 and 30, before the na
   assert.doesNotThrow(() => enabledPasses({}));
 });
 
-test("literal-forms: an already-raised expression is a fixed point (PL-08)", { skip: SKIP }, async () => {
+test("literal-forms: an already-raised expression is a fixed point (PL-08)", async () => {
   const { match } = await rung();
   assert.equal(match({ k: "regex", pattern: "a", flags: "g" } as Any, {} as Any), null);
   assert.equal(match({ k: "bin", op: "!==", left: { k: "unary", op: "typeof ", arg: { k: "ident", name: "r1" } }, right: { k: "lit", text: '"string"' } } as Any, {} as Any), null);
@@ -173,7 +172,7 @@ test("literal-forms: an already-raised expression is a fixed point (PL-08)", { s
 // Fixture properties (spec 23 section 5).
 // ---------------------------------------------------------------------------
 
-test("L-R: every regex-table site becomes a literal, at every version", { skip: SKIP }, () => {
+test("L-R: every regex-table site becomes a literal, at every version", () => {
   for (const version of VERSIONS) {
     const on = js("45-regex-literals", version);
     assert.equal(count(on, NEW_REGEXP), 0, `${version}: no CreateRegExp site may stay a constructor call`);
@@ -181,17 +180,22 @@ test("L-R: every regex-table site becomes a literal, at every version", { skip: 
     assert.match(on, /\/\^\[a-z\]\+\$\/i/);
     // The unflagged literal loses the empty flags string, not the slashes.
     assert.match(on, /\/,\//);
-    assert.doesNotMatch(on, /\/\//, "an empty pattern must print as /(?:)/, never //");
+    // The emitter prints a `// fn#N "name"` comment (always `// ` with a
+    // trailing space) at the top of the module and of every function, so a
+    // blanket `//` search is unsatisfiable against any real output; an
+    // empty-pattern regex literal prints as `//<flags>` instead, i.e. `//`
+    // immediately followed by a non-space, which distinguishes the two.
+    assert.doesNotMatch(on, /\/\/\S/, "an empty pattern must print as /(?:)/, never //");
   }
 });
 
-test("L-R refuses a `new RegExp` with no regex-table provenance (R-L1)", { skip: SKIP }, async () => {
+test("L-R refuses a `new RegExp` with no regex-table provenance (R-L1)", async () => {
   const { match } = await rung();
   const node = { k: "new", callee: { k: "ident", name: "RegExp" }, args: [{ k: "lit", text: '"a"' }, { k: "lit", text: '"g"' }] };
   assert.equal(match(node as Any, {} as Any), null, "without fromRegExpTable the global read is real and must survive");
 });
 
-test("L-T: v98/v99 print the same typeof shapes v94/v96 already print", { skip: SKIP }, () => {
+test("L-T: v98/v99 print the same typeof shapes v94/v96 already print", () => {
   for (const version of TYPEOF_IS_VERSIONS) {
     const on = js("55-typeof-is-masks", version);
     assert.equal(count(on, NEGATED_TYPEOF), 0, `${version}: no negated-typeof expansion may survive`);
@@ -204,7 +208,7 @@ test("L-T: v98/v99 print the same typeof shapes v94/v96 already print", { skip: 
   }
 });
 
-test("L-T is a no-op where the typeof is not a mask expansion (R-T2/R-T3)", { skip: SKIP }, () => {
+test("L-T is a no-op where the typeof is not a mask expansion (R-T2/R-T3)", () => {
   for (const version of VERSIONS) {
     for (const fixture of ["47-typeof-instanceof-in", "46-bigint-arithmetic"]) {
       assert.equal(js(fixture, version), js(fixture, version, "off"), `${fixture} ${version}: literal-forms must rewrite nothing here`);

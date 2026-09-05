@@ -94,6 +94,7 @@ function precedence(e: Expr): number {
     case "spread": // F17: never wrapped in parens by `expr()`; ASSIGNMENT is a safe lower bound
     case "template": // F14: a template literal is a primary expression
     case "jsx": // D20: a JSX element is a primary expression (and so is the call it lowers to, at MEMBER — PRIMARY is the safe lower bound for both renderings)
+    case "regex": // F23-3: `/x/g.test(s)` never parenthesises the literal as a member base
       return PRIMARY;
     case "member":
     case "optmember": // F18: same precedence as `member` — a chain never parenthesises an inner link
@@ -389,6 +390,14 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       printBody(s.body, depth + 1, out, opts);
       out.push(`${p}}`);
       return;
+    case "for-in":
+    case "for-of": {
+      const decl = s.decl === null ? expr(s.left, 0) : `${s.decl} ${expr(s.left, 0)}`;
+      out.push(`${p}${s.label === null ? "" : `${s.label}: `}for (${decl} ${s.k === "for-in" ? "in" : "of"} ${expr(s.right, 0)}) {`);
+      printBody(s.body, depth + 1, out, opts);
+      out.push(`${p}}`);
+      return;
+    }
     case "labeled":
       out.push(`${p}${s.label}: {`);
       printBody(s.body, depth + 1, out, opts);
@@ -409,7 +418,7 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
     case "try":
       out.push(`${p}try {`);
       printBody(s.block, depth + 1, out, opts);
-      out.push(`${p}} catch (${s.param}) {`);
+      out.push(s.param === null ? `${p}} catch {` : `${p}} catch (${s.param}) {`);
       printBody(s.handler, depth + 1, out, opts);
       out.push(`${p}}`);
       return;
@@ -462,6 +471,13 @@ function render(e: Expr): string {
       return "this";
     case "argumentsObject":
       return "arguments";
+    case "regex":
+      // F23-3/R-L5: an empty pattern is never printed as `//` (a comment
+      // opener) — the writer computes `pattern` from `.source`, which is
+      // `(?:)` for the empty case, so this can only fire on a malformed
+      // hand-built node.
+      if (e.pattern === "") throw new Error("regex literal: empty pattern would print as `//`");
+      return `/${e.pattern}/${e.flags}`;
     case "member": {
       // A numeric-literal callee/object needs parentheses: `1 .x` is a syntax
       // trap, and `(1).x` is the standard workaround.

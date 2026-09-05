@@ -36,7 +36,7 @@ export function declaredNames(stmts: readonly Stmt[]): Set<string> {
     stmt: (s) => {
       if (s.k === "decl") for (const n of s.names) bound.add(n);
       else if (s.k === "init") bound.add(s.name);
-      else if (s.k === "try") bound.add(s.param);
+      else if (s.k === "try") { if (s.param !== null) bound.add(s.param); }
       else if (s.k === "func") {
         bound.add(s.name);
         for (const param of s.params) bound.add(param.name);
@@ -113,6 +113,8 @@ export function indexStatements(fnBody: readonly Stmt[]): Map<Stmt, number> {
         case "while":
         case "do-while":
         case "for":
+        case "for-in":
+        case "for-of":
         case "labeled":
         case "iife":
           visit(s.body);
@@ -151,7 +153,9 @@ function computeLoopMembership(fnBody: readonly Stmt[]): Map<number, ReadonlySet
           break;
         case "while":
         case "do-while":
-        case "for": {
+        case "for":
+        case "for-in":
+        case "for-of": {
           const next = new Set(loops);
           next.add(myIdx);
           out.set(myIdx, next);
@@ -202,6 +206,8 @@ function computeTryMembership(fnBody: readonly Stmt[]): Map<number, ReadonlySet<
         case "while":
         case "do-while":
         case "for":
+        case "for-in":
+        case "for-of":
         case "labeled":
         case "iife":
           visit(s.body, tries);
@@ -404,6 +410,20 @@ function transformStmtExprs(s: Stmt, onOccFull: (reg: string, kind: OccKind, str
       const update = s.update === null ? null : walkExpr(s.update, wrap("update"), true);
       return init === s.init && test === s.test && update === s.update ? s : { ...s, init, test, update };
     }
+    case "for-in":
+    case "for-of": {
+      // `left` is the loop's own binding — a strong def, same treatment as
+      // `init`'s name, not a use of whatever the register held before.
+      let left = s.left;
+      if (left.k === "ident" && isRegisterName(left.name)) {
+        const to = onOcc(left.name, "def", true, false);
+        if (to !== undefined) left = { ...left, name: to };
+      } else {
+        left = walkExpr(left, onOcc, false);
+      }
+      const right = walkExpr(s.right, onOcc, false);
+      return left === s.left && right === s.right ? s : { ...s, left, right };
+    }
     case "return": {
       if (s.arg === null) return s;
       const arg = walkExpr(s.arg, onOcc, false);
@@ -459,6 +479,8 @@ export function transformFrame(fnBody: readonly Stmt[], stmtIndex: ReadonlyMap<S
       case "while":
       case "do-while":
       case "for":
+      case "for-in":
+      case "for-of":
       case "labeled":
       case "iife": {
         const body = visitList(next.body);
@@ -673,6 +695,15 @@ export function analyzeFrame(fnBody: readonly Stmt[]): RegSplitSite | null {
           processOccs(s, idx, "init");
           observe(s);
           s = loopFixpoint(s, false, true, idx, stmt.body, idx, "test", "update", stmt.label);
+          break;
+        }
+        case "for-in":
+        case "for-of": {
+          // The binding (`left`) is written fresh every iteration — same
+          // per-iteration re-evaluation as a `while`'s test, so it belongs
+          // inside `loopFixpoint`, not processed once here.
+          observe(s);
+          s = loopFixpoint(s, false, true, idx, stmt.body, undefined, "any", "any", stmt.label);
           break;
         }
         case "labeled": {

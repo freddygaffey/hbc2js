@@ -40,22 +40,22 @@ stores) split into real files. (docs/LANES.md)
 - M2 Disassembler (100% match vs `hermesc -dump-bytecode`) — done
 - M3 Test harness (trace runner + recompile round-trip) — done
 - M4 Baseline (CFG + structurer + emitter) — done, 501/501 gate, 0 DIVERGENT
-- M5 Pass ladder (readability) — in progress, 16/30 rungs merged (1 opt-in)
+- M5 Pass ladder (readability) — in progress, 18/30 rungs merged (1 opt-in)
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 16/30 rungs live (1 opt-in)
+## Ladder — 18/30 rungs live (1 opt-in)
 
-`loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `label-clean`,
-`expr-rebuild`, `global-access`, `call-shape`, `default-params`,
+`loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `try-shape`,
+`label-clean`, `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
 `destructure`, `spread-rest`, `template-literal`, `jsx-recover` (opt-in
-`--jsx`), `fn-naming`, `reg-split`, `var-naming`. D23 (2026-09-03,
+`--jsx`), `try-clean`, `fn-naming`, `reg-split`, `var-naming`. D23 (2026-09-03,
 docs/DECISIONS.md) reorders the registry: every structure-recovery rung
 (through `jsx-recover`) now runs before the renaming block
 (`fn-naming`/`reg-split`/`var-naming`) — `reg-split` is now **default-on**
 (P-11/P-11b resolved, docs/PUSHBACK.md P-11 closed, docs/BUGS.md P-11b
-row resolved).
-Next: var-naming compound -> literal-forms / try-clean / arguments-form /
-for-in/for-of.
+row resolved). `try-shape`/`try-clean` (spec 22, 2026-09-05) strip redundant
+`__pc`/`__exc` scaffolding (PUSHBACK P-19).
+Next: var-naming compound -> literal-forms / arguments-form / for-in/for-of.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate

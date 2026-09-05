@@ -73,6 +73,12 @@ export function topLevelExprOf(s: Stmt): Expr | null {
       return s.test;
     case "for":
       return s.test;
+    case "for-in":
+    case "for-of":
+      // `left` is a write target (the loop's own binding), not a read here
+      // — `right` is the one expression this statement's own position reads,
+      // the same role `for`'s `test` plays.
+      return s.right;
     case "switch":
       return s.disc;
     default:
@@ -431,6 +437,18 @@ function branchVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, 
       const body = scanFrom(s.body, reg, 0, withBreak, CLEAR, memo);
       return body === "read" ? "read" : "next";
     }
+    case "for-in":
+    case "for-of": {
+      // `right` is `topLevelExprOf`'s job (handled by `stmtVerdict`'s own
+      // top-level-read check before this ever runs); `left` is a fresh
+      // per-iteration binding, not a read of `reg`'s old value, so there is
+      // no header verdict here the way `for`'s `init`/`update` give one —
+      // only the body can still read the stale value.
+      const withBreak = new Map(labels);
+      withBreak.set(UNLABELLED_BREAK, rest);
+      const body = scanFrom(s.body, reg, 0, withBreak, CLEAR, memo);
+      return body === "read" ? "read" : "next";
+    }
     case "try": {
       const block = scanFrom(s.block, reg, 0, labels, CLEAR, memo);
       const handler = scanFrom(s.handler, reg, 0, labels, rest, memo);
@@ -521,6 +539,8 @@ function containsJump(list: readonly Stmt[]): boolean {
       case "while":
       case "do-while":
       case "for":
+      case "for-in":
+      case "for-of":
       case "labeled":
       case "iife":
         if (containsJump(s.body)) return true;

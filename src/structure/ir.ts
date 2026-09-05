@@ -53,8 +53,14 @@ export type Stmt =
   /**
    * Exception region. Carved by spec 03, wrapped here, never inferred.
    * `cfgBlock` is the synthetic try-head node (§4.5 note below).
+   *
+   * `shape` (F22-1, docs/specs/passes/22-try-shape-try-clean.md §3.1) is an
+   * optional annotation `src/passes/try-shape` writes and the emitter
+   * (`src/emit/function.ts`) reads: it is transparent to verify.ts, exactly
+   * like `LoopForm`/`hideLabel`/`elseIf` — the body and handler subtrees it
+   * sits on are untouched.
    */
-  | { readonly k: "try"; readonly region: number; readonly cfgBlock: BlockId; readonly body: Stmt; readonly handler: Stmt; readonly catchRegister: number }
+  | { readonly k: "try"; readonly region: number; readonly cfgBlock: BlockId; readonly body: Stmt; readonly handler: Stmt; readonly catchRegister: number; readonly shape?: TryShape }
   /**
    * Assign the §4.4 dispatch variable. Not in spec 04's node list: `dispatch`
    * mode is specified as "rewrite entering edges as `__state0 = k; continue L`",
@@ -65,7 +71,7 @@ export type Stmt =
   | { readonly k: "setState"; readonly variable: DispatchVar; readonly value: number };
 
 /** See the `loop` node. Written by src/passes, read by src/emit. */
-export interface LoopForm {
+export interface WhileForm {
   /** "while": the test runs before every iteration; "do-while": after. */
   readonly kind: "while" | "do-while";
   /** The `if` block (inside `body`) whose terminator is the test. */
@@ -86,19 +92,58 @@ export interface LoopForm {
    */
   readonly init?: { readonly cfgBlock: BlockId; readonly from: number };
   readonly step?: { readonly cfgBlock: BlockId; readonly from: number };
-  /**
-   * `for-in`/`for-of` (spec `docs/specs/passes/01-framework-fixes.md` F5):
-   * `iterBlock` is the block holding the per-iteration advance-and-test
-   * (`GetNextPName`/`IteratorNext` followed by the exhaustion jump);
-   * `close` names blocks that are the compiler's iterator-protocol cleanup
-   * (`for-of`'s `break`/exception `IteratorClose`), implied by the `for...of`
-   * form and dropped rather than printed. The emitter prints `for (k in o)` /
-   * `for (v of it)` only when it finds `iterBlock` exactly where declared,
-   * else it falls back to `while`, exactly as `init`/`step` do. Nothing sets
-   * it in batch 1.
-   */
-  readonly iter?: { readonly kind: "for-in" | "for-of"; readonly iterBlock: BlockId; readonly close: readonly BlockId[] };
 }
+
+/** See the `try` node's `shape` field. Written by `src/passes/try-shape`,
+ *  read by `src/emit/function.ts`'s `planTries`/`case "try"` lowering
+ *  (docs/specs/passes/22-try-shape-try-clean.md §3.1). */
+export interface TryShape {
+  /** No instruction in the handler reads `catchRegister`: the handler needs
+   *  no `__exc = e` copy and no catch binding. */
+  readonly bindsExc: boolean;
+  /** `"redundant"`: the emitter's `__pc` range guard is provably always true
+   *  when the handler runs, so it may be omitted. `"needed"` is the default
+   *  and an absent `shape` means the same. */
+  readonly guard: "needed" | "redundant";
+}
+
+/**
+ * `for-in`/`for-of` (docs/specs/passes/21-for-in-for-of.md §3). Annotation
+ * only — nothing is moved, added or removed in the tree; the emitter derives
+ * the printed `for (… in …)` / `for (… of …)` from these fields and falls
+ * back to `while` when any of them is not exactly where declared, the same
+ * discipline `WhileForm.init`/`step` use.
+ */
+export interface IterForm {
+  readonly kind: "for-in" | "for-of";
+  /** The block whose terminator is the exhaustion test (the `if`'s block). */
+  readonly cond: BlockId;
+  readonly at: "head";
+  /** True when the taken edge of `cond` leaves the loop. */
+  readonly negate: boolean;
+  /** Block holding GetNextPName / IteratorNext. Equal to `cond` in every
+   *  shape measured; kept separate so a future split header still works. */
+  readonly iter: BlockId;
+  /** Block whose tail holds GetPNameList / IteratorBegin (the loop's
+   *  preceding `block` sibling, or the enclosing labeled block's first). */
+  readonly setup: BlockId;
+  /** Blocks ending in `IteratorClose` that the rung is dropping. Empty for
+   *  `for-in`; 1..2 entries for `for-of` (normal close per `break`, plus
+   *  the one abrupt close in the handler). */
+  readonly close: readonly BlockId[];
+  /** Register the per-iteration binding lands in (`k` / `v`). */
+  readonly binding: number;
+  /** Register holding the enumerated object / the iterable. */
+  readonly source: number;
+  /** `for-of` only, and only in the merge-point cleanup shape v84/v94/v96 emit
+   *  for a loop with a source `break` (docs/BUGS.md `for-of-break-handler-shape`):
+   *  the label of the `labeled` wrapper both synthesized `try`s carry a
+   *  `break` to instead of naming the cleanup block as their own `handler`.
+   *  The emitter drops that wrapper, both handlers and the cleanup block. */
+  readonly mergeLabel?: LabelId;
+}
+
+export type LoopForm = WhileForm | IterForm;
 
 export type Scrutinee =
   | { readonly t: "jumptable"; readonly table: SwitchTable }
