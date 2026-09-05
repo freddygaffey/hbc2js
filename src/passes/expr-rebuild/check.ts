@@ -19,6 +19,7 @@ const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { CheckResult, PassContext } from "../types.ts";
 import type { ExprRebuildSite } from "./match.ts";
 import { classifySite, exprCounts } from "./match.ts";
+import { noteStmtIndexSplice } from "./stmt-index.ts";
 import { impureStoreRemnant, substituteTopLevel } from "./rewrite.ts";
 
 function sameStmt(a: Stmt, b: Stmt): boolean {
@@ -172,6 +173,11 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // which is that derivation's whole premise. `docs/BUGS.md`'s
   // superlinear-pass row, part 5.
   noteRegisterUsesSplice(before, after, beforeMid, afterMid);
+  // Same premise, same window, for `match.ts`'s per-register position index:
+  // move it onto `after` rather than let the next `classifySite` rebuild it
+  // (or, worse, fall back to walking the list). `docs/BUGS.md`'s
+  // superlinear-pass row, part 6.
+  noteStmtIndexSplice(before, after, i, hiBefore, hiAfter);
 
   return { ok: true };
 }
