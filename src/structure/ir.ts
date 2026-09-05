@@ -60,7 +60,7 @@ export type Stmt =
    * like `LoopForm`/`hideLabel`/`elseIf` — the body and handler subtrees it
    * sits on are untouched.
    */
-  | { readonly k: "try"; readonly region: number; readonly cfgBlock: BlockId; readonly body: Stmt; readonly handler: Stmt; readonly catchRegister: number; readonly shape?: TryShape }
+  | { readonly k: "try"; readonly region: number; readonly cfgBlock: BlockId; readonly body: Stmt; readonly handler: Stmt; readonly catchRegister: number; readonly shape?: TryShape; readonly finalizer?: FinallyForm }
   /**
    * Assign the §4.4 dispatch variable. Not in spec 04's node list: `dispatch`
    * mode is specified as "rewrite entering edges as `__state0 = k; continue L`",
@@ -92,6 +92,53 @@ export interface WhileForm {
    */
   readonly init?: { readonly cfgBlock: BlockId; readonly from: number };
   readonly step?: { readonly cfgBlock: BlockId; readonly from: number };
+}
+
+/**
+ * One copy of a `finally` body, as an instruction range `[from, to)` of a CFG
+ * block (spec 30 section 1 fact 1: a copy is a sub-block range, never a whole
+ * block and never a subtree, which is why this is an annotation and not a
+ * `finalizer: Stmt` child).
+ */
+export interface FinallyRange {
+  readonly cfgBlock: BlockId;
+  readonly from: number;
+  readonly to: number;
+  /**
+   * Instruction indices inside `[from, to)` that the printer still emits at a
+   * *copy* site. Empty on `source`. Spec 30 section 6 R-FD8: at v96 the copy's
+   * leading `Mov <exitValue>, <param>` both feeds the finalizer call and
+   * defines the register the exit's own `Ret` reads, so dropping it would
+   * break the exit. `finally-dedup` retains such an instruction only when it
+   * is a side-effect-free `Mov` whose source register no other instruction of
+   * the range writes and whose destination the `source` range never touches,
+   * which makes its position relative to the finalizer body irrelevant.
+   */
+  readonly retained?: readonly number[];
+}
+
+/**
+ * See the `try` node's `finalizer` field. Written by
+ * `src/passes/finally-dedup`, read by `src/emit/function.ts`
+ * (docs/specs/passes/30-finally-dedup.md section 3.2). Annotation only: the
+ * body and handler subtrees it sits on are untouched, no block moves, and
+ * `src/structure/verify.ts` never sees it.
+ */
+export interface FinallyForm {
+  /** The copy the printer emits, always the handler-side one (section 2). */
+  readonly source: FinallyRange;
+  /** The copies the printer suppresses: one per normal/returning exit. */
+  readonly copies: readonly FinallyRange[];
+  /**
+   * `true`: the handler ends in the compiler's `Throw <catchRegister>`
+   * rethrow, which is implied by JS `finally` semantics and dropped, and each
+   * copy keeps its own control transfer (case A). `false`: the finalizer
+   * itself ends in a transfer that overrides the pending completion (case B,
+   * `finally { return x }`), so each copy runs to the end of its block and
+   * the copy site's own transfer is not printed either -- the one in the
+   * `finally` is that transfer.
+   */
+  readonly handlerIsRethrowOnly: boolean;
 }
 
 /** See the `try` node's `shape` field. Written by `src/passes/try-shape`,

@@ -426,8 +426,16 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
     case "try":
       out.push(`${p}try {`);
       printBody(s.block, depth + 1, out, opts);
-      out.push(s.param === null ? `${p}} catch {` : `${p}} catch (${s.param}) {`);
-      printBody(s.handler, depth + 1, out, opts);
+      // spec 30 section 3.2: a folded `try`/`finally` prints no `catch` at all
+      // (its handler was the duplicated finalizer) and appends `finally { }`.
+      if (s.hasCatch !== false) {
+        out.push(s.param === null ? `${p}} catch {` : `${p}} catch (${s.param}) {`);
+        printBody(s.handler, depth + 1, out, opts);
+      }
+      if (s.finalizer !== undefined) {
+        out.push(`${p}} finally {`);
+        printBody(s.finalizer, depth + 1, out, opts);
+      }
       out.push(`${p}}`);
       return;
     case "switch":

@@ -1,6 +1,11 @@
 # Spec 30 — `finally-dedup` (stage A, catalogue lowering row 12 + 54)
 
-Status: **SPEC ONLY, NOT IMPLEMENTED.** This spec ships the shape, the
+Status: **IMPLEMENTED 2026-09-05** (design B, annotation-only stage A, per
+the orchestrator's ruling on P-49). Sections 3.2, 4, 6 and 8 carry the
+amendments the implementation forced; the paragraph below is the state this
+spec shipped in and is kept for the record.
+
+Was: **SPEC ONLY, NOT IMPLEMENTED.** This spec ships the shape, the
 protocol claim, the IR design, the refusal table, the acceptance tests and the
 measured evidence LADDER section 5.1 asked for. It stops short of the IR
 change and the rung by the escape clause the task brief wrote for it ("if the
@@ -172,6 +177,32 @@ export interface FinallyForm {
   `src/emit/print.ts` case `"try"`). `planTries` contributes no `__pc` guard
   for a region with a `finalizer` whose `handlerIsRethrowOnly` is true: the
   clause the guard would sit in is not printed.
+**Amendments made when this landed (2026-09-05).**
+
+1. `FinallyRange` gains `retained?: readonly number[]` -- instruction indices
+   inside `[from, to)` that the printer still emits at a *copy* site. Needed
+   at v96 only, and only for `13-try-finally-no-catch`'s `cleanup`: see
+   section 6's R-FD8 and section 8's v96 note.
+2. `src/emit/ast.ts`'s `try` gains **two** optional fields, not one:
+   `finalizer?: readonly Stmt[]` and `hasCatch?: false`. `hasCatch` is what
+   suppresses the clause; making `finalizer` non-optional (`| null`, as 3.2
+   first wrote) would have forced an edit at every one of the ~40 sites in
+   `src/passes/**` that build a `try` AST node, for no gain.
+3. **No `catch` clause is printed in either case**, not only when
+   `handlerIsRethrowOnly`. In case B the synthesized handler *is* the
+   finalizer (`finally { return 'finally-wins' }`), so it is consumed the same
+   way; what `handlerIsRethrowOnly` selects is whether the handler's trailing
+   transfer is dropped (case A, the rethrow) or kept as the finalizer's own
+   transfer (case B), and correspondingly whether each *copy* keeps its own
+   transfer (case A) or has it suppressed (case B, where the finalizer's
+   transfer overrides it -- the copy range then runs to the end of its block).
+   `planTries` therefore contributes no `__pc` guard for any region with a
+   `finalizer`, not just a rethrow-only one.
+4. The shared AST walkers in `src/passes/ast.ts` and the child-list helpers in
+   `src/passes/restructure.ts` (segment `try-finalizer`) descend into the
+   finalizer; rung-local walkers were left alone and are covered by the
+   equivalence gate.
+
 * **Cost:** `src/structure/ir.ts` (+2 types, +1 field), `src/emit/ast.ts`
   (+1 field), `src/emit/print.ts` (+3 lines), `src/emit/function.ts` (the
   real work, ~60 lines), `src/structure/print.ts` (+1 line so `--emit-tree`

@@ -71,7 +71,10 @@ export function printTree(fn: StructuredFunction): string {
         lines.push(`${pad}}`);
         return;
       case "try":
-        lines.push(`${pad}try r${node.region} (head b${node.cfgBlock}) {`);
+        // spec 30 section 3.2: `--emit-tree` shows the `finalizer` annotation
+        // (source range, copy ranges) so the rung's effect is visible without
+        // reading the emitted JS.
+        lines.push(`${pad}try r${node.region} (head b${node.cfgBlock})${node.finalizer === undefined ? "" : ` finalizer=${rangeStr(node.finalizer.source)}${node.finalizer.handlerIsRethrowOnly ? "" : "+exit"} copies=[${node.finalizer.copies.map(rangeStr).join(",")}]`} {`);
         emit(node.body, indent + 1);
         lines.push(`${pad}} catch r${node.catchRegister} {`);
         emit(node.handler, indent + 1);
@@ -82,3 +85,6 @@ export function printTree(fn: StructuredFunction): string {
   emit(fn.root, 0);
   return lines.join("\n") + "\n";
 }
+
+const rangeStr = (r: { readonly cfgBlock: number; readonly from: number; readonly to: number; readonly retained?: readonly number[] }): string =>
+  `b${r.cfgBlock}[${r.from},${r.to})${r.retained === undefined || r.retained.length === 0 ? "" : `keep${r.retained.join("/")}`}`;

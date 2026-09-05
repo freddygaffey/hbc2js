@@ -293,6 +293,7 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
         case "try":
           walkStmts(s.block);
           walkStmts(s.handler);
+          walkStmts(s.finalizer ?? []); // spec 30
           break;
         case "switch":
           walkExpr(s.disc);
@@ -544,7 +545,8 @@ function mapStmtChildren(s: Stmt, fs: (s: Stmt) => Stmt, fx: (e: Expr) => Expr):
     case "try": {
       const block = mapStmts(s.block, fs, fx);
       const handler = mapStmts(s.handler, fs, fx);
-      return block === s.block && handler === s.handler ? s : { ...s, block, handler };
+      const finalizer = s.finalizer === undefined ? undefined : mapStmts(s.finalizer, fs, fx); // spec 30
+      return block === s.block && handler === s.handler && finalizer === s.finalizer ? s : { ...s, block, handler, ...(finalizer === undefined ? {} : { finalizer }) };
     }
     case "switch": {
       const disc = mapExpr(s.disc, fx);
@@ -607,6 +609,7 @@ export function stmtLists(body: readonly Stmt[]): readonly (readonly Stmt[])[] {
         case "try":
           visit(s.block);
           visit(s.handler);
+          visit(s.finalizer ?? []); // spec 30
           break;
         case "switch":
           for (const c of s.cases) visit(c.body);
@@ -655,7 +658,8 @@ function spliceInStmt(s: Stmt, target: readonly Stmt[], repl: readonly Stmt[]): 
     case "try": {
       const block = spliceList(s.block, target, repl);
       const handler = spliceList(s.handler, target, repl);
-      return block === s.block && handler === s.handler ? s : { ...s, block, handler };
+      const finalizer = s.finalizer === undefined ? undefined : spliceList(s.finalizer, target, repl); // spec 30
+      return block === s.block && handler === s.handler && finalizer === s.finalizer ? s : { ...s, block, handler, ...(finalizer === undefined ? {} : { finalizer }) };
     }
     case "switch": {
       let changed = false;
@@ -1037,6 +1041,7 @@ function countUses(stmts: readonly Stmt[], wanted: (name: string) => boolean, fo
         case "try":
           visitStmts(s.block, inNested);
           visitStmts(s.handler, inNested);
+          visitStmts(s.finalizer ?? [], inNested); // spec 30
           break;
         case "switch":
           visitExpr(s.disc, inNested);
@@ -1221,6 +1226,7 @@ function defUseWalk(stmts: readonly Stmt[], nextAt: (s: Stmt) => number): Map<st
         case "try":
           visitStmts(s.block);
           visitStmts(s.handler);
+          visitStmts(s.finalizer ?? []); // spec 30
           break;
         case "switch":
           visitExpr(s.disc, at);
@@ -1637,6 +1643,7 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
         case "try":
           visitStmts(s.block);
           visitStmts(s.handler);
+          visitStmts(s.finalizer ?? []); // spec 30
           break;
         case "switch":
           visitExpr(s.disc);
