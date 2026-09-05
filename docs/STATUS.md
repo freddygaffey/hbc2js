@@ -43,19 +43,26 @@ stores) split into real files. (docs/LANES.md)
 - M5 Pass ladder (readability) — in progress, 18/30 rungs merged (1 opt-in)
 - M6 CLI + Tier 2 sweep (real bundles survive, clean round-trip) — not started
 
-## Ladder — 18/30 rungs live (1 opt-in)
+## Ladder — 26/31 rungs live (1 opt-in)
 
-`loop-cond`, `for-header`, `switch-raise` (S1), `if-chain`, `try-shape`,
-`label-clean`, `expr-rebuild`, `global-access`, `call-shape`, `default-params`,
-`destructure`, `spread-rest`, `template-literal`, `jsx-recover` (opt-in
-`--jsx`), `try-clean`, `fn-naming`, `reg-split`, `var-naming`. D23 (2026-09-03,
+Registry order (2026-09-05 ladder landing, specs 21/22/23/25):
+`loop-cond`, `for-header`, `for-in`, `for-of`, `switch-raise` (S1), `if-chain`,
+`try-shape`, `label-clean`, `expr-rebuild`, `global-access`, `call-shape`,
+`default-params`, `destructure`, `spread-rest`, `template-literal`,
+`optional-chain`, `object-literal`, `yield-recovery`, `async-recovery`,
+`arguments-form`, `literal-forms`, `try-clean`, `jsx-recover` (opt-in `--jsx`),
+`fn-naming`, `reg-split`, `var-naming`. D23 (2026-09-03,
 docs/DECISIONS.md) reorders the registry: every structure-recovery rung
 (through `jsx-recover`) now runs before the renaming block
 (`fn-naming`/`reg-split`/`var-naming`) — `reg-split` is now **default-on**
 (P-11/P-11b resolved, docs/PUSHBACK.md P-11 closed, docs/BUGS.md P-11b
 row resolved). `try-shape`/`try-clean` (spec 22, 2026-09-05) strip redundant
 `__pc`/`__exc` scaffolding (PUSHBACK P-19).
-Next: var-naming compound -> literal-forms / arguments-form / for-in/for-of.
+Spec 25 (`yield-recovery`/`async-recovery`) lands `function*`/`async` recovery
+for the non-delegating, acyclic shapes (see the spec's refusal table); the
+pipeline-speed pin moved to `6c2f2dbe` with the rn-template diff recorded in
+docs/reports/2026-09-05-ladder-landing-rn-template-diff.md.
+Next: class-recover (spec 24, after fixture-67 goldens), gen-lowered (F25-2).
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 
 ## Gate

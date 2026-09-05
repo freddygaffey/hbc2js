@@ -78,7 +78,7 @@ Not rungs: `29-promise-chaining`, `31-microtask-ordering`, `50-this-binding`
 (no idiom); `30-async-generator` (uncompilable); `21-iife-closures` (module
 wrapper `_fn0.call(globalThis)` is the emitter's, not a lowering).
 
-**Count: 31 rungs** (12 stage A, 19 stage B); 13 merged (jsx-recover, reg-split opt-in), 4 hard, 1 unscheduled.
+**Count: 31 rungs** (12 stage A, 19 stage B); 26 merged (jsx-recover opt-in) as of the 2026-09-05 ladder landing; remaining: class-recover, gen-lowered, and the hard/unscheduled rows below.
 
 ---
 
