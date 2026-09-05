@@ -1,3 +1,2 @@
-v94: FAILS - check source.js for details
-v96: FAILS - check source.js for details
-v99: FAILS - check source.js for details
+v94, v96, v99: compile and run. NOT a compile failure. The Hermes VM prints "let results: 3,3,3" where Node prints "0,1,2": Hermes gives a for-loop `let` one binding for the whole loop instead of one per iteration, so all three closures see the final value. Per D14 the VM trace is the reference, so this is a d14-legit Node-vs-VM divergence, not a fixture or decompiler bug; verified against the v94 and v99 source-built VMs 2026-09-05.
+(The earlier "FAILS - check source.js" lines were stale. Only lines of the form "vNN: FAILS - reason" mean anything to src/harness/tiers.ts.)

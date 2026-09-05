@@ -1,3 +1,2 @@
-v94: FAILS - check source.js for details
-v96: FAILS - check source.js for details
-v99: FAILS - check source.js for details
+v94, v96, v99: compile and run. Hermes VM trace (v94, v99 source-built VMs) matches expected.txt byte for byte; verified 2026-09-05.
+(The earlier "FAILS - check source.js" lines were stale: source.js documents no failure. Only lines of the form "vNN: FAILS - reason" mean anything to src/harness/tiers.ts.)
