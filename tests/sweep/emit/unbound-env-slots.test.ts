@@ -174,3 +174,80 @@ test("react-navigation-example-0.85.3: a closure created with an undefined envir
     assert.equal(copies[0]!.envRemap.size, 0, "copy 0 is the chain every recorded EnvAccess was resolved against; it renames nothing");
   }
 });
+
+// docs/BUGS.md 2026-09-04 (E_UNBOUND_IDENT hunt), re-measured 2026-09-05 after
+// F24-5 (`W_NO_CAPTURE_HOSTED`) and per-creation-context closure copies: the
+// residual on this bundle is UNCHANGED at 10 isolated / 22 unbound names
+// (F24-5 hosts exactly 1 function on this bundle, `W_NO_CAPTURE_HOSTED`, and
+// it was never part of the isolated residual). Bucketing the 10 by root cause
+// (`src/cfg/env-graph.ts closureEnvOf`/`closureCreationSites`, cross-referenced
+// against `W_AMBIGUOUS_CLOSURE_ENV`'s function indices):
+//
+//  - BUCKET 1 (7 of 10 — `_fn13838..13844`,`_fn13914..17`,`_fn14001..02` unbound,
+//    13 `_fn<n>` references across `h`/`start`/`_fn11246`/`t`): each isolated
+//    function creates or is one of the 18 `W_AMBIGUOUS_CLOSURE_ENV` "bucket C"
+//    residual — created at sites whose environment chains have DIFFERENT
+//    LENGTH, so `closureCopies`'s positional remap has no alignment to use
+//    (`tests/gate/cfg/closure-copies.test.ts` "bucket C"). 3 of those 18
+//    (`_fn14984/85/86`) are themselves isolated because their own bodies read
+//    an `_e4551_*` slot of the very environment their 4 creation sites
+//    disagree about (6 of the 22 unbound names, 3 distinct). This needs a
+//    remap that tolerates unequal chain depths, not a placement change — the
+//    docs/reports/2026-09-05-ambiguous-closure-env.md §4 test plan already
+//    flags this as the unaligned residual, and no small `source.js` reproduces
+//    it, so it is not a "<100 line" fix.
+//  - BUCKET 2 (3 of 10 — `_fn15251`,`_fn15275`,`queryFn` i.e. `_fn13056`,
+//    referencing `_fn15473`/`_fn15478`/`_fn14790`): report §5 "leftover 7" —
+//    a JOINED function (`W_JOINED_REHOSTED`) moved to the lowest common
+//    ancestor of its creation sites, but one child it creates over an
+//    environment it merely CAPTURED (not created) stayed behind at the OLD
+//    home, because that child's own reads are not visible from the new host
+//    either. The report's own conclusion stands: this needs per-instance
+//    `parentOf` (placement keyed by emitted copy, not by function index),
+//    which is a design change, not a safe small patch.
+//
+// Neither bucket has a safe fix under ~100 lines, so nothing was landed for
+// them this pass; this test pins the measured buckets as a ceiling, split by
+// referenced-name kind, so a regression is caught even if the isolated/unbound
+// TOTALS above happen to stay flat while the mix shifts.
+//
+// This also regression-tests `src/decompile.ts`: `analysis.envGraph` is a
+// lazy getter whose OWN diagnostics (`W_AMBIGUOUS_CLOSURE_ENV`, among others)
+// used to be silently dropped from `decompile()`'s result whenever nothing
+// had read `.envGraph` before `decompile()` took its `[...analysis.diagnostics]`
+// snapshot (the getter is what pushes them, and callers exercise it only
+// inside the `emitModule` call, which runs AFTER that snapshot). Fixed by
+// re-spreading `analysis.diagnostics` fresh at the very end. Before the fix,
+// `cachedDecompile(...).diagnostics` reported ZERO `W_AMBIGUOUS_CLOSURE_ENV`
+// on this bundle although `analyseModule(...).envGraph.diagnostics` reported
+// 18 — this test's counts come from `cachedDecompile`, so it fails again if
+// that snapshot-before-lazy-build bug comes back.
+test("react-navigation-example-0.85.3: the residual E_UNBOUND_IDENT isolations bucket into two known, uncheap-to-fix causes", (t) => {
+  if (!requireSweep(t)) return;
+  if (!existsSync(HBC)) {
+    t.skip(`${HBC} not present — run this fixture's fetch.sh first (INCONCLUSIVE, not a failure)`);
+    return;
+  }
+  const result = cachedDecompile(readFileSync(HBC), { moduleName: "react-navigation-example.hbc", strictEnv: false });
+  const isolated = result.diagnostics.filter((d) => d.code === "W_UNBOUND_ISOLATED");
+  const names: string[] = [];
+  for (const d of isolated) for (const m of d.message.matchAll(/emitted identifier "([^"]+)"/g)) names.push(m[1]!);
+  const eSlotNames = names.filter((n) => /^_e\d+_\d+$/.test(n));
+  const fnRefNames = names.filter((n) => /^_fn\d+$/.test(n));
+
+  assert.equal(isolated.length, names.length === 0 ? 0 : isolated.length, "sanity: isolated diagnostics parsed");
+  assert.ok(isolated.length <= MAX_ISOLATED, `${isolated.length} isolated functions, ceiling is ${MAX_ISOLATED} (this test's own bucket table)`);
+  assert.ok(eSlotNames.length <= 6, `${eSlotNames.length} _e<env>_<slot> references unbound, was 6 (bucket 1's 3 self-reading ambiguous functions) — must only go down`);
+  assert.ok(fnRefNames.length <= 16, `${fnRefNames.length} _fn<n> references unbound, was 16 (13 bucket 1 + 3 bucket 2) — must only go down`);
+
+  // Regression for src/decompile.ts's diagnostic-assembly ordering: envGraph's
+  // lazy diagnostics must survive into decompile()'s own result.
+  const ambiguousViaDecompile = result.diagnostics.filter((d) => d.code === "W_AMBIGUOUS_CLOSURE_ENV").length;
+  assert.ok(
+    ambiguousViaDecompile > 0,
+    "decompile()'s own diagnostics report zero W_AMBIGUOUS_CLOSURE_ENV on a bundle known to have 18 " +
+      "(src/cfg/env-graph.ts) — analysis.envGraph's lazily-pushed diagnostics are being dropped again " +
+      "(src/decompile.ts snapshots analysis.diagnostics before anything reads .envGraph)",
+  );
+  assert.ok(ambiguousViaDecompile <= MAX_STILL_AMBIGUOUS, `${ambiguousViaDecompile} via decompile(), ceiling is ${MAX_STILL_AMBIGUOUS}`);
+});
