@@ -128,7 +128,7 @@ test("expr-rebuild's per-site cost scales close to linearly with site count, not
 // applied site (`[...list.slice(0, i), ...list.slice(i + 1)]` in
 // `expr-rebuild/rewrite.ts`) — both `O(list.length)` per site by
 // construction of the immutable-list architecture, neither one this row's
-// `defUse` term. See docs/PUSHBACK.md P-32.
+// `defUse` term. See docs/PUSHBACK.md P-33.
 
 /** A lineage of statement lists, each one the previous with a single
  *  statement replaced by a structurally identical clone (a fresh object, so
