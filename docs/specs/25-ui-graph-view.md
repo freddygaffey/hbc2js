@@ -35,12 +35,16 @@ Driven by the current selection (`ui/src/state/selection.ts`), one at a time:
    edges (spec 17 §14.1), and the graph must never let them read as proven.
 2. **Module edges** (`module` selection). Focus node = the module; edges from
    `GET /api/module/{id}` (`deps` out, `dependents` in). Direct edges only.
-3. **CFG of the selected function** — **NOT SHIPPED**. `src/ui-server/routes.ts`
-   publishes no per-function CFG route (the closest is
-   `/api/fn/{fn}/disasm`, a text listing, and `/api/fn/{fn}/linemap`). Adding
-   a `cfg` resource is a server + `McpResources` change with its own contract
-   shape and tests, which is out of scope for this task; it stays a follow-up
-   (see §7).
+3. **CFG of the selected function** — **SHIPPED (2026-09-05, spec 26 L9)**.
+   `GET /api/fn/{fn}/cfg` (`src/ui-server/cfg.ts`, registered in
+   `routes.ts`) projects `src/cfg`'s own block graph: blocks with their
+   function-relative byte range, instruction count, terminator and SOURCE
+   LINE span, normal + exception edges, and the exception regions. The mode
+   is entered by the `near` semantic-zoom level (§5b), not by a separate
+   selection: nodes become `blk:<id>` (entry = focus), and a **click selects
+   the listing lines the block was compiled from** through the shared
+   `select()`. `lodCard` (§5b) remains the fallback when the route declines
+   the function.
 
 Only the focus node's neighbours are ever fetched. **Expand** re-roots nothing:
 clicking a neighbour's "+" fetches *that* node's callers/callees and merges
@@ -180,16 +184,28 @@ are exactly what the `mid` level is for. The bundle node reports `members`
 (the fold count) and the bundled edge reports `weight`, both on screen — the
 same "never a silent trim" rule as the node cap (§5).
 
-`near` is **degraded until spec 26 L9 lands.** Mode 3 (CFG) has no route
-(§3, §7), so `near` renders the focus node as a taller **card**
-(`NODE_H_NEAR`) whose body is `lodCard(model, focusId)`: its already-drawn
+`near` **landed with spec 26 L9 (2026-09-05).** It draws mode 3: the focus
+function's own **block graph**, fetched from `GET /api/fn/{fn}/cfg` at this
+level only (`mid`/`far` never pay for it) and turned into the ordinary
+`GraphModel` by `buildCfgModel` in `ui/src/graph/model.ts`, so the shipped
+renderer, the §5c frame-aware layout, the drag offsets, the hover highlight
+and the truncation bar all work on it unchanged — the UI adds no CFG logic.
+`modelForLevel(model, level, cfgModel)` is the one place that chooses.
+
+The **fallback is `lodCard`**, exactly as this section always promised: when
+the route DECLINES the function (a project served with no `--hbc`, or an
+analysis that refused it) `near` still renders the focus node as a taller
+**card** (`NODE_H_NEAR`) whose body is `lodCard(model, focusId)` — its drawn
 callers and callees by label, capped at `LOD_CARD_CAP = 8` with an honest
-`+N more`, plus the line `blocks: CFG pending (spec 26 L9)`. **What L9 plugs
-into:** `FocusCard` in `ui/src/graph/nodes.tsx` — L9 swaps that component's
-body for the block list/graph fetched from `GET /api/fn/{fn}/cfg`, and
-nothing else moves: the level machinery, the thresholds, the layout hook
-(`layoutModel(model, { focusHeight })`) and the store are already in place.
-`lodCard` stays as the fallback for a function whose CFG the route declines.
+`+N more`, plus the line `blocks: no CFG for this function`. The card's
+extra height is reserved only when the card is what is drawn; a CFG entry
+block is an ordinary node.
+
+The e2e test that asserted the degraded stand-in
+(`the near level opens the focus into a card, honest about the missing CFG`)
+became `the near level falls back to the focus card when the CFG route
+declines`, which makes the SAME honesty assertion over the fallback path,
+with the route stubbed to 404. Nothing else in §5b moved.
 
 ### Thresholds, and why they are hysteretic
 
@@ -305,8 +321,10 @@ shell without a graph pane implements as no-ops. Neither inverts
    deps/dependents, i.e. mode 2) instead of bundling what is already drawn.
    Bundling is honest and free; re-rooting shows more, but changes what "the
    neighbourhood" means mid-gesture. Deliberately not guessed.
-3. **The `near` card's contents once L9 lands**: blocks only, or blocks plus
-   the callers/callees `lodCard` shows today.
+3. **The `near` level's contents now L9 has landed**: it draws the blocks
+   ALONE (the callers/callees are one zoom level away, at `mid`, and mixing
+   two node kinds on one canvas reads badly). Blocks plus the neighbourhood
+   in one view is still available as a design choice — not guessed here.
 
 ## 5c. Layout for the frame — bur 11 (2026-09-05)
 
@@ -480,10 +498,10 @@ Plus `npm run typecheck` in `ui/` (React Flow and dagre are typed; no `any`).
 
 ## 7. Out of scope / follow-ups
 
-- **CFG mode** — needs a read-only `/api/fn/{fn}/cfg` route over the existing
-  `src/cfg` block graph, with `tests/ui-server/**` coverage. Follow-up
-  (spec 26 L9). §5b's `near` level is its degraded stand-in and names the
-  exact component L9 replaces (`FocusCard` in `ui/src/graph/nodes.tsx`).
+- ~~**CFG mode**~~ — **DONE (2026-09-05, spec 26 L9)**: `GET /api/fn/{fn}/cfg`
+  (`src/ui-server/cfg.ts`, `tests/ui-server/cfg.test.ts`), drawn by the `near`
+  level (§3 mode 3, §5b). `FocusCard` in `ui/src/graph/nodes.tsx` survives as
+  the decline-path fallback.
 - Whole-bundle map, clustering, force layout, WebGL (sigma.js) — held in
   reserve per spec 20 §2.4; nothing here needs them.
 - Enabling `view.graph` in `src/ui-core/actions.ts` (see §4).

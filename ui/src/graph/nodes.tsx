@@ -57,6 +57,7 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
   const ring = data.highlighted && !m.isFocus ? "ring-2 ring-accent" : "";
   const fade = data.dimmed ? "opacity-40" : "";
   const card = data.level === "near" && m.isFocus ? data.card : null;
+  const blk = m.kind === "block" ? m.block : undefined;
   return (
     <div
       data-graph-node={m.id}
@@ -69,10 +70,14 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
       data-lod={lod}
       data-graph-level={data.level}
       data-graph-members={m.members}
+      data-graph-kind={m.kind}
+      {...(blk !== undefined ? { "data-graph-block": m.ref, "data-graph-block-line": blk.listingLine ?? "" } : {})}
       data-graph-card={card !== null ? "true" : "false"}
       style={{ width: data.width > 0 ? data.width : NODE_W, height: card !== null ? NODE_H_NEAR : NODE_H }}
       className={`flex flex-col justify-center gap-0.5 overflow-hidden rounded-ui border bg-surface px-2 ${border} ${ring} ${fade}`}
-      title={m.byName ? `${m.label} — heuristic by-name candidate, not a proven edge` : m.label}
+      title={blk !== undefined
+        ? `block ${m.ref}: ${blk.instructions} instr, ${blk.terminator}${blk.lines !== null ? `, lines ${blk.lines[0]}-${blk.lines[1]}` : ", no mapped line"} — click to select it in the listing`
+        : m.byName ? `${m.label} — heuristic by-name candidate, not a proven edge` : m.label}
     >
       <Handle type="target" position={Position.Top} className={handleClass} />
       {lod === "full" ? (
@@ -82,6 +87,9 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${SEVERITY_CLASS[m.severity] ?? "bg-sev-ok"}`} />
             ) : null}
             <span className={`truncate font-mono text-xs ${text}`}>{m.label}</span>
+            {blk !== undefined && blk.lines !== null ? (
+              <span className="shrink-0 font-mono text-xs text-text-muted">L{blk.lines[0]}{blk.lines[1] !== blk.lines[0] ? `-${blk.lines[1]}` : ""}</span>
+            ) : null}
             {m.ref >= 0 && m.kind === "fn" && !m.expanded ? (
               <button
                 type="button"
@@ -98,6 +106,15 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
             ) : null}
           </div>
           <div className="flex items-center gap-2 text-xs text-text-muted">
+            {blk !== undefined ? (
+              <>
+                {blk.entry ? <span className="shrink-0 rounded-ui bg-surface-2 px-1">entry</span> : null}
+                {blk.exit ? <span className="shrink-0 rounded-ui bg-surface-2 px-1">exit</span> : null}
+                {blk.handler ? <span className="shrink-0 rounded-ui bg-surface-2 px-1">catch</span> : null}
+                <span className="truncate">{blk.terminator}</span>
+                <span className="ml-auto shrink-0">{blk.instructions}i</span>
+              </>
+            ) : null}
             {m.module !== null ? <span className="truncate rounded-ui bg-surface-2 px-1">mod {m.module}</span> : null}
             {m.members > 1 ? <span className="shrink-0 rounded-ui bg-surface-2 px-1">{m.members} fns</span> : null}
             {m.size !== null ? <span className="shrink-0">{m.size} B</span> : null}
@@ -113,10 +130,12 @@ export function HbcNode({ data, positionAbsoluteX, positionAbsoluteY }: NodeProp
   );
 }
 
-/** The `near` level's focus card, spec 25 §5b's DEGRADED form: the focus
- *  function's already-drawn callers and callees, bounded by `lodCard`'s cap.
- *  Spec 26 L9 replaces this body with the function's CFG blocks - same slot,
- *  same node, no layout change beyond `NODE_H_NEAR`. */
+/** The `near` level's FALLBACK, spec 25 §5b's card: the focus function's
+ *  already-drawn callers and callees, bounded by `lodCard`'s cap. Since spec
+ *  26 L9 the `near` level normally draws the function's own block graph
+ *  (`buildCfgModel`); this card is what it degrades to when
+ *  `GET /api/fn/{fn}/cfg` DECLINES the function (no `--hbc`, or an analysis
+ *  that refused it) - honest about the missing CFG, never an empty canvas. */
 function FocusCard({ card }: { readonly card: LodCard }): ReactNode {
   const line = (label: string, names: readonly string[], more: number): ReactNode => (
     <div className="flex items-start gap-1">
@@ -131,7 +150,7 @@ function FocusCard({ card }: { readonly card: LodCard }): ReactNode {
     <div data-graph-card-body className="mt-1 flex flex-col gap-0.5 overflow-hidden border-t border-border pt-1 text-xs">
       {line("callers", card.callers, card.moreCallers)}
       {line("callees", card.callees, card.moreCallees)}
-      <div className="text-text-muted">blocks: CFG pending (spec 26 L9)</div>
+      <div className="text-text-muted">blocks: no CFG for this function</div>
     </div>
   );
 }

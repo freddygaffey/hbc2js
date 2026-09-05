@@ -5,7 +5,7 @@
 // Until the server lands, `mockApi` (./mock.ts) answers instead — selected
 // by `VITE_API_MOCK` (default "1"; set VITE_API_MOCK=0 to hit a real server).
 import type {
-  CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
+  CallsFrom, FnCfg, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, Bounded, LocalsListing, LineMap, StringExact, StringGrep, GlobalUses,
   WhoCallsByName, ObjectTables,
@@ -103,6 +103,11 @@ export interface Api {
    *  identifier -> `reg:F:R` rename join. */
   locals(fn: number): Promise<LocalsListing>;
   context(fn: number): Promise<FnContext>;
+  /** `GET /api/fn/:fn/cfg` (spec 26 L9) — the function's block graph, drawn
+   *  by the graph pane's `near` level. A 404 is the route DECLINING (no
+   *  `--hbc`, or the analysis refused this function): the pane falls back to
+   *  spec 25 §5b's card rather than drawing an empty graph. */
+  cfg(fn: number): Promise<FnCfg>;
   whoCalls(fn: number): Promise<WhoCalls>;
   callsFrom(fn: number): Promise<CallsFrom>;
   /** `GET /api/xref/who-calls-by-name?fn=` — spec 17 §14.1's heuristic
@@ -170,6 +175,7 @@ export const httpApi: Api = {
   lineMap: (fn) => get(`/fn/${fn}/linemap`),
   locals: (fn) => get(`/fn/${fn}/locals`),
   context: (fn) => get(`/fn/${fn}/context`),
+  cfg: (fn) => get(`/fn/${fn}/cfg`),
   whoCalls: (fn) => get(`/fn/${fn}/callers`),
   callsFrom: (fn) => get(`/fn/${fn}/callees`),
   xrefWhoCallsByName: (fn) => get(`/xref/who-calls-by-name`, { fn }),

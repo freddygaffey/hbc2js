@@ -16,7 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { analyseModule } from "../cfg/index.ts";
-import type { ModuleAnalysis } from "../cfg/types.ts";
+import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import { parseHbc } from "../parse/module.ts";
 import type { HbcModule } from "../parse/types.ts";
 import { rawFrames, type RawFrame } from "../name-overlay/frames.ts";
@@ -878,18 +878,41 @@ export class ArtifactService {
     return this.hbcModule;
   }
 
-  private ensureFrames(): { readonly analysis: ModuleAnalysis; readonly frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> } {
-    const module = this.ensureModule("list/context");
+  /** The module analysis alone (`src/cfg`'s block graphs), without the much
+   *  more expensive `rawFrames` pass `ensureFrames` also runs. Memoised in
+   *  the SAME `this.analysis` slot, so a caller that only wants a CFG
+   *  (`functionCfg` below) and a later caller that wants frames share one
+   *  `analyseModule` run — `warmAnalyseCount`'s "never more than 1" holds
+   *  either way round. */
+  private ensureAnalysis(verb: string): ModuleAnalysis {
+    const module = this.ensureModule(verb);
     if (this.analysis === undefined) {
       this.analyseCount++;
       this.analysis = analyseModule(module, { strictEnv: true });
     }
-    if (this.rawFrameMap === undefined) this.rawFrameMap = rawFrames(this.analysis);
+    return this.analysis;
+  }
+
+  /** The live CFG of one function (docs/specs/03-cfg.md §3's `FunctionCfg`:
+   *  blocks, normal edges, exception edges and regions) — a live verb like
+   *  `disasm`/`list`, needing `--hbc`. `null` when this service has none, so
+   *  a caller can DECLINE honestly (`src/ui-server/cfg.ts`) instead of
+   *  drawing an empty graph. Throws the usual `E_USAGE` for an fn this
+   *  artifact does not contain, exactly as `disasm` does. */
+  functionCfg(fn: number): FunctionCfg | null {
+    if (!this.hasFn(fn)) throw new Hbc2jsError(ErrorCode.E_USAGE, `query cfg: no such function ${fn} in this artifact`);
+    if (this.hbcPath === undefined) return null;
+    return this.ensureAnalysis("cfg").cfg(fn);
+  }
+
+  private ensureFrames(): { readonly analysis: ModuleAnalysis; readonly frames: Map<number, readonly import("../emit/ast.ts").Stmt[]> } {
+    const analysis = this.ensureAnalysis("list/context");
+    if (this.rawFrameMap === undefined) this.rawFrameMap = rawFrames(analysis);
     if (this.frames === undefined) {
       this.frames = new Map();
       for (const [fn, frame] of this.rawFrameMap) if (frame.node.k === "func") this.frames.set(fn, frame.node.body);
     }
-    return { analysis: this.analysis, frames: this.frames };
+    return { analysis, frames: this.frames };
   }
 
   /** Test-only: how many times `analyseModule` actually ran (never more than

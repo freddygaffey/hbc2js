@@ -421,7 +421,31 @@ attended-only, and is never reachable from a worker (spec 23 §7).
 
 ---
 
-### L9 — Graph CFG mode + `GET /api/fn/{fn}/cfg` · **Opus**
+### L9 — Graph CFG mode + `GET /api/fn/{fn}/cfg` · **Opus** — LANDED 2026-09-05
+
+**Landed.** `GET /api/fn/{fn}/cfg` lives in **`src/ui-server/cfg.ts`**, not in
+`src/mcp/resources.ts` — the landing's call, and the reason is at the top of
+that file: the MCP surface is the AGENT-facing contract (spec 17 §14
+deliberately narrowed it), while a block graph is a rendering aid for one
+pane, so growing `McpResources` would widen the agent contract, its docs and
+its tests for a UI-only need. `screens.ts` (L4) set the precedent: a route
+file of its own, registered with ONE line in `routes.ts`
+(`...CFG_ROUTES`), reading the same shared `McpResources`/`ArtifactService`
+pair. If an agent workflow ever needs the CFG, `McpResources.cfg()` is a
+one-line delegation to `cfgOf`.
+
+The blocks come from `src/cfg` through a new
+`ArtifactService.functionCfg(fn)` (a live verb like `disasm`: `null` without
+`--hbc`, so the route can DECLINE honestly rather than invent a graph). The
+per-block source-line span is the SAME `lineMap` the listing aligns with, so
+a block and the listing cannot disagree about which lines it covers. The UI
+side is `buildCfgModel` in `ui/src/graph/model.ts` turning the rows into the
+ordinary `GraphModel`, plus `modelForLevel(model, level, cfgModel)`: the
+`near` semantic-zoom level (spec 25 §5b) draws mode 3 when the route answers
+and degrades to `lodCard` when it declines. Everything else in spec 25 §5a/
+§5b/§5c — drag, reset, follow, hysteresis, the frame-aware layout — is
+unchanged and its e2e tests still pass. See spec 25 §3/§5b/§7 and
+`docs/UI.md` "Graph view".
 
 **Scope.** spec 25 §7's named follow-up: a read-only CFG resource over the
 existing `src/cfg` block graph (blocks, edges, exception regions, the
@@ -433,11 +457,19 @@ should not grow — decide in the landing and say why), `src/ui-server/routes.ts
 `ui/src/graph/{model,layout,nodes}.ts`, `ui/src/contracts.ts`.
 
 **Tests.**
-- `tests/ui-server/cfg.test.ts` — `every edge names a block the response also contains`; `the block ranges partition the function's instructions with no gap or overlap`; `exception regions are reported, not silently dropped`; `capped at the published cap with an honest truncation field`.
-- `ui/e2e/graph.spec.ts` (extend) — `CFG mode draws the selected function's blocks`; `a block click scrolls the disasm pane to its first instruction`.
+- `tests/ui-server/cfg.test.ts` — `every edge names a block the response also contains`; `the block ranges partition the function's instructions with no gap or overlap`; `exception regions are reported, not silently dropped`; `capped at the published cap with an honest truncation field`. Shipped, plus four more the landing added: `a dangling edge is dropped with its block, never left pointing at nothing`; `a block's line span comes from the same linemap the listing aligns with`; `a bad or unknown fn is a 400/404, never a 500`; `a project with no --hbc declines the route rather than inventing a graph`.
+- `tests/ui-core/graph-cfg-model.test.ts` (new, pure, no browser) — the seven `buildCfgModel`/`modelForLevel` rules, including `a block node is never a function node (ids and kinds do not collide)` and `modelForLevel: near draws the CFG when there is one, and the fetched neighbourhood when there is not`.
+- `ui/e2e/graph.spec.ts` (extend) — `CFG mode draws the selected function's blocks`; `a block click scrolls the disasm pane to its first instruction`; plus `CFG mode: a branching graph draws every block and labels its true/false edges` (stubbed, because the rn-template fixture's own visible functions are single-block — the same stub discipline spec 25 §6 uses for expansion and the cap), and spec 25 §5b's near-level test re-pointed at the decline path (`the near level falls back to the focus card when the CFG route declines`), which keeps its honesty assertion.
 
-**Docs.** `docs/specs/25-ui-graph-view.md` §3/§7 (mode 3 shipped), `docs/UI.md`.
+**Docs.** `docs/specs/25-ui-graph-view.md` §3/§5b/§7 (mode 3 shipped), `docs/UI.md`.
 **Depends on:** landing (b).
+**Needs Fred (art direction, defaults picked here):** the block card's chips
+(`entry`/`exit`/`catch`, terminator, `Ni`, `L<a>-<b>`) and the edge language —
+`T`/`F`/`case n`/`default`/`exc` LABELS with dash patterns (`5 3` not-taken,
+`2 4` exception, `4 3` by-name unchanged) and no colour encoding of a branch
+outcome, so the graph stays readable in every theme and to a colour-blind
+reader. `CFG_BLOCK_CAP = 300` mirrors `GRAPH_NODE_CAP`; a CFG-specific number
+was not measured against real bundles.
 
 ---
 

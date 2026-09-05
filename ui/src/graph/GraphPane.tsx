@@ -4,7 +4,7 @@
 // `/api/xref/who-calls-by-name`, `/api/module/{id}`). Never the whole graph:
 // one hop from the focus, and one more per node the analyst expands.
 import { ReactFlow, Background, Controls, MarkerType, type Edge, type ReactFlowInstance } from "@xyflow/react";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "@xyflow/react/dist/style.css";
 import "./graph.css";
@@ -14,7 +14,7 @@ import { useFindings, useFn, useModule } from "../hooks.ts";
 import { displayName } from "../listing/names.ts";
 import { select, useSelection } from "../state/selection.ts";
 import {
-  buildCallModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, lodCard,
+  buildCallModel, buildCfgModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, lodCard,
   LOD_NOMINAL_ZOOM, modelForLevel, neighbourSet,
   type CallHop, type GraphModel, type NeighbourSet,
 } from "./model.ts";
@@ -143,11 +143,31 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
     });
   }, [target, mod.data, meta.data, hops, expanded, severityOf]);
 
+  // Spec 26 L9 / spec 25 §3 mode 3: the `near` level draws the focus
+  // function's OWN block graph. Fetched only at that level (zooming in is
+  // the gesture that asks for it; `mid`/`far` never pay for it), never
+  // retried - a 404 here is the route DECLINING the function, a stable
+  // answer, and the pane degrades to §5b's card instead.
+  const cfgQuery = useQuery({
+    queryKey: ["cfg", focusFn],
+    queryFn: () => api.cfg(focusFn),
+    enabled: visible && callMode && focusFn >= 0 && gs.lod === "near",
+    retry: false,
+  });
+  const cfgModel = useMemo(
+    () => (cfgQuery.data !== undefined && cfgQuery.data.fn === focusFn ? buildCfgModel({ fn: focusFn, cfg: cfgQuery.data }) : null),
+    [cfgQuery.data, focusFn],
+  );
+
   // Bur 9 / spec 25 §5b: the canvas draws the model AT THE CURRENT LEVEL -
   // `far` bundles the neighbourhood by module, `mid`/`near` draw it as
   // fetched (near only changes how the focus node renders). Pure derivation,
   // no extra fetch: zooming never loads the bundle.
-  const drawn = useMemo(() => modelForLevel(model, gs.lod), [model, gs.lod]);
+  const drawn = useMemo(() => modelForLevel(model, gs.lod, cfgModel), [model, gs.lod, cfgModel]);
+  /** True exactly when the canvas is showing spec 25 mode 3 (the blocks),
+   *  rather than the call neighbourhood - `modelForLevel` decides, this only
+   *  reads its decision, so the pane and the model can never disagree. */
+  const drawnIsCfg = cfgModel !== null && drawn === cfgModel;
 
   // Bur 11 / spec 25 §5c: lay out FOR THE FRAME. The canvas element is
   // measured with a ResizeObserver (the pane is ~280 px wide docked and the
@@ -172,8 +192,11 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
   }, [target, gs.maximised]);
 
   const layout = useMemo(
-    () => layoutGraph(drawn, { frame, ...(gs.lod === "near" ? { focusHeight: NODE_H_NEAR } : {}) }),
-    [drawn, gs.lod, frame],
+    // The taller focus box is the CARD's; a CFG entry block is an ordinary
+    // node, so the near level only reserves the extra height when the card
+    // is what it is actually drawing.
+    () => layoutGraph(drawn, { frame, ...(gs.lod === "near" && !drawnIsCfg ? { focusHeight: NODE_H_NEAR } : {}) }),
+    [drawn, gs.lod, frame, drawnIsCfg],
   );
   const positions = layout.positions;
 
@@ -190,8 +213,8 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
   }, [grid, hasDrags]);
   const focusId = useMemo(() => drawn.nodes.find((n) => n.isFocus)?.id ?? null, [drawn]);
   const focusCard = useMemo(
-    () => (gs.lod === "near" && focusId !== null ? lodCard(drawn, focusId) : null),
-    [gs.lod, drawn, focusId],
+    () => (gs.lod === "near" && focusId !== null && !drawnIsCfg ? lodCard(drawn, focusId) : null),
+    [gs.lod, drawn, focusId, drawnIsCfg],
   );
 
   // Bur 8: hovering a node highlights it. Bur 10: with `follow` on, so does
@@ -227,7 +250,14 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
     () =>
       drawn.edges.map((e) => {
         const isActive = active !== null && active.edges.has(e.id);
-        const stroke = isActive ? "var(--accent)" : e.byName ? "var(--text-muted)" : "var(--border)";
+        // Spec 26 L9 edge art direction, tokens only: an unproven by-name
+        // candidate and an exception edge are BOTH drawn in `text-muted`
+        // (they are the two "not the straight line" cases), and the dash
+        // pattern tells them apart from a taken/not-taken branch. Colour is
+        // never used to encode a branch outcome - the T/F label is.
+        const dashed = e.byName ? "4 3" : e.cfgKind === "exception" ? "2 4" : e.cfgKind === "branch-not-taken" ? "5 3" : undefined;
+        const muted = e.byName || e.cfgKind === "exception";
+        const stroke = isActive ? "var(--accent)" : muted ? "var(--text-muted)" : "var(--border)";
         // A far-level bundle carries how many edges it stands for: shown as
         // a label and a (bounded) thicker stroke, never a silent merge.
         const bundled = e.weight > 1;
@@ -235,12 +265,12 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
           id: e.id,
           source: e.source,
           target: e.target,
-          label: bundled ? String(e.weight) : undefined,
+          label: bundled ? String(e.weight) : (e.cfgLabel !== undefined && e.cfgLabel !== "" ? e.cfgLabel : undefined),
           labelStyle: { fill: "var(--text-muted)", fontSize: 9 },
           labelBgStyle: { fill: "var(--surface)" },
           style: {
             stroke,
-            strokeDasharray: e.byName ? "4 3" : undefined,
+            strokeDasharray: dashed,
             strokeWidth: isActive ? 2 : Math.min(1 + (bundled ? Math.log2(e.weight) : 0), 4),
             opacity: active !== null && !isActive ? 0.35 : 1,
           },
@@ -254,6 +284,7 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
     <div
       className="flex min-h-0 flex-1 flex-col"
       data-graph-nodes={drawn.shown}
+      data-graph-mode={drawnIsCfg ? "cfg" : target?.kind === "module" ? "module" : "call"}
       data-graph-columns={layout.columns}
       data-graph-node-width={layout.nodeWidth}
     >
@@ -291,11 +322,22 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
             onNodeMouseLeave={() => setHoverNode(null)}
             onNodeClick={(_e, node) => {
               const m = node.data.model;
+              // Spec 26 L9: a BLOCK is not navigable as a function - clicking
+              // it selects the listing lines it was compiled from, through
+              // the same `select()` the listing and the xref panes use, so
+              // the centre pane scrolls and highlights exactly as it does
+              // for any other jump. A block the render mapped no line into
+              // selects nothing rather than a neighbouring block's line.
+              if (m.kind === "block") {
+                const line = m.block?.listingLine ?? null;
+                if (line !== null && focusFn >= 0) select({ kind: "fn", fn: focusFn, line });
+                return;
+              }
               if (m.ref >= 0 && !m.isFocus) focusGraphNode({ kind: m.kind, ref: m.ref });
             }}
             onNodeDoubleClick={(_e, node) => {
               const m = node.data.model;
-              if (m.ref < 0) return;
+              if (m.ref < 0 || m.kind === "block") return;
               if (m.kind === "module") select({ kind: "module", moduleId: String(m.ref) });
               else select({ kind: "fn", fn: m.ref });
             }}
