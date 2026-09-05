@@ -35,9 +35,13 @@ twice plus the picker.
 
 1. `HBC2JS_CI_HOSTS` (space-separated URLs, default `http://deb.local:8787`)
    replaces the single `DEB_CI_URL`. `DEB_CI_URL` stays as a one-host override.
-2. Before POST: `GET /jobs` on every host (2 s timeout). Skip unreachable
-   hosts. Pick the host with the fewest `queued + running` jobs; ties go to
-   list order. Print the chosen host on stderr.
+2. Before POST: `GET /load` on every host (2 s timeout). Skip unreachable
+   hosts. Pick the host with the lowest load score (`loadavg[0] / nproc +
+   (queued + running) / maxParallel` — docs/DEB-CI.md "Load-aware picking",
+   2026-09-05); ties go to list order. Print the chosen host and every
+   host's score on stderr. A host answering `GET /jobs` but not `GET /load`
+   (pre-load-aware server) falls back to a `queued + running` count for
+   itself only.
 3. `--host <url>` pins a host and skips the pick.
 4. Push step: unchanged (push branch to `origin`, worker fetches from GitHub).
    LAN-direct push to the worker's mirror is a later option, not part of this
@@ -62,8 +66,9 @@ twice plus the picker.
 4. With deb saturated (`MAX_PARALLEL` jobs running) and the node idle,
    `run.sh` with no `--host` picks the node; with the node unreachable it
    picks deb and prints one warning.
-5. `tests/gate/tools/deb-pick.test.ts`: the picker, given fake `/jobs`
-   responses, chooses the shortest queue, skips timeouts, honours `--host`.
+5. `tests/gate/tools/deb-pick.test.ts`: the picker, given fake `/load`
+   responses, chooses the lowest score, skips timeouts, honours `--host`
+   (see §8 for the 2026-09-05 load-score revision of this item).
 
 ## 6. Non-goals
 
@@ -97,3 +102,39 @@ operation against Fred's hardware, never run by an agent):
   node's server, not just its `/jobs` GET).
 - §5 item 4's "picks the node when it's idle and deb is saturated" half
   (the "unreachable → picks deb, one warning" half is verified above).
+
+## 8. Implementation note (2026-09-05, load-aware picking)
+
+Landed: `tools/deb/server.mjs` now exposes `GET /load` (score formula in
+§3 item 2 above, `docs/DEB-CI.md` "Load-aware picking"), and its
+toolchain/state/port locations are configurable (`HBC2JS_TOOLCHAIN_DIR`,
+`HBC2JS_CI_DIR`, `PORT`) so a second instance can run on a different
+machine (the Mac) without colliding with `deb`'s deployment; Node
+resolution now falls back to `process.execPath` when `fnm` is absent
+instead of leaving `PATH` untouched. `tools/deb/pick.mjs`'s `pickHost` is
+rewritten around `{score, fallback}` (was `queued+running` count alone),
+with the formula factored into an exported, separately-tested
+`computeLoadScore`. `tools/deb/run.sh`'s default `HBC2JS_CI_HOSTS` now
+lists two hosts (`deb.local:8787`, `127.0.0.1:8788`), and `--status` with no
+id lists jobs from every candidate host, prefixed by host, instead of only
+the picked one. New `tools/deb/start-local.sh` starts a `server.mjs`
+instance on the current (non-`deb`) machine under `nohup` (no systemd on
+macOS); it never touches `tools/deb/install.sh`'s systemd path. This
+supersedes §3 item 2 and §5 item 5's "fewest queued+running jobs" wording
+above with load-score picking; §7's "`server.mjs` reused unchanged" note is
+now historical (true only through 2026-09-05's `run.sh`-only revision).
+
+`tests/gate/tools/deb-pick.test.ts` was rewritten for the new
+`{score, fallback}`-shaped `pickHost`/`computeLoadScore` API (fewest-queue
+assertions replaced with lowest-score assertions, since the picker's
+underlying metric is what this task changed by design) and extended with:
+lowest score wins, queue pressure can outweigh loadavg alone, `/load`-missing
+host falls back to a count and is marked `fallback: true`, all-unreachable
+still throws, ties still go to list order, plus unit tests for
+`computeLoadScore` itself (including the zero-`nproc`/zero-`maxParallel`
+guard) and a check that `run.sh`'s default host list has more than one
+entry. Not independently re-verified live against a second real node
+(same constraint as §7 above — no second node stood up by this task); the
+single-node and unreachable-host paths were smoke-tested by hand
+(`node --check` on both `.mjs` files, `bash -n` on all three scripts, the
+full gate test file).
