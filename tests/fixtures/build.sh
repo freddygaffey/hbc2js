@@ -4,6 +4,9 @@
 # Usage:
 #   tests/fixtures/build.sh              # rebuild everything (base .hbc only, unchanged)
 #   tests/fixtures/build.sh --force      # ignore up-to-date check, recompile anyway
+#   tests/fixtures/build.sh --native     # ONLY (re)generate the synthetic APK fixtures of
+#                                           docs/specs/27-native-side.md section 3
+#                                           (tests/fixtures/native/*.apk; pure node, no JVM).
 #   tests/fixtures/build.sh --variants   # ALSO (re)generate the D13 hardened-tier variants:
 #                                           source.obf.js/source.min.js for every
 #                                           constructs/*/source.js, verified against
@@ -46,12 +49,23 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HERMESC_DIR="$REPO_ROOT/tools/hermesc"
 FORCE=0
 VARIANTS=0
+NATIVE=0
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     --variants) VARIANTS=1 ;;
+    --native) NATIVE=1 ;;
   esac
 done
+
+# --native: regenerate ONLY the hermetic synthetic APK fixtures of
+# docs/specs/27-native-side.md section 3 (tests/fixtures/native/*.apk). Pure
+# node, no hermesc, no JVM, nothing downloaded - every byte is authored by us
+# from the public AOSP format documentation, so no real app is ever involved.
+if [ "$NATIVE" = "1" ]; then
+  node "$REPO_ROOT/tools/native-fixture/gen.mjs" "$SCRIPT_DIR/native"
+  exit 0
+fi
 
 # Pinned versions for the D13 hardened-tier obfuscator/minifier, per
 # tests/fixtures/OBFUSCATION.md. Fetched on demand via `npx --yes -p <pkg>@<ver>`
