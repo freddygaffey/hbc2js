@@ -1,0 +1,142 @@
+# Sibling environments: what actually causes the residual `diff:LoadFromEnvironment(imm)` bucket, and why the block-scope fix cannot work
+
+Agent: `agent/sibling-env-2`, 2026-09-05. Fixture `tests/fixtures/constructs/75-sibling-envs`,
+test `tests/gate/emit/sibling-env-slots.test.ts` (RED). See `docs/PUSHBACK.md` P-41.
+
+## 1. The construct
+
+`hermesc -O` **inlines an IIFE into its caller but keeps the callee's own
+environment**. A caller that inlines several of them therefore ends up with
+several environments side by side, all children of the same parent scope:
+
+    function make(items) {
+      var out = {};
+      (function () { var a = items[0], b = items[1]; out.ab = function () { return a + b; }; })();
+      (function () { var c = items[2];              out.c  = function () { return c * 10; }; })();
+      (function () { var d = items[0], e = items[1], f = items[2];
+                     out.def = function () { return d + e + f; }; })();
+      return out;
+    }
+
+compiles (v98) to one function with three `CreateFunctionEnvironment` of 2, 1
+and 3 slots, and three reader closures loading slots `(0,1)`, `(0)` and
+`(0,1,2)`. That is the shape of react-navigation-example module 681 / fn#683:
+one `CreateFunctionEnvironment r4, 11` plus twelve sibling
+`CreateEnvironment`/`CreateFunctionEnvironment` in the same function.
+
+Our emitter declares every environment a function owns as one flat
+`let _e<env>_<slot>` list in the function's top scope
+(`src/emit/function.ts` `ownedEnvSlots`), so recompiling the decompiled source
+gives hermesc a single scope: it allocates a **single**
+`CreateFunctionEnvironment(6)` and the readers become `(0,1)`, `(2)`,
+`(3,4,5)`. That is exactly the `diff:CreateFunctionEnvironment(imm)` and
+`diff:LoadFromEnvironment(imm)` verdicts on the corpus.
+
+Versions: v98 and v99 reproduce. v84/v94/v96 do not inline these IIFEs at all
+(the callee stays its own function), so there are no siblings to flatten.
+
+## 2. Why the two earlier synthetic repros failed
+
+Both earlier attempts (`{ let x; function get(){return x} }` blocks, and a
+three-export lazy-require barrel) used **block scopes**, and hermesc -O merges
+sibling block scopes into the enclosing function environment. Probed directly
+on hermesc v98: three sibling `{ let a; fns.push(function(){return a}) }`
+blocks in one function compile to ONE `CreateFunctionEnvironment(3)`, in the
+original as well as in the recompile — so nothing ever diverged. The trigger
+is inlining, not block scoping.
+
+## 3. Why the briefed fix (emit each sibling environment as a block scope) cannot work
+
+Same reason. Taking the decompiled output of fixture 75 and hand-rewriting it
+so that each environment's slots and its reader closure sit inside their own
+`{ let _eN_0, _eN_1; function reader() {...} ... }` block, then recompiling
+with hermesc v98, still gives `CreateFunctionEnvironment(6)` with readers on
+slots `(0,1)`, `(2)`, `(3,4,5)` — byte-identical to the flat form. Block
+scopes are free at this level; hermesc's scope allocator flattens them.
+
+Hand-rewriting the **same** ranges as `(function () { ... })();` instead
+reproduces the original exactly: `CreateFunctionEnvironment(2) / (1) / (3)`
+and readers on `(0,1)` / `(0)` / `(0,1,2)`.
+
+So the only source form that round-trips a sibling environment is the IIFE it
+came from.
+
+## 4. What an IIFE-emitting fix would have to do, and why it was not landed
+
+It is a real option — arguably the *more* faithful decompilation, since the
+original source really did contain an IIFE — but it is a design decision, not
+an implementation detail, and it is bigger than the briefed change:
+
+1. **Readability.** The output gains `(function () { ... })();` wrappers in the
+   middle of ordinary function bodies. The project's order is correct first,
+   readable second; round-trip identity is a metric, not correctness. Trading
+   readability for a metric needs Fred or the orchestrator to say yes.
+2. **Safety guards.** An IIFE is only transparent if the wrapped statement
+   range contains no `return`, `break`, `continue`, `this`, `arguments`, no
+   `yield`/`await`, and declares nothing used after the range.
+3. **Guard 2 already refuses on the minimal case.** In fixture 75's own
+   decompiled output the scratch register declaration `let r0 = undefined;`
+   falls inside environment 1's statement range and is read again inside
+   environment 2's range. A contiguous-range IIFE would refuse there, so the
+   fix does not work at all unless such declarations are first hoisted out of
+   the range — extra machinery with its own correctness argument.
+4. **Placement.** The reader closures are emitted as hoisted `function`
+   declarations at the top of the body, away from the statements that fill
+   their environment, so the transform must move declarations as well as wrap
+   a range.
+
+Recommendation: treat this as a scoped follow-up with an explicit decision on
+(1), most plausibly as an **opt-in** emit mode used by the round-trip harness
+rather than a default, so readable output is not paid for a corpus metric.
+Until then the BUGS row stays open with the repro now pinned by fixture 75.
+
+## 5. Baseline measurement (no code change)
+
+`node tools/e2e/roundtrip-corpus.ts --only react-navigation-example-0.85.3 --passes on`
+on this worktree (`ecbf218` + fixture 75 only):
+
+- IDENTICAL 6178 (42.79%) of 14437, DIFFERENT 8259, RECOMPILE-ERROR 0, DECOMPILE-STUB 0
+- `diff:LoadFromEnvironment(imm)` 863 (rank 1)
+- `diff:CreateFunctionEnvironment(imm)` 619 (rank 3)
+
+The LoadFromEnvironment figure drifted down from the 925 recorded at
+`d4011d8` with nothing changed in between — the same corpus-migration effect
+the BUGS row already notes. A later "after" measurement should be compared
+against 863, not 925. There is no "after" figure in this pass: no fix landed.
+
+## 6. Gate note
+
+Fixture 75's **v98** build lands on the long-standing hbc98-late / hbc99-mar2026
+auto-probe ambiguity (both tables verify structurally but disagree on function
+ids 0 and 1), so `75-sibling-envs` joins `KNOWN_AMBIGUOUS_V98` in
+`tests/support/known-issues.ts` alongside 64/67/71, which were added the same
+way with their own fixtures. `--opcode-table=hbc98-late` resolves it; the v99
+build probes cleanly; nothing about inlined IIFEs is special here.
+
+Fixture 75's disasm/parse goldens are NOT committed — golden regeneration is a
+batched, approved operation (CLAUDE.md), so the two aggregate golden tests stay
+red for 75 exactly as they already are for 66/67/70/71/73/74.
+
+## 7. Ruling (orchestrator, 2026-09-05)
+
+Delegated to the orchestrator by Fred for this session, answering section 4
+and `docs/PUSHBACK.md` P-41:
+
+> **Yes** — the emitter may reconstruct an inlined IIFE as
+> `(function () { ... })();`, **default-on, not opt-in**, because the original
+> source *was* an IIFE, so emitting one is more faithful, not less readable.
+> It applies only when every guard in section 4 holds (no
+> `return`/`break`/`continue`/`this`/`arguments` crossing the range, scratch
+> declarations outliving the range hoisted out first, hoisted closure
+> declarations moved in); refuse otherwise, leaving today's flat
+> `let _e<env>_<slot>` prologue and no behaviour change.
+
+So the recommendation at the end of section 4 (opt-in, harness-only) is
+**superseded**: the reconstruction is a default emit behaviour.
+
+Implementation is a **separate task**, not this one. Until it lands, the two
+round-trip cases in `tests/gate/emit/sibling-env-slots.test.ts` are skipped
+with the reason string
+`BUGS.md: residual diff:LoadFromEnvironment(imm) row, PUSHBACK P-41 -- inlined-IIFE reconstruction not implemented yet`,
+so the gate is green on main. The fix task flips them by deleting the skip;
+the test bodies are unchanged and already assert the right thing.
