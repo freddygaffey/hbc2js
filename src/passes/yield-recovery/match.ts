@@ -22,7 +22,10 @@ export function match(list: readonly Stmt[], ctx: PassContext): Match<readonly S
     const s = list[i]!;
     if (s.k !== "func") continue;
     const r = recover(s);
-    if (!r.ok) continue; // §4: a counted refusal, never a wrong rewrite.
+    if (!r.ok) {
+      ctx.refuse?.(s, r.reason); // §4/§5: a counted refusal, never a wrong rewrite.
+      continue;
+    }
     return { root: list, nodes: [[list[i]!]], data: { index: i, recovered: r }, at: { functionIndex: ctx.functionIndex, offset: 0 } };
   }
   return null;

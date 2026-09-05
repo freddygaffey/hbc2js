@@ -54,6 +54,11 @@ export interface ErrorContext {
   readonly expected?: string;
   readonly actual?: string;
   readonly hint?: string; // one sentence, actionable
+  // W_PASS_REFUSED (docs/specs/passes/25-yield-async-recovery.md §5): the
+  // pass that refused, its named reason code, and how many distinct sites.
+  readonly pass?: string;
+  readonly reason?: string;
+  readonly count?: number;
 }
 
 function formatMessage(code: ErrorCode, message: string, context: ErrorContext): string {

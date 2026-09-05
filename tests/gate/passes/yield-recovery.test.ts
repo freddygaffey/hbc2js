@@ -243,6 +243,17 @@ test("yield-recovery refuses 24-generator-return-throw's g1 with R-Y4 (finally b
   assert.equal(count(on, /g1 finally ran/g), 5, "no copy may be dropped");
 });
 
+test("docs/specs/passes/25-yield-async-recovery.md §5: g1's R-Y4 refusal surfaces as a W_PASS_REFUSED diagnostic, not silently", () => {
+  const r = decompile(readFileSync(join(CONSTRUCTS, "24-generator-return-throw", "v94.hbc")), { resolveV98Ambiguity: true });
+  const refused = r.diagnostics.filter((d) => d.code === "W_PASS_REFUSED" && (d.context as { pass?: string }).pass === "yield-recovery");
+  assert.ok(refused.length > 0, "yield-recovery must report at least one refusal for this fixture");
+  assert.ok(
+    refused.some((d) => (d.context as { reason?: string }).reason === "forced-return-body"),
+    `expected a forced-return-body (R-Y4) refusal among ${JSON.stringify(refused.map((d) => d.context))}`,
+  );
+  for (const d of refused) assert.ok((d.context as { count?: number }).count! >= 1, "a reported refusal must count at least one site");
+});
+
 // PUSHBACK P-32: the spec (section 1.5) says "fixture 25 is refused in full, at
 // every version", and this test asserted it as an equality of
 // `__hbc_makeGenerator` counts. Measured, that is false: the fixture's `inner`

@@ -1807,9 +1807,17 @@ export function applyAstPasses(fnBody: readonly Stmt[], passes: readonly StmtLis
     const beforePass = current;
     const appliedCountBefore = applied.length;
     const refused = new Set<readonly Stmt[]>();
+    // W_PASS_REFUSED (mirrors driver.ts): distinct (reason -> site
+    // identities) this pass has reported refusing for the current function.
+    const refusals = new Map<string, Set<unknown>>();
+    const refuse = (node: unknown, reason: string): void => {
+      let sites = refusals.get(reason);
+      if (sites === undefined) refusals.set(reason, (sites = new Set()));
+      sites.add(node);
+    };
     let firedHere = false;
     for (let guard = 0; guard < MAX_SITES_PER_PASS; guard++) {
-      const ctx: PassContext = { ...base, applied: appliedNames, fnBody: current };
+      const ctx: PassContext = { ...base, applied: appliedNames, fnBody: current, refuse };
       const site = firstAstMatch(current, pass, ctx, refused);
       if (site === null) break;
       const { list, match } = site;
@@ -1829,6 +1837,9 @@ export function applyAstPasses(fnBody: readonly Stmt[], passes: readonly StmtLis
       current = spliceList(current, list, after);
       applied.push({ pass: pass.name, at: match.at });
       firedHere = true;
+    }
+    for (const [reason, sites] of refusals) {
+      diagnostics.push({ severity: "info", code: "W_PASS_REFUSED", message: `pass ${pass.name} refused ${sites.size} site(s): ${reason}`, context: { pass: pass.name, reason, count: sites.size } });
     }
     if (!firedHere) continue;
     if (parses(current)) {

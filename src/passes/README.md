@@ -25,6 +25,14 @@ export const myPass: Pass<Stmt, MySite> = {
   Recognises exactly one Hermes lowering idiom. Return `null` for everything
   else, generously: a refused site costs nothing, a wrong match costs
   correctness. The driver calls it on every node, innermost (post-order) first.
+  If your rung recognises a site but declines it for a *named* reason (not a
+  plain "this isn't my idiom" `null`), call `ctx.refuse?.(node, reason)`
+  before returning `null` — the one side effect `match` is allowed, since it
+  never changes what `match` returns. The framework dedupes by `node` identity
+  per pass per function and turns the result into one `W_PASS_REFUSED` info
+  diagnostic per reason (`{ pass, reason, count }`), so a refusal is no longer
+  silent (docs/specs/passes/25-yield-async-recovery.md §5; see
+  `yield-recovery`/`async-recovery` for the pattern).
   A `Match`'s `root` is documentation only — **the driver splices the exact
   node it called `match` on, never `m.root`** (`driver.ts:47,66`); if your
   `root` disagrees with the matched node, that disagreement fails silently.

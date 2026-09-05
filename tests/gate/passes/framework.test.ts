@@ -10,7 +10,7 @@ import { decompile, parseForDecompile } from "../../../src/decompile.ts";
 import { ErrorCode, Hbc2jsError } from "../../../src/errors.ts";
 import { printTree, structure } from "../../../src/structure/index.ts";
 import type { Stmt } from "../../../src/structure/ir.ts";
-import { applyPasses } from "../../../src/passes/driver.ts";
+import { applyPasses, postOrder } from "../../../src/passes/driver.ts";
 import { enabledPasses, REGISTRY } from "../../../src/passes/registry.ts";
 import { forHeader } from "../../../src/passes/for-header/index.ts";
 import { loopCond } from "../../../src/passes/loop-cond/index.ts";
@@ -75,6 +75,32 @@ test("review M5-pass-1 F5: a mistyped only/skip/after/before name is E_PASS_ORDE
   assert.throws(() => enabledPasses({ skip: ["nonexistent-pass"] }), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
   const badDep: Pass<Stmt> = { ...(loopCond as Pass<Stmt>), after: ["loop-condd"] };
   assert.throws(() => enabledPasses({}, [badDep, forHeader as Pass]), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
+});
+
+test("docs/specs/passes/25-yield-async-recovery.md §5: a refusal is reported as one W_PASS_REFUSED per (pass, reason) per function, counted by distinct site", () => {
+  const cfg = countingLoop();
+  const fn = structure(cfg);
+  const nodes = postOrder(fn.root);
+  assert.ok(nodes.length >= 3, "fixture needs at least 3 distinct nodes to refuse");
+  const [nodeA1, nodeA2, nodeB1] = nodes;
+  const refusing: Pass<Stmt> = {
+    ...(loopCond as Pass<Stmt>),
+    match: (node, ctx) => {
+      if (node === nodeA1 || node === nodeA2) ctx.refuse?.(node, "reason-a");
+      else if (node === nodeB1) ctx.refuse?.(node, "reason-b");
+      return null;
+    },
+  };
+  const r = applyPasses(fn, [refusing], base(cfg));
+  assert.deepEqual(r.applied, []);
+  const refused = r.diagnostics.filter((d) => d.code === "W_PASS_REFUSED");
+  assert.deepEqual(
+    refused.map((d) => d.context).sort((a, b) => String((a as { reason: string }).reason).localeCompare(String((b as { reason: string }).reason))),
+    [
+      { pass: "loop-cond", reason: "reason-a", count: 2 },
+      { pass: "loop-cond", reason: "reason-b", count: 1 },
+    ],
+  );
 });
 
 test("PL-05: --passes=none reproduces the M4 emitter output byte for byte", () => {

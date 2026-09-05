@@ -50,6 +50,21 @@ export interface PassContext {
    * a guess (R-A1).
    */
   readonly fnParams?: { readonly names: readonly string[]; readonly simple: boolean };
+  /**
+   * docs/specs/passes/25-yield-async-recovery.md §5 follow-up: a rung that
+   * recognises a site but declines to rewrite it (a named refusal reason,
+   * not a bare "did not match") reports it here instead of staying silent.
+   * `node` is the concrete site the rung looked at (any object identity the
+   * rung already has to hand — the driver dedupes by identity so a matcher
+   * that is asked about the same unresolved site again, e.g. on a later
+   * fixed-point iteration, does not inflate the count). The framework turns
+   * the distinct (reason, node) pairs collected per pass per function into
+   * one `W_PASS_REFUSED` diagnostic per reason after that pass's sites are
+   * exhausted (`src/passes/driver.ts`, `src/passes/ast.ts`). Calling this is
+   * the one side effect `match` is allowed: it never changes what `match`
+   * returns, so it cannot affect a rewrite or the PL-08 fixed point.
+   */
+  readonly refuse?: (node: unknown, reason: string) => void;
 }
 
 export interface Match<TNode, TData = unknown> {

@@ -34,12 +34,21 @@ export function applyPasses(fn: StructuredFunction, passes: readonly Pass<Stmt>[
     // identity: the node survives untouched in the tree, so it is seen again on
     // the next walk and must not be retried forever.
     const refused = new Set<Stmt>();
+    // W_PASS_REFUSED: distinct (reason -> site identities) this pass has
+    // reported refusing for the current function, deduped so a site a
+    // matcher is asked about again (PL-08 re-scans) is counted once.
+    const refusals = new Map<string, Set<unknown>>();
     let parents = parentMap(current.root);
     const ctx: PassContext = {
       ...base,
       applied: appliedNames,
       structured: current,
       parentOf: (node) => parents.get(node as Stmt) ?? null,
+      refuse: (node, reason) => {
+        let sites = refusals.get(reason);
+        if (sites === undefined) refusals.set(reason, (sites = new Set()));
+        sites.add(node);
+      },
     };
     let firedHere = false;
     for (let guard = 0; guard < MAX_SITES_PER_PASS; guard++) {
@@ -73,6 +82,9 @@ export function applyPasses(fn: StructuredFunction, passes: readonly Pass<Stmt>[
       firedHere = true;
     }
     if (firedHere) appliedNames.push(pass.name);
+    for (const [reason, sites] of refusals) {
+      diagnostics.push({ severity: "info", code: "W_PASS_REFUSED", message: `pass ${pass.name} refused ${sites.size} site(s): ${reason}`, context: { pass: pass.name, reason, count: sites.size } });
+    }
   }
   for (const a of abandoned) {
     diagnostics.push({ severity: "info", code: "W_PASS_ABANDONED", message: `pass ${a.pass} left fn#${a.at.functionIndex} @${a.at.offset} as is: ${a.reason}`, context: { functionIndex: a.at.functionIndex, offset: a.at.offset } });
