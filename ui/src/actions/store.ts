@@ -19,7 +19,7 @@ export interface DialogState {
  *  the keyboard cheat-sheet and the Settings dialog. */
 export type Overlay = "none" | "shortcuts" | "settings";
 
-export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | "findings" | "package" | "workers";
+export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | "findings" | "package" | "workers" | "edit";
 
 /** Bur 5 (docs/UI-BURS.md #5): "command" is the vim-style ":" mode —
  *  CommandPalette prefills its query with ":" and interprets it as

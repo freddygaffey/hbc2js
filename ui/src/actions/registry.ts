@@ -85,6 +85,25 @@ registry.register({
   },
 });
 
+// -- spec 26 L8: the attended "Edit & recompile" flow ------------------------
+//
+// One registry entry, exactly as spec 26 §3.1 promises ("every new action in
+// L4/L6/L8 is one registry entry and appears in the menu, the palette and the
+// keymap for free"). It only OPENS the pane — the recompile itself needs a
+// second, explicit confirmation inside `EditPane.tsx`, because it is the one
+// operation that produces a modified binary (spec 17 §13). Deliberately no
+// `defaultChord`: a keystroke away is too close for this one.
+registry.register({
+  id: "edit.recompile",
+  title: "Edit & recompile (attended)",
+  group: "review",
+  when: (ctx) => ctx.selection.fn !== undefined && ctx.selection.fn >= 0,
+  run: (ctx) => {
+    if (ctx.selection.fn === undefined || ctx.selection.fn < 0) return setStatus("select a function to edit and recompile");
+    setRightPanel("edit");
+  },
+});
+
 /** Root the graph pane on `sel` and bring the tab up. */
 function openGraphOn(sel: Selection): void {
   const t = graphTargetFor(sel);

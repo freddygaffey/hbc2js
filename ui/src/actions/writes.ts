@@ -36,7 +36,7 @@ export function fnTarget(fn: number): string {
   return `fn:${fn}`;
 }
 
-async function post(path: string, body: unknown): Promise<ToolResult> {
+async function post<T = ToolResult>(path: string, body: unknown): Promise<T> {
   if (USING_MOCK) {
     throw new ToolError(0, "the shell is in mock mode — start src/ui-server and run the dev server with VITE_API_MOCK=0 to write");
   }
@@ -56,7 +56,7 @@ async function post(path: string, body: unknown): Promise<ToolResult> {
     const reason = typeof (parsed as { reason?: unknown }).reason === "string" ? (parsed as { reason: string }).reason : text;
     throw new ToolError(res.status, reason === "" ? res.statusText : reason);
   }
-  return parsed as ToolResult;
+  return parsed as T;
 }
 
 export const setName = (target: string, name: string): Promise<ToolResult> =>
@@ -78,3 +78,45 @@ export interface RecordFindingBody {
 
 export const recordFinding = (body: RecordFindingBody): Promise<ToolResult> =>
   post("record-finding", { ...body, prov: UI_PROV });
+
+// -- recompile_edit (spec 17 §13, spec 26 L8) --------------------------------
+//
+// The ONE write that produces a modified binary. Its `warning` and
+// `watermark` are rendered VERBATIM by `ui/src/panes/EditPane.tsx` — never
+// reworded, never summarised, exactly as `ToolError.reason` is — and the
+// server refuses the call outright for a worker (spec 23 §7), so this
+// client never has to decide whether a caller is attended.
+
+/** `{kind:"edited-and-recompiled"}` (spec 17 §13), forwarded unmodified. */
+export interface RecompileWatermark {
+  readonly kind: "edited-and-recompiled";
+  readonly baseBundleSha256: string;
+  readonly fn: number;
+  readonly editSha256: string;
+}
+
+/** The additive half spec 26 L8 adds: which sandbox ran it and whether the
+ *  teardown succeeded (`src/ui-server/sandbox.ts`). */
+export interface SandboxReport {
+  readonly id: string;
+  readonly kind: "copy" | "worktree";
+  readonly tornDown: boolean;
+  readonly teardownError?: string;
+}
+
+export interface RecompileEditResult extends ToolResult {
+  readonly warning: string;
+  readonly watermark: RecompileWatermark;
+  /** Scratch-directory path of the recompiled `.hbc` COPY — never the
+   *  original bundle, never inside the `.hbcproj`. */
+  readonly outputPath: string;
+  readonly sandbox: SandboxReport;
+}
+
+export const recompileEdit = (fn: number, source: string, sandboxKind?: "copy" | "worktree"): Promise<RecompileEditResult> =>
+  post<RecompileEditResult>("recompile-edit", {
+    fn,
+    source,
+    prov: UI_PROV,
+    ...(sandboxKind !== undefined ? { sandbox: { kind: sandboxKind } } : {}),
+  });
