@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 /** §1.4: the header schema id shared by every `native/*.jsonl` file. */
 export const NATIVE_SCHEMA = "hbc2js-native/1";
 
-export type NativeKind = "classes" | "methods" | "strings" | "resources" | "assets" | "react-modules" | "seams";
+export type NativeKind = "classes" | "methods" | "strings" | "resources" | "assets" | "react-modules" | "seams" | "env";
 /** `join` (spec 27 L3) is not a byte source: a `seams.jsonl` row is derived
  *  from the ALREADY-materialised native tables and JS artifact index rows,
  *  never re-read from bytes. */
@@ -231,4 +231,29 @@ export interface SeamRow {
   readonly channel: SeamChannel | null;
   /** Filled by L4; always `null` at L3. */
   readonly firstParty: boolean | null;
+}
+
+// --- spec 27 §L6 -- `.env` recovery from strings.xml / BuildConfig ---------
+
+/** Which channel produced an `env.jsonl` row. */
+export type EnvSource = "strings.xml" | "BuildConfig";
+
+/** How the value was recovered.
+ *  - `own-parser`: a plain ARSC string value, or a DEX `static_values`
+ *    compile-time-constant literal — both read from tables, no method body.
+ *  - `baksmali`: reserved for the optional external oracle (§1.2); the own
+ *    parser never sets this.
+ *  - `none`: no value could be recovered; `value` is `"unresolved"`. */
+export type EnvResolvedBy = "own-parser" | "baksmali" | "none";
+
+/** `native/env.jsonl` (spec 27 §L6). One row per recovered (or key-only)
+ *  `.env` entry. A value assembled at runtime (a `BuildConfig` field with no
+ *  `static_values` entry, i.e. only settable from a `<clinit>` this parser
+ *  does not read) is `"unresolved"` -- the key is a real, honest fact even
+ *  when its value is not. */
+export interface EnvRow {
+  readonly key: string;
+  readonly value: string | "unresolved";
+  readonly source: EnvSource;
+  readonly resolvedBy: EnvResolvedBy;
 }

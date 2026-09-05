@@ -13,6 +13,7 @@ import { emptyManifest, looksLikeAxml, manifestFromAxml, parseAxml } from "./axm
 import { looksLikeArsc, parseArsc, resourceRows } from "./arsc.ts";
 import { labelReactModuleParty } from "./classify-party.ts";
 import { parseDex } from "./dex.ts";
+import { buildEnvRows, isBuildConfigClass, type BuildConfigField } from "./env.ts";
 import { buildReactModules } from "./react-modules.ts";
 import {
   assetKind,
@@ -21,6 +22,7 @@ import {
   toNativeJsonl,
   type NativeAssetRow,
   type NativeClassRow,
+  type EnvRow,
   type NativeManifest,
   type NativeMethodRow,
   type NativeModuleRow,
@@ -88,6 +90,7 @@ export interface NativeTables {
   readonly resources: readonly NativeResourceRow[];
   readonly assets: readonly NativeAssetRow[];
   readonly reactModules: readonly NativeModuleRow[];
+  readonly env: readonly EnvRow[];
   readonly manifest: NativeManifest;
   readonly dexFiles: readonly string[];
   readonly notes: readonly string[];
@@ -115,6 +118,9 @@ export function buildNativeTables(container: NativeContainer): NativeTables {
   const classes: NativeClassRow[] = [];
   const methods: NativeMethodRow[] = [];
   const strings: NativeStringRow[] = [];
+  // spec 27 §L6: BuildConfig static-field facts, collected alongside the
+  // classes/methods tables above (never re-read from bytes a second time).
+  const buildConfigFields: BuildConfigField[] = [];
 
   const dexFiles = dexEntryNames(names);
   if (dexFiles.length === 0) notes.push("no classes*.dex in the container; zero class/method/string rows (absence, not failure)");
@@ -124,6 +130,11 @@ export function buildNativeTables(container: NativeContainer): NativeTables {
     const image = parseDex(bytes);
     image.strings.forEach((s, i) => strings.push({ i, s, dex: dexIndex }));
     for (const c of image.classes) {
+      if (isBuildConfigClass(c.name)) {
+        for (const f of c.staticFields) {
+          buildConfigFields.push({ className: c.name, name: f.name, type: f.type, ...(f.value === undefined ? {} : { value: f.value }) });
+        }
+      }
       classes.push({
         key: nativeTypeKey(c.name),
         name: c.name,
@@ -195,7 +206,11 @@ export function buildNativeTables(container: NativeContainer): NativeTables {
   // (serialisation, the L3 seams join) sees the label already filled.
   const reactModules = labelReactModuleParty(buildReactModules(classes, methods), manifest.package);
 
-  return { classes, methods, strings, resources, assets, reactModules, manifest, dexFiles, notes };
+  // spec 27 §L6: a join over the resources table above and the BuildConfig
+  // facts collected during the DEX pass -- not a byte reading of its own.
+  const env = buildEnvRows(resources, buildConfigFields);
+
+  return { classes, methods, strings, resources, assets, reactModules, env, manifest, dexFiles, notes };
 }
 
 /** §L1.2's documented fallback: when AndroidManifest.xml carries no AXML chunk
@@ -238,6 +253,7 @@ export function serialiseNativeTables(tables: NativeTables): Map<string, string>
     ["native/resources.jsonl", toNativeJsonl(nativeHeader("resources", "arsc"), tables.resources)],
     ["native/assets.jsonl", toNativeJsonl(nativeHeader("assets", "zip"), tables.assets)],
     ["native/react-modules.jsonl", toNativeJsonl(nativeHeader("react-modules", "dex"), tables.reactModules)],
+    ["native/env.jsonl", toNativeJsonl(nativeHeader("env", "join"), tables.env)],
     ["native/manifest.json", JSON.stringify({ ...tables.manifest, notes: tables.manifest.notes }, null, 2) + "\n"],
   ]);
 }
@@ -262,6 +278,7 @@ export function nativeProvenance(container: NativeContainer, tables: NativeTable
       resources: tables.resources.length,
       assets: tables.assets.length,
       reactModules: tables.reactModules.length,
+      env: tables.env.length,
       components: tables.manifest.components.length,
     },
     notes: tables.notes,
