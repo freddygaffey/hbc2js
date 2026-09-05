@@ -91,6 +91,28 @@ export function select(sel: Selection): void {
   emit();
 }
 
+/** ui/src/state/url.ts's popstate handler: restore `sel` as the CURRENT
+ *  selection without growing the jump list a second time. If `sel` already
+ *  names an entry we hold (the common case — a real browser back/forward
+ *  landed on a selection `select()` itself pushed), the cursor just moves
+ *  to it, exactly like `back()`/`forward()`. Otherwise (a hand-typed or
+ *  externally-shared URL) it is treated as a fresh selection, same as
+ *  `select()`. Never called by application code directly — only by the URL
+ *  sync module. */
+export function restoreSelection(sel: Selection): void {
+  if (sameSelection(getSelection(), sel)) return;
+  const idx = history.findIndex((h) => sameSelection(h, sel));
+  if (idx >= 0) {
+    cursor = idx;
+  } else {
+    history = history.slice(0, cursor + 1);
+    history.push(sel);
+    if (history.length > JUMP_LIMIT) history = history.slice(history.length - JUMP_LIMIT);
+    cursor = history.length - 1;
+  }
+  emit();
+}
+
 export function canBack(): boolean {
   return cursor > 0;
 }

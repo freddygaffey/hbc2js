@@ -554,6 +554,42 @@ fallback default.
 **Depends on:** L5, L6 (the panels being docked should be the final ones).
 **Needs Fred:** §4.4 (first-run hierarchy only; everything else is mechanical).
 
+**Landed 2026-09-05** (Claude Sonnet 5, lean worker), against the pre-L5/L6
+`main` this agent's worktree was cut from (the `fn ?? 0` default and the
+allowlist entry §1.2 row 21 describes had ALREADY been fixed by a concurrent
+track before this landing started — verified against the shipped code, not
+redone; `App.tsx` already used the `-1` sentinel and
+`ui/e2e/smoke.spec.ts`'s allowlist was already empty). (i) `ui/src/state/
+url-codec.ts` (new, pure — no `ui/node_modules` needed, same rule
+`ui/src/graph/model.ts` follows) encodes/decodes `Selection` + the active
+right panel to/from a query string; `ui/src/state/url.ts` (new) is the
+`window.history`/`popstate` wiring, wired from one `App.tsx` mount effect. A
+bare `?fn=` (the spec's own literal example, no `sel=`) is accepted —
+kind is inferred from whichever identifying param is present, `sel` only
+disambiguates. Fixed a real regression this surfaced: `LeftPane.tsx`'s
+cold-start "open the first module" effect was gated on `sel.kind === "none"`,
+which a URL-restored selection no longer satisfies by the time the effect's
+guard runs (child effects fire before the parent's `App.tsx` URL-sync
+effect) — it is now a one-shot, same idiom as the `openedDefaults` effect
+beside it, and only the *select* (not the *open*) stays conditional on
+"nothing already selected". Caught by `ui/e2e/keys.spec.ts`'s pre-existing
+"rebinding an action … survives reload" test, which stayed red until fixed.
+(ii)/(iii) `ui/src/actions/store.ts` gained `rightPanel2`, `Layout`,
+`setRightPanel2`/`resetLayout`/`saveLayout`/`loadLayout`/`deleteLayout`/
+`listLayoutNames`, all `localStorage`-persisted like the theme; the vim/
+palette/keymap layer is untouched (this landing's own file list does not
+include `ui/src/actions/registry.ts`, so the split/reset/save/load
+affordances are plain buttons, not registry actions). `ui/src/panes/
+RightPane.tsx` is now a vertical `PanelGroup` of one or two `RightPanelBody`
+instances (the old single-instance JSX, extracted verbatim so the
+pre-existing text-matching gate tests in `tests/gate/ui/xref-*.test.ts` kept
+passing unmodified) plus a `LayoutBar`. (iv) Fred has not named a
+first-run hierarchy yet (§4.4 stays **Needs Fred**); the fallback the spec
+names — the single-panel layout — is `DEFAULT_LAYOUT`. Tests: both files the
+spec names, all five titles, plus a `docs/BUGS.md` row for two smoke-spec
+command-palette timeouts found to be pre-existing (reproduced identically on
+the pre-L10 `main`) while regression-running the untouched e2e suite.
+
 ## 3. What does NOT change — and where "nothing is throwaway" is false
 
 Spec 22 §0 claimed *"Nothing built here is throwaway: the server, action

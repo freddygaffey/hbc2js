@@ -1,6 +1,9 @@
-// ui/src/panes/RightPane.tsx — ONE panel visible at a time (spec 22 §2):
-// Context / Xrefs / Findings / Package.
+// ui/src/panes/RightPane.tsx — spec 26 L10 (ii): a vertical stack of ONE OR
+// TWO panels (Context / Xrefs / Findings / Package / …), nested
+// `react-resizable-panels` groups so the two can be dragged against each
+// other exactly like the shell's left/centre/right columns already are.
 import * as Tabs from "@radix-ui/react-tabs";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Empty, PaneHeader, ToolButton } from "../components/primitives.tsx";
@@ -9,7 +12,10 @@ import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCall
 import { useSegregation } from "../listing/use-segregation.ts";
 import type { ByNameCaller, FindingStatus, ResolvedFinding, Severity, XrefEdge } from "../contracts.ts";
 import { displayName } from "../actions/names.ts";
-import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../actions/store.ts";
+import {
+  deleteLayout, listLayoutNames, loadLayout, openDialog, resetLayout, saveLayout, setRightPanel, setRightPanel2,
+  useActionsState, type RightPanel,
+} from "../actions/store.ts";
 import { keymap } from "../actions/registry.ts";
 import { select, useSelection } from "../state/selection.ts";
 import { ToolError, setFindingStatus } from "../actions/writes.ts";
@@ -29,6 +35,20 @@ const SEVERITY_CLASS: Readonly<Record<Severity, string>> = {
   med: "text-sev-med",
   low: "text-sev-ok",
 };
+
+const PANEL_TABS: readonly { readonly value: RightPanel; readonly label: string }[] = [
+  { value: "context", label: "Context" },
+  { value: "xrefs", label: "Xrefs" },
+  { value: "strings", label: "Strings" },
+  { value: "tables", label: "Tables" },
+  { value: "graph", label: "Graph" },
+  { value: "findings", label: "Findings" },
+  { value: "package", label: "Package" },
+  { value: "workers", label: "AI" },
+];
+
+const handleClass =
+  "h-px bg-border transition-colors data-[resize-handle-state=drag]:bg-accent data-[resize-handle-state=hover]:bg-accent";
 
 /** Columns shared by the "called by" / "calls" tables: clicking a row
  *  selects that function, which is what makes the Xrefs panel a navigation
@@ -153,19 +173,35 @@ function FindingRow({ f }: { readonly f: ResolvedFinding }): ReactNode {
   );
 }
 
-function KeyVal({ k, v }: { readonly k: string; readonly v: string | number | null | undefined }): ReactNode {
+function KeyVal({ k, v, testId }: {
+  readonly k: string; readonly v: string | number | null | undefined; readonly testId?: string;
+}): ReactNode {
   return (
     <div className="flex gap-2 px-3 py-0.5 text-xs">
       <span className="w-28 shrink-0 text-text-muted">{k}</span>
-      <span className="truncate font-mono text-text">{v ?? "—"}</span>
+      <span className="truncate font-mono text-text" {...(testId !== undefined ? { "data-testid": testId } : {})}>{v ?? "—"}</span>
     </div>
   );
 }
 
-export function RightPane({ fn }: { readonly fn: number }): ReactNode {
-  // Which panel is up is action-owned state: `navigate.xrefs` switches to
-  // Xrefs from the menu, the palette or a chord (ui/src/actions/store.ts).
-  const panel = useActionsState().rightPanel;
+/** One docked slot's full tab set. Extracted from the old single-instance
+ *  `RightPane` so it can be mounted TWICE (spec 26 L10 (ii)) — the primary
+ *  slot always shows, the secondary slot shows only once `rightPanel2` is
+ *  non-null. Each hook call is keyed by `fn` + the fetch's own cache key
+ *  (react-query), so mounting the same tab in both slots at once is just a
+ *  cache hit, never a second network round trip. */
+function RightPanelBody({
+  fn, panel, onPanelChange, slot, onSplit, onClose,
+}: {
+  readonly fn: number;
+  readonly panel: RightPanel;
+  readonly onPanelChange: (panel: RightPanel) => void;
+  readonly slot: "primary" | "secondary";
+  /** Present only on the primary slot, and only while no split is open. */
+  readonly onSplit?: () => void;
+  /** Present only on the secondary slot: its own close button. */
+  readonly onClose?: () => void;
+}): ReactNode {
   const selection = useSelection();
   // `fn` is `-1` before anything is selected (App.tsx) — the same sentinel
   // `perFn()` already uses in hooks.ts to skip a query, so passing it straight
@@ -193,11 +229,12 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
   return (
     <Tabs.Root
       value={panel}
-      onValueChange={(v) => setRightPanel(v as RightPanel)}
+      onValueChange={(v) => onPanelChange(v as RightPanel)}
       className="flex h-full min-w-0 flex-col bg-surface"
+      data-testid={`right-panel-${slot}`}
     >
       <PaneHeader>
-        <Tabs.List className="flex w-full gap-1">
+        <Tabs.List className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
           <Tabs.Trigger value="context" className={tabClass}>Context</Tabs.Trigger>
           <Tabs.Trigger value="xrefs" className={tabClass}>Xrefs</Tabs.Trigger>
           <Tabs.Trigger value="strings" className={tabClass}>Strings</Tabs.Trigger>
@@ -208,6 +245,21 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <Tabs.Trigger value="workers" className={tabClass}>AI</Tabs.Trigger>
           <Tabs.Trigger value="edit" className={tabClass}>Edit</Tabs.Trigger>
         </Tabs.List>
+        {onSplit !== undefined && (
+          <ToolButton
+            aria-label="split right panel"
+            data-testid="right-panel-split"
+            tip="Show a second panel below this one"
+            onClick={onSplit}
+          >
+            ⊟
+          </ToolButton>
+        )}
+        {onClose !== undefined && (
+          <ToolButton aria-label="close split panel" data-testid="right-panel-close" tip="Close this panel" onClick={onClose}>
+            ✕
+          </ToolButton>
+        )}
       </PaneHeader>
 
       <Tabs.Content value="context" className={bodyClass}>
@@ -217,7 +269,7 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
           <>
             <div className="py-2">
               <KeyVal k="name" v={displayName(md)} />
-              <KeyVal k="fn" v={md?.fn} />
+              <KeyVal k="fn" v={md?.fn} testId={`right-panel-fn-${slot}`} />
               <KeyVal k="module" v={md?.module} />
               <KeyVal k="file" v={md?.file} />
               <KeyVal k="lines" v={md?.lines === null || md?.lines === undefined ? null : `${md.lines[0]}-${md.lines[1]}`} />
@@ -388,5 +440,106 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
         <EditPane fn={fn} />
       </Tabs.Content>
     </Tabs.Root>
+  );
+}
+
+/** The "Layouts" strip above the docked panels: named saved layouts
+ *  (persisted like theme/density, spec 26 L10 (iii)) plus "reset layout".
+ *  A native `<select>` rather than a bespoke menu component — this is
+ *  workspace plumbing, not a surface worth a new primitive. */
+function LayoutBar(): ReactNode {
+  const [names, setNames] = useState<readonly string[]>(() => listLayoutNames());
+  const refresh = (): void => setNames(listLayoutNames());
+  return (
+    <div className="flex h-6 shrink-0 items-center gap-2 border-b border-border bg-surface px-2 text-xs text-text-muted">
+      <span>layout</span>
+      <select
+        aria-label="saved layouts"
+        className="h-5 rounded-ui border border-border bg-surface-2 px-1 text-xs text-text"
+        value=""
+        onChange={(e) => {
+          const name = e.target.value;
+          if (name !== "") loadLayout(name);
+          e.target.value = "";
+        }}
+      >
+        <option value="" disabled>load…</option>
+        {names.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <ToolButton
+        aria-label="save current layout"
+        tip="Save the current panel arrangement under a name"
+        onClick={() => {
+          const name = window.prompt("Save current layout as:");
+          if (name !== null && name.trim() !== "") {
+            saveLayout(name.trim());
+            refresh();
+          }
+        }}
+      >
+        save…
+      </ToolButton>
+      {names.length > 0 && (
+        <ToolButton
+          aria-label="delete last saved layout"
+          tip="Delete the selected layout"
+          onClick={() => {
+            const name = window.prompt(`Delete which layout? (${names.join(", ")})`);
+            if (name !== null && names.includes(name)) {
+              deleteLayout(name);
+              refresh();
+            }
+          }}
+        >
+          delete…
+        </ToolButton>
+      )}
+      <ToolButton
+        className="ml-auto"
+        aria-label="reset layout"
+        data-testid="layout-reset"
+        tip="Reset to the single-panel default layout"
+        onClick={() => resetLayout()}
+      >
+        reset layout
+      </ToolButton>
+    </div>
+  );
+}
+
+export function RightPane({ fn }: { readonly fn: number }): ReactNode {
+  // Which panel(s) are up is action-owned state: `navigate.xrefs` switches
+  // the primary from the menu, the palette or a chord (ui/src/actions/store.ts).
+  const { rightPanel, rightPanel2 } = useActionsState();
+  const split = rightPanel2 !== null;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <LayoutBar />
+      <PanelGroup direction="vertical" autoSaveId="hbc2js.rightStack" className="min-h-0 flex-1">
+        <Panel defaultSize={split ? 60 : 100} minSize={20} className="min-h-0">
+          <RightPanelBody
+            fn={fn}
+            panel={rightPanel}
+            onPanelChange={setRightPanel}
+            slot="primary"
+            {...(split ? {} : { onSplit: () => setRightPanel2(PANEL_TABS.find((t) => t.value !== rightPanel)?.value ?? "xrefs") })}
+          />
+        </Panel>
+        {split && (
+          <>
+            <PanelResizeHandle className={handleClass} />
+            <Panel defaultSize={40} minSize={20} className="min-h-0 border-t border-border">
+              <RightPanelBody
+                fn={fn}
+                panel={rightPanel2}
+                onPanelChange={setRightPanel2}
+                slot="secondary"
+                onClose={() => setRightPanel2(null)}
+              />
+            </Panel>
+          </>
+        )}
+      </PanelGroup>
+    </div>
   );
 }

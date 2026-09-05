@@ -4,7 +4,7 @@
 // shell must not feel cramped.
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { TopBar } from "./panes/TopBar.tsx";
 import { LeftPane } from "./panes/LeftPane.tsx";
 import { CenterPane } from "./panes/CenterPane.tsx";
@@ -13,6 +13,7 @@ import { BottomPane } from "./panes/BottomPane.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
 import { usePxMinSize } from "./usePxMinSize.ts";
 import { useSelection } from "./state/selection.ts";
+import { initUrlSync } from "./state/url.ts";
 import { ActionsProvider } from "./actions/ActionsProvider.tsx";
 
 /** Hard minimums, in CSS pixels (see usePxMinSize). */
@@ -34,6 +35,11 @@ export function App(): ReactNode {
   const fn = useSelection().fn ?? -1;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { ref, pct } = usePxMinSize();
+
+  // spec 26 L10 (i): selection + right panel <-> URL, both ways. One-time
+  // wiring for the life of the shell (the app never unmounts `App`, but the
+  // cleanup exists for tests that do).
+  useEffect(() => initUrlSync(), []);
 
   return (
     <Tooltip.Provider delayDuration={400}>

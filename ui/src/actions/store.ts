@@ -26,12 +26,22 @@ export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | 
  *  `src/ui-core/commands.ts` describes, instead of the plain action list. */
 export type PaletteMode = "normal" | "command";
 
+/** spec 26 L10 (ii): docking two right panels at once — the vertical stack
+ *  in `RightPane.tsx` shows `rightPanel` (top/primary) always, and
+ *  `rightPanel2` (bottom/secondary) when it is not `null`. */
+export interface Layout {
+  readonly rightPanel: RightPanel;
+  readonly rightPanel2: RightPanel | null;
+}
+
 export interface ActionsState {
   readonly dialog: DialogState;
   readonly paletteOpen: boolean;
   readonly paletteMode: PaletteMode;
   readonly overlay: Overlay;
   readonly rightPanel: RightPanel;
+  /** `null` = single-panel layout (the fallback default, §4.4). */
+  readonly rightPanel2: RightPanel | null;
   /** Last write result / hint, shown in the status toast. `null` = nothing. */
   readonly status: string | null;
   /** The chord keys typed so far while a multi-key sequence is pending. */
@@ -40,12 +50,68 @@ export interface ActionsState {
 
 const CLOSED: DialogState = { kind: "none", selection: { kind: "none" } };
 
+/** First-run default (§4.4 "everything else is mechanical" — Fred did not
+ *  name a hierarchy, so the fallback the spec names is used verbatim: the
+ *  pre-L10 single-panel layout). */
+export const DEFAULT_LAYOUT: Layout = { rightPanel: "context", rightPanel2: null };
+
+const LAYOUT_KEY = "hbc2js.layout.current";
+const LAYOUTS_KEY = "hbc2js.layout.named";
+
+/** Same try/catch idiom as ui/src/graph/store.ts's `readFollow`: a
+ *  private-browsing tab, a `window`-less test run (no `typeof` guard
+ *  needed — referencing `window` itself throws, and the catch below is
+ *  exactly what catches that) or corrupt JSON all degrade to `fallback`. */
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key: string, value: unknown): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // best-effort persistence only.
+  }
+}
+
+function readCurrentLayout(): Layout {
+  const saved = readJson<Partial<Layout>>(LAYOUT_KEY, {});
+  return {
+    rightPanel: saved.rightPanel ?? DEFAULT_LAYOUT.rightPanel,
+    rightPanel2: saved.rightPanel2 ?? DEFAULT_LAYOUT.rightPanel2,
+  };
+}
+
+function writeCurrentLayout(layout: Layout): void {
+  writeJson(LAYOUT_KEY, layout);
+}
+
+/** Named saved layouts (§(iii)): a plain name -> `Layout` map, persisted
+ *  like the current layout. Unbounded (there is no jump-list-style cap
+ *  here — an analyst naming layouts is not going to name a hundred). */
+function readNamedLayouts(): Readonly<Record<string, Layout>> {
+  return readJson<Record<string, Layout>>(LAYOUTS_KEY, {});
+}
+
+function writeNamedLayouts(layouts: Readonly<Record<string, Layout>>): void {
+  writeJson(LAYOUTS_KEY, layouts);
+}
+
+const persistedLayout = readCurrentLayout();
+
 const INITIAL: ActionsState = {
   dialog: CLOSED,
   paletteOpen: false,
   paletteMode: "normal",
   overlay: "none",
-  rightPanel: "context",
+  rightPanel: persistedLayout.rightPanel,
+  rightPanel2: persistedLayout.rightPanel2,
   status: null,
   pendingChord: "",
 };
@@ -69,6 +135,11 @@ function subscribe(l: () => void): () => void {
 export function getActionsState(): ActionsState {
   return state;
 }
+
+/** ui/src/state/url.ts (spec 26 L10): the URL sync needs to know when
+ *  `rightPanel` changes, from outside React, same reason every other
+ *  `subscribe*` export in this shell exists. */
+export { subscribe as subscribeActions };
 
 export function useActionsState(): ActionsState {
   return useSyncExternalStore(subscribe, getActionsState, getActionsState);
@@ -95,6 +166,53 @@ export function setOverlay(overlay: Overlay): void {
 
 export function setRightPanel(panel: RightPanel): void {
   set({ rightPanel: panel });
+  writeCurrentLayout({ rightPanel: panel, rightPanel2: state.rightPanel2 });
+}
+
+/** Open (a tab name) or close (`null`) the secondary right panel — the
+ *  "two right panels at once" docking spec 26 L10 (ii) asks for. Opening
+ *  with the same tab already showing primary is refused (a split showing
+ *  the same content twice is not useful and not what "two panels" means). */
+export function setRightPanel2(panel: RightPanel | null): void {
+  if (panel !== null && panel === state.rightPanel) return;
+  set({ rightPanel2: panel });
+  writeCurrentLayout({ rightPanel: state.rightPanel, rightPanel2: panel });
+}
+
+/** §(iii) "reset layout" action (`layout.reset`): back to the single-panel
+ *  default, discarding the split. Does not touch which named layouts are
+ *  saved — only the CURRENT arrangement. */
+export function resetLayout(): void {
+  set({ rightPanel: DEFAULT_LAYOUT.rightPanel, rightPanel2: DEFAULT_LAYOUT.rightPanel2 });
+  writeCurrentLayout(DEFAULT_LAYOUT);
+}
+
+/** Save the current arrangement under `name` (overwriting any existing
+ *  layout of that name). */
+export function saveLayout(name: string): void {
+  const layouts = { ...readNamedLayouts() };
+  layouts[name] = { rightPanel: state.rightPanel, rightPanel2: state.rightPanel2 };
+  writeNamedLayouts(layouts);
+}
+
+/** Switch to a previously saved named layout; a no-op if `name` was never
+ *  saved (or was deleted since). */
+export function loadLayout(name: string): void {
+  const layout = readNamedLayouts()[name];
+  if (layout === undefined) return;
+  set({ rightPanel: layout.rightPanel, rightPanel2: layout.rightPanel2 });
+  writeCurrentLayout(layout);
+}
+
+export function deleteLayout(name: string): void {
+  const layouts = { ...readNamedLayouts() };
+  delete layouts[name];
+  writeNamedLayouts(layouts);
+}
+
+/** Names of every saved layout, alphabetical (stable order for a menu). */
+export function listLayoutNames(): readonly string[] {
+  return Object.keys(readNamedLayouts()).sort();
 }
 
 export function setStatus(status: string | null): void {

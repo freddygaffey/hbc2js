@@ -332,10 +332,17 @@ silently degrade into a no-op.
 | top bar: project · search (stub) · density · theme · Cmd/Ctrl-K  |
 +-------------+---------------------------------+-----------------+
 | left >=220px| centre listing >=360px          | right >=280px   |
-| Modules /   |  source   (monospace)           | ONE panel at a  |
-| Leads tabs  | ------- draggable split ------- | time: Context / |
-|             |  disasm  (monospace)            | Xrefs /Findings |
-|             |                                 | / Package       |
+| Modules /   |  source   (monospace)           | layout bar:     |
+| Leads tabs  | ------- draggable split ------- | saved layouts,  |
+|             |  disasm  (monospace)            | reset layout    |
+|             |                                 | +---------------+
+|             |                                 | | primary panel |
+|             |                                 | | (Context/     |
+|             |                                 | |  Xrefs/…)     |
+|             |                                 | +- split ------+
+|             |                                 | | secondary,    |
+|             |                                 | | when open     |
+|             |                                 | +---------------+
 +-------------+---------------------------------+-----------------+
 | activity: collapsed to a status line by default                  |
 +-----------------------------------------------------------------+
@@ -350,6 +357,79 @@ uselessness. Pane sizes persist per group via `autoSaveId`.
 
 Right-clicking a row in the left pane opens the Radix context menu with the
 spec 22 §3.3 item list (disabled until landing 4 wires the action registry).
+
+### Docking: two right panels at once (spec 26 L10)
+
+The right-hand column is no longer a single `Tabs.Root` — it is a **vertical
+`PanelGroup`** (`ui/src/panes/RightPane.tsx`) holding one or two instances of
+the same tab set (Context / Xrefs / Strings / Tables / Graph / Findings /
+Package / AI), each mounted by `RightPanelBody`. The "⊟" button in the
+primary panel's header opens a **secondary** panel below it (defaulting to
+whichever tab is not already showing primary); the secondary panel's own "✕"
+closes it. Both panels read the SAME `fn`, so showing e.g. Context and Xrefs
+side by side is two independent tab views over one selection, not a second
+fetch of anything already cached (react-query dedups by cache key).
+
+Above the stack, a **layout bar** (`ui/src/actions/store.ts`'s `Layout` =
+`{rightPanel, rightPanel2}`) persists the current arrangement to
+`localStorage` exactly like the theme does, and supports **named saved
+layouts** (`saveLayout`/`loadLayout`/`deleteLayout`, a plain
+name -> `Layout` map, also `localStorage`-persisted) plus a **reset layout**
+button (`resetLayout`) that returns to the single-panel default
+(`DEFAULT_LAYOUT`: Context only, no split) — the fallback the spec names for
+first run, since Fred has not yet named a different one (spec 26 §4.4,
+**Needs Fred**). None of this is registry/keymap-driven (spec 26 L10's own
+file list does not touch `ui/src/actions/registry.ts`); the buttons call
+`setRightPanel2`/`resetLayout`/`saveLayout`/`loadLayout` directly.
+
+### Addressing: selection + panel live in the URL (spec 26 L10)
+
+Every load of the shell keeps its query string in sync with "what is
+selected and which right panel is showing" — `ui/src/state/url-codec.ts`
+(pure encode/decode, importable with no `ui/node_modules`, same rule
+`ui/src/graph/model.ts` follows) plus `ui/src/state/url.ts` (the
+`window.history` wiring, called once from `App.tsx`'s mount effect).
+
+- **Shape.** `?fn=42` selects a function, `?mod=7&sel=module` a module,
+  `?panel=xrefs` picks the visible tab (omitted when it is the default,
+  Context) — the spec's own literal example (`?mod=&fn=&panel=`) works with
+  no `sel=` at all: an unambiguous identifying param (`fn`, `mod`, `sid`,
+  `rid`) infers its own kind; `sel` only disambiguates when two kinds could
+  read the same params. "Nothing selected" is the **absence** of these
+  params, never `fn=0` (fn 0 is the bytecode global function and was never a
+  real selection — this is what retired the `fn ?? 0` default and the
+  smoke-spec console-error allowlist, spec 26 §1.2 row 21).
+- **History.** A genuinely new selection (`select()`, which grows the
+  in-memory jump list `ui/src/state/selection.ts` has always kept) gets its
+  own `history.pushState`; moving within the existing list (the toolbar's
+  back/forward arrows, or a real browser back/forward via `popstate`) only
+  `replaceState`s the current entry, so pressing the browser's own Back
+  button lands on the previous selection without doubling the stack.
+  `restoreSelection` (new in `selection.ts`) is what a `popstate` calls:
+  it reuses the matching jump-list entry when the URL names one already on
+  the list, and only falls back to treating it as a fresh selection for a
+  hand-typed or externally shared link.
+- **Reload.** Because every selection/panel change is reflected into the URL
+  immediately, reloading the page re-decodes the same query string on mount
+  and lands back on the same view — this is also what makes a link
+  shareable. Unrelated shell churn (the palette opening, a chord being
+  recorded in Settings) does not touch the URL: `pushUrl` bails out unless
+  the ENCODED selection/panel actually changed, both to avoid needless
+  `history.*State` calls and to keep the jump list's own "did this actually
+  grow" bookkeeping honest.
+- **Left tree.** `ui/src/panes/LeftPane.tsx`'s "open the first module on
+  cold start" effect used to be gated on "nothing is selected yet"
+  (`sel.kind === "none"`) — exactly the condition a URL-restored selection
+  no longer satisfies by the time the effect's guard is checked (React runs
+  a child's mount effects before its parent's, and `App.tsx`'s URL-sync
+  effect is the parent). It is now a one-shot (`openedFirstModule`, matching
+  the existing `openedDefaults` idiom two effects above it): it always opens
+  the first group/module once segregation settles, and only *selects* that
+  module when nothing was already selected — so a deep link's own selection
+  is never stomped, and the tree still opens to something instead of
+  staying fully collapsed. Regression found and fixed in the same commit
+  that added URL addressing (`ui/e2e/keys.spec.ts`'s "rebinding an action …
+  survives reload").
 
 ## The listing (wave 2, track 1)
 
@@ -1569,17 +1649,16 @@ the search box finds and selects a function; and (fixture run only) a
 submitted rename shows up as `Context`'s `name` row and produces at least
 one Activity row.
 
-**Known, reported, not fixed here:** on first paint `App.tsx` defaults the
-selected `fn` to `0` (`useSelection().fn ?? 0`) before anything is actually
-selected, so `RightPane`/`CenterPane` query `/api/fn/0/context` etc.
-immediately; fn 0 (the global function) has no recorded source range and
-answers 400, which the browser logs as a console error on every fresh load
-regardless of application code. Fixing it means threading
-`fn: number | undefined` through `RightPane.tsx` so it can skip the query
-instead of collapsing "nothing selected" into fn 0 — `RightPane.tsx` is
-owned by a different concurrent track, so this was reported rather than
-edited; `ui/e2e/smoke.spec.ts`'s console-error test allowlists exactly this
-one known signature and still fails on anything else.
+**Fixed** (was: "on first paint `App.tsx` defaults the selected `fn` to `0`
+… a console error on every fresh load"): `App.tsx` now defaults to `-1`, a
+sentinel `RightPane`/`CenterPane` already treat as "no selection" (`perFn()`
+in `hooks.ts`), so no `/api/fn/0/...` request is made until something is
+actually selected, and `ui/e2e/smoke.spec.ts`'s console-error test allowlists
+nothing — any console error fails it. Spec 26 L10's URL-addressed selection
+(see "Addressing" under Layout, above) replaces the underlying state model
+this bug came from, not just the default: "nothing selected" is now
+representable in the URL as the plain absence of a `fn`/`mod` param, never
+as `fn=0` (spec 26 §1.2 row 21).
 
 A real bug the suite caught and a fix that shipped with it: `LeftPane.tsx`'s
 auto-select-first-module effect could fire while `GET /api/segregation` was
