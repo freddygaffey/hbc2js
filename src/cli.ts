@@ -1626,6 +1626,20 @@ function runQuery(argv: readonly string[]): void {
         const tl = truncationLine(uses.total, uses.rows.length, "--all");
         if (tl !== null) process.stdout.write(`${tl}\n`);
       }
+    } else if (verb === "string-uses") {
+      // Hunt-tooling-backlog gap #2: the use SITES, not just `string`'s
+      // `fn role n` counts. Live verb — needs `--hbc` (svc throws E_USAGE
+      // otherwise, same shape as `object-tables`/`disasm`).
+      const sid = Number(positional[0]);
+      const fnFlag = flagValue(argv, "--fn");
+      const result = svc.stringUseSites(sid, { ...(fnFlag !== undefined ? { fn: Number(fnFlag) } : {}), all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`fn:${r.fn} ${r.fnName ?? "-"} pc:${r.pc} ${r.opcode} ${r.role} module:${r.moduleId ?? "-"}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
     } else if (verb === "string-grep") {
       const result = svc.stringGrep(positional[0] as string, { all });
       if (json) process.stdout.write(JSON.stringify(result) + "\n");
@@ -1728,7 +1742,7 @@ function runQuery(argv: readonly string[]): void {
       const range = linesArg !== undefined ? (linesArg.split("-").map(Number) as [number, number]) : undefined;
       process.stdout.write(svc.source(fn, range) + "\n");
     } else {
-      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|object-tables|template-injections|module|source> …", 2, json);
+      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-uses|string-grep|global-uses|native|object-tables|template-injections|module|source> …", 2, json);
     }
     process.exit(0);
   } catch (e) {
