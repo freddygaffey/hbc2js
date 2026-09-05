@@ -1411,7 +1411,8 @@ layered, callers above the focus and callees below. Code lives in
 `GraphPane.tsx`); `graph.css` re-points React Flow's own chrome at the theme
 tokens, so the graph has no palette of its own.
 
-Two modes, chosen by the selection:
+Three modes: two chosen by the selection, the third (CFG) by the semantic-zoom
+level:
 
 - **Call neighbourhood** of a function — `GET /api/fn/{fn}/callers`,
   `/api/fn/{fn}/callees`, and `GET /api/xref/who-calls-by-name?fn=` drawn as
@@ -1421,14 +1422,30 @@ Two modes, chosen by the selection:
   not navigable.
 - **Module edges** of a module — `GET /api/module/{id}`'s direct `deps` and
   `dependents`. Direct edges only; spec 17 §14 cut the whole module graph.
-- **CFG** is not implemented: `src/ui-server` publishes no per-function CFG
-  route (spec 25 §7 keeps it as a follow-up).
+- **CFG of the selected function** (spec 25 §3 mode 3, landed by spec 26 L9) —
+  `GET /api/fn/{fn}/cfg`, drawn at the **near** zoom level (below). Nodes are
+  the function's basic blocks (`blk:<id>`; the entry block is the focus),
+  edges are `src/cfg`'s own control-flow edges. Nothing is re-derived in the
+  UI: the route projects `src/cfg`'s block graph, and the pane draws the rows.
+  **Clicking a block selects the listing lines it was compiled from** (the
+  shared `select()`, so the centre pane scrolls and the disasm pane aligns
+  exactly as for any other jump); a block the render mapped no line into
+  selects nothing rather than a neighbour's line. Block cards show the
+  terminator, the instruction count, the `L<first>-<last>` span and
+  `entry`/`exit`/`catch` chips.
 
 Interactions: **click** a node to focus the graph on it (the breadcrumb at the
 top grows; the code pane is untouched), **double-click** to select it — that
 jumps the listing and re-roots the graph there. **+** on a node expands one
 more hop into the existing drawing. **⛶** maximises the pane over the window
 (a call neighbourhood does not read at 280 px) and back.
+
+**CFG edge art direction** (spec 26 L9, tokens only): the branch outcome is
+carried by a **label** (`T` / `F`, `case <n>`, `default`), never by colour —
+a not-taken branch is additionally dashed `5 3`. An exception edge is muted
+(`text-muted`) and dashed `2 4`, the same "not the straight line" reading as
+the by-name candidate edge's `4 3`, which keeps its own dash pattern. The
+highlight ring and the `accent` stroke are unchanged.
 
 Scale rules, all visible in the UI:
 
@@ -1448,6 +1465,10 @@ Scale rules, all visible in the UI:
   token-coloured boxes (`data-lod="min"`).
 - **Cap** — at most `GRAPH_NODE_CAP = 300` nodes; the overflow is dropped and a
   truncation bar says how many are not drawn, the same idiom as the listing's.
+  The CFG route caps blocks at the same number (`CFG_BLOCK_CAP = 300`,
+  published in the response as `cap`) and reports `total`/`shown`/`hidden`/
+  `truncated`; edges to a capped-away block are dropped with it, server-side,
+  so no drawn edge ever points at a block the answer does not contain.
 
 Actions: `graph.open`, `graph.focus`, `graph.expand`, registered in
 `ui/src/actions/registry.ts` (browser shell only); `graph.followToggle`
@@ -1485,10 +1506,12 @@ anything new:
   own node rather than being guessed into someone else's; an intra-module
   edge is not drawn (it is what `mid` is for).
 - **mid** — the function neighbourhood, exactly as before.
-- **near** — the focus function opens into a card listing its drawn callers
-  and callees (bounded, with an honest `+N more`) and the line
-  `blocks: CFG pending (spec 26 L9)`. This is a **stand-in**: spec 26 L9 adds
-  `GET /api/fn/{fn}/cfg` and swaps the card body for the block graph.
+- **near** — the focus function's **own block graph** (mode 3 above), fetched
+  from `GET /api/fn/{fn}/cfg` at this level only. When the route DECLINES the
+  function (a project served with no `--hbc`, or an analysis that refused it)
+  the level degrades to spec 25 §5b's card: the focus's drawn callers and
+  callees, bounded with an honest `+N more`, and the line
+  `blocks: no CFG for this function` — never an empty canvas.
 
 The level is a pure function of the viewport zoom with hysteresis
 (`lodLevel(zoom, prev)`, thresholds 0.5 and 1.6, a 12% sticky band), so a

@@ -397,11 +397,19 @@ test.describe("Graph tab: semantic zoom (bur 9)", () => {
     await expect(page.locator('[data-graph-node="fn:901"]')).toHaveCount(1, { timeout: WAIT });
   });
 
-  test("the near level opens the focus into a card, honest about the missing CFG", async ({ page, request }) => {
+  // Spec 25 §5b shipped this level DEGRADED and named spec 26 L9 as its
+  // replacement ("`near` is degraded until spec 26 L9 lands", §7: "§5b's
+  // `near` level is its degraded stand-in and names the exact component L9
+  // replaces"). L9 has landed, so the card is now the FALLBACK path — the
+  // route declining a function — and the assertion it always made (the card
+  // lists the drawn callees and never pretends to have a CFG it does not
+  // have) is kept, exercised over exactly that path.
+  test("the near level falls back to the focus card when the CFG route declines", async ({ page, request }) => {
     await page.goto("/");
     await openFirstModuleAndFn(page);
     const { row, fn } = await pickFnWithNeighbours(page, request);
     await stubOneModule(page);
+    await page.route("**/api/fn/*/cfg", (route) => route.fulfill({ status: 404, json: { reason: "declined by the test" } }));
     await openGraphFor(page, row);
     await page.locator("[data-graph-maximise]").click();
 
@@ -412,7 +420,8 @@ test.describe("Graph tab: semantic zoom (bur 9)", () => {
     // The card lists the drawn callees and does not pretend to have the CFG
     // that spec 26 L9 will add.
     await expect(focus.locator("[data-graph-card-body]")).toContainText("stub901");
-    await expect(focus.locator("[data-graph-card-body]")).toContainText("CFG pending");
+    await expect(focus.locator("[data-graph-card-body]")).toContainText("no CFG for this function");
+    await expect(page.locator("[data-graph-nodes]")).toHaveAttribute("data-graph-mode", "call");
     // No neighbour becomes a card: `near` opens ONE node, it never pulls the
     // rest of the bundle in behind it.
     await expect(page.locator('[data-graph-node="fn:901"]')).toHaveAttribute("data-graph-card", "false");
@@ -517,5 +526,177 @@ test.describe("Graph tab: layout for the frame (bur 11)", () => {
     // allowed more columns — proof the ResizeObserver drives the layout.
     await expect.poll(async () => Number(await grid.getAttribute("data-graph-columns")), { timeout: WAIT })
       .toBeGreaterThan(docked);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 25 §3 mode 3, landed by docs/specs/26-ui-full-ide.md L9: the `near`
+// level draws the focus function's OWN block graph, from
+// `GET /api/fn/{fn}/cfg`. Ground truth is that route, never a hard-coded
+// block count — same discipline as the neighbourhood tests above.
+// ---------------------------------------------------------------------------
+interface CfgBlockRow {
+  readonly id: number;
+  readonly start: number;
+  readonly end: number;
+  readonly entry: boolean;
+  readonly lines: readonly [number, number] | null;
+  readonly fileLines: readonly [number, number] | null;
+}
+interface CfgWire {
+  readonly fn: number;
+  readonly entry: number;
+  readonly blocks: readonly CfgBlockRow[];
+  readonly edges: readonly { readonly from: number; readonly to: number; readonly kind: string }[];
+  readonly hidden: number;
+}
+
+test.describe("Graph tab: CFG mode (spec 25 §3 mode 3, spec 26 L9)", () => {
+  /** A function in the open tree whose CFG the route actually serves, with
+   *  more than one block and few enough of them to stay on screen. Skips the
+   *  test rather than asserting on a fixture that has none. */
+  async function pickFnWithCfg(page: Page, request: APIRequestContext): Promise<{ readonly row: Locator; readonly fn: number; readonly cfg: CfgWire } | null> {
+    const rows = page.locator("[data-fn]");
+    const n = Math.min(await rows.count(), 30);
+    for (let i = 0; i < n; i += 1) {
+      const row = rows.nth(i);
+      const fn = Number(await row.getAttribute("data-fn"));
+      if (!Number.isInteger(fn)) continue;
+      const res = await request.get(`${API}/api/fn/${fn}/cfg`);
+      if (!res.ok()) continue;
+      const cfg = (await res.json()) as CfgWire;
+      // Any served CFG small enough to stay on screen, with at least one
+      // block the render mapped a line into (the click test needs one). The
+      // rn-template fixture's own visible functions are single-block, so
+      // demanding a branch here would skip on the committed fixture — the
+      // BRANCH shapes are exercised by the stubbed test below instead, the
+      // same split spec 25 §6 already uses for expansion and the cap.
+      if (cfg.blocks.length >= 1 && cfg.blocks.length <= 12 && cfg.blocks.some((b) => b.lines !== null)) return { row, fn, cfg };
+    }
+    return null;
+  }
+
+  async function toNearLevel(page: Page): Promise<void> {
+    const lod = page.locator("[data-graph-lod]");
+    if ((await page.locator("[data-graph-pane]").getAttribute("data-graph-maximised")) !== "true") {
+      await page.locator("[data-graph-maximise]").click();
+    }
+    for (let i = 0; i < 3 && (await lod.getAttribute("data-graph-lod")) !== "near"; i += 1) await lod.click();
+    await expect(lod).toHaveAttribute("data-graph-lod", "near");
+  }
+
+  test("CFG mode draws the selected function's blocks", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const picked = await pickFnWithCfg(page, request);
+    test.skip(picked === null, "no function in this fixture's first rows has a multi-block CFG");
+    const { row, cfg } = picked!;
+    await openGraphFor(page, row);
+    await toNearLevel(page);
+
+    // The drawn node set is exactly the route's block set — computed from
+    // the SAME route the pane calls, never a hard-coded count.
+    const expected = new Set(cfg.blocks.map((b) => `blk:${b.id}`));
+    const nodes = page.locator("[data-graph-node]");
+    await expect(nodes).toHaveCount(expected.size, { timeout: WAIT });
+    const drawn = await nodes.evaluateAll((els) => els.map((e) => e.getAttribute("data-graph-node")));
+    expect(new Set(drawn)).toEqual(expected);
+    await expect(page.locator("[data-graph-nodes]")).toHaveAttribute("data-graph-mode", "cfg");
+
+    // The entry block is the focus, and every drawn node is a block — the
+    // call neighbourhood is not mixed into the CFG.
+    await expect(page.locator(`[data-graph-node="blk:${cfg.entry}"]`)).toHaveAttribute("data-graph-focus", "true");
+    const kinds = await nodes.evaluateAll((els) => els.map((e) => e.getAttribute("data-graph-kind")));
+    expect(new Set(kinds)).toEqual(new Set(["block"]));
+
+    // Back to `mid` and the neighbourhood returns: the CFG is a view of the
+    // level, not a re-rooting of the graph.
+    await page.locator("[data-graph-lod]").click();
+    await expect(page.locator("[data-graph-lod]")).toHaveAttribute("data-graph-lod", "far");
+    await expect(page.locator("[data-graph-nodes]")).not.toHaveAttribute("data-graph-mode", "cfg");
+  });
+
+  test("CFG mode: a branching graph draws every block and labels its true/false edges", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const { row } = await pickFnWithNeighbours(page, request);
+    // Stubbed, like spec 25 §6's expansion/cap tests: this fixture's own
+    // functions are single-block, so a branch, a switch case and an
+    // exception edge cannot be exercised against it honestly.
+    await page.route("**/api/fn/*/cfg", (route) =>
+      route.fulfill({
+        json: {
+          // Echo the fn that was asked for: the pane refuses a CFG that
+          // names a DIFFERENT function than the one it is focused on.
+          fn: Number(/\/api\/fn\/(\d+)\/cfg/.exec(route.request().url())?.[1] ?? "0"),
+          entry: 0,
+          fnStartLine: 1,
+          blocks: [0, 1, 2, 3].map((id) => ({
+            id,
+            start: id * 10,
+            end: id * 10 + 10,
+            instructions: 2,
+            terminator: id === 3 ? "return" : "branch",
+            isHandlerEntry: id === 3,
+            entry: id === 0,
+            exit: id === 3,
+            synthetic: false,
+            lines: [id + 1, id + 1],
+            fileLines: [id + 1, id + 1],
+          })),
+          edges: [
+            { from: 0, to: 1, kind: "branch-taken" },
+            { from: 0, to: 2, kind: "branch-not-taken" },
+            { from: 1, to: 3, kind: "jump" },
+            { from: 2, to: 3, kind: "exception" },
+          ],
+          regions: [],
+          total: 4,
+          shown: 4,
+          hidden: 0,
+          truncated: false,
+          cap: 300,
+        },
+      }));
+    await openGraphFor(page, row);
+    await toNearLevel(page);
+
+    await expect(page.locator("[data-graph-node]")).toHaveCount(4, { timeout: WAIT });
+    await expect(page.locator('[data-graph-node="blk:0"]')).toHaveAttribute("data-graph-focus", "true");
+    await expect(page.locator('[data-graph-node="blk:3"]')).toContainText("catch");
+    // The branch outcome is carried by a LABEL, never by colour alone.
+    await expect(page.locator(".react-flow__edge-textwrapper", { hasText: "T" }).first()).toBeVisible({ timeout: WAIT });
+    await expect(page.locator(".react-flow__edge-textwrapper", { hasText: "F" }).first()).toBeVisible();
+    await expect(page.locator(".react-flow__edge-textwrapper", { hasText: "exc" }).first()).toBeVisible();
+  });
+
+  test("a block click scrolls the disasm pane to its first instruction", async ({ page, request }) => {
+    await page.goto("/");
+    await openFirstModuleAndFn(page);
+    const picked = await pickFnWithCfg(page, request);
+    test.skip(picked === null, "no function in this fixture's first rows has a multi-block CFG");
+    const { row, cfg } = picked!;
+    await openGraphFor(page, row);
+    await toNearLevel(page);
+    await expect(page.locator("[data-graph-nodes]")).toHaveAttribute("data-graph-mode", "cfg", { timeout: WAIT });
+
+    // A block that HAS a mapped line and is actually on screen (React Flow
+    // pans with a transform, so an off-screen node can never be clicked).
+    const node = await firstNodeInViewport(page, "[data-graph-block-line]:not([data-graph-block-line=''])");
+    test.skip(node === null, "no mapped block is inside the viewport at this zoom");
+    const id = Number((await node!.getAttribute("data-graph-block"))!);
+    const block = cfg.blocks.find((b) => b.id === id)!;
+    await node!.click();
+
+    // The click went through the shared `select()`, so the centre pane's
+    // cursor is on the block's first line and the disasm pane is aligned to
+    // an instruction INSIDE the block's own byte range.
+    const disasm = page.getByTestId("code-view").nth(1);
+    const highlighted = disasm.locator(".hbc-selected-line");
+    await expect(highlighted).toHaveCount(1, { timeout: WAIT });
+    const text = (await highlighted.textContent()) ?? "";
+    const offset = Number(/\[@ (\d+)\]/.exec(text)?.[1] ?? "-1");
+    expect(offset).toBeGreaterThanOrEqual(block.start);
+    expect(offset).toBeLessThan(block.end);
   });
 });

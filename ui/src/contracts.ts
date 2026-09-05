@@ -481,3 +481,62 @@ export type PackageIdResult =
  *  imports without a browser) and re-exported here so the contract surface
  *  stays one file. */
 export type { NavConfidence, ScreenKind, ScreenNavEdge, ScreenRow, ScreensPage } from "./listing/screens.ts";
+
+/** `GET /api/fn/{fn}/cfg` (docs/specs/26-ui-full-ide.md L9) — the read-only
+ *  per-function block graph spec 25 §3 mode 3 draws. A STRUCTURAL copy of
+ *  `src/ui-server/cfg.ts`'s own result types (contracts.ts's rule: the
+ *  server wins any tie). The UI adds no CFG logic: it draws these rows. */
+export interface CfgBlock {
+  readonly id: number;
+  /** Function-relative byte offsets, `[start, end)`. Both `-1` when the
+   *  block is spec 03 §4.5's synthetic one (`synthetic`). */
+  readonly start: number;
+  readonly end: number;
+  readonly instructions: number;
+  readonly terminator: string;
+  readonly isHandlerEntry: boolean;
+  readonly entry: boolean;
+  readonly exit: boolean;
+  readonly synthetic: boolean;
+  /** 1-based `[first, last]` inside the FUNCTION's own text, `null` when the
+   *  render mapped no line into the block. */
+  readonly lines: readonly [number, number] | null;
+  /** The same span in module-file lines, `null` when unknown. */
+  readonly fileLines: readonly [number, number] | null;
+}
+
+export type CfgEdgeKind =
+  | "fallthrough" | "jump" | "branch-taken" | "branch-not-taken"
+  | "switch-case" | "switch-default" | "exception";
+
+export interface CfgEdge {
+  readonly from: number;
+  readonly to: number;
+  readonly kind: CfgEdgeKind;
+  readonly caseValue?: number;
+  readonly caseIsString?: boolean;
+}
+
+export interface CfgRegion {
+  readonly index: number;
+  readonly startPc: number;
+  readonly endPc: number;
+  readonly handlerBlock: number;
+  readonly catchRegister: number;
+  readonly parent: number | null;
+  readonly blocks: readonly number[];
+}
+
+export interface FnCfg {
+  readonly fn: number;
+  readonly entry: number;
+  readonly fnStartLine: number | null;
+  readonly blocks: readonly CfgBlock[];
+  readonly edges: readonly CfgEdge[];
+  readonly regions: readonly CfgRegion[];
+  readonly total: number;
+  readonly shown: number;
+  readonly hidden: number;
+  readonly truncated: boolean;
+  readonly cap: number;
+}

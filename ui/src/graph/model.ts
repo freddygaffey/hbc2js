@@ -2,13 +2,17 @@
 // xref/module contract rows in, a capped node/edge model out. No React, no
 // dagre, no fetching — everything here is testable with plain data, and the
 // cap is applied here so the pane can never draw more than it promises.
-import type { ByNameCaller, Severity, XrefEdge } from "../contracts.ts";
+import type { ByNameCaller, CfgEdgeKind, FnCfg, Severity, XrefEdge } from "../contracts.ts";
 
 /** Spec 25 §5: the hard ceiling on drawn nodes. Above it the extra nodes are
  *  dropped and the pane shows a truncation bar — never a silent trim. */
 export const GRAPH_NODE_CAP = 300;
 
-export type GraphKind = "fn" | "module";
+/** `block` is spec 25 §3 mode 3 (the CFG, landed by spec 26 L9): the nodes
+ *  are the focus function's basic blocks, not functions. It is a THIRD kind
+ *  on purpose - a block is not navigable as a function, so every `kind`
+ *  switch is forced to say what it does with one. */
+export type GraphKind = "fn" | "module" | "block";
 
 export interface GraphNodeModel {
   /** Stable React Flow id: `fn:12`, `mod:3`, or `ext:<name>` for a
@@ -30,6 +34,21 @@ export interface GraphNodeModel {
    *  `far` LOD level, where `bundleByModule` folds a module's functions into
    *  one module node and reports the count honestly (spec 25 §5b). */
   readonly members: number;
+  /** `kind: "block"` only (spec 26 L9): what the CFG route said about this
+   *  basic block. `listingLine` is the line a click should select - module
+   *  file coordinates when the route knew the function's start line, the
+   *  function's own otherwise, and `null` when the render mapped no line
+   *  into the block (an honest gap: the click then selects nothing rather
+   *  than a neighbouring block's line). */
+  readonly block?: {
+    readonly lines: readonly [number, number] | null;
+    readonly listingLine: number | null;
+    readonly instructions: number;
+    readonly terminator: string;
+    readonly entry: boolean;
+    readonly exit: boolean;
+    readonly handler: boolean;
+  };
 }
 
 export interface GraphEdgeModel {
@@ -41,6 +60,13 @@ export interface GraphEdgeModel {
   /** How many source edges this edge stands for: 1 everywhere except a
    *  `far`-level bundle, where parallel module-to-module edges merge. */
   readonly weight: number;
+  /** CFG edges only (spec 26 L9): which kind of control transfer this is,
+   *  straight from `src/cfg` - never re-derived here. Absent on call and
+   *  module edges. */
+  readonly cfgKind?: CfgEdgeKind;
+  /** A short edge label the pane draws (`T`/`F`, a switch case value,
+   *  `exc`). Empty string = no label. */
+  readonly cfgLabel?: string;
 }
 
 export interface GraphModel {
@@ -477,10 +503,104 @@ export function lodCard(model: GraphModel, id: string, cap: number = LOD_CARD_CA
   };
 }
 
+// ---------------------------------------------------------------------------
+// Spec 25 §3 mode 3 / spec 26 L9 - the CFG model
+// ---------------------------------------------------------------------------
+
+/** The `near` level's node id for a basic block. Namespaced away from
+ *  `fn:`/`mod:` so a drag offset, a hover set or a highlight can never
+ *  confuse block 3 with function 3. */
+export function blockNodeId(id: number): string {
+  return `blk:${id}`;
+}
+
+/** Edge labels, by kind. The pane draws these; it never invents a label of
+ *  its own. `switch-case` carries its own value, so it is labelled by
+ *  `buildCfgModel` rather than from this table. */
+const CFG_EDGE_LABEL: Readonly<Record<CfgEdgeKind, string>> = {
+  "fallthrough": "",
+  "jump": "",
+  "branch-taken": "T",
+  "branch-not-taken": "F",
+  "switch-case": "case",
+  "switch-default": "default",
+  "exception": "exc",
+};
+
+export interface CfgModelInput {
+  readonly fn: number;
+  readonly cfg: FnCfg;
+}
+
+/** `GET /api/fn/{fn}/cfg` rows -> the same `GraphModel` every other mode
+ *  produces, so the SHIPPED renderer (React Flow + the §5c frame-aware dagre
+ *  layout), the drag offsets, the hover highlight and the truncation bar all
+ *  work on it unchanged - spec 26 L9's "the UI adds no CFG logic".
+ *
+ *  The entry block is the focus (it is what the reader starts from, and the
+ *  layout puts the focus rank first). Edges are drawn exactly as the route
+ *  reported them: an edge naming a block this model does not contain is
+ *  dropped, the same rule the server already applied, so the two cannot
+ *  disagree even if a future cap changes. */
+export function buildCfgModel(input: CfgModelInput): GraphModel {
+  const cfg = input.cfg;
+  const nodes: GraphNodeModel[] = cfg.blocks.map((b) => {
+    const lines = b.fileLines ?? b.lines;
+    return {
+      id: blockNodeId(b.id),
+      kind: "block" as const,
+      ref: b.id,
+      label: `B${b.id}`,
+      size: null,
+      module: null,
+      severity: null,
+      isFocus: b.entry,
+      byName: false,
+      expanded: true,
+      members: 1,
+      block: {
+        lines: b.lines,
+        listingLine: lines === null ? null : lines[0],
+        instructions: b.instructions,
+        terminator: b.terminator,
+        entry: b.entry,
+        exit: b.exit,
+        handler: b.isHandlerEntry,
+      },
+    };
+  });
+  const present = new Set(nodes.map((n) => n.id));
+  const edges: GraphEdgeModel[] = [];
+  const seen = new Set<string>();
+  for (const e of cfg.edges) {
+    const source = blockNodeId(e.from);
+    const target = blockNodeId(e.to);
+    if (!present.has(source) || !present.has(target)) continue;
+    const label = e.kind === "switch-case" && e.caseValue !== undefined
+      ? (e.caseIsString === true ? `case s${e.caseValue}` : `case ${e.caseValue}`)
+      : CFG_EDGE_LABEL[e.kind];
+    const id = `${source}->${target}:${e.kind}:${label}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    // NOT `byName`: an exception edge is a proven control transfer, just an
+    // unusual one. It is drawn dashed by its `cfgKind`, never by borrowing
+    // the "heuristic candidate" flag that means something else entirely.
+    edges.push({ id, source, target, byName: false, weight: 1, cfgKind: e.kind, cfgLabel: label });
+  }
+  return { nodes, edges, shown: nodes.length, hidden: cfg.hidden, total: cfg.total };
+}
+
 /** The model actually drawn at `level`. `mid`/`near` draw the fetched
  *  neighbourhood (near only changes how the FOCUS node renders); `far`
  *  bundles it by module. One pure entry point, so the pane and the tests
  *  agree by construction. */
-export function modelForLevel(model: GraphModel, level: LodLevel): GraphModel {
-  return level === "far" ? bundleByModule(model) : model;
+export function modelForLevel(model: GraphModel, level: LodLevel, cfgModel: GraphModel | null = null): GraphModel {
+  if (level === "far") return bundleByModule(model);
+  // Spec 26 L9: `near` IS spec 25 §3 mode 3 once the CFG route answers. When
+  // it declines (no `--hbc`, an analysis that refused this function, a fetch
+  // still in flight) the level degrades to §5b's focus card over the fetched
+  // neighbourhood - the shape this level shipped with - rather than drawing
+  // an empty canvas.
+  if (level === "near" && cfgModel !== null && cfgModel.nodes.length > 0) return cfgModel;
+  return model;
 }

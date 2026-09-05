@@ -4,7 +4,7 @@
 // artifact, and no component may special-case it.
 import type { Api } from "./api.ts";
 import type {
-  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogTail,
+  Bounded, CallsFrom, FnCfg, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry, StringExact, StringGrep, GlobalUses,
   WhoCallsByName, ObjectTable, ObjectTables,
@@ -218,6 +218,31 @@ export const mockApi: Api = {
     }));
     return delay({ rows, total: rows.length });
   },
+  // A minimal but internally consistent block graph, so the mock shell can
+  // draw spec 25 mode 3 without a server: entry branches to a body and a
+  // join, every edge names a block, nothing is truncated.
+  cfg: (fn): Promise<FnCfg> =>
+    delay({
+      fn,
+      entry: 0,
+      fnStartLine: 1,
+      blocks: [
+        { id: 0, start: 0, end: 12, instructions: 4, terminator: "branch", isHandlerEntry: false, entry: true, exit: false, synthetic: false, lines: [1, 2], fileLines: [1, 2] },
+        { id: 1, start: 12, end: 24, instructions: 3, terminator: "jump", isHandlerEntry: false, entry: false, exit: false, synthetic: false, lines: [3, 4], fileLines: [3, 4] },
+        { id: 2, start: 24, end: 30, instructions: 2, terminator: "return", isHandlerEntry: false, entry: false, exit: true, synthetic: false, lines: [5, 6], fileLines: [5, 6] },
+      ],
+      edges: [
+        { from: 0, to: 1, kind: "branch-taken" },
+        { from: 0, to: 2, kind: "branch-not-taken" },
+        { from: 1, to: 2, kind: "jump" },
+      ],
+      regions: [],
+      total: 3,
+      shown: 3,
+      hidden: 0,
+      truncated: false,
+      cap: 300,
+    }),
   context: (fn): Promise<FnContext> => delay({
     fn,
     metadata: summary(fn),

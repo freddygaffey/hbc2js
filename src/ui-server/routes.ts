@@ -18,6 +18,7 @@ import { segregation } from "./segregation.ts";
 import { WORKER_ROUTES, type WorkersCtx } from "./workers-routes.ts";
 import { SCREENS_ROUTES } from "./screens.ts";
 import { RECOMPILE_ROUTES } from "./sandbox.ts";
+import { CFG_ROUTES } from "./cfg.ts";
 
 export interface UiRequest {
   readonly method: string;
@@ -465,7 +466,7 @@ const BASE_ROUTES: readonly Route[] = [
  *  routes (`workers-routes.ts`, which owns their doc comments). `handle()`
  *  below still walks a single list, so there is exactly one place a request
  *  can 404. */
-const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES, ...SCREENS_ROUTES, ...RECOMPILE_ROUTES];
+const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES, ...SCREENS_ROUTES, ...RECOMPILE_ROUTES, ...CFG_ROUTES];
 
 /** `/api/log/tail?since=<seq>` — spec 21 §1.3's "read log entries after its
  *  cursor" half of the doorbell pairing (this MVP does poll only, §1
