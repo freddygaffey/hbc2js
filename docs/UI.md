@@ -154,6 +154,15 @@ are what the perf regression test (`ui/e2e/perf.spec.ts`) enforces:
   `ArtifactService` (`src/ui-server/list.ts`). Both are safe because the
   artifact indices are `renderIndependent` — no annotation a write tool
   records can change them.
+* **`/api/leads` itself never blocks the event loop (docs/UI-BURS.md bur 1
+  row 2, spec 26 L6).** `computeLeads` now runs on a `node:worker_threads`
+  worker (`src/workers/leads-worker.ts`, the same pattern `/api/segregation`
+  already uses for `segregateSplitTree`): `listLeads` answers the
+  `computing: true` placeholder immediately for a fresh artifact, and every
+  other route stays responsive while the scan runs on its own thread.
+  `useLeads` (`ui/src/hooks.ts`) polls at 500 ms while `computing` is true
+  and stops once the answer settles — the same `refetchInterval` shape
+  `use-segregation.ts` uses for its own `computing` window.
 
 The HTTP contract is unchanged by all of this: same routes, same bodies,
 byte for byte.
@@ -902,7 +911,30 @@ function plus `functions-all`, `findings` and `log-tail` are invalidated.
 | `annotate.rename` (`F2`, vim `cr`) | inline dialog, pre-filled with the accepted name, showing call sites + context xrefs before confirm | `POST /api/tools/set-name` |
 | `annotate.comment` (`Ctrl-/`, vim `gc`) | textarea dialog | `POST /api/tools/add-comment` |
 | `annotate.finding` (`Ctrl-Shift-N`, vim `cf`) | "Add finding" button in the Findings panel, plus menu and palette | `POST /api/tools/record-finding` |
+| `finding.fromLead` | "+finding" button on a Leads-tab row, plus menu/palette on a lead selection | `POST /api/tools/record-finding` (prefilled from the lead) |
+| `finding.setStatus` | menu/palette raise the Findings tab; the per-row status control there | `POST /api/tools/set-finding-status` |
+| `view.history` | menu/palette on a function/module selection | `GET /api/history/{target}` |
 | `review.markReviewed` / `markSuspicious` | menu, palette | `POST /api/tools/add-tag` |
+
+**Findings and leads (spec 26 L6).** The Findings panel (`RightPane.tsx`)
+renders each finding's evidence refs individually — `text-text` for one that
+resolves, `text-text-muted` for one that does not, same weight convention as
+the Xrefs panel's by-name candidates — and, once the finding's OWN evidence
+resolves (`ResolvedFinding.valid`), an inline status control: pick a next
+status from `checkStatusTransition`'s own allowed set
+(`src/project/findings.ts`), optionally supply a confirming evidence ref, and
+apply. A rejected transition (e.g. `open -> confirmed` with no resolving
+evidence) shows the backend's `set_finding_status` rejection VERBATIM under
+the row (spec 19 §1.4) — never reworded. The Leads tab's rows get a
+"+finding" button (`finding.fromLead`) that opens the same "Add finding" form
+`annotate.finding` does, prefilled from the lead's evidence/detail/class
+(`ui/src/components/FindingForm.tsx`'s `lead` prop); a lead with no owning
+function (a string-only sink, `SinkLead.fn === null`) stays refused
+client-side rather than guessing a location. `view.history` opens
+`ui/src/panes/HistoryPane.tsx` over `GET /api/history/{target}` — `target` is
+the same `fn:N`/`mod:N` annotation target every write already uses, not the
+finding's own rid, and the server's newest-first `revisions` rows are shown
+oldest-first (the natural reading order for a timeline).
 
 **Names.** `McpResources.fn` adds `acceptedName` on top of the artifact's
 `name`/`overlayName`; `ui/src/actions/names.ts`'s `displayName()` is the one

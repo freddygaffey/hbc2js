@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from "react";
 import type { Selection } from "../state/selection.ts";
 
-export type DialogKind = "none" | "rename" | "comment" | "finding";
+export type DialogKind = "none" | "rename" | "comment" | "finding" | "history";
 
 export interface DialogState {
   readonly kind: DialogKind;

@@ -317,6 +317,50 @@ Severity rendered from the L3 severity ramp only.
 **Depends on:** L1 (status changes made by an agent must appear live), L5
 (the list it renders in).
 
+**Landed 2026-09-05** (Claude Sonnet 5, lean worker). All four backend
+routes (`set-finding-status`, `record-finding`, `history/{target}`,
+`leads`/`security-sinks`) already existed and are untouched beyond the
+`/api/leads` off-main-thread move below — this landing is almost entirely
+frontend. `src/ui-core/actions.ts` gained `finding.fromLead` (enabled only
+on a `"lead"` selection), `finding.setStatus` (enabled only once
+`Selection.evidenceResolved` is true) and `view.history` (any function/
+module selection); `ui/src/panes/RightPane.tsx`'s Findings tab renders each
+finding's evidence refs individually (resolved vs. not) and an inline
+status control whose rejection is the backend's `set_finding_status` message
+verbatim; `ui/src/panes/LeftPane.tsx`'s Leads rows got a "+finding" button;
+`ui/src/panes/HistoryPane.tsx` (new) renders `GET /api/history/{target}`
+oldest-first. `ui/src/components/FindingForm.tsx` grew an optional `lead`
+prop so `finding.fromLead` opens the same dialog `annotate.finding` does,
+pre-filled from the lead rather than blank; a lead with no owning function
+(`SinkLead.fn === null`) stays refused client-side (no location to attach
+the finding to) rather than fabricating one.
+
+**Needs Fred / follow-up**: exercising the status control end to end against
+a real `hbc2js init` (DB-backed) project surfaced a pre-existing backend bug,
+new docs/BUGS.md row (2026-09-05, "spec 26 L6 ... discovered exercising
+POST /api/tools/set-finding-status"): a DB-backed project's confirmed/
+refuted transition persists (the write returns 200, evidence merges
+correctly) but never surfaces on any later read (`GET /api/findings`, MCP
+`finding`/`findings`, the CLI) — `src/project/findings.ts`'s `FindingStore`
+still expects live status from a separate `kind:"status"` revision that the
+DB-backed write path never produces. Out of this landing's `ui/`+`src/
+ui-server` scope (`src/project/service.ts`/`findings.ts` fix needed);
+`ui/e2e/findings.spec.ts`'s "a confirmed finding shows its evidence ref"
+test reads the live status from the API rather than hard-coding "confirmed"
+so it pins today's real behaviour honestly either way.
+
+Also closes docs/BUGS.md's 2026-09-05 UI-BURS-bur-1-row-2 row: this landing
+makes the Leads tab load-bearing (lead promotion), so `computeLeads`
+(previously cached-but-still-inline, still capable of head-of-line-blocking
+every other route on its first call per artifact) now runs on a
+`node:worker_threads` worker (`src/workers/leads-worker.ts`, `src/ui-server/
+list.ts`'s `listLeads`), the exact pattern `src/ui-server/segregation.ts`
+already used for `segregateSplitTree`. `LeadsResult.computing` mirrors
+`SegregationResult.computing`; `ui/src/hooks.ts`'s `useLeads` polls at
+500 ms while it is true. Regression tests: `tests/ui-server/routes.test.ts`
+("listLeads never blocks…", "a concurrent request answers fast while
+/api/leads is in flight…").
+
 ---
 
 ### L7 — The missing test layers: DOM tests + visual baselines + kitchen sink · Sonnet

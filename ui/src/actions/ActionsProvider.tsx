@@ -10,9 +10,21 @@ import { RenameDialog } from "../components/RenameDialog.tsx";
 import { CommentDialog } from "./CommentDialog.tsx";
 import { KeymapHelp } from "../components/KeymapHelp.tsx";
 import { SettingsDialog } from "../components/SettingsDialog.tsx";
+import { HistoryPane } from "../panes/HistoryPane.tsx";
 import { installKeymapListener } from "./keys.ts";
 import { setQueryClient } from "./registry.ts";
-import { closeDialog, setOverlay, setStatus, useActionsState } from "./store.ts";
+import { closeDialog, setOverlay, setStatus, useActionsState, type DialogState } from "./store.ts";
+
+/** Spec 26 L6: `history/{target}` is keyed by the same annotation target
+ *  every write already uses (`fn:N`/`mod:N`) — not the finding rid — so a
+ *  target is only derivable from a selection that carries an `fn` or a
+ *  `moduleId` (`hasListingTarget` in src/ui-core/actions.ts gates
+ *  `view.history` on exactly that). `null` = no target, closes the dialog. */
+function historyTargetFor(selection: DialogState["selection"]): string | null {
+  if (selection.fn !== undefined) return `fn:${selection.fn}`;
+  if (selection.moduleId !== undefined) return `mod:${selection.moduleId}`;
+  return null;
+}
 
 const STATUS_MS = 6000;
 
@@ -38,8 +50,27 @@ function StatusToast(): ReactNode {
 
 function Dialogs(): ReactNode {
   const { dialog } = useActionsState();
-  const fn = dialog.selection.fn;
   if (dialog.kind === "none") return null;
+  // Spec 26 L6: `history/{target}` — a target string, not an `fn`, so this
+  // is checked before the fn-required gate below (a module selection has
+  // no `fn` at all).
+  if (dialog.kind === "history") {
+    const target = historyTargetFor(dialog.selection);
+    if (target === null) {
+      setStatus("no history for this selection");
+      closeDialog();
+      return null;
+    }
+    return <HistoryPane target={target} onClose={closeDialog} />;
+  }
+  const fn = dialog.selection.fn;
+  // Spec 26 L6: a lead promoted via `finding.fromLead` may have no owning
+  // `fn` at all (`SinkLead.fn` is `number | null` for a string-only hit) —
+  // `FindingForm` itself renders the "no owning function" case, so this
+  // path skips the generic fn-required gate below.
+  if (dialog.kind === "finding" && dialog.selection.kind === "lead") {
+    return <FindingForm fn={fn ?? -1} lead={dialog.selection} />;
+  }
   if (fn === undefined) {
     setStatus("select a function first");
     closeDialog();

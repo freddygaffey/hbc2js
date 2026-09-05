@@ -7,7 +7,7 @@ import { useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryRe
 import { API_BASE, USING_MOCK, api, ApiError, authQueryParam, type ObjectTablesQuery } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
-  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
+  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogEntry, LogTail,
   LineMap, LocalsListing, ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceText, WhoCalls,
   StringExact, StringGrep, GlobalUses, WhoCallsByName, ObjectTables,
 } from "./contracts.ts";
@@ -102,8 +102,27 @@ export const useFindings = (): UseQueryResult<Bounded<ResolvedFinding>> =>
  *  opens the Leads tab. `staleTime: Infinity` because leads are derived
  *  from the artifact, which does not change while the server runs — one
  *  scan per session at most, never a refetch on remount. */
+// Spec 26 L6 / docs/UI-BURS.md bur 1 (row 2): the scan itself now runs on a
+// `node:worker_threads` worker (`src/workers/leads-worker.ts`), so the
+// FIRST answer while it is still in flight is a `computing: true`
+// placeholder rather than a blocked request — the exact `use-segregation.ts`
+// pattern, polled fast until it settles.
+const LEADS_COMPUTING_POLL_MS = 500;
+
 export const useLeads = (enabled = true): UseQueryResult<LeadsResult> =>
-  useQuery({ queryKey: ["leads"], queryFn: () => api.leads(), enabled, staleTime: Infinity });
+  useQuery({
+    queryKey: ["leads"],
+    queryFn: () => api.leads(),
+    enabled,
+    staleTime: Infinity,
+    refetchInterval: (query) => (query.state.data?.computing === true ? LEADS_COMPUTING_POLL_MS : false),
+  });
+
+/** Spec 26 L6: `history/{target}` for the context menu's "History" action —
+ *  `target` is `undefined` while nothing is selected, matching `perFn`'s
+ *  own "skip the query" convention elsewhere in this file. */
+export const useHistory = (target: string | undefined): UseQueryResult<Bounded<HistoryEntry>> =>
+  useQuery({ queryKey: ["history", target], queryFn: () => api.history(target ?? ""), enabled: target !== undefined });
 
 /** `xref/string` mode=substring|regex — the Strings tab's search. Skipped
  *  when `pattern` is empty, same gate `useSearchFunctions` uses. */

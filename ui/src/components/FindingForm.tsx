@@ -17,19 +17,32 @@ import { closeDialog, setStatus } from "../actions/store.ts";
 import { useContextResource } from "../hooks.ts";
 import { displayName } from "../actions/names.ts";
 import type { Severity } from "../contracts.ts";
+import type { Selection } from "../state/selection.ts";
 import { ToolButton } from "./primitives.tsx";
 
 const SEVERITIES: readonly Severity[] = ["critical", "high", "med", "low"];
 
-export function FindingForm({ fn }: { readonly fn: number }): ReactNode {
+/** Spec 26 L6: the lead a "finding" dialog opened via `finding.fromLead`
+ *  carries — `undefined` for a plain `annotate.finding`, which leaves the
+ *  form exactly as it was before this landing. */
+export interface FindingFormProps {
+  readonly fn: number;
+  readonly lead?: Selection;
+}
+
+export function FindingForm({ fn, lead }: FindingFormProps): ReactNode {
   const qc = useQueryClient();
   setQueryClient(qc);
+  // `fn` is -1 for a lead with no owning function (`SinkLead.fn === null`,
+  // a string-only sink) — `useContextResource`'s own `-1` sentinel already
+  // skips the query in that case (RightPane.tsx uses the same convention).
+  const hasFn = fn >= 0;
   const ctx = useContextResource(fn);
-  const name = displayName(ctx.data?.metadata) ?? `fn${fn}`;
+  const name = hasFn ? (displayName(ctx.data?.metadata) ?? `fn${fn}`) : null;
 
-  const [claim, setClaim] = useState("");
+  const [claim, setClaim] = useState(lead?.leadDetail ?? "");
   const [severity, setSeverity] = useState<Severity>("med");
-  const [evidenceRef, setEvidenceRef] = useState(`fn:${fn}`);
+  const [evidenceRef, setEvidenceRef] = useState(lead?.leadEvidence ?? (hasFn ? `fn:${fn}` : ""));
   const [note, setNote] = useState("");
   const [cwe, setCwe] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +50,12 @@ export function FindingForm({ fn }: { readonly fn: number }): ReactNode {
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
+    // Spec 26 L6: a `SinkLead` with `fn: null` (a string-only sink, e.g. a
+    // deep-link pattern with no recorded call site) has no owning function
+    // to record the finding against — `record_finding`'s `location.fn` is
+    // required, and fabricating one would misattribute the finding, so
+    // this stays refused client-side rather than guessing `fn: 0`.
+    if (!hasFn) return setError("this lead has no owning function to record the finding against");
     if (claim.trim() === "") return setError("a claim is required");
     if (evidenceRef.trim() === "") return setError("at least one evidence ref is required (e.g. fn:123, sid:45, mod:9)");
     setBusy(true);
@@ -61,8 +80,14 @@ export function FindingForm({ fn }: { readonly fn: number }): ReactNode {
 
   return (
     <Modal
-      title="Add finding"
-      subtitle={<>on <span className="font-mono">fn:{fn}</span> {name} · candidate until its evidence resolves</>}
+      title={lead !== undefined ? "Promote lead to finding" : "Add finding"}
+      subtitle={
+        hasFn ? (
+          <>on <span className="font-mono">fn:{fn}</span> {name} · candidate until its evidence resolves</>
+        ) : (
+          <>lead ({lead?.leadClass}): {lead?.leadDetail} · no owning function</>
+        )
+      }
       onClose={closeDialog}
     >
       <form onSubmit={(e) => void submit(e)}>

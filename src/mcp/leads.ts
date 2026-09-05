@@ -43,6 +43,11 @@ export interface LeadsResult {
   readonly groups: readonly LeadGroup[];
   readonly total: number;
   readonly truncated: boolean;
+  /** Set only by `src/ui-server/list.ts`'s off-main-thread wrapper
+   *  (docs/UI-BURS.md bur 1 row 2) while a `node:worker_threads` compute is
+   *  still in flight — `computeLeads` itself never sets this; the MCP
+   *  `leads`/`security-sinks` resources always answer settled. */
+  readonly computing?: boolean;
 }
 
 const PER_CLASS_CAP = 20;

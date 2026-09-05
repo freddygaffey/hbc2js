@@ -5,7 +5,7 @@
 // Until the server lands, `mockApi` (./mock.ts) answers instead — selected
 // by `VITE_API_MOCK` (default "1"; set VITE_API_MOCK=0 to hit a real server).
 import type {
-  CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
+  CallsFrom, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogTail,
   ModuleInfo, ModuleSource, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, Bounded, LocalsListing, LineMap, StringExact, StringGrep, GlobalUses,
   WhoCallsByName, ObjectTables,
@@ -122,6 +122,9 @@ export interface Api {
   packageId(mod: number): Promise<PackageIdResult>;
   findings(): Promise<Bounded<ResolvedFinding>>;
   leads(): Promise<LeadsResult>;
+  /** Spec 26 L6: `GET /api/history/{target}`, `target` a `fn:N`/`mod:N`
+   *  annotation target — the full revision timeline for it. */
+  history(target: string): Promise<Bounded<HistoryEntry>>;
   logTail(since: number): Promise<LogTail>;
   searchFunctions(query: string, cursor?: number): Promise<SearchPage<FunctionMatch>>;
   searchSource(query: string, cursor?: number): Promise<SearchPage<SourceMatch>>;
@@ -180,6 +183,7 @@ export const httpApi: Api = {
   packageId: (mod) => get(`/package-id/${mod}`),
   findings: () => get(`/findings`),
   leads: () => get(`/leads`),
+  history: (target) => get(`/history/${encodeURIComponent(target)}`),
   logTail: (since) => get(`/log/tail`, { since }),
   searchFunctions: (query, cursor) => get(`/search/functions`, { q: query, cursor }),
   searchSource: (query, cursor) => get(`/search/source`, { q: query, cursor }),

@@ -218,12 +218,39 @@ test("listModules's narrow module query equals loadIndexRowsFromDb's modulesInde
   assert.equal(listModules(outDir), listModules(outDir));
 });
 
-test("listLeads answers resources.leads() once per artifact (bur 1)", () => {
-  const first = listLeads(resources);
-  assert.deepEqual(first, resources.leads());
+// Spec 26 L6 / docs/UI-BURS.md bur 1 row 2: `computeLeads` now runs on a
+// `node:worker_threads` worker (`src/workers/leads-worker.ts`) so it never
+// blocks the event loop the way an inline call used to (the regression this
+// test pins) — `listLeads` answers `computing: true` immediately, then
+// settles to the SAME object on every later call for the same artifact.
+test("listLeads never blocks: computing:true immediately, settles to resources.leads() once", async () => {
+  const first = listLeads(resources, outDir);
+  assert.equal(first.computing, true, "a fresh artifact must answer computing:true, not block on the worker");
+  let settled = listLeads(resources, outDir);
+  for (let i = 0; i < 200 && settled.computing === true; i++) {
+    await new Promise((r) => setTimeout(r, 25));
+    settled = listLeads(resources, outDir);
+  }
+  assert.notEqual(settled.computing, true, "leads did not settle off the main thread in time");
+  assert.deepEqual({ groups: settled.groups, total: settled.total, truncated: settled.truncated }, resources.leads());
   // Identity, not just equality: the whole-bundle scan (37.7 s cold on
   // Service NSW) must not run twice for one artifact.
-  assert.equal(listLeads(resources), first);
+  assert.equal(listLeads(resources, outDir), settled);
+});
+
+// The BUGS.md row's own "prove fixed" criterion: with `/api/leads` in
+// flight against a real artifact, a concurrent request answers fast rather
+// than queuing behind the scan — proof the compute is off the main thread,
+// not just cached.
+test("a concurrent request answers fast while /api/leads is in flight (bur 1 row 2, off-main-thread)", async () => {
+  const freshMcp = new McpContext(outDir, { hbc: RN_TEMPLATE });
+  const freshCtx: UiServerCtx = { resources: freshMcp.resources, tools: freshMcp.tools, artifactDir: outDir };
+  const started = Date.now();
+  const leadsPromise = handle({ method: "GET", path: "/api/leads", query: {}, body: undefined }, freshCtx);
+  const concurrent = await handle({ method: "GET", path: "/api/findings", query: {}, body: undefined }, freshCtx);
+  assert.equal(concurrent.status, 200);
+  assert.ok(Date.now() - started < 500, "a concurrent /api/findings must not queue behind /api/leads");
+  await leadsPromise;
 });
 
 test("GET /api/functions pages {fn,name,size,module}", async () => {

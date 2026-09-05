@@ -366,8 +366,8 @@ const BASE_ROUTES: readonly Route[] = [
   // `listLeads`, not `ctx.resources.leads()`: the scan is 37.7 s cold on
   // Service NSW and blocks every other route while it runs, so this layer
   // caches it per artifact (see `list.ts`). Same answer, computed once.
-  { method: "GET", re: /^\/api\/leads$/, handler: (_p, _req, ctx) => ok(listLeads(ctx.resources)) },
-  { method: "GET", re: /^\/api\/leads\/security-sinks$/, handler: (_p, _req, ctx) => ok(listLeads(ctx.resources)) },
+  { method: "GET", re: /^\/api\/leads$/, handler: (_p, _req, ctx) => ok(listLeads(ctx.resources, ctx.artifactDir)) },
+  { method: "GET", re: /^\/api\/leads\/security-sinks$/, handler: (_p, _req, ctx) => ok(listLeads(ctx.resources, ctx.artifactDir)) },
   {
     method: "GET",
     re: /^\/api\/findings$/,

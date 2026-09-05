@@ -385,6 +385,16 @@ export const actionApi: ActionApi = {
   setName: (target) => openDialog("rename", asShellSelection(target)),
   addComment: (target) => openDialog("comment", asShellSelection(target)),
   recordFinding: (target) => openDialog("finding", asShellSelection(target)),
+  // Spec 26 L6: same "Add finding" dialog `recordFinding` opens, but the
+  // dialog itself (`FindingForm`) tells a `kind: "lead"` selection apart
+  // and prefills from `leadClass`/`leadEvidence`/`leadDetail` instead of
+  // starting blank.
+  promoteLead: (target) => openDialog("finding", asShellSelection(target)),
+  // No modal: the status control lives inline on each finding row in the
+  // Findings tab (`RightPane.tsx`) — this action just raises that tab so
+  // the menu/palette/chord path lands somewhere visible.
+  setFindingStatus: () => setRightPanel("findings"),
+  showHistory: (target) => openDialog("history", asShellSelection(target)),
   gotoFn: (fn) => select({ kind: "fn", fn }),
   showXrefs: (target) => {
     if (target.fn !== undefined) select({ kind: "fn", fn: target.fn });

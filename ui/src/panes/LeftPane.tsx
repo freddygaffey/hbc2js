@@ -27,7 +27,8 @@ import { useSegregation } from "../listing/use-segregation.ts";
 import { useScreens } from "../listing/use-screens.ts";
 import { orderScreenGroups, screenDepths, screenEdges, screensByMod, screensTree } from "../listing/screens.ts";
 import { useQueryText } from "../listing/search-store.ts";
-import { select, useSelection } from "../state/selection.ts";
+import { select, useSelection, type Selection } from "../state/selection.ts";
+import { runAction } from "../actions/registry.ts";
 import type { ModuleEntry } from "../listing/wire.ts";
 
 const MENU_ITEMS: readonly string[] = ["Rename", "Add comment", "Go to definition", "Find xrefs", "Mark reviewed", "Copy disasm offset"];
@@ -495,18 +496,46 @@ export function LeftPane(): ReactNode {
         {(leads.data?.groups ?? []).map((g) => (
           <div key={g.class}>
             <div className="px-2 py-1 text-xs uppercase text-text-muted">{g.class}</div>
-            {g.leads.map((l) => (
-              <RowMenu key={l.evidence}>
-                <div
-                  {...(l.fn !== null ? { "data-fn": l.fn } : {})}
-                  className={rowClass(l.fn !== null && l.fn === sel.fn, false)}
-                  onClick={() => { if (l.fn !== null) select({ kind: "fn", fn: l.fn, ...(l.name !== null ? { name: l.name } : {}) }); }}
-                >
-                  <span className="truncate font-mono">{l.name ?? l.evidence}</span>
-                  <span className="ml-auto shrink-0 truncate text-text-muted">{l.detail}</span>
-                </div>
-              </RowMenu>
-            ))}
+            {g.leads.map((l) => {
+              // Spec 26 L6: a "lead" selection, distinct from the "fn"
+              // selection a click makes — `finding.fromLead`
+              // (src/ui-core/actions.ts) is gated on `kind === "lead"`, so
+              // the Promote button passes this directly to `runAction`
+              // rather than routing through the click-driven `select()`
+              // below (which stays a plain "fn" navigation selection).
+              const leadSelection: Selection = {
+                kind: "lead",
+                ...(l.fn !== null ? { fn: l.fn } : {}),
+                leadClass: l.class,
+                leadEvidence: l.evidence,
+                leadDetail: l.detail,
+              };
+              return (
+                <RowMenu key={l.evidence}>
+                  <div
+                    {...(l.fn !== null ? { "data-fn": l.fn } : {})}
+                    className={rowClass(l.fn !== null && l.fn === sel.fn, false)}
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() => { if (l.fn !== null) select({ kind: "fn", fn: l.fn, ...(l.name !== null ? { name: l.name } : {}) }); }}
+                    >
+                      <span className="truncate font-mono">{l.name ?? l.evidence}</span>
+                      <span className="ml-auto shrink-0 truncate text-text-muted">{l.detail}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="ml-2 shrink-0 rounded-ui px-1 text-text-muted hover:bg-surface-2 hover:text-text"
+                      title="Promote to finding"
+                      onClick={() => runAction("finding.fromLead", leadSelection)}
+                    >
+                      +finding
+                    </button>
+                  </div>
+                </RowMenu>
+              );
+            })}
           </div>
         ))}
         {leads.data === undefined && <Empty>scanning the bundle for leads…</Empty>}
