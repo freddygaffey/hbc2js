@@ -167,7 +167,7 @@ sides), never a golden-output compare against a shared fixture (CLAUDE.md).
 | L6 | `.env` recovery from `strings.xml` / `BuildConfig` | Sonnet | L1 | `native/env.jsonl` + `.env` in reconstruction |
 | L7 | Known-lib native shortcut; merge native dep channel with `deps` | Sonnet | L2, L4 | merged dependency list (two channels) |
 | L8 | Rebuildable-project emit incl. native (custom-module TODO stubs) | Sonnet | L6, L7 | project emit hook |
-| L9 | Documented futures: iOS Mach-O, DEX method-body reader, resynth custom native | — | — | docs only |
+| L9 | Documented futures: iOS Mach-O, DEX method-body reader, resynth custom native — **Landed 2026-09-05** | — | — | docs only |
 
 ---
 
@@ -677,6 +677,27 @@ the three deferred capabilities with their evidence bars and refusals:
    md` "Verdict"). L8 ships the *interface* skeleton + evidence; automated body
    translation is out of scope and would be LLM-assisted at best. Refusal:
    hbc2js never emits a fabricated method body.
+
+**Landed (2026-09-05).** Two parts. **(A) Closed the L8 gap:** `deps
+<app.apk> --out <dir>` (`src/cli.ts`'s `runDepsCmd`) now calls `ingestNative
+(openApk(args.input), args.out)` — the same reader `check-native` verifies,
+not a duplicate — right before the existing `reconstructNativeProject`
+hook, so a single command yields `native/*.jsonl`, `.env`, merged
+`package.json` native deps, and `native-todo/` from one `.apk`, where
+before this landing the two steps had to be driven separately (see the
+existing `tests/gate/cli/deps.test.ts` L8 test, which still exercises that
+two-step form deliberately). Non-`.apk` input is unchanged (no `native/`
+directory written); re-running is idempotent (`ingestNative` rewrites the
+same tables from the same bytes each time, §4.1); a native-ingestion
+failure is reported to stderr without failing the JS-side run (§1.4).
+Tested end to end in `tests/gate/cli/deps.test.ts` against a **fresh,
+uncommitted** APK assembled at test time from the committed `synthetic.apk`
+fixture (§3's "primary" fixture — it already carries a first-party module,
+a third-party module, and env values) plus a `hermesc`-compiled
+`assets/index.android.bundle`, so `deps` itself succeeds on the combined
+APK; the committed fixture is never modified. **(B) Documented futures:**
+this section's three refusals are cross-referenced from `docs/DECISIONS.md`
+D32.
 
 ---
 

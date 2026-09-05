@@ -20,7 +20,19 @@ hbc2js deps <bundle.hbc|app.apk> [--out <dir>] [--confirm] [--offline] \
 - `--out <dir>` — the decompile-project output directory. When at least one
   dependency is confirmed with confidence, `<dir>/package.json` is written
   (merged into an existing one) with a `dependencies` map. The project-local
-  signature DB also lives under here: `<dir>/.hbc2js/sigdb/`.
+  signature DB also lives under here: `<dir>/.hbc2js/sigdb/`. When the input
+  is an `.apk`, this single flag also drives the native side end to end
+  (spec 27 §L9, closing the §L8 gap): the APK's native tables are ingested
+  into `<dir>/native/*.jsonl` (the same `ingestNative`/`buildNativeTables`
+  reader `check-native` verifies — see `docs/TOOLCHAIN.md`), then the L8
+  reconstruction hook reads those tables straight back out and writes
+  `<dir>/.env`, folds native-only dependencies into `<dir>/package.json`,
+  and emits one `<dir>/native-todo/<Module>/` interface-skeleton stub per
+  first-party native module. A bare `.hbc` input is unchanged: no
+  `<dir>/native/` directory is written, and the reconstruction hook is a
+  silent no-op. Re-running `deps <apk> --out <dir>` is idempotent, and a
+  native-ingestion problem is reported to stderr without failing the
+  JS-side run (native is optional-by-construction — spec 27 §1.4).
 - `--confirm` — run the npm confirm stage (§4 below). Requires network.
 - `--offline` — skip npm registry search and the confirm stage entirely; the
   match and guess stages still run against whatever signature DB is
