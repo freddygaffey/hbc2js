@@ -825,6 +825,18 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
     case "LoadParamLong":
       return set(V(insn, 0), f.paramExpr(V(insn, 1)));
     case "LoadThisNS":
+      // `hermesc` compiles a bare `this` in a NON-strict function to exactly
+      // this opcode, because the sloppy-mode call protocol has already done the
+      // coercion the opcode describes: ES2024 10.2.1.2 OrdinaryCallBindThis maps
+      // null/undefined to the global object and boxes a primitive receiver
+      // before the body runs. So inside a sloppy function `this` and the
+      // explicit ternary denote the same value, and `this` is the form that
+      // round-trips back through hermesc (docs/BUGS.md, 2026-09-01 "LoadThisNS
+      // lowering"). Two cases keep the explicit coercion: a strict function,
+      // where the call protocol leaves `this` uncoerced, and an opcode-era
+      // generator body, whose `thisExpr` is the captured `__this` variable
+      // rather than the body's own receiver.
+      if (!f.fn.header.flags.strictMode && f.thisExpr.k === "this") return set(V(insn, 0), f.thisExpr);
       return set(V(insn, 0), coerceThis(f.thisExpr));
     case "CoerceThisNS":
       return set(V(insn, 0), coerceThis(RG(insn, 1)));
