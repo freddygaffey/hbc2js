@@ -180,3 +180,102 @@ IS regrouped and wrapped; the same list with one property store, which refuses
 with the blocking swap in the refusal's `detail`; a statement naming two
 environments, which refuses with `statement in two environments` (rnav's
 dominant class); and fixture 79's structural refusal at v98/v99.
+
+## 9. Escape analysis: moving a store into a freshly allocated object
+
+Section 7 measured the blockers and named the dominant one: the property store
+an inlined IIFE ends with (`out.f = <closure>`, `arr[0] = <closure>`). A member
+store is refused by section 7's `pureFootprint` because a setter is user code
+and a null base throws, so it can never be reordered blind. This section is the
+argument that lets a *specific* member store move: one whose base is an object
+this function allocated and has not let out of its hands.
+
+### 9.1 What is proved
+
+For a region `[lo, hi]` of one overlapping group (`src/emit/iife-escape.ts`), a
+name `n` is FRESH over `(a, hi]` when all of the following hold, where `a` is a
+top-level statement index in `[lo, hi]`:
+
+* **F1 allocation.** Statement `a` is `n = <alloc>` or `let n = <alloc>`, where
+  `<alloc>` is an array literal, an object literal with no computed key and no
+  spread, or the emitter's rendering of the `NewArray`/`NewFastArray` opcode
+  (`new Array(<literal>)` carrying `fromNewArray`, `src/emit/lower.ts`) --
+  never a call, a `new` of a name, or anything read from elsewhere. Every
+  sub-expression of `<alloc>` is itself pure by section 7's rule.
+* **F2 single definition in the region.** `a` is the last assignment to `n` in
+  `[lo, hi]`; no other statement in `(a, hi]` writes the *name* `n`.
+* **F3 no escape inside the region.** Every occurrence of `n` in `(a, hi]` is
+  the BASE of a member access (`n.p`, `n[k]`), load or store. Not an argument,
+  not a callee, not a value assigned anywhere, not returned, not thrown, not an
+  element of a literal.
+* **F4 no capture.** `n` does not occur anywhere inside a nested `func` of this
+  scope, so no closure -- however it is later called -- can reach it.
+* **F5 nothing before.** Occurrences of `n` at top-level indices `< a` are
+  unconstrained (they concern the previous value in a reused register), but a
+  member access on `n` before `a` is not covered by this proof and keeps the
+  old, refusing footprint.
+
+Occurrences at top-level indices `> hi` are deliberately UNCONSTRAINED: the
+array an inlined IIFE fills is returned or passed on straight after the region
+(`return arr`), and once the region has run, the reordering has preserved every
+write and every written value, so a later escape observes exactly the same
+object. Only an escape that can be triggered *while the region runs* could see
+the difference, and F3/F4 exclude those.
+
+### 9.2 The footprint of a member access on a fresh base
+
+Given F1-F5, `n[k]` runs no user code and cannot throw on the base, so a member
+statement gets a footprint like any other:
+
+* `n[<lit>] = <pure>`: writes `n#<lit>`, reads `n` and the value's names.
+* `x = n[<lit>]`: writes `x`, reads `n` and `n#<lit>`.
+
+Distinct literal keys give distinct pseudo-names, so `arr[0] = x` and
+`arr[1] = y` commute with each other, and the allocation `n = <alloc>` (which
+writes the plain name `n`) never commutes with either -- a member access reads
+`n`, so section 7's disjointness test already pins the allocation before its
+stores. A non-literal key refuses (`E_KEY_NOT_LITERAL`): proving two register
+keys distinct is a separate argument.
+
+### 9.3 Filler repair
+
+A statement in the region that names no environment (`r0 = a2`, the allocation
+itself) is a FILLER; section 7 attached every filler to the preceding block.
+That single choice is often the only thing that blocks a group: fixture 79
+needs `arr = new Array(2)` and `arr[0] = x` to stay on the same side of the
+partition, and the preceding block puts them on opposite sides. The planner now
+repairs: when the first blocking swap is between a filler and anything else, it
+moves the filler to the other block and re-verifies, at most `2 * region`
+times. The repair is a heuristic; SOUNDNESS is unchanged, because the final
+labelling is verified pair by pair exactly as before, and a labelling that
+still blocks refuses (`regrouping did not converge` when the budget runs out).
+
+### 9.4 Refusal codes
+
+Reported per name by `src/emit/iife-escape.ts` and tallied by
+`tools/passes/iife-overlap.ts`:
+
+| code | meaning |
+|---|---|
+| `E_NOT_FRESH` | no allocation of the shape F1 defines the base in the region |
+| `E_REASSIGNED` | the name is written again after the allocation (F2) |
+| `E_ESCAPES_CALL` | the name is an argument, a callee or a `new` operand after the allocation (F3) |
+| `E_ESCAPES_STORE` | the name is assigned, returned, thrown or put in a literal after the allocation (F3) |
+| `E_ESCAPES_CLOSURE` | the name occurs inside a nested function of this scope (F4) |
+| `E_KEY_NOT_LITERAL` | the property key is not a literal (9.2) |
+| `E_VALUE_NOT_PURE` | the stored value is not an identifier/literal/pure aggregate |
+
+### 9.5 The one premise that is not proved (A-PROTO)
+
+`n[k] = v` on a fresh array or object literal still consults the prototype
+chain for an accessor named `k`. This proof assumes the intrinsic
+`Array.prototype` / `Object.prototype` carry no accessor property for the
+literal key being stored -- i.e. that a bundle has not installed a setter for
+`"0"` or for the property name an inlined IIFE writes. An object literal built
+by `Object.create(null)`-style lowering has no chain at all and needs no
+premise. A-PROTO is the single non-provable step in section 9; it is recorded
+in `docs/BUGS.md` so it is never lost, and it is the same class of assumption
+`hermesc -O` itself made when it scheduled these statements into each other in
+the first place. Every other premise (F1-F5, 9.2) is checked syntactically and
+conservatively: any use of a base that the analysis cannot classify is an
+escape.
