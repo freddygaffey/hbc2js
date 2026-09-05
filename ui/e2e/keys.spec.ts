@@ -114,7 +114,13 @@ test.describe("command mode (bur 4/5)", () => {
     await expect(input).toHaveValue(":fn 74");
     await page.keyboard.press("Enter");
 
-    await expect(page.getByTestId("breadcrumbs")).toContainText("fn 74", { timeout: WAIT });
+    // Assert on the disasm fold header, which always carries the numeric
+    // `fn N` identity, not on the breadcrumb: the breadcrumb shows the
+    // ACCEPTED name (fn-rename landing, 2026-09-05), and
+    // code-pane-rename.spec.ts renames this same fixture project's first
+    // function and deliberately leaves the rename in place ("survives a
+    // reload"), so "fn 74" is not the breadcrumb text once that spec has run.
+    await expect(page.getByTestId("disasm-fold").locator("span").nth(1)).toContainText("fn 74", { timeout: WAIT });
   });
 });
 
