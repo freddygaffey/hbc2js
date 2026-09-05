@@ -2,7 +2,7 @@
 
 **Fixtures:** `06-for-of-array` (plain arrays, `break`), `07-for-of-iterable`
 (Map/Set/custom `[Symbol.iterator]`)
-**Confidence:** ✅ single-version (v94, default `-O`)
+**Confidence:** ✅ verified (v94 and v99 read, default `-O`)
 
 This resolves the other open question from `docs/specs/03-cfg.md` §6.4 and
 `docs/specs/07-pass-ladder.md` §4 (the "`Iterator*` family, likewise
@@ -111,7 +111,60 @@ lower-level `try`/`catch` recovery to handle it.
 
 ## 7. Version differences
 
-Not cross-checked against v99 in this research pass — only v94 was read.
-No HBC-FORMAT note suggests the iterator-protocol opcodes changed at v97+;
-per spec 07 §4 this needs a second-version confirmation before
-`src/passes/for-of/` is implemented.
+**Re-read at v99 (Static Hermes, `hbc99-mar2026` opcode table), 2026-09-05,
+spec 21.** `hbc2js disasm` on `06-for-of-array/v99.hbc` and
+`07-for-of-iterable/v99.hbc`. The **opcode family is unchanged** —
+`IteratorBegin`/`IteratorNext`/`IteratorClose` with the same operand counts,
+the same `JStrictEqual state, <undefined-reg>` exhaustion test, the same
+`Catch; IteratorClose s, 1; Throw` handler, and the same `IteratorClose s, 0`
+before a `break`'s jump to the exit. Two **register-plumbing** differences
+matter to a matcher, and only to a matcher:
+
+**(a) v99 refreshes the source operand through a `Mov` inside the loop
+header, and reuses one register for value and source.**
+
+```
+                     v94                                   v99
+  001d  IteratorBegin  r9, r5             0011  IteratorBegin  r4, r6
+L1:                                       0014  LoadConstUInt8 r5, 30
+  0020  IteratorNext   r11, r9, r5      L1:
+  0024  Mov            r12, r9            0017  Mov            r7, r6
+  0027  JStrictEqual   L4, r12, r3        001a  IteratorNext   r7, r4, r7
+                                          001e  Mov            r8, r4
+                                          0021  JStrictEqual   L4, r8, r3
+```
+
+At v94 `IteratorNext dst, state, src` names the very register
+`IteratorBegin` was given. At v99 the source operand is a fresh copy made in
+the header (`Mov r7, r6; IteratorNext r7, r4, r7`) and the destination
+*aliases* it. A matcher that requires `next.src === begin.src`, or that
+requires `next.dst !== next.src`, matches at 94 and refuses at 99. It must
+resolve the source operand through header `Mov`s back to `begin.src`, and
+must not assume the three operands are distinct.
+
+**(b) v99 copies the state register before a normal `IteratorClose`.**
+
+```
+        v94                                  v99
+  0051  IteratorClose  r9, 0          004d  Mov            r0, r4
+  0054  Jmp            L4             0050  IteratorClose  r0, 0
+                                      0053  Jmp            L4
+```
+
+The abrupt close in the handler is *not* copied at either version
+(`Catch r0; IteratorClose r4, 1; Throw r0` at v99), so only the break-path
+close needs the `Mov` walk-back.
+
+Consequential but not shape-changing: v94's exception table carries **two**
+`.try` ranges pointing at the one for-of handler (the protected range is
+split around the `Jmp`), v99 carries **one**. A matcher must therefore accept
+*one or more* ranges whose handler is the same block, never exactly one and
+never exactly two.
+
+`07-for-of-iterable` behaves identically at both versions, including the
+nested `IteratorBegin`/`IteratorNext` pair that destructures the `[k, v]`
+entry (four `IteratorBegin` sites at 94 and at 99); at v99 the nested pair
+shows the same `Mov`-refreshed source operand as (a).
+
+Versions 84/96/98 were not re-dumped, for the reason given in
+`for-in.md` §7: 94 and 99 bracket both opcode tables.
