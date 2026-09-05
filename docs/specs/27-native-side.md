@@ -167,7 +167,7 @@ sides), never a golden-output compare against a shared fixture (CLAUDE.md).
 | L6 | `.env` recovery from `strings.xml` / `BuildConfig` | Sonnet | L1 | `native/env.jsonl` + `.env` in reconstruction |
 | L7 | Known-lib native shortcut; merge native dep channel with `deps` | Sonnet | L2, L4 | merged dependency list (two channels) |
 | L8 | Rebuildable-project emit incl. native (custom-module TODO stubs) | Sonnet | L6, L7 | project emit hook |
-| L9 | Documented futures: iOS Mach-O, DEX method-body reader, resynth custom native | — | — | docs only |
+| L9 | Documented futures: iOS Mach-O, DEX method-body reader, resynth custom native — **Landed 2026-09-05** | — | — | docs only |
 
 ---
 
@@ -617,6 +617,41 @@ lists every merged native dep exactly once*.
 
 **Depends on:** L6, L7.
 
+**Landed (2026-09-05).** `src/native/reconstruct.ts`: `reconstructNativeProject
+(outDir)` reads `outDir/native/{env,react-modules,methods}.jsonl` directly (the
+already-materialised tables — a join, never a re-parse of the APK's bytes,
+exactly like `seams.ts`/`native-deps.ts`) and is a silent no-op — `{ran:false,
+...}`, nothing written — when neither `env.jsonl` nor `react-modules.jsonl` is
+present ("the project directory has no native tables"). When it runs: (1)
+`renderEnvFile` writes `.env` — every recovered row a plain `KEY=value` line,
+every `unresolved` row a commented `# TODO:` line citing `source`/`resolvedBy`/
+the key itself (§1.4's "field" evidence — `EnvRow` carries no separate class
+name, so the key IS the field fact); (2) `mergeNativeDependencies` folds
+`buildNativeChannel`'s (L7) merged package list into `outDir/package.json`'s
+`dependencies`, `"*"` for a package with no key yet (native side has no
+version to offer), never overwriting a version the JS-fingerprint channel
+already wrote, so re-running is idempotent (`tests/gate/native/
+reconstruct.test.ts`'s dedup test calls it twice); (3) `renderModuleStub` +
+`renderResynthesizeMd` write one `native-todo/<Module>/{<Module>.java,
+RESYNTHESIZE.md}` per `firstParty:true` react-modules row — a faithful Java
+skeleton (`parseJavaProto`/`javaTypeName` decode the method key's own JVM
+proto string, spec 27 §L2's `nativeMethodKey` encoding, into real parameter/
+return types) where every method body is `// TODO RESYNTHESIZE` + a `throw`,
+never a guessed implementation. CLI hook: `runDepsCmd`'s `deps --out <dir>`
+(`src/cli.ts`, the package.json-write step) calls `reconstructNativeProject
+(args.out)` right after writing the JS-side `dependencies`; a one-line note to
+stderr when it ran, nothing at all when it was a no-op. **Deviation from the
+brief:** the spec text names `tests/appgen/native-reconstruct.test.ts` for the
+end-to-end case; landed instead as one more test in `tests/gate/cli/
+deps.test.ts` (that file already owns every `deps --out` CLI test, and
+`tests/appgen/` is the fuzz app-generator's own suite, a different thing —
+confirmed by reading its other files before landing here). Tests: the four
+spec 27 §L8 tests, `tests/gate/native/reconstruct.test.ts`, against
+`env.apk` (§L6), `party.apk` (§L4, the dependency-dedup pair) and `seams.apk`
+(§L3 — the only fixture with an `@ReactMethod` taking real parameters,
+`generateKey(String, Promise)`, needed to prove the interface skeleton is
+faithful) — no new fixture; plus the CLI end-to-end test above.
+
 ---
 
 ### L9 — Documented futures (docs only)
@@ -642,6 +677,27 @@ the three deferred capabilities with their evidence bars and refusals:
    md` "Verdict"). L8 ships the *interface* skeleton + evidence; automated body
    translation is out of scope and would be LLM-assisted at best. Refusal:
    hbc2js never emits a fabricated method body.
+
+**Landed (2026-09-05).** Two parts. **(A) Closed the L8 gap:** `deps
+<app.apk> --out <dir>` (`src/cli.ts`'s `runDepsCmd`) now calls `ingestNative
+(openApk(args.input), args.out)` — the same reader `check-native` verifies,
+not a duplicate — right before the existing `reconstructNativeProject`
+hook, so a single command yields `native/*.jsonl`, `.env`, merged
+`package.json` native deps, and `native-todo/` from one `.apk`, where
+before this landing the two steps had to be driven separately (see the
+existing `tests/gate/cli/deps.test.ts` L8 test, which still exercises that
+two-step form deliberately). Non-`.apk` input is unchanged (no `native/`
+directory written); re-running is idempotent (`ingestNative` rewrites the
+same tables from the same bytes each time, §4.1); a native-ingestion
+failure is reported to stderr without failing the JS-side run (§1.4).
+Tested end to end in `tests/gate/cli/deps.test.ts` against a **fresh,
+uncommitted** APK assembled at test time from the committed `synthetic.apk`
+fixture (§3's "primary" fixture — it already carries a first-party module,
+a third-party module, and env values) plus a `hermesc`-compiled
+`assets/index.android.bundle`, so `deps` itself succeeds on the combined
+APK; the committed fixture is never modified. **(B) Documented futures:**
+this section's three refusals are cross-referenced from `docs/DECISIONS.md`
+D32.
 
 ---
 

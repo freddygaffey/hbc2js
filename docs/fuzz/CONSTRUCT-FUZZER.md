@@ -307,3 +307,86 @@ way it was first built:
 node tools/fuzz/diff-signatures.mjs --extract docs/reports/<date>-retriage.md \
      --out tools/fuzz/known-signatures.json
 ```
+
+## Campaign 3 (2026-09-05) — fresh clone, post P-16/fix-wave-3
+
+`docs/reports/2026-09-05-campaign2-rediff.md` found that the live campaign-2
+`campaign-runner.sh` loops ran from `deb`'s shared `~/hbc2js` checkout, which
+never picked up the P-16 (budget cutoff is INCONCLUSIVE, never DIVERGENT) or
+fix-wave-3 (resource-ceiling marker + missing-global wording) harness fixes —
+every campaign-2 program was classified pre-fix. Campaign 3 is the same
+runner (`tools/fuzz/campaign-runner.sh`, unmodified) on a **fresh, dedicated
+clone** so it can never silently drift onto a stale checkout again, and uses
+a seed base campaign-2 never touched.
+
+- **Clone:** `~/hbc2js-c3` on `deb`, checked out at `1e1fe39` (own `git
+  clone`, never `~/hbc2js` — that shared checkout stays untouched). `npm ci
+  --ignore-scripts`. `tools/hermesc` symlinked whole from `~/hbc2js/tools/hermesc`
+  (gives v84 a working `hermes` VM via the bundled `hermes-engine-cli`
+  binary, plus `hermesc` for all of 84/94/96/98/99). `tools/hermes-vm/v94`
+  and `tools/hermes-vm/v99` symlinked individually from `~/hbc2js`'s
+  source-built VMs; `tools/hermes-vm/v96` symlinked from
+  `~/hbc2js-rediff/tools/hermes-vm/v96` (the real source-built v96 VM the
+  campaign-2 rediff task built — `~/hbc2js`'s own tarball-derived
+  `tools/hermesc/v96/` has no `hermes` binary on this Linux box, only
+  `hermesc`). No v84/v94/v96/v99 VM is missing; v98 has never had a VM on any
+  host (roundtrip-only always, `docs/TOOLCHAIN.md`).
+- **Smoke** (`~/hbc2js-fuzz/campaign3-smoke/v<N>.json`, 20 programs/version,
+  seed-base 4000000): v84/v94/v96/v99 all ran `mode: "full-ladder"` against
+  the real Hermes VM (v94/v96/v99 each had 1/20 `inconclusive`, none
+  `divergent` — ordinary budget-cutoff INCONCLUSIVE, not a driver bug). v98
+  ran `mode: "roundtrip-only"` and reported 20/20 `divergent` — this is the
+  pre-existing, already-documented `roundtrip` oracle weakness (PUSHBACK
+  P-12: the oracle's function-count comparison flags hbc2js's own injected
+  `__hbc_*` helper functions), not a new bug and not a driver failure, and
+  matches why campaign 2 itself never ran a `campaign2-v98-*` directory.
+  Campaign 3 follows the same precedent and only launches 84/94/96/99.
+- **Seed base:** 4000000 (fresh — 1000000/2000000/3000000 are campaign-1/2's;
+  never reused).
+- **Dirs:** one `campaign-runner.sh` process per version, each its own
+  campaign dir: `~/hbc2js-fuzz/campaign3-v84-4000000`,
+  `campaign3-v94-4000000`, `campaign3-v96-4000000`, `campaign3-v99-4000000`
+  (each with `reports/`, `finds/`, `state/`, per-chunk logs). Runner stdout/
+  stderr: `~/hbc2js-fuzz/campaign3-v<N>.log`.
+- **Launch (already done, chunk-size default 500, target 10000/version):**
+  ```
+  ssh deb 'export PATH="$HOME/.local/share/fnm/node-versions/v22.23.2/installation/bin:$PATH"; \
+    cd ~/hbc2js-c3 && for v in 84 94 96 99; do \
+      setsid nohup tools/fuzz/campaign-runner.sh \
+        --campaign-dir "$HOME/hbc2js-fuzz/campaign3-v${v}-4000000" \
+        --seed-base 4000000 --versions "$v" --target 10000 \
+        > "$HOME/hbc2js-fuzz/campaign3-v${v}.log" 2>&1 < /dev/null & \
+    done; disown -a'
+  ```
+- **Status:**
+  ```
+  ssh deb 'for v in 84 94 96 99; do f=~/hbc2js-fuzz/campaign3-v$v-4000000/state/v$v.count; echo "v$v: $(cat "$f" 2>/dev/null || echo 0)"; done'
+  ssh deb 'pgrep -fa campaign-runner.sh; uptime'
+  ```
+- **Resume** (same as launch — state files make it a no-op past target,
+  pick up mid-target otherwise; run one version at a time or all four, same
+  form as launch above).
+- **Kill:**
+  ```
+  ssh deb 'pkill -f campaign-runner.sh'
+  ```
+- **Harvest** (once a campaign has run a while; never inside an
+  implementation task, per `docs/CONSOLIDATION.md`'s golden-regen-approval
+  rule for anything beyond a report):
+  ```
+  ssh deb 'cd ~/hbc2js-c3 && node tools/fuzz/diff-signatures.mjs ~/hbc2js-fuzz/campaign3-* \
+       --out /tmp/campaign3-signatures.md'
+  ssh deb 'cat /tmp/campaign3-signatures.md' > docs/reports/<date>-campaign3-signatures.md
+  ```
+- **Morning-after harvest (2026-09-05):** v94/v96/v99 reached their
+  `--target 10000` and exited cleanly; v84 was still running (partial,
+  harvested as-is). ~98.6-98.9% pass rate on all four; 0/64 known
+  signatures fired; the 2 raw NEW signature strings both collapsed into one
+  already-diagnosed fuzzer/VM-limit artifact (`-Infinity` loop bound ->
+  Hermes RangeError vs Node OOM/timeout, confirmed to reproduce with no
+  decompilation involved) — **not a decompiler bug**, no new `docs/BUGS.md`
+  row. Also confirmed the `campaign3-v96-4000000/finds/` directory's 20
+  `v98-*` files are stale smoke-test leftovers (shared finds-dir race,
+  already documented in the campaign-2 rediff report), not campaign 3 v96
+  output. Full detail: `docs/reports/2026-09-05-campaign3-signatures.md`.
+  Re-harvest v84 once it reaches its own target.

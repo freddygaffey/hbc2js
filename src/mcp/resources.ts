@@ -14,8 +14,7 @@
 // `history`, `annotatedCalls` below.
 import type { DatabaseSync } from "node:sqlite";
 import type { LineMapEntry } from "../emit/origin.ts";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary, type ObjectTablesOptions, type TemplateInjectionsOptions } from "../artifact/service.ts";
 import { ProjectService, PROJECT_CAPS, type AnnotationRow } from "../project/service.ts";
 import type { ResolvedFinding } from "../project/findings.ts";
@@ -349,6 +348,20 @@ export class McpResources {
     };
   }
 
+  /** `string-uses` (spec 17 mirror of spec 10 §3.1 `query string-uses`,
+   *  hunt-tooling-backlog gap #2) — instruction-level use SITES for a sid,
+   *  computed on demand (never stored on disk — spec 10 §2.3b keeps
+   *  `string-uses.jsonl` at `(sid, fn, role) -> n`). Rows already carry
+   *  `fnName` from the service; inlined with the containing function's
+   *  `size` too, same convention as `objectTables`/`templateInjections`. */
+  stringUseSites(sid: number, opts: { readonly fn?: number; readonly all?: boolean } = {}) {
+    const r = this.artifact.stringUseSites(sid, opts);
+    return {
+      ...r,
+      rows: r.rows.map((row) => ({ ...row, size: this.neighbor(row.fn).size })),
+    };
+  }
+
   /** `xref/string` — merges the two pre-§14 string endpoints (spec 10
    *  `query string`/`query string-grep`) behind one `mode`: `exact` reads a
    *  single sid (`key` must be a number); `substring`/`regex` grep every
@@ -563,16 +576,14 @@ export class McpResources {
    *  an unchanged bundle writes nothing new (§6 of that module's own
    *  header) — this is the SAME write path the CLI already ships and
    *  tests, called here rather than reinvented, per §14 addition 2 ("the
-   *  cheap lead generators, callable"). Honest `available: false` (not a
-   *  crash) when the project is `.hbcproj`-backed: `SecretsService` reads
-   *  `index/strings.json`/`string-uses.jsonl` off disk directly and does
-   *  not yet know about the DB stratum (docs/BUGS.md — filed alongside this
-   *  change, not silently swallowed). */
+   *  cheap lead generators, callable"). Works against a DB-backed
+   *  (`.hbcproj`) project exactly like a JSONL one now: `SecretsService`
+   *  reads through the already-open `this.artifact` (docs/BUGS.md
+   *  `readStringsIndex`/`readStringUses` row, fixed) — the `available:
+   *  false` branch of the return type is kept for a genuine construction
+   *  failure but is no longer reachable from a missing `index/*.jsonl`. */
   scanSecrets(): (Bounded<SecretFindingRow> & { readonly available: true }) | { readonly available: false; readonly reason: string; readonly rows: readonly SecretFindingRow[]; readonly total: 0; readonly truncated: false } {
-    if (!existsSync(join(this.artifactDir, "index", "strings.json"))) {
-      return { available: false, reason: "scan/secrets: this project is .hbcproj-backed; src/secrets/service.ts reads index/*.jsonl directly and does not yet support DB-backed artifacts (docs/BUGS.md)", rows: [], total: 0, truncated: false };
-    }
-    const svc = new SecretsService({ artifactDir: this.artifactDir });
+    const svc = new SecretsService({ artifactDir: this.artifactDir, artifact: this.artifact });
     svc.scan();
     const rows = svc.list();
     const cap = CAPS_SCAN_SECRETS;
@@ -735,7 +746,16 @@ export class McpResources {
       const callers = this.inlineEdges(this.artifact.whoCalls(calleeFn, { all: true }));
       for (const caller of callers.rows) {
         for (const f of fs) {
-          rows.push({ caller, calleeFn, finding: { rid: f.record.rid, severity: f.record.severity, status: f.record.status } });
+          // `f.status` (the LIVE `ResolvedFinding.status`, from `StatusStore`/
+          // the DB transition chain) — NOT `f.record.status`, which is
+          // always `"open"` on the frozen finding record itself (§1.5;
+          // `src/project/findings.ts` `toFindingRecord`). Using the record's
+          // own field reported a stale status here even though the
+          // `status` FILTER just above (`this.project.findings(query, ...)`)
+          // already uses the live one, so a confirmed/refuted finding's row
+          // was filtered correctly but LABELLED as still open
+          // (docs/BUGS.md 2026-09-05, fixed).
+          rows.push({ caller, calleeFn, finding: { rid: f.record.rid, severity: f.record.severity, status: f.status } });
         }
       }
     }

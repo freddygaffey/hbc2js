@@ -213,6 +213,25 @@ export async function guessModules(inventory: ModuleInventory, matchReport: Matc
   }
 
   const search = opts.search ?? npmRegistrySearch;
+  // Dedupe identical queries across modules: on a real bundle the same
+  // generic token (a minifier-friendly property name like "exports" or
+  // "value", not a real package name) is picked as the fallback query lead
+  // by hundreds of unrelated unattributed modules, each otherwise issuing
+  // its own sequential network round-trip (measured on the Service NSW
+  // bundle, docs/BUGS.md "did not finish in 10 minutes" row: 2068 calls for
+  // only 345 distinct query strings, ~143s of a ~146s wall time — this is
+  // the dominant cost, not the fingerprint/match stages). One in-flight
+  // promise per distinct query, reused by every later module that asks for
+  // the same string.
+  const searchCache = new Map<string, Promise<NpmSearchHit[]>>();
+  const cachedSearch = (query: string): Promise<NpmSearchHit[]> => {
+    let hit = searchCache.get(query);
+    if (hit === undefined) {
+      hit = search(query);
+      searchCache.set(query, hit);
+    }
+    return hit;
+  };
   const guesses: ModuleGuess[] = [];
 
   for (const unmatched of matchReport.unattributedModules) {
@@ -294,7 +313,7 @@ export async function guessModules(inventory: ModuleInventory, matchReport: Matc
       const query = nameLead ?? stringLead ?? null;
       if (query !== null) {
         try {
-          const hits = await search(query);
+          const hits = await cachedSearch(query);
           for (const hit of hits.slice(0, 3)) {
             mergeCandidate(candidates, hit.name, hit.version, { kind: "npm-search", detail: `query="${query}"`, weight: 0.15 });
           }

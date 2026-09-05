@@ -271,6 +271,26 @@ test("annotated-calls[?status] filters to matching findings only", () => {
   assert.equal(refuted.rows.length, 0);
 });
 
+test("annotated-calls reports the finding's LIVE status, not the frozen record's own (docs/BUGS.md 2026-09-05)", () => {
+  // `FindingRecord.status` never mutates (always "open", src/project/findings.ts
+  // toFindingRecord) — the live status lives on `ResolvedFinding.status`
+  // (`f.status`, from `StatusStore`/the DB transition chain). Confirm this
+  // finding, then assert the annotated-calls row reflects "confirmed", not
+  // the still-frozen "open" the record itself carries.
+  const { rid } = res.project.addFinding({
+    target: `fn:${CALLEE_FN}`,
+    claim: "status-liveness regression (annotated-calls)",
+    severity: "low",
+    evidence: [{ ref: `fn:${CALLEE_FN}`, role: "primary" }],
+    prov: { source: "human", who: "resources.test.ts" },
+  });
+  res.project.setFindingStatus(rid, "confirmed", [{ ref: "fuzz:package.json", role: "dynamic" }], { source: "human", who: "resources.test.ts" });
+  const ac = res.annotatedCalls({});
+  const row = ac.rows.find((r) => r.finding.rid === rid);
+  assert.ok(row !== undefined, "expected a row for the just-confirmed finding");
+  assert.equal(row!.finding.status, "confirmed");
+});
+
 test("log/history refuse cleanly against a directory with no project.hbcproj", () => {
   const emptyDir = mkdtempSync(join(tmpdir(), "hbc2js-mcp-resources-nodb-"));
   try {

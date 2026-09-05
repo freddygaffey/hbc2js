@@ -233,9 +233,10 @@ byte-identical.
   record states it is a head, and how to get the rest).
 - **b. `string-uses.jsonl`**: `{"sid":123,"fn":42,"role":"literal","n":2}` —
   role ∈ `literal|property-get|property-put|property-key|global-name|regexp|call-arg-literal`,
-  `n` = site count in that function (site-level detail comes from the `context`
-  query, not from disk — materialising every site explodes size for zero
-  standing benefit). This file is what P2.3 (secrets indexer) scans.
+  `n` = site count in that function (site-level detail comes from the
+  `string-uses`/`context` queries, computed on demand from the loaded module,
+  not from disk — materialising every site explodes size for zero standing
+  benefit). This file is what P2.3 (secrets indexer) scans.
 
 ### 2.4 `globals.jsonl` — global-read-where
 
@@ -446,6 +447,22 @@ built by `src/native/native-deps.ts` from L4's already-labelled
 `reactModules` and merged in `src/deps/index.ts`'s `runDeps` against the
 JS-fingerprint channel's confirmed/guessed/hinted package names.
 
+**Landed (2026-09-05, spec 27 §L8).** `hbc2js deps --out <dir>` also emits
+the native side of the project once `<dir>/native/*.jsonl` exists (whether
+`ingestNative` wrote it there in an earlier step, or a future combined
+CLI path does): `src/native/reconstruct.ts`'s `reconstructNativeProject`
+writes `<dir>/.env` from `native/env.jsonl` (recovered values as plain
+assignments, `unresolved` keys as commented `# TODO:` lines citing their
+evidence — never a fabricated value), merges L7's `nativeChannel` into
+`<dir>/package.json`'s `dependencies` (third-party libs only, `"*"` — no
+version to offer — never overwriting a version the JS-fingerprint channel
+already found), and writes `<dir>/native-todo/<Module>/{<Module>.java,
+RESYNTHESIZE.md}` for every `firstParty:true` react-modules row: a faithful
+Java interface skeleton (real package, class name, method signatures decoded
+from the method key's own JVM proto) whose every method body is a `TODO
+RESYNTHESIZE` that throws — no body is ever fabricated. A directory with no
+`native/` tables at all is a silent no-op.
+
 ## 3. Query surface
 
 **The files ARE the contract** — a tool that wants to stream everything reads
@@ -483,6 +500,7 @@ via:m:3.module.exports`) and carries `confidence`/`exportName`/`module` in
 they always were.
 
 | `query string <sid>` | the value (head if >4 KB unless `--full`) + use rows `fn role n` | ≤ 30 lines |
+| `query string-uses <sid> [--fn N] [--all]` | hunt-tooling-backlog gap #2: the use SITES `string`'s `fn role n` counts fold away — one row per instruction `fn:N fnName pc:P opcode role module:M`, sorted `(fn, pc)`. Computed ON DEMAND from the loaded module (never stored — §2.3b's `n`-only row stands), re-walking each candidate fn's bytecode with the SAME classifier that built `string-uses.jsonl` (`src/artifact/semantic-walk.ts`'s `walkFunction`/`bumpString`), so a site count for `(sid, fn, role)` can never disagree with that file's `n`. Default scans every fn `string-uses.jsonl` lists for the sid; `--fn` narrows to one (scanned even without a row, for a caller vouching for the candidate). Live verb — needs `--hbc` like `object-tables`/`disasm` (same `E_USAGE`/message shape when absent). | ≤ 50 rows (`CAPS.stringUses`) + total, `--all` lifts |
 | `query string-grep <regex>` | matching `sid  head-of-value  useCount` rows | ≤ 50 lines + total |
 | `query global-uses <name>` | `fn access n file:line` rows | ≤ 50 lines + total |
 | `query native [--fn N]` | native-surface rows | ≤ 50 lines + total |

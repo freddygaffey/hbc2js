@@ -3,6 +3,7 @@
 // exactly, which is the required capability (PL-05).
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
 import { argumentsForm } from "./arguments-form/index.ts";
+import { asyncRecovery } from "./async-recovery/index.ts";
 import { literalForms } from "./literal-forms/index.ts";
 import { callShape } from "./call-shape/index.ts";
 import { defaultParams } from "./default-params/index.ts";
@@ -27,6 +28,7 @@ import { tryClean } from "./try-clean/index.ts";
 import { tryShape } from "./try-shape/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
+import { yieldRecovery } from "./yield-recovery/index.ts";
 
 /** Order is explicit data (§2.3). Stage A first; within a stage, dependency
  *  order — `expr-rebuild` is first in stage B (PL-11), enforced below by
@@ -107,6 +109,8 @@ export const REGISTRY: readonly Pass[] = [
   templateLiteral as Pass,
   optionalChain as Pass,
   objectLiteral as Pass,
+  yieldRecovery as Pass,
+  asyncRecovery as Pass,
   // Spec 23 section 2 / 00-LADDER.md batch 4: both are surface rungs on
   // emitter output (no new bytecode fact), registered after `object-literal`
   // and before `jsx-recover` — after every rung that changes an expression's

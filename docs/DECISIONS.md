@@ -332,3 +332,36 @@ what ships until he answers, chosen so that his answer is a one-word change.
    `McpTools`' own scratch dir. The sandbox holds the speculative *source*
    (spec 21 §2.1's actual argument); tearing down the artifact the caller was
    just told to inspect would hand back a dead path.
+
+## D32 — Native-side spec 27 §L9: three deferred capabilities, refused rather than half-built (2026-09-05, Claude Sonnet 5)
+
+Ratifies spec 27 §L9's documented futures as the standing decision, so a
+later hunt does not re-litigate why these three are out rather than
+half-implemented:
+
+1. **iOS Mach-O / `RCT_EXPORT_MODULE` / `RCT_EXPORT_METHOD` is deferred
+   entirely.** iOS native-module registration compiles into a Mach-O binary
+   via ObjC macros, not DEX; recovering method *names* is tractable from the
+   `__DATA` section's ObjC metadata, but recovering *behaviour* is full
+   binary RE, a different project. Android stays the sole donor
+   (`docs/specs/cross-platform-reconstruction-IDEAS.md` "Direction
+   asymmetry") until a spec is written for the iOS half specifically.
+2. **A DEX method-body reader is scoped as its own future spec, not folded
+   into L1.** L1's `src/native/dex.ts` deliberately does not decode method
+   bodies (~230 opcodes) — it resolves `getName()`/`BuildConfig` constants
+   and simple constant flows only via the optional `baksmali` oracle
+   (`docs/TOOLCHAIN.md`). A minimal own-parser body reader closes that gap
+   for the core (no-JVM) path, but only gets written when a real hunt needs
+   a value no oracle can supply — premature otherwise.
+3. **Resynthesis of custom native behaviour is refused, not deferred.**
+   Turning a recovered smali method body into target-platform source
+   (Kotlin -> Swift) is code translation, not ingestion — spec 27 §1's only
+   true entropy gap. L8 ships the interface *skeleton* (signatures +
+   `RESYNTHESIZE.md` evidence) and stops there; hbc2js never emits a
+   fabricated method body, and automated body translation, if it ever
+   happens, is LLM-assisted work outside this tool's truth-preserving
+   contract (spec 27 §4, spec 10 §4).
+
+No code changes; this entry exists so `docs/specs/27-native-side.md` §L9's
+text has a `docs/DECISIONS.md` cross-reference per this repo's own
+convention (every landing's decision gets one).

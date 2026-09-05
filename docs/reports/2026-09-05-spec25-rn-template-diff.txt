@@ -1,0 +1,75 @@
+--- rn-before.js	2026-09-05 17:08:37
++++ rn-after.js	2026-09-05 17:09:40
+@@ -136586,62 +136586,17 @@
+       function v() {
+         // fn#3496 "v"
+         let apply2, r1, apply;
+-        function _fn3497(a1) {
++        function* _fn3497(a1) {
+           // fn#3497 ""
+-          let r0;
+-          function _fn3498(a1) {
+-            // fn#3498 "?anon_0_"
+-            var __this = this;
+-            var __args = arguments;
+-            let r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11;
+-            let __state = 0;
+-            let __done = false;
+-            return function (__sent, __isReturn, __isThrow) {
+-  L0: {
+-    switch (__state) {
+-      case 0:
+-        break L0;
+-        break;
+-      case 1:
+-        r1 = __sent;
+-        r2 = __isReturn;
+-        if (__isThrow) {
+-          throw __sent;
+-        }
+-        if (r2) {
+-          __done = true;
+-          return [r1, __done];
+-        } else {
+-          __done = true;
+-          return [r1, __done];
+-        }
+-        break;
+-      default:
+-        break L0;
+-        break;
+-    }
+-  }
+-  r0 = __sent;
+-  r1 = __isReturn;
+-  if (__isThrow) {
+-    throw __sent;
+-  }
+-  if (r1) {
+-    __done = true;
+-    return [r0, __done];
+-  } else {
+-    r1 = undefined;
+-    r1 = _e804_8;
+-    r3 = r1["default"];
+-    r1 = a1;
+-    r1 = r3.queryCache(r1);
+-    __state = 1;
+-    return [r1, __done];
+-  }
+-};
+-          }
+-          r0 = __hbc_makeGenerator(_fn3498, this, arguments);
+-          return r0;
++          // fn#3498 "?anon_0_"
++          let r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11;
++          r1 = undefined;
++          r1 = _e804_8;
++          r3 = r1["default"];
++          r1 = a1;
++          r1 = r3.queryCache(r1);
++          r1 = yield r1;
++          return r1;
+         }
+         apply = Reflect.apply(_e804_3["default"], undefined, [_fn3497]);
+         _e804_15 = apply;

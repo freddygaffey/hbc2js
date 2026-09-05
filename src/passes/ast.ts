@@ -174,6 +174,12 @@ export function walk(stmts: readonly Stmt[], visit: Visitor): void {
       case "spread": // F17
         walkExpr(e.arg);
         return;
+      case "await": // F25-1
+        walkExpr(e.arg);
+        return;
+      case "yield": // F25-1 (`yield` with no argument has none to walk)
+        if (e.arg !== null) walkExpr(e.arg);
+        return;
       case "seq":
         e.exprs.forEach(walkExpr);
         return;
@@ -400,6 +406,16 @@ export function mapExpr(e: Expr, fx: (e: Expr) => Expr): Expr {
       const params = mapParams(e.params, fx);
       const body = mapStmts(e.body, (s) => s, fx);
       rebuilt = params === e.params && body === e.body ? e : { ...e, params, body };
+      break;
+    }
+    case "await": { // F25-1
+      const arg = mapExpr(e.arg, fx);
+      rebuilt = arg === e.arg ? e : { ...e, arg };
+      break;
+    }
+    case "yield": { // F25-1
+      const arg = e.arg === null ? null : mapExpr(e.arg, fx);
+      rebuilt = arg === e.arg ? e : { ...e, arg };
       break;
     }
     default:
@@ -1226,7 +1242,10 @@ export type Effect =
   | { readonly k: "delete" }
   | { readonly k: "throw" }
   | { readonly k: "return" }
-  | { readonly k: "assign"; readonly name: string };
+  | { readonly k: "assign"; readonly name: string }
+  /** F25-1 (docs/specs/passes/25-yield-async-recovery.md §2): a `yield`/
+   *  `await` suspension. Observable, and never reorderable past anything. */
+  | { readonly k: "suspend"; readonly kind: "yield" | "yield*" | "await" };
 
 /**
  * F18 (docs/specs/passes/18-optional-chain.md §3/§6 item 2): how many
@@ -1313,6 +1332,14 @@ export function effectSequence(stmts: readonly Stmt[]): readonly Effect[] {
         visitExpr(e.obj);
         if (e.computed) visitExpr(e.prop);
         out.push(withDepth({ k: "member-read" }, e));
+        return;
+      case "await": // F25-1: a suspension is observable and never reorderable.
+        visitExpr(e.arg);
+        out.push({ k: "suspend", kind: "await" });
+        return;
+      case "yield": // F25-1
+        if (e.arg !== null) visitExpr(e.arg);
+        out.push({ k: "suspend", kind: e.delegate ? "yield*" : "yield" });
         return;
       case "unary":
         // `delete o.p` does not itself *read* `p` (unlike every other

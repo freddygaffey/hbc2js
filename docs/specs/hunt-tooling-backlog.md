@@ -16,8 +16,13 @@ UI (Stage 3) first, THEN these.
    bug-finding (the unique edge) AND cross-platform reconstruction
    (cross-platform-reconstruction-IDEAS.md). PROVEN VALUE: the CryptoModule finding
    (software RSA key exported to JS + persisted) required BOTH halves.
-2. **`query string-uses <id>` verb.** string-grep returns id+count, not the use SITES;
-   data already exists in index/string-uses.jsonl (14MB). Easy, high-value.
+2. ~~**`query string-uses <id>` verb.**~~ **DONE** (`453f6ad`): `query string-uses <sid>
+   [--fn N] [--all]` (spec 10 §3.1, spec 17 §14.5) returns the instruction-level use
+   SITES on demand — `fn:N fnName pc:P opcode role module:M`, sorted `(fn, pc)` —
+   by re-walking the candidate function(s) with the same classifier that built
+   `string-uses.jsonl` (`src/artifact/semantic-walk.ts`'s `walkFunction`/`bumpString`,
+   given an optional `onSite` hook). Artifact format unchanged; live verb, needs `--hbc`.
+   `tests/gate/artifact/string-uses.test.ts`.
 3. ~~**Scoped single-function readable decompile.**~~ **LANDED 2026-09-04**
    (docs/DECISIONS.md D25): `hbc2js decompile <bundle.hbc> --fn N` +
    `decompileFunction(bytes, N, opts)` (`EmitOptions.onlyFunction` on the same

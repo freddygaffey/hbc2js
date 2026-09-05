@@ -124,18 +124,23 @@ test("package-id/{mod} returns a real identification (or an honest not-found), n
   }
 });
 
-test("scanSecrets returns capped, real (possibly empty) findings, or an honest DB-backed not-supported reason", () => {
+// docs/BUGS.md "src/secrets/service.ts (readStringsIndex/readStringUses)"
+// row: `res` (built above from an `.hbcproj`-only project, no
+// `index/*.jsonl` on disk) used to make `scanSecrets` return
+// `available: false` because `SecretsService` read `index/strings.json`
+// directly off disk; it now reads through the already-open `res.artifact`
+// (DB-backed or JSONL, same code path) and must succeed here.
+test("scanSecrets succeeds against a DB-backed (.hbcproj-only) project, not just JSONL", () => {
   const result = res.scanSecrets();
   assert.ok(Array.isArray(result.rows));
   assert.ok(result.rows.length <= RESOURCE_CAPS.scanSecrets);
   assert.equal(typeof result.total, "number");
+  assert.equal(result.available, true, "scanSecrets must be available against a DB-backed project (docs/BUGS.md)");
   if (result.available) {
     for (const row of result.rows) {
       assert.equal(typeof row.target, "string");
       assert.ok(Array.isArray(row.evidence));
     }
-  } else {
-    assert.ok(result.reason.length > 0);
   }
 });
 

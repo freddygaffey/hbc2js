@@ -2,7 +2,7 @@
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { parseHbc } from "./parse/module.ts";
@@ -42,6 +42,8 @@ import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
+import { reconstructNativeProject } from "./native/reconstruct.ts";
+import { ingestNative, openApk } from "./native/ingest.ts";
 import { ProjectService } from "./project/service.ts";
 import type { AnnotationRow } from "./project/service.ts";
 import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
@@ -1188,6 +1190,35 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
         }
         writeFileSync(pkgJsonPath, JSON.stringify({ ...existing, dependencies: deps }, null, 2) + "\n");
       }
+      // spec 27 §L9 (closing the L8 gap): when the input is an `.apk`,
+      // ingest its native side into `<out>/native/*.jsonl` first — the same
+      // `ingestNative`/`buildNativeTables` API `check-native` verifies, not
+      // a re-derivation — so a single `deps <app.apk> --out <dir>` run
+      // yields both the JS-side `package.json` above and the native tables
+      // the L8 reconstruction hook below reads. Never fails the run: a
+      // native-ingestion problem is reported to stderr, exactly like the
+      // `nativeChannelForApk` swallow-on-failure convention in
+      // `src/deps/index.ts` ("native is optional-by-construction", §1.4).
+      // Non-APK input is unchanged: no `native/` directory is written.
+      // Re-running is idempotent: `ingestNative` rewrites the same tables
+      // from the same bytes each time (spec 27 §4.1 "pure function of
+      // input bytes").
+      if (extname(args.input).toLowerCase() === ".apk") {
+        try {
+          ingestNative(openApk(args.input), args.out);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          process.stderr.write(`hbc2js deps --out: native ingestion skipped — ${message}\n`);
+        }
+      }
+      // spec 27 §L8: the native-side reconstruction hook — a silent no-op
+      // when `args.out` holds no `native/*.jsonl` tables (never fails the
+      // JS-side `deps --out` run over it), a one-line note to stderr when it
+      // does run (mirrors `--confirm`'s onProgress convention above).
+      const nativeSummary = reconstructNativeProject(args.out);
+      if (nativeSummary.ran) {
+        process.stderr.write(`hbc2js deps --out: native reconstruction — ${nativeSummary.note}\n`);
+      }
     }
     if (args.json) {
       process.stdout.write(JSON.stringify(result.report, null, 2) + "\n");
@@ -1595,6 +1626,20 @@ function runQuery(argv: readonly string[]): void {
         const tl = truncationLine(uses.total, uses.rows.length, "--all");
         if (tl !== null) process.stdout.write(`${tl}\n`);
       }
+    } else if (verb === "string-uses") {
+      // Hunt-tooling-backlog gap #2: the use SITES, not just `string`'s
+      // `fn role n` counts. Live verb — needs `--hbc` (svc throws E_USAGE
+      // otherwise, same shape as `object-tables`/`disasm`).
+      const sid = Number(positional[0]);
+      const fnFlag = flagValue(argv, "--fn");
+      const result = svc.stringUseSites(sid, { ...(fnFlag !== undefined ? { fn: Number(fnFlag) } : {}), all });
+      if (json) process.stdout.write(JSON.stringify(result) + "\n");
+      else {
+        for (const r of result.rows) process.stdout.write(`fn:${r.fn} ${r.fnName ?? "-"} pc:${r.pc} ${r.opcode} ${r.role} module:${r.moduleId ?? "-"}\n`);
+        const tl = truncationLine(result.total, result.rows.length, "--all");
+        if (tl !== null) process.stdout.write(`${tl}\n`);
+        process.stdout.write(`total:${result.total}\n`);
+      }
     } else if (verb === "string-grep") {
       const result = svc.stringGrep(positional[0] as string, { all });
       if (json) process.stdout.write(JSON.stringify(result) + "\n");
@@ -1697,7 +1742,7 @@ function runQuery(argv: readonly string[]): void {
       const range = linesArg !== undefined ? (linesArg.split("-").map(Number) as [number, number]) : undefined;
       process.stdout.write(svc.source(fn, range) + "\n");
     } else {
-      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-grep|global-uses|native|object-tables|template-injections|module|source> …", 2, json);
+      fail(ErrorCode.E_USAGE, "query <fn|who-calls|who-calls-by-name|calls-from|string|string-uses|string-grep|global-uses|native|object-tables|template-injections|module|source> …", 2, json);
     }
     process.exit(0);
   } catch (e) {
@@ -1941,7 +1986,22 @@ function runSecrets(argv: readonly string[]): void {
 
   let svc: SecretsService;
   try {
-    svc = new SecretsService({ artifactDir });
+    // Open the same ArtifactService every other artifact-reading CLI verb
+    // opens (e.g. `runProject` above) so a DB-backed (.hbcproj-only, spec 16
+    // §2.4) artifact works here too — `SecretsService`'s legacy direct-disk
+    // path (no `artifact` passed) only understands `index/strings.json` +
+    // `index/string-uses.jsonl` on disk and throws ENOENT against a
+    // DB-backed project (docs/BUGS.md `SecretsService` row). Fall back to
+    // the legacy path only for the narrow index-only fixtures that have
+    // neither a `manifest.json` nor a `.hbcproj` — `ArtifactService` cannot
+    // open those at all (module header, src/secrets/service.ts).
+    let artifact: ArtifactService | undefined;
+    try {
+      artifact = new ArtifactService(artifactDir);
+    } catch {
+      artifact = undefined;
+    }
+    svc = new SecretsService(artifact !== undefined ? { artifactDir, artifact } : { artifactDir });
   } catch (e) {
     const err = e instanceof Hbc2jsError ? e : new Hbc2jsError(ErrorCode.E_INTERNAL, e instanceof Error ? e.message : String(e));
     if (json) process.stdout.write(JSON.stringify(err.toJSON()) + "\n");

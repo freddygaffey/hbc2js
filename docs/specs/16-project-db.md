@@ -233,6 +233,24 @@ timeline (§4.3); and `<hbc>.names.json` remains available as an EXPORT
 (§3.3), so any external consumer of that format keeps working. §10 Q1 asks the
 reviewer to confirm this reversal.
 
+**Finding status transitions on the DB path (2026-09-05).** `kind='status'`
+is in the `revisions` CHECK list above, but no `d_status` detail table ships
+in this DDL, so a transition has nowhere to store its `from`/`to`/`finding`
+triple. `ProjectService.setFindingStatus` therefore WRITES a transition as a
+fresh `kind='finding'` revision on the finding's own slot (same `finding_no`,
+same claim, same severity, the new `status`, the transition's evidence refs
+appended after the claim's), and `src/projdb/project-read.ts`'s
+`splitFindingRevisions` READS that folding back apart: such a revision is
+handed to `FindingStore` as a synthetic `StatusRecord` whose `finding` is the
+claim revision it supersedes, and that claim revision stays the live
+(`active`) `FindingRecord`. The pair is exactly what spec 11 §1.5 mandates
+(an immutable claim row plus an append-only transition chain), so a DB-backed
+project and a JSONL-backed one answer `findings`/`finding show`/`stat`
+identically, with a finding `rid` that is stable across a transition. A real
+`d_status` table would make the write side symmetrical too; until then the
+read-side split is the normative reconstruction (docs/BUGS.md 2026-09-05
+row).
+
 ### 2.4 Derived index stratum — spec 10 §2, one table per JSONL kind
 
 Same fields, same semantics, same sort keys (now `PRIMARY KEY`s). All columns
@@ -264,6 +282,20 @@ CREATE TABLE ix_module_deps (id INTEGER NOT NULL, ord INTEGER NOT NULL,
 CREATE TABLE ix_ranges (fn INTEGER PRIMARY KEY, file TEXT NOT NULL,
   line_start INTEGER NOT NULL, line_end INTEGER NOT NULL);
   -- render-coupled: valid only while meta.render_hash matches the live render (§5.2)
+```
+
+**MIGRATION 5 (docs/BUGS.md 2026-09-05 `ix_calls_resolved` row) adds
+`ix_calls_resolved`** — `index/calls-resolved.jsonl`'s own kind (§2.2a, the
+`require(N)` points-to pass), a separate table for the same reason it is a
+separate JSONL file: it reconstructs a `calls.jsonl` `callee:'?'`
+`why:'computed-callee'` edge, never rewrites it.
+
+```sql
+CREATE TABLE IF NOT EXISTS ix_calls_resolved (
+  caller INTEGER NOT NULL, site INTEGER NOT NULL, callee INTEGER NOT NULL,
+  module INTEGER NOT NULL, name TEXT NOT NULL, confidence TEXT NOT NULL,
+  PRIMARY KEY (caller, site));
+CREATE INDEX IF NOT EXISTS ix_calls_resolved_callee ON ix_calls_resolved(callee);
 ```
 
 (`fnOwnership` is `ix_functions.module`; spec 10 §2.6 already derives one from

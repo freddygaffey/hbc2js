@@ -31,10 +31,11 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FindingStore } from "../project/findings.ts";
-import { ArtifactEvidenceResolver, type ArtifactExistenceCheck } from "../project/evidence-resolver.ts";
+import { ArtifactEvidenceResolver } from "../project/evidence-resolver.ts";
 import { RECORD_FILE_NAMES } from "../project/schema.ts";
 import type { EvidenceRef, FindingRecord, FindingsFileRecord, Severity, StatusRecord } from "../project/schema.ts";
 import { loadRecordFile, saveRecordFile } from "../project/io.ts";
+import { ArtifactService } from "../artifact/service.ts";
 import type { StringRow, StringUseRow } from "../artifact/schema.ts";
 import { classify, type Hit } from "./classify.ts";
 import { PATTERN_SET_VERSION } from "./patterns.ts";
@@ -91,6 +92,13 @@ function sha256Hex(s: string): string {
   return createHash("sha256").update(s, "utf8").digest("hex");
 }
 
+/** Legacy direct-read path: an INDEX-only directory (just `index/
+ *  strings.json`/`string-uses.jsonl`, no `manifest.json` and no other
+ *  artifact files) that some narrow fixtures (`tests/secrets/support/
+ *  materialize.ts`) still use on purpose — never a real spec-10 artifact,
+ *  so it cannot go through `ArtifactService` (which requires a manifest or
+ *  a `.hbcproj`). Used only when the constructor is not given an
+ *  already-open `ArtifactService`. */
 function readStringsIndex(artifactDir: string): readonly StringRow[] {
   const raw = JSON.parse(readFileSync(join(artifactDir, "index", "strings.json"), "utf8")) as { entries: StringRow[] };
   return raw.entries;
@@ -115,22 +123,47 @@ function findingContentKey(claim: string, severity: Severity, evidence: readonly
 
 export class SecretsService {
   private readonly artifactDir: string;
+  private readonly artifact: ArtifactService | undefined;
   private readonly rows: readonly StringRow[];
   private readonly usesBySid: Map<number, StringUseRow[]>;
   private readonly bundleHash8: string;
   private store: FindingStore;
   private nextRun = 0;
 
-  constructor(opts: { readonly artifactDir: string }) {
+  /** `artifact`, if the caller already has one open, is reused for the
+   *  string table/xref/evidence-resolution — the SAME read path
+   *  `ArtifactService` already gives every other resource for a `.hbcproj`
+   *  (DB-backed) OR a JSONL project (docs/BUGS.md
+   *  `readStringsIndex`/`readStringUses` row: this class used to read
+   *  `index/strings.json`/`string-uses.jsonl` off disk directly, which
+   *  threw `ENOENT` against a `.hbcproj`-only project with no
+   *  `index/*.jsonl` on disk). When `artifact` is omitted, the legacy
+   *  direct-read path below is used instead (kept for callers — the CLI,
+   *  and narrow fixtures like `tests/secrets/support/materialize.ts` — that
+   *  point `artifactDir` at a bare index directory with no `manifest.json`,
+   *  which `ArtifactService` cannot open at all). */
+  constructor(opts: { readonly artifactDir: string; readonly artifact?: ArtifactService }) {
     this.artifactDir = opts.artifactDir;
-    this.rows = readStringsIndex(this.artifactDir);
-    this.usesBySid = new Map();
-    for (const u of readStringUses(this.artifactDir)) {
-      const list = this.usesBySid.get(u.sid) ?? [];
-      list.push(u);
-      this.usesBySid.set(u.sid, list);
+    this.artifact = opts.artifact;
+    if (this.artifact !== undefined) {
+      this.rows = this.artifact.allStrings();
+      this.usesBySid = new Map();
+      for (const u of this.artifact.allStringUses()) {
+        const list = this.usesBySid.get(u.sid) ?? [];
+        list.push(u);
+        this.usesBySid.set(u.sid, list);
+      }
+      this.bundleHash8 = this.artifact.manifest.bundle.sha256.slice(0, 8);
+    } else {
+      this.rows = readStringsIndex(this.artifactDir);
+      this.usesBySid = new Map();
+      for (const u of readStringUses(this.artifactDir)) {
+        const list = this.usesBySid.get(u.sid) ?? [];
+        list.push(u);
+        this.usesBySid.set(u.sid, list);
+      }
+      this.bundleHash8 = sha256Hex(readFileSync(join(this.artifactDir, "index", "strings.json"), "utf8")).slice(0, 8);
     }
-    this.bundleHash8 = sha256Hex(readFileSync(join(this.artifactDir, "index", "strings.json"), "utf8")).slice(0, 8);
     this.store = this.loadStore();
   }
 
@@ -155,11 +188,11 @@ export class SecretsService {
   }
 
   private resolver(): ArtifactEvidenceResolver {
+    if (this.artifact !== undefined) return new ArtifactEvidenceResolver(this.artifact);
     const sids = new Set(this.rows.map((r) => r.sid));
     const fns = new Set<number>();
     for (const list of this.usesBySid.values()) for (const u of list) fns.add(u.fn);
-    const check: ArtifactExistenceCheck = { hasFn: (fn) => fns.has(fn), hasString: (sid) => sids.has(sid), hasModule: () => false };
-    return new ArtifactEvidenceResolver(check);
+    return new ArtifactEvidenceResolver({ hasFn: (fn) => fns.has(fn), hasString: (sid) => sids.has(sid), hasModule: () => false });
   }
 
   private loadScanState(): ScanStateFile {

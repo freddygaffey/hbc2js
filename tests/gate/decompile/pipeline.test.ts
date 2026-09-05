@@ -76,7 +76,11 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
       // for a site a rung's `check` refuses, not an error — expr-rebuild's
       // conservative deadness proof legitimately abandons many sites across
       // this corpus (see docs/AGENT-LOG.md's expr-rebuild entry).
-      const unexpected = r.diagnostics.filter((d) => d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED");
+      // W_PASS_VERSION_SKIP (F7) is the same kind of designed outcome: a rung
+      // whose `versions` predicate excludes this module's bytecode version is
+      // reported once per function rather than silently dropped. `yield-recovery`
+      // (spec 25, v<=96 only) is the first registered rung that fires it.
+      const unexpected = r.diagnostics.filter((d) => d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED" && d.code !== "W_PASS_VERSION_SKIP");
       if (unexpected.length > 0) failures.push(`${b.fixture} v${b.version}${b.variant}: ${unexpected.map((d) => d.code).join(", ")}`);
     } catch (e) {
       failures.push(`${b.fixture} v${b.version}${b.variant}: ${e instanceof Error ? e.message : String(e)}`);
@@ -94,10 +98,10 @@ test("the pass registry lists the M5 passes in dependency order", () => {
   // selection below unless `optIn` names it. `reg-split` is default-on
   // (P-11b resolved by the D23 reorder), so it appears in every selection
   // below.
-  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "arguments-form", "literal-forms", "try-clean", "jsx-recover", "fn-naming", "reg-split", "var-naming"]);
+  assert.deepEqual(REGISTRY.map((p) => p.name), ["loop-cond", "for-header", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "yield-recovery", "async-recovery", "arguments-form", "literal-forms", "try-clean", "jsx-recover", "fn-naming", "reg-split", "var-naming"]);
   assert.deepEqual(enabledPasses({ stage: "A" }).map((p) => p.name), ["loop-cond", "for-header", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean"]);
-  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"]);
-  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"]);
+  assert.deepEqual(enabledPasses({ skip: ["loop-cond"] }).map((p) => p.name), ["for-header", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "yield-recovery", "async-recovery", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"]);
+  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "yield-recovery", "async-recovery", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"]);
 });
 
 test("decompileTree covers every function of a module", () => {
