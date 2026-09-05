@@ -1,16 +1,18 @@
 // ui/src/panes/RightPane.tsx — ONE panel visible at a time (spec 22 §2):
 // Context / Xrefs / Findings / Package.
 import * as Tabs from "@radix-ui/react-tabs";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Empty, PaneHeader, ToolButton } from "../components/primitives.tsx";
 import { ResultTable, type ColumnDef } from "../components/ResultTable.tsx";
 import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls, useWhoCallsByName } from "../hooks.ts";
 import { useSegregation } from "../listing/use-segregation.ts";
-import type { ByNameCaller, Severity, XrefEdge } from "../contracts.ts";
+import type { ByNameCaller, FindingStatus, ResolvedFinding, Severity, XrefEdge } from "../contracts.ts";
 import { displayName } from "../actions/names.ts";
 import { openDialog, setRightPanel, useActionsState, type RightPanel } from "../actions/store.ts";
 import { keymap } from "../actions/registry.ts";
 import { select, useSelection } from "../state/selection.ts";
+import { ToolError, setFindingStatus } from "../actions/writes.ts";
 import { WorkersPane } from "./WorkersPane.tsx";
 import { StringsPane } from "./StringsPane.tsx";
 import { TablesPane } from "./TablesPane.tsx";
@@ -55,6 +57,99 @@ function ByNameRow({ row }: { readonly row: ByNameCaller }): ReactNode {
       <span className="truncate">{row.callerName ?? `fn:${row.fn}`}</span>
       <span className="ml-auto shrink-0 text-text-muted">{row.file}:{row.line}</span>
     </button>
+  );
+}
+
+/** Spec 26 L6: the status transitions a finding may move to next.
+ *  `checkStatusTransition` (src/project/findings.ts) is the real gate — this
+ *  is only the menu of what's worth OFFERING; a rejected pick still shows
+ *  the backend's own message verbatim, never a client-side guess at why. */
+const NEXT_STATUS: Readonly<Record<FindingStatus, readonly FindingStatus[]>> = {
+  open: ["confirmed", "refuted"],
+  confirmed: ["refuted"],
+  refuted: ["open"],
+};
+
+/** Spec 26 L6: one finding row — evidence state (resolved/unresolved, with
+ *  the ref), and, once the evidence resolves, the status-transition control.
+ *  `set_finding_status`'s own truth rule 3 (`src/mcp/tools.ts`) still gates
+ *  `open -> confirmed`, so a rejected transition here is expected, not a
+ *  bug — its message is shown exactly as the server sent it. */
+function FindingRow({ f }: { readonly f: ResolvedFinding }): ReactNode {
+  const qc = useQueryClient();
+  const next = NEXT_STATUS[f.status];
+  const [to, setTo] = useState<FindingStatus>(next[0] ?? f.status);
+  const [evidenceRef, setEvidenceRef] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const apply = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const evidence = evidenceRef.trim() === "" ? [] : [{ ref: evidenceRef.trim(), role: "site" }];
+      const res = await setFindingStatus(f.record.rid, to, evidence);
+      await qc.invalidateQueries({ queryKey: ["findings"] });
+      setEvidenceRef("");
+      setError(null);
+      void res;
+    } catch (err) {
+      setError(err instanceof ToolError ? err.reason : err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="border-b border-border px-3 py-2 text-xs"
+      title={f.valid ? "evidence resolves" : "candidate — evidence does not resolve yet"}
+    >
+      <div className="flex items-center gap-2">
+        <span className={SEVERITY_CLASS[f.record.severity]}>{f.record.severity}</span>
+        <span className="text-text-muted">{f.status}</span>
+        {!f.valid && <span className="text-text-muted">candidate</span>}
+        <span className="ml-auto font-mono text-text-muted">{f.record.target}</span>
+      </div>
+      <div className="pt-1 text-text">{f.record.claim}</div>
+      {/* Spec 26 L6: evidence state per finding, resolved/unresolved, with
+          the ref — `text-text` for a resolved ref, `text-text-muted` (the
+          same "candidate/heuristic" weight as everywhere else in this
+          pane) for one that does not. */}
+      <div className="flex flex-wrap gap-2 pt-1 font-mono">
+        {f.refs.map((r, i) => (
+          <span key={`${r.ref.ref}-${i}`} className={r.resolved ? "text-text" : "text-text-muted"} title={r.resolved ? "resolves" : "does not resolve"}>
+            {r.ref.ref}
+          </span>
+        ))}
+      </div>
+      {next.length > 0 && (
+        <div className="flex items-center gap-1 pt-2">
+          <select
+            className="rounded-ui border border-border bg-surface-2 px-1 py-0.5 text-xs text-text"
+            value={to}
+            onChange={(e) => setTo(e.target.value as FindingStatus)}
+            aria-label={`set status for ${f.record.rid}`}
+          >
+            {next.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input
+            className="flex-1 rounded-ui border border-border bg-surface-2 px-1 py-0.5 font-mono text-xs text-text"
+            placeholder="evidence ref (fn:/reg:/sid:/mod:, needed to confirm)"
+            value={evidenceRef}
+            onChange={(e) => setEvidenceRef(e.target.value)}
+            spellCheck={false}
+          />
+          <ToolButton onClick={() => void apply()} disabled={busy} active>
+            {busy ? "applying..." : "Apply"}
+          </ToolButton>
+        </div>
+      )}
+      {/* The backend's own rejection text, verbatim (spec 19 §1.4) —
+          e.g. `set_finding_status`'s evidence-gate message on a refused
+          `open -> confirmed`. */}
+      {error !== null && <div className="pt-1 text-sev-crit">{error}</div>}
+    </div>
   );
 }
 
@@ -250,25 +345,8 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
             Add finding
           </ToolButton>
         </div>
-        <div className="h-64 min-h-0 shrink-0">
-          <ResultTable
-            data={findings.data?.rows ?? []}
-            getRowId={(f) => f.record.rid}
-            rowClassName={() => ""}
-            emptyMessage="No findings recorded."
-            columns={[
-              {
-                id: "severity",
-                header: "severity",
-                accessorFn: (f) => f.record.severity,
-                cell: (info) => <span className={SEVERITY_CLASS[info.getValue() as Severity]}>{info.getValue() as string}</span>,
-              },
-              { id: "status", header: "status", accessorFn: (f) => (f.valid ? f.status : `${f.status} (candidate)`), cell: (info) => <span className="text-text-muted">{info.getValue() as string}</span> },
-              { id: "target", header: "target", accessorFn: (f) => f.record.target, cell: (info) => <span className="font-mono text-text-muted">{info.getValue() as string}</span> },
-              { id: "claim", header: "claim", accessorFn: (f) => f.record.claim, cell: (info) => <span className="text-text">{info.getValue() as string}</span> },
-            ]}
-          />
-        </div>
+        {(findings.data?.rows ?? []).length === 0 && <Empty>No findings recorded.</Empty>}
+        {(findings.data?.rows ?? []).map((f) => <FindingRow key={f.record.rid} f={f} />)}
       </Tabs.Content>
 
       <Tabs.Content value="package" className={bodyClass}>

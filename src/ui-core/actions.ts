@@ -8,7 +8,7 @@
 // Pure TypeScript, no DOM, no React, no dependencies — importable from
 // Node tests and from the browser shell alike.
 
-export type SelectionKind = "fn" | "identifier" | "string" | "module" | "finding" | "none";
+export type SelectionKind = "fn" | "identifier" | "string" | "module" | "finding" | "lead" | "none";
 
 export interface Selection {
   kind: SelectionKind;
@@ -22,6 +22,19 @@ export interface Selection {
   moduleId?: string;
   /** Finding/review-row id, when kind is "finding". */
   rid?: number;
+  /** Spec 26 L6: whether the finding's evidence resolves (`ResolvedFinding.
+   *  valid`) — `finding.setStatus` is gated on this, exactly like
+   *  `record_finding`'s own truth rule 1 (a candidate that never resolves
+   *  stays refused server-side; the UI does not let a status change even
+   *  start against one). Present only when kind is "finding". */
+  evidenceResolved?: boolean;
+  /** Spec 26 L6: the sink class/evidence/detail of a lead row (`SinkLead`,
+   *  `src/mcp/leads.ts`), present only when kind is "lead" — `finding.
+   *  fromLead` prefills the "Add finding" form from these three fields
+   *  rather than starting blank. */
+  leadClass?: string;
+  leadEvidence?: string;
+  leadDetail?: string;
 }
 
 export type FocusPane = "editor" | "tree" | "search" | "palette" | "graph" | "findings";
@@ -93,6 +106,17 @@ export interface ActionApi {
   /** Bur 6 (docs/UI-BURS.md #6): flips the active theme preset to its
    *  dark/light partner (docs/UI.md "Theme"). */
   toggleTheme(): void | Promise<void>;
+  /** Spec 26 L6: promote a lead (`target.kind === "lead"`) to a candidate
+   *  finding — opens the same "Add finding" form `recordFinding` does,
+   *  prefilled from the lead's class/evidence/detail rather than blank. */
+  promoteLead(target: Selection): void | Promise<void>;
+  /** Spec 26 L6: open the status-transition control for a finding
+   *  (`target.kind === "finding"`) — `set_finding_status`, with the
+   *  backend's own rejection surfaced verbatim on a bad transition. */
+  setFindingStatus(target: Selection): void | Promise<void>;
+  /** Spec 26 L6: `GET /api/history/{target}` for the current selection's
+   *  target (a function or a module) — the full revision timeline. */
+  showHistory(target: Selection): void | Promise<void>;
 }
 
 export interface ActionContext {
@@ -241,6 +265,30 @@ export function standardActions(): Action[] {
       group: "annotate",
       when: (ctx) => ctx.selection.kind !== "none",
       run: (ctx) => ctx.api.recordFinding(ctx.selection),
+    },
+    // Spec 26 L6: lead promotion, the status-transition control, and the
+    // per-target history view — three thin actions over verbs the backend
+    // already tests (spec 19 §1.4: "no analysis logic" in the UI).
+    {
+      id: "finding.fromLead",
+      title: "Promote to finding",
+      group: "annotate",
+      when: (ctx) => ctx.selection.kind === "lead",
+      run: (ctx) => ctx.api.promoteLead(ctx.selection),
+    },
+    {
+      id: "finding.setStatus",
+      title: "Set status",
+      group: "annotate",
+      when: (ctx) => ctx.selection.kind === "finding" && ctx.selection.evidenceResolved === true,
+      run: (ctx) => ctx.api.setFindingStatus(ctx.selection),
+    },
+    {
+      id: "view.history",
+      title: "History",
+      group: "view",
+      when: hasListingTarget,
+      run: (ctx) => ctx.api.showHistory(ctx.selection),
     },
     {
       id: "review.markReviewed",

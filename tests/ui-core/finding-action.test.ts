@@ -59,6 +59,38 @@ test("annotate.finding reaches menu and palette, with its chord shown", () => {
   }
 });
 
+// -- spec 26 L6: lead promotion / status transition gating -----------------
+
+test("finding.fromLead is enabled only on a lead target", () => {
+  const registry = createStandardRegistry();
+  const { api } = apiSpy();
+  const enabled = (s: Selection): boolean => registry.enabledFor(ctxFor(s, api)).some((a) => a.id === "finding.fromLead");
+  assert.equal(enabled({ kind: "none" }), false);
+  assert.equal(enabled({ kind: "fn", fn: 1 }), false);
+  assert.equal(enabled({ kind: "finding", rid: 1 }), false);
+  assert.equal(enabled({ kind: "lead", leadClass: "verify", leadEvidence: "fn:7", leadDetail: "calls crypto.verify" }), true);
+});
+
+test("finding.fromLead prefills the form from the lead (recordFinding target carries the lead)", () => {
+  const registry = createStandardRegistry();
+  const calls: Selection[] = [];
+  const api = new Proxy({ promoteLead: (target: Selection): void => void calls.push(target) } as Record<string, unknown>, {
+    get: (t, k) => (k in t ? t[k as string] : (): void => {}),
+  }) as unknown as ActionApi;
+  const lead: Selection = { kind: "lead", fn: 7, leadClass: "verify", leadEvidence: "fn:7", leadDetail: "calls crypto.verify" };
+  registry.run("finding.fromLead", ctxFor(lead, api));
+  assert.deepEqual(calls, [lead]);
+});
+
+test("finding.setStatus is disabled on a finding whose evidence has not resolved", () => {
+  const registry = createStandardRegistry();
+  const { api } = apiSpy();
+  const enabled = (s: Selection): boolean => registry.enabledFor(ctxFor(s, api)).some((a) => a.id === "finding.setStatus");
+  assert.equal(enabled({ kind: "finding", rid: 1, evidenceResolved: false }), false);
+  assert.equal(enabled({ kind: "finding", rid: 1 }), false);
+  assert.equal(enabled({ kind: "finding", rid: 1, evidenceResolved: true }), true);
+});
+
 test("resolveKeymapConfig accepts a preloaded preset table (browser shell path)", () => {
   const registry = createStandardRegistry();
   const presets = { default: loadPreset("default"), vim: loadPreset("vim"), ghidra: loadPreset("ghidra") };

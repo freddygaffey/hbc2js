@@ -4,7 +4,7 @@
 // artifact, and no component may special-case it.
 import type { Api } from "./api.ts";
 import type {
-  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogTail,
+  Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogTail,
   LocalsListing, ModuleInfo, PackageIdResult, ResolvedFinding, SearchPage, SourceMatch,
   SourceText, WhoCalls, XrefEdge, LineMap, LineMapEntry, StringExact, StringGrep, GlobalUses,
   WhoCallsByName, ObjectTable, ObjectTables,
@@ -280,6 +280,15 @@ export const mockApi: Api = {
     groups: [
       { class: "verify", leads: [{ fn: 7, name: "verifySignature", class: "verify", evidence: "fn:7", detail: "calls crypto.verify" }], total: 1, truncated: false },
       { class: "keychain", leads: [{ fn: 5, name: "storeToken", class: "keychain", evidence: "fn:5", detail: "RNKeychainManager" }], total: 1, truncated: false },
+    ],
+    total: 2, truncated: false,
+  }),
+  // Spec 26 L6: two revisions, newest first (as the server sends it) —
+  // `HistoryPane` reverses this before rendering.
+  history: (_target): Promise<Bounded<HistoryEntry>> => delay({
+    rows: [
+      { rid: 2, kind: "finding", ts: "2026-09-05T09:00:00Z", supersedes: null, reactivates: null, cleared: false, who: "ui" },
+      { rid: 1, kind: "name", ts: "2026-09-05T08:00:00Z", supersedes: null, reactivates: null, cleared: false, who: "ui" },
     ],
     total: 2, truncated: false,
   }),

@@ -43,6 +43,9 @@ function stubApi(): ActionApi {
     openSettings: noop,
     openCommandMode: noop,
     toggleTheme: noop,
+    promoteLead: noop,
+    setFindingStatus: noop,
+    showHistory: noop,
   };
 }
 

@@ -9,7 +9,7 @@
 // `ToolError.reason` is that string VERBATIM — never reworded, because the
 // server's refusal is the only thing that tells the user what to fix.
 import { API_BASE, USING_MOCK, authHeaders } from "../api.ts";
-import type { EvidenceRef, Provenance, Severity, Tag } from "../contracts.ts";
+import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "../contracts.ts";
 
 /** `McpTools.ToolResult`: the record id plus a one-line confirmation. */
 export interface ToolResult {
@@ -120,3 +120,10 @@ export const recompileEdit = (fn: number, source: string, sandboxKind?: "copy" |
     prov: UI_PROV,
     ...(sandboxKind !== undefined ? { sandbox: { kind: sandboxKind } } : {}),
   });
+
+/** Spec 26 L6: `POST /api/tools/set-finding-status`. A rejected transition
+ *  (evidence gate, spec 19 §1.4) throws `ToolError` whose `.reason` is the
+ *  backend's own message verbatim — callers must show it as-is, never
+ *  reworded. */
+export const setFindingStatus = (findingRid: string, to: FindingStatus, evidence: readonly EvidenceRef[]): Promise<ToolResult> =>
+  post("set-finding-status", { findingRid, to, evidence, prov: UI_PROV });

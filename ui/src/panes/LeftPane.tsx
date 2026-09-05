@@ -28,7 +28,8 @@ import { useSegregation } from "../listing/use-segregation.ts";
 import { useScreens } from "../listing/use-screens.ts";
 import { orderScreenGroups, screenDepths, screenEdges, screensByMod, screensTree } from "../listing/screens.ts";
 import { useQueryText } from "../listing/search-store.ts";
-import { select, useSelection } from "../state/selection.ts";
+import { select, useSelection, type Selection } from "../state/selection.ts";
+import { runAction } from "../actions/registry.ts";
 import type { ModuleEntry } from "../listing/wire.ts";
 
 const MENU_ITEMS: readonly string[] = ["Rename", "Add comment", "Go to definition", "Find xrefs", "Mark reviewed", "Copy disasm offset"];
@@ -526,7 +527,6 @@ export function LeftPane(): ReactNode {
           <ResultTable
             data={leads.data.groups.flatMap((g) => g.leads.map((l) => ({ cls: g.class, ...l })))}
             getRowId={(l) => l.evidence}
-            rowElement="button"
             rowProps={(l) => (l.fn !== null ? { "data-fn": l.fn } : {})}
             rowClassName={(l) => (l.fn !== null && l.fn === sel.fn ? "border-l-2 border-l-accent bg-surface-2" : "")}
             onRowClick={(l) => {
@@ -537,6 +537,37 @@ export function LeftPane(): ReactNode {
               { id: "class", header: "class", accessorFn: (l) => l.cls, cell: (info) => <span className="uppercase text-text-muted">{info.getValue() as string}</span> },
               { id: "name", header: "name", accessorFn: (l) => l.name ?? l.evidence, cell: (info) => <span className="font-mono">{info.getValue() as string}</span> },
               { id: "detail", header: "detail", accessorFn: (l) => l.detail, cell: (info) => <span className="text-text-muted">{info.getValue() as string}</span> },
+              {
+                id: "promote",
+                header: "",
+                enableSorting: false,
+                accessorFn: () => "",
+                cell: (info) => {
+                  const l = info.row.original;
+                  // Spec 26 L6: a "lead" selection, distinct from the "fn"
+                  // selection a row click makes — `finding.fromLead`
+                  // (src/ui-core/actions.ts) is gated on `kind === "lead"`,
+                  // so the Promote button passes this directly to `runAction`
+                  // rather than routing through the click-driven `select()`.
+                  const leadSelection: Selection = {
+                    kind: "lead",
+                    ...(l.fn !== null ? { fn: l.fn } : {}),
+                    leadClass: l.cls,
+                    leadEvidence: l.evidence,
+                    leadDetail: l.detail,
+                  };
+                  return (
+                    <button
+                      type="button"
+                      className="rounded-ui px-1 text-text-muted hover:bg-surface-2 hover:text-text"
+                      title="Promote to finding"
+                      onClick={(e) => { e.stopPropagation(); runAction("finding.fromLead", leadSelection); }}
+                    >
+                      +finding
+                    </button>
+                  );
+                },
+              },
             ]}
           />
         )}

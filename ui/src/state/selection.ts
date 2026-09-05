@@ -16,7 +16,7 @@
 import { useSyncExternalStore } from "react";
 
 /** Mirrors `SelectionKind` in src/ui-core/actions.ts. */
-export type SelectionKind = "none" | "fn" | "identifier" | "string" | "module" | "finding";
+export type SelectionKind = "none" | "fn" | "identifier" | "string" | "module" | "finding" | "lead";
 
 /** Mirrors `Selection` in src/ui-core/actions.ts, plus `line`. */
 export interface Selection {
@@ -31,6 +31,12 @@ export interface Selection {
   readonly moduleId?: string;
   /** Finding/review-row id, when kind is "finding". */
   readonly rid?: number;
+  /** Spec 26 L6: whether the finding's evidence resolves, when kind is "finding". */
+  readonly evidenceResolved?: boolean;
+  /** Spec 26 L6: a lead's sink class/evidence/detail, when kind is "lead". */
+  readonly leadClass?: string;
+  readonly leadEvidence?: string;
+  readonly leadDetail?: string;
   /** 1-based line in the current listing the selection came from (UI only). */
   readonly line?: number;
 }

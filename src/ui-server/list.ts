@@ -13,11 +13,13 @@
 // `index/modules.json` file `ArtifactService` reads.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 import type { ArtifactService, FnSummary } from "../artifact/service.ts";
 import type { McpResources } from "../mcp/resources.ts";
 import type { ModuleEntry, ModulesIndex } from "../artifact/schema.ts";
 import { hasProjectDb, openProjectDbReadonly, dbPath } from "../projdb/artifact-read.ts";
 import type { ProjectService } from "../project/service.ts";
+import type { LeadsWorkerMessage } from "../workers/leads-worker.ts";
 
 /** Every module the artifact knows about — own cap (never widens anything
  *  `resources.ts` publishes; this is a new list this layer owns). The UI's
@@ -108,24 +110,60 @@ export function listModules(artifactDir: string): ModuleListResult {
   return result;
 }
 
-/** `/api/leads` — `computeLeads` is a whole-bundle scan (37.7 s cold, 9.4 s
- *  warm on Service NSW) and Node's server is single-threaded, so one call
- *  head-of-line-blocks every other route behind it: on the rig it was the
- *  reason `/api/segregation`, `/api/findings` and `/api/log/tail` all landed
- *  41 s after the page asked for them. The answer depends only on the
- *  artifact (no project annotation feeds it), and the server holds one
- *  `ArtifactService` for its whole life, so computing it once per artifact
- *  is sound. The left pane no longer asks for it until the Leads tab is
- *  opened (`ui/src/panes/LeftPane.tsx`), so the first call is now paid by an
- *  analyst who asked for leads, not by every page load. */
-const leadsCache = new WeakMap<ArtifactService, ReturnType<McpResources["leads"]>>();
+/** `/api/leads` / `/api/leads/security-sinks` — `computeLeads` is a
+ *  whole-bundle scan (37.7 s cold, 9.4 s warm on Service NSW). Node's
+ *  server is single-threaded, so a call answered INLINE head-of-line-blocks
+ *  every other route behind it: on the rig it was the reason
+ *  `/api/segregation`, `/api/findings` and `/api/log/tail` all landed 41 s
+ *  after the page asked for them (docs/UI-BURS.md bur 1 row 2). Spec 26 L6
+ *  makes the Leads tab load-bearing (lead -> finding promotion), so this
+ *  can no longer stay a "pay once, but pay inline" cache — the compute now
+ *  runs on a `node:worker_threads` worker (`src/workers/leads-worker.ts`,
+ *  the exact pattern `src/ui-server/segregation.ts` already uses for
+ *  `segregateSplitTree`), and `listLeads` never blocks: it returns the
+ *  `computing: true` placeholder immediately while the first call for an
+ *  artifact is in flight, and the SAME settled object on every call after
+ *  that (answer depends only on the artifact, never on project
+ *  annotations). */
+const LEADS_WORKER_URL = new URL("../workers/leads-worker.ts", import.meta.url);
 
-export function listLeads(resources: McpResources): ReturnType<McpResources["leads"]> {
+const leadsCache = new WeakMap<ArtifactService, ReturnType<McpResources["leads"]>>();
+const leadsComputing = new WeakSet<ArtifactService>();
+
+const LEADS_PLACEHOLDER: ReturnType<McpResources["leads"]> = { groups: [], total: 0, truncated: false, computing: true };
+
+function runLeadsWorker(artifactDir: string): Promise<ReturnType<McpResources["leads"]>> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let worker: Worker;
+    try {
+      worker = new Worker(LEADS_WORKER_URL, { workerData: { artifactDir } });
+    } catch (err) {
+      rejectPromise(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    worker.once("message", (msg: LeadsWorkerMessage) => {
+      void worker.terminate();
+      if (msg.ok) resolvePromise(msg.result);
+      else rejectPromise(new Error(msg.error));
+    });
+    worker.once("error", (err) => rejectPromise(err));
+  });
+}
+
+/** Never blocks: a fresh artifact returns the `computing: true` placeholder
+ *  while the worker runs in the background; once it settles, every later
+ *  call for the SAME artifact returns the identical (`===`) cached object,
+ *  matching `segregation()`'s own settled-cache contract. */
+export function listLeads(resources: McpResources, artifactDir: string): ReturnType<McpResources["leads"]> {
   const hit = leadsCache.get(resources.artifact);
   if (hit !== undefined) return hit;
-  const result = resources.leads();
-  leadsCache.set(resources.artifact, result);
-  return result;
+  if (!leadsComputing.has(resources.artifact)) {
+    leadsComputing.add(resources.artifact);
+    void runLeadsWorker(artifactDir)
+      .then((result) => leadsCache.set(resources.artifact, result))
+      .catch(() => leadsCache.set(resources.artifact, { groups: [], total: 0, truncated: false }));
+  }
+  return LEADS_PLACEHOLDER;
 }
 
 /** `/api/functions?cursor=&limit=` — every function `{fn, name, size,

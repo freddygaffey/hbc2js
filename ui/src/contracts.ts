@@ -334,11 +334,15 @@ export interface LeadGroup {
   readonly truncated: boolean;
 }
 
-/** `leads` and `security-sinks`. */
+/** `leads` and `security-sinks`. `computing` (spec 26 L6, docs/UI-BURS.md
+ *  bur 1 row 2): `true` while the off-main-thread scan (`src/workers/
+ *  leads-worker.ts`) has not settled yet — `groups`/`total` are the empty
+ *  placeholder shape until then, exactly like `SegregationResult.computing`. */
 export interface LeadsResult {
   readonly groups: readonly LeadGroup[];
   readonly total: number;
   readonly truncated: boolean;
+  readonly computing?: boolean;
 }
 
 export interface SearchPage<T> {
@@ -408,6 +412,18 @@ export interface ResolvedFinding {
   readonly status: FindingStatus;
   readonly valid: boolean;
   readonly refs: readonly { readonly ref: EvidenceRef; readonly resolved: boolean }[];
+}
+
+/** `history/{target}` row (spec 16 §3.2), newest first as the server sends
+ *  it — `HistoryPane` (spec 26 L6) reverses it to render oldest-first. */
+export interface HistoryEntry {
+  readonly rid: number;
+  readonly kind: string;
+  readonly ts: string;
+  readonly supersedes: number | null;
+  readonly reactivates: number | null;
+  readonly cleared: boolean;
+  readonly who: string;
 }
 
 // -- log --------------------------------------------------------------------
