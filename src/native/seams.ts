@@ -65,24 +65,51 @@ const CHANNELS: readonly { readonly channel: SeamChannel; readonly global: strin
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Functions that read/call `global` (a write to it is shadowing, not a use —
- *  same rule `src/artifact/native.ts` applies to the host-global surface). */
-function anchorFns(globals: readonly GlobalRow[], global: string): Set<number> {
+/** Functions that read/call `global` as a true JS GLOBAL (a write to it is
+ *  shadowing, not a use — same rule `src/artifact/native.ts` applies to the
+ *  host-global surface) OR read it as an ordinary property off some other
+ *  value.
+ *
+ *  The second half fixes docs/BUGS.md 2026-09-05 "seam join links 0/9": on a
+ *  real Metro/CommonJS bundle `NativeModules`/`TurboModuleRegistry`/
+ *  `requireNativeComponent` are never script globals — they are `require()`-
+ *  BOUND LOCALS (`var {NativeModules} = require("react-native")`, or the
+ *  Babel-interop `_reactNative.NativeModules`), so they show up in
+ *  `index/string-uses.jsonl` as an ordinary `property-get` off a non-global
+ *  register, and NEVER in `index/globals.jsonl` at all — `globals.jsonl`
+ *  only ever records a `GetById` whose receiver is `globalThis`
+ *  (`src/artifact/semantic-walk.ts`'s `GETBYID` handling). Anchoring on that
+ *  `property-get` is still an exact-name match (same truth rule as
+ *  everywhere else in this file) — it just does not additionally require the
+ *  receiver to be the global object, which the old anchor effectively (and
+ *  wrongly) assumed was the only way a host object ever gets read. */
+function anchorFns(js: SeamJsTables, global: string): Set<number> {
   const out = new Set<number>();
-  for (const g of globals) {
+  for (const g of js.globals) {
     if (g.g !== global || g.access === "write") continue;
     out.add(g.fn);
+  }
+  for (const use of js.stringUses) {
+    if (use.role !== "property-get") continue;
+    if (js.strings.get(use.sid) !== global) continue;
+    out.add(use.fn);
   }
   return out;
 }
 
 /** fn -> (candidate name -> the sid it was seen as), for one channel. */
 function candidatesByFn(js: SeamJsTables, channel: (typeof CHANNELS)[number]): Map<number, Map<string, number>> {
-  const fns = anchorFns(js.globals, channel.global);
+  const fns = anchorFns(js, channel.global);
   const out = new Map<number, Map<string, number>>();
   if (fns.size === 0) return out;
   for (const use of js.stringUses) {
     if (!fns.has(use.fn) || !channel.roles.includes(use.role)) continue;
+    // The anchor's OWN name (`NativeModules` read as a property-get off the
+    // required module, per `anchorFns` above) is the thing that identifies
+    // this function as in-scope, not a candidate module/method name itself —
+    // only relevant for the `NativeModules` channel, whose candidate role
+    // (`property-get`) is the same role the anchor read used.
+    if (use.role === "property-get" && js.strings.get(use.sid) === channel.global) continue;
     const text = js.strings.get(use.sid);
     if (text === undefined || text.length === 0) continue;
     const perFn = out.get(use.fn) ?? new Map<string, number>();
