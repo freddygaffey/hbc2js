@@ -3,6 +3,7 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import type { ReactNode } from "react";
 import { Empty, PaneHeader, ToolButton } from "../components/primitives.tsx";
+import { ResultTable, type ColumnDef } from "../components/ResultTable.tsx";
 import { useCallsFrom, useContextResource, useFindings, usePackageId, useWhoCalls, useWhoCallsByName } from "../hooks.ts";
 import { useSegregation } from "../listing/use-segregation.ts";
 import type { ByNameCaller, Severity, XrefEdge } from "../contracts.ts";
@@ -26,25 +27,15 @@ const SEVERITY_CLASS: Readonly<Record<Severity, string>> = {
   low: "text-sev-ok",
 };
 
-/** One xref row: clicking it selects that function, which is what makes the
- *  Xrefs panel a navigation surface rather than a list of numbers. */
-function XrefRow({ edge, dir }: { readonly edge: XrefEdge; readonly dir: "in" | "out" }): ReactNode {
-  // `NeighborRef.fn` is `number | string` (a native/unknown neighbour has no
-  // fn index); only a numeric one is navigable.
-  const target = typeof edge.fn === "number" ? edge.fn : Number.NaN;
-  return (
-    <button
-      type="button"
-      disabled={Number.isNaN(target)}
-      onClick={() => select({ kind: "fn", fn: target })}
-      className="flex w-full items-center gap-2 px-3 py-0.5 text-left font-mono text-xs text-text hover:bg-surface-2"
-      title={`${dir === "in" ? "called by" : "calls"} fn:${edge.fn}`}
-    >
-      <span className="truncate">{edge.name ?? edge.fn}</span>
-      <span className="ml-auto shrink-0 text-text-muted">{edge.file}:{edge.line}</span>
-    </button>
-  );
-}
+/** Columns shared by the "called by" / "calls" tables: clicking a row
+ *  selects that function, which is what makes the Xrefs panel a navigation
+ *  surface rather than a list of numbers. `NeighborRef.fn` is `number |
+ *  string` (a native/unknown neighbour has no fn index) — only a numeric
+ *  one is navigable, so a non-numeric row renders but does not click. */
+const XREF_COLUMNS: ColumnDef<XrefEdge, any>[] = [
+  { id: "name", header: "name", accessorFn: (e) => e.name ?? String(e.fn), cell: (info) => <span className="font-mono">{info.getValue() as string}</span> },
+  { id: "loc", header: "location", accessorFn: (e) => `${e.file}:${e.line}`, cell: (info) => <span className="text-text-muted">{info.getValue() as string}</span> },
+];
 
 /** A `who-calls-by-name` candidate: a NAME match on a `property-get`, never
  *  a resolved edge (spec 17 §14.1) — deliberately in `text-text-muted`
@@ -158,9 +149,33 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
               called by ({callers.data?.total ?? 0})
               {callers.data !== undefined && callers.data.unknownInScope > 0 && <> · {callers.data.unknownInScope} unknown in scope</>}
             </div>
-            {(callers.data?.rows ?? []).map((e) => <XrefRow key={`in-${e.fn}`} edge={e} dir="in" />)}
+            <div className="h-40 min-h-0 shrink-0">
+              <ResultTable
+                data={callers.data?.rows ?? []}
+                getRowId={(e) => `in-${e.fn}`}
+                rowElement="button"
+                rowProps={(e) => (typeof e.fn === "number" ? { "data-fn": e.fn } : {})}
+                onRowClick={(e) => {
+                  if (typeof e.fn === "number") select({ kind: "fn", fn: e.fn });
+                }}
+                emptyMessage="no callers recorded"
+                columns={XREF_COLUMNS}
+              />
+            </div>
             <div className="px-3 pt-3 pb-1 text-xs text-text-muted">calls ({callees.data?.total ?? 0})</div>
-            {(callees.data?.rows ?? []).map((e) => <XrefRow key={`out-${e.fn}`} edge={e} dir="out" />)}
+            <div className="h-40 min-h-0 shrink-0">
+              <ResultTable
+                data={callees.data?.rows ?? []}
+                getRowId={(e) => `out-${e.fn}`}
+                rowElement="button"
+                rowProps={(e) => (typeof e.fn === "number" ? { "data-fn": e.fn } : {})}
+                onRowClick={(e) => {
+                  if (typeof e.fn === "number") select({ kind: "fn", fn: e.fn });
+                }}
+                emptyMessage="no callees recorded"
+                columns={XREF_COLUMNS}
+              />
+            </div>
             {/* spec 17 §14.1: heuristic name-based caller CANDIDATES, below
                 the exact callers — hidden when the exact callers already
                 answered (non-empty) and the heuristic scan found nothing,
@@ -233,22 +248,25 @@ export function RightPane({ fn }: { readonly fn: number }): ReactNode {
             Add finding
           </ToolButton>
         </div>
-        {(findings.data?.rows ?? []).length === 0 && <Empty>No findings recorded.</Empty>}
-        {(findings.data?.rows ?? []).map((f) => (
-          <div
-            key={f.record.rid}
-            className="border-b border-border px-3 py-2 text-xs"
-            title={f.valid ? "evidence resolves" : "candidate — evidence does not resolve yet"}
-          >
-            <div className="flex items-center gap-2">
-              <span className={SEVERITY_CLASS[f.record.severity]}>{f.record.severity}</span>
-              <span className="text-text-muted">{f.status}</span>
-              {!f.valid && <span className="text-text-muted">candidate</span>}
-              <span className="ml-auto font-mono text-text-muted">{f.record.target}</span>
-            </div>
-            <div className="pt-1 text-text">{f.record.claim}</div>
-          </div>
-        ))}
+        <div className="h-64 min-h-0 shrink-0">
+          <ResultTable
+            data={findings.data?.rows ?? []}
+            getRowId={(f) => f.record.rid}
+            rowClassName={() => ""}
+            emptyMessage="No findings recorded."
+            columns={[
+              {
+                id: "severity",
+                header: "severity",
+                accessorFn: (f) => f.record.severity,
+                cell: (info) => <span className={SEVERITY_CLASS[info.getValue() as Severity]}>{info.getValue() as string}</span>,
+              },
+              { id: "status", header: "status", accessorFn: (f) => (f.valid ? f.status : `${f.status} (candidate)`), cell: (info) => <span className="text-text-muted">{info.getValue() as string}</span> },
+              { id: "target", header: "target", accessorFn: (f) => f.record.target, cell: (info) => <span className="font-mono text-text-muted">{info.getValue() as string}</span> },
+              { id: "claim", header: "claim", accessorFn: (f) => f.record.claim, cell: (info) => <span className="text-text">{info.getValue() as string}</span> },
+            ]}
+          />
+        </div>
       </Tabs.Content>
 
       <Tabs.Content value="package" className={bodyClass}>

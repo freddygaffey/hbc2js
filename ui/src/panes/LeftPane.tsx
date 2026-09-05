@@ -18,6 +18,7 @@ import clsx from "clsx";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Empty, PaneHeader } from "../components/primitives.tsx";
+import { ResultTable } from "../components/ResultTable.tsx";
 import { useLeads, useModuleSources, useModules, useSearchFunctions } from "../hooks.ts";
 import {
   defaultOpenGroups, filterGroups, flattenTree, fnLabel, groupModulesSegregated, indexOfFnRow, indexOfModuleRow,
@@ -298,51 +299,74 @@ export function LeftPane(): ReactNode {
    *  `search/functions` returns fn ids without module ids, and at 15 000
    *  functions resolving each one's module to graft it into the tree would
    *  be 15 000 requests. */
+  // The two search-hit lists used to hard-cap at 100 modules / 200
+  // functions with no indication anything was cut (spec 26 L5). Modules are
+  // a client-side filter over the whole already-fetched tree, so every
+  // match is shown — `ResultTable` virtualises it, the cap bought nothing.
+  // Functions come from the server's own paginated `search/functions`
+  // (`SEARCH_PAGE_CAP`, `src/mcp/leads.ts`), which already reports
+  // `truncated`/`total` honestly — that is what the bar below reads now,
+  // never a client-invented number.
   const searchBody = ((): ReactNode => {
     const moduleHits = filterGroups(groups, query, labelOf)
-      .flatMap((g) => g.modules.map((m) => ({ groupKey: g.key, group: g.label, module: m })))
-      .slice(0, 100);
+      .flatMap((g) => g.modules.map((m) => ({ groupKey: g.key, group: g.label, module: m })));
     if (hits.isLoading && moduleHits.length === 0) return <Empty>searching…</Empty>;
-    const rowsOut = (hits.data?.rows ?? []).slice(0, 200);
+    const rowsOut = hits.data?.rows ?? [];
     if (rowsOut.length === 0 && moduleHits.length === 0) return <Empty>nothing matches “{query}”</Empty>;
     return (
       <>
-        {moduleHits.length > 0 && <div className="px-2 py-1 text-xs uppercase text-text-muted">modules</div>}
-        {moduleHits.map(({ groupKey, group, module: m }) => (
-          <div
-            key={`sm:${m.id}`}
-            data-module={m.id}
-            title={group}
-            className={rowClass(sel.kind === "module" && sel.moduleId === String(m.id), false)}
-            onClick={() => {
-              // Selecting a search hit must also open its group, or the row
-              // this selection points at would never exist in the flattened
-              // tree — `flattenTree` skips a closed group's modules
-              // entirely, so the scroll-into-view effect below would have
-              // no row to find once the query is cleared.
-              toggleGroup(groupKey, true);
-              select({ kind: "module", moduleId: String(m.id) });
-            }}
-          >
-            <span className="truncate">{labelOf(m)}</span>
-            <span className="ml-auto shrink-0 truncate font-mono text-text-muted">module_{m.id}</span>
+        {moduleHits.length > 0 && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 px-2 py-1 text-xs uppercase text-text-muted">modules ({moduleHits.length})</div>
+            <ResultTable
+              data={moduleHits}
+              getRowId={(h) => `sm:${h.module.id}`}
+              rowProps={(h) => ({ "data-module": h.module.id, title: h.group })}
+              rowClassName={(h) =>
+                sel.kind === "module" && sel.moduleId === String(h.module.id) ? "border-l-2 border-l-accent bg-surface-2" : ""
+              }
+              onRowClick={(h) => {
+                // Selecting a search hit must also open its group, or the
+                // row this selection points at would never exist in the
+                // flattened tree — `flattenTree` skips a closed group's
+                // modules entirely, so the scroll-into-view effect below
+                // would have no row to find once the query is cleared.
+                toggleGroup(h.groupKey, true);
+                select({ kind: "module", moduleId: String(h.module.id) });
+              }}
+              columns={[
+                { id: "label", header: "module", accessorFn: (h) => labelOf(h.module), cell: (info) => info.getValue() },
+                {
+                  id: "id",
+                  header: "id",
+                  accessorFn: (h) => `module_${h.module.id}`,
+                  cell: (info) => <span className="font-mono text-text-muted">{info.getValue() as string}</span>,
+                },
+              ]}
+            />
           </div>
-        ))}
-        {moduleHits.length > 0 && rowsOut.length > 0 && <div className="px-2 py-1 text-xs uppercase text-text-muted">functions</div>}
-        {rowsOut.map((r) => (
-          <RowMenu key={r.fn}>
-            <div
-              data-fn={r.fn}
-              className={rowClass(sel.fn === r.fn, false)}
-              onClick={() => select({ kind: "fn", fn: r.fn, ...(r.name !== null ? { name: r.name } : {}) })}
-            >
-              <span className="truncate font-mono">{r.name ?? `fn ${r.fn}`}</span>
-              <span className="ml-auto shrink-0 tabular-nums text-text-muted">{r.size ?? ""}</span>
-            </div>
-          </RowMenu>
-        ))}
-        {(hits.data?.total ?? 0) > rowsOut.length && (
-          <div className="px-2 py-1 text-xs text-text-muted">{(hits.data?.total ?? 0) - rowsOut.length} more not shown</div>
+        )}
+        {rowsOut.length > 0 && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 px-2 py-1 text-xs uppercase text-text-muted">functions ({hits.data?.total ?? rowsOut.length})</div>
+            <ResultTable
+              data={rowsOut}
+              getRowId={(r) => `sf:${r.fn}`}
+              rowElement="button"
+              rowProps={(r) => ({ "data-fn": r.fn })}
+              rowClassName={(r) => (sel.fn === r.fn ? "border-l-2 border-l-accent bg-surface-2" : "")}
+              onRowClick={(r) => select({ kind: "fn", fn: r.fn, ...(r.name !== null ? { name: r.name } : {}) })}
+              cap={
+                hits.data
+                  ? { shown: rowsOut.length, total: hits.data.total, truncated: hits.data.truncated, noun: "function" }
+                  : undefined
+              }
+              columns={[
+                { id: "name", header: "name", accessorFn: (r) => r.name ?? `fn ${r.fn}`, cell: (info) => <span className="font-mono">{info.getValue() as string}</span> },
+                { id: "size", header: "size", accessorFn: (r) => r.size ?? 0, cell: (info) => <span className="tabular-nums text-text-muted">{(info.getValue() as number) || ""}</span> },
+              ]}
+            />
+          </div>
         )}
       </>
     );
@@ -481,35 +505,41 @@ export function LeftPane(): ReactNode {
           tabIndex={0}
           onKeyDown={onKeyDown}
           data-tree="modules"
-          className="hbc-scroll h-full overflow-auto py-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+          className={
+            searching
+              ? "flex h-full min-h-0 flex-col outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+              : "hbc-scroll h-full overflow-auto py-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+          }
         >
           {body}
         </div>
-        {modules.data?.truncated === true && (
+        {!searching && modules.data?.truncated === true && (
           <div className="border-t border-border px-2 py-1 text-xs text-text-muted">
             module list truncated — showing the first {modules.data?.rows.length ?? 0} of {modules.data?.total ?? 0}
           </div>
         )}
       </Tabs.Content>
-      <Tabs.Content value="leads" className="hbc-scroll min-h-0 flex-1 overflow-auto py-1 outline-none">
-        {(leads.data?.groups ?? []).map((g) => (
-          <div key={g.class}>
-            <div className="px-2 py-1 text-xs uppercase text-text-muted">{g.class}</div>
-            {g.leads.map((l) => (
-              <RowMenu key={l.evidence}>
-                <div
-                  {...(l.fn !== null ? { "data-fn": l.fn } : {})}
-                  className={rowClass(l.fn !== null && l.fn === sel.fn, false)}
-                  onClick={() => { if (l.fn !== null) select({ kind: "fn", fn: l.fn, ...(l.name !== null ? { name: l.name } : {}) }); }}
-                >
-                  <span className="truncate font-mono">{l.name ?? l.evidence}</span>
-                  <span className="ml-auto shrink-0 truncate text-text-muted">{l.detail}</span>
-                </div>
-              </RowMenu>
-            ))}
-          </div>
-        ))}
-        {leads.data === undefined && <Empty>scanning the bundle for leads…</Empty>}
+      <Tabs.Content value="leads" className="flex min-h-0 flex-1 flex-col outline-none">
+        {leads.data === undefined ? (
+          <Empty>scanning the bundle for leads…</Empty>
+        ) : (
+          <ResultTable
+            data={leads.data.groups.flatMap((g) => g.leads.map((l) => ({ cls: g.class, ...l })))}
+            getRowId={(l) => l.evidence}
+            rowElement="button"
+            rowProps={(l) => (l.fn !== null ? { "data-fn": l.fn } : {})}
+            rowClassName={(l) => (l.fn !== null && l.fn === sel.fn ? "border-l-2 border-l-accent bg-surface-2" : "")}
+            onRowClick={(l) => {
+              if (l.fn !== null) select({ kind: "fn", fn: l.fn, ...(l.name !== null ? { name: l.name } : {}) });
+            }}
+            emptyMessage="no leads found"
+            columns={[
+              { id: "class", header: "class", accessorFn: (l) => l.cls, cell: (info) => <span className="uppercase text-text-muted">{info.getValue() as string}</span> },
+              { id: "name", header: "name", accessorFn: (l) => l.name ?? l.evidence, cell: (info) => <span className="font-mono">{info.getValue() as string}</span> },
+              { id: "detail", header: "detail", accessorFn: (l) => l.detail, cell: (info) => <span className="text-text-muted">{info.getValue() as string}</span> },
+            ]}
+          />
+        )}
       </Tabs.Content>
     </Tabs.Root>
   );

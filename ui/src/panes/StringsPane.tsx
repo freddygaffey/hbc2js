@@ -7,6 +7,7 @@
 // pane (activity/log only) was the wrong home.
 import { useEffect, useState, type ReactNode } from "react";
 import { Empty } from "../components/primitives.tsx";
+import { ResultTable } from "../components/ResultTable.tsx";
 import { useDebouncedValue, useGlobalUses, useStringGrep, useStringUses } from "../hooks.ts";
 import type { StringGrepRow, StringUseSite, GlobalUse } from "../contracts.ts";
 import { select } from "../state/selection.ts";
@@ -44,32 +45,25 @@ function BoundedLine({ total, shown, truncated }: { readonly total: number; read
   );
 }
 
-function StringHit({
-  row, expanded, onToggle,
-}: { readonly row: StringGrepRow; readonly expanded: boolean; readonly onToggle: () => void }): ReactNode {
-  const uses = useStringUses(expanded ? row.sid : undefined);
+/** The detail panel for one expanded string hit — a master/detail split
+ *  (the table row itself stays a single fixed-height row, so it can be
+ *  virtualised; the uses list, which can be long, lives below the table
+ *  instead of growing the row in place). */
+function StringUsesDetail({ sid }: { readonly sid: number }): ReactNode {
+  const uses = useStringUses(sid);
   return (
-    <div className="border-b border-border">
-      <button type="button" data-sid={row.sid} onClick={onToggle} className={rowClass} title={`sid:${row.sid}`}>
-        <span className="shrink-0 text-text-muted">{row.sid}</span>
-        <span className="truncate">{row.head}</span>
-        <span className="ml-auto shrink-0 text-text-muted">{row.uses} use{row.uses === 1 ? "" : "s"}</span>
-      </button>
-      {expanded && (
-        <div className="bg-surface-2/40 pb-1">
-          {uses.data === undefined ? (
-            <Empty>loading…</Empty>
-          ) : uses.data.uses.rows.length === 0 ? (
-            <Empty>no recorded uses</Empty>
-          ) : (
-            <>
-              {uses.data.uses.rows.map((u: StringUseSite) => (
-                <UseRow key={`${u.sid}-${u.fn}-${u.role}`} fn={u.fn} name={u.name} detail={`${u.role} x${u.n}`} />
-              ))}
-              <BoundedLine total={uses.data.uses.total} shown={uses.data.uses.rows.length} truncated={uses.data.uses.truncated} />
-            </>
-          )}
-        </div>
+    <div className="h-32 min-h-0 shrink-0 border-t border-border bg-surface-2/40 py-1">
+      {uses.data === undefined ? (
+        <Empty>loading…</Empty>
+      ) : uses.data.uses.rows.length === 0 ? (
+        <Empty>no recorded uses</Empty>
+      ) : (
+        <>
+          {uses.data.uses.rows.map((u: StringUseSite) => (
+            <UseRow key={`${u.sid}-${u.fn}-${u.role}`} fn={u.fn} name={u.name} detail={`${u.role} x${u.n}`} />
+          ))}
+          <BoundedLine total={uses.data.uses.total} shown={uses.data.uses.rows.length} truncated={uses.data.uses.truncated} />
+        </>
       )}
     </div>
   );
@@ -107,21 +101,26 @@ function StringsSearch(): ReactNode {
       </div>
       {debounced === "" ? (
         <Empty>type to search the string table</Empty>
-      ) : grep.data === undefined ? (
-        <Empty>loading…</Empty>
-      ) : grep.data.rows.length === 0 ? (
-        <Empty>no strings match "{debounced}"</Empty>
       ) : (
         <>
-          <BoundedLine total={grep.data.total} shown={grep.data.rows.length} truncated={grep.data.truncated} />
-          {grep.data.rows.map((row) => (
-            <StringHit
-              key={row.sid}
-              row={row}
-              expanded={expandedSid === row.sid}
-              onToggle={() => setExpandedSid(expandedSid === row.sid ? undefined : row.sid)}
+          <div className="h-40 min-h-0 shrink-0">
+            <ResultTable
+              data={grep.data?.rows ?? []}
+              getRowId={(row) => String(row.sid)}
+              rowElement="button"
+              rowProps={(row) => ({ "data-sid": row.sid, title: `sid:${row.sid}` })}
+              rowClassName={(row) => (expandedSid === row.sid ? "border-l-2 border-l-accent bg-surface-2" : "")}
+              onRowClick={(row) => setExpandedSid(expandedSid === row.sid ? undefined : row.sid)}
+              emptyMessage={grep.data === undefined ? "loading…" : `no strings match "${debounced}"`}
+              cap={grep.data ? { shown: grep.data.rows.length, total: grep.data.total, truncated: grep.data.truncated, noun: "string" } : undefined}
+              columns={[
+                { id: "sid", header: "sid", accessorFn: (row: StringGrepRow) => row.sid, cell: (info) => <span className="text-text-muted">{info.getValue() as number}</span> },
+                { id: "head", header: "text", accessorFn: (row: StringGrepRow) => row.head, cell: (info) => <span>{info.getValue() as string}</span> },
+                { id: "uses", header: "uses", accessorFn: (row: StringGrepRow) => row.uses, cell: (info) => <span className="text-text-muted">{info.getValue() as number}</span> },
+              ]}
             />
-          ))}
+          </div>
+          {expandedSid !== undefined && <StringUsesDetail sid={expandedSid} />}
         </>
       )}
     </div>
@@ -149,17 +148,27 @@ function GlobalsSearch(): ReactNode {
       </div>
       {debounced === "" ? (
         <Empty>type a global's name</Empty>
-      ) : uses.data === undefined ? (
-        <Empty>loading…</Empty>
-      ) : uses.data.rows.length === 0 ? (
-        <Empty>no recorded uses of "{debounced}"</Empty>
       ) : (
-        <>
-          <BoundedLine total={uses.data.total} shown={uses.data.rows.length} truncated={uses.data.truncated} />
-          {uses.data.rows.map((u: GlobalUse) => (
-            <UseRow key={`${u.fn}-${u.access}`} fn={u.fn} name={u.name} detail={`${u.access} x${u.n}${u.file !== null ? ` · ${u.file}:${u.line ?? "?"}` : ""}`} />
-          ))}
-        </>
+        <div className="h-40 min-h-0 shrink-0">
+          <ResultTable
+            data={uses.data?.rows ?? []}
+            getRowId={(u) => `${u.fn}-${u.access}`}
+            rowElement="button"
+            rowProps={(u) => ({ "data-fn": u.fn })}
+            onRowClick={(u) => select({ kind: "fn", fn: u.fn })}
+            emptyMessage={uses.data === undefined ? "loading…" : `no recorded uses of "${debounced}"`}
+            cap={uses.data ? { shown: uses.data.rows.length, total: uses.data.total, truncated: uses.data.truncated, noun: "use" } : undefined}
+            columns={[
+              { id: "name", header: "name", accessorFn: (u: GlobalUse) => u.name ?? `fn:${u.fn}`, cell: (info) => <span className="font-mono">{info.getValue() as string}</span> },
+              {
+                id: "detail",
+                header: "detail",
+                accessorFn: (u: GlobalUse) => `${u.access} x${u.n}${u.file !== null ? ` · ${u.file}:${u.line ?? "?"}` : ""}`,
+                cell: (info) => <span className="text-text-muted">{info.getValue() as string}</span>,
+              },
+            ]}
+          />
+        </div>
       )}
     </div>
   );
