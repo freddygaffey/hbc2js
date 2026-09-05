@@ -1,6 +1,6 @@
 # `arguments` object — reification and sloppy-mode aliasing
 
-**Fixtures:** `42-rest-params`, `49-arguments-object`, `67-arguments-reify-readback`
+**Fixtures:** `42-rest-params`, `49-arguments-object`, `69-arguments-reify-readback`
 **Confidence:** ✅ single-version (v94, `-O0`); §8 measured at 84/94/96/98/99
 
 ## 1. Source
@@ -137,7 +137,7 @@ compiles (v84) to `ReifyArguments r1` / `PutByVal r3, r0, r2` /
 unconditionally, which silently dropped the write (`docs/BUGS.md`
 `arity/arguments-aliasing`); it now routes the reads of a function that
 reifies through the `__hbc_argsLive` helper. Fixture
-`67-arguments-reify-readback` pins this at all five committed versions.
+`69-arguments-reify-readback` pins this at all five committed versions.
 
 This is *not* parameter aliasing, and §2's third block (a `x = 99` store
 followed by a lazy read said to "read back 99, confirming aliasing") should

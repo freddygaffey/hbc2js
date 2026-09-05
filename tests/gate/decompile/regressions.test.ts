@@ -272,14 +272,14 @@ for (const version of [94, 96, 99] as const) {
 // dropped every write: at v84 the VM prints `write then read: written|1` and the
 // candidate printed `incoming|1`. Fixed by routing the reads of a function that
 // reifies through `__hbc_argsLive`; a function that never reifies keeps the
-// plain `arguments` form. Fixture `67-arguments-reify-readback` keeps every
+// plain `arguments` form. Fixture `69-arguments-reify-readback` keeps every
 // touched index outside the declared parameter list, so Node's mapped sloppy
 // `arguments` and Hermes's unmapped one agree (D14) and the fixture measures the
 // reify/read-back path only.
 for (const version of [84, 94, 96, 98, 99] as const) {
-  test(`67-arguments-reify-readback v${version}: a write into a reified 'arguments' is visible to the later lazy reads`, async (t) => {
+  test(`69-arguments-reify-readback v${version}: a write into a reified 'arguments' is visible to the later lazy reads`, async (t) => {
     void t;
-    const name = "67-arguments-reify-readback";
+    const name = "69-arguments-reify-readback";
     const src = code(name, version);
     const expected = readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", name, "expected.txt"), "utf8").trimEnd().split("\n");
     const dir = mkdtempSync(join(tmpdir(), "hbc2js-args-reify-"));
@@ -297,13 +297,13 @@ for (const version of [84, 94, 96, 98, 99] as const) {
 // The same fixture against the real Hermes VM (D14 ground truth) wherever one
 // exists, so the oracle above is not merely Node agreeing with Node.
 for (const version of [84, 94, 96, 99] as const) {
-  test(`67-arguments-reify-readback v${version}: the reified read-back matches the Hermes VM`, async (t) => {
+  test(`69-arguments-reify-readback v${version}: the reified read-back matches the Hermes VM`, async (t) => {
     const vm = findHermesVm(version);
     if (vm === null) {
       t.skip(`no Hermes VM for v${version} (see docs/TOOLCHAIN.md "Hermes VM (source build)")`);
       return;
     }
-    const name = "67-arguments-reify-readback";
+    const name = "69-arguments-reify-readback";
     const hbcPath = path(name, version);
     const src = code(name, version);
     const dir = mkdtempSync(join(tmpdir(), "hbc2js-args-reify-vm-"));

@@ -38,7 +38,7 @@ export function prop(obj: Expr, name: string): Expr {
  * plain `arguments` form; one that does routes through `__hbc_argsLive` so a
  * write made through the reified object is visible to the later lazy reads,
  * exactly as the real VM does (docs/BUGS.md `arity/arguments-aliasing`,
- * fixture 67-arguments-reify-readback).
+ * fixture 69-arguments-reify-readback).
  */
 function argsSource(f: FunctionEmitter, insn: Instruction, lazyOperand: number): Expr {
   if (!f.argumentsReified) return f.argsExpr;
