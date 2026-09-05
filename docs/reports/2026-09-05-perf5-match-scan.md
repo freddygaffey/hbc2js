@@ -79,3 +79,58 @@ is an `||` of two pure predicates:
 Neither changes which sites match: same predicates, same values, evaluated
 in a cheaper order over a map derived rather than recomputed. Results after
 the fix are in the same row of `docs/BUGS.md`.
+
+## After the fix (same machine, same generator, same session)
+
+Two changes, both verdict-preserving:
+
+1. `expr-rebuild/match.ts`'s `isDeadAfter` asks D-b's whole-function counts
+   first whenever that map is already memoised (`registerUsesIfMemoised`),
+   and only then runs D-a's scan; when the map was cold it still scans
+   first, exactly as before. Two pure predicates joined by `||`, so the
+   order is free.
+2. `expr-rebuild/check.ts` derives the accepted list's register-use map from
+   the one it just proved (`noteRegisterUsesSplice` in `ast.ts`) instead of
+   leaving the next iteration to rebuild it, so the map is warm for every
+   site after the first.
+
+| shape | 2k sites | 4k sites | 8k sites |
+|---|---|---|---|
+| D, before | 940 ms | 4458 ms | 25526 ms |
+| D, after | 398 ms | 1487 ms | 7105 ms |
+| A, before / after | 119 / 116 ms | 280 / 273 ms | 858 / 824 ms |
+
+Shape A (the shape the gate already covered) is unchanged, within noise.
+Shape D is **3.6x** faster at 8k sites.
+
+The layer this session was pointed at is gone from the profile. A
+`--cpu-prof` of shape D after the fix has no `classifySite`, `nextRelevant`,
+`scanFrom` or `stmtInterest` frame in the top ten at all (they were 4.2 s of
+14.9 s before), and no `countUses` frame either (4.9 s before). The direct
+proof is `tests/gate/passes/expr-rebuild-perf.test.ts`'s new ratio: 500
+classify calls with a 20,000-statement inert tail behind them against the
+same 500 with none. Pre-fix that ratio measures **37.9x**; post-fix it is
+~1x, budget 4x.
+
+## What is still superlinear, and why
+
+Shape D's exponent is still ~2.2 (398 -> 1487 -> 7105). The top frames are
+now `noteRegisterUsesSplice` itself (its one `new Map(base)` copy per site,
+`O(distinct register names)`), `incrementalReadBeforeDef`, `withoutAt`'s
+single array build and `verifyExpectedShape`'s pointer sweep - i.e. the
+`readonly Stmt[]` materialisation floor PUSHBACK P-33/P-34 named, plus one
+new `O(distinct register names)` term this change adds in its place. Note
+shape D is deliberately adversarial for that term: it gives every one of its
+thousands of sites its own register name, so `distinct register names` grows
+with the list. A real function's register frame does not grow that way, and
+the trade is strictly favourable either way - a map copy per site replaces a
+whole-list `countUses` walk per site.
+
+Removing the rest needs a persistent list representation or a
+patch-returning driver contract (perf part 6), not more work in this layer.
+
+The wall-clock verdict this row is judged on is a Service NSW whole-file
+re-timing, which needs the bundle and therefore deb: the orchestrator
+re-times there. Nothing in this session touched
+`tests/gate/passes/pipeline-speed.test.ts` or its rn-template output hash,
+which the gate re-checks unchanged.

@@ -80,6 +80,36 @@ function cpuMs(f: () => void): number {
   return (d.user + d.system) / 1000;
 }
 
+/**
+ * Best of `reps`. Every ratio in this file is a *lower bound* claim - the
+ * shipped code costs less than X - so the cheapest observation is the least
+ * contaminated one, and taking the minimum is sound for exactly that
+ * direction: a pre-fix implementation that scores over budget in every
+ * repetition still scores over budget at its own minimum, so nothing this
+ * file proves is weakened. What it removes is the one-sided noise a
+ * *parallel* gate injects: `node --test` runs this file alongside a dozen
+ * others, and a preemption or a GC pause landing inside a timed region can
+ * only ever inflate a measurement, never deflate it. Measured on this Mac
+ * under a full parallel gate (load 12-17), the part-4 ratio below read
+ * ~1.5 s against ~160 ms for the same code run alone; best-of-5 brings it
+ * back to the alone-value. Added 2026-09-05 with perf part 5, after the
+ * orchestrator reported that test failing in every parallel gate run and
+ * passing every time it was run on its own.
+ */
+function bestOf<T>(reps: number, measure: () => T, score: (t: T) => number): T {
+  let best = measure();
+  for (let n = 1; n < reps; n++) {
+    const next = measure();
+    if (score(next) < score(best)) best = next;
+  }
+  return best;
+}
+
+const RATIO_REPS = 5;
+/** Fewer repetitions where one repetition is itself seconds of work, so the
+ *  file stays inside the gate's own time budget. */
+const HEAVY_RATIO_REPS = 3;
+
 function runFolds(k: number): number {
   const module = fakeModule();
   const ctx = baseCtx(module);
@@ -269,7 +299,14 @@ test("expr-rebuild's writer and checker cost less than the whole-list rebuild-an
   rewriteAndCheckVsWholeListRebuild(200, 200); // warmup: JIT, not measured
   const budget = 0.8;
   for (const pairs of [1000, 2000]) {
-    const { bounded, removed } = rewriteAndCheckVsWholeListRebuild(pairs, pairs);
+    // Best of `RATIO_REPS` (see `bestOf`): under a loaded parallel gate a
+    // single observation of this ratio is dominated by preemption and GC
+    // pauses landing in the numerator's timed region, not by the work.
+    const { bounded, removed } = bestOf(
+      HEAVY_RATIO_REPS,
+      () => rewriteAndCheckVsWholeListRebuild(pairs, pairs),
+      (r) => r.bounded / Math.max(r.removed, 1),
+    );
     // A floor keeps the ratio meaningful if the denominator rounds to ~0.
     const ratio = bounded / Math.max(removed, 1);
     assert.ok(
@@ -338,9 +375,16 @@ function classifyAll(sites: number, tail: number): number {
     }
   };
   sweep(); // untimed: warms JIT and the per-node `stmtInterest`/`topLevelReads` memos, which is the steady state the driver sees
-  return cpuMs(() => {
-    for (let n = 0; n < CLASSIFY_SWEEPS; n++) sweep();
-  });
+  // Best of `RATIO_REPS` batches over the very same list (see `bestOf`):
+  // both sides of the ratio are measured this way, so neither is favoured.
+  return bestOf(
+    RATIO_REPS,
+    () =>
+      cpuMs(() => {
+        for (let n = 0; n < CLASSIFY_SWEEPS; n++) sweep();
+      }),
+    (t) => t,
+  );
 }
 
 test("expr-rebuild's classify layer costs the same per site however long the list behind it is", () => {
