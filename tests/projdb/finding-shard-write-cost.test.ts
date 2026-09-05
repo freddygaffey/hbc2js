@@ -83,13 +83,13 @@ test("writeFindingShardForRid: passing the record in hand does O(1) SQL work, no
   const dir = tmpProjectDir();
   try {
     const resultWithRecord = { written: [] as string[], unchanged: [] as string[] };
-    let withRecordOut: ReturnType<typeof writeFindingShardForRid>;
+    let withRecordOut: ReturnType<typeof writeFindingShardForRid> = null;
     const withRecordPrepares = countPrepares(db, () => {
       withRecordOut = writeFindingShardForRid(db, dir, binding, rid, resultWithRecord, target);
     });
 
     const resultNoRecord = { written: [] as string[], unchanged: [] as string[] };
-    let noRecordOut: ReturnType<typeof writeFindingShardForRid>;
+    let noRecordOut: ReturnType<typeof writeFindingShardForRid> = null;
     const noRecordPrepares = countPrepares(db, () => {
       noRecordOut = writeFindingShardForRid(db, dir, binding, rid, resultNoRecord);
     });
