@@ -509,7 +509,14 @@ Each is a distinct counted `abandoned` reason.
   landed 2026-09-05) — one recognised private name at a time, refusing (and
   leaving this rung's Symbol/computed-member output untouched) whenever a
   name's reference set is not exactly `CreatePrivateName`/`AddOwnPrivateBySym`/
-  `Get`/`PutOwnPrivateBySym`/`PrivateIsIn`. See docs/specs/passes/00-LADDER.md's
+  `Get`/`PutOwnPrivateBySym`/`PrivateIsIn`, **and whenever the install's own
+  target does not resolve to literal `this`** — every constructor this rung's
+  own fixtures decompile to (32-36) builds a separate `Object.create(new
+  .target.prototype)` stand-in and returns it instead of using `this`, and a
+  native private field only ever attaches to the object a class's own
+  `[[Construct]]` really brands, so `private-fields` refuses on all of them
+  today (T2 equivalence caught the unguarded version, docs/BUGS.md's row
+  reopened 2026-09-05). See docs/specs/passes/00-LADDER.md's
   `private-fields` row and `tests/gate/passes/private-fields.test.ts`.
 * **R-C7 `enumerable-member`** — a descriptor with `enumerable: true` for a
   method/accessor. Class members are non-enumerable; an enumerable one did not
