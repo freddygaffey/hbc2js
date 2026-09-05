@@ -36,6 +36,14 @@ export const KNOWN_AMBIGUOUS_V98: readonly string[] = [
   // `--opcode-table=hbc98-late` resolves it the same way. Nothing about
   // `arr[i++]` over a captured environment is special here.
   "71-env-slot-captured-index",
+  // Added 2026-09-05 with the fixture itself (the sibling-environment repro):
+  // its v98 build hits exactly the ambiguity above -- hbc98-late and
+  // hbc99-mar2026 both verify structurally but disagree on function ids 0 and
+  // 1 -- and `--opcode-table=hbc98-late` resolves it the same way. Nothing
+  // about the inlined IIFEs is special here; the v99 build of the same source
+  // probes cleanly, and the fixture's own test
+  // (tests/gate/emit/sibling-env-slots.test.ts) forces the table.
+  "75-sibling-envs",
 ];
 
 export function isKnownAmbiguousV98(group: string, name: string, version: number): boolean {

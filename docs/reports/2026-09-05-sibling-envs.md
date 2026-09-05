@@ -103,3 +103,16 @@ The LoadFromEnvironment figure drifted down from the 925 recorded at
 `d4011d8` with nothing changed in between — the same corpus-migration effect
 the BUGS row already notes. A later "after" measurement should be compared
 against 863, not 925. There is no "after" figure in this pass: no fix landed.
+
+## 6. Gate note
+
+Fixture 75's **v98** build lands on the long-standing hbc98-late / hbc99-mar2026
+auto-probe ambiguity (both tables verify structurally but disagree on function
+ids 0 and 1), so `75-sibling-envs` joins `KNOWN_AMBIGUOUS_V98` in
+`tests/support/known-issues.ts` alongside 64/67/71, which were added the same
+way with their own fixtures. `--opcode-table=hbc98-late` resolves it; the v99
+build probes cleanly; nothing about inlined IIFEs is special here.
+
+Fixture 75's disasm/parse goldens are NOT committed — golden regeneration is a
+batched, approved operation (CLAUDE.md), so the two aggregate golden tests stay
+red for 75 exactly as they already are for 66/67/70/71/73/74.
