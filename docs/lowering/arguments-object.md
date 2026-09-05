@@ -1,7 +1,7 @@
 # `arguments` object — reification and sloppy-mode aliasing
 
-**Fixtures:** `42-rest-params`, `49-arguments-object`
-**Confidence:** ✅ single-version (v94, `-O0`)
+**Fixtures:** `42-rest-params`, `49-arguments-object`, `67-arguments-reify-readback`
+**Confidence:** ✅ single-version (v94, `-O0`); §8 measured at 84/94/96/98/99
 
 ## 1. Source
 
@@ -109,3 +109,40 @@ is a real array built via ordinary array-literal opcodes independent of
 whichever `arguments` idiom (lazy or reified) the function also uses; the
 two are unrelated in the bytecode despite both deriving from "the extra
 call arguments."
+
+## 8. The last operand is the lazy-arguments register (measured, 2026-09-05)
+
+§3 above guessed that `GetArgumentsPropByVal`'s third operand (and
+`GetArgumentsLength`'s second) is a "mapped indicator" register, "name
+inferred from usage, not confirmed". Measured directly against
+`tools/hermesc/v84/hermes` and `tools/hermesc/v96/hermes`, it is the
+function's **lazy-arguments register**:
+
+- it holds `undefined` while the `arguments` object is still unmaterialised,
+  and the lazy read then reads the frame's incoming arguments;
+- `ReifyArguments*` materialises a real object **into that same register**,
+  and every later lazy read goes through that object instead.
+
+So a function that writes into `arguments` and then reads it back observes
+its own write through the lazy opcodes:
+
+```js
+function k() { arguments[0] = 'K'; return arguments[0] + '|' + arguments.length; }
+print(k('m0'));            // real VM, v84 and v96: K|1
+```
+
+compiles (v84) to `ReifyArguments r1` / `PutByVal r3, r0, r2` /
+`GetArgumentsPropByVal r1, r0, r1` — the read names the reified register.
+`src/emit` used to ignore the operand and emit the host `arguments`
+unconditionally, which silently dropped the write (`docs/BUGS.md`
+`arity/arguments-aliasing`); it now routes the reads of a function that
+reifies through the `__hbc_argsLive` helper. Fixture
+`67-arguments-reify-readback` pins this at all five committed versions.
+
+This is *not* parameter aliasing, and §2's third block (a `x = 99` store
+followed by a lazy read said to "read back 99, confirming aliasing") should
+not be read as evidence of any: that block was recorded from a disassembly,
+never run. Measured on the real VM, `function f(x){ x = 'mutated'; return
+arguments[0] + '|' + x; }` prints `original|mutated` at v84 — the frame's
+incoming argument is unchanged by the parameter store, exactly as D14 and
+`src/emit/semantics.ts`'s `mappedArguments: false` say.
