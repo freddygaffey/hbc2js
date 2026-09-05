@@ -439,8 +439,10 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
 
     // Pull in every function transitively referenced-but-undeclared, so no
     // reference in this file resolves to nothing (see comment above). These
-    // become extra function *declarations at the top of the factory's own
-    // body* (nested inside `factory`, not file-top-level siblings): a
+    // become extra function *declarations inside the factory's own body*
+    // (nested inside `factory`, not file-top-level siblings, and placed by
+    // `withExtraDeclarations` after the factory's declaration prologue so
+    // they cannot renumber its environment slots): a
     // top-level declaration would recompile as a module-scope function
     // (hermesc never emits a `CreateClosure` for it), tripping the E2E
     // harness's closure-tree comparison even harder than the original bug —
