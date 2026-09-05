@@ -53,7 +53,13 @@ function reWalkGuardRedundant(node: TryNode, ctx: PassContext): boolean {
 
 function reScanHandlerReadsCatchRegister(node: TryNode, ctx: PassContext): boolean {
   const structured = ctx.structured!;
-  for (const b of blocksOf(node.handler)) {
+  const region = structured.graph.cfg.regions[node.region]!;
+  const handlerBlocks = blocksOf(node.handler);
+  // A shared/merge-point handler's real code is not textually inside this
+  // node's `handler` at all (src/structure/augment.ts §4.5) -- conservatively
+  // answer "reads" (see match.ts's handlerReadsCatchRegister doc).
+  if (!handlerBlocks.includes(region.handlerBlock) || region.sharesHandlerWith.length > 0) return true;
+  for (const b of handlerBlocks) {
     if (structured.graph.blocks[b]?.block === null) continue;
     const insns = instructionsOf(structured, b) ?? [];
     for (const insn of insns) {

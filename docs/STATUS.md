@@ -53,10 +53,8 @@ docs/DECISIONS.md) reorders the registry: every structure-recovery rung
 (through `jsx-recover`) now runs before the renaming block
 (`fn-naming`/`reg-split`/`var-naming`) — `reg-split` is now **default-on**
 (P-11/P-11b resolved, docs/PUSHBACK.md P-11 closed, docs/BUGS.md P-11b
-row resolved). `try-shape`/`try-clean` (spec 22, 2026-09-05) strip the
-`__pc`/`__exc` scaffolding a redundant guard or unread catch binding leaves
-behind; PUSHBACK P-18 corrects the spec's own fixture-12 worked example
-(measured redundant, not "needed").
+row resolved). `try-shape`/`try-clean` (spec 22, 2026-09-05) strip redundant
+`__pc`/`__exc` scaffolding (PUSHBACK P-18).
 Next: var-naming compound -> literal-forms / arguments-form / for-in/for-of.
 Source: docs/specs/passes/00-LADDER.md; STATUS-ARCHIVE.md M5 section.
 

@@ -54,10 +54,29 @@ function isGuardRedundant(node: TryNode, ctx: PassContext): boolean {
  * subtree (at any depth, including a nested `try`'s own handler) read
  * `node.catchRegister`? The leading `Catch <catchRegister>` is a write and
  * never counts as a read.
+ *
+ * Refuses (conservatively answers "reads", i.e. `bindsExc` stays `true`)
+ * whenever the region's real handler block (`region.handlerBlock`, where the
+ * physical `Catch` instruction lives) is not reachable inside `node.handler`
+ * at all: `src/structure/augment.ts` §4.5 says a handler shared by several
+ * regions becomes one merge point that every sharing region's tree node
+ * reaches only via a `break` to it — the real handler code, and any read of
+ * the exception it does, is not textually inside *this* node's `handler`
+ * subtree, so this rung cannot see it and must not claim it is unread. The
+ * emitter's `__exc = _excN` copy this try's handler would otherwise lose is
+ * exactly the bridge that merge point's own `Catch` lowering (`r = __exc`)
+ * reads from — dropping it silently reads a stale `__exc`. Caught during
+ * this rung's own implementation by the T2 equivalence gate on fixture 14's
+ * `f2` (a shared handler reached via `break L1`, per `src/cfg/exceptions.ts`
+ * step 8's `sharesHandlerWith` grouping) before it ever landed; fixed here,
+ * so no BUGS.md row is needed.
  */
 function handlerReadsCatchRegister(node: TryNode, ctx: PassContext): boolean {
   const structured = ctx.structured!;
-  for (const b of blocksOf(node.handler)) {
+  const region = structured.graph.cfg.regions[node.region]!;
+  const handlerBlocks = blocksOf(node.handler);
+  if (!handlerBlocks.includes(region.handlerBlock) || region.sharesHandlerWith.length > 0) return true; // shared/merge-point handler: cannot see the real code
+  for (const b of handlerBlocks) {
     if (structured.graph.blocks[b]?.block === null) continue;
     const insns = instructionsOf(structured, b) ?? [];
     for (const insn of insns) if (instructionReadsRegister(insn, node.catchRegister)) return true;
