@@ -44,6 +44,15 @@ export const KNOWN_AMBIGUOUS_V98: readonly string[] = [
   // probes cleanly, and the fixture's own test
   // (tests/gate/emit/sibling-env-slots.test.ts) forces the table.
   "75-sibling-envs",
+  // Added 2026-09-05 with the fixture itself (spec 28 section 9.7, the
+  // super-call field-install fold): its v98 build hits exactly the ambiguity
+  // above -- hbc98-late and hbc99-mar2026 both verify structurally but
+  // disagree on function ids 1 and 4 -- and `--opcode-table=hbc98-late`
+  // resolves it the same way. Nothing about the class fields or the
+  // forwarding constructor is special here; the fixture's own tests
+  // (tests/gate/passes/super-call.test.ts) already pass `resolveV98Ambiguity:
+  // true`.
+  "80-super-forward-field-installs",
 ];
 
 export function isKnownAmbiguousV98(group: string, name: string, version: number): boolean {

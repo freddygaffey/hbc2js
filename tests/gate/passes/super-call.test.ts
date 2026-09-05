@@ -346,22 +346,29 @@ test("super-call: `r0 = applyArguments(...); return r0;` dereferences through th
   assert.equal(call.k === "call" && call.callee.k === "lit" && call.callee.text, "super");
 });
 
-test("super-call: a store-then-return whose stored register is read elsewhere is refused (R-SC9)", () => {
+test("super-call: an early read of the receiver before the store is refused (R-SC9)", () => {
+  // Section 9.7: the store is now found by scanning for it rather than
+  // assumed adjacent to the return, so this shape is caught by the HEAD
+  // loop (the same "statement the forward did not consume" refusal an
+  // unrelated head statement already gets, R-SC9) rather than by a
+  // whole-body reads count -- still refused, same code, a more specific
+  // message (the diagnostic used to be a total-uses count; the shape it
+  // covered here is actually a statement before the store, not after it).
   const { module, cls } = moduleWith(STORE_RETURN_BODY);
   const earlyRead: Stmt = { k: "expr", expr: { k: "call", callee: ident("sideEffect"), args: [ident("r0")] } };
   const body: readonly Stmt[] = [STORE_RETURN_BODY[0]!, STORE_RETURN_BODY[1]!, earlyRead, STORE_RETURN_BODY[2]!, STORE_RETURN_BODY[3]!];
   const out = foldSuperBody(module, cls, body, []);
   assert.equal("code" in out && out.code, "R-SC9");
-  assert.match("code" in out ? out.reason : "", /used elsewhere/);
+  assert.match("code" in out ? out.reason : "", /did not consume/);
 });
 
-test("super-call: a store-then-return whose store is not the immediately-preceding statement is refused (R-SC9)", () => {
+test("super-call: a statement between the store and the return that is not a field install or a receiver capture is refused (R-SC9)", () => {
   const { module, cls } = moduleWith(STORE_RETURN_BODY);
   const between: Stmt = { k: "expr", expr: { k: "call", callee: ident("sideEffect"), args: [] } };
   const body: readonly Stmt[] = [STORE_RETURN_BODY[0]!, STORE_RETURN_BODY[1]!, STORE_RETURN_BODY[2]!, between, STORE_RETURN_BODY[3]!];
   const out = foldSuperBody(module, cls, body, []);
   assert.equal("code" in out && out.code, "R-SC9");
-  assert.match("code" in out ? out.reason : "", /immediately-preceding/);
+  assert.match("code" in out ? out.reason : "", /neither a field install nor a receiver capture/);
 });
 
 test("super-call: `return <ident>` whose preceding store is not the applyArguments call is refused (R-SC9)", () => {
@@ -372,6 +379,63 @@ test("super-call: `return <ident>` whose preceding store is not the applyArgumen
   const body: readonly Stmt[] = [store("temp", applyCall()), store("r0", lit("1")), { k: "return", arg: ident("r0") }];
   const out = foldSuperBody(module, cls, body, []);
   assert.equal("code" in out && out.code, "R-SC9");
+});
+
+// --- section 9.7: field installs (and an env-slot receiver capture for a
+// nested closure) between the forward's store and its `return` -------------
+
+const install = (obj: string, prop: string, value: Expr): Stmt => ({ k: "expr", expr: { k: "assign", target: { k: "member", obj: ident(obj), prop: lit(prop), computed: false }, value } });
+
+test("super-call: two field installs after the forward fold to `this.<prop> = <expr>;` (section 9.7)", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, store("r0", applyCall()), install("r0", "other", lit("1")), install("r0", "bound", ident("helper")), { k: "return", arg: ident("r0") }];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+  assert.deepEqual(out.body.map((s) => s.k), ["comment", "expr", "expr", "expr"]);
+  const [superStmt, other, bound] = out.body.slice(1) as { expr: Expr }[];
+  const superExpr = superStmt!.expr;
+  assert.equal(superExpr.k === "call" && superExpr.callee.k === "lit" && superExpr.callee.text, "super");
+  const otherExpr = other!.expr as Extract<Expr, { k: "assign" }>;
+  const boundExpr = bound!.expr as Extract<Expr, { k: "assign" }>;
+  assert.deepEqual(otherExpr.target, { k: "member", obj: { k: "this" }, prop: lit("other"), computed: false });
+  assert.deepEqual(boundExpr.target, { k: "member", obj: { k: "this" }, prop: lit("bound"), computed: false });
+});
+
+test("super-call: a receiver captured into an env slot for a nested closure folds, the closure untouched (section 9.7)", () => {
+  // The real react-navigation shape: an arrow class field (`handle = () =>
+  // this.x`) is created BEFORE `super()` runs, so the emitter captures the
+  // receiver into the frame's own env slot for the closure to read, then
+  // installs the closure itself as a field once the capture is done.
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  const handle: Stmt = { k: "func", name: "handle", params: [], body: [{ k: "return", arg: { k: "member", obj: ident("_e1_0"), prop: lit("x"), computed: false } }] } as unknown as Stmt;
+  const decl: Stmt = { k: "decl", kind: "let", names: ["_e1_0"] } as unknown as Stmt;
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, decl, handle, store("r0", applyCall()), store("_e1_0", ident("r0")), install("r0", "handle", ident("handle")), install("r0", "other", lit("1")), { k: "return", arg: ident("r0") }];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+  assert.deepEqual(out.body.map((s) => s.k), ["comment", "decl", "func", "expr", "expr", "expr", "expr"]);
+  // The closure body is untouched (it still reads `_e1_0`, unchanged) --
+  // only the capture statement's right-hand side becomes `this`.
+  const closure = out.body[2] as { body: readonly Stmt[] };
+  assert.deepEqual((closure.body[0] as { arg: Expr }).arg, { k: "member", obj: ident("_e1_0"), prop: lit("x"), computed: false });
+  const capture = out.body[4] as { expr: Extract<Expr, { k: "assign" }> };
+  assert.deepEqual(capture.expr, { k: "assign", target: ident("_e1_0"), value: { k: "this" } });
+});
+
+test("super-call: a field install with a computed key after the forward is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  const computed: Stmt = { k: "expr", expr: { k: "assign", target: { k: "member", obj: ident("r0"), prop: ident("propName"), computed: true }, value: lit("1") } };
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, store("r0", applyCall()), computed, { k: "return", arg: ident("r0") }];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+  assert.match("code" in out ? out.reason : "", /computed key/);
+});
+
+test("super-call: a field install whose value reads the receiver itself is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(FORWARD_BODY);
+  const body: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, store("r0", applyCall()), install("r0", "self", { k: "member", obj: ident("r0"), prop: lit("x"), computed: false }), { k: "return", arg: ident("r0") }];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+  assert.match("code" in out ? out.reason : "", /reads the receiver itself/);
 });
 
 // --- fixture 78: the implicit constructor next to the explicit spread one ---
@@ -402,6 +466,58 @@ for (const version of ["v98", "v99"] as const) {
     // this is a module-level assertion: the forward is still there verbatim
     // and nothing is a statement-level super call.
     const none = js("78-class-implicit-derived-ctor", version, "none");
+    assert.match(none, /__hbc_b_applyArguments\(arguments, /);
+    assert.equal(none.split(/^\s*super\(/gm).length - 1, 0);
+  });
+}
+
+// --- fixture 80: field installs (and a nested-closure receiver capture)
+// after the forward (section 9.7, the 136 `R-SC9 func` refusals) -----------
+
+for (const version of ["v98", "v99"] as const) {
+  test(`super-call: 80-super-forward-field-installs ${version} -- B's constructor is rebuilt with super(...) followed by this.-installs`, () => {
+    const on = js("80-super-forward-field-installs", version);
+    const b = ctorOf(on, "B");
+    assert.doesNotMatch(b, /__hbc_b_applyArguments/);
+    assert.match(b, /^constructor\(\.\.\.\w+\)/);
+    assert.match(b, /\bsuper\(\.\.\.\w+\);/);
+    // The two class fields survive as `this.`-installs after the super call
+    // -- an arrow field (captured into an env slot for `handle`'s own body
+    // to read, so its own assignment reads `this` rather than a raw
+    // register) and a plain one.
+    assert.match(b, /this\.handle\s*=\s*handle;/);
+    assert.match(b, /this\.other\s*=\s*1;/);
+    // Nothing above the rebuilt constructor still returns the receiver by
+    // hand -- a derived constructor yields `this` on its own.
+    assert.doesNotMatch(b, /return\s+\w+;\s*\}\s*$/);
+  });
+
+  test(`super-call: 80-super-forward-field-installs ${version} -- handle() still returns the right value once called as a method`, () => {
+    // The end-to-end proof that capturing the receiver into an env slot
+    // (rather than substituting inside the closure) is behaviour-preserving:
+    // T2 equivalence covers the whole module, but this pins the shape this
+    // rung is specifically responsible for -- `handle`'s own body is
+    // untouched, still reading whatever the env slot the capture statement
+    // now assigns `this` to.
+    const on = js("80-super-forward-field-installs", version);
+    const b = ctorOf(on, "B");
+    assert.match(b, /=\s*this\s*;/); // the capture statement, `_eD_S = this;`
+  });
+
+  test(`super-call: 80-super-forward-field-installs ${version} -- C's explicit rest-param constructor is a different lowering, not this rung's shape`, () => {
+    // `constructor(...args) { super(...args); this.y = args.length; }`
+    // reads its own rest parameter for something besides the forward, so
+    // hermesc never uses the `applyArguments` intrinsic for it at all (it
+    // needs the materialised array) -- the spread/apply lowering instead
+    // (fixture 78's `Explicit`), a different shape this rung does not fold.
+    const on = js("80-super-forward-field-installs", version);
+    const c = ctorOf(on, "C");
+    assert.match(c, /__hbc_b_applyWithNewTarget|__hbc_b_copyRestArgs/);
+    assert.doesNotMatch(c, /\bsuper\(\.\.\./);
+  });
+
+  test(`super-call: 80-super-forward-field-installs ${version} -- --passes=none still shows the untouched forward (PL-05)`, () => {
+    const none = js("80-super-forward-field-installs", version, "none");
     assert.match(none, /__hbc_b_applyArguments\(arguments, /);
     assert.equal(none.split(/^\s*super\(/gm).length - 1, 0);
   });
