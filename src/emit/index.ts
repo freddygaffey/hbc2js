@@ -246,6 +246,47 @@ export function emitModule(analysis: ModuleAnalysis, opts: EmitOptions = {}): Em
     return out;
   };
 
+  // F24-5 (docs/BUGS.md `class-recover-orphan-methods`, PUSHBACK P-38) — a
+  // function that captures NOTHING is not an orphan. `closureEnvOf(f) === null`
+  // is the env graph *stating* that every `Create*Closure`/`CreateBaseClass`
+  // site for `f` passed an undefined environment operand (src/cfg/env-graph.ts,
+  // the `none` lattice value); it is a known answer, not a missing one, and it
+  // is exactly what Hermes emits for a non-capturing nested function from v96
+  // on — including a class method or constructor. Such a function used to be
+  // emitted at MODULE level under `// orphan: no closure creation site was
+  // found`, which is simply false: the creation site is right there, in a known
+  // function. Because the body captures nothing it is scope-independent, so any
+  // host is semantically valid; when every site is in ONE function that function
+  // is the host, and the declaration is hoisted to the top of it (`emitOne`'s
+  // `hoisted` list), so it precedes every use. Functions with sites in several
+  // functions, or with no site at all, stay orphans and keep the 2026-09-04
+  // orphan-host costing below (`resolveOrphanHosts`).
+  let noCaptureHosted = 0;
+  for (let f = 0; f < mod.functions.length; f++) {
+    if (f === globalIndex) continue;
+    if (envGraph.closureEnvOf.get(f) !== null) continue; // unknown, or a real environment
+    if ((parentOf.get(f) ?? null) !== null) continue;
+    if (envGraph.closureCopies.has(f)) continue; // the copy machinery owns its own placement
+    const sites = envGraph.closureCreationSites.get(f);
+    if (sites === undefined || sites.size === 0) continue;
+    const creators = new Set([...sites.keys()].map((k) => Number(k.slice(0, k.indexOf(":")))));
+    if (creators.size !== 1) continue;
+    const host = [...creators][0]!;
+    // A site inside `f`'s own subtree cannot host `f`: that is a cycle, and the
+    // declaration would not be visible to whatever reaches the subtree.
+    if (host === f || isAncestor(f, host)) continue;
+    parentOf.set(f, host);
+    noCaptureHosted++;
+  }
+  if (noCaptureHosted > 0) {
+    diagnostics.push({
+      severity: "info",
+      code: "W_NO_CAPTURE_HOSTED",
+      message: `${noCaptureHosted} function(s) capture no environment and are created at sites in exactly one function; each is emitted inside that function rather than at module level`,
+      context: {},
+    });
+  }
+
   // docs/reports/2026-09-05-ambiguous-closure-env.md §5 "Landing item 4" — a
   // *joined* function's home. When several creation sites capture different but
   // aligned environments and nothing in the function's lexical subtree can tell

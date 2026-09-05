@@ -101,10 +101,17 @@ Three facts the rung keys on, all present above:
   {value: <closure>, enumerable: false, configurable: true})` — the
   `DefineOwnByVal` lowering, `enumerable: false` being the class-method
   signature (an object literal's own methods are enumerable, §1.5);
-* the method functions are emitted as **sibling declarations** (`_fn2`…), here
-  even carrying `// orphan: no closure creation site was found`, because the
-  closure that `CreateClosure` produced was consumed by a `DefineOwnByVal`
-  rather than stored to a named binding.
+* the method functions are emitted as **sibling declarations** (`_fn2`…),
+  inside the function that creates them. Before F24-5 (landed 2026-09-05, sha
+  26054f9) they carried `// orphan: no closure creation site was found` and sat
+  at *module* level: `emitModule` nests a function under the owner of the
+  environment it captures, and a method or constructor that captures nothing
+  has none, so it looked to the emitter like a function with no site at all.
+  The listing above is that older output. Since F24-5 a capture-nothing
+  function whose creation sites are all in one function is declared inside that
+  function (its body is scope-independent, so any host is valid and the
+  declaration is hoisted above every use), which is what puts these
+  declarations in `ctx.fnBody` where the rung can move them.
 
 Target shape:
 
@@ -379,13 +386,14 @@ class-recover: { stage: "B", catalogue: [20],
   HBC-FORMAT level rather than read out of disassembler text. `role === "ctor"`
   is the version-native confirmation that the `CreateBaseClass` operand really
   is a class constructor; `role === "nc"` confirms a method.
-* **F24-5** (not in this batch, §6.4): the emitter's "orphan" hoisting. A
-  method closure consumed by `DefineOwnByVal` is emitted as a sibling
-  declaration with an `// orphan` comment (§1.1). The rung *moves* those
-  declarations into the class body, which is a statement move; if instead the
-  emitter kept the closure inline in the descriptor, the rung would be a pure
-  expression rewrite. Out of scope, recorded because it is the reason for
-  §6.3.
+* **F24-5** (landed 2026-09-05, sha 26054f9, §6.4): the emitter's "orphan"
+  hoisting. A method closure consumed by `DefineOwnByVal` used to be emitted as
+  a module-level declaration with an `// orphan` comment (§1.1); it is now a
+  sibling declaration inside the function that creates it. The rung *moves*
+  those declarations into the class body, which is a statement move; if instead
+  the emitter kept the closure inline in the descriptor, the rung would be a
+  pure expression rewrite. It is the reason for §6.3, and unblocking C1/C3/C4
+  is what it landed for.
 
 ---
 
@@ -618,13 +626,21 @@ rn-template output hash unchanged.
   second argument, the class name from F24-4.
 * **C1, C3 and C4 refuse**, with two new counted reasons
   (`ctor-not-in-body`, `method-not-in-body`) in the R-C11/R-C12 slots. The
-  cause is F24-5, not the matcher: a class method or constructor that
-  captures nothing is emitted at *module* level by `emitModule`'s `parentOf`
+  cause was F24-5, not the matcher: a class method or constructor that
+  captures nothing was emitted at *module* level by `emitModule`'s `parentOf`
   (it nests by captured environment, and such a closure has none), so for
-  fixtures 32, 34 and 36 the declarations the class body must hold are not in
+  fixtures 32, 34 and 36 the declarations the class body must hold were not in
   `ctx.fnBody`. PUSHBACK **P-38**, `docs/BUGS.md` row
-  `class-recover-orphan-methods`. The three acceptance tests that need them
-  stay `skip`ped with that reason; none was inverted or deleted.
+  `class-recover-orphan-methods`. **F24-5 landed 2026-09-05 (sha 26054f9)**:
+  such a function is now declared inside the single function that creates it,
+  the two refusals no longer fire on these fixtures, and the three acceptance
+  tests run unskipped and green exactly as written — none was ever inverted or
+  deleted. One further bug had to be fixed with it: the class-shape checker
+  located the rewritten head at `rebuilt[<count of preceding deletions>]`
+  instead of `rebuilt[headIndex - <that count>]`, which on 32-class-basic
+  substituted the following statement's effects and counted that statement
+  twice ("changed the effect sequence"). `33.obf` still refuses with
+  `group-interrupted`, unchanged.
 * **C5 and `super` remain out of scope**, exactly as section 6.5 proposed:
   R-C8 (`super-shape`) and R-C9 (`ctor-allocates`) stay refusals, the
   constructor is carried into the class body verbatim including its

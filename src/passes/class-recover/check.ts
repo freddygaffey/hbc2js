@@ -42,7 +42,15 @@ export function check(before: readonly Stmt[], after: readonly Stmt[], ctx: Pass
   // body defines the same own properties, with the same descriptors, in the
   // same order, that those calls defined.
   const drop = new Set(g.deleted);
-  const headPos = g.deleted.filter((i) => i < g.headIndex).length;
+  // The head's index in `rebuilt`, which is `before` with `g.deleted` removed:
+  // its original index less the deletions that precede it. (F24-5: this used to
+  // be the *count* of preceding deletions alone, which is the same number only
+  // when `headIndex` happens to be twice it. On 32-class-basic -- four moved
+  // declarations then the head at index 7 -- it named the statement AFTER the
+  // head, so the head's replacement effects were taken from a `rN =
+  // <ctor>.prototype` alias store that was also still counted in its own right,
+  // and the group was abandoned with "changed the effect sequence".)
+  const headPos = g.headIndex - g.deleted.filter((i) => i < g.headIndex).length;
   const expected: unknown[] = [];
   for (let i = 0; i < before.length; i++) {
     if (drop.has(i)) continue;

@@ -21,7 +21,17 @@ import { decompile } from "../../../src/decompile.ts";
 import { repoRoot } from "../../support/paths.ts";
 
 const CONSTRUCTS = join(repoRoot(), "tests", "fixtures", "constructs");
-const js = (fixture: string, version: string): string => decompile(readFileSync(join(CONSTRUCTS, fixture, `${version}.hbc`)), { resolveV98Ambiguity: true }).code;
+// The property under test is the EMITTER's. Since F24-5 these two fixtures'
+// constructors and methods are declared inside fn#0 instead of at module level,
+// so two stage-B rungs now reach them: `class-recover` folds the very statements
+// these regexes read (the `<ident> = _fn1` binding, the `Object.setPrototypeOf`
+// pair, the static installs) into a `class` head, and `fn-naming` renames `_fn1`
+// to its bytecode name. Skipping exactly those two keeps every assertion below
+// as written, measuring exactly what it was written to measure (`--passes=none`
+// would not: the descriptor keys are still registers before `expr-rebuild`). The
+// recovered shape is asserted by tests/gate/passes/class-recover.test.ts.
+const js = (fixture: string, version: string): string =>
+  decompile(readFileSync(join(CONSTRUCTS, fixture, `${version}.hbc`)), { resolveV98Ambiguity: true, passes: { skip: ["class-recover", "fn-naming"] } }).code;
 
 test("CreateBaseClass: an aliased dst_ctor/dst_prototype installs statics on the constructor, not the prototype (34-class-static-members)", () => {
   for (const version of ["v98", "v99"]) {

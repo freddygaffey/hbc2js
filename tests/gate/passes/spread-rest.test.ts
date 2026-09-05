@@ -304,12 +304,12 @@ for (const version of ["v94", "v96", "v99"]) {
     assert.match(code, /\[0, \.\.\.\w+, 4, \.\.\.\w+, 5\]/);
     assert.match(code, /\w+\(\.\.\.\w+\)/); // sum3(...a)
     // Only the prelude's own `function __hbc_b_arraySpread(...) { ... }`
-    // definitions may remain — zero *call* sites, except v99's known orphan-
-    // function gap (docs/BUGS.md, 2026-09-02): `variadicSum` is emitted as
-    // an orphan there, so S3 cannot reach its own `copyRestArgs` call — the
-    // *array/call* spread sites (S1/S2, this fixture's own point) are still
-    // all fully recovered regardless.
-    assert.equal(helperCallCount(code), version === "v99" ? 1 : 0);
+    // definitions may remain — zero *call* sites at every version. v99 used to
+    // keep one: `variadicSum` was emitted as a module-level orphan there, so S3
+    // could not reach its own `copyRestArgs` call. F24-5 places a capture-nothing
+    // function inside the function that creates it, which is the "prove fixed"
+    // condition of docs/BUGS.md's 2026-09-02 spread-rest orphan row.
+    assert.equal(helperCallCount(code), 0);
   });
 
   test(`spread-rest: 41-spread-object (${version}) — every object spread recovered, no helper calls left`, () => {
@@ -319,9 +319,11 @@ for (const version of ["v94", "v96", "v99"]) {
   });
 }
 
-// v98/v99: docs/BUGS.md's 2026-09-02 "spread-rest v98/v99 orphan" row — S3
-// cannot reach an orphaned function's own `func` node, so `combine`'s and
-// `restOnly`'s rest params stay unrewritten there; S1/S2/S4 are unaffected.
+// v98/v99: docs/BUGS.md's 2026-09-02 "spread-rest v98/v99 orphan" row, FIXED by
+// F24-5 — S3 could not reach an orphaned function's own `func` node, so
+// `combine`'s and `restOnly`'s rest params stayed unrewritten at v98/v99 while
+// S1/S2/S4 were unaffected. Both functions capture nothing and are created in
+// fn#0, so they are now declared there and S3 reaches them.
 test("spread-rest: 42-rest-params (v94) — every rest param recovered, no helper calls left", () => {
   const code = decompileFixture("42-rest-params", "v94");
   assert.match(code, /function \w+\(a1, \.\.\.\w+\)/); // combine
@@ -329,12 +331,16 @@ test("spread-rest: 42-rest-params (v94) — every rest param recovered, no helpe
   assert.equal(helperCallCount(code), 0);
 });
 
-test("spread-rest: 42-rest-params (v99) — known orphan-function gap (docs/BUGS.md), other sites unaffected", () => {
-  const code = decompileFixture("42-rest-params", "v99");
-  // `mutateParamAffectsArguments`'s plain `arguments[0]` use is untouched.
-  assert.match(code, /arguments\[0\]/);
-  assert.equal(helperCallCount(code), 2); // the two orphaned functions' calls, tracked by the BUGS.md row
-});
+for (const version of ["v98", "v99"]) {
+  test(`spread-rest: 42-rest-params (${version}) — the former orphan-function gap is closed (F24-5)`, () => {
+    const code = decompileFixture("42-rest-params", version);
+    // `mutateParamAffectsArguments`'s plain `arguments[0]` use is untouched.
+    assert.match(code, /arguments\[0\]/);
+    assert.match(code, /function \w+\(a1, \.\.\.\w+\)/); // combine
+    assert.match(code, /function \w+\(\.\.\.\w+\)/); // restOnly
+    assert.equal(helperCallCount(code), 0);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Regression: fuzz family F1 (docs/reports/2026-09-04-fuzz-families.md).
