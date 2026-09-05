@@ -256,6 +256,14 @@ export const WORKER_ROUTES: readonly Route[] = [
       if (typeof input !== "object" || input === null || Array.isArray(input)) return badRequest("jobs: input must be an object");
       const idem = b["idempotencyKey"];
       const createdBy = b["createdBy"];
+      // `jobs.created_by` is `TEXT REFERENCES sessions(id)` (FK enforcement
+      // on) — an unknown id would otherwise reach sqlite as a 500 "FOREIGN
+      // KEY constraint failed". Validate here so a caller gets a clear 400
+      // instead (found via the UI sending a literal "ui", never a real
+      // session — docs/BUGS.md).
+      if (typeof createdBy === "string" && createdBy !== "" && w.presence.session(createdBy) === undefined) {
+        return badRequest(`jobs: createdBy "${createdBy}" is not a known session id (POST /api/sessions first)`);
+      }
       return ok(
         w.queue.enqueue({
           kind: kind as JobKind,

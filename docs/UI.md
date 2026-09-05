@@ -1496,7 +1496,12 @@ reaches a shard).
 **Queuing work.** "Suggest name" and "Explain" enqueue a job for the selected
 function. They are also the `ai.suggestName` / `ai.explain` actions, so the
 command palette, the context menu and any keybinding pointed at them do the
-same thing — enabled as of spec 23, on an fn target only.
+same thing — enabled as of spec 23, on an fn target only. The UI does not
+register its own session yet (docs/BUGS.md, "UI enqueues jobs without a
+session id"), so it enqueues with no `createdBy` rather than a hardcoded id
+no session owns — `jobs.created_by` is a `sessions(id)` foreign key, and the
+server answers 400 (never a raw constraint-failure 500) for an id it does
+not recognise.
 
 The default backend is offline and deterministic (`HeuristicBackend`: names
 from the function's own callees and strings), so the loop works with no API

@@ -119,6 +119,35 @@ test("POST /api/jobs validates kind and input", async () => {
   assert.equal((await get("/api/jobs", { status: "nope" })).status, 400);
 });
 
+// Regression: BUG 1, ui-qa-report.md — `createdBy: "ui"` (no such session)
+// used to reach sqlite raw and 500 "FOREIGN KEY constraint failed"
+// (jobs.created_by TEXT REFERENCES sessions(id)). It must now be a 400 with
+// a reason naming the field, and a real session id or no field at all must
+// still enqueue and reach `done`.
+test("POST /api/jobs: an unknown createdBy is a 400, never a 500", async () => {
+  const res = await post("/api/jobs", { kind: "suggest-name", input: { fn: FN }, createdBy: "ui" });
+  assert.equal(res.status, 400);
+  assert.match(String((res.json as { reason: string }).reason), /createdBy/);
+  assert.match(String((res.json as { reason: string }).reason), /not a known session/);
+});
+
+test("POST /api/jobs: a live session id, or no createdBy, enqueues and runs to done", async () => {
+  const session = presence.open({ kind: "human", who: "test-ui" });
+  const withSession = await post("/api/jobs", { kind: "suggest-name", input: { fn: FN }, createdBy: session.id, idempotencyKey: "k-with-session" });
+  assert.equal(withSession.status, 200);
+  const enqWithSession = withSession.json as EnqueueResult;
+  assert.equal(enqWithSession.job.createdBy, session.id);
+  await runner.runUntilIdle();
+  assert.equal(queue.get(enqWithSession.job.id)!.status, "done");
+
+  const withoutCreatedBy = await post("/api/jobs", { kind: "suggest-name", input: { fn: FN }, idempotencyKey: "k-no-session" });
+  assert.equal(withoutCreatedBy.status, 200);
+  const enqNoSession = withoutCreatedBy.json as EnqueueResult;
+  assert.equal(enqNoSession.job.createdBy, null);
+  await runner.runUntilIdle();
+  assert.equal(queue.get(enqNoSession.job.id)!.status, "done");
+});
+
 test("enqueue is idempotent and the jobs list carries target/elapsed/backend", async () => {
   const first = await post("/api/jobs", { kind: "explain-fn", input: { fn: FN } });
   assert.equal(first.status, 200);
