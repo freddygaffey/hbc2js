@@ -241,10 +241,162 @@ export const APPLY_ARGUMENTS = "__hbc_b_applyArguments";
  *  shadow nothing that is read. */
 const FORWARD_PARAM = "args";
 
-/** `arguments` occurrences anywhere in `stmts`, nested frames included. */
+/**
+ * `arguments` occurrences that can only be *this* frame's own -- frame-aware,
+ * spec section 9.5: a bare `argumentsObject` read counts only while still in
+ * this frame or a `sameFrame` (generator-resume) closure transparent to it
+ * (`src/emit/ast.ts`'s `func.sameFrame` doc, the same distinction
+ * `countUses` makes for register/name uses, `src/passes/ast.ts`), because a
+ * non-arrow nested `function` always reifies its own `arguments` there --
+ * a separate frame, never this one's. An `ident{name:"arguments"}` read, by
+ * contrast, counts everywhere however deep: that shape is never a nested
+ * function's own (which always reads its own `argumentsObject`, never a
+ * plain identifier for it) -- it is only how a nested *arrow* surfaces a
+ * lexical read of an enclosing frame's `arguments`, the same two shapes
+ * `arguments-form/match.ts`'s own recognition already treats as equivalent.
+ */
 function argumentsUses(stmts: readonly Stmt[]): number {
   let n = 0;
-  walk(stmts, { expr: (e) => { if (e.k === "argumentsObject") n++; } });
+  const visitExpr = (e: Expr, ownFrame: boolean): void => {
+    switch (e.k) {
+      case "argumentsObject":
+        if (ownFrame) n++;
+        return;
+      case "ident":
+        if (e.name === "arguments") n++;
+        return;
+      case "assign":
+        visitExpr(e.target, ownFrame);
+        visitExpr(e.value, ownFrame);
+        return;
+      case "member":
+        visitExpr(e.obj, ownFrame);
+        if (e.computed) visitExpr(e.prop, ownFrame);
+        return;
+      case "call":
+      case "new":
+        visitExpr(e.callee, ownFrame);
+        e.args.forEach((a) => visitExpr(a, ownFrame));
+        return;
+      case "bin":
+      case "logical":
+        visitExpr(e.left, ownFrame);
+        visitExpr(e.right, ownFrame);
+        return;
+      case "unary":
+        visitExpr(e.arg, ownFrame);
+        return;
+      case "cond":
+        visitExpr(e.test, ownFrame);
+        visitExpr(e.then, ownFrame);
+        visitExpr(e.else, ownFrame);
+        return;
+      case "array":
+        e.elements.forEach((x) => visitExpr(x, ownFrame));
+        return;
+      case "object":
+        e.props.forEach((p) => visitExpr("k" in p ? p.arg : p.value, ownFrame));
+        return;
+      case "spread":
+      case "seq":
+        (e.k === "spread" ? [e.arg] : e.exprs).forEach((x) => visitExpr(x, ownFrame));
+        return;
+      case "template":
+        e.exprs.forEach((x) => visitExpr(x, ownFrame));
+        return;
+      case "tagged":
+        visitExpr(e.tag, ownFrame);
+        visitExpr(e.quasi, ownFrame);
+        return;
+      case "func": {
+        // `sameFrame` (the generator-resume closure): transparent, same
+        // frame -- everything else is a genuine separate Hermes function,
+        // which owns its own `arguments` if it uses one at all, so this
+        // traversal still visits it (an arrow nested inside it can still
+        // capture *this* frame's `arguments` as a plain identifier) but
+        // never again as `ownFrame`.
+        const stillOwn = e.sameFrame === true && ownFrame;
+        for (const param of e.params) if (param.init !== undefined) visitExpr(param.init, stillOwn);
+        visitStmts(e.body, stillOwn);
+        return;
+      }
+      default:
+        return; // lit, this, class, jsx, destructure, yield, await: none forward `arguments`
+    }
+  };
+  const visitStmts = (list: readonly Stmt[], ownFrame: boolean): void => {
+    for (const s of list) {
+      switch (s.k) {
+        case "expr":
+          visitExpr(s.expr, ownFrame);
+          break;
+        case "init":
+          visitExpr(s.value, ownFrame);
+          break;
+        case "if":
+          visitExpr(s.test, ownFrame);
+          visitStmts(s.then, ownFrame);
+          visitStmts(s.else, ownFrame);
+          break;
+        case "while":
+          if (s.test !== undefined) visitExpr(s.test, ownFrame);
+          visitStmts(s.body, ownFrame);
+          break;
+        case "do-while":
+          visitExpr(s.test, ownFrame);
+          visitStmts(s.body, ownFrame);
+          break;
+        case "for":
+          if (s.init !== null) visitExpr(s.init, ownFrame);
+          visitExpr(s.test, ownFrame);
+          if (s.update !== null) visitExpr(s.update, ownFrame);
+          visitStmts(s.body, ownFrame);
+          break;
+        case "for-in":
+        case "for-of":
+          if (s.left.k !== "ident") visitExpr(s.left, ownFrame);
+          visitExpr(s.right, ownFrame);
+          visitStmts(s.body, ownFrame);
+          break;
+        case "labeled":
+          visitStmts(s.body, ownFrame);
+          break;
+        case "return":
+          if (s.arg !== null) visitExpr(s.arg, ownFrame);
+          break;
+        case "throw":
+          visitExpr(s.arg, ownFrame);
+          break;
+        case "try":
+          visitStmts(s.block, ownFrame);
+          visitStmts(s.handler, ownFrame);
+          break;
+        case "switch":
+          visitExpr(s.disc, ownFrame);
+          for (const c of s.cases) {
+            if (c.test !== null) visitExpr(c.test, ownFrame);
+            visitStmts(c.body, ownFrame);
+          }
+          break;
+        case "classdecl":
+          visitExpr(s.value, ownFrame);
+          break;
+        case "func":
+          // A hoisted declaration (section 9.4): never `sameFrame` (that
+          // marker is only ever set on the `Expr` form the generator
+          // recovery returns), so always a separate frame from here on.
+          for (const param of s.params) if (param.init !== undefined) visitExpr(param.init, false);
+          visitStmts(s.body, false);
+          break;
+        case "iife":
+          visitStmts(s.body, ownFrame);
+          break;
+        default:
+          break; // decl, break, continue, directive, comment, raw
+      }
+    }
+  };
+  visitStmts(stmts, true);
   return n;
 }
 
