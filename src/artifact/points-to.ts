@@ -35,6 +35,13 @@
 //    object (the factory's `exports` parameter, or `module.exports` read off
 //    its `module` parameter); two closures under one name, or a put on an
 //    object this pass cannot prove is the exports object, resolve to nothing;
+//  - the ONE exception (spec 17 §14.4, docs/BUGS.md "export-side
+//    resolution"): babel's `exports.default = void 0;` prologue. A store of a
+//    value PROVEN to be `undefined` is set aside instead of poisoning the
+//    name, and forgiven only if `provenLastWrite` proves over the factory's
+//    CFG that the single closure store to that name always runs last (see
+//    there for the five obligations). `_interopRequireDefault` wrappers and a
+//    helper-assembled `module.exports` are still refused;
 //  - any unresolved link in the chain drops the edge entirely. One edge per
 //    call site, or none.
 //
@@ -48,7 +55,7 @@
 // here), and a second, weaker implementation of the same analysis is exactly
 // the kind of thing that produces a WRONG edge.
 import { siteKey } from "../cfg/types.ts";
-import type { EnvNodeId, ModuleAnalysis } from "../cfg/types.ts";
+import type { BlockId, EnvNodeId, FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import type { Instruction } from "../disasm/decode.ts";
 import type { HbcModule } from "../parse/types.ts";
 import type { ResolvedCallRow } from "./schema.ts";
@@ -175,6 +182,75 @@ function uniqueClosureRegs(insns: readonly Instruction[]): ReadonlyMap<number, n
   return out;
 }
 
+/** The block whose offset range contains `offset` (the §4.5 synthetic block
+ *  has `start`/`end` of -1 and contains nothing). */
+function blockAt(cfg: FunctionCfg, offset: number): BlockId | undefined {
+  for (const b of cfg.blocks) if (b.start >= 0 && offset >= b.start && offset < b.end) return b.id;
+  return undefined;
+}
+
+/**
+ * The ordering proof behind the ONE widening this pass allows over "a name
+ * written once with a proven closure and once with an unproven value has no
+ * provable target": babel's `exports.default = void 0;` prologue (spec 17
+ * §14.4). It returns true only when the closure store is PROVEN to be the
+ * last write to the name that any exit can observe:
+ *
+ *  - the only other writes to the name are `undefOffsets`, each a store of a
+ *    value this pass proved is `undefined` (the caller refuses outright if
+ *    any other unproven value is written to the name, exactly as before);
+ *  - every void-0 store DOMINATES the closure store, so it always runs first;
+ *  - the closure store POST-DOMINATES every void-0 store — no path from a
+ *    void-0 store reaches an exit without running it, so no exit can see
+ *    `undefined` as the last write;
+ *  - no exception region covers the span: a throw between the two stores
+ *    could be caught and leave the hole observable;
+ *  - the exports object is neither read nor escapes inside the span
+ *    (`escapeOffsets`), so nothing can capture or observe the hole either.
+ *
+ * Anything else refuses, and the name resolves to nothing as it did before.
+ */
+function provenLastWrite(cfg: FunctionCfg | null, undefOffsets: readonly number[], closureOffset: number, escapeOffsets: readonly number[]): boolean {
+  if (cfg === null || undefOffsets.length === 0) return false;
+  const bC = blockAt(cfg, closureOffset);
+  if (bC === undefined) return false;
+  let lo = closureOffset;
+  for (const off of undefOffsets) if (off < lo) lo = off;
+  if (lo >= closureOffset) return false;
+  for (const r of cfg.regions) if (r.startPc <= closureOffset && r.endPc > lo) return false;
+  for (const off of escapeOffsets) if (off >= lo && off <= closureOffset) return false;
+  // Blocks that reach an exit WITHOUT passing through the closure store's
+  // block: backwards reachability over normal edges with `bC` removed.
+  const escapesExit = new Set<BlockId>();
+  const stack: BlockId[] = [];
+  for (const e of cfg.exits) {
+    if (e === bC || escapesExit.has(e)) continue;
+    escapesExit.add(e);
+    stack.push(e);
+  }
+  while (stack.length > 0) {
+    const b = stack.pop()!;
+    for (const p of cfg.blocks[b]!.preds) {
+      if (p === bC || escapesExit.has(p)) continue;
+      escapesExit.add(p);
+      stack.push(p);
+    }
+  }
+  for (const off of undefOffsets) {
+    const bU = blockAt(cfg, off);
+    if (bU === undefined) return false;
+    // Same block: no branch between the two stores, so the closure store
+    // always runs after this one.
+    if (bU === bC) {
+      if (off >= closureOffset) return false;
+      continue;
+    }
+    if (!cfg.dom.dominates(bU, bC)) return false;
+    if (escapesExit.has(bU)) return false;
+  }
+  return true;
+}
+
 /** Slot bookkeeping shared by the module-value and closure-value resolvers. */
 interface SlotIndex {
   /** `${env}:${slot}` -> every store SITE key + every reading function. */
@@ -229,6 +305,14 @@ function exportsOfModule(mod: HbcModule, analysis: ModuleAnalysis, f: Factory, i
   }
   const params = paramRegs(insns);
   const uniqueClosures = uniqueClosureRegs(insns);
+  // Only the void-0 ordering proof needs the CFG; a factory whose CFG cannot
+  // be built simply keeps the old, stricter refusal.
+  let cfg: FunctionCfg | null = null;
+  try {
+    cfg = analysis.cfg(f.fn);
+  } catch {
+    cfg = null;
+  }
   const resolvedAt = analysis.envGraph.resolvedAt;
   // Two passes: the first learns which environment slots of this factory hold
   // one closure (a hoisted `function foo(){}` the factory later exports is
@@ -237,7 +321,7 @@ function exportsOfModule(mod: HbcModule, analysis: ModuleAnalysis, f: Factory, i
   let closureSlots = new Map<string, number>();
   for (let pass = 0; pass < 2; pass++) {
     const storeFacts = new Map<string, { readonly key: string; readonly value: number | null }>();
-    const found = exportsPass(mod, insns, labels, f, params, uniqueClosures, resolvedAt, closureSlots, storeFacts);
+    const found = exportsPass(mod, insns, labels, f, params, uniqueClosures, resolvedAt, closureSlots, storeFacts, cfg);
     if (pass === 1) return found;
     closureSlots = resolveSlotValues(index, storeFacts);
   }
@@ -256,9 +340,17 @@ function exportsPass(
   resolvedAt: ReadonlyMap<string, EnvNodeId>,
   closureSlots: ReadonlyMap<string, number>,
   storeFacts: Map<string, { readonly key: string; readonly value: number | null }>,
+  cfg: FunctionCfg | null,
 ): ReadonlyMap<string, number> {
   const out = new Map<string, number>();
   const ambiguous = new Set<string>();
+  // Offsets, per export name, of the stores of a PROVEN `undefined` (babel's
+  // `exports.default = void 0;` prologue) and of the proven closure stores;
+  // plus every offset at which the exports object is read or escapes. All
+  // three feed `provenLastWrite` once the walk is over.
+  const undefWrites = new Map<string, number[]>();
+  const closureWrites = new Map<string, number[]>();
+  const escapes: number[] = [];
   // Function-wide (`paramRegs`) OR straight-line: hermesc reuses a register
   // for `this`/temporaries and the `exports` parameter in the same factory
   // (`LoadParam r0, 4` after a `CreateEnvironment r0`), so the function-wide
@@ -270,21 +362,50 @@ function exportsPass(
   // Straight-line, dropped at every branch target.
   let closures = new Map<number, number>(); // reg -> created fn
   let exportsRegs = new Set<number>(); // regs proven to hold the exports object
+  let undefRegs = new Set<number>(); // regs proven to hold `undefined`
   const closureOf = (reg: number): number | undefined => closures.get(reg) ?? uniqueClosures.get(reg);
+  const isExportsReg = (reg: number): boolean => exportsRegs.has(reg) || isExportsParam(reg);
   for (const insn of insns) {
     if (labels.has(insn.offset)) {
       closures = new Map();
       exportsRegs = new Set();
+      undefRegs = new Set();
       paramLocal = new Map();
     }
     const name = insn.name;
     const dst = insn.operands[0]?.value;
+
+    // Does the exports object leak here? Every SOURCE use of a proven-exports
+    // register counts, except propagation through `Mov` and the object of a
+    // put — so a property READ (`Get*ById` off exports) and any call argument
+    // or environment store both count. Only `provenLastWrite` consults this.
+    if (!MOV.test(name)) {
+      const isPut = PUT_BY_ID.test(name) || PROPKEY_DEF.test(name);
+      for (const [i, op] of insn.operands.entries()) {
+        if (op.type !== "Reg8" && op.type !== "Reg32") continue;
+        if (i === 0 && (isPut || !NOT_A_DEF.test(name))) continue;
+        if (isExportsReg(op.value)) {
+          escapes.push(insn.offset);
+          break;
+        }
+      }
+    }
 
     if (name === "LoadParam" || name === "LoadParamLong") {
       if (dst !== undefined) {
         paramLocal.set(dst, V(insn, 1));
         closures.delete(dst);
         exportsRegs.delete(dst);
+        undefRegs.delete(dst);
+      }
+      continue;
+    }
+    if (name === "LoadConstUndefined") {
+      if (dst !== undefined) {
+        undefRegs.add(dst);
+        closures.delete(dst);
+        exportsRegs.delete(dst);
+        paramLocal.delete(dst);
       }
       continue;
     }
@@ -294,11 +415,14 @@ function exportsPass(
         closures.set(dst, V(insn, 2));
         exportsRegs.delete(dst);
         paramLocal.delete(dst);
+        undefRegs.delete(dst);
       }
       continue;
     }
     if (MOV.test(name) && dst !== undefined) {
       const src = V(insn, 1);
+      if (undefRegs.has(src)) undefRegs.add(dst);
+      else undefRegs.delete(dst);
       const c = closureOf(src);
       if (c !== undefined) closures.set(dst, c);
       else closures.delete(dst);
@@ -313,6 +437,7 @@ function exportsPass(
       if (dst === undefined) continue;
       paramLocal.delete(dst);
       exportsRegs.delete(dst);
+      undefRegs.delete(dst);
       const env = resolvedAt.get(siteKey(f.fn, insn.offset));
       const held = env === undefined ? undefined : closureSlots.get(`${env}:${V(insn, 2)}`);
       if (held === undefined) closures.delete(dst);
@@ -331,6 +456,7 @@ function exportsPass(
       if (dst === undefined) continue;
       closures.delete(dst);
       paramLocal.delete(dst);
+      undefRegs.delete(dst);
       let text: string | undefined;
       try {
         text = mod.strings.get(V(insn, 3));
@@ -363,10 +489,16 @@ function exportsPass(
       // disqualifying as two different closures: at runtime the LAST write
       // wins, so a name written once with a proven closure and once with an
       // unproven value has no provable target. (Cost: babel's
-      // `exports.default = void 0;` prologue makes `default` unprovable for
-      // every module that uses it — spec 17 §14.4 "what still escapes".)
+      // `exports.default = void 0;` prologue is the ONE exception: a store of
+      // a PROVEN `undefined` is set aside here and forgiven at the end only
+      // if `provenLastWrite` proves a single later closure store always
+      // overwrites it — spec 17 §14.4.)
       if (fnIdx === undefined) {
-        ambiguous.add(text);
+        if (undefRegs.has(V(insn, 1))) {
+          const list = undefWrites.get(text);
+          if (list === undefined) undefWrites.set(text, [insn.offset]);
+          else list.push(insn.offset);
+        } else ambiguous.add(text);
         continue;
       }
       const prev = out.get(text);
@@ -375,6 +507,9 @@ function exportsPass(
         continue;
       }
       out.set(text, fnIdx);
+      const written = closureWrites.get(text);
+      if (written === undefined) closureWrites.set(text, [insn.offset]);
+      else written.push(insn.offset);
       continue;
     }
     const op0 = insn.operands[0];
@@ -382,9 +517,17 @@ function exportsPass(
       closures.delete(dst);
       exportsRegs.delete(dst);
       paramLocal.delete(dst);
+      undefRegs.delete(dst);
     }
   }
   for (const name of ambiguous) out.delete(name);
+  // A name that also took a void-0 store survives only with the full ordering
+  // proof: exactly one closure store, and it provably runs last.
+  for (const [name, offsets] of undefWrites) {
+    if (!out.has(name)) continue;
+    const written = closureWrites.get(name);
+    if (written === undefined || written.length !== 1 || !provenLastWrite(cfg, offsets, written[0]!, escapes)) out.delete(name);
+  }
   return out;
 }
 

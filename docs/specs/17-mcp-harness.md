@@ -597,9 +597,40 @@ drops the edge; one edge per call site, or none.
   parameter, or the object a `module.exports = …` installed). Two closures
   under one name, or one closure plus one unproven value under the same name
   (the LAST write wins at runtime, so the target is not provable), resolve to
-  nothing.
+  nothing -- with ONE proven exception, below.
 - A factory whose parameter count cannot locate `exports`/`module`
   positionally is skipped entirely.
+
+**The one widening: babel's `exports.default = void 0;` prologue** (2026-09-05,
+docs/BUGS.md "export-side resolution"). `export default f` compiles to a store
+of `undefined` under the name, then the real closure store, so every
+babel-authored module made its own `default` unprovable. A store of a value
+this pass PROVES is `undefined` (`LoadConstUndefined`, tracked per register
+exactly like the closure lattice) is now set aside rather than poisoning the
+name, and forgiven only when `provenLastWrite` proves, over the FACTORY'S CFG,
+that the closure store is the last write any exit can observe:
+
+| obligation | why |
+|---|---|
+| exactly ONE proven closure store to the name, and no other unproven store | two closure stores, or a second unproven value, is the old refusal unchanged |
+| every void-0 store's block DOMINATES the closure store's block (same block: strictly lower pc) | the hole is always written first |
+| the closure store's block POST-DOMINATES every void-0 store's block (backwards reachability with that block removed) | no path from the hole reaches an exit without filling it |
+| no exception region overlaps the span | a throw in between could be caught and leave the hole observable |
+| the exports object is neither READ nor escapes inside the span | a `Get*ById` off it, or any use as a call argument or environment store, could capture the hole (`Object.defineProperty(exports, ...)` before the prologue is outside the span, which is where babel puts it) |
+
+Deliberately NOT widened, and still refused: `_interopRequireDefault(require(d[N]))`
+wrappers and a `module.exports` assembled by a helper function (docs/BUGS.md's
+new row for those two).
+
+**Measured (the widening).** Service NSW 5,183 -> 4,827 unresolved of 11,972
+proven sites, 6,789 -> 7,145 edges, and no existing edge changed callee.
+rn-template is UNCHANGED (934 edges, 152 of 1,086 unresolved) because its
+residue contains no `default` at all -- 62 `oneOf`, 19 `shape`, 15
+`polyfillGlobal`, 11 `oneOfType`, then hooks, i.e. entirely the other two
+causes (docs/PUSHBACK.md P-24). Construct fixture
+`tests/fixtures/constructs/68-babel-default-export-prologue`: module 0 is the
+provable prologue, module 1 puts the closure store behind an `if` and must
+still refuse.
 
 **False-positive classes it REMOVES** (§14.1's list): (1) a same-named method
 on an unrelated object — the receiver is proven, so an unrelated object is
@@ -612,11 +643,11 @@ module 0's.
 **What still escapes (honest residue).** A receiver that is a parameter, a
 property of another object, or a value that crosses a branch target; an
 `_interopRequireDefault(require(d[N]))` wrapper (the module value is consumed
-by a call, so it is dropped); babel's `exports.default = void 0;` prologue,
-which makes `default` unprovable for every module that uses it; a
-`module.exports` assembled by a helper. Measured tail: on rn-template 152 of
-1,086 proven `export E of M` call sites had no provable target; on the Service
-NSW bundle 5,183 of 11,972.
+by a call, so it is dropped); a `module.exports` assembled by a helper; and a
+babel `exports.default = void 0;` prologue whose closure store fails any of
+the five obligations above. Measured tail: on rn-template 152 of 1,086 proven
+`export E of M` call sites have no provable target (unchanged by the
+widening); on the Service NSW bundle 4,827 of 11,972 (was 5,183).
 
 **Cost.** Decode-only and NOT bundle-wide: the pass decodes the module
 factories plus the readers of a slot it proved (rn-template 452 of 4,199
