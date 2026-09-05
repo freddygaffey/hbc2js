@@ -331,6 +331,18 @@ class SecretsService {
 }
 ```
 
+Implementation note (docs/BUGS.md `readStringsIndex`/`readStringUses` row,
+fixed): `src/secrets/service.ts`'s actual constructor is
+`{artifactDir: string, artifact?: ArtifactService}` rather than the two
+positional args above. When `artifact` is passed — the shape every real
+caller (`McpResources.scanSecrets`) now uses — the string table, xref, and
+evidence resolution all go through that already-open `ArtifactService`, so a
+`.hbcproj` (DB-backed, spec 16 §2.4) project works exactly like a JSONL one
+(no `available: false`). When `artifact` is omitted, a legacy direct-read
+path (`index/strings.json`/`string-uses.jsonl` off disk) is kept for the CLI
+and for narrow index-only fixtures that have no `manifest.json` at all and
+so cannot open an `ArtifactService`.
+
 ## 6. Efficiency, bounds, incremental re-scan
 
 - **Time bound**: full cold scan of a 4k-function bundle (~30–60k strings,

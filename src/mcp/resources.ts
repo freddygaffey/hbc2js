@@ -14,8 +14,7 @@
 // `history`, `annotatedCalls` below.
 import type { DatabaseSync } from "node:sqlite";
 import type { LineMapEntry } from "../emit/origin.ts";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { ArtifactService, CAPS, type Bounded, type Edge, type FnSummary, type ObjectTablesOptions, type TemplateInjectionsOptions } from "../artifact/service.ts";
 import { ProjectService, PROJECT_CAPS, type AnnotationRow } from "../project/service.ts";
 import type { ResolvedFinding } from "../project/findings.ts";
@@ -577,16 +576,14 @@ export class McpResources {
    *  an unchanged bundle writes nothing new (§6 of that module's own
    *  header) — this is the SAME write path the CLI already ships and
    *  tests, called here rather than reinvented, per §14 addition 2 ("the
-   *  cheap lead generators, callable"). Honest `available: false` (not a
-   *  crash) when the project is `.hbcproj`-backed: `SecretsService` reads
-   *  `index/strings.json`/`string-uses.jsonl` off disk directly and does
-   *  not yet know about the DB stratum (docs/BUGS.md — filed alongside this
-   *  change, not silently swallowed). */
+   *  cheap lead generators, callable"). Works against a DB-backed
+   *  (`.hbcproj`) project exactly like a JSONL one now: `SecretsService`
+   *  reads through the already-open `this.artifact` (docs/BUGS.md
+   *  `readStringsIndex`/`readStringUses` row, fixed) — the `available:
+   *  false` branch of the return type is kept for a genuine construction
+   *  failure but is no longer reachable from a missing `index/*.jsonl`. */
   scanSecrets(): (Bounded<SecretFindingRow> & { readonly available: true }) | { readonly available: false; readonly reason: string; readonly rows: readonly SecretFindingRow[]; readonly total: 0; readonly truncated: false } {
-    if (!existsSync(join(this.artifactDir, "index", "strings.json"))) {
-      return { available: false, reason: "scan/secrets: this project is .hbcproj-backed; src/secrets/service.ts reads index/*.jsonl directly and does not yet support DB-backed artifacts (docs/BUGS.md)", rows: [], total: 0, truncated: false };
-    }
-    const svc = new SecretsService({ artifactDir: this.artifactDir });
+    const svc = new SecretsService({ artifactDir: this.artifactDir, artifact: this.artifact });
     svc.scan();
     const rows = svc.list();
     const cap = CAPS_SCAN_SECRETS;
