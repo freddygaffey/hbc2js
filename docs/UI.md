@@ -1683,6 +1683,31 @@ this bug came from, not just the default: "nothing selected" is now
 representable in the URL as the plain absence of a `fn`/`mod` param, never
 as `fn=0` (spec 26 §1.2 row 21).
 
+**On the gate.** `tests/gate/ui/e2e-smoke.test.ts` runs the fixture suite
+(`cd ui && npm run e2e`, or the root `npm run test:e2e` alias) as a real
+`node:test` test — a red Playwright run fails `npm run test:gate`/`npm test`,
+not just the two structural checks (spec/config exist; scripts wired) that
+used to be all this file did. It uses its own port base and throwaway root
+(`HBC2JS_E2E_PORT_BASE`/`HBC2JS_E2E_ROOT`, keyed off the test's own pid) so
+it never collides with :7341/:7342, the live NSW rig's :4173/:7331, or
+another agent's own gate run on the same box. It `t.skip`s, with a stated
+reason, ONLY when Playwright's own Chromium build is not present under its
+cache dir (`~/Library/Caches/ms-playwright` on macOS, `~/.cache/ms-playwright`
+on Linux, or `PLAYWRIGHT_BROWSERS_PATH`) — a Linux CI image that never ran
+`npx playwright install chromium` skips cleanly rather than failing on a
+missing browser; add that install step to a CI job to turn the skip into a
+real run there. Before 2026-09-05 this suite (19 specs) was never run by any
+agent or by CI — two real product bugs (the command palette's `Command.Item`
+filtering on the action id instead of its visible title, so almost nothing
+typed by its label ever matched; and the AI tab's "Suggest name"/"Explain"
+always 500ing on a `FOREIGN KEY constraint failed` because the enqueue call
+sent a `createdBy` that was never an open session id) had shipped invisibly
+behind unit tests that mocked the exact seam where each one lived — see
+`docs/BUGS.md`'s two 2026-09-05 "e2e-gate task" resolved rows.
+
+**Component/DOM tests (`ui/`'s `vitest`, next section) are still not part of
+the root gate** — only the Playwright suite is, via the file above.
+
 A real bug the suite caught and a fix that shipped with it: `LeftPane.tsx`'s
 auto-select-first-module effect could fire while `GET /api/segregation` was
 still loading, against the FALLBACK grouping's keys (`groupModules`, e.g.
@@ -1704,8 +1729,9 @@ package's zero-runtime-dependency rule is untouched — nothing under `src/`
 imports them); `vitest` is the runner (`ui/vitest.config.ts`,
 `npm run test:dom` inside `ui/`), reusing the same Vite/Tailwind/React
 plugin config the app itself builds with rather than a second bundler
-config. These tests are not part of the root `npm test` gate — they run
-under `ui/`, same as `ui/e2e/*` does. Discipline: assert semantics (roles,
+config. These tests run under `ui/` (`npm run test:dom`) and are not
+themselves part of the root `npm test` gate — unlike `ui/e2e/*`, which is,
+see "On the gate" above. Discipline: assert semantics (roles,
 accessible names, structure), never pixels — `ui/src/components/
 KitchenSink.dom.test.tsx` is the example to copy from.
 

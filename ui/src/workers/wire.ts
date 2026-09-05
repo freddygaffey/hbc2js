@@ -146,8 +146,19 @@ export const workersApi = {
     USING_MOCK ? Promise.resolve({ rows: [], total: 0 }) : call(`/suggestions${fn !== undefined ? `?fn=${fn}` : ""}`),
   workerEvents: (since: number): Promise<WorkerEventsTail> =>
     USING_MOCK ? Promise.resolve({ rows: [], cursor: since }) : call(`/worker-events?since=${since}`),
+  // `createdBy`, when given, must be a REAL open session id — the jobs
+  // table's `created_by TEXT REFERENCES sessions(id)` (src/projdb/schema.sql)
+  // is enforced, and the UI never opens a `POST /api/sessions` presence
+  // session for itself (only the worker pool does, in startWorkers). This
+  // used to send the literal string "ui" here, which is not any session's
+  // id, so EVERY job the UI ever queued 500'd with "FOREIGN KEY constraint
+  // failed" the moment sqlite's foreign-key enforcement was on — found by
+  // ui/e2e/ai-suggestions.spec.ts (2026-09-05), matching Fred's "none of
+  // the AI features [are] working". Omitting it leaves `created_by` NULL
+  // (allowed: the column has no NOT NULL), which is honest — the UI does
+  // not yet have a real presence session to attribute this to.
   enqueue: (kind: string, input: Record<string, unknown>): Promise<{ readonly job: JobRow; readonly deduped: boolean }> =>
-    USING_MOCK ? mockWrite() : call("/jobs", { method: "POST", body: JSON.stringify({ kind, input, createdBy: "ui" }) }),
+    USING_MOCK ? mockWrite() : call("/jobs", { method: "POST", body: JSON.stringify({ kind, input }) }),
   cancel: (id: string): Promise<{ readonly cancelled: boolean; readonly job: JobRow }> =>
     USING_MOCK ? mockWrite() : call(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" }),
   promote: (target: string, rid: string): Promise<{ readonly rid: string; readonly line: string }> =>

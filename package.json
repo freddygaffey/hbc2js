@@ -21,7 +21,8 @@
     "gen:tables:check": "node tools/gen-tables/gen.ts --check",
     "fixtures": "tests/fixtures/build.sh",
     "cli": "node src/cli.ts",
-    "ui-server": "node src/cli.ts ui-server"
+    "ui-server": "node src/cli.ts ui-server",
+    "test:e2e": "cd ui && npm run e2e"
   },
   "devDependencies": {
     "typescript": "^5.8.0",
