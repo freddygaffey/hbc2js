@@ -7,6 +7,7 @@ import { asyncRecovery } from "./async-recovery/index.ts";
 import { literalForms } from "./literal-forms/index.ts";
 import { callShape } from "./call-shape/index.ts";
 import { classRecover } from "./class-recover/index.ts";
+import { ctorThis } from "./ctor-this/index.ts";
 import { defaultParams } from "./default-params/index.ts";
 import { destructure } from "./destructure/index.ts";
 import { spreadRest } from "./spread-rest/index.ts";
@@ -127,6 +128,12 @@ export const REGISTRY: readonly Pass[] = [
   // registered after `object-literal` (its descriptor argument must already be
   // an `object` node) and before every renaming rung.
   classRecover as Pass,
+  // R12 (docs/specs/passes/26-ctor-this.md): replaces the base-class
+  // constructor's `new.target.prototype` stand-in with the real `this`. It
+  // reads the `class` node `class-recover` builds and it must land before
+  // `private-fields`, whose install shape is only recognisable once the
+  // constructor's target IS `this`.
+  ctorThis as Pass,
   // Private-name follow-up (docs/BUGS.md 2026-09-01 "class private fields"):
   // needs the `class` node `classRecover` just built, and the same register
   // identity, so it sits immediately after it and before every renaming rung.
