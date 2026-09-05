@@ -155,8 +155,8 @@ prove, and the ones that look closest (`assign:ident=ident` on both sides) are
 groups where a LATER pair blocks -- the table reports the first blocker only.
 The commonest real blocker is the property store an inlined IIFE ends with
 (`out.f = <closure>`, `arr[0] = <closure>`): proving that safe needs escape
-analysis showing the base is a freshly allocated object with no setter, which
-is a much bigger argument than this step should carry.
+analysis showing the base is a freshly allocated object with no setter. That
+argument is section 9, and section 9.6 re-measures this table with it.
 
 rnav is therefore UNCHANGED by this step (0 groups planned, so the emitted
 statement list is the input one, byte for byte); the round-trip figures of
@@ -279,3 +279,41 @@ in `docs/BUGS.md` so it is never lost, and it is the same class of assumption
 the first place. Every other premise (F1-F5, 9.2) is checked syntactically and
 conservatively: any use of a base that the analysis cannot classify is an
 escape.
+
+### 9.6 Measured (react-navigation-example-0.85.3)
+
+`node tools/passes/iife-overlap.ts <bundle.hbc>`, before -> after section 9,
+same 339 groups / 757 environments:
+
+| class | groups before | envs before | groups after | envs after |
+|---|---|---|---|---|
+| `statement in two environments` | 291 | 622 | 291 | 622 |
+| blocked swap, one side a member load or store | 18 | 63 | 16 | 64 |
+| blocked swap, both sides identifier stores | 18 | 37 | 24 | 55 |
+| blocked swap, one side an object literal | 4 | 19 | 0 | 0 |
+| blocked swap, one side a labeled statement | 8 | 16 | 8 | 16 |
+| reordering proved | 0 | 0 | 0 | 0 |
+
+So the escape argument closes the object-literal class outright and the filler
+repair carries several groups past their first blocker into a later one, but
+**no group on rnav becomes provable**: the 64 environments still blocked on a
+member store are blocked because their BASE is not fresh, not because the store
+could not move. Bases refused, by section 9.4 code: `E_NOT_FRESH` 239,
+`E_ESCAPES_CLOSURE` 88, `E_ESCAPES_STORE` 10, `E_ESCAPES_CALL` 2. The shape a
+real bundle uses is a store into an object it was GIVEN (a module `exports`, a
+`this`, a required namespace), not one it just allocated; fixture 79's
+`arr = new Array(2)` is the allocating variant and is now wrapped.
+
+rnav is therefore still UNCHANGED by the grouping step (0 groups planned, so
+the emitted statement list is the input one). Re-measured on this machine with
+`node tools/e2e/roundtrip-corpus.ts --only react-navigation-example-0.85.3
+--passes on`, at `a217e9c` and with section 9 landed: IDENTICAL 6215 (43.05%)
+of 14437 both times, `diff:LoadFromEnvironment(imm)` 804 both times,
+`diff:CreateFunctionEnvironment(imm)` 621 both times -- byte for byte the same
+corpus verdicts. (Section 6's 6214/616 were measured on another worktree; the
+drift is the corpus-migration effect the `docs/BUGS.md` row already records,
+which is why the before number was re-measured here rather than quoted.)
+
+The next lead is NOT more reordering either: it is `E_ESCAPES_CLOSURE` and
+`E_NOT_FRESH`, i.e. an argument about an object the function received rather
+than allocated, which needs a whole-module notion of who else can see it.

@@ -258,15 +258,29 @@ export function planGrouping(body: readonly Stmt[], members: readonly GroupMembe
     return null;
   };
 
+  // A filler is moved at most once per destination block: a filler that has
+  // already been tried on both sides of a blocking swap is a real blocker, and
+  // reporting the swap is more useful to `tools/passes/iife-overlap.ts` than
+  // reporting the loop. The budget is the backstop.
+  const tried = new Map<number, Set<number>>();
+  const flip = (at: number, to: number): boolean => {
+    const seenLabels = tried.get(at) ?? new Set<number>([label[at - lo]!]);
+    tried.set(at, seenLabels);
+    if (seenLabels.has(to)) return false;
+    seenLabels.add(to);
+    label[at - lo] = to;
+    return true;
+  };
   const budget = 2 * (hi - lo + 1);
   for (let round = 0; ; round++) {
     const bad = firstBlocked();
     if (bad === null) break;
     const [i, j] = bad;
+    const blocked = { reason: `swap ${stmtShape(body[i]!)} / ${stmtShape(body[j]!)}`, codes };
     if (round >= budget) return { reason: "regrouping did not converge", codes };
-    if (owner[j - lo] === null) label[j - lo] = label[i - lo]!;
-    else if (owner[i - lo] === null) label[i - lo] = label[j - lo]!;
-    else return { reason: `swap ${stmtShape(body[i]!)} / ${stmtShape(body[j]!)}`, codes };
+    if (owner[j - lo] === null && flip(j, label[i - lo]!)) continue;
+    if (owner[i - lo] === null && flip(i, label[j - lo]!)) continue;
+    return blocked;
   }
 
   const order: number[] = [];
