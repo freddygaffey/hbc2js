@@ -149,6 +149,14 @@ VM work — the pattern is proven in-repo. **Recommendation: worktrees ARE
 warranted here.** One ephemeral worktree per `recompile_edit` experiment (or
 per agent running such experiments), torn down after.
 
+> **Status 2026-09-05 (spec 26 L8, landed):** implemented as
+> `src/ui-server/sandbox.ts`. One ephemeral sandbox per `recompile_edit`
+> experiment, torn down on success, on throw and on process exit. §2.4's
+> "plain scratch directory ... may suffice when the edit is a single-file
+> patch" is the shipped DEFAULT (`kind: "copy"`, D31); `kind: "worktree"` is
+> implemented alongside it for the experiment that wants git's own diff, and
+> spec 26 §4.3 leaves the final choice of default to Fred.
+
 ### 2.2 (b) Version-diff / comparing two app versions (P2.5) — YES, natural fit
 
 Comparing two versions of an app means having two full source/bundle trees

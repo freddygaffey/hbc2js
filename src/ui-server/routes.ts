@@ -17,6 +17,7 @@ import { listModules, listFunctions, listLeads, moduleSource, invalidateModuleSo
 import { segregation } from "./segregation.ts";
 import { WORKER_ROUTES, type WorkersCtx } from "./workers-routes.ts";
 import { SCREENS_ROUTES } from "./screens.ts";
+import { RECOMPILE_ROUTES } from "./sandbox.ts";
 
 export interface UiRequest {
   readonly method: string;
@@ -453,20 +454,18 @@ const BASE_ROUTES: readonly Route[] = [
     re: /^\/api\/tools\/generate-documentation$/,
     handler: (_p, req, ctx) => ok(ctx.tools.generateDocumentation((req.body ?? {}) as Parameters<McpTools["generateDocumentation"]>[0])),
   },
-  {
-    // §13's warning/watermark travel verbatim — this handler does not touch
-    // the result shape at all, just forwards `RecompileEditResult` as-is.
-    method: "POST",
-    re: /^\/api\/tools\/recompile-edit$/,
-    handler: (_p, req, ctx) => ok(ctx.tools.recompileEdit(req.body as Parameters<McpTools["recompileEdit"]>[0])),
-  },
+  // `POST /api/tools/recompile-edit` lives in `sandbox.ts` (spec 26 L8): it
+  // is the one tool route that must run inside a created-and-torn-down
+  // sandbox and is refused for workers, so its handler owns that policy
+  // next to the sandbox primitives rather than inlining it here. §13's
+  // warning/watermark still travel verbatim.
 ];
 
 /** One table, two files: the spec-22 routes above plus the spec-23 worker
  *  routes (`workers-routes.ts`, which owns their doc comments). `handle()`
  *  below still walks a single list, so there is exactly one place a request
  *  can 404. */
-const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES, ...SCREENS_ROUTES];
+const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES, ...SCREENS_ROUTES, ...RECOMPILE_ROUTES];
 
 /** `/api/log/tail?since=<seq>` — spec 21 §1.3's "read log entries after its
  *  cursor" half of the doorbell pairing (this MVP does poll only, §1

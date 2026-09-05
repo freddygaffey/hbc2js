@@ -305,3 +305,30 @@ Ratified for the whole UI, not just the centre pane:
    count. hbc2js is not building a general text editor over decompiled
    output — the artifact is the source of truth and every change to it is a
    logged, hash-locked write.
+
+## D31 — `recompile_edit`'s sandbox defaults to a temp copy, and the attended-only rule is enforced at the route (2026-09-05, Claude Opus 5)
+
+Spec 26 L8 had to pick a sandbox kind and a place to enforce "attended only";
+spec 26 §4.3 reserves the *final* word on both for Fred, so this decision is
+what ships until he answers, chosen so that his answer is a one-word change.
+
+1. **Default `kind: "copy"`** (a `mkdtemp` directory), not a git worktree.
+   `recompile_edit` is a single-file patch — one function's source, one
+   `hermesc` call — which is exactly the case spec 21 §2.4 says "a plain
+   scratch directory may suffice" for. A worktree earns its keep when the
+   experiment needs the whole tree and git's diff, which this one does not,
+   and requiring one would break the common deployment where the `.hbcproj`
+   sits next to an APK outside any git checkout. `kind: "worktree"` is
+   implemented and tested alongside it, selectable per request, and it
+   **errors rather than degrading to a copy** when there is no checkout: a
+   caller who asked for git's diff must never be told it got one.
+2. **The attended-only rule is a route-level refusal**, not a log audit.
+   `POST /api/tools/recompile-edit` answers 403 for a worker provenance
+   (`source: "llm"`, or `who` starting `worker:`) before a sandbox exists,
+   because spec 23 §7's rule ("no worker may call it unattended") is about
+   what may *run*, and a check that happens after the binary exists is not
+   that rule. The UI's two-step confirm is the second, independent half.
+3. **The recompiled artifact outlives the sandbox.** `outputPath` stays in
+   `McpTools`' own scratch dir. The sandbox holds the speculative *source*
+   (spec 21 §2.1's actual argument); tearing down the artifact the caller was
+   just told to inspect would hand back a dead path.
