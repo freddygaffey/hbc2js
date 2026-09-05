@@ -1,7 +1,7 @@
 # `for-in` — `for (const k in obj)`
 
 **Fixture:** `tests/fixtures/constructs/05-for-in-object.js`
-**Confidence:** ✅ single-version (v94, default `-O`)
+**Confidence:** ✅ verified (v94 and v99 read, default `-O`)
 
 This resolves an open question from `docs/specs/03-cfg.md` §3.4/§6.4 and
 `docs/specs/07-pass-ladder.md` §4, both of which flagged the `for...in`
@@ -84,8 +84,37 @@ same block (a for-in loop has exactly one exit, reached from two different
 
 ## 7. Version differences
 
-Not cross-checked against v99 in this research pass — only v94 was read.
-`GetPNameList`/`GetNextPName` are core-era opcodes with no HBC-FORMAT note
-suggesting a v97+ change (unlike the environment-op family), so no
-divergence is expected, but per spec 07 §4 this must be confirmed at a
-second version before `src/passes/for-in/` is implemented against it.
+**Re-read at v99 (Static Hermes, `hbc99-mar2026` opcode table), 2026-09-05,
+spec 21.** `hbc2js disasm tests/fixtures/constructs/05-for-in-object/v99.hbc`
+against the v94 dump above: **the shape is identical**, opcode for opcode.
+
+```
+  008d  NewArray             r5, 0
+  0091  Mov                  r6, r4
+  0094  GetPNameList         r7, r6, r0, r1
+  0099  JmpUndefined         L2, r7
+L1:
+  009c  GetNextPName         r4, r7, r6, r0, r1
+  00a2  JmpUndefined         L2, r4
+  00a5  Mov                  r9, r4
+  00a8  GetByIdShort         r8, r5, #c6, s10 "push"
+  00ad  Call2                r8, r8, r5, r9
+  00b2  Jmp                  L1
+L2:
+```
+
+Same five-operand `GetNextPName`, same two `JmpUndefined` guards targeting
+the same exit `L2`, same back edge onto the `GetNextPName` block, both
+occurrences in the fixture (the plain object loop and the
+prototype-enumerable loop). The only v99 differences anywhere near the site
+are unrelated to this idiom: `PutById` is spelled `PutByIdLoose`,
+`NewObjectWithBuffer` carries a shape-table id, `GetGlobalObject` is
+re-materialised per use, and the scratch pair `idx`/`size` happens to land
+in `r0`/`r1` (the low constant registers) rather than `r4`/`r3`. **No
+matcher change is needed between 94 and 99**; the operand *positions* are
+what the matcher keys on, never the register numbers.
+
+Versions 84/96/98 were not re-dumped: 94 and 99 bracket the two opcode
+tables (`hbc94` and `hbc99-mar2026`) and the family is unchanged across
+them, so an intermediate divergence is not physically possible without a
+table entry that neither end has.

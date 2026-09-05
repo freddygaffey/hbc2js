@@ -41,8 +41,8 @@ spec states the per-version shape it has read (catalogue confidence rule).
 | `async-recovery` | 19 | 27, 28 | all | `spawnAsync(body)` around a recovered generator → `async function` + `await` | batch 4, `after: [yield-recovery, gen-lowered]` |
 | `if-chain` | 1 | 01 | all | `else { if … }` → `else if`; `if (c) return; else {…}` → early return | done |
 | `switch-raise` | 6, 7 (8 is ⛔: not until a fixture exists) | 09, 10, 52, 53 | all (opcode rename at 99) | jump-table `switch` node + `JStrictEqual` compare chain on one register → `switch` with fall-through | **done (S1, jump-table)**; S2 blocked on F13 |
-| `for-in` | 9 (single-version: **re-read at 99 first**) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | batch 2 |
-| `for-of` | 10 (single-version: re-read at 99) | 06, 07 | all | `IteratorBegin` + `IteratorNext` loop + two `IteratorClose` sites → `for (v of it)` | batch 2 |
+| `for-in` | 9 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | batch 2 |
+| `for-of` | 10 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21; v99 `Mov`-refreshes the `IteratorNext` source and the normal-close state register) | 06, 07 | all | `IteratorBegin` + `IteratorNext` loop + two `IteratorClose` sites → `for (v of it)` | batch 2 |
 | `label-clean` | 5 (single-version; the rung is IR hygiene, row is evidence only) | 08, 11 | all | unused labels; `labeled{…; break L}` whose only use is the final break; `seq` of one | done (rung 7, re-enabled 2026-08-31 after infinite-loop fix) |
 | `try-shape` | 11 | 14, 15 | all | `try` whose handler never reads `catchRegister` → `catch {}`; `__pc` range guard that covers the whole region → plain `catch` | batch 4, `after: [finally-dedup]` |
 
@@ -147,7 +147,7 @@ Rationale, one line each (a spec must repeat the ones that bind its rung):
 | Batch | Rungs | Why this batch |
 |---|---|---|
 | 1 | `expr-rebuild`, `global-access`, `call-shape`, `fn-naming`, `label-clean` | M4 review's order 1–3: largest readability and round-trip win; erases 30/40 fuzz divergences; needs the stage-B driver (§7.1) — batch 1 *includes* that framework work |
-| 2 | `if-chain`, `switch-raise`, `for-in`, `for-of`, `var-naming` | finishes control flow on already-✅ rows (for-in/for-of need the v99 re-read first); naming makes batch-1 output reviewable |
+| 2 | `if-chain`, `switch-raise`, `for-in`, `for-of`, `var-naming` | finishes control flow on already-✅ rows (for-in/for-of re-read at v99 and spec'd in `docs/specs/passes/21-for-in-for-of.md`); naming makes batch-1 output reviewable |
 | 3 | `template-literal`, `default-params`, `destructure`, `spread-rest`, `optional-chain` | expression sugar, all single-version rows → each spec starts with the second-version read |
 | 4 | `yield-recovery`, `async-recovery`, `class-recover`, `try-shape` + `try-clean`, `arguments-form` + `literal-forms` | D9 v1→v2 for ≤96; classes at 99 |
 | Fable | `finally-dedup`, `gen-lowered`, `jsx-recover`, `closure-naming`, `string-array-decode` | §5 |
