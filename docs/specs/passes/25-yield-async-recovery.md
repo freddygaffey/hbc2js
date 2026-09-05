@@ -742,3 +742,82 @@ either rewritten *or* counted with a reason.
    exist. Building it (`tests/fixtures/build.sh`) would let R-A5 be tested
    rather than only specified. Worth queuing; not done here, because fixture
    builds are `build.sh`'s to own.
+
+---
+
+## 7. Landed — 2026-09-05 (`agent/yield-impl`)
+
+Both rungs shipped; every acceptance skip in
+`tests/gate/passes/yield-recovery.test.ts` and `async-recovery.test.ts` lifted.
+
+**Built:** F25-1 (`src/emit/ast.ts` `k:"yield"`/`k:"await"` + `generator`/
+`async` on both the `Expr` and `Stmt` `func` nodes; `src/emit/print.ts`;
+`walk`/`mapExpr`/`effectSequence` — a suspension is a new
+`{ k: "suspend" }` effect, never reorderable), `src/passes/yield-recovery/`
+and `src/passes/async-recovery/`, both registered in the structure-recovery
+block (after `object-literal`, before `jsx-recover` and the renaming rungs).
+
+**Not built, deliberately:** **F25-2**. The rung anchors on `func.sameFrame`
+(the emitter's own marker, §1.0's third argument) plus the exact
+`__hbc_makeGenerator(F, this, arguments)` shim shape, and *verifies* the 1:1
+state map itself (R-Y3) instead of reading it from an `Origin`. `docs/BUGS.md`
+carries the row; F25-2 should land with `gen-lowered`, which needs the same
+map. F25-3 was already "not required"; F25-4 remains the `yield-loop`
+follow-up (§6.2).
+
+**§3.4's checker** is implemented as obligations 5 + 3 + 1 fused: the group is
+re-derived from `before` by §3.1's rule alone and the result must be
+structurally identical to `after`. Because the recovered body is a pure
+function of the suspend order, that single equality subsumes the undo,
+segment-conservation and suspension-order obligations; residue, `parses` and
+`freeNames ⊆` are checked separately, and obligation 6 (protocol identity) is
+stated in `check.ts`'s header, which is what R-Y4 exists to keep honest.
+
+**R-Y5/R-Y7 share one criterion.** An arm may be inlined at a suspend site
+only if the two sit inside exactly the same labels, loops, branches and `try`
+regions (compared as a path key through the step closure's statement tree).
+A back edge shows up as an arm whose `break L` would escape the site it is
+being inlined into, which is precisely §1.4's cyclic case.
+
+**Measured at landing (v84/v94/v96 unless noted).**
+
+| fixture | recovered | refused |
+|---|---|---|
+| `23-generator-basic` | `sequence` → `function*`, 4 `yield` | `counter` (R-Y5) |
+| `24-generator-return-throw` | `g2` | `g1` (R-Y4; all 5 `finally` copies survive) |
+| `25-generator-delegation` | `inner` (see below) | `outer`, `delegatesToArray` (R-Y6) |
+| `26-infinite-generator-take` | — | both groups (R-Y5) |
+| `27-async-await-basic` | `sequence` → `async function`, 3 `await` | — at ≤96; R-A4 at 98/99 |
+| `28-async-await-error` | `guarded` (await inside its original `try`, every `__pc` store the `catch` filter reads intact) and `unguarded` | — at ≤96; R-A4 at 98/99 |
+| `tests/fixtures/bundles/rn-template-0.72` (v94) | 1 of 7 sites (fn#3497, 1 `yield`) | 6 (R-Y5 — every one is a loop or a `yield` inside a `try` region the arm escapes) |
+
+**Corrections to this spec, each with a `docs/PUSHBACK.md` row.**
+
+* **P-28** — §5's "F25-1 premise" tests assert that F25-1 has *not* been
+  implemented, so they cannot survive the landing F25-1 is required for.
+  Re-pointed at the landed state.
+* **P-29** — §5's "identical with passes on and off (PL-05)" tests are not
+  PL-05 and assert that the rungs do nothing. Re-pointed at the property they
+  were reaching for: no rung *other* than these two touches the idiom.
+* **P-32** — §1.4/§1.5's "fixture 25 is refused in full" is false for `inner`,
+  which delegates nothing and has a two-node suspend graph. It recovers.
+  §1.4/§1.5 should read "its two delegating groups are refused".
+* **§1.8/§6.1 are wrong about the golden, and no regeneration is needed.**
+  The pin in `tests/gate/passes/pipeline-speed.test.ts` hashes
+  **`decompileTree`**, not `decompile().code`, and `decompileTree`'s rendering
+  of rn-template contains **zero** `__hbc_makeGenerator` / `let __state = 0` /
+  `switch (__state)` occurrences with passes on *or* off. Measured after the
+  landing: the hash is still
+  `fa54d8f22ba3ccf07ab00dc07d3374a1443d45ae52d7f3027e321ce5b758d7d8`. The
+  *full* `decompile().code` of the same bundle does move —
+  `b7756228d6649c1e4d203413df9bfdb45ed18274b8ed78c4cc761bc55f8f5caa` →
+  `3418e0d48569ff120856bb8748d4902771115c34c9f9bb761376d7d6c6ffff29`, a 75-line
+  unified diff touching exactly one function — but nothing pins that.
+
+**Still open for the orchestrator.** §6.2 (`yield-loop` scope) and §6.6
+(`finally-dedup` before fixture 24) are unchanged and now have `docs/BUGS.md`
+rows. The per-refusal histogram §5 asks for is *not* emitted as a diagnostic:
+`match` is required to be pure and the framework only counts an `abandoned`
+record when `check` fails, so a refusal is currently silent. Adding a
+`W_PASS_REFUSED` info diagnostic through `PassContext.diagnostic` is the
+obvious follow-up and is the only part of §5's metric list not produced here.
