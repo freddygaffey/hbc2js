@@ -42,6 +42,7 @@ import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
+import { reconstructNativeProject } from "./native/reconstruct.ts";
 import { ProjectService } from "./project/service.ts";
 import type { AnnotationRow } from "./project/service.ts";
 import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
@@ -1187,6 +1188,14 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
           // no existing package.json — write a fresh one.
         }
         writeFileSync(pkgJsonPath, JSON.stringify({ ...existing, dependencies: deps }, null, 2) + "\n");
+      }
+      // spec 27 §L8: the native-side reconstruction hook — a silent no-op
+      // when `args.out` holds no `native/*.jsonl` tables (never fails the
+      // JS-side `deps --out` run over it), a one-line note to stderr when it
+      // does run (mirrors `--confirm`'s onProgress convention above).
+      const nativeSummary = reconstructNativeProject(args.out);
+      if (nativeSummary.ran) {
+        process.stderr.write(`hbc2js deps --out: native reconstruction — ${nativeSummary.note}\n`);
       }
     }
     if (args.json) {

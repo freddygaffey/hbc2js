@@ -446,6 +446,22 @@ built by `src/native/native-deps.ts` from L4's already-labelled
 `reactModules` and merged in `src/deps/index.ts`'s `runDeps` against the
 JS-fingerprint channel's confirmed/guessed/hinted package names.
 
+**Landed (2026-09-05, spec 27 §L8).** `hbc2js deps --out <dir>` also emits
+the native side of the project once `<dir>/native/*.jsonl` exists (whether
+`ingestNative` wrote it there in an earlier step, or a future combined
+CLI path does): `src/native/reconstruct.ts`'s `reconstructNativeProject`
+writes `<dir>/.env` from `native/env.jsonl` (recovered values as plain
+assignments, `unresolved` keys as commented `# TODO:` lines citing their
+evidence — never a fabricated value), merges L7's `nativeChannel` into
+`<dir>/package.json`'s `dependencies` (third-party libs only, `"*"` — no
+version to offer — never overwriting a version the JS-fingerprint channel
+already found), and writes `<dir>/native-todo/<Module>/{<Module>.java,
+RESYNTHESIZE.md}` for every `firstParty:true` react-modules row: a faithful
+Java interface skeleton (real package, class name, method signatures decoded
+from the method key's own JVM proto) whose every method body is a `TODO
+RESYNTHESIZE` that throws — no body is ever fabricated. A directory with no
+`native/` tables at all is a silent no-op.
+
 ## 3. Query surface
 
 **The files ARE the contract** — a tool that wants to stream everything reads

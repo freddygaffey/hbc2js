@@ -617,6 +617,41 @@ lists every merged native dep exactly once*.
 
 **Depends on:** L6, L7.
 
+**Landed (2026-09-05).** `src/native/reconstruct.ts`: `reconstructNativeProject
+(outDir)` reads `outDir/native/{env,react-modules,methods}.jsonl` directly (the
+already-materialised tables — a join, never a re-parse of the APK's bytes,
+exactly like `seams.ts`/`native-deps.ts`) and is a silent no-op — `{ran:false,
+...}`, nothing written — when neither `env.jsonl` nor `react-modules.jsonl` is
+present ("the project directory has no native tables"). When it runs: (1)
+`renderEnvFile` writes `.env` — every recovered row a plain `KEY=value` line,
+every `unresolved` row a commented `# TODO:` line citing `source`/`resolvedBy`/
+the key itself (§1.4's "field" evidence — `EnvRow` carries no separate class
+name, so the key IS the field fact); (2) `mergeNativeDependencies` folds
+`buildNativeChannel`'s (L7) merged package list into `outDir/package.json`'s
+`dependencies`, `"*"` for a package with no key yet (native side has no
+version to offer), never overwriting a version the JS-fingerprint channel
+already wrote, so re-running is idempotent (`tests/gate/native/
+reconstruct.test.ts`'s dedup test calls it twice); (3) `renderModuleStub` +
+`renderResynthesizeMd` write one `native-todo/<Module>/{<Module>.java,
+RESYNTHESIZE.md}` per `firstParty:true` react-modules row — a faithful Java
+skeleton (`parseJavaProto`/`javaTypeName` decode the method key's own JVM
+proto string, spec 27 §L2's `nativeMethodKey` encoding, into real parameter/
+return types) where every method body is `// TODO RESYNTHESIZE` + a `throw`,
+never a guessed implementation. CLI hook: `runDepsCmd`'s `deps --out <dir>`
+(`src/cli.ts`, the package.json-write step) calls `reconstructNativeProject
+(args.out)` right after writing the JS-side `dependencies`; a one-line note to
+stderr when it ran, nothing at all when it was a no-op. **Deviation from the
+brief:** the spec text names `tests/appgen/native-reconstruct.test.ts` for the
+end-to-end case; landed instead as one more test in `tests/gate/cli/
+deps.test.ts` (that file already owns every `deps --out` CLI test, and
+`tests/appgen/` is the fuzz app-generator's own suite, a different thing —
+confirmed by reading its other files before landing here). Tests: the four
+spec 27 §L8 tests, `tests/gate/native/reconstruct.test.ts`, against
+`env.apk` (§L6), `party.apk` (§L4, the dependency-dedup pair) and `seams.apk`
+(§L3 — the only fixture with an `@ReactMethod` taking real parameters,
+`generateKey(String, Promise)`, needed to prove the interface skeleton is
+faithful) — no new fixture; plus the CLI end-to-end test above.
+
 ---
 
 ### L9 — Documented futures (docs only)

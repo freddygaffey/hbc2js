@@ -7,9 +7,11 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
+import { ingestNative, openApk } from "../../../src/native/ingest.ts";
 
 const CLI = join(repoRoot(), "src", "cli.ts");
 const RN_TEMPLATE = join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc");
+const PARTY_APK = join(repoRoot(), "tests", "fixtures", "native", "party.apk");
 
 function runCli(args: readonly string[]): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", shell: false });
@@ -74,6 +76,30 @@ test("deps --offline --out <dir> writes package.json with confirmed dependencies
     assert.equal(pkgJson.dependencies["react-native"], "0.72.17");
     assert.equal(pkgJson.dependencies["react"], "18.2.0");
     assert.ok(!("lodash" in pkgJson.dependencies));
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+// docs/specs/27-native-side.md §L8: the CLI hook fires once a project
+// directory holds native tables (here, from a separate `ingestNative` call —
+// the same two-step "split, then ingest the APK's native side into the same
+// dir" the L3/L5 tests use — `deps --out` never re-parses an APK's DEX
+// itself). Named `native-reconstruct` in spec 27 §L8's own text as
+// `tests/appgen/native-reconstruct.test.ts`; landed here instead, beside the
+// rest of this file's `deps --out` CLI tests (spec 27 L8 Landed note).
+test("deps --offline --out <dir>, once native tables are ingested into <dir>, reconstructs the native side (spec 27 L8)", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "hbc2js-deps-cli-native-out-"));
+  try {
+    let r = runCli(["deps", RN_TEMPLATE, "--offline", "--out", outDir]);
+    assert.equal(r.status, 0, r.stderr);
+    ingestNative(openApk(PARTY_APK), outDir);
+    r = runCli(["deps", RN_TEMPLATE, "--offline", "--out", outDir]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /native reconstruction/);
+    const pkgJson = JSON.parse(readFileSync(join(outDir, "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    assert.equal(pkgJson.dependencies["react-native-gesture-handler"], "*", "the native-only dep must be merged in");
+    assert.equal(pkgJson.dependencies["react-native"], "0.72.17", "the JS-fingerprint channel's own version is untouched");
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
