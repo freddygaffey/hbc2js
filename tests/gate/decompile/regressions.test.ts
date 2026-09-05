@@ -140,9 +140,15 @@ test("the `new` triple is matched across basic blocks", () => {
 test("AddOwnPrivateBySym is (object, value, symbol)", () => {
   // The vendored doc comment says "Arg1[Arg2] = Arg3"; the bytecode of
   // 35-class-private-fields v99 function #1 says otherwise, and reading it the
-  // documented way made every private-field brand check fail.
+  // documented way made every private-field brand check fail. The fact under
+  // test is the emitter's operand ORDER -- (object, symbol key, descriptor
+  // carrying the value) -- not which expression the object happens to be:
+  // since `ctor-this` landed (docs/specs/passes/26-ctor-this.md) the
+  // constructor addresses the real `this` instead of an allocated stand-in
+  // register, so the object slot reads `this` for the class-brand install
+  // that survives here. Both spellings are accepted; the order is not.
   const text = code("35-class-private-fields", 99);
-  assert.match(text, /Object\.defineProperty\(r\d+, r\d+, \{value: r\d+/);
+  assert.match(text, /Object\.defineProperty\((?:this|r\d+), r\d+, \{value: r\d+/);
   assert.ok(!text.includes("Private element not found") || text.includes("__hbc_b_throwTypeError"));
 });
 
