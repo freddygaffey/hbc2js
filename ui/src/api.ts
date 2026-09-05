@@ -16,6 +16,12 @@ import { mockApi } from "./mock.ts";
 export const API_BASE: string = import.meta.env["VITE_API_BASE"] ?? "http://127.0.0.1:7331";
 export const USING_MOCK: boolean = (import.meta.env["VITE_API_MOCK"] ?? "1") !== "0";
 
+/** The `?limit=` every type-ahead search box sends (TopBar's `search/functions`
+ *  box; `search/source` once a pane calls it) — one page's worth
+ *  (`SEARCH_PAGE_CAP` in `src/mcp/leads.ts`), so a keystroke never asks the
+ *  scan for more rows than the dropdown will ever show. */
+export const SEARCH_TYPEAHEAD_LIMIT = 50;
+
 // Spec 26 L2 (docs/specs/26-ui-full-ide.md): the server mints a per-run
 // bearer token and prints it in the launch URL's `?token=`. On first load
 // this lifts it out of `location` into `sessionStorage` (so a reload of the
@@ -131,8 +137,18 @@ export interface Api {
    *  annotation target — the full revision timeline for it. */
   history(target: string): Promise<Bounded<HistoryEntry>>;
   logTail(since: number): Promise<LogTail>;
-  searchFunctions(query: string, cursor?: number): Promise<SearchPage<FunctionMatch>>;
-  searchSource(query: string, cursor?: number): Promise<SearchPage<SourceMatch>>;
+  /** `limit` (docs/UI.md "search/functions") caps the page the same way
+   *  `functions()` does above; the type-ahead box (TopBar) always sends
+   *  {@link SEARCH_TYPEAHEAD_LIMIT} so one keystroke never asks the server
+   *  for more rows than it will ever render. */
+  searchFunctions(query: string, cursor?: number, limit?: number): Promise<SearchPage<FunctionMatch>>;
+  /** `limit` is pushed all the way into the scan on the server (`src/mcp/leads.ts`
+   *  `searchSourceSteps`): an explicit one stops the walk as soon as the page
+   *  is full instead of grepping every function's source, which is what made
+   *  `GET /api/search/source` take 83 s on a real app before a limit was
+   *  wired through (docs/BUGS.md, commit 5908aee). `partial: true` on the
+   *  answer means the scan stopped early, so `total` is a lower bound. */
+  searchSource(query: string, cursor?: number, limit?: number): Promise<SearchPage<SourceMatch>>;
   /** `GET /api/xref/string?mode=substring|regex&key=` — the Strings window's
    *  search (spec 22 §3, docs/UI.md "Strings & globals (xref)"). */
   xrefStringSearch(mode: "substring" | "regex", pattern: string): Promise<StringGrep>;
@@ -196,8 +212,8 @@ export const httpApi: Api = {
   leads: () => get(`/leads`),
   history: (target) => get(`/history/${encodeURIComponent(target)}`),
   logTail: (since) => get(`/log/tail`, { since }),
-  searchFunctions: (query, cursor) => get(`/search/functions`, { q: query, cursor }),
-  searchSource: (query, cursor) => get(`/search/source`, { q: query, cursor }),
+  searchFunctions: (query, cursor, limit) => get(`/search/functions`, { q: query, cursor, limit }),
+  searchSource: (query, cursor, limit) => get(`/search/source`, { q: query, cursor, limit }),
   xrefStringSearch: (mode, pattern) => get(`/xref/string`, { mode, key: pattern }),
   xrefStringUses: (sid) => get(`/xref/string`, { mode: "exact", key: sid }),
   xrefGlobal: (name) => get(`/xref/global`, { name }),

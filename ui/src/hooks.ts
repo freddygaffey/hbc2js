@@ -4,7 +4,7 @@
 // precisely, and the log poll (landing 6) has its own 1 s interval.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { API_BASE, USING_MOCK, api, ApiError, authQueryParam, type ObjectTablesQuery } from "./api.ts";
+import { API_BASE, USING_MOCK, SEARCH_TYPEAHEAD_LIMIT, api, ApiError, authQueryParam, type ObjectTablesQuery } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, HistoryEntry, LeadsResult, LogEntry, LogTail,
@@ -274,8 +274,15 @@ export const useLog = (): LogFeedState => {
   return { rows, cursor, connected: sse === "up" ? "sse" : sse === "down" ? "poll" : "connecting" };
 };
 
+/** The type-ahead box (TopBar): one bounded page per keystroke
+ *  ({@link SEARCH_TYPEAHEAD_LIMIT}), never an unbounded scan of every
+ *  function's name for a query the user is still typing. */
 export const useSearchFunctions = (query: string): UseQueryResult<SearchPage<FunctionMatch>> =>
-  useQuery({ queryKey: ["search-functions", query], queryFn: () => api.searchFunctions(query), enabled: query.length > 0 });
+  useQuery({
+    queryKey: ["search-functions", query],
+    queryFn: () => api.searchFunctions(query, undefined, SEARCH_TYPEAHEAD_LIMIT),
+    enabled: query.length > 0,
+  });
 
 // -- listing (wave 2 track 1) ------------------------------------------------
 

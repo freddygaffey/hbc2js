@@ -141,7 +141,10 @@ export function TopBar({ onOpenPalette }: { readonly onOpenPalette: () => void }
                 <span className="ml-auto shrink-0 tabular-nums">{r.size ?? ""}</span>
               </button>
             ))}
-            {(hits.data?.total ?? 0) > rows.length && (
+            {hits.data?.partial === true && (
+              <div className="px-2 py-1 text-text-muted" data-testid="search-functions-partial">more matches than shown — narrow the query</div>
+            )}
+            {hits.data?.partial !== true && (hits.data?.total ?? 0) > rows.length && (
               <div className="px-2 py-1 text-text-muted">{hits.data!.total - rows.length} more not shown</div>
             )}
           </div>

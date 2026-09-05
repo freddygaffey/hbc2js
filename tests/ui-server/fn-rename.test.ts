@@ -146,3 +146,20 @@ test("the caller's whole-module FILE view is re-spliced too (module-source cache
   const owned = body.functions.find((f) => f.fn === TARGET);
   if (owned !== undefined) assert.equal(owned.name, NEW_NAME, "the module view's own function list uses the accepted name");
 });
+
+// Regression: docs/BUGS.md "search/functions matches the bytecode name
+// only" (fn-rename landing) — `/api/search/functions` displayed the accepted
+// name but only matched the pre-rename bytecode name, so typing the name a
+// rename JUST gave a function found nothing.
+interface SearchFunctionsPage {
+  readonly rows: readonly { readonly fn: number; readonly name: string | null }[];
+}
+
+test("/api/search/functions matches the accepted (post-rename) name, not only the bytecode name", async () => {
+  const res = await get("/api/search/functions", { q: NEW_NAME });
+  assert.equal(res.status, 200);
+  const page = res.json as SearchFunctionsPage;
+  const hit = page.rows.find((r) => r.fn === TARGET);
+  assert.notEqual(hit, undefined, "searching for the accepted name must find the renamed function");
+  assert.equal(hit?.name, NEW_NAME);
+});

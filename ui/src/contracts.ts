@@ -356,6 +356,10 @@ export interface SearchPage<T> {
   readonly total: number;
   readonly truncated: boolean;
   readonly nextCursor: number | null;
+  /** Set only when an explicit `?limit=` cut the scan short (`src/mcp/leads.ts`
+   *  `SearchOptions`/`paginate`) — `total` is then a LOWER BOUND, not the
+   *  exact match count. Absent (never `false`) on a complete scan. */
+  readonly partial?: true;
 }
 
 export interface FunctionMatch {

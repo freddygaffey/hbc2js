@@ -248,3 +248,23 @@ test("sessions: open, heartbeat, and only live ones are listed", async () => {
   assert.equal((await post("/api/sessions/no-such-session/heartbeat", {})).status, 404);
   assert.equal((await post("/api/sessions", { kind: "robot", who: "x" })).status, 400);
 });
+
+// Regression: docs/BUGS.md "UI enqueues jobs without a session id" — the UI
+// now calls POST /api/sessions on load (kind: "human", who: "ui",
+// ui/src/workers/wire.ts's initUiSession()) and passes the id back as
+// createdBy on every enqueue. This is that exact shape, end to end: open the
+// session the way the UI does, enqueue with it, and the job round-trips to
+// done with a non-null created_by that resolves back to the session's own
+// row through GET /api/sessions.
+test("a UI-registered session (kind human, who ui) round-trips to a job whose created_by is that session", async () => {
+  const session = (await post("/api/sessions", { kind: "human", who: "ui" })).json as { id: string };
+  const enq = (await post("/api/jobs", { kind: "suggest-name", input: { fn: FN }, createdBy: session.id, idempotencyKey: "k-ui-session" }))
+    .json as EnqueueResult;
+  assert.equal(enq.job.createdBy, session.id);
+  await runner.runUntilIdle();
+  const done = queue.get(enq.job.id);
+  assert.equal(done?.status, "done");
+  assert.equal(done?.createdBy, session.id);
+  const listed = (await get("/api/sessions")).json as { rows: readonly { id: string; who: string; kind: string }[] };
+  assert.ok(listed.rows.some((s) => s.id === session.id && s.who === "ui" && s.kind === "human"));
+});
