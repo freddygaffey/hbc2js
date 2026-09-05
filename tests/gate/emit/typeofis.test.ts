@@ -89,8 +89,14 @@ test("review-M4-H2: 55-typeof-is-masks decompiles at v98/v99 and covers non-128 
     }
     assert.ok(masks.has(507), `v${version}: mask 507 (typeof x !== "string") is gone — the fixture no longer covers the bundle blocker`);
     assert.ok([...masks].filter((m) => m !== 128).length >= 8, `v${version}: only ${masks.size} distinct masks: ${[...masks].join(",")}`);
-    // And the whole module decompiles, which it did not before.
-    const code = decompile(bytes, { resolveV98Ambiguity: true, moduleName: "55-typeof-is-masks" }).code;
+    // And the whole module decompiles, which it did not before. `passes:
+    // {none:true}` (PL-05, byte-identical forever): this is an M4-emitter
+    // review, not a passes review, and spec 23's `literal-forms` rung (2026-
+    // 09-05) now rewrites this exact shape to `typeof x !== "string"` on the
+    // default pipeline (its whole job, L-T/T1) -- asserting the pre-pass
+    // baseline is what actually proves the M4 decode, and stays true no
+    // matter which readability rungs run afterwards.
+    const code = decompile(bytes, { resolveV98Ambiguity: true, moduleName: "55-typeof-is-masks", passes: { none: true } }).code;
     // `\w+` rather than `r\d+`: expr-rebuild (M5) may fold the tested value
     // all the way down to a parameter name (e.g. `!(typeof a1 === "string")`)
     // rather than leaving it in a register; either way proves mask 507
