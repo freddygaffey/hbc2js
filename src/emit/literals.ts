@@ -170,7 +170,9 @@ export function objectFromBuffers(mod: HbcModule, keys: readonly string[], value
  * nothing at M4).
  */
 export function regExpExpr(mod: HbcModule, patternId: number, flagsId: number): Expr {
-  return { k: "new", callee: { k: "ident", name: "RegExp" }, args: [stringLiteral(mod, patternId), stringLiteral(mod, flagsId)] };
+  // F23-2: `fromRegExpTable` is the provenance bit that lets `literal-forms`
+  // (L-R) tell this node apart from a genuine source-level `new RegExp(...)`.
+  return { k: "new", callee: { k: "ident", name: "RegExp" }, args: [stringLiteral(mod, patternId), stringLiteral(mod, flagsId)], fromRegExpTable: true };
 }
 
 /**

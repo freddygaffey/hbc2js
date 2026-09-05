@@ -65,8 +65,8 @@ test("PL-04: a pass that throws is E_PASS_CRASH, not a silent skip", () => {
 test("PL-07: registry order must satisfy after/before; skip/only/stage select", () => {
   assert.throws(() => enabledPasses({}, [forHeader as Pass, loopCond as Pass]), (e: unknown) => e instanceof Hbc2jsError && e.code === ErrorCode.E_PASS_ORDER);
   assert.deepEqual(enabledPasses({ only: ["loop-cond"] }).map((p) => p.name), ["loop-cond"]);
-  assert.deepEqual(enabledPasses({ skip: ["for-header"] }).map((p) => p.name), ["loop-cond", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "try-clean", "fn-naming", "reg-split", "var-naming"]);
-  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "try-clean", "fn-naming", "reg-split", "var-naming"]);
+  assert.deepEqual(enabledPasses({ skip: ["for-header"] }).map((p) => p.name), ["loop-cond", "for-in", "for-of", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"]);
+  assert.deepEqual(enabledPasses({ stage: "B" }).map((p) => p.name), ["expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"]);
   for (const p of REGISTRY) assert.ok(p.catalogue.length > 0, `${p.name} declares no catalogue row`);
 });
 
@@ -93,5 +93,5 @@ test("PL-05: --passes=none reproduces the M4 emitter output byte for byte", () =
   // `label-clean` (re-enabled) also removes this fixture's loop labels, so
   // it must be in the skip list too or `code` keeps `L0:`/`L1:`/… while
   // `none` (the fully-disabled baseline) does not.
-  assert.equal(decompile(bytes, { passes: { skip: ["loop-cond", "for-header", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "try-clean", "fn-naming", "reg-split", "var-naming"] }, moduleName: "x" }).code, none);
+  assert.equal(decompile(bytes, { passes: { skip: ["loop-cond", "for-header", "switch-raise", "if-chain", "try-shape", "label-clean", "expr-rebuild", "global-access", "call-shape", "default-params", "destructure", "spread-rest", "template-literal", "optional-chain", "object-literal", "arguments-form", "literal-forms", "try-clean", "fn-naming", "reg-split", "var-naming"] }, moduleName: "x" }).code, none);
 });

@@ -37,7 +37,27 @@ export type Expr =
    *  future writer/checker step that needs to tell `a.b?.()` (this = `a`)
    *  from a detached call can use it. */
   | { readonly k: "optcall"; readonly callee: Expr; readonly args: readonly Expr[]; readonly thisIsBase: boolean }
-  | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[] }
+  /**
+   * F23-2 (docs/specs/passes/23-arguments-form-literal-forms.md section 2):
+   * `fromRegExpTable` marks a `new RegExp(pattern, flags)` node built by
+   * `literals.ts`'s `regExpExpr` from a `CreateRegExp` bytecode instruction's
+   * string-table ids — the only provenance the `literal-forms` rung (L-R) may
+   * rely on to raise it to a `/pattern/flags` literal. A genuine source-level
+   * `new RegExp(...)` (no flag) is a real `RegExp` global read that a literal
+   * would erase, so it must never be rewritten. Printing, `sameShape` and
+   * `effectSequence` ignore the flag entirely: it changes no observable
+   * behaviour by itself.
+   */
+  | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[]; readonly fromRegExpTable?: true }
+  /**
+   * F23-3: a regex literal `/pattern/flags`, the `literal-forms` rung's (L-R)
+   * sole writer output for a `fromRegExpTable` `new RegExp` node. `pattern`/
+   * `flags` are the literal's raw source text (never re-escaped by the
+   * printer — the rung itself computed the escaped form via
+   * `new RegExp(p, f).source`). Printed at `PRIMARY` precedence: `/x/g.test(s)`
+   * is valid JS with no parentheses needed as a member base.
+   */
+  | { readonly k: "regex"; readonly pattern: string; readonly flags: string }
   | { readonly k: "bin"; readonly op: BinaryOp; readonly left: Expr; readonly right: Expr }
   | { readonly k: "logical"; readonly op: "&&" | "||" | "??"; readonly left: Expr; readonly right: Expr }
   | { readonly k: "unary"; readonly op: "!" | "-" | "+" | "~" | "typeof " | "void " | "delete "; readonly arg: Expr }

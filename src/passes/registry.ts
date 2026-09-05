@@ -2,6 +2,8 @@
 // only place a pass is switched on. `--passes=none` reproduces the M4 baseline
 // exactly, which is the required capability (PL-05).
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
+import { argumentsForm } from "./arguments-form/index.ts";
+import { literalForms } from "./literal-forms/index.ts";
 import { callShape } from "./call-shape/index.ts";
 import { defaultParams } from "./default-params/index.ts";
 import { destructure } from "./destructure/index.ts";
@@ -105,6 +107,12 @@ export const REGISTRY: readonly Pass[] = [
   templateLiteral as Pass,
   optionalChain as Pass,
   objectLiteral as Pass,
+  // Spec 23 section 2 / 00-LADDER.md batch 4: both are surface rungs on
+  // emitter output (no new bytecode fact), registered after `object-literal`
+  // and before `jsx-recover` — after every rung that changes an expression's
+  // shape, before every renaming rung (`fn-naming`/`reg-split`/`var-naming`).
+  argumentsForm as Pass,
+  literalForms as Pass,
   tryClean as Pass,
   jsxRecover as Pass,
   fnNaming as Pass,
