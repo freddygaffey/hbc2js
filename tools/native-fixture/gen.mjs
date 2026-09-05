@@ -305,6 +305,49 @@ const SEAMS_MANIFEST = {
   children: [{ name: "uses-sdk", attrs: [a("minSdkVersion", { int: 24 }), a("targetSdkVersion", { int: 34 })] }],
 };
 
+/** classes.dex for `party.apk` (docs/specs/27-native-side.md §L4's own
+ *  fixture): one class per §L4 classification outcome, none of the other
+ *  fixtures' bytes touched. `CustomModule` sits under the manifest's own
+ *  package (first-party); `GestureHandlerModule` sits under the curated
+ *  `com.swmansion` third-party prefix (`third-party-packages.ts`);
+ *  `FooModule` sits under a package that matches neither list (unresolved,
+ *  `firstParty:null`, never forced either way). */
+const PARTY_DEX = [
+  {
+    name: "Lcom/example/party/CustomModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "CustomModule.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "Custom" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [{ name: "getName", ret: STRING, params: [], access: 0x1 }],
+  },
+  {
+    name: "Lcom/swmansion/gesturehandler/GestureHandlerModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "GestureHandlerModule.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "GestureHandler" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [{ name: "getName", ret: STRING, params: [], access: 0x1 }],
+  },
+  {
+    name: "Lcom/unknownvendor/foo/FooModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "FooModule.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "Foo" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [{ name: "getName", ret: STRING, params: [], access: 0x1 }],
+  },
+];
+
+const PARTY_MANIFEST = {
+  name: "manifest",
+  attrs: [{ ns: null, name: "package", value: { s: "com.example.party" } }],
+  children: [{ name: "uses-sdk", attrs: [a("minSdkVersion", { int: 24 }), a("targetSdkVersion", { int: 34 })] }],
+};
+
 const RN_MODULES_MANIFEST = {
   name: "manifest",
   attrs: [{ ns: null, name: "package", value: { s: "com.example.rn" } }],
@@ -358,12 +401,22 @@ export function generate(outDir) {
   ]);
   writeFileSync(join(outDir, "seams.apk"), seamsApk);
 
+  // The L4-owned fifth fixture (docs/specs/27-native-side.md §L4): one class
+  // per classification outcome (first-party / curated third-party /
+  // unresolved), none of the fixtures above touched.
+  const partyApk = buildZip([
+    { name: "AndroidManifest.xml", data: buildAxml(PARTY_MANIFEST) },
+    { name: "classes.dex", data: buildDex(PARTY_DEX) },
+  ]);
+  writeFileSync(join(outDir, "party.apk"), partyApk);
+
   return {
     apk: join(outDir, "synthetic.apk"),
     bare: join(outDir, "no-resources.apk"),
     rnModules: join(outDir, "rn-modules.apk"),
     seams: join(outDir, "seams.apk"),
-    sizes: { apk: apk.length, bare: bare.length, rnModules: rnModules.length, seams: seamsApk.length },
+    party: join(outDir, "party.apk"),
+    sizes: { apk: apk.length, bare: bare.length, rnModules: rnModules.length, seams: seamsApk.length, party: partyApk.length },
   };
 }
 
@@ -371,5 +424,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const out = process.argv[2] ?? join(root, "tests", "fixtures", "native");
   const r = generate(out);
-  process.stdout.write(`wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes), ${r.rnModules} (${r.sizes.rnModules} bytes) and ${r.seams} (${r.sizes.seams} bytes)\n`);
+  process.stdout.write(
+    `wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes), ${r.rnModules} (${r.sizes.rnModules} bytes), ${r.seams} (${r.sizes.seams} bytes) and ${r.party} (${r.sizes.party} bytes)\n`,
+  );
 }

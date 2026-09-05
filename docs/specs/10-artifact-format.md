@@ -346,7 +346,16 @@ match, not a general instruction interpreter — see `dex.ts`'s
 `decodeTrivialStringReturn`), `classname` (RN codegen's `Native<X>Spec` ->
 `X` naming convention for TurboModule spec classes with no annotation), or
 `unresolved` (the row is still emitted, `jsName:null` — never dropped, never
-invented). `firstParty` is always `null` at L2; L4 fills it.
+invented). `firstParty` is always `null` from `buildReactModules` itself; L4
+(`src/native/classify-party.ts`) fills it in `buildNativeTables` right after,
+using L1's own decoded manifest `package`: `true` when the impl class's Java
+package equals, or is a dot-bounded subpackage of, the manifest package;
+`false` when it falls under a curated third-party native-module package
+prefix (`src/native/third-party-packages.ts` — same append-only,
+evidence-cited governance as `src/artifact/native-boundary-packages.ts`,
+seeded from and cross-checked against the deps signature DB under
+`tools/pkgsig/db`); `null` when neither applies (unresolved, surfaced for the
+human, never guessed either way).
 
 `native/seams.jsonl` (spec 27 L3, `src/native/seams.ts`) is the JS<->native
 **join**, written only when this directory holds BOTH a JS artifact
@@ -363,6 +372,11 @@ nothing is re-derived from bytecode or DEX bytes here. Row:
  "native":{"module":"native:module:Crypto","method":"native:method:Lcom/example/seam/CryptoModule;->generateKey(Ljava/lang/String;Lcom/facebook/react/bridge/Promise;)V"},
  "status":"linked","channel":"NativeModules","firstParty":null}
 ```
+
+(`firstParty` above is shown `null` as `buildSeams` itself always emits it —
+`writeSeams` labels it right after, inheriting the linked/native-only row's
+native module's own L4 label; a `js-only` row has no native class to
+classify and stays `null`. See L2's paragraph above for the label's rule.)
 
 - **`status`** is `linked` (both halves), `js-only` (a JS reference with no
   native impl in this APK — `native:null`, a real unresolved boundary, never

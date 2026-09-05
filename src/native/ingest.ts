@@ -11,6 +11,7 @@ import { join, relative, sep } from "node:path";
 import { nativeMethodKey, nativeTypeKey } from "../name-overlay/id.ts";
 import { emptyManifest, looksLikeAxml, manifestFromAxml, parseAxml } from "./axml.ts";
 import { looksLikeArsc, parseArsc, resourceRows } from "./arsc.ts";
+import { labelReactModuleParty } from "./classify-party.ts";
 import { parseDex } from "./dex.ts";
 import { buildReactModules } from "./react-modules.ts";
 import {
@@ -189,7 +190,10 @@ export function buildNativeTables(container: NativeContainer): NativeTables {
 
   // spec 27 §L2: derived from the classes/methods tables above, never from
   // raw DEX bytes directly (react-modules.ts only ever reads these rows).
-  const reactModules = buildReactModules(classes, methods);
+  // spec 27 §L4: labelled first/third-party right away, using L1's own
+  // manifest package — every consumer of `reactModules` from here on
+  // (serialisation, the L3 seams join) sees the label already filled.
+  const reactModules = labelReactModuleParty(buildReactModules(classes, methods), manifest.package);
 
   return { classes, methods, strings, resources, assets, reactModules, manifest, dexFiles, notes };
 }

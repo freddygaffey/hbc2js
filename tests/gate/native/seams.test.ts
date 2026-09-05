@@ -110,7 +110,12 @@ test("a linked seam's jsEvidence ids resolve in string-uses.jsonl AND its native
         assert.ok(claimed.has(j.strings.get(sid) ?? ""), `${row.key} cites ${id} = ${JSON.stringify(j.strings.get(sid))}, which is neither its jsName nor its jsMethod`);
       }
       assert.equal(row.jsEvidence!.resolved, "string-only");
-      assert.equal(row.firstParty, null, "firstParty is L4's column, always null at L3");
+      // spec 27 §L4: `ingestNative`/`writeSeams` label `firstParty` from the
+      // linked module's own label; every class in seams.apk sits under its
+      // own manifest package com.example.seam, so a linked row is
+      // first-party. L4's own fixture (`party.apk`) exercises the other
+      // outcomes; this file stays L3's own join assertions.
+      assert.equal(row.firstParty, true, "every module in seams.apk sits under its own manifest package com.example.seam");
     }
   }
 });

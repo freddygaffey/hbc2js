@@ -34,6 +34,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GlobalRow, StringRow, StringUseRow, StringUseRole } from "../artifact/schema.ts";
+import { labelSeamParty } from "./classify-party.ts";
 import {
   nativeHeader,
   toNativeJsonl,
@@ -272,7 +273,10 @@ export function serialiseSeams(rows: readonly SeamRow[]): string {
 export function writeSeams(artifactDir: string, modules: readonly NativeModuleRow[]): { rows: SeamRow[]; text: string } | null {
   const js = readJsSeamTables(artifactDir);
   if (js === null) return null;
-  const rows = buildSeams(js, modules);
+  // spec 27 §L4: `modules` is already party-labelled by the caller
+  // (`ingest.ts`); a seam row inherits its native module's label, never
+  // re-classifies (a join file joins, it does not re-derive a label).
+  const rows = labelSeamParty(buildSeams(js, modules), modules);
   const text = serialiseSeams(rows);
   writeFileSync(join(artifactDir, "native", "seams.jsonl"), text);
   return { rows, text };

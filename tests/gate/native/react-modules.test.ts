@@ -84,6 +84,10 @@ test("every react-modules row's key and implClass round-trip against classes.jso
   const classKeys = new Set(t.classes.map((c) => c.key));
   for (const r of t.reactModules) {
     assert.ok(classKeys.has(r.implClass), `${r.key} cites implClass ${r.implClass}, which is not in classes.jsonl`);
-    assert.equal(r.firstParty, null, "firstParty is filled by L4, always null at L2");
+    // spec 27 §L4: `buildNativeTables` fills `firstParty` using the manifest
+    // package (`com.example.rn`), which every class in this fixture sits
+    // under — L4's own fixture (`party.apk`) is what exercises the
+    // third-party/unknown outcomes; this file stays L2's own assertions.
+    assert.equal(r.firstParty, true, "every class in rn-modules.apk sits under its own manifest package com.example.rn");
   }
 });

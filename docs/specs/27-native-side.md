@@ -415,6 +415,23 @@ forced*; *the curated list agrees with the deps sigdb where they overlap
 
 **Depends on:** L2 (uses L1's manifest package).
 
+**Landed (2026-09-05).** `src/native/classify-party.ts` (`classifyParty`,
+`labelReactModuleParty`, `labelSeamParty`) + `src/native/third-party-packages.ts`
+(4 curated prefixes: `com.oblador.keychain`, `com.reactnativecommunity`,
+`com.swmansion`, `org.reactnative`, each with a one-line npm-package
+citation). Wired into `buildNativeTables` (labels `reactModules` right after
+`buildReactModules`, using the decoded manifest package) and `writeSeams`
+(labels a `native/seams.jsonl` row from its already-labelled native module —
+never re-classified there). Decisions taken without Fred's ratification (see
+the file's own header comment): "equals-or-under manifest package" for
+first-party, no per-app allow/deny; the 4-prefix seed list, not padded beyond
+what's evidence-cited. Fixture: `tests/fixtures/native/party.apk`
+(`tools/native-fixture/gen.mjs`), one class per outcome. The third-party seed
+list's cross-check against `tools/pkgsig/db` found it agrees on TWO packages,
+not the one this section's text names: `@react-native-async-storage/async-
+storage` (`com.reactnativecommunity`) AND `react-native-gesture-handler`
+(`com.swmansion`) are both in the sigdb, pinned by the 4th test.
+
 ---
 
 ### L5 — MCP + ui-server read verbs; UI Context-pane native link · Sonnet
