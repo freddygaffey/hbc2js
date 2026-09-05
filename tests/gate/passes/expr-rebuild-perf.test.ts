@@ -22,11 +22,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { timeScale } from "../../support/tiers.ts";
-import type { Stmt } from "../../../src/emit/ast.ts";
+import type { Expr, Stmt } from "../../../src/emit/ast.ts";
 import { id, lit } from "../../../src/emit/ast.ts";
 import { applyAstPasses, defUse, expressionOnlyCheck, isPure, registerUses } from "../../../src/passes/ast.ts";
 import type { ExprRebuildSite } from "../../../src/passes/expr-rebuild/match.ts";
 import { classifySite } from "../../../src/passes/expr-rebuild/match.ts";
+import { stmtInterest } from "../../../src/passes/expr-rebuild/stmt-index.ts";
 import { substituteTopLevel } from "../../../src/passes/expr-rebuild/rewrite.ts";
 import { exprRebuild } from "../../../src/passes/expr-rebuild/index.ts";
 import type { ModuleView } from "../../../src/passes/tree.ts";
@@ -410,5 +411,128 @@ test("expr-rebuild's classify layer costs the same per site however long the lis
   assert.ok(
     ratio < budget,
     `classifying ${TAIL_SITES} sites cost ${picked.l.toFixed(1)} ms with a ${INERT_TAIL}-statement inert tail behind them and ${picked.s.toFixed(1)} ms with none - ${ratio.toFixed(1)}x, budget ${budget.toFixed(1)}x. Cost per site must not depend on list length: a pre-fix isDeadAfter walks that whole tail once per site, which lands near 40x here.`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// docs/BUGS.md's same superlinear row, part 6: the *classify scan* half.
+//
+// `classifySite`'s forward search and `isDeadAfter`'s backward scan both step
+// through `nextRelevant`, which before this fix walked every statement
+// between the site and its answer, asking `stmtInterest` (a WeakMap get plus
+// a Set membership test) about each one. On a module-root list that is the
+// whole tail: `fn#0` of the Service NSW bundle stores most of its registers
+// once, reads them once and never mentions them again, so "the next statement
+// that mentions `reg`" is usually "there is none" and every one of its ~4,510
+// sites walks to the end of the list. That layer was 275 s of the 546 s CPU
+// in the 2026-09-05 whole-file profile of that bundle.
+//
+// It is now answered from a per-register sorted position list
+// (`src/passes/expr-rebuild/stmt-index.ts`), derived across each splice from
+// the window `check.ts` has already proven is the only thing that changed.
+// `tests/gate/passes/stmt-index.test.ts` proves the answers are identical;
+// this is the cost proof.
+//
+// Self-calibrating, in this file's established style: the denominator is
+// literally the work removed - the pre-fix `nextRelevant` scan, reimplemented
+// below over the same exported `stmtInterest` facts - measured in the same
+// process, on the same list, immediately after the numerator. The pre-fix
+// implementation scores >= 1.0 here by construction, since its classify cost
+// was exactly this denominator plus everything the numerator still does.
+
+/** K dead stores to distinct registers (never read, never redefined), then a
+ *  tail of statements mentioning no register at all: the shape whose
+ *  `nextRelevant` answer is always "there is none". */
+function deadStoreHeadWithInertTail(k: number, tail: number): readonly Stmt[] {
+  const body: Stmt[] = [];
+  for (let n = 0; n < k; n++) body.push({ k: "expr", expr: { k: "assign", target: id(`r${n}`), value: { k: "call", callee: id("source"), args: [lit(String(n))] } } });
+  for (let n = 0; n < tail; n++) body.push({ k: "expr", expr: { k: "call", callee: id("sink"), args: [lit(String(n))] } });
+  return body;
+}
+
+function classifyHead(list: readonly Stmt[], k: number): void {
+  for (let n = 0; n < k; n++) {
+    const s = list[n] as { readonly expr: { readonly value: Expr } };
+    classifySite(list, list, n, `r${n}`, s.expr.value);
+  }
+}
+
+/** The pre-fix `nextRelevant`, kept here as the denominator's reference
+ *  implementation only - `stmt-index.ts` no longer scans this way when it
+ *  holds an index for the list. One call per site, exactly as
+ *  `classifySite`'s forward search made. */
+function scanHead(list: readonly Stmt[], k: number): number {
+  let found = 0;
+  for (let n = 0; n < k; n++) {
+    for (let m = n + 1; m < list.length; m++) {
+      const it = stmtInterest(list[m]!);
+      if (it.jump || it.regs.has(`r${n}`)) {
+        found++;
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+test("classifySite's scan for a register that is never mentioned again costs a fraction of the whole-tail walk it replaced", () => {
+  const warm = deadStoreHeadWithInertTail(200, 500);
+  classifyHead(warm, 200); // JIT warmup, not measured
+  scanHead(warm, 200);
+  const budget = 0.5;
+  // Three repetitions, not `RATIO_REPS`: one repetition of the *denominator*
+  // here is 500 walks of a 20,000-statement list, seconds of work on its own.
+  const reps = 3;
+  for (const tail of [4000, 20000]) {
+    const list = deadStoreHeadWithInertTail(500, tail);
+    const { indexed, scanned } = bestOf(
+      reps,
+      () => {
+        const fresh = deadStoreHeadWithInertTail(500, tail); // a fresh identity per rep: the index is built inside the timed region, never reused
+        return { indexed: cpuMs(() => classifyHead(fresh, 500)), scanned: cpuMs(() => scanHead(list, 500)) };
+      },
+      (t) => t.indexed / Math.max(t.scanned, 1),
+    );
+    const ratio = indexed / Math.max(scanned, 1);
+    assert.ok(
+      ratio < budget,
+      `500 classifySite calls over a ${500 + tail}-statement list cost ${indexed.toFixed(1)} CPU ms, ${(ratio * 100).toFixed(0)}% of the ` +
+        `${scanned.toFixed(1)} ms the pre-fix nextRelevant walk alone costs for the same 500 sites (budget ${(budget * 100).toFixed(0)}%). ` +
+        `The pre-fix algorithm scores >= 100% here by construction.`,
+    );
+  }
+});
+
+/**
+ * The same claim as a growth curve, since a ratio at one size cannot
+ * distinguish "bounded" from "smaller constant": classifying every site of a
+ * module-root-shaped list is `O(N log N)` once the answers come from the
+ * index (one build, then a binary search per site) and `Theta(N^2)` when
+ * every site walks the tail. Per-site cost is therefore asserted to grow by
+ * less than 3x across a 4x growth in N - linear-with-a-log would be ~1.2x,
+ * and the pre-fix walk is 4x by construction. The bound is deliberately loose
+ * because the index build is `O(N)` work amortised over the N sites of one
+ * measurement and because `node --test` runs this file under load; it is
+ * still a factor of 1.4 below what a quadratic scan can reach.
+ */
+test("classifying every site of a module-root-shaped list grows near-linearly in the site count", () => {
+  const perSite = (n: number): number => {
+    const cost = bestOf(
+      RATIO_REPS,
+      () => {
+        const list = deadStoreHeadWithInertTail(n, n);
+        return cpuMs(() => classifyHead(list, n));
+      },
+      (t) => t,
+    );
+    return cost / n;
+  };
+  perSite(500); // warmup
+  const small = perSite(2000);
+  const large = perSite(8000);
+  const growth = large / Math.max(small, 1e-6);
+  assert.ok(
+    growth < 3,
+    `per-site classify cost grew ${growth.toFixed(2)}x from N=2000 (${(small * 1000).toFixed(1)} us/site) to N=8000 (${(large * 1000).toFixed(1)} us/site), a 4x growth in N; budget 3x. A tail-walking scan is 4x here by construction.`,
   );
 });

@@ -9,6 +9,7 @@
 // tests can assert the exact refuse reason without going through the driver.
 import type { Expr, IdentUses, Stmt } from "../ast.ts";
 import { identUses, isPure, isPureStmt, isRegisterName, registerUses, registerUsesIfMemoised } from "../ast.ts";
+import { anyPassThroughBetween, nextRelevant, stmtInterest } from "./stmt-index.ts";
 
 const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { Match, PassContext } from "../types.ts";
@@ -541,101 +542,12 @@ function stmtVerdict(s: Stmt, reg: string, labels: ReadonlyMap<string, Cont>, re
 // slices, never copies), the per-list index on the list's.
 // ---------------------------------------------------------------------------
 
-interface StmtInterest {
-  /** Register names occurring anywhere in the statement's own frame. */
-  readonly regs: ReadonlySet<string>;
-  /** A `break`/`continue` occurs anywhere in the statement's own frame. */
-  readonly jump: boolean;
-  /** `branchVerdict` on this statement hands its enclosing list's
-   *  continuation to a sub-list that can fall through into it — so, with no
-   *  mention of `reg` and no jump, its verdict *is* the rest of the list's.
-   *  `if`/`labeled`/`iife`/`try` (its handler) always; `switch` with at
-   *  least one case. Loops hand `CLEAR` to their body, never `rest`. */
-  readonly passThrough: boolean;
-}
-
-const stmtInterestMemo = new WeakMap<Stmt, StmtInterest>();
-
-function containsJump(list: readonly Stmt[]): boolean {
-  for (const s of list) {
-    switch (s.k) {
-      case "break":
-      case "continue":
-        return true;
-      case "if":
-        if (containsJump(s.then) || containsJump(s.else)) return true;
-        break;
-      case "while":
-      case "do-while":
-      case "for":
-      case "for-in":
-      case "for-of":
-      case "labeled":
-      case "iife":
-        if (containsJump(s.body)) return true;
-        break;
-      case "try":
-        if (containsJump(s.block) || containsJump(s.handler)) return true;
-        break;
-      case "switch":
-        for (const c of s.cases) if (containsJump(c.body)) return true;
-        break;
-      default:
-        break; // expr, init, decl, return, throw, func (a separate frame), directive, comment, raw
-    }
-  }
-  return false;
-}
-
-function stmtInterest(s: Stmt): StmtInterest {
-  let it = stmtInterestMemo.get(s);
-  if (it !== undefined) return it;
-  const regs = new Set(registerUses([s]).keys());
-  const jump = containsJump([s]);
-  const passThrough = s.k === "if" || s.k === "labeled" || s.k === "iife" || s.k === "try" || (s.k === "switch" && s.cases.length > 0);
-  it = { regs, jump, passThrough };
-  stmtInterestMemo.set(s, it);
-  return it;
-}
-
-/**
- * The smallest index `>= from` whose statement can change a scan's verdict
- * for `reg` (mentions it in its own frame, or contains a jump) —
- * `list.length` when there is none. Every statement skipped over is
- * `clear`-and-keep-going for `reg` (see the section comment above).
- *
- * A direct scan, not a precomputed whole-list index: `stmtInterest` is
- * memoised per statement node (`stmtInterestMemo`, module-level and keyed
- * by node identity, so it survives a splice), so the only work this
- * function does is the statements between `from` and the answer — never a
- * separate `O(list.length)` pass over the *whole* list. `list` itself gets
- * a fresh array identity on every applied site (`spliceList` rebuilds the
- * spine), so an index keyed by list identity (the previous approach: a
- * `byReg`/`jumps` map built once per distinct `list` object) was rebuilt
- * from scratch on every site — `O(sites × body)` on a function with many
- * sites, the dominant cost profiled on a real bundle's module-root
- * function (its own `docs/BUGS.md` row). A bounded scan does not have that
- * problem: its own cost is exactly `O(distance to the answer)`, the same
- * bound a caller like `classifySite`'s forward search already pays one
- * `nextRelevant` call for, whether or not the list itself is huge. */
-function nextRelevant(list: readonly Stmt[], reg: string, from: number): number {
-  for (let m = from; m < list.length; m++) {
-    const it = stmtInterest(list[m]!);
-    if (it.jump || it.regs.has(reg)) return m;
-  }
-  return list.length;
-}
-
-/** Number of pass-through statements (`if`/`labeled`/`iife`/`try`/non-empty
- *  `switch` — `stmtInterest`'s `passThrough`) in `list[from, to)`. Direct
- *  scan for the same reason `nextRelevant` is: `to` is always a position
- *  `nextRelevant` just found a bounded distance from `from`, so this pays
- *  no more than that same bound, never a whole-list prefix-sum rebuild. */
-function passThroughCount(list: readonly Stmt[], from: number, to: number): number {
-  let n = 0;
-  for (let m = from; m < to; m++) if (stmtInterest(list[m]!).passThrough) n++;
-  return n;
-}
+// `stmtInterest`, `nextRelevant` and `anyPassThroughBetween` live in
+// `./stmt-index.ts`: per-node facts memoised on statement identity, plus the
+// per-register position index that answers both queries without walking the
+// statements in between (perf part 6, docs/BUGS.md's "452 s / 946 s" row --
+// on a module-root list a scan for a register that is never mentioned again
+// runs to the end of the list, once per candidate site).
 
 /** Scans `list` from `from`, statement by statement, stopping at the first
  *  `dead` (redefined — nothing further in `list` matters) or `read`
@@ -775,7 +687,7 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
       // list, which starts with this read — and refused the site as
       // `use-under-control-flow` before the read was ever reached. Keep that
       // verdict (and its reason) exactly.
-      if (passThroughCount(list, i + 1, m) > 0) {
+      if (anyPassThroughBetween(list, i + 1, m)) {
         blocked = true;
         break;
       }
