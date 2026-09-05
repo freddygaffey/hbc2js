@@ -45,8 +45,8 @@
 import type { Expr, Stmt } from "../ast.ts";
 import { identUses, mapStmts, stmtLists, walk } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
-import { classesIn, ctorMember } from "../ctor-this/match.ts";
-import type { ClassExpr } from "../ctor-this/match.ts";
+
+export type ClassExpr = Extract<Expr, { k: "class" }>;
 
 export interface SuperCallGroup {
   /** Display name of every class whose constructor this rung rewrote. */
@@ -56,6 +56,19 @@ export interface SuperCallGroup {
 export interface SuperRefusal {
   readonly code: string;
   readonly reason: string;
+}
+
+/** Every recovered `class` node in `stmts`, in tree order. */
+export function classesIn(stmts: readonly Stmt[]): readonly ClassExpr[] {
+  const found: ClassExpr[] = [];
+  walk(stmts, { expr: (e) => { if (e.k === "class") found.push(e); } });
+  return found;
+}
+
+/** The class's own `constructor` member, exactly as `class-recover` installs it. */
+export function ctorMember(cls: ClassExpr): Extract<Expr, { k: "func" }> | null {
+  const m = cls.members.find((m) => m.kind === "method" && !m.static && m.key.k === "ident" && m.key.name === "constructor");
+  return m !== undefined && m.value !== null && m.value.k === "func" ? m.value : null;
 }
 
 const THIS: Expr = { k: "this" };

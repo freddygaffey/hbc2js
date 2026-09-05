@@ -393,7 +393,12 @@ test("v99 shape: 33-class-inheritance-super — an ordinary two-argument Reflect
   // reg-split (still on — only var-naming is skipped) may give any of these
   // registers their own `rN_j` web name; call-shape's own property under
   // test is unaffected by that renaming.
-  const code = decompile(new Uint8Array(readFileSync(fixturePath("33-class-inheritance-super", 99, ""))), { moduleName: "x", passes: { skip: ["var-naming"] } }).code;
+  // `super-call` (row R13, spec 28) is skipped for the same reason: since
+  // 2026-09-05 it CONSUMES this very site, rebuilding it as `super(r4)`.
+  // That is a later rung's rewrite of a shape call-shape had already
+  // (correctly) declined to fold; skipping it keeps this assertion about
+  // call-shape's own property, unchanged, on the shape call-shape sees.
+  const code = decompile(new Uint8Array(readFileSync(fixturePath("33-class-inheritance-super", 99, ""))), { moduleName: "x", passes: { skip: ["var-naming", "super-call"] } }).code;
   assert.match(code, /new r7(?:_\d+)?\(r12(?:_\d+)?, r11(?:_\d+)?\)/);
   assert.match(code, /Reflect\.construct\(r2(?:_\d+)?, \[r4(?:_\d+)?\], r3(?:_\d+)?\)/, "super() forwards a distinct new.target — must not become `new r2(r4)`");
 });

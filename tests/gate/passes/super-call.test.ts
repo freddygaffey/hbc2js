@@ -22,7 +22,7 @@ import { decompile } from "../../../src/decompile.ts";
 import { repoRoot } from "../../support/paths.ts";
 import type { Expr, Stmt } from "../../../src/passes/ast.ts";
 import { classBindingSlots, foldSuperBody } from "../../../src/passes/super-call/match.ts";
-import type { ClassExpr } from "../../../src/passes/ctor-this/match.ts";
+import type { ClassExpr } from "../../../src/passes/super-call/match.ts";
 
 const js = (fixture: string, version: "v98" | "v99", mode: "on" | "none" = "on"): string =>
   decompile(new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", fixture, `${version}.hbc`))), {
