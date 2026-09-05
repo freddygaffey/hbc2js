@@ -418,22 +418,64 @@ function argumentsUses(stmts: readonly Stmt[]): number {
  * new.target is the frame's own literal, the `arguments` object is the one the
  * forward consumes and is read nowhere else, and the constructor declares no
  * parameters of its own.
+ *
+ * Section 9.5's residue: some constructors (136 of 147 on
+ * react-navigation-example-0.85.3) end `r0 = __hbc_b_applyArguments(...);
+ * return r0;` -- a store, then `return <ident>` -- rather than `return
+ * __hbc_b_applyArguments(...)` directly. That is still the same identity
+ * (returning a value bound one statement earlier is not observable), so this
+ * matcher dereferences a `return <ident>` back through exactly ONE
+ * immediately-preceding `<ident> = <call>` store, mirroring `derefChain`'s own
+ * conservatism about a register reused after its move: the store must sit
+ * directly before the `return` (no statement between them -- there is nothing
+ * to "search past" the way `derefChain` searches for a store, because a
+ * reused register would make the return read the *later* value, not the
+ * call's result), and the ident must have no other read or write anywhere in
+ * the body (register scope: never followed into a nested closure, same as
+ * every other check here). Once dereferenced, the call found this way goes
+ * through every check below exactly as `return call(...)` would; the store
+ * statement itself is simply never added to `head`; it is consumed by the
+ * forward the same way the direct shape's `return` statement is.
  */
 function foldForwardBody(module: readonly Stmt[], cls: ClassExpr, body: readonly Stmt[], params: readonly Param[]): { readonly body: readonly Stmt[]; readonly params: readonly Param[] } | SuperRefusal {
-  // Shape: the forward is the constructor's LAST statement, and everything
-  // before it is inert -- the `// fn#N` provenance comment (kept), the
-  // "use strict" directive (DROPPED: the rebuilt constructor has a non-simple
-  // parameter list and ES2024 15.2.1 forbids a directive prologue there; a
-  // no-op, since a class body is strict code already, ES2024 15.7), a hoisted
-  // `function` declaration this frame merely hosts (kept -- a declaration runs
-  // no user code and is legal before `super()`), a register `let` (kept only
-  // if something still reads it), and the operand moves the forward itself
-  // consumed (deleted, exactly as the main path deletes its own). Anything
-  // else is refused rather than guessed at.
-  const at = body.length - 1;
-  const ret = body[at];
-  if (ret === undefined || ret.k !== "return" || ret.arg === null || ret.arg.k !== "call") return { code: "R-SC9", reason: "the applyArguments forward is not the constructor's last statement" };
-  const call = ret.arg;
+  // Shape: the forward is the constructor's LAST statement (or the statement
+  // immediately before a `return <ident>` that only echoes it -- see above),
+  // and everything before it is inert -- the `// fn#N` provenance comment
+  // (kept), the "use strict" directive (DROPPED: the rebuilt constructor has
+  // a non-simple parameter list and ES2024 15.2.1 forbids a directive
+  // prologue there; a no-op, since a class body is strict code already,
+  // ES2024 15.7), a hoisted `function` declaration this frame merely hosts
+  // (kept -- a declaration runs no user code and is legal before `super()`),
+  // a register `let` (kept only if something still reads it), and the
+  // operand moves the forward itself consumed (deleted, exactly as the main
+  // path deletes its own). Anything else is refused rather than guessed at.
+  const last = body[body.length - 1];
+  if (last === undefined || last.k !== "return" || last.arg === null || (last.arg.k !== "call" && last.arg.k !== "ident")) {
+    return { code: "R-SC9", reason: "the applyArguments forward is not the constructor's last statement" };
+  }
+  let call: Extract<Expr, { k: "call" }>;
+  let at: number;
+  if (last.arg.k === "call") {
+    call = last.arg;
+    at = body.length - 1;
+  } else {
+    const name = last.arg.name;
+    const storeIdx = body.length - 2;
+    const storeStmt = storeIdx >= 0 ? body[storeIdx] : undefined;
+    const store = storeStmt !== undefined ? simpleStore(storeStmt) : null;
+    if (store === null || store.name !== name) {
+      return { code: "R-SC9", reason: "the constructor returns an identifier not stored by the immediately-preceding statement" };
+    }
+    const uses = identUses(body, name);
+    if (uses.reads !== 1 || uses.writes !== 1 || mentionedInNestedFunction(body, name)) {
+      return { code: "R-SC9", reason: `the forwarding constructor stores its result in ${name}, which is used elsewhere in the body` };
+    }
+    if (store.value.k !== "call") {
+      return { code: "R-SC9", reason: `the statement immediately before the return does not store the applyArguments forward into ${name}` };
+    }
+    call = store.value;
+    at = storeIdx;
+  }
   if (!isIdentNamed(call.callee, APPLY_ARGUMENTS)) return { code: "R-SC9", reason: "the constructor's last statement is not the applyArguments forward" };
   if (params.length > 0) return { code: "R-SC9", reason: `the forwarding constructor declares ${params.length} parameter(s) of its own` };
   if (argumentsUses(body) !== 1) return { code: "R-SC9", reason: "`arguments` is read somewhere other than the forward itself" };

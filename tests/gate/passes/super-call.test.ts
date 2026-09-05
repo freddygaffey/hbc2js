@@ -332,6 +332,48 @@ test("super-call: a forward that passes a receiver (the apply path) is refused (
   assert.equal("code" in out && out.code, "R-SC8");
 });
 
+// --- section 9.6: `r0 = applyArguments(...); return r0;` (store-then-return) --
+
+const applyCall = (): Expr => ({ k: "call", callee: ident("__hbc_b_applyArguments"), args: [{ k: "argumentsObject" }, getProto(ident("_e0_1")), lit("undefined"), lit("new.target")] });
+const STORE_RETURN_BODY: readonly Stmt[] = [FORWARD_BODY[0]!, FORWARD_BODY[1]!, store("r0", applyCall()), { k: "return", arg: ident("r0") }];
+
+test("super-call: `r0 = applyArguments(...); return r0;` dereferences through the store and folds (section 9.6)", () => {
+  const { module, cls } = moduleWith(STORE_RETURN_BODY);
+  const out = foldSuperBody(module, cls, STORE_RETURN_BODY, []);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+  assert.deepEqual(out.body.map((s) => s.k), ["comment", "expr"]);
+  const call = (out.body[1] as { expr: Expr }).expr;
+  assert.equal(call.k === "call" && call.callee.k === "lit" && call.callee.text, "super");
+});
+
+test("super-call: a store-then-return whose stored register is read elsewhere is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(STORE_RETURN_BODY);
+  const earlyRead: Stmt = { k: "expr", expr: { k: "call", callee: ident("sideEffect"), args: [ident("r0")] } };
+  const body: readonly Stmt[] = [STORE_RETURN_BODY[0]!, STORE_RETURN_BODY[1]!, earlyRead, STORE_RETURN_BODY[2]!, STORE_RETURN_BODY[3]!];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+  assert.match("code" in out ? out.reason : "", /used elsewhere/);
+});
+
+test("super-call: a store-then-return whose store is not the immediately-preceding statement is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(STORE_RETURN_BODY);
+  const between: Stmt = { k: "expr", expr: { k: "call", callee: ident("sideEffect"), args: [] } };
+  const body: readonly Stmt[] = [STORE_RETURN_BODY[0]!, STORE_RETURN_BODY[1]!, STORE_RETURN_BODY[2]!, between, STORE_RETURN_BODY[3]!];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+  assert.match("code" in out ? out.reason : "", /immediately-preceding/);
+});
+
+test("super-call: `return <ident>` whose preceding store is not the applyArguments call is refused (R-SC9)", () => {
+  const { module, cls } = moduleWith(STORE_RETURN_BODY);
+  // The unused earlier statement keeps `foldSuperBody` routing into the
+  // forward path (it scans the whole body for the intrinsic), but the tail's
+  // own preceding store is a plain literal, not the forward itself.
+  const body: readonly Stmt[] = [store("temp", applyCall()), store("r0", lit("1")), { k: "return", arg: ident("r0") }];
+  const out = foldSuperBody(module, cls, body, []);
+  assert.equal("code" in out && out.code, "R-SC9");
+});
+
 // --- fixture 78: the implicit constructor next to the explicit spread one ---
 
 for (const version of ["v98", "v99"] as const) {
