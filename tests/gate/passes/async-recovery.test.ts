@@ -130,7 +130,7 @@ test("baseline: the async idiom is untouched by every rung except yield-recovery
         // `Reflect.apply` argument list); `call-shape` rewrites that call, so it
         // is not a pipeline-invariant marker and is asserted above instead.
         ["this coercions", THIS_COERCION, []],
-        // PUSHBACK P-34: spec 23's `arguments-form` (catalogue row R10) owns
+        // PUSHBACK P-35: spec 23's `arguments-form` (catalogue row R10) owns
         // exactly this expression -- rewriting `__hbc_arguments(arguments)` to
         // a bare `arguments` is its whole purpose -- so it is the one further
         // rung that legitimately touches this marker. Narrowed, not weakened:
@@ -143,7 +143,7 @@ test("baseline: the async idiom is untouched by every rung except yield-recovery
   }
 });
 
-// PUSHBACK P-34, second half: `arguments-form` is the ONLY rung besides the
+// PUSHBACK P-35, second half: `arguments-form` is the ONLY rung besides the
 // two spec-25 rungs that may move the reified-arguments marker. Skipping it
 // alone restores the passes-off count on every async fixture at every version.
 test("baseline: `arguments-form` is the only other rung that rewrites the async stub's reified arguments", () => {
