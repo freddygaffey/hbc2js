@@ -39,7 +39,7 @@ Concrete, non-overlapping. Model: **Opus** = design/hard/checker-critical or sem
 
 ## IN FLIGHT
 
-- **Campaign runners on deb (own clone).** `deb` is BACK and runs the 8 live `campaign2-*` `campaign-runner.sh` loops (heavy fuzz compute stays on deb per the deb-compute rule; Mac keeps UI + gates). NOTE (`docs/reports/2026-09-05-campaign2-rediff.md`): the live runners were found to be on a checkout PRE-dating the P-16/fix-wave-3 harness fixes and produced stale finds — needs the deb clone refreshed before more compute (NEEDS FRED item below).
+- **Campaign runners on deb (own clone).** The campaign-2 `campaign-runner.sh` loops are dead (found stale — pre-dated the P-16/fix-wave-3 harness fixes, see `docs/reports/2026-09-05-campaign2-rediff.md`). Campaign 3 runs from a fresh clone `~/hbc2js-c3` at `1e1fe39` (heavy fuzz compute stays on deb per the deb-compute rule; Mac keeps UI + gates) — see `docs/fuzz/CONSTRUCT-FUZZER.md`'s "Campaign 3" section for dirs/status/resume/kill.
 - **object-tables verb consumers.** `query object-tables` LANDED (`docs/specs/hunt-tooling-backlog.md`); wiring it into the endpoint-table hunt UI/leads is the follow-through.
 - **Bulk sigdb round 2b — registry-driven candidates (lane B).** `tools/pkgsig/bulk/round2b-runner.sh` on `deb`; remaining = measure Service NSW / rn-template attribution once the first incremental assemble exists (record in `docs/DEPS.md`), widen to top ~3000. Publish only when Fred says.
 
