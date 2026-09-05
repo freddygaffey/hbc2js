@@ -128,13 +128,18 @@ function mapChildren(s: Stmt, key: string, f: (list: readonly Stmt[], key: strin
 interface Dispatcher {
   readonly stmt: Stmt & { readonly k: "labeled" };
   readonly key: string;
+  /** `__pc` stores the emitter put inside the dispatcher's own labelled block,
+   *  ahead of the `switch` (`28-async-await-error`). They run on every resume,
+   *  including the entry, so they stay exactly where the block was. */
+  readonly lead: readonly Stmt[];
   readonly arms: ReadonlyMap<number, readonly Stmt[]>;
 }
 
 function findDispatcher(list: readonly Stmt[], key: string, out: Dispatcher[]): void {
   for (const s of list) {
-    if (s.k === "labeled" && s.body.length === 1 && s.body[0]!.k === "switch") {
-      const sw = s.body[0]! as Stmt & { readonly k: "switch" };
+    if (s.k === "labeled" && s.body.length >= 1 && s.body.slice(0, -1).every((x) => isPcStore(x) || x.k === "comment") && s.body[s.body.length - 1]!.k === "switch") {
+      const sw = s.body[s.body.length - 1]! as Stmt & { readonly k: "switch" };
+      const lead = s.body.slice(0, -1);
       if (isIdent(sw.disc, "__state")) {
         const arms = new Map<number, readonly Stmt[]>();
         let shaped = true;
@@ -151,7 +156,7 @@ function findDispatcher(list: readonly Stmt[], key: string, out: Dispatcher[]): 
           if (arms.has(Number(c.test.text))) shaped = false;
           arms.set(Number(c.test.text), c.body);
         }
-        if (shaped) out.push({ stmt: s, key, arms });
+        if (shaped) out.push({ stmt: s, key, lead, arms });
       }
     }
     for (const c of children(s)) findDispatcher(c.list, key === "" ? c.seg : `${key}/${c.seg}`, out);
@@ -289,7 +294,7 @@ function openEntry(list: readonly Stmt[], d: Dispatcher, t: Threader): readonly 
   if (at >= 0) {
     const pro = stripPrologue(list.slice(at + 1));
     if ("ok" in pro) return pro;
-    return [...list.slice(0, at), ...pro.lead, ...pro.cont];
+    return [...list.slice(0, at), ...d.lead, ...pro.lead, ...pro.cont];
   }
   let failed: Refused | null = null;
   const mapped = list.map((s) =>
