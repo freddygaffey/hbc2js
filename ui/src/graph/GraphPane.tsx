@@ -12,7 +12,7 @@ import { api } from "../api.ts";
 import type { CallsFrom, Severity, WhoCalls, WhoCallsByName } from "../contracts.ts";
 import { useFindings, useFn, useModule } from "../hooks.ts";
 import { displayName } from "../listing/names.ts";
-import { useSelection } from "../state/selection.ts";
+import { select, useSelection } from "../state/selection.ts";
 import {
   buildCallModel, buildCfgModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, lodCard,
   LOD_NOMINAL_ZOOM, modelForLevel, neighbourSet,
