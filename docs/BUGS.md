@@ -13,7 +13,7 @@ row, or a deliberate design choice). New bugs are appended to Open with a
 `cluster` and `verdict` from the start — no more thin "why no test yet"
 placeholders. Triage history: docs/QUEUE.md item 4, 2026-09-01.
 
-## Open — 31 rows
+## Open — 32 rows
 
 | date | source | component | description | why no test yet | owner | status | cluster | verdict |
 |---|---|---|---|---|---|---|---|---|
