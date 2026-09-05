@@ -360,7 +360,7 @@ function uniqueRegSites(sites: number, tail: number): readonly Stmt[] {
  *  `noteRegisterUsesSplice`). The list itself is never rewritten here, so
  *  the *only* thing that differs between the two measurements is how much
  *  list sits behind the last site. */
-const CLASSIFY_SWEEPS = 100;
+const CLASSIFY_SWEEPS = 40;
 
 function classifyAll(sites: number, tail: number): number {
   const list = uniqueRegSites(sites, tail);
