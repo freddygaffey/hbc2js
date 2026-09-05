@@ -106,10 +106,77 @@ same worktree, before -> after:
 * 31 functions newly IDENTICAL, 1 newly DIFFERENT (bucket
   `diff:LoadConst/GetGlobalObject`; recorded in the `docs/BUGS.md` row).
 
-## 7. Not done
+## 7. Interleaved ranges: measured, mostly not a reordering problem
 
-`overlapping statement ranges` is by far the largest refusal (757). Module 681 /
-fn#683's thirteen environments are in it: their statements interleave because
-the emitter places each environment's stores where the bytecode had them rather
-than grouping them. Grouping would need a reordering argument of its own and is
-not attempted here.
+`overlapping statement ranges` is by far the largest refusal (757
+environments). `hermesc -O` schedules the statements of the IIFEs it inlined
+freely, so environment A's stores can sit between two of environment B's and
+neither is a contiguous run.
+
+`src/emit/iife-group.ts` answers the reordering question. For each connected
+group of overlapping environments it plans the stable partition of the region
+into one block per environment (blocks in order of first appearance, the filler
+between two of an environment's own statements staying with the preceding
+block, which is what an accepted range already swallows). That permutation is a
+sequence of swaps between statements of different blocks, and it is allowed
+only when EVERY such pair provably commutes: both statements inert or a
+`x = <identifier | literal | array/object literal of those>` store, and their
+read/write footprints disjoint. A call, a member access (a getter is a side
+effect, and a null base throws), a spread, a computed key, a control-flow
+statement -- all refuse. A group that cannot be proved keeps its statement
+order and refuses as before; a proved reordering that ends up buying no wrapper
+is reverted, so the emitted statement list only ever moves when a wrapper
+lands.
+
+Measured with `node tools/passes/iife-overlap.ts <bundle.hbc>` on
+react-navigation-example-0.85.3 (339 groups, 757 environments):
+
+| class | groups | environments |
+|---|---|---|
+| `statement in two environments` | 291 | 622 |
+| blocked swap, one side a member load or store | 18 | 63 |
+| blocked swap, both sides identifier stores | 18 | 37 |
+| blocked swap, one side an object literal | 4 | 19 |
+| blocked swap, one side a labeled statement | 8 | 16 |
+| reordering proved | 0 | 0 |
+
+So the refusal is NOT mainly a statement-order artefact. 622 of the 757 (82%)
+are groups in which a single statement names slots of two environments at once
+(`_eA_0 = _eB_0;`, or a store of one environment's hoisted closure into
+another's slot). No reordering can separate those, and section 4's
+`environment read outside the range` guard would refuse them even if the ranges
+were contiguous -- the wrapper would add a scope level to a chain the original
+does not have. Strict nesting (an IIFE inside an IIFE) accounts for 204 of the
+757 and is not a distinct fixable class either: it is nesting only of the
+computed RANGES, and every such group is already in one of the rows above.
+
+Of the remaining 135, every group has at least one swap this analysis cannot
+prove, and the ones that look closest (`assign:ident=ident` on both sides) are
+groups where a LATER pair blocks -- the table reports the first blocker only.
+The commonest real blocker is the property store an inlined IIFE ends with
+(`out.f = <closure>`, `arr[0] = <closure>`): proving that safe needs escape
+analysis showing the base is a freshly allocated object with no setter, which
+is a much bigger argument than this step should carry.
+
+rnav is therefore UNCHANGED by this step (0 groups planned, so the emitted
+statement list is the input one, byte for byte); the round-trip figures of
+section 6 stand. What landed is the analysis, its measurement tool, and the
+regrouping itself, which fires wherever an interleaving IS provable -- pinned
+by the synthetic cases in `tests/gate/emit/iife-reconstruct.test.ts`.
+
+## 8. Fixture 79 and the tests section 7 added
+
+`tests/fixtures/constructs/79-interleaved-envs` is the interleaved shape at
+v98/v99: two (and three) inlined IIFEs that hand their reader closures back
+through an array, so the emitted statements are
+`_e0_0 = a1; _e1_0 = a2; arr = new Array(2); arr[0] = x; arr[1] = y;` and both
+environments' ranges cross. v84/v94/v96 do not inline them, so no sibling
+environment exists there. The fixture pins the REFUSAL (the flat prologue
+survives, which is never a behaviour change), and would go green on its own the
+day the property-store argument above is made.
+
+`tests/gate/emit/iife-reconstruct.test.ts` adds: a provable interleaving that
+IS regrouped and wrapped; the same list with one property store, which refuses
+with the blocking swap in the refusal's `detail`; a statement naming two
+environments, which refuses with `statement in two environments` (rnav's
+dominant class); and fixture 79's structural refusal at v98/v99.
