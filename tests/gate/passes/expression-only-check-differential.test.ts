@@ -120,7 +120,7 @@ test("expressionOnlyCheck: a register whose first def crosses the frozen-prefix/
     const l2: readonly Stmt[] = [readR0, redefR0, sink, tailClone];
     const afterDelete = expressionOnlyCheck(l1, l2);
     assert.equal(afterDelete.ok, false, "step 2: deleting r0's first def makes r0 read-before-def; a memo that carries r0's old status forward accepts this unsoundly");
-    assert.match(afterDelete.ok === false ? afterDelete.reason : "", /^r0 is read before its first def/);
+    assert.match(afterDelete.ok === false ? (afterDelete.reason ?? "") : "", /^r0 is read before its first def/);
 
     // Step 3: put a def of `r0` back at the front — the first def crosses
     // the line the other way and the list is legal again.
