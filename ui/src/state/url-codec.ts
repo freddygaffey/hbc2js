@@ -22,7 +22,7 @@
 // structural copies.
 import type { Selection, SelectionKind } from "./selection.ts";
 
-export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | "findings" | "package" | "workers";
+export type RightPanel = "context" | "xrefs" | "strings" | "tables" | "graph" | "findings" | "package" | "workers" | "edit";
 
 export const DEFAULT_PANEL: RightPanel = "context";
 
@@ -34,7 +34,7 @@ export const DEFAULT_PANEL: RightPanel = "context";
 export const NO_URL_SELECTION: Selection = { kind: "none" };
 
 const RIGHT_PANELS: readonly RightPanel[] = [
-  "context", "xrefs", "strings", "tables", "graph", "findings", "package", "workers",
+  "context", "xrefs", "strings", "tables", "graph", "findings", "package", "workers", "edit",
 ];
 
 const SELECTION_KINDS: readonly SelectionKind[] = ["none", "fn", "identifier", "string", "module", "finding"];
