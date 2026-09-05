@@ -18,6 +18,7 @@ import { forHeader } from "./for-header/index.ts";
 import { forIn } from "./for-in/index.ts";
 import { forOf } from "./for-of/index.ts";
 import { globalAccess } from "./global-access/index.ts";
+import { globalthisDeadStore } from "./globalthis-dead-store/index.ts";
 import { ifChain } from "./if-chain/index.ts";
 import { labelClean } from "./label-clean/index.ts";
 import { loopCond } from "./loop-cond/index.ts";
@@ -103,6 +104,7 @@ export const REGISTRY: readonly Pass[] = [
   labelClean as Pass,
   exprRebuild as Pass,
   globalAccess as Pass,
+  globalthisDeadStore as Pass,
   callShape as Pass,
   defaultParams as Pass,
   destructure as Pass,

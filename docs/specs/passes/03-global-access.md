@@ -167,9 +167,25 @@ rewritten twelve times, each with its own `check` and its own abandonment.
 
 Delete `L[i]`; in `L[j]` replace that one `member` node with `{k:"ident",
 name:p}`. Nothing else moves. A now-dead `rN = globalThis` store is **not**
-removed here (`expr-rebuild`'s R1b has already run); `01` F10 prunes the
-declaration and `var-naming` (batch 2) clears the residue — one dead line, not
-a correctness issue.
+removed here (`expr-rebuild`'s R1b has already run and cannot see the
+deadness this fold creates). **Fixed 2026-09-05** (docs/BUGS.md, was: "the
+store rides all the way to emit and round-trips as a live
+`GetGlobalObject`+`TryGetById` `hermesc -O` cannot prove dead" — not a
+readability-only residue, a real E2E round-trip regression, top bucket
+`diff:TryGetById(string)`): a dedicated rung, `globalthis-dead-store`
+(docs/LOWERING-CATALOGUE.md R11, `src/passes/globalthis-dead-store/`),
+registered immediately after this one and before every renaming rung
+(`fn-naming`/`reg-split`/`var-naming`, the `try-clean`/R8 ordering pattern —
+so a register its deletion exposes as dead never reaches a renaming rung
+first), deletes the store once a position-sensitive scan (`isDeadLocally`,
+the same "read before the next redefinition?" question `expr-rebuild`'s own
+R1b/D-a asks, needed here rather than a whole-function read count because a
+register a `globalThis` store fed can be reused for a later, unrelated value
+whose own read must not be mistaken for a survivor of *this* store) proves
+its value is never read. `var-naming`'s "globalThis alias -> refuse" rule
+(spec 07 section 4.2 item 2) stays exactly as it was: it is not this rung's
+job to delete a binding, and by the time `var-naming` runs the dead alias is
+already gone.
 
 ## 6. Checker
 
