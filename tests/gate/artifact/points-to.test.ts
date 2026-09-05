@@ -274,3 +274,82 @@ test("the resolved index is render-independent: a second write is byte-identical
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// -- 68-babel-default-export-prologue: the void-0 prologue widening --------
+//
+// docs/BUGS.md "src/artifact/points-to.ts (export-side resolution)": babel's
+// `exports.default = void 0;` prologue used to make `default` unprovable for
+// every module that uses it, because one name took a proven closure AND an
+// unproven value. Module 0 of this fixture is the shape where last-write-wins
+// is PROVEN (the void-0 store dominates the closure store, which
+// post-dominates it, nothing catches in between and the exports object never
+// escapes the span); module 1 is the same prologue with the closure store
+// behind an `if`, so `undefined` can still be the last write on some path and
+// the pass MUST still refuse.
+
+const PROLOGUE = "68-babel-default-export-prologue";
+
+function constructPath(fixture: string, version: number): string {
+  return join(repoRoot(), "tests", "fixtures", "constructs", fixture, `v${version}.hbc`);
+}
+
+function scanConstruct(fixture: string, version: number): { readonly scan: PointsToScan; readonly factoryOf: ReadonlyMap<number, number>; readonly closuresIn: (fn: number) => ReadonlySet<number> } | null {
+  const p = constructPath(fixture, version);
+  if (!existsSync(p)) return null;
+  const sr = splitProjectFresh(readFileSync(p), {});
+  const factoryOf = new Map(sr.modules.map((m) => [m.id, m.factoryFunctionIndex]));
+  const closuresIn = (fn: number): ReadonlySet<number> => {
+    const out = new Set<number>();
+    for (const insn of sr.analysis.decoded(fn).instructions) {
+      if (/^Create(Generator|Async)?Closure(LongIndex)?$/.test(insn.name)) out.add(insn.operands[2]!.value);
+    }
+    return out;
+  };
+  return { scan: resolvePointsToCalls(sr.module, sr.analysis, sr.modules), factoryOf, closuresIn };
+}
+
+test("babel's `exports.default = void 0;` prologue resolves `default`, at every version", () => {
+  let versionsChecked = 0;
+  for (const v of VERSIONS) {
+    const got = scanConstruct(PROLOGUE, v);
+    if (got === null) continue;
+    versionsChecked++;
+    const rows = got.scan.rows.filter((r) => r.name === "default");
+    assert.equal(rows.length, 1, `v${v}: exactly the module-0 call site resolves`);
+    const row = rows[0]!;
+    assert.equal(row.module, 0, `v${v}: the receiver is module 0`);
+    assert.equal(row.confidence, "points-to");
+    const factory = got.factoryOf.get(0);
+    assert.ok(factory !== undefined);
+    assert.ok(got.closuresIn(factory!).has(row.callee), `v${v}: callee fn#${row.callee} must be a closure module 0's factory creates`);
+  }
+  assert.ok(versionsChecked >= 2, "at least two committed bytecode versions should be scanned");
+});
+
+test("a conditional second write to the same export name still refuses", () => {
+  let versionsChecked = 0;
+  for (const v of VERSIONS) {
+    const got = scanConstruct(PROLOGUE, v);
+    if (got === null) continue;
+    versionsChecked++;
+    // Both call sites are proven `export default of M`; only module 0's has a
+    // provable target, so exactly one stays in the sound-refusal tail.
+    assert.equal(got.scan.exportCalls, 2, `v${v}: both m.default(x) sites are proven receivers`);
+    assert.equal(got.scan.unresolvedExportCalls, 1, `v${v}: module 1's conditional store must not resolve`);
+    assert.equal(got.scan.rows.filter((r) => r.module === 1).length, 0, `v${v}: module 1 is never a resolved receiver`);
+    const factory = got.factoryOf.get(1);
+    assert.ok(factory !== undefined);
+    const refused = got.closuresIn(factory!);
+    for (const row of got.scan.rows) assert.ok(!refused.has(row.callee), `v${v}: no edge may name module 1's conditionally-stored closure`);
+  }
+  assert.ok(versionsChecked >= 2);
+});
+
+test("the widening never changes an edge that already resolved on rn-template", () => {
+  // The prologue shape is absent from rn-template's residue (its 152
+  // unresolved sites are PropTypes/hook re-exports assembled by helpers, not
+  // `export default`), so this bundle must be bit-for-bit unaffected: the
+  // widening may only ADD edges, never move one.
+  assert.equal(scan.exportCalls, 1086, "the proven receiver+name population is unchanged");
+  assert.equal(scan.rows.filter((r) => r.name === "default").length, 0);
+});
