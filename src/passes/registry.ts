@@ -8,6 +8,7 @@ import { literalForms } from "./literal-forms/index.ts";
 import { callShape } from "./call-shape/index.ts";
 import { classRecover } from "./class-recover/index.ts";
 import { ctorThis } from "./ctor-this/index.ts";
+import { superCall } from "./super-call/index.ts";
 import { defaultParams } from "./default-params/index.ts";
 import { destructure } from "./destructure/index.ts";
 import { spreadRest } from "./spread-rest/index.ts";
@@ -128,6 +129,13 @@ export const REGISTRY: readonly Pass[] = [
   // registered after `object-literal` (its descriptor argument must already be
   // an `object` node) and before every renaming rung.
   classRecover as Pass,
+  // R13 (docs/specs/passes/28-super-call.md): rebuilds a DERIVED class
+  // constructor's `Reflect.construct(Object.getPrototypeOf(<class>), [args],
+  // new.target)` lowering into `super(args)`. It reads the `class` node
+  // `class-recover` builds AND the `_eD_S = <class>` store in the enclosing
+  // function body (R-SC1's evidence), so it is registered immediately after
+  // it and before `ctor-this`, which refuses a derived class outright.
+  superCall as Pass,
   // R12 (docs/specs/passes/26-ctor-this.md): replaces the base-class
   // constructor's `new.target.prototype` stand-in with the real `this`. It
   // reads the `class` node `class-recover` builds and it must land before
