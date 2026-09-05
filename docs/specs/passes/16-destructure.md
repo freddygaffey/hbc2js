@@ -180,6 +180,25 @@ direct-commit grammar expects) rather than mis-rewriting it. v98/v99 wrap
 `sumPair`'s own pattern in a `try`/`catch` region (measured directly, not
 predicted by this section) and are refused the same way, correctly.
 
+**Nested compound elements (BUGS.md 2026-09-02 follow-up, measured
+2026-09-05).** A default nested *inside* a compound element — `[a = 1,
+[b = 2]] = xs` (element 1 is itself an array pattern), `[{x = 3}] = ys`
+(element 0 is itself an object pattern) — is a different shape from the
+per-element default above: it requires `ArrayElement.target` to recurse into
+a `Pattern` rather than stay a bare register, which `match.ts` does not do.
+Measured directly (`70-destructure-nested-default`) at every version
+(v84/v94/v96/v98/v99), in statement-assignment position and in a
+function-parameter-default position: as soon as an array element is itself a
+compound pattern, Hermes wraps the *whole* destructuring in the same
+`__pc`-tracked region rest (§2.4) uses — even with **no default anywhere in
+the pattern** (`[{x}] = ys;` alone triggers it), because the inner
+extraction can throw and the outer iterator's close must stay
+exception-safe. Precondition 6 (`pc-tracked-region`) therefore already
+refuses the whole site correctly, before the missing recursive-target code
+path would ever run — this is the same "inherently pc-tracked" class as
+rest, not a matcher gap; the sound extension is the same §8 Q1 follow-up
+(match the region including its handler), not a change scoped to this rung.
+
 ### 2.3 Holes and the close block
 
 An elision is a block that advances the iterator and never commits

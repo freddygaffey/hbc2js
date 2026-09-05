@@ -154,3 +154,42 @@ handler), present regardless of nesting depth. Array rest therefore has no
 reachable v1 site at all, not merely a top-level one — it stays exactly
 where spec §8 Q1 already put it, a batch-4 `try-clean` follow-up, now with
 direct evidence rather than an inference from the top-level case alone.
+
+### Nested compound elements (rung 16 follow-up, BUGS.md 2026-09-02, measured 2026-09-05)
+
+Measured on `tests/fixtures/constructs/70-destructure-nested-default`
+(`nestedArrayDefault(xs) { let a, b; [a = 1, [b = 2]] = xs; return a + ':' + b; }`
+/ `nestedObjectDefault(ys) { let x; [{x = 3}] = ys; return x; }`, both
+function-body scope, plain-assignment form, same TDZ-avoidance rationale as
+`65` above). A default nested inside a compound array element is a
+different shape from the flat per-element default §2.2 already handles: the
+element's own target is itself a pattern, not a bare register, which would
+need `ArrayElement.target` (`src/passes/destructure/match.ts`) to recurse
+into a `Pattern` — not implemented.
+
+That gap turns out not to matter: measured directly at every version
+(v84/v94/v96/v98/v99), in both statement-assignment position and a
+function-parameter-default position (`function f([a = 1, [b = 2]] = []) {…}`),
+as soon as an array pattern's element is itself a compound pattern (nested
+array **or** nested object, defaulted or not), Hermes wraps the *entire*
+destructuring in the same `__pc`-tracked `try`/`catch` region the rest loop
+uses — confirmed with a minimal `[{x}] = ys;` (no default anywhere) still
+producing the region, so the trigger is "nested extraction can throw",
+never "a default is present". The outer iterator's `IteratorClose` must
+stay exception-safe once a further throw-capable extraction (a non-iterable
+nested-array source, a null/undefined nested-object source) can happen
+between `iterBegin` and the close, so Hermes reaches for the same general
+mechanism it uses for rest.
+
+`noPcOrTry` therefore refuses the *prologue block itself* (it prints a
+`__pc = N;` head like every block in this idiom's try-wrapped form) before
+`matchArray` ever reaches the element loop, so the missing recursive-target
+code path is unreachable dead code in v1, exactly like the staged-commit-
+plus-default combination §2.2 already documents and like array rest above.
+`70`'s functions are a pure-refusal fixture: `--no-pass destructure` is
+byte-identical to the default pipeline at every version, and a raw,
+unrewritten `__hbc_iterBegin` call site survives for both `nestedArrayDefault`
+and `nestedObjectDefault`. The sound extension remains exactly the one §8
+Q1 already names (match the `__pc` region including its handler against the
+canonical abrupt-close expansion) — not a change scoped to the matcher's
+element-target grammar.

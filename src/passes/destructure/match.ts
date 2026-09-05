@@ -27,10 +27,20 @@
 // remains out of scope at *every* version — measured to be structurally
 // unreachable (the append loop's own `try`/`catch` is inherent to the
 // lowering, not a top-level-only artifact), see §8 Q1 and
-// `docs/lowering/destructuring.md`. Object patterns support plain reads,
-// defaulted properties (including nested-pattern defaults one level via
-// `target` recursion is NOT implemented — a nested object/array target is
-// refused, `non-register-target`) and the 3-argument rest form.
+// `docs/lowering/destructuring.md`. A **nested compound pattern as an array
+// element** (`[a = 1, [b = 2]] = xs`, `[{x = 3}] = ys`) is likewise out of
+// scope at every version, for the same reason as rest: `ArrayElement.target`
+// is never a recursive `Pattern` in this file, but measured directly
+// (BUGS.md 2026-09-02 follow-up, 2026-09-05, `70-destructure-nested-default`)
+// this is structurally unreachable anyway — as soon as an array element is
+// itself a compound pattern, Hermes wraps the whole site in the same
+// `__pc`-tracked region rest uses (even with zero defaults present, even in
+// a parameter-default position), so precondition 6 (`pc-tracked-region`)
+// already refuses it before any nested-target code path would run. Object
+// patterns support plain reads, defaulted properties (including
+// nested-pattern defaults one level via `target` recursion is NOT
+// implemented — a nested object/array target is refused,
+// `non-register-target`) and the 3-argument rest form.
 import type { Expr, Pattern, PatternElement, Stmt } from "../ast.ts";
 import { defUse, identUses, isRegisterName } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";

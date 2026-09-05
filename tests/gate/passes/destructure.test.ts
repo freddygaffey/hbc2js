@@ -411,3 +411,37 @@ for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
     assert.match(code, /= __hbc_iterBegin\(/);
   });
 }
+
+// BUGS.md 2026-09-02, brief "nested per-element default" measurement
+// (2026-09-05): once an array pattern's element is itself a compound
+// pattern (a nested array or a nested object, `[a = 1, [b = 2]] = xs` /
+// `[{x = 3}] = ys`), Hermes always wraps the whole destructuring in its
+// `__pc`-tracked exception region -- confirmed directly at every version,
+// with and without a default present, and even in a parameter-default
+// position (the inner extraction can throw, so the outer iterator's close
+// must be exception-safe). This is the same "inherently pc-tracked" class
+// as array rest, not a top-level-only artifact: precondition 6
+// (`pc-tracked-region`) already refuses it correctly, so `70` is a pure
+// refusal fixture (`--no-pass destructure` is byte-identical to the
+// default pipeline) -- see `docs/lowering/destructuring.md` and the BUGS
+// row for the measured IR.
+for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
+  test(`destructure: 70-destructure-nested-default (${version}) — nested array-in-array default stays refused (pc-tracked-region, inherent to the nested extraction)`, () => {
+    const code = decompileFixture("70-destructure-nested-default", version);
+    // Never a mis-rewrite: no top-level array-destructuring assignment for
+    // either function is ever written, and a raw, unrewritten
+    // `__hbc_iterBegin` call site survives for both `nestedArrayDefault`
+    // and `nestedObjectDefault`.
+    assert.doesNotMatch(code, /\[\w+ = 1, \[\w+ = 2\]\] = /);
+    assert.doesNotMatch(code, /\[\{x: ?\w+ = 3\}\] = /);
+    const calls = code.match(/= __hbc_iterBegin\(/g) ?? [];
+    assert.ok(calls.length >= 2, `expected at least 2 unrewritten __hbc_iterBegin call sites, saw ${calls.length}`);
+  });
+
+  test(`destructure: 70-destructure-nested-default (${version}) — the destructure pass makes no rewrite on this fixture (pure refusal)`, () => {
+    const withPass = decompileFixture("70-destructure-nested-default", version);
+    const hbc = join(repoRoot(), "tests/fixtures/constructs/70-destructure-nested-default", `${version}.hbc`);
+    const withoutPass = decompile(readFileSync(hbc), { passes: { skip: ["destructure"] } }).code;
+    assert.equal(withPass, withoutPass);
+  });
+}
