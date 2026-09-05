@@ -83,6 +83,14 @@ resource key survives every rename and re-render (spec 10 §0).
 | `object-tables?minProps&stringRatio&key&value&minMatched&module&limit` | filter opts | `query object-tables` (spec 10 §3.1; §14.2 below) | ≤ 100 tables + total; rows inlined with `fnName`/`size` |
 | `template-injections?module&limit` | filter opts | `query template-injections` (spec 10 §3.1; §14.3 below) | ≤ 100 rows + total; rows inlined with `fnName`/`size` |
 | `native[/{fn}]` — native surface | optional `fnIndex` | `query native` (spec 10 §3.1) | that verb's ≤ 50 + total |
+| `native/modules` + `native/module/{x}` + `native/seams[?status&firstParty]` + `native/manifest` — the APK-ingested tables (spec 27 §L1-L4) | `jsName`/module key, or filter opts | `query native modules\|module\|seams\|manifest` (spec 10 §3.1, spec 27 §L5) | those verbs' caps (modules/seams ≤ 100 + total; module/manifest one block); a seam is a first-class read object citing both a JS call site and a native module/method |
+
+`native/module/{x}` is the same "kill the N+1" join `context/{fn}` already
+does for calls: one call returns the module, its exported methods, AND every
+seam that names it — an agent asking "what is the native impl of this JS
+call" never needs a second round trip. `native/seams` is empty (never an
+error) when a project has no native side ingested; `firstParty:null` on a row
+means unresolved, not "no" — spec 27 §L4's own null-is-a-fact rule.
 | `module/{mod}` + `module-graph` | `mod` | `query module` (spec 10 §3.1) | that verb's ≤ 15 lines |
 | `package-id/{mod}` — fingerprint-DB identification result for a module | `mod` | reuse-validation two-key gate (spec 13) over the shared sigdb (spec 15) | spec-13 published cap; every row cites the sigdb match, never a guess |
 | `annotations/for-fn/{fn}` — all names/tags/comments/findings asserted about a fn | `fnIndex` | `project for-fn` (spec 11 §3.1) | that verb's ≤ 40 + total |

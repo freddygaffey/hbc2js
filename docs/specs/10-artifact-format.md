@@ -390,6 +390,19 @@ nothing is re-derived from bytecode or DEX bytes here. Row:
   host-member string-use role, or a receiver on a resolved call edge), not an
   L3 one — L3 never invents a signal.
 
+**Landed (2026-09-05, spec 27 §L5).** Read verbs over `native/*` (L1-L4):
+`ArtifactService.nativeModules()`/`.nativeModule(x)`/`.seams(filter)`/
+`.nativeManifest()`/`.nativeResources(pattern)`/`.nativeImplFor(fn)`
+(`src/artifact/service.ts`), mirrored on `McpResources` (`src/mcp/
+resources.ts`), the CLI (`hbc2js query native modules|module <X>|seams|
+manifest|resources`, §3.1 below) and `GET /api/native/{modules,module/:x,
+seams,manifest,impl/:fn}` (`src/ui-server/native.ts`). The UI Context pane's
+"native impl" row (`ui/src/panes/context-native.ts` + `RightPane.tsx`) reads
+`impl/:fn`. Every reader answers empty/null rather than throwing when a
+project has no native side ingested; staleness is inherited for free — a
+stale artifact's `ArtifactService` construction already refuses with
+`E_STALE_INDEX` before any native verb can run.
+
 ## 3. Query surface
 
 **The files ARE the contract** — a tool that wants to stream everything reads
@@ -430,6 +443,7 @@ they always were.
 | `query string-grep <regex>` | matching `sid  head-of-value  useCount` rows | ≤ 50 lines + total |
 | `query global-uses <name>` | `fn access n file:line` rows | ≤ 50 lines + total |
 | `query native [--fn N]` | native-surface rows | ≤ 50 lines + total |
+| `query native modules` \| `native module <X>` \| `native seams [--status linked\|js-only\|native-only] [--first-party]` \| `native manifest` \| `native resources --key <re>` | spec 27 §L5's native/ table read verbs (`react-modules.jsonl`/`seams.jsonl`/`manifest.json`/`resources.jsonl`); `native module <X>` returns the module, its methods AND every seam citing it in one call — no N+1. Distinct verb space from the legacy `query native [--fn N]` above (that one is the JS-side host-access surface, `native.jsonl`); told apart by the first positional token. Empty/null, never an error, when no native side was ingested into this artifact. | modules/seams ≤ 100 rows + total; resources ≤ 50 rows + total; module/manifest one block |
 | `query object-tables [--min-props N] [--string-ratio R] [--key <re>] [--value <re>] [--min-matched N] [--module M] [--limit N]` | bundle-wide inventory of CONSTANT object literals (`NewObjectWithBuffer*`): a `fn N @off  module M  keys=K strings=S matched=M` header then `key: value` lines (`<computed>` for a member built at runtime). Default filter ≥ 4 members and ≥ 50% string-valued; `--key`/`--value` are ECMAScript regexes and a table matches if ANY member does. `matched` = members satisfying those patterns (the member count when neither is given), `--min-matched` (default 1) drops the accidental hit. Ranked by `matched`, then hit density, then size when filtered; by size alone when not. Live verb (needs `--hbc`); one O(instructions) scan, memoised per service (spec 17 §14.2) | ≤ 100 tables (`--limit`/`--all`), ≤ 20 member lines each + total |
 | `query template-injections [--module M] [--limit N]` | bundle-wide WebView-injection anti-pattern scan (hunt lead C1): a template literal / `+` chain whose static text quotes a runtime substitution, e.g. `` `window.foo('${x}')` `` or `"x = '" + x + "'"`. One line per row: `fn:N @off module:M kind:template|concat subs-in-quotes:S/nSubs 'quote'` then the prefix/suffix around the quote (capped ~120 chars, holes shown as `${…}`). Ranked by substitutions-inside-quotes desc, then `fn`. Live verb (needs `--hbc`); one O(instructions) scan, memoised per service (spec 17 §14.3) | ≤ 100 rows (`--limit`/`--all`) + total |
 | `query module <id>` | deps, dependents, owned fn count, file | ≤ 15 lines |
