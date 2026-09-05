@@ -25,12 +25,17 @@
 // Every guard below refuses by leaving the flat prologue exactly as it was, so
 // a refusal is never a behaviour change.
 import type { Stmt } from "./ast.ts";
+import type { GroupPlan } from "./iife-group.ts";
+import { applyPlans, grouping } from "./iife-group.ts";
 
 const SLOT_RE = /^_e(\d+)_(\d+)$/;
 
 export interface IifeRefusal {
   readonly env: number;
   readonly reason: string;
+  /** For `overlapping statement ranges`: why the spec 27 section 7 regrouping
+   *  could not reorder the group apart (`tools/passes/iife-overlap.ts`). */
+  readonly detail?: string;
 }
 
 export interface IifeReconstruction {
@@ -247,8 +252,8 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
   }
 
   const refusals: IifeRefusal[] = [];
-  const refuse = (env: number, reason: string): void => {
-    refusals.push({ env, reason });
+  const refuse = (env: number, reason: string, detail?: string): void => {
+    refusals.push(detail === undefined ? { env, reason } : { env, reason, detail });
   };
 
   // The prologue declaration that holds the owned slot names.
@@ -290,6 +295,8 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
   interface Candidate {
     readonly env: number;
     readonly slots: ReadonlySet<string>;
+    /** `slots` plus the hoisted children that move with them. */
+    readonly mine: ReadonlySet<string>;
     readonly childIndices: readonly number[];
     from: number;
     to: number;
@@ -320,22 +327,37 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
     }
     for (const c of kids) mine.add(c.name);
 
-    let from = -1;
-    let to = -1;
-    for (let i = 0; i < input.body.length; i++) {
-      if (!mentionsAny(input.body[i], mine)) continue;
-      if (from < 0) from = i;
-      to = i;
-    }
-    if (from < 0) {
+    const c: Candidate = { env, slots: new Set(slots), mine, childIndices: kids.map((k) => k.index), from: -1, to: -1, hoist: [] };
+    rangeOf(c, input.body);
+    if (c.from < 0) {
       refuse(env, "environment unused in the body");
       continue;
     }
-    candidates.push({ env, slots: new Set(slots), childIndices: kids.map((c) => c.index), from, to, hoist: [] });
+    candidates.push(c);
   }
 
   // Ranges must be contiguous and disjoint: two environments interleaved
-  // cannot both become a range of consecutive statements.
+  // cannot both become a range of consecutive statements AS EMITTED. Spec 27
+  // section 7: `hermesc -O` schedules the stores of the IIFEs it inlined
+  // freely, so try to reorder each group of mutually overlapping environments
+  // into one block each first (`src/emit/iife-group.ts`). A group whose
+  // reordering cannot be proved safe keeps its statement order and refuses,
+  // exactly as before.
+  const plans: GroupPlan[] = [];
+  const groupReason = new Map<number, string>();
+  for (const group of overlapComponents(candidates)) {
+    if (group.length < 2) continue;
+    const members = group.map((c) => ({ env: c.env, names: c.mine, from: c.from, to: c.to }));
+    const outcome = grouping.plan(input.body, members, (i, names) => mentionsAny(input.body[i], names));
+    if ("plan" in outcome) plans.push(outcome.plan);
+    else for (const c of group) groupReason.set(c.env, outcome.reason);
+  }
+  let work: readonly Stmt[] = input.body;
+  if (plans.length > 0) {
+    work = applyPlans(input.body, plans);
+    for (const c of candidates) rangeOf(c, work);
+  }
+
   const overlapping = new Set<number>();
   for (const a of candidates) {
     for (const b of candidates) {
@@ -346,10 +368,10 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
   const accepted: Candidate[] = [];
   for (const c of candidates) {
     if (overlapping.has(c.env)) {
-      refuse(c.env, "overlapping statement ranges");
+      refuse(c.env, "overlapping statement ranges", groupReason.get(c.env));
       continue;
     }
-    const range = input.body.slice(c.from, c.to + 1);
+    const range = work.slice(c.from, c.to + 1);
     const opaque = opaqueReason(range);
     if (opaque !== null) {
       refuse(c.env, opaque);
@@ -358,9 +380,9 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
     // A slot name may not be read outside its own range (a reader closure that
     // is not hoisted with it, an unrelated statement) -- the IIFE would hide it.
     let leaks = false;
-    for (let i = 0; i < input.body.length; i++) {
+    for (let i = 0; i < work.length; i++) {
       if (i >= c.from && i <= c.to) continue;
-      if (mentionsAny(input.body[i], c.slots)) leaks = true;
+      if (mentionsAny(work[i], c.slots)) leaks = true;
     }
     // ...and the range may not touch a SIBLING environment's slots. A closure
     // emitted inside the range that reads another of the function's
@@ -369,7 +391,7 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
     const foreign = new Set<string>();
     for (const name of owned) if (!c.slots.has(name)) foreign.add(name);
     for (let i = c.from; i <= c.to; i++) {
-      if (mentionsAny(input.body[i], foreign)) leaks = true;
+      if (mentionsAny(work[i], foreign)) leaks = true;
     }
     for (const child of children) {
       if (c.childIndices.includes(child.index)) continue;
@@ -395,13 +417,13 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
       continue;
     }
     const outside = new Set<string>();
-    for (let i = 0; i < input.body.length; i++) {
+    for (let i = 0; i < work.length; i++) {
       if (i >= c.from && i <= c.to) continue;
-      namesIn(input.body[i], outside);
+      namesIn(work[i], outside);
     }
     let unhoistable: string | null = null;
     for (let i = c.from; i <= c.to; i++) {
-      const s = input.body[i]!;
+      const s = work[i]!;
       for (const name of declaredBy(s)) {
         if (c.slots.has(name) || !outside.has(name)) continue;
         if ((s.k === "decl" || s.k === "init") && s.kind === "let") c.hoist.push(name);
@@ -416,6 +438,11 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
   }
 
   if (accepted.length === 0) return { ...flat(), refusals };
+
+  // A reordering that bought no wrapper is churn: drop it and emit the
+  // statements exactly where the bytecode had them.
+  const kept = plans.filter((p) => accepted.some((c) => c.from >= p.lo && c.to <= p.hi));
+  if (kept.length !== plans.length) work = applyPlans(input.body, kept);
 
   // --- apply ---------------------------------------------------------------
   const movedChildren = new Set<number>();
@@ -441,14 +468,14 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
   for (const c of accepted) for (let i = c.from; i <= c.to; i++) covered.add(i);
 
   const body: Stmt[] = [];
-  for (let i = 0; i < input.body.length; i++) {
+  for (let i = 0; i < work.length; i++) {
     const c = byStart.get(i);
     if (c !== undefined) {
       if (c.hoist.length > 0) body.push({ k: "decl", kind: "let", names: [...new Set(c.hoist)] });
       const inner: Stmt[] = [{ k: "decl", kind: "let", names: [...c.slots] }];
       for (const idx of c.childIndices) inner.push(input.header[idx]!);
       for (let j = c.from; j <= c.to; j++) {
-        const s = input.body[j]!;
+        const s = work[j]!;
         // A hoisted `let x = v;` keeps its value here as a plain assignment
         // against the binding now declared in front of the IIFE.
         if (s.k === "init" && c.hoist.includes(s.name)) inner.push({ k: "expr", expr: { k: "assign", target: { k: "ident", name: s.name }, value: s.value } });
@@ -461,8 +488,43 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
       continue;
     }
     if (covered.has(i)) continue;
-    body.push(input.body[i]!);
+    body.push(work[i]!);
   }
 
   return { stmts: [...header, ...body], wrapped: accepted.map((c) => c.env).sort((a, b) => a - b), refusals };
+}
+
+/** (Re)computes a candidate's statement range over `body`. */
+function rangeOf(c: { mine: ReadonlySet<string>; from: number; to: number }, body: readonly Stmt[]): void {
+  c.from = -1;
+  c.to = -1;
+  for (let i = 0; i < body.length; i++) {
+    if (!mentionsAny(body[i], c.mine)) continue;
+    if (c.from < 0) c.from = i;
+    c.to = i;
+  }
+}
+
+/**
+ * Groups of candidates whose ranges overlap, transitively. Connected
+ * overlapping intervals span one interval, so the groups' regions are
+ * disjoint and their reorderings compose.
+ */
+function overlapComponents<T extends { readonly from: number; readonly to: number }>(candidates: readonly T[]): T[][] {
+  const sorted = [...candidates].sort((a, b) => a.from - b.from || a.to - b.to);
+  const out: T[][] = [];
+  let cur: T[] = [];
+  let end = -1;
+  for (const c of sorted) {
+    if (cur.length > 0 && c.from <= end) {
+      cur.push(c);
+      end = Math.max(end, c.to);
+      continue;
+    }
+    if (cur.length > 0) out.push(cur);
+    cur = [c];
+    end = c.to;
+  }
+  if (cur.length > 0) out.push(cur);
+  return out;
 }

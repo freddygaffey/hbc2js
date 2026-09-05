@@ -857,7 +857,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   }
   if (rebuilt.refusals.length > 0) {
     const byReason = new Map<string, number>();
-    for (const r of rebuilt.refusals) byReason.set(r.reason, (byReason.get(r.reason) ?? 0) + 1);
+    for (const r of rebuilt.refusals) {
+      const key = r.detail === undefined ? r.reason : `${r.reason} [${r.detail}]`;
+      byReason.set(key, (byReason.get(key) ?? 0) + 1);
+    }
     const reasons = [...byReason.entries()].sort((a, b) => b[1] - a[1]).map(([reason, count]) => `${reason} x${count}`).join(", ");
     input.diagnostic({ severity: "info", code: "W_IIFE_REFUSED", message: `fn#${fn.index}: left ${rebuilt.refusals.length} sibling environment(s) flat (spec 27): ${reasons}`, context: { functionIndex: fn.index, count: rebuilt.refusals.length, reason: reasons } });
   }
