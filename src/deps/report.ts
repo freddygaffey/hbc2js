@@ -7,6 +7,7 @@ import type { Evidence, ModuleGuess } from "./guess.ts";
 import { isHintEligibleEvidence } from "./guess.ts";
 import type { ConfirmResult } from "./confirm.ts";
 import type { ClassificationReport } from "./classify.ts";
+import type { NativeChannelReport } from "../native/native-deps.ts";
 
 export interface ConfirmedDep {
   readonly package: string;
@@ -172,6 +173,14 @@ export interface DepsReport {
    *  covers unnamed library code the match/guess stages never attempted to
    *  identify by package. */
   readonly classification: ClassificationReport | null;
+  /** spec 27 §L7: the native-side ("literal package name") dependency
+   *  channel, merged against this same report's JS-fingerprint channel
+   *  (confirmed/guessed/hinted package names) and de-duplicated by npm
+   *  package name. `null` when the input had no native side to read at all
+   *  (a plain `.hbc` bundle, not an `.apk`) or reading it failed — the
+   *  native side is optional-by-construction (§1.4), never required for a
+   *  deps report to exist. */
+  readonly nativeChannel: NativeChannelReport | null;
 }
 
 // docs/TOOLCHAIN.md's "Bytecode versions" table, condensed to the RN
@@ -277,7 +286,7 @@ const BASELINE_ALIAS: ReadonlyMap<string, string | null> = new Map([
   ["metro-toolchain-empty", null],
 ]);
 
-export function buildReport(input: string, matchReport: MatchReport, guesses: readonly ModuleGuess[], confirmResults: readonly ConfirmResult[] = [], classification: ClassificationReport | null = null): DepsReport {
+export function buildReport(input: string, matchReport: MatchReport, guesses: readonly ModuleGuess[], confirmResults: readonly ConfirmResult[] = [], classification: ClassificationReport | null = null, nativeChannel: NativeChannelReport | null = null): DepsReport {
   const confirmedDeps: ConfirmedDep[] = [];
   const confirmedNamesFromRealPackages = new Set<string>();
   for (const p of matchReport.packages) {
@@ -493,6 +502,7 @@ export function buildReport(input: string, matchReport: MatchReport, guesses: re
       percentVerifiedByWeight,
     },
     classification,
+    nativeChannel,
   };
 }
 

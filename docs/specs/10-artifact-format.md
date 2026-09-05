@@ -438,6 +438,14 @@ assigned in `<clinit>`, a method body the minimal parser does not read — spec
 not. `resolvedBy:"baksmali"` is reserved for the optional external oracle
 (§1.2); v1 never sets it.
 
+**Landed (2026-09-05, spec 27 §L7).** §L7's output is deliberately NOT a
+`native/*` file: it is a `nativeChannel` section spliced into the existing
+`hbc2js deps` report (`src/deps/report.ts`'s `DepsReport.nativeChannel`,
+documented in full in `docs/DEPS.md`'s "`DepsReport` JSON schema" table),
+built by `src/native/native-deps.ts` from L4's already-labelled
+`reactModules` and merged in `src/deps/index.ts`'s `runDeps` against the
+JS-fingerprint channel's confirmed/guessed/hinted package names.
+
 ## 3. Query surface
 
 **The files ARE the contract** — a tool that wants to stream everything reads

@@ -558,6 +558,34 @@ app-namespace or unknown package is not an npm dep (it is a custom module, §L8)
 
 **Depends on:** L2, L4.
 
+**Landed (2026-09-05).** `src/native/native-deps.ts`: `nativePackageForImplClass`
+resolves a `native/react-modules.jsonl` row's `implClass` to an npm package
+name by reading `third-party-packages.ts`'s curated prefix table directly —
+deliberately not a second curated list (that file already IS "package-prefix
+-> npm-name, one evidence line per row", cross-checked against
+`tools/pkgsig/db` per §L4; a second list would only let the two drift apart).
+`buildNativeChannel(reactModules, jsFoundPackages)` groups by resolved npm
+package, skipping any `firstParty:true` row outright (never resolved to an
+npm package regardless of what its package name looks like) and any row with
+no curated match (first-party or unknown alike); each surviving package gets
+`channel:"both"` + `evidence:["native-package","js-fingerprint"]` when
+`jsFoundPackages` (the deps report's own confirmed/guessed/hinted package
+names) already names it, else `channel:"native-only"` +
+`evidence:["native-package"]`. Merged into `DepsReport.nativeChannel`
+(`src/deps/report.ts`, documented in `docs/DEPS.md`) by a new
+`nativeChannelForApk` helper in `src/deps/index.ts`'s `runDeps`: only runs
+when the input is an `.apk`, reads the native side independently of the
+JS-bundle read via `openApk`/`buildNativeTables`, and never fails the deps
+run on a native-read error (`null` back, per §1.4's "native is
+optional-by-construction") or on zero react-modules found. Tests:
+`tests/gate/native/native-deps.test.ts`, all four against
+`tests/fixtures/native/party.apk` (L4's fixture — `GestureHandlerModule`
+under the curated `com.swmansion` prefix resolves to
+`react-native-gesture-handler`; `CustomModule` (first-party) and `FooModule`
+(unknown) both contribute nothing to `nativeChannel.deps`) plus a
+synthesised `jsFoundPackages` set for the both-channels-agree case, rather
+than a new end-to-end APK+HBC-bundle fixture.
+
 ---
 
 ### L8 — Rebuildable-project emit including the native side · Sonnet
