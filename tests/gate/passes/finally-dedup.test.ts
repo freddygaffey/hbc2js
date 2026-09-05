@@ -180,7 +180,8 @@ test("spec 30 item 8: the checker rejects a source range widened by one instruct
   assert.equal(check(node, { ...node, finalizer: m.data }, ctx).ok, true, "the honest annotation passes");
   const widened = { ...m.data, source: { ...m.data.source, to: m.data.source.to + 1 } };
   assert.equal(check(node, { ...node, finalizer: widened }, ctx).ok, false, "a widened source range is rejected");
-  const movedCopy = { ...m.data, copies: [{ ...m.data.copies[0], from: m.data.copies[0].from + 1, to: m.data.copies[0].to + 1 }] };
+  const copy0 = m.data.copies[0]!;
+  const movedCopy = { ...m.data, copies: [{ ...copy0, from: copy0.from + 1, to: copy0.to + 1 }] };
   assert.equal(check(node, { ...node, finalizer: movedCopy }, ctx).ok, false, "a shifted copy range is rejected");
   assert.equal(check(node, { ...node, finalizer: { ...m.data, copies: [] } }, ctx).ok, false, "an empty copy list is rejected");
 });

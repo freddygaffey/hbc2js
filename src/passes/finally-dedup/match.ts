@@ -65,6 +65,25 @@ export function isomorphicModuloRegisters(a: readonly Instruction[], b: readonly
   return true;
 }
 
+/**
+ * Cheap, purely local answer to "is `reg` still read after index `to` of this
+ * block?": a read before any write says yes, a write before any read says no,
+ * and a block that ends the function (`return`/`throw`) says no. `undefined`
+ * means the question escapes the block and the caller must fall back to the
+ * whole-CFG `registerLiveAfter` walk -- which is the expensive one, and which
+ * this keeps off the hot path (the pipeline-speed budget, P-1).
+ */
+function liveAfterRange(ins: readonly Instruction[], to: number, reg: number): boolean | undefined {
+  for (let j = to; j < ins.length; j++) {
+    const insn = ins[j]!;
+    const written = writtenRegisters(insn);
+    if (insn.operands.some((op, k) => op.role === "reg" && op.value === reg && !(k === 0 && written.includes(reg)))) return true;
+    if (written.includes(reg)) return false;
+  }
+  const last = ins[ins.length - 1];
+  return last !== undefined && (last.kind === "return" || last.kind === "throw") ? false : undefined;
+}
+
 export function match(node: Stmt, ctx: PassContext): Match<Stmt, FinallyForm> | null {
   if (node.k !== "try") return null;
   if (node.finalizer !== undefined) return null; // already folded (PL-08 fixed point)
@@ -137,7 +156,7 @@ export function match(node: Stmt, ctx: PassContext): Match<Stmt, FinallyForm> | 
     const retained: number[] = [];
     for (let i = from; i < to; i++) {
       const insn = ins[i]!;
-      if (!writtenRegisters(insn).some((w) => registerLiveAfter(structured, b, to, w))) continue;
+      if (!writtenRegisters(insn).some((w) => liveAfterRange(ins, to, w) ?? registerLiveAfter(structured, b, to, w))) continue;
       if (insn.name !== "Mov") return refuse("R-FD8 copy-defines-a-live-value");
       const src = insn.operands[1];
       const dst = insn.operands[0];
