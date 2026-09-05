@@ -414,3 +414,91 @@ react-navigation-example-0.85.3 --passes on` before -> after: IDENTICAL 6222
 both times. Tracked in `docs/BUGS.md`'s `diff:GetOwnPrivateBySym/GetByVal`
 row (tail): the next step is field-install statements after the forward, not
 a further dereference hop.
+
+### 9.7 Field installs (and a receiver capture for a nested closure) after the forward
+
+`foldForwardBody` now accepts a run of statements between the store
+(`name = __hbc_b_applyArguments(...)`) and the `return name;` it feeds,
+rather than requiring the return to sit immediately after the store. Two
+shapes are accepted, tracked by a growing `receiverAliases` set (`name`
+itself, to start):
+
+* **A field install**, `X.<prop> = <expr>;` where `X` is `name` or an
+  already-proven alias, `<prop>` is a non-computed literal key, and `<expr>`
+  contains no read of `name` or any alias (a computed key, or a value that
+  reads the receiver, is refused with its own distinct reason -- the brief's
+  "does not read r0" rule, generalised to whichever alias the install
+  targets).
+* **A receiver capture**, `_eD_S = X;` where `X` is `name` or an alias and
+  `_eD_S` is an env slot proved to hold exactly one value for the rest of the
+  body (`identUses(body, alias).writes === 1`, the same proof
+  `classBindingSlots` uses for a class binding). This is the shape an arrow
+  class field forces: `handle = () => this.x` has to be created *before*
+  `super()` runs (Hermes builds the closure, then calls the forward, then
+  installs it), so the closure cannot read `this` directly -- it reads the
+  frame's own env slot instead, and the emitter fills that slot once the
+  receiver exists.
+
+Anything else between the store and the return is refused (R-SC9, "neither a
+field install nor a receiver capture" when it does not mention the receiver
+at all, "used elsewhere in the body" -- the same reason `identUses`'s old
+reads-count check gave -- when it does).
+
+The key simplification: **only `name` itself is ever substituted for
+`this`.** An env-slot alias is never rewritten. The capture statement's own
+right-hand side reads `name`, so substitution turns `_eD_S = name;` into
+`_eD_S = this;`, and every existing read of `_eD_S` elsewhere (inside the
+nested closure, unchanged) keeps working exactly as before, now against the
+right value -- there is no need to chase the substitution into the closure's
+own body at all, because unlike a raw register, an env slot is legitimately
+shared across frames (that is the entire reason the emitter uses one here).
+This also means the closure declaration itself needs no rewriting: it is
+still a plain hoisted `function` in `head`, and it still ends up correct at
+the call site (`this.handle = handle; ... b.handle()`), because a plain
+function's own `this` at a method call is exactly the object it is called
+on -- the same value the arrow lexically captured. A small amount of
+resulting noise (`_eD_S = this;` and its `let _eD_S;` declaration usually
+become dead once nothing but the substituted-away closure read the slot) is
+left in place rather than cleaned up -- correct, just not maximally tidy;
+not a `docs/BUGS.md` row, since it is not incorrect.
+
+The decl-liveness filter (section 9.4, "register declarations nothing reads
+any more go with them") now scans `head` **and** the accepted tail
+statements together: an env slot is declared in `head` but only written in
+the tail, so a head-only scan would see zero uses and wrongly drop a
+declaration the tail's capture statement still needs.
+
+Fixture: `tests/fixtures/constructs/80-super-forward-field-installs`
+(`class B extends A { handle = () => this.x; other = 1; describe() {...} }`,
+plus `class C extends A { constructor(...args) { super(...args); this.y =
+args.length; } describe() {...} }` as the contrast -- `C` reads its own rest
+parameter for something besides the forward, so hermesc never uses the
+`applyArguments` intrinsic for it at all; it gets the spread/apply lowering
+instead, fixture 78's `Explicit` shape, which stays refused). Six new unit
+tests (`tests/gate/passes/super-call.test.ts`): two installs fold, a receiver
+capture plus install folds and the closure body is left untouched, a
+computed key is refused, an install reading the receiver is refused, plus
+two pre-existing store-then-return unit tests whose reason strings changed
+(the store is now found by scanning rather than assumed adjacent, so an
+unrelated statement before the store is now caught by the `head` loop's
+existing "statement the forward did not consume" refusal instead of a
+whole-body reads count -- same refusal, same `R-SC9` code, a more accurate
+message).
+
+**Measured**: `node tools/passes/ctor-this-refusals.ts` before -> after:
+FOLD 52 -> 118 (+66; the recovered-constructor denominator also grows, 448
+-> 534, because class-recover picks up additional classes once the fold
+removes dead register statements from earlier ones -- a downstream effect,
+not re-verified further here), R-SC9 147 -> 61, `R-SC9 func` 136 -> 56 (80 of
+the 136 now fold). `node tools/e2e/roundtrip-corpus.ts --only
+react-navigation-example-0.85.3 --passes on` before -> after: IDENTICAL 6222
+(43.10 percent) of 14437 and `diff:GetOwnPrivateBySym/GetByVal` 177, both
+unchanged again. Classified (`--show 122:2646`, `122:2647`, `122:2649`): all
+three of the bucket's sampled functions are one-parameter private-field
+*getters* (`fn(1) ~ ... GetOwnPrivateBySym %0, %0, 0, %1`), not constructors,
+and the bucket-restricted class breakdown (`--corpus ... --bucket`) shows
+zero `FOLD` among the bucket's 22 modules' classes either before or after --
+this bucket was never causally downstream of `super-call`'s own fold count;
+it is a shared checkpoint metric across the whole class-rung ladder, rooted
+in `src/passes/private-fields`' own row. The remaining 56 `R-SC9 func`
+refusals are the next residue, not classified by this landing.

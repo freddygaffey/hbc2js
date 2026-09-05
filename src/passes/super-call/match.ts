@@ -455,23 +455,78 @@ function foldForwardBody(module: readonly Stmt[], cls: ClassExpr, body: readonly
   }
   let call: Extract<Expr, { k: "call" }>;
   let at: number;
+  // Section 9.7's residue: the real shape on react-navigation is
+  // `name = applyArguments(...)` [= super(...args)] followed by several more
+  // statements that read `name` before `return name;` -- either a field
+  // install (`name.<prop> = <expr>;`, an ordinary class field) or a capture
+  // of the receiver into an env slot (`_eD_S = name;`) so a nested closure
+  // can read it (an arrow class field: `handle = () => this.x`, which the
+  // emitter compiles by capturing the receiver into the frame's own env slot
+  // *before* creating the closure, since the closure is created before
+  // `super()` ever runs). `receiverAliases` records every name this matcher
+  // has proved holds the receiver -- `name` itself, plus every env slot
+  // proved to hold it by exactly one store, so a later install may target
+  // either. Only `name` itself is ever substituted for `this` below: an
+  // aliased env slot needs no substitution at all, because the nested
+  // closure that reads it keeps working unchanged once the capture
+  // statement's own right-hand side reads `this` instead of `name`.
+  const receiverAliases = new Set<string>();
+  let tail: readonly Stmt[] = [];
+  let receiverName: string | null = null;
   if (last.arg.k === "call") {
     call = last.arg;
     at = body.length - 1;
   } else {
     const name = last.arg.name;
-    const storeIdx = body.length - 2;
-    const storeStmt = storeIdx >= 0 ? body[storeIdx] : undefined;
-    const store = storeStmt !== undefined ? simpleStore(storeStmt) : null;
-    if (store === null || store.name !== name) {
-      return { code: "R-SC9", reason: "the constructor returns an identifier not stored by the immediately-preceding statement" };
+    receiverName = name;
+    receiverAliases.add(name);
+    let storeIdx = -1;
+    for (let i = body.length - 2; i >= 0; i--) {
+      const st = simpleStore(body[i]!);
+      if (st !== null && st.name === name) { storeIdx = i; break; }
     }
-    const uses = identUses(body, name);
-    if (uses.reads !== 1 || uses.writes !== 1 || mentionedInNestedFunction(body, name)) {
+    if (storeIdx < 0) {
+      return { code: "R-SC9", reason: "the constructor returns an identifier not stored anywhere in its body" };
+    }
+    const found: Stmt[] = [];
+    for (let i = storeIdx + 1; i < body.length - 1; i++) {
+      const st = body[i]!;
+      const alias = simpleStore(st);
+      if (alias !== null && alias.value.k === "ident" && receiverAliases.has(alias.value.name) && ENV_SLOT.test(alias.name) && identUses(body, alias.name).writes === 1) {
+        receiverAliases.add(alias.name);
+        found.push(st);
+        continue;
+      }
+      // Anything else that still reads the receiver -- a bare call passing
+      // it as an argument, for instance -- is the same "used elsewhere"
+      // refusal `identUses`'s reads-count check gave before this section
+      // existed, just detected structurally now that a run of accepted
+      // statements can sit between the store and the return.
+      const usedElsewhereReason = (): SuperRefusal | null => {
+        let reads = false;
+        walk([st], { expr: (e) => { if (e.k === "ident" && receiverAliases.has(e.name)) reads = true; } });
+        return reads ? { code: "R-SC9", reason: `the forwarding constructor stores its result in ${name}, which is used elsewhere in the body` } : null;
+      };
+      if (st.k !== "expr" || st.expr.k !== "assign") return usedElsewhereReason() ?? { code: "R-SC9", reason: "the forwarding constructor runs a statement after the forward that is neither a field install nor a receiver capture" };
+      const t = st.expr.target;
+      if (t.k !== "member" || t.obj.k !== "ident" || !receiverAliases.has(t.obj.name)) {
+        return usedElsewhereReason() ?? { code: "R-SC9", reason: "the forwarding constructor runs a statement after the forward that is neither a field install nor a receiver capture" };
+      }
+      if (t.computed || t.prop.k !== "lit") {
+        return { code: "R-SC9", reason: `a field install after the forward writes a computed key on ${t.obj.name}` };
+      }
+      let readsReceiver = false;
+      walk([{ k: "expr", expr: st.expr.value }], { expr: (e) => { if (e.k === "ident" && receiverAliases.has(e.name)) readsReceiver = true; } });
+      if (readsReceiver) return { code: "R-SC9", reason: `a field install after the forward (${t.obj.name}.${t.prop.text}) reads the receiver itself` };
+      found.push(st);
+    }
+    tail = found;
+    const store = simpleStore(body[storeIdx]!)!;
+    if (identUses(body, name).writes !== 1 || mentionedInNestedFunction(body, name)) {
       return { code: "R-SC9", reason: `the forwarding constructor stores its result in ${name}, which is used elsewhere in the body` };
     }
     if (store.value.k !== "call") {
-      return { code: "R-SC9", reason: `the statement immediately before the return does not store the applyArguments forward into ${name}` };
+      return { code: "R-SC9", reason: `the statement stored into ${name} before the return is not the applyArguments forward` };
     }
     call = store.value;
     at = storeIdx;
@@ -515,19 +570,38 @@ function foldForwardBody(module: readonly Stmt[], cls: ClassExpr, body: readonly
     const st = simpleStore(head[i]!);
     if (st === null) continue;
     const rest = head.slice(i + 1);
-    if (identUses(rest, st.name).reads > 0 || mentionedInNestedFunction(rest, st.name)) return { code: "R-SC9", reason: `the forwarding constructor's store to ${st.name} is still read after the forward is rebuilt` };
+    if (identUses(rest, st.name).reads > 0 || identUses(tail, st.name).reads > 0 || mentionedInNestedFunction(rest, st.name)) {
+      return { code: "R-SC9", reason: `the forwarding constructor's store to ${st.name} is still read after the forward is rebuilt` };
+    }
     head = [...head.slice(0, i), ...rest];
   }
-  // Register declarations nothing reads any more go with them.
-  head = head.filter((st) => st.k !== "decl" || st.names.some((n) => identUses(head, n).reads + identUses(head, n).writes > 0));
+  // Register declarations nothing reads any more go with them -- checked
+  // across head AND tail together (section 9.7): an env slot the tail
+  // captures the receiver into (`_eD_S = name;`) is declared in head but
+  // only written in tail, so a head-only scan would see zero uses and drop
+  // a declaration the tail statement below still needs.
+  const declLive = (n: string): boolean => identUses(head, n).reads + identUses(head, n).writes + identUses(tail, n).reads + identUses(tail, n).writes > 0;
+  head = head.filter((st) => st.k !== "decl" || st.names.some(declLive));
 
-  // The rest parameter must shadow nothing a surviving statement reads.
+  // Section 9.7: every accepted tail statement is kept verbatim -- a field
+  // install already reads the receiver only through `name`/an alias (proved
+  // above), and a receiver-capture statement's right-hand side is exactly
+  // `name`, so substituting `name` for `this` there (and nowhere else --
+  // an aliased env slot is never itself substituted, see above) is the only
+  // rewrite the tail needs.
+  const substituted = receiverName === null ? tail : mapStmts(tail, (s) => s, (e) => (e.k === "ident" && e.name === receiverName ? THIS : e));
+
+  // The rest parameter must shadow nothing a surviving statement reads,
+  // the tail included -- a field's own value can already read the class's
+  // rest parameter (`this.y = args.length`), which is fine (same binding);
+  // anything else with that name must be renamed.
+  const tailSoFar = [...head, ...substituted];
   let param = FORWARD_PARAM;
-  for (let n = 2; identUses(head, param).reads + identUses(head, param).writes > 0; n++) param = `${FORWARD_PARAM}${n}`;
+  for (let n = 2; identUses(tailSoFar, param).reads + identUses(tailSoFar, param).writes > 0; n++) param = `${FORWARD_PARAM}${n}`;
 
   const spread: Expr = { k: "spread", arg: { k: "ident", name: param } };
   const superStmt: Stmt = { k: "expr", expr: { k: "call", callee: SUPER, args: [spread] } };
-  return { body: [...head, superStmt], params: [{ name: param, rest: true }] };
+  return { body: [...head, superStmt, ...substituted], params: [{ name: param, rest: true }] };
 }
 
 /** Rewrites one derived-class constructor body, or explains why not. Pure. */

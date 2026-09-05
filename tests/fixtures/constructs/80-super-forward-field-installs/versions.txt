@@ -1,0 +1,10 @@
+v84: FAILS - hermesc rejects the `class` keyword entirely, same root cause as
+     32-class-basic/versions.txt (no IRGen lowering for
+     ClassDeclaration/ClassExpression at all in this build).
+v94: FAILS - identical error, same root cause.
+v96: FAILS - identical error, same root cause.
+v98: OK - classes, `extends`, class fields and rest parameters all supported.
+v99: OK - same.
+
+Only v98.hbc/v99.hbc exist in this directory; tests/fixtures/build.sh skips
+v84/v94/v96 for this fixture, matching this file.
