@@ -18,13 +18,13 @@ import { decompile } from "../../../src/decompile.ts";
 import { parseCatalogueIndex } from "../../../src/passes/catalogue.ts";
 import { repoRoot } from "../../support/paths.ts";
 
-// Sub-forms C1/C3/C4 need F24-5 (spec 24 section 2): the emitter places a
-// method or constructor closure that captures nothing at MODULE level, not
-// inside the function whose `CreateClosure` made it, so for fixtures 32, 34
-// and 36 the declarations the class body must hold are not in `ctx.fnBody`
-// and the rung refuses (`ctor-not-in-body` / `method-not-in-body`). See
-// PUSHBACK P-38 and the docs/BUGS.md row `class-recover-orphan-methods`.
-const SKIP_F24_5 = "spec 24 C1/C3/C4 blocked on F24-5 -- PUSHBACK P-38, docs/BUGS.md class-recover-orphan-methods";
+// Sub-forms C1/C3/C4 were skipped until F24-5 (PUSHBACK P-38, docs/BUGS.md row
+// `class-recover-orphan-methods`): the emitter placed a method or constructor
+// closure that captures nothing at MODULE level, not inside the function whose
+// `CreateClosure` made it, so for fixtures 32, 34 and 36 the declarations the
+// class body must hold were not in `ctx.fnBody` and the rung refused
+// (`ctor-not-in-body` / `method-not-in-body`). F24-5 places such a function in
+// the single function that creates it, and the three tests below run unchanged.
 const DIR = ["..", "..", "..", "src", "passes", "class-recover"].join("/");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -236,7 +236,7 @@ test("class-recover: a body with no class-creation site is a fixed point (R-C0/P
 // Fixture properties (spec 24 section 5).
 // ---------------------------------------------------------------------------
 
-test("class-recover recovers the base form and consumes every owned install", { skip: SKIP_F24_5 }, () => {
+test("class-recover recovers the base form and consumes every owned install", {}, () => {
   for (const version of CLASS_VERSIONS) {
     const on = js("32-class-basic", version);
     const off = js("32-class-basic", version, "off");
@@ -259,7 +259,7 @@ test("class-recover recovers `extends` from the setPrototypeOf pair", {}, () => 
   }
 });
 
-test("class-recover merges a split get/set pair into two accessor members", { skip: SKIP_F24_5 }, () => {
+test("class-recover merges a split get/set pair into two accessor members", {}, () => {
   for (const version of CLASS_VERSIONS) {
     const on = js("36-class-getters-setters", version);
     assert.match(on, /get area\(\)/, `${version}`);
@@ -279,7 +279,7 @@ test("class-recover refuses the object-literal accessors and the private-field i
   }
 });
 
-test("class-recover puts statics on the class object, never the prototype (R-C10, needs F24-3)", { skip: SKIP_F24_5 }, () => {
+test("class-recover puts statics on the class object, never the prototype (R-C10, needs F24-3)", {}, () => {
   // Fixture 34's CreateBaseClass aliases dst_ctor and dst_prototype
   // (`CreateBaseClass r2, r2, r1, 1`), and src/emit/lower.ts clobbers the
   // constructor with `<ctor>.prototype`, so today every static lands on the
@@ -300,4 +300,47 @@ test("class-recover's checker rejects an `after` whose member order differs from
   const forged = [{ k: "classdecl", name: "C", value: { k: "class", name: "C", superClass: null, members: [method("b"), method("a")] } }];
   const r = check(before as Any, forged as Any, { fnBody: before } as Any);
   assert.equal(r.ok, false, "a member order the installs never produced must be refused");
+});
+
+// ---------------------------------------------------------------------------
+// F24-5 regressions. Both failed before F24-5 and pass after it.
+
+test("F24-5: the class-shape checker finds the rewritten head in the rebuilt body (off-by-one)", () => {
+  // `check` substitutes the new head's effects for the old head's at
+  // `rebuilt[headPos]`. `headPos` was the *count* of deletions preceding the
+  // head, which is its index in `rebuilt` only when `headIndex` happens to be
+  // twice that count. 32-class-basic (four moved declarations, head at index 7)
+  // is the first fixture where it is not: the substitution read the `rN =
+  // <ctor>.prototype` alias store that follows the head, counted that store
+  // twice, and abandoned the whole group with "changed the effect sequence".
+  for (const version of CLASS_VERSIONS) {
+    const r = decompile(readFileSync(join(CONSTRUCTS, "32-class-basic", `${version}.hbc`)), { resolveV98Ambiguity: true });
+    const abandoned = r.diagnostics.filter((d) => d.code === "W_PASS_ABANDONED" && d.message.includes("class-recover"));
+    assert.deepEqual(
+      abandoned.map((d) => d.message),
+      [],
+      `${version}: class-recover must not abandon its only site`,
+    );
+  }
+});
+
+test("F24-5: a class method or constructor that captures nothing is declared in the function that creates it", () => {
+  // The precondition the rung needs, asserted on the emitter alone
+  // (`--passes=none`): no `// orphan` comment, and every method/constructor
+  // body nested inside `_fn0` rather than sitting at module level.
+  for (const fixture of ["32-class-basic", "34-class-static-members", "36-class-getters-setters"]) {
+    for (const version of CLASS_VERSIONS) {
+      const out = js(fixture, version, "none");
+      assert.doesNotMatch(out, /\/\/ orphan:/, `${fixture} ${version}: nothing is an orphan any more`);
+      const lines = out.split("\n");
+      const global = lines.findIndex((l) => /^\s*function _fn0\(\)/.test(l));
+      assert.ok(global >= 0, `${fixture} ${version}: the global function is emitted`);
+      const decls = lines.map((l, i) => [l, i] as const).filter(([l]) => /^\s*function _fn[1-9]\d*\(/.test(l));
+      assert.ok(decls.length >= 2, `${fixture} ${version}: the class's own functions are emitted as declarations`);
+      for (const [line, i] of decls) {
+        assert.ok(i > global, `${fixture} ${version}: ${line.trim()} must come after fn#0's own header, i.e. inside it`);
+        assert.ok(/^ {4,}function/.test(line), `${fixture} ${version}: ${line.trim()} must be nested, not at module level`);
+      }
+    }
+  }
 });

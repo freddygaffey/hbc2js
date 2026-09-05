@@ -80,7 +80,12 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
       // whose `versions` predicate excludes this module's bytecode version is
       // reported once per function rather than silently dropped. `yield-recovery`
       // (spec 25, v<=96 only) is the first registered rung that fires it.
-      const unexpected = r.diagnostics.filter((d) => d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED" && d.code !== "W_PASS_VERSION_SKIP" && d.code !== "W_PASS_REFUSED");
+      // W_NO_CAPTURE_HOSTED (F24-5) is one summary info line per module: a
+      // function that captures nothing and is created in exactly one function
+      // is emitted inside that function instead of at module level. It is a
+      // placement statement, not a problem -- it exists so the count is
+      // observable on a real bundle.
+      const unexpected = r.diagnostics.filter((d) => d.code !== "W_NO_CAPTURE_HOSTED" && d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED" && d.code !== "W_PASS_VERSION_SKIP" && d.code !== "W_PASS_REFUSED");
       if (unexpected.length > 0) failures.push(`${b.fixture} v${b.version}${b.variant}: ${unexpected.map((d) => d.code).join(", ")}`);
     } catch (e) {
       failures.push(`${b.fixture} v${b.version}${b.variant}: ${e instanceof Error ? e.message : String(e)}`);
