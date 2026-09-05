@@ -9,5 +9,10 @@ export function rewrite(m: ObjectLiteralMatch): readonly Stmt[] {
   // Spread the original statement so the `NewObject`'s own `origin` stamp
   // survives: the rebuilt literal really does come from that instruction.
   const repl: Stmt = { ...(def as Stmt & { readonly k: "expr" }), expr: { k: "assign", target: { k: "ident", name: site.reg }, value } };
-  return [...list.slice(0, site.defIndex), repl, ...list.slice(site.defIndex + 1 + site.storeCount)];
+  // docs/BUGS.md `object-literal-interleaved`: `hoisted` statements were
+  // proven safe to commute above the whole run (`canHoist`) — moved here,
+  // unmodified and in their original relative order, they are never deleted
+  // the way a folded store is, only relocated.
+  const span = site.storeCount + site.hoisted.length;
+  return [...list.slice(0, site.defIndex), ...site.hoisted, repl, ...list.slice(site.defIndex + 1 + span)];
 }

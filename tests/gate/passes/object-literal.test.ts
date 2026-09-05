@@ -134,9 +134,39 @@ test("object-literal folds only the prefix before an accessor define", () => {
 // Negatives.
 // ---------------------------------------------------------------------------
 
-test("object-literal refuses a PutById run (full [[Set]], not an own define)", () => {
+// docs/BUGS.md `object-literal-putbyid`: a `PutById`-family run on a FRESH
+// object, where nothing in the run has had a chance to reach
+// `Object.prototype`, IS observably a define for plain data keys.
+test("object-literal folds a PutById run on a fresh object for plain data keys", () => {
   const list = [def("r0", []), store("r0", "a", false, id("r1"), "PutByIdLoose"), store("r0", "b", false, id("r2"), "PutByIdLoose")];
+  const after = fold(list);
+  assert.ok(after !== null);
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : p.key)),
+    ["a", "b"],
+  );
+});
+
+test("object-literal refuses a PutById store's __proto__ key even on a fresh object", () => {
+  const list = [def("r0", []), store("r0", "__proto__", false, id("r1"), "PutByIdLoose")];
   assert.equal(match(list, ctxFor()), null);
+});
+
+test("object-literal refuses a PutById store once an earlier value in the run could have reached Object.prototype", () => {
+  // The first store is an own-define (never prototype-sensitive), but its
+  // own value is a call — which could itself have redefined a property on
+  // `Object.prototype` before the *second* store's `[[Set]]` runs.
+  const list = [def("r0", []), store("r0", "a", false, { k: "call", callee: id("f"), args: [] }), store("r0", "b", false, id("r2"), "PutByIdLoose")];
+  const after = fold(list);
+  assert.ok(after !== null);
+  // Only the own-define folds; the PutById store after a call is refused.
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : p.key)),
+    ["a"],
+  );
+  assert.equal(after!.length, 2); // the literal, then the refused `.b =` store
 });
 
 test("object-literal refuses a value that reads the half-built object", () => {
@@ -149,11 +179,50 @@ test("object-literal refuses a __proto__ key in either spelling", () => {
   assert.equal(match([def("r0", []), store("r0", '"__proto__"', true, id("r1"))], ctxFor()), null);
 });
 
-test("object-literal refuses a non-contiguous run and an unstamped store", () => {
+// docs/BUGS.md `object-literal-interleaved`: an interleaved statement is no
+// longer an automatic refusal — a *pure register def* commutes above the
+// run when it is safe to (see `canHoist`'s doc comment); a genuinely unsafe
+// one (or anything else, e.g. an unstamped store) still ends the run there.
+test("object-literal hoists a pure interleaved register def above the run", () => {
   const gap = [def("r0", []), { k: "expr", expr: { k: "assign", target: id("r5"), value: lit("1") } } as Stmt, store("r0", "a", false, id("r5"))];
-  assert.equal(match(gap, ctxFor()), null);
+  const after = fold(gap);
+  assert.ok(after !== null);
+  // The hoisted statement stays a statement of its own, placed before the
+  // rebuilt literal — it is relocated, not folded into a property.
+  assert.equal(after!.length, 2);
+  assert.deepEqual(after![0], gap[1]);
+});
+
+test("object-literal refuses to hoist a statement that reads the half-built object, and an unstamped store", () => {
+  // `r5 = r0` is syntactically a pure register def, but `r0` is the object
+  // this very run is building — hoisting it above the definition would read
+  // the object before it exists.
+  const selfRead = [def("r0", []), { k: "expr", expr: { k: "assign", target: id("r5"), value: id("r0") } } as Stmt, store("r0", "a", false, id("r5"))];
+  assert.equal(match(selfRead, ctxFor()), null);
   const unstamped: Stmt = { k: "expr", expr: { k: "assign", target: { k: "member", obj: id("r0"), prop: lit("a"), computed: false }, value: id("r1") } };
   assert.equal(match([def("r0", []), unstamped], ctxFor()), null);
+});
+
+// docs/BUGS.md `object-literal-interleaved`, `canHoist` condition 1: a
+// redefinition of a register an EARLIER fold already read (register reuse,
+// `63-object-literal`'s `table` `len` property at v98/v99 in miniature) must
+// not hoist — doing so would change what that earlier fold observes.
+test("object-literal refuses to hoist a register redefinition an earlier fold has already read", () => {
+  const list = [
+    def("r0", []),
+    store("r0", "a", false, id("r5")), // reads r5's first value
+    { k: "expr", expr: { k: "assign", target: id("r5"), value: id("r6") } } as Stmt, // redefines r5
+    store("r0", "b", false, id("r5")), // would read r5's second value
+  ];
+  const after = fold(list);
+  assert.ok(after !== null);
+  // Only `a` folds; `r5`'s redefinition and `.b =` stay separate statements.
+  const props = ((after![0] as { expr: { value: Expr } }).expr.value as Extract<Expr, { k: "object" }>).props;
+  assert.deepEqual(
+    props.map((p) => ("k" in p ? "…" : p.key)),
+    ["a"],
+  );
+  assert.equal(after!.length, 3); // the literal, the redefinition, `.b =`
 });
 
 test("object-literal refuses NewObjectWithParent (the prototype is a runtime value)", () => {
@@ -231,8 +300,11 @@ for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
 
   test(`object-literal refuses the fixture's negative controls at ${version}`, () => {
     const on = js(version);
-    // D: the intervening read of the half-built object stays two statements.
-    assert.match(on, /\.a = [^\n]*\n\s*\w+\.b = \w+\.a /);
+    // D: `.a` is a `PutById`-family store on a fresh object with nothing
+    // else in the run (docs/BUGS.md `object-literal-putbyid`), so it now
+    // folds into the literal; `.b` reads the half-built object (precondition
+    // 6) and still stays a separate store.
+    assert.match(on, /= \{a: [^\n]*\};\n\s*\w+\.b = \w+\.a /);
     // E: the accessor still goes through Object.defineProperty, and the
     // property after it is still a separate store.
     assert.match(on, /Object\.defineProperty\([^\n]*"doubled"/);
