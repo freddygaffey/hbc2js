@@ -96,3 +96,36 @@ None in the handler-table mechanism or the `Catch`-leader convention — this
 is unchanged from v94 through v99 (confirmed by cross-reading `12`'s v99
 `-O0` dump, which reproduces the identical `Catch`/handler-table shape
 modulo the v≥97 explicit-environment opcodes noted in `closures-env-slots.md`).
+
+## 8. Emitter scaffolding (`__pc` / `__exc`) — measured for spec 22
+
+Not bytecode: this is what *our* emitter prints around a recovered `try`
+(`src/emit/function.ts` `planTries`, `src/emit/names.ts`). Recorded here
+because `docs/specs/passes/22-try-shape-try-clean.md` (rungs `try-shape` and
+`try-clean`) is the consumer of these shapes.
+
+Measured 2026-09-05 by decompiling fixtures 12-16 at **v94 and v99** with the
+default pipeline:
+
+* `let __exc;` per function with any exception region; `let __pc = -1;` per
+  function where any region needs a guard.
+* `__pc = <blockId>;` at the head of every non-synthetic block of such a
+  function — function-wide, including blocks outside every `try`, and (v99,
+  fixture 16) as a comma element inside a `for` header's update slot.
+* `if (!(__pc >= lo && __pc <= hi)) { throw _excN; }` first in a handler whose
+  lexical `try` over-reaches the region's blocks; `[lo, hi]` is the region's
+  block-id range. Observed: `[0,0]` (15 v94), `[1,1]` (13), `[0,1]` (12),
+  `[1,2]` (14 v94), `[2,3]` and `[14,15]` (16 v99).
+* `__exc = _excN;` next in the handler (the `Catch r` lowering reads it as
+  `r = __exc`). Reads can also appear *outside* the handler on the path where
+  it already ran (16 v99: `r12 = __exc;` after the `try`).
+
+Fixture 16 at v94 is the irreducible shape: a `__state0` dispatch nest whose
+tries carry `cfgBlock: -1`, where the guard *selects* the handler and is
+therefore never removable.
+
+**Versions unread for this scaffolding: 84, 96, 98.** The scaffolding is
+emitter-side and version-independent by construction (it keys on
+`ExceptionRegion`, which every version has), but that is an argument, not a
+reading — spec 22 §7 open question 3 asks the implementer to confirm it while
+running the fixture tests and to update this section.
