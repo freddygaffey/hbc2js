@@ -29,6 +29,24 @@ export function replaceCalls(list: readonly Stmt[], calls: readonly Expr[]): rea
   return mapStmts(list, (s) => s, (e) => (set.has(e) ? bare : e));
 }
 
+/** Is `name` read anywhere in `stmts` before the first statement that
+ *  WRITES it? A later write is a fresh, unrelated definition (Hermes freely
+ *  reuses a register name for a later, temporally disjoint purpose within
+ *  the same function -- 49-arguments-object's `toArray` reuses `r0` for the
+ *  `,` separator a few statements after its one `arguments` read), so a
+ *  read that happens strictly after such a write is a read of THAT later
+ *  value, not of the reify result, and must not block the fold. Walked
+ *  statement-by-statement (not `identUses(stmts, name)` in one shot) so the
+ *  write can act as a cutoff. */
+function readOccursBeforeAnyWrite(stmts: readonly Stmt[], name: string): boolean {
+  for (const s of stmts) {
+    const u = identUses([s], name);
+    if (u.reads > 0 || u.nested > 0) return true;
+    if (u.writes > 0) return false; // redefined here: nothing after this can be our reify's value
+  }
+  return false;
+}
+
 function isBareArgumentsValue(e: Expr): boolean {
   return e.k === "argumentsObject";
 }
@@ -52,12 +70,19 @@ function assignedArgsTemp(s: Stmt): string | null {
  *  very same function (`49-arguments-object`'s `toArray`: `r0` is also the
  *  separator string a few statements later), so "exactly one read, exactly
  *  one write, anywhere in the function" is the wrong -- too strict --
- *  question; "exactly one occurrence, in the very next statement, before
- *  anything else can run" is both sufficient (nothing can observe the
- *  temp between the two statements) and unaffected by whatever the name is
- *  reused for afterwards (that reuse is a separate write, strictly later,
- *  untouched by deleting this pair). Iterates to a fixed point in case more
- *  than one reify call fed the same pattern. */
+ *  question. The check below is instead "exactly one *remaining* read of
+ *  `name`, in the very next statement, and no read of it anywhere later in
+ *  this same statement list" -- checked over `list.slice(i + 1)`, not just
+ *  `[next]` (BUGS 2026-09-05, `73-arguments-identity`'s `sliceEach`, two
+ *  reads of one reify-derived register: `let r0 = arguments; r2 =
+ *  slice.call(r0); … r1 = r0;` -- checking only `[next]` saw the first read,
+ *  folded `r0 = arguments;` away, and left the second read (`r1 = r0;`)
+ *  referring to a register nothing assigns anymore, silently reading
+ *  `undefined`). A later *write* to `name` (the legitimate reuse-for-a-
+ *  later-purpose case) still stops the scan at that write via `writes !==
+ *  0`, so that reuse remains foldable -- only a later *read* refuses the
+ *  fold now. Iterates to a fixed point in case more than one reify call fed
+ *  the same pattern. */
 export function inlineSingleUseTemp(fnBody: readonly Stmt[]): readonly Stmt[] {
   let current = fnBody;
   for (let guard = 0; guard < 1000; guard++) {
@@ -69,6 +94,12 @@ export function inlineSingleUseTemp(fnBody: readonly Stmt[]): readonly Stmt[] {
         const next = list[i + 1]!;
         const uses = identUses([next], name);
         if (uses.reads !== 1 || uses.writes !== 0 || uses.nested !== 0) continue;
+        // No further read of `name`'s CURRENT (reify) value anywhere later
+        // in this statement list -- a read after some later statement
+        // rewrites `name` for an unrelated purpose does not count (the fold
+        // above already accounted for the one read in `next`).
+        const rest = list.slice(i + 2);
+        if (readOccursBeforeAnyWrite(rest, name)) continue;
         const bare: Expr = { k: "argumentsObject" };
         const newNext = mapStmts([next], (s) => s, (e) => (e.k === "ident" && e.name === name ? bare : e))[0]!;
         const newList = [...list.slice(0, i), newNext, ...list.slice(i + 2)];
