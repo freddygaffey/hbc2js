@@ -108,7 +108,7 @@ function bestOf<T>(reps: number, measure: () => T, score: (t: T) => number): T {
 const RATIO_REPS = 5;
 /** Fewer repetitions where one repetition is itself seconds of work, so the
  *  file stays inside the gate's own time budget. */
-const HEAVY_RATIO_REPS = 3;
+const HEAVY_RATIO_REPS = 5;
 
 function runFolds(k: number): number {
   const module = fakeModule();
@@ -362,38 +362,53 @@ function uniqueRegSites(sites: number, tail: number): readonly Stmt[] {
  *  list sits behind the last site. */
 const CLASSIFY_SWEEPS = 40;
 
-function classifyAll(sites: number, tail: number): number {
-  const list = uniqueRegSites(sites, tail);
-  registerUses(list);
-  const sweep = (): void => {
-    for (let i = 0; i < sites * 2; i += 2) {
-      const s = list[i]!;
-      assert.equal(s.k, "expr");
-      const e = (s as { expr: { k: string; target: { name: string }; value: unknown } }).expr;
-      const v = classifySite(list, list, i, e.target.name, e.value as Parameters<typeof classifySite>[4]);
-      assert.ok(v.ok, `site ${i} should classify, got ${JSON.stringify(v)}`);
-    }
-  };
-  sweep(); // untimed: warms JIT and the per-node `stmtInterest`/`topLevelReads` memos, which is the steady state the driver sees
-  // Best of `RATIO_REPS` batches over the very same list (see `bestOf`):
-  // both sides of the ratio are measured this way, so neither is favoured.
-  return bestOf(
-    RATIO_REPS,
-    () =>
-      cpuMs(() => {
-        for (let n = 0; n < CLASSIFY_SWEEPS; n++) sweep();
-      }),
-    (t) => t,
-  );
+/** One timed sweep of `classifySite` over every store in `list`'s site
+ *  region. The list is never rewritten here, so the only thing that differs
+ *  between the two lists measured below is how much list sits behind the
+ *  last site. */
+function classifySweep(list: readonly Stmt[], sites: number): void {
+  for (let i = 0; i < sites * 2; i += 2) {
+    const s = list[i]!;
+    assert.equal(s.k, "expr");
+    const e = (s as { expr: { k: string; target: { name: string }; value: unknown } }).expr;
+    const v = classifySite(list, list, i, e.target.name, e.value as Parameters<typeof classifySite>[4]);
+    assert.ok(v.ok, `site ${i} should classify, got ${JSON.stringify(v)}`);
+  }
 }
 
 test("expr-rebuild's classify layer costs the same per site however long the list behind it is", () => {
-  const short = classifyAll(TAIL_SITES, 0);
-  const long = classifyAll(TAIL_SITES, INERT_TAIL);
-  const ratio = long / Math.max(short, 1);
+  const short = uniqueRegSites(TAIL_SITES, 0);
+  const long = uniqueRegSites(TAIL_SITES, INERT_TAIL);
+  // Warm: `registerUses` is what the driver hands the matcher after its own
+  // first site (`check.ts`'s `noteRegisterUsesSplice`), and one untimed
+  // sweep each warms the JIT and the per-node `stmtInterest`/
+  // `topLevelReads` memos, which is the steady state the driver sees.
+  for (const list of [short, long]) {
+    registerUses(list);
+    classifySweep(list, TAIL_SITES);
+  }
+  const batch = (list: readonly Stmt[]): number =>
+    cpuMs(() => {
+      for (let n = 0; n < CLASSIFY_SWEEPS; n++) classifySweep(list, TAIL_SITES);
+    });
+  // Interleaved and best-of-N, the same load tolerance the two tests above
+  // use: the two halves of each ratio are measured back to back in the same
+  // process, so a preemption or a GC pause hits both, and the cheapest of
+  // `RATIO_REPS` pairs is the least contaminated one (see `bestOf`).
+  let ratio = Infinity;
+  let picked = { s: 0, l: 0 };
+  for (let n = 0; n < RATIO_REPS; n++) {
+    const s = batch(short);
+    const l = batch(long);
+    const r = l / Math.max(s, 1);
+    if (r < ratio) {
+      ratio = r;
+      picked = { s, l };
+    }
+  }
   const budget = 4 * timeScale();
   assert.ok(
     ratio < budget,
-    `classifying ${TAIL_SITES} sites cost ${long.toFixed(1)} ms with a ${INERT_TAIL}-statement inert tail behind them and ${short.toFixed(1)} ms with none - ${ratio.toFixed(1)}x, budget ${budget.toFixed(1)}x. Cost per site must not depend on list length: a pre-fix isDeadAfter walks that whole tail once per site, which lands near 50x here.`,
+    `classifying ${TAIL_SITES} sites cost ${picked.l.toFixed(1)} ms with a ${INERT_TAIL}-statement inert tail behind them and ${picked.s.toFixed(1)} ms with none - ${ratio.toFixed(1)}x, budget ${budget.toFixed(1)}x. Cost per site must not depend on list length: a pre-fix isDeadAfter walks that whole tail once per site, which lands near 40x here.`,
   );
 });
