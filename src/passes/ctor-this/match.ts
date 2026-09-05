@@ -44,7 +44,7 @@ export interface CtorThisGroup {
   readonly folded: readonly string[];
 }
 
-type ClassExpr = Extract<Expr, { k: "class" }>;
+export type ClassExpr = Extract<Expr, { k: "class" }>;
 
 const THIS: Expr = { k: "this" };
 
@@ -90,9 +90,33 @@ function isNewObjectWithParent(e: Expr, reg: string): boolean {
   return fallback.k === "member" && !fallback.computed && fallback.obj.k === "ident" && fallback.obj.name === "Object" && fallback.prop.k === "lit" && fallback.prop.text === "prototype";
 }
 
+/** `Object.<name>(...)` -- the emitter's own spelling (a non-computed member
+ *  on the global `Object` binding). */
+function isObjectCall(e: Expr, name: string, arity: number): e is Extract<Expr, { k: "call" }> {
+  if (e.k !== "call" || e.args.length !== arity) return false;
+  const c = e.callee;
+  return c.k === "member" && !c.computed && c.obj.k === "ident" && c.obj.name === "Object" && c.prop.k === "lit" && c.prop.text === name;
+}
+
+/** The SEEDED allocation (spec 26 section 6, R-CT2 until 2026-09-05):
+ *  `Object.assign(Object.create(new.target.prototype), {...})`, which is what
+ *  hermesc emits for a base class that has public field initialisers -- the
+ *  field buffer is folded into the allocation itself (32-class-basic). Note
+ *  the inner argument is the bare `new.target.prototype`, not the
+ *  null/primitive-guarded `cond` of `NewObjectWithParent`. Returns the seed
+ *  object literal, or null when this is not that shape (a computed or
+ *  non-literal second argument keeps the refusal). */
+function seededAllocation(e: Expr): Expr | null {
+  if (!isObjectCall(e, "assign", 2)) return null;
+  const base = e.args[0]!;
+  if (!isObjectCall(base, "create", 1) || !isNewTargetPrototype(base.args[0]!)) return null;
+  const seed = e.args[1]!;
+  return seed.k === "object" ? seed : null;
+}
+
 /** The class's own `constructor` member, exactly as `class-recover` installs
  *  it (and as `private-fields` finds it). */
-function ctorMember(cls: ClassExpr): Extract<Expr, { k: "func" }> | null {
+export function ctorMember(cls: ClassExpr): Extract<Expr, { k: "func" }> | null {
   const m = cls.members.find((m) => m.kind === "method" && !m.static && m.key.k === "ident" && m.key.name === "constructor");
   return m !== undefined && m.value !== null && m.value.k === "func" ? m.value : null;
 }
@@ -167,32 +191,46 @@ export interface CtorRefusal {
 export function foldCtorBody(cls: ClassExpr, body: readonly Stmt[]): { readonly body: readonly Stmt[] } | CtorRefusal {
   if (cls.superClass !== null) return { code: "R-CT1", reason: "derived class: `this` comes from super(), not from an allocation this rung can prove" };
 
-  // The stand-in must be the first executable statement pair: everything
+  // The stand-in must be the first executable statement (pair): everything
   // before it may only be a comment, a directive or a bare declaration.
   let at = 0;
   while (at < body.length && (body[at]!.k === "comment" || body[at]!.k === "directive" || body[at]!.k === "decl")) at++;
   const first = at < body.length ? simpleStore(body[at]!) : null;
-  if (first === null || !isNewTargetPrototype(first.value)) {
-    const seeded = at < body.length ? body[at]! : null;
-    const store = seeded === null ? null : simpleStore(seeded);
-    if (store !== null && store.value.k === "call") return { code: "R-CT2", reason: "constructor allocates its receiver in a seeded form (Object.assign over Object.create) this rung does not fold yet" };
+  if (first === null) return { code: "R-CT0", reason: "constructor does not open with the new.target.prototype stand-in" };
+  // Two spellings of the same allocation. PLAIN: `rP = new.target.prototype;
+  // rO = Object.create(rP === null ? ...)` -- one register at v98, two at v99.
+  // SEEDED: `rO = Object.assign(Object.create(new.target.prototype), {...})`,
+  // the field-initialiser form; a single statement, one register.
+  const seed = seededAllocation(first.value);
+  let reg: string;
+  let protoReg: string;
+  let span: number;
+  if (seed !== null) {
+    reg = first.name;
+    protoReg = first.name;
+    span = 1;
+    // The seed literal is evaluated BEFORE the assignment to `reg`, so a read
+    // of `reg` inside it would see the pre-allocation value; substituting
+    // `this` there would not be an identity substitution.
+    if (identUses([{ k: "expr", expr: seed }], reg).reads > 0) return { code: "R-CT2", reason: "the seed literal reads the stand-in register it is about to become" };
+  } else if (isNewTargetPrototype(first.value)) {
+    protoReg = first.name;
+    const second = at + 1 < body.length ? simpleStore(body[at + 1]!) : null;
+    if (second === null || !isNewObjectWithParent(second.value, protoReg)) return { code: "R-CT0", reason: "constructor does not open with the new.target.prototype stand-in" };
+    reg = second.name;
+    span = 2;
+  } else {
+    if (first.value.k === "call") return { code: "R-CT2", reason: "constructor allocates its receiver in a seeded form (Object.assign over Object.create) this rung does not fold yet" };
     return { code: "R-CT0", reason: "constructor does not open with the new.target.prototype stand-in" };
   }
-  // Two registers or one: hermesc allocates `new.target.prototype` into its
-  // own temporary at v99 (`rP = new.target.prototype; rO = Object.create(rP
-  // === null ? ...)`) and reuses a single register at v98. Both are the same
-  // allocation; `reg` is whichever one ends up holding the object.
-  const protoReg = first.name;
-  const second = at + 1 < body.length ? simpleStore(body[at + 1]!) : null;
-  if (second === null || !isNewObjectWithParent(second.value, protoReg)) return { code: "R-CT0", reason: "constructor does not open with the new.target.prototype stand-in" };
-  const reg = second.name;
   // Both holders must be the constructor's OWN locals. A register name is
   // the usual spelling, but not the guaranteed one: `var-naming` runs on a
   // constructor's own function long before `class-recover` moves its body
   // into the class node, so by the time this rung sees it the pair may
-  // already read `prototype`/`create`. What matters is not the spelling but
-  // that the name is declared in this body -- substituting `this` for a name
-  // that lives in an enclosing scope would rewrite someone else's variable.
+  // already read `prototype`/`create`/`assign`. What matters is not the
+  // spelling but that the name is declared in this body -- substituting
+  // `this` for a name that lives in an enclosing scope would rewrite
+  // someone else's variable.
   if (!declaredInBody(body, reg) || !declaredInBody(body, protoReg)) return { code: "R-CT0", reason: "the stand-in holder is not declared in the constructor body" };
 
   // Exactly two writes in this frame: the two statements above. `identUses`
@@ -201,7 +239,7 @@ export function foldCtorBody(cls: ClassExpr, body: readonly Stmt[]): { readonly 
   // buried inside an expression -- refuses here.
   const uses = identUses(body, reg);
   const dead = deadStoresTo(body, reg);
-  const allocWrites = protoReg === reg ? 2 : 1;
+  const allocWrites = span === 1 ? 1 : protoReg === reg ? 2 : 1;
   if (uses.writes !== allocWrites + dead) return { code: "R-CT3", reason: `the stand-in register is written ${uses.writes} times, not exactly the ${allocWrites} the allocation needs (plus ${dead} provably dead store(s))` };
   if (mentionedInNestedFunction(body, reg)) return { code: "R-CT5", reason: "the stand-in register name also occurs inside a nested closure, where it is a different frame's local" };
 
@@ -209,11 +247,15 @@ export function foldCtorBody(cls: ClassExpr, body: readonly Stmt[]): { readonly 
   if (returns.length === 0) return { code: "R-CT4", reason: "constructor never returns the stand-in" };
   for (const r of returns) if (r.arg === null || !isIdentNamed(r.arg, reg)) return { code: "R-CT4", reason: "some return does not return the stand-in" };
 
-  const kept = body.filter((_s, i) => i !== at && i !== at + 1);
+  // The seeded form keeps its `Object.assign` call: the object it seeds IS
+  // `this`, so the whole statement becomes `Object.assign(this, {...});` --
+  // the same call on the same arguments, one statement in place of one.
+  const seededReplacement: Stmt = { k: "expr", expr: { k: "call", callee: { k: "member", obj: { k: "ident", name: "Object" }, prop: { k: "lit", text: "assign" }, computed: false }, args: [THIS, seed ?? THIS] } };
+  const kept = seed !== null ? body.map((s, i) => (i === at ? seededReplacement : s)) : body.filter((_s, i) => i !== at && i !== at + 1);
   // The prototype temporary, when it is a register of its own, must die with
   // the allocation: anything still reading or writing it after the two
   // statements go is a use this rung has not accounted for.
-  if (protoReg !== reg) {
+  if (protoReg !== reg && span === 2) {
     const p = identUses(kept, protoReg);
     if (p.reads + p.writes > 0) return { code: "R-CT3", reason: "the prototype temporary outlives the allocation" };
   }
@@ -239,7 +281,7 @@ export function foldCtorBody(cls: ClassExpr, body: readonly Stmt[]): { readonly 
 }
 
 /** Every recovered `class` node in `before`, in tree order. */
-function classesIn(before: readonly Stmt[]): readonly ClassExpr[] {
+export function classesIn(before: readonly Stmt[]): readonly ClassExpr[] {
   const found: ClassExpr[] = [];
   walk(before, { expr: (e) => { if (e.k === "class") found.push(e); } });
   return found;

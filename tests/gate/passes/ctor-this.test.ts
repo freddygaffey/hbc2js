@@ -30,10 +30,22 @@ const js = (fixture: string, version: "v98" | "v99", mode: "on" | "none" = "on")
     passes: mode === "none" ? { none: true } : {},
   }).code;
 
+/** The text of the first `constructor(...) { ... }` in a decompiled module,
+ *  so a rung assertion can be about the constructor rather than about the
+ *  whole shared fixture's output (CONSOLIDATION section B item 7). */
+const ctorBody = (code: string): string => {
+  const i = code.indexOf("constructor(");
+  assert.notEqual(i, -1, "no constructor in the decompiled output");
+  const j = code.indexOf("\n  }\n", i);
+  assert.notEqual(j, -1, "constructor body is not delimited as expected");
+  return code.slice(i, j);
+};
+
 /** Every fixture whose class-recover output is a BASE class with the
- *  `NewObjectWithParent` stand-in. 32-class-basic is deliberately absent: its
- *  constructor uses the seeded `Object.assign(Object.create(...), {...})`
- *  allocation, refusal R-CT2 (asserted below). */
+ *  `NewObjectWithParent` stand-in. 32-class-basic and 76-class-fields-private
+ *  are deliberately absent: their constructors use the SEEDED
+ *  `Object.assign(Object.create(...), {...})` allocation, which folds to
+ *  `Object.assign(this, {...})` instead (asserted below). */
 const BASE_FIXTURES = ["34-class-static-members", "35-class-private-fields", "36-class-getters-setters"] as const;
 
 for (const fixture of BASE_FIXTURES) {
@@ -53,11 +65,79 @@ for (const fixture of BASE_FIXTURES) {
   }
 }
 
-test("ctor-this: 32-class-basic keeps its seeded allocation (refusal R-CT2, both versions)", () => {
+// The seeded allocation (`Object.assign(Object.create(new.target.prototype),
+// {...})`, the public-field-initialiser form) was refusal R-CT2 in the rung's
+// first landing -- "foldable in principle; not measured, so not folded", spec
+// 26 section 6. It is measured now (docs/BUGS.md 2026-09-01 "class private
+// fields": 21 of react-navigation's 448 recovered class constructors, 9 of
+// them with a private name in scope), so the rung folds it: the object
+// `Object.assign` seeds IS the object base [[Construct]] bound to `this`, so
+// the statement becomes `Object.assign(this, {...})` -- the same call on the
+// same arguments. See docs/PUSHBACK.md P-42 for the assertion this replaces.
+for (const fixture of ["32-class-basic", "76-class-fields-private"] as const) {
   for (const version of ["v98", "v99"] as const) {
-    const on = js("32-class-basic", version);
-    assert.match(on, /Object\.assign\(Object\.create\(new\.target\.prototype\)/);
+    test(`ctor-this: ${fixture} ${version} -- the seeded allocation folds onto the real \`this\``, () => {
+      // Scoped to the constructor: the module body of both fixtures also
+      // contains an INLINED `new C(...)` call site, whose own
+      // `Object.assign(Object.create(C.prototype), {...})` is catalogue row
+      // 20a's lowering of `new` and no business of this rung's.
+      const on = ctorBody(js(fixture, version));
+      assert.doesNotMatch(on, /new\.target/);
+      assert.doesNotMatch(on, /Object\.create\(/);
+      assert.match(on, /Object\.assign\(this, \{/);
+      // ...and `--passes=none` still shows the untouched seeded lowering
+      // (whole output: without `class-recover` there is no `constructor(`
+      // to scope to -- the constructor is still a plain function there).
+      const none = js(fixture, version, "none");
+      assert.match(none, /Object\.assign\(Object\.create\(/);
+      assert.match(none, /new\.target/);
+    });
   }
+}
+
+test("ctor-this: 76-class-fields-private keeps the documented private-field residue", () => {
+  // The seeded fold is not enough for `private-fields` here: the `#name`
+  // symbols live in module environment slots and the accessors copy them into
+  // a register first. Neither is a shape that rung recognises, so the accesses
+  // stay symbol-keyed -- pinned so the day it changes is a deliberate one.
+  for (const version of ["v98", "v99"] as const) {
+    const on = js("76-class-fields-private", version);
+    assert.match(on, /Object\.defineProperty\(this, \w+, \{value:/);
+    assert.match(on, /Symbol\("#reading"\)/);
+    assert.doesNotMatch(on, /this\.#reading/);
+  }
+});
+
+test("ctor-this: a seeded allocation whose seed is not an object literal is still refused (R-CT2)", () => {
+  const seeded = (seed: Any): Any => ({
+    k: "call",
+    callee: { k: "member", obj: { k: "ident", name: "Object" }, prop: { k: "lit", text: "assign" }, computed: false },
+    args: [{ k: "call", callee: { k: "member", obj: { k: "ident", name: "Object" }, prop: { k: "lit", text: "create" }, computed: false }, args: [NEW_TARGET_PROTO] }, seed],
+  });
+  const cls = classWith([{ k: "init", kind: "let", name: "r1", value: seeded({ k: "ident", name: "src" }) }, { k: "return", arg: { k: "ident", name: "r1" } }]);
+  const outcome = foldCtorBody(cls, ctorOf(cls)) as Any;
+  assert.equal(outcome.code, "R-CT2");
+});
+
+test("ctor-this: folds the seeded allocation into `Object.assign(this, ...)`", () => {
+  const seed: Any = { k: "object", props: [{ key: "x", computed: false, value: { k: "lit", text: "0" } }] };
+  const alloc: Any = {
+    k: "call",
+    callee: { k: "member", obj: { k: "ident", name: "Object" }, prop: { k: "lit", text: "assign" }, computed: false },
+    args: [{ k: "call", callee: { k: "member", obj: { k: "ident", name: "Object" }, prop: { k: "lit", text: "create" }, computed: false }, args: [NEW_TARGET_PROTO] }, seed],
+  };
+  const cls = classWith([{ k: "init", kind: "let", name: "r1", value: alloc }, { k: "expr", expr: { k: "assign", target: { k: "member", obj: { k: "ident", name: "r1" }, prop: { k: "lit", text: "y" }, computed: false }, value: { k: "lit", text: "1" } } }, { k: "return", arg: { k: "ident", name: "r1" } }]);
+  const before: Any[] = [{ k: "init", kind: "let", name: "r7", value: cls }];
+  const { folded, after } = foldAll(before);
+  assert.deepEqual(folded, ["C"]);
+  const body = ctorOf((after[0] as Any).value);
+  assert.equal(body.length, 2, "the seeding call and the property store survive");
+  assert.equal(body[0].k, "expr");
+  assert.equal(body[0].expr.args[0].k, "this");
+  assert.equal(body[0].expr.args[1], seed);
+  assert.equal(body[1].expr.target.obj.k, "this");
+  // PL-08: a second run is a no-op.
+  assert.deepEqual(foldAll(after).folded, []);
 });
 
 test("ctor-this: 33-class-inheritance-super's derived constructor is untouched (refusal R-CT1)", () => {

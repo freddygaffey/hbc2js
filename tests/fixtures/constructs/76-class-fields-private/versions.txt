@@ -1,0 +1,13 @@
+v84: FAILS - classes are unsupported in IRGen at all (see 32-class-basic/
+     versions.txt), and this file additionally uses private names, which this
+     build's parser rejects outright (see 35-class-private-fields/versions.txt).
+v94: FAILS - same two independent blockers as 35-class-private-fields:
+     "private properties are not supported" from the semantic validator, on top
+     of the lack of class support at all.
+v96: FAILS - identical to v94, same root cause (react-native@0.73.11's bundled
+     hermesc).
+v98: OK - classes, public field initialisers and private fields all supported.
+v99: OK - same.
+
+Only v98.hbc/v99.hbc exist in this directory; tests/fixtures/build.sh skips
+v84/v94/v96 for this fixture, matching this file.

@@ -238,7 +238,15 @@ test("class-recover: a body with no class-creation site is a fixed point (R-C0/P
 
 test("class-recover recovers the base form and consumes every owned install", {}, () => {
   for (const version of CLASS_VERSIONS) {
-    const on = js("32-class-basic", version);
+    // `skip: ["ctor-this"]` keeps this test about class-recover alone. Since
+    // 2026-09-05 `ctor-this` also folds fixture 32's SEEDED allocation
+    // (`Object.assign(Object.create(new.target.prototype), {...})` ->
+    // `Object.assign(this, {...})`), and part of that fold is dropping the
+    // constructor's trailing `return this;` -- which the return-count
+    // assertion below would otherwise read as class-recover losing a return.
+    // Rescoped, not inverted (docs/PUSHBACK.md P-42); the seeded fold has its
+    // own assertions in tests/gate/passes/ctor-this.test.ts.
+    const on = decompile(readFileSync(join(CONSTRUCTS, "32-class-basic", `${version}.hbc`)), { resolveV98Ambiguity: true, passes: { skip: ["ctor-this"] } }).code;
     const off = js("32-class-basic", version, "off");
     assert.equal(count(on, /(^|\s)class\s+Point\b/g), 1, `${version}: one class head named from the bytecode function name`);
     assert.equal(count(on, MEMBER_INSTALL), 0, `${version}: every owned defineProperty is consumed`);

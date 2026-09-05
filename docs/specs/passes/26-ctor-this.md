@@ -42,10 +42,16 @@ handling, and `src/emit/lower.ts` lowers it verbatim:
 Object.create(p === null ? null : typeof p === "object" ? p : Object.prototype)
 ```
 
-`32-class-basic` is the third shape: its class has field initialisers, so
-hermesc seeds the allocation from a literal buffer and the emitter prints
-`Object.assign(Object.create(new.target.prototype), {x: 0, y: 0, label:
-"point"})`. That form is **refused** (R-CT2, section 6).
+`32-class-basic` is the third shape, the **seeded** one: its class has public
+field initialisers, so hermesc seeds the allocation from a literal buffer and
+the emitter prints `Object.assign(Object.create(new.target.prototype), {x: 0,
+y: 0, label: "point"})` -- one statement, one register, and note the bare
+`new.target.prototype` rather than the null/primitive-guarded `cond` of
+`NewObjectWithParent`. Refused as R-CT2 in the first landing ("foldable in
+principle; not measured"); **folded since 2026-09-05**, now that it is
+measured: 21 of react-navigation-example-0.85.3's 448 recovered class
+constructors are this shape (9 of them with a private name in scope), against
+0 of the plain shape. Fixtures 32-class-basic and 76-class-fields-private.
 
 ## 3. CFG / IR shape
 
@@ -71,6 +77,22 @@ the same object on every path, and:
   constructor that completes normally yields `this` anyway. An *earlier*
   `return this;` is a real early exit and is kept.
 
+The **seeded** form is the same argument with one extra step. Its allocation
+is `Object.assign(O, L)` where `O` is `Object.create(new.target.prototype)` --
+the same object `[[Construct]]` bound to `this` -- so the whole statement
+becomes `Object.assign(this, L);`: the same call, on the same two arguments,
+in the same position. Nothing is deleted and nothing is reordered, so the
+only obligation beyond the base argument is that `L` must not itself read the
+stand-in register (it is evaluated *before* the assignment, so a read there
+would see the pre-allocation value and substituting `this` would not be an
+identity substitution) -- refused if it does. `L` must also be a plain object
+literal, so that "the seed" is a thing the writer can carry across unchanged.
+Note that the fold is, if anything, *closer* to the bytecode than the text it
+replaces: `Object.create(p)` throws on a non-object `p`, whereas
+`[[Construct]]` (and therefore the bytecode) falls back to
+`%Object.prototype%`, which is what `this` denotes (D14: the bytecode is
+ground truth).
+
 A **derived** class is a different protocol entirely — `this` is TDZ until
 `super()` returns it — so it is refused outright (R-CT1) rather than reasoned
 about.
@@ -92,6 +114,9 @@ whose value is a `func`:
    * `<reg> = Object.create(<protoReg> === null ? null : typeof <protoReg>
      === "object" ? <protoReg> : Object.prototype)`, matched literally.
    `protoReg` and `reg` may be the same name (v98) or different (v99).
+   *Or*, in the **seeded** spelling, one single store of `<reg> =
+   Object.assign(Object.create(new.target.prototype), <object literal>)`;
+   then `protoReg` is `reg` and the allocation is one statement, not two.
 2. Both names must be **declared by this body** (`let` prologue or the `init`
    store). Not "must look like a register": `var-naming` runs on the
    constructor's own function long before `class-recover` moves its body into
@@ -116,7 +141,9 @@ whose value is a `func`:
 
 ## 6. Writer (`rewrite.ts`) and refusals
 
-Delete the two allocation statements; substitute `this` for `reg`
+Delete the two allocation statements -- or, for the seeded form, replace the
+one allocation statement with `Object.assign(this, <the same literal>);` in
+place; substitute `this` for `reg`
 everywhere; demote each dead store to its bare call; strip `reg`/`protoReg`
 from any `let` prologue; drop a trailing `return this;`. `foldAll` is a pure
 function of the statement list, which is what lets the checker re-derive it.
@@ -125,7 +152,7 @@ function of the statement list, which is what lets the checker re-derive it.
 |---|---|
 | R-CT0 | Not this shape at all (no stand-in, or a holder the body does not declare). Silent — no `W_PASS_REFUSED`. |
 | R-CT1 | Derived class (`superClass !== null`): `this` comes from `super()`. |
-| R-CT2 | Seeded allocation (`Object.assign(Object.create(...), {...})`, 32-class-basic). Foldable in principle; not measured, so not folded. |
+| R-CT2 | A seeded-looking allocation this rung will not fold: the first store's value is a call that is not `Object.assign(Object.create(new.target.prototype), <object literal>)`, or the seed literal reads the stand-in register it is about to become. The plain seeded form itself is folded since 2026-09-05 (sections 2 and 4). |
 | R-CT3 | The stand-in register is written again, or the prototype temporary outlives the allocation. |
 | R-CT4 | Some path returns something other than the stand-in, or nothing returns it. |
 | R-CT5 | The stand-in name also occurs inside a nested closure. |
@@ -150,6 +177,7 @@ Three obligations:
 * **≤96**: no class lowering in `hermesc` at all, so the rung is gated off.
 * **98**: one register for both the prototype read and the allocation.
 * **99**: two registers (see section 2). Both accepted.
+* The seeded form is one statement at both 98 and 99 (fixtures 32 and 76).
 * Neither version changes the descriptor of the allocation itself; the
   `Object.create(... typeof ... "object" ...)` form is byte-identical at both.
 
@@ -164,3 +192,40 @@ fixture 35 (docs/BUGS.md 2026-09-01 "class private fields", reopened
 2026-09-05). With the constructor addressing the real `this`, that rung's
 `isThisArg` guard holds unchanged and fixture 35 folds `#balance`/`#history`
 for real.
+
+## 10. Measured on a real bundle (2026-09-05)
+
+`tools/passes/ctor-this-refusals.ts` classifies every recovered class
+constructor in a bundle by the code `foldCtorBody` returns, R-CT0 included
+(R-CT0 is silent in the rung itself: almost every class in a real bundle is
+R-CT0 and one `W_PASS_REFUSED` each would drown the diagnostics stream). On
+react-navigation-example-0.85.3 (v98), 448 class constructors:
+
+| code | classes | of those, with a `Symbol("#name")` in scope |
+|---|---|---|
+| R-CT1 (derived) | 304 | 130 |
+| R-CT0 | 119 | 69 |
+| R-CT2 (seeded) | 21 | 9 |
+| R-CT3 | 4 | 4 |
+| folded before this section was written | 0 | 0 |
+
+So the dominant refusal by a factor of three is **R-CT1, the derived class**,
+and it is out of reach of this rung's soundness argument: a derived
+constructor's `this` is the value `super()` returns, and the decompiled text
+does not contain a `super()` -- it contains `Reflect.construct(Object.
+getPrototypeOf(<class binding>), [...], new.target)` plus the TDZ marker and
+"super() called twice" guard Hermes emits around it. Substituting `this` for
+the register that receives that call is only legal once the call itself has
+been rebuilt as a real `super(...)`, which is a *different* rung (it has to
+recognise the superclass expression, prove it is the class's own `extends`
+binding, and prove the guard is the one the language re-creates). It is not a
+250-line extension of this one, and it is not attempted here.
+
+The seeded shape (R-CT2) is, and folds: 21 constructors across 12 module files
+of that bundle. It does **not** move the round-trip numbers -- `IDENTICAL
+6184 (42.83%)` and the `diff:GetOwnPrivateBySym/GetByVal` bucket at 177
+functions, both unchanged before and after -- because none of the 22 classes
+in the 22 modules that own a bucket function is the seeded shape (11 are
+R-CT1, 9 R-CT0, 2 R-CT3). It is a readability fold on this bundle, and a
+correctness prerequisite only where a seeded class also has private fields
+(9 classes here; fixture 76-class-fields-private).
