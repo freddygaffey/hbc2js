@@ -294,3 +294,38 @@ already rebuilds one as `{ ...fn, params: [...] }`. The class member is
 rebuilt the same way, in `foldAll`: `{ ...ctor, params, body }`. The rest
 parameter is named `args`; it can shadow nothing that is read, because the
 body it lands in contains no other name.
+
+### 9.4 What the constructor may also contain
+
+The forward must be the constructor's **last** statement; before it the rung
+accepts only what the emitter puts there and what it can account for: the
+`// fn#N` provenance comment (kept), the `"use strict"` directive (dropped,
+9.2), a hoisted `function` declaration this frame merely hosts (kept -- a
+declaration runs no user code and is legal before `super()`), a register `let`
+(kept only while something still reads it), and the operand moves the forward
+itself consumed. Those moves are how the operands actually reach the call
+(`r5 = r2; r3 = r1; applyArguments(arguments, r5, r4, r3)`), so the matcher
+chases each operand with `derefChain`: up to four hops, each resolved against
+the stores preceding the hop it came from and never a later one, so a register
+reused after its move is never followed. The moves are then deleted in
+reverse, and only when nothing that survives -- a later head statement, a
+nested closure -- still reads the target; a store that cannot be deleted is
+R-SC9 rather than left behind. The rest parameter is renamed (`args2`, ...)
+if any surviving statement would be shadowed by `args`.
+
+### 9.5 Residue on react-navigation-example-0.85.3
+
+`node tools/passes/ctor-this-refusals.ts` before -> after: FOLD 39 -> 52,
+R-SC6 168 -> 0, and a new R-SC9 147 -- so 13 of the 168 folded and 147 became
+a *narrower* refusal. 136 of those 147 have the shape `R-SC9 func`: a
+forwarding constructor whose frame also hosts a hoisted `function`
+declaration. Section 9.4 accepts the declaration itself, so what still refuses
+them is `argumentsUses(body) !== 1`: the check counts an `arguments` mention
+anywhere in the constructor, **nested frames included**, and a hosted
+declaration that uses its own `arguments` therefore reads as a second use of
+the constructor's. That is deliberately conservative (over-refusing is safe),
+and it is the next step: a non-arrow nested `func` has its own `arguments`
+object, so the count should skip nested frames unless `sameFrame === true`
+(the generator-resume closure, `src/emit/ast.ts`) -- the same distinction
+`countUses` already makes. Not done here: it changes what the rung claims on
+136 real constructors and deserves its own measurement.
