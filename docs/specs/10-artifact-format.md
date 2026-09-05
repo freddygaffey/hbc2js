@@ -361,12 +361,20 @@ human, never guessed either way).
 
 `native/seams.jsonl` (spec 27 L3, `src/native/seams.ts`) is the JS<->native
 **join**, written only when this directory holds BOTH a JS artifact
-(`index/strings.json` + `index/string-uses.jsonl` + `index/globals.jsonl`) and
-the native tables above; with no JS half the file is simply absent (an absent
-seam table says "not joinable", which is the truth). Its header `source` is
-`join` — the one native table that is not a byte reading: every signal it uses
-is already materialised by `src/artifact/*` or by `react-modules.jsonl`, and
-nothing is re-derived from bytecode or DEX bytes here. Row:
+(`index/strings.json` + `index/string-uses.jsonl` + `index/globals.jsonl` +
+`index/functions.jsonl`) and the native tables above; with no JS half the file
+is simply absent (an absent seam table says "not joinable", which is the
+truth). Its header `source` is `join` — the one native table that is not a
+byte reading: every signal it uses is already materialised by
+`src/artifact/*` or by `react-modules.jsonl`, and nothing is re-derived from
+bytecode or DEX bytes here. A function is anchored into a channel (in scope
+for `NativeModules`/`TurboModuleRegistry`/`requireNativeComponent`) by a
+materialised GLOBAL read of the host name in `globals.jsonl`, OR an exact
+`property-get`/`global-name` string-use of the host name in that function or
+any of its lexical ancestors (`functions.jsonl` `parent`, walked to full
+depth) — a real Metro bundle binds these as a `require("react-native")`
+local, never a global, so the string-use path is the one that matters on real
+bundles (spec 27 L3's "Anchor fix" note). Row:
 
 ```json
 {"key":"seam:Crypto.generateKey","jsName":"Crypto","jsMethod":"generateKey",

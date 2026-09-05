@@ -216,7 +216,12 @@ test("no JS artifact -> no seams table at all, and the join is pure (same inputs
   // is either linked / js-only / native-only with the documented nullness.
   const modules = buildNativeTables(openApk(APK)).reactModules;
   const j = joins[0]!;
-  const js = { strings: j.strings, stringUses: j.stringUses, globals: jsonl(j.dir, "index/globals.jsonl") as never };
+  const js = {
+    strings: j.strings,
+    stringUses: j.stringUses,
+    globals: jsonl(j.dir, "index/globals.jsonl") as never,
+    functions: jsonl(j.dir, "index/functions.jsonl") as never,
+  };
   assert.deepEqual(buildSeams(js, modules), buildSeams(js, modules));
   assert.deepEqual(buildSeams(null, modules).map((r) => r.status), modules.map(() => "native-only"));
   for (const row of j.seams) {
@@ -227,4 +232,42 @@ test("no JS artifact -> no seams table at all, and the join is pure (same inputs
   const keys = j.seams.map((r) => r.key);
   assert.deepEqual(keys, [...keys].sort(), "seams.jsonl is sorted by its primary key");
   assert.equal(new Set(keys).size, keys.length, "seam keys are unique");
+});
+
+test("both real anchor shapes link the same seam: inline chain (a) and module-top capture via functions.jsonl parent (b)", () => {
+  for (const j of joins) {
+    const row = find(j, "seam:Crypto.generateKey");
+    assert.ok(row !== undefined && row.status === "linked", `v${j.version}: seam:Crypto.generateKey must be linked`);
+    const fns = row!.jsEvidence!.callSites.map((c) => Number(c.slice("fn:".length)));
+    assert.ok(fns.length >= 2, `v${j.version}: expected evidence from both boundary shapes, got fns=${JSON.stringify(fns)}`);
+
+    const functions = jsonl(j.dir, "index/functions.jsonl") as { fn: number; parent: number | null }[];
+    const parentOf = new Map(functions.map((f) => [f.fn, f.parent]));
+    const nativeModulesSid = [...j.strings.entries()].find(([, v]) => v === "NativeModules")?.[0];
+    assert.ok(nativeModulesSid !== undefined, `v${j.version}: "NativeModules" must be a materialised string`);
+    const hasAnchorHere = (fn: number): boolean => j.stringUses.some((u) => u.fn === fn && u.sid === nativeModulesSid && (u.role === "property-get" || u.role === "global-name"));
+
+    // Shape (a) inline: at least one cited function carries the "NativeModules"
+    // anchor string-use itself (same function as the Crypto/generateKey uses).
+    const inlineFns = fns.filter(hasAnchorHere);
+    assert.ok(inlineFns.length >= 1, `v${j.version}: expected an inline-shape function citing "NativeModules" directly`);
+
+    // Shape (b) module-top capture: at least one cited function carries NO
+    // "NativeModules" string-use of its own, yet a lexical ancestor does —
+    // provable only by walking functions.jsonl's parent chain.
+    const captureFns = fns.filter((fn) => !hasAnchorHere(fn));
+    assert.ok(captureFns.length >= 1, `v${j.version}: expected a module-top-capture function citing no "NativeModules" use of its own`);
+    for (const fn of captureFns) {
+      let cur: number | null = parentOf.get(fn) ?? null;
+      let foundAncestorAnchor = false;
+      while (cur !== null) {
+        if (hasAnchorHere(cur)) {
+          foundAncestorAnchor = true;
+          break;
+        }
+        cur = parentOf.get(cur) ?? null;
+      }
+      assert.ok(foundAncestorAnchor, `v${j.version}: fn:${fn} has no direct "NativeModules" use, but no ancestor carries it either`);
+    }
+  }
 });
