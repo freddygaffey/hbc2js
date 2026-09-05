@@ -7,8 +7,8 @@
 // `classifySite` is exported so `check.ts` can re-derive the same verdict
 // from `before` alone (it gets no access to this match's `data`) and so unit
 // tests can assert the exact refuse reason without going through the driver.
-import type { Expr, IdentUses, Stmt } from "../ast.ts";
-import { identUses, isPure, isPureStmt, isRegisterName, registerUses, registerUsesIfMemoised } from "../ast.ts";
+import type { Expr, Stmt } from "../ast.ts";
+import { identUses, isPure, isPureStmt, isRegisterName, registerUses } from "../ast.ts";
 
 const NO_USES = { reads: 0, writes: 0, nested: 0 } as const;
 import type { Match, PassContext } from "../types.ts";
@@ -674,24 +674,9 @@ function tryDA(list: readonly Stmt[], j: number, reg: string, memo: Memo): boole
  * of it at `j`.
  */
 function isDeadAfter(list: readonly Stmt[], fnBody: readonly Stmt[], j: number, reg: string, readsAtJ: number, memo: Memo): boolean {
-  // D-a `||` D-b, two pure predicates — so the cheaper one may be tried
-  // first, and which one is cheaper depends only on whether `fnBody`'s
-  // register-use map has already been paid for. When it has (the usual
-  // case once `check.ts` carries it across each splice), D-b is one map
-  // lookup, while D-a's scan is `O(distance to `reg`'s next mention)` —
-  // unbounded, and a full walk to the end of the list for exactly the
-  // shape a module-root function is made of: a register stored once, read
-  // once and never mentioned again. That walk was `Theta(sites x
-  // list.length)` over the whole pass (`docs/BUGS.md`'s superlinear-pass
-  // row, part 5; `docs/reports/2026-09-05-perf5-match-scan.md`). Same
-  // predicates, same values, same verdict for every site — only the order
-  // of evaluation changes.
-  const warm = registerUsesIfMemoised(fnBody);
-  const dbHolds = (u: IdentUses): boolean => u.reads === readsAtJ && u.writes === 1 && u.nested === 0;
-  if (warm !== undefined && dbHolds(warm.get(reg) ?? NO_USES)) return true;
   if (tryDA(list, j, reg, memo)) return true;
-  if (warm !== undefined) return false; // D-b already asked and answered above
-  return dbHolds(registerUses(fnBody).get(reg) ?? NO_USES); // one memoised walk per fnBody, not one per candidate (P-1)
+  const u = registerUses(fnBody).get(reg) ?? NO_USES; // one memoised walk per fnBody, not one per candidate (P-1)
+  return u.reads === readsAtJ && u.writes === 1 && u.nested === 0;
 }
 
 /** §4's whole matcher for one candidate store `L[i] = reg <- value`, tried
