@@ -233,6 +233,24 @@ timeline (§4.3); and `<hbc>.names.json` remains available as an EXPORT
 (§3.3), so any external consumer of that format keeps working. §10 Q1 asks the
 reviewer to confirm this reversal.
 
+**Finding status transitions on the DB path (2026-09-05).** `kind='status'`
+is in the `revisions` CHECK list above, but no `d_status` detail table ships
+in this DDL, so a transition has nowhere to store its `from`/`to`/`finding`
+triple. `ProjectService.setFindingStatus` therefore WRITES a transition as a
+fresh `kind='finding'` revision on the finding's own slot (same `finding_no`,
+same claim, same severity, the new `status`, the transition's evidence refs
+appended after the claim's), and `src/projdb/project-read.ts`'s
+`splitFindingRevisions` READS that folding back apart: such a revision is
+handed to `FindingStore` as a synthetic `StatusRecord` whose `finding` is the
+claim revision it supersedes, and that claim revision stays the live
+(`active`) `FindingRecord`. The pair is exactly what spec 11 §1.5 mandates
+(an immutable claim row plus an append-only transition chain), so a DB-backed
+project and a JSONL-backed one answer `findings`/`finding show`/`stat`
+identically, with a finding `rid` that is stable across a transition. A real
+`d_status` table would make the write side symmetrical too; until then the
+read-side split is the normative reconstruction (docs/BUGS.md 2026-09-05
+row).
+
 ### 2.4 Derived index stratum — spec 10 §2, one table per JSONL kind
 
 Same fields, same semantics, same sort keys (now `PRIMARY KEY`s). All columns
