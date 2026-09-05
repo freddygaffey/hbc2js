@@ -349,10 +349,15 @@ function loadFixture(name: string, version: number, variant: string): Uint8Array
   return new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", name, `v${version}${variant}.hbc`)));
 }
 
-/** Distinct register variables declared by the emitter's `let r…` decls. */
+/** Distinct register variables still carrying a plain `rN` name, whether
+ *  hoisted into the leading `let r…, …;` decl or (docs/BUGS.md 2026-09-01
+ *  "register prologue", F26) declared inline at its first assignment as
+ *  `let rN = …;` — either form is still an un-renamed register to this
+ *  count. */
 function declaredRegisters(code: string): number {
   let n = 0;
   for (const m of code.matchAll(/^\s*let ((?:\w+, )*\w+);$/gm)) n += m[1]!.split(", ").filter((x) => /^r\d+$/.test(x)).length;
+  n += [...code.matchAll(/^\s*let r\d+ = /gm)].length;
   return n;
 }
 

@@ -356,9 +356,17 @@ test("v94 shape: 19-var-hoisting fn#1 'demo' — guard-`if`s between accesses do
   const code = decompile(loadFixture("19-var-hoisting", 94, ""), { moduleName: "x" }).code;
   // reg-split (docs/specs/passes/19-reg-split.md §Q3) may give each of these
   // 5 base registers its own disjoint-web `rN_j` names on top of `rN` — the
-  // collapse-to-5-*base*-registers property under test is unaffected, so
-  // each base name below optionally admits `_\d+` children.
-  assert.match(code, /let r0(?:, r0_\d+)*, r1(?:, r1_\d+)*, r2(?:, r2_\d+)*, r3(?:, r3_\d+)*, r4(?:, r4_\d+)*;/, "14 registers collapse to 5 base registers");
+  // collapse-to-5-*base*-registers property under test is unaffected. Since
+  // docs/BUGS.md 2026-09-01 "register prologue" (F26), a register whose
+  // first definition is a plain top-level statement no longer sits in a
+  // leading hoisted decl at all — it is declared inline at that definition
+  // (`let rN = …;`) — so the collapse is asserted on which base register
+  // numbers occur anywhere in `demo`'s body, not on one decl line.
+  const demoStart = code.indexOf("function demo(");
+  const demoEnd = code.indexOf("\n    function hoistedFn(", demoStart);
+  const demoBody = code.slice(demoStart, demoEnd === -1 ? undefined : demoEnd);
+  const baseRegisters = new Set([...demoBody.matchAll(/\br(\d+)(?:_\d+)?\b/g)].map((m) => m[1]));
+  assert.deepEqual([...baseRegisters].sort((a, b) => Number(a) - Number(b)), ["0", "1", "2", "3", "4"], "14 registers collapse to 5 base registers");
   assert.match(code, /r2(?:_\d+)?\("x before declaration:", r3(?:_\d+)?\);/, "r2 (impure, non-adjacent) stays a name; the pure literal folds in, and call-shape now proves this-undefined and drops Reflect.apply");
   assert.match(code, /print\("x after assignment:", 1\);/, "an adjacent impure read (no intervening statement) folds, and call-shape now proves this-undefined and drops Reflect.apply");
   assert.match(code, /r4(?:_\d+)?\("x reassigned in block:", r0\);/);
