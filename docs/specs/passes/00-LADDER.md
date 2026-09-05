@@ -44,7 +44,7 @@ spec states the per-version shape it has read (catalogue confidence rule).
 | `for-in` | 9 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | batch 2 |
 | `for-of` | 10 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21; v99 `Mov`-refreshes the `IteratorNext` source and the normal-close state register) | 06, 07 | all | `IteratorBegin` + `IteratorNext` loop + two `IteratorClose` sites → `for (v of it)` | batch 2 |
 | `label-clean` | 5 (single-version; the rung is IR hygiene, row is evidence only) | 08, 11 | all | unused labels; `labeled{…; break L}` whose only use is the final break; `seq` of one | done (rung 7, re-enabled 2026-08-31 after infinite-loop fix) |
-| `try-shape` | 11 | 14, 15 | all | `try` whose handler never reads `catchRegister` → `catch {}`; `__pc` range guard that covers the whole region → plain `catch` | batch 4, `after: [finally-dedup]` |
+| `try-shape` | 11 | 12-16 | all | `try` whose handler never reads `catchRegister` → `catch {}`; `__pc` range guard provably always true when the handler runs → no guard printed | **done (2026-09-05, spec 22)**; `after: [finally-dedup]` not yet declared — `finally-dedup` is unbuilt (§5.1), add it when that rung lands; annotation-only, not CF-preserving (§4.3 corrected below, spec 22 §6.1) |
 
 Row 27 (obfuscated control-flow flattening) needs **no rung**: Hermes's own
 front end collapses the dispatcher. The obfuscation rung that remains is
@@ -69,7 +69,7 @@ front end collapses the dispatcher. The obfuscation rung that remains is
 | `class-recover` | 20 (v99 only; ≤98 shape unmeasured) | 32–36 | 99 (≤98 later) | `CreateBaseClass/DerivedClass` + `Constructor<>`/`NCFunction<>` + `<instance_members_initializer>` → `class` | batch 4, `after: [call-shape, fn-naming]` |
 | `arguments-form` | 16 (single-version) | 42, 49 | all | `__hbc_arguments` reads where no param slot aliases → `arguments` | batch 4 |
 | `literal-forms` | 45, 46, 47, 55 (needs rows) | 45, 46, 47, 55 | all | `new RegExp("…","g")` from a regex-table literal → `/…/g`; BigInt table → `123n`; `typeofIs` mask helper → `typeof x === "…"` chains | batch 4 |
-| `try-clean` | 11, 12 | 12–16 | all | `__pc =` stores and `__exc` copies no handler reads → removed; `__pc = -1` frame → removed | batch 4, `after: [expr-rebuild]`; stage-A `try-shape` first |
+| `try-clean` | 11, 12 | 12–16 | all | `__pc =` stores and `__exc` copies no handler reads → removed; `__pc = -1` frame → removed | **done (2026-09-05, spec 22)**, `after: [expr-rebuild]`; stage-A `try-shape` first |
 | `jsx-recover` | D20, R6 | 59, bundles | all | `React.createElement(T, p, …c)` / `jsx(T, {…children})` trees → JSX (opt-in `--jsx`; spilled callee/type/config registers resolved and absorbed per spec 08 implementation notes) | **merged 2026-09-01**, opt-in; §5.3; **reordered 2026-09-03 (D23)** to last-of-structure-recovery (was last overall), before the renaming block |
 | `string-array-decode` | R7 (needs row) | `.obf` variants | all | obfuscator string-array accessor `_0x…(i)` → the literal | **hard** §5.5 |
 | `closure-naming` | R5 cross-function part | 17, 18, 21, 22 | all | consistent env-slot names across every function touching the slot | **hard** §5.4 |
@@ -240,8 +240,8 @@ are never rewritten by any rung except the generator rungs.
 
 | Class | Rungs | Obligation |
 |---|---|---|
-| **CF-preserving (stage A)** | finally-dedup, switch-raise, if-chain, yield/gen, try-shape, label-clean | `blocksMultiset(before)` = `blocksMultiset(after)` minus the duplicates the rung *declares* it removed; every `break`/`continue` label in `after` resolves; then the driver's whole-function round-trip |
-| **Annotation-only (stage A)** | loop-cond, for-header, for-in, for-of | `sameShape(before, after)` + the semantic predicate the annotation asserts (`firstTestHolds`, liveness of the step register, the iterator register is not read after `IteratorClose`) |
+| **CF-preserving (stage A)** | finally-dedup, switch-raise, if-chain, yield/gen, label-clean | `blocksMultiset(before)` = `blocksMultiset(after)` minus the duplicates the rung *declares* it removed; every `break`/`continue` label in `after` resolves; then the driver's whole-function round-trip |
+| **Annotation-only (stage A)** | loop-cond, for-header, for-in, for-of, try-shape | `sameShape(before, after)` + the semantic predicate the annotation asserts (`firstTestHolds`, liveness of the step register, the iterator register is not read after `IteratorClose`) |
 | **Expression-only (stage B)** | expr-rebuild, call-shape, global-access, sugar rungs, try-clean, class-recover, jsx | `effectSequence(before)` deep-equals `effectSequence(after)`; `parses(after)`; no `rN` read before its def was introduced. An *effect* is, in order: `call`/`new` (callee + arg count), `member` write, `delete`, `throw`, `return`, `assign` to a name with `nested > 0` or non-`rN`, and any `member` **read** (getters are effects). Pure operations may move; nothing else may. This is O(n) over the statement list — no round-trip, no CFG. |
 | **Alpha-renaming (stage B)** | fn-naming, var-naming, closure-naming | `freeNames` unchanged after renaming back; the new name is not in `freeNames` of any enclosing or nested `func`; printing `before` and `after` with the rename undone is byte-identical |
 

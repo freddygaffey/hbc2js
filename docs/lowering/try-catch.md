@@ -129,3 +129,22 @@ emitter-side and version-independent by construction (it keys on
 `ExceptionRegion`, which every version has), but that is an argument, not a
 reading — spec 22 §7 open question 3 asks the implementer to confirm it while
 running the fixture tests and to update this section.
+
+Confirmed 2026-09-05 (`try-shape`/`try-clean` landing): the default pipeline
+(both rungs on) at v84, v96 and v98 reproduces the same reduced-scaffolding
+shapes as v94/v99 on fixtures 12-16 — e.g. fixture 13's `cleanup` keeps
+exactly one surviving `__pc` store range and one guard at all five versions
+(`grep -c "__pc =" ` on the default-pipeline decompile: 3 at v84/v96/v98,
+matching v94/v99's own post-`try-clean` count). No version-specific shape
+difference found; both rungs ship without a `versions` restriction as spec
+22 §2 anticipated.
+
+**Correction (PUSHBACK P-18, docs/PUSHBACK.md):** the `[0,1]` guard measured
+above for fixture 12 (`f2`) is not, in fact, ever consulted at either
+version: `f2`'s outer region's only over-reaching block is a bare
+`return 'finally-wins';` (`LoadConstString`/`Ret` — neither can throw,
+`src/passes/tree.ts`'s `canThrow`), and its inner region has no over-reach at
+all. `try-shape` proves both guards redundant and `f2` ends up with **no**
+`__pc` scaffolding whatsoever. Fixture 13's `cleanup` (`[1,1]`) is the
+worked example of a guard that *does* survive: its over-reach is the block
+compiling `log.push('cleanup')` — a real call, which can throw.
