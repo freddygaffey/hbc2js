@@ -847,6 +847,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     body,
     ownedEnvSlots: input.ownedEnvSlots,
     envParent: envParentMap(input.envGraph),
+    movableChild: (childName) => movableChild(input.envGraph, fn.index, childName),
   });
   for (const r of rebuilt.refusals) {
     input.diagnostic({ severity: "info", code: "W_IIFE_REFUSED", message: `iife-reconstruct left env ${r.env} of fn#${fn.index} flat: ${r.reason}`, context: { functionIndex: fn.index, reason: r.reason } });
@@ -855,6 +856,22 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     input.diagnostic({ severity: "info", code: "W_IIFE_RECONSTRUCTED", message: `iife-reconstruct wrapped ${rebuilt.wrapped.length} inlined IIFE(s) in fn#${fn.index}`, context: { functionIndex: fn.index, count: rebuilt.wrapped.length } });
   }
   return { k: "func", name, params, body: rebuilt.stmts };
+}
+
+/**
+ * Spec 27: only a function created exactly once, here, by a `Create*Closure`
+ * of this body may travel into a reconstructed IIFE. Anything else is HOSTED
+ * (an orphan, or a per-creation-context copy) and is named from another
+ * function, which the wrapper would hide.
+ */
+function movableChild(envGraph: EnvGraph, functionIndex: number, childName: string): boolean {
+  const m = /^_fn(\d+)$/.exec(childName);
+  if (m === null) return false;
+  const child = Number(m[1]);
+  const sites = envGraph.closureCreationSites.get(child);
+  if (sites === undefined || sites.size !== 1) return false;
+  for (const key of sites.keys()) if (key.slice(0, key.indexOf(":")) !== String(functionIndex)) return false;
+  return true;
 }
 
 /** env id -> parent env id, for spec 27's "parent of a sibling" guard. */

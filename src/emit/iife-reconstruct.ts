@@ -54,6 +54,14 @@ export interface IifeReconstructInput {
   /** True for a lowered generator body, whose statements live in a re-entered
    *  same-frame closure: never wrapped. */
   readonly isGeneratorBody?: boolean;
+  /**
+   * May this hoisted child declaration travel into the IIFE? False for a
+   * function this body only HOSTS (an orphan, or a copy created at more than
+   * one site, src/emit/placement.ts): another function elsewhere in the module
+   * names it, and moving it inside a wrapper makes that name unbound
+   * (`E_UNBOUND_IDENT`). Defaults to refusing everything.
+   */
+  readonly movableChild?: (name: string) => boolean;
 }
 
 type Obj = Record<string, unknown>;
@@ -300,6 +308,16 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
       refuse(env, "closure spans two environments");
       continue;
     }
+    if (!kids.every((c) => input.movableChild?.(c.name) === true)) {
+      refuse(env, "hosted closure cannot move into the range");
+      continue;
+    }
+    // A closure that stays outside may not name one that moves in.
+    const moving = new Set(kids.map((c) => c.name));
+    if (children.some((c) => !moving.has(c.name) && mentionsAny(input.header[c.index], moving))) {
+      refuse(env, "moved closure named from outside the range");
+      continue;
+    }
     for (const c of kids) mine.add(c.name);
 
     let from = -1;
@@ -343,6 +361,15 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
     for (let i = 0; i < input.body.length; i++) {
       if (i >= c.from && i <= c.to) continue;
       if (mentionsAny(input.body[i], c.slots)) leaks = true;
+    }
+    // ...and the range may not touch a SIBLING environment's slots. A closure
+    // emitted inside the range that reads another of the function's
+    // environments would gain a scope level from the wrapper, so its parent
+    // chain no longer matches the original (`diff:GetParentEnvironment/...`).
+    const foreign = new Set<string>();
+    for (const name of owned) if (!c.slots.has(name)) foreign.add(name);
+    for (let i = c.from; i <= c.to; i++) {
+      if (mentionsAny(input.body[i], foreign)) leaks = true;
     }
     for (const child of children) {
       if (c.childIndices.includes(child.index)) continue;
