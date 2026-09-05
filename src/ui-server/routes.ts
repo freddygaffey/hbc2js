@@ -260,18 +260,26 @@ const BASE_ROUTES: readonly Route[] = [
       if (q === undefined) return badRequest("search/functions: ?q= is required");
       const regex = qBool(req.query.regex);
       const cursor = qNum(req.query.cursor);
-      return ok(ctx.resources.searchFunctions(q, { ...(regex !== undefined ? { regex } : {}), ...(cursor !== undefined ? { cursor } : {}) }));
+      const limit = qNum(req.query.limit);
+      return ok(ctx.resources.searchFunctions(q, { ...(regex !== undefined ? { regex } : {}), ...(cursor !== undefined ? { cursor } : {}), ...(limit !== undefined ? { limit } : {}) }));
     },
   },
   {
     method: "GET",
     re: /^\/api\/search\/source$/,
-    handler: (_p, req, ctx) => {
+    // Off the event loop\'s critical path (`searchSourceAsync`): the scan
+    // walks every function in the bundle, and answering it inline froze the
+    // WHOLE server for 83 s on a real 12 MB app -- seven `/api/jobs` probes
+    // issued over 70 s all timed out and then completed in 0 ms the instant
+    // the search returned (docs/BUGS.md "search/source blocks the
+    // ui-server" row). `?limit=` is pushed down into the scan.
+    handler: async (_p, req, ctx) => {
       const q = req.query.q;
       if (q === undefined) return badRequest("search/source: ?q= is required");
       const regex = qBool(req.query.regex);
       const cursor = qNum(req.query.cursor);
-      return ok(ctx.resources.searchSource(q, { ...(regex !== undefined ? { regex } : {}), ...(cursor !== undefined ? { cursor } : {}) }));
+      const limit = qNum(req.query.limit);
+      return ok(await ctx.resources.searchSourceAsync(q, { ...(regex !== undefined ? { regex } : {}), ...(cursor !== undefined ? { cursor } : {}), ...(limit !== undefined ? { limit } : {}) }));
     },
   },
   // -- xref (spec 17 §1/§14) --
@@ -359,11 +367,16 @@ const BASE_ROUTES: readonly Route[] = [
     // lead C1). Live verb, no UI pane yet — contracts-only for now.
     method: "GET",
     re: /^\/api\/template-injections$/,
-    handler: (_p, req, ctx) => {
+    // Same head-of-line-blocking class as `search/source` above: 23 s for
+    // two rows on a real 12 MB app, because the ranked scan must decode
+    // every function before `limit` can be applied. `templateInjectionsAsync`
+    // yields the event loop while it runs, and caches the scan after the
+    // first call (docs/BUGS.md "template-injections blocks the ui-server").
+    handler: async (_p, req, ctx) => {
       const moduleId = qNum(req.query.module);
       const limit = qNum(req.query.limit);
       return ok(
-        ctx.resources.templateInjections({
+        await ctx.resources.templateInjectionsAsync({
           ...(moduleId !== undefined ? { module: moduleId } : {}),
           ...(limit !== undefined ? { limit } : {}),
         }),

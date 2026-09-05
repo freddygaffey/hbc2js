@@ -55,6 +55,7 @@
 import { decodeFunction, type DecodedFunction, type Instruction } from "../disasm/decode.ts";
 import { argSlotBase } from "../emit/semantics.ts";
 import type { HbcModule } from "../parse/types.ts";
+import { drainSync, type Steps } from "../incremental.ts";
 
 /** Longest prefix/suffix text reported per row; longer text is cut from the
  *  QUOTE end (the end nearest the hole) and suffixed/prefixed with `…` — the
@@ -335,10 +336,22 @@ export function scanFunction(mod: HbcModule, decoded: DecodedFunction, moduleOf:
  *  .templateInjections`) memoises this so repeated filtered queries are
  *  free. */
 export function scanTemplateInjections(mod: HbcModule, moduleOf: (fn: number) => number | null): TemplateInjectionScan {
+  return drainSync(scanTemplateInjectionsSteps(mod, moduleOf));
+}
+
+/** The same scan as {@link scanTemplateInjections}, expressed as steps (one
+ *  `yield` per function) so a caller on a shared event loop can drain it
+ *  without freezing every other request for the whole pass — it decodes
+ *  EVERY function in the bundle, 23 s on a real 12 MB app
+ *  (`src/incremental.ts`, docs/BUGS.md "template-injections blocks the
+ *  ui-server" row). `scanTemplateInjections` is this generator drained
+ *  straight through, so the two can never disagree. */
+export function* scanTemplateInjectionsSteps(mod: HbcModule, moduleOf: (fn: number) => number | null): Steps<TemplateInjectionScan> {
   const rows: TemplateInjectionRow[] = [];
   let scanned = 0;
   let failed = 0;
   for (let fnIndex = 0; fnIndex < mod.functions.length; fnIndex++) {
+    yield;
     let decoded: DecodedFunction;
     try {
       decoded = decodeFunction(mod, fnIndex);

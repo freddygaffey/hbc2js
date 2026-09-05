@@ -181,7 +181,9 @@ test("route: GET /api/template-injections passes filters through", async () => {
   let seen: unknown;
   const ctx = {
     resources: {
-      templateInjections: (opts: unknown) => {
+      // The route calls the non-blocking entry point (`src/incremental.ts`,
+      // D33); same options, same answer -- only the drain differs.
+      templateInjectionsAsync: (opts: unknown) => {
         seen = opts;
         return { rows: [], total: 0, truncated: false, scanned: 0, failed: 0 };
       },
@@ -196,7 +198,9 @@ test("route: GET /api/template-injections with no query uses the service default
   let seen: unknown;
   const ctx = {
     resources: {
-      templateInjections: (opts: unknown) => {
+      // The route calls the non-blocking entry point (`src/incremental.ts`,
+      // D33); same options, same answer -- only the drain differs.
+      templateInjectionsAsync: (opts: unknown) => {
         seen = opts;
         return { rows: [], total: 0, truncated: false, scanned: 0, failed: 0 };
       },

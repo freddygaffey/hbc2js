@@ -6,7 +6,9 @@
 // an already-open `ArtifactService`, deriving every answer from data the
 // shipped index already carries (call-graph, native surface, string xrefs)
 // — no new store, no network, no unbounded output.
+import { readFileSync } from "node:fs";
 import type { ArtifactService } from "../artifact/service.ts";
+import { drainAsync, drainSync, type Steps } from "../incremental.ts";
 
 // -- leads / security-sinks ------------------------------------------------
 
@@ -151,6 +153,24 @@ export interface SearchPage<T> {
   readonly total: number;
   readonly truncated: boolean;
   readonly nextCursor: number | null;
+  /** Set only when the scan STOPPED EARLY because the caller passed an
+   *  explicit `limit` and the page was already full (`search/source`):
+   *  `total` is then a lower bound on the number of matches, not the count.
+   *  Absent (never `false`) on a complete scan, so an unbounded query's
+   *  answer is byte-identical to what it always was. */
+  readonly partial?: true;
+}
+
+/** Options every `search/*` resource takes. `limit` only ever NARROWS the
+ *  page (clamped into `[1, SEARCH_PAGE_CAP]`) — it can never widen a cap —
+ *  and, for `search/source`, it is pushed down into the scan itself: the
+ *  walk stops as soon as the page plus one row (enough to know whether
+ *  there is a next page) is filled, which is what makes a type-ahead query
+ *  from the UI's string-search box cheap. */
+export interface SearchOptions {
+  readonly regex?: boolean;
+  readonly cursor?: number;
+  readonly limit?: number;
 }
 
 const SEARCH_PAGE_CAP = 50;
@@ -166,11 +186,19 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function paginate<T>(all: readonly T[], cursor: number): SearchPage<T> {
+/** A caller-supplied `?limit=` clamped into `[1, SEARCH_PAGE_CAP]`; absent
+ *  or nonsense means the full page. Never widens the cap. */
+function clampSearchLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit) || limit < 1) return SEARCH_PAGE_CAP;
+  return Math.min(Math.floor(limit), SEARCH_PAGE_CAP);
+}
+
+function paginate<T>(all: readonly T[], cursor: number, pageSize: number = SEARCH_PAGE_CAP, partial = false): SearchPage<T> {
   const start = Math.max(0, cursor);
-  const rows = all.slice(start, start + SEARCH_PAGE_CAP);
+  const rows = all.slice(start, start + pageSize);
   const nextCursor = start + rows.length < all.length ? start + rows.length : null;
-  return { rows, total: all.length, truncated: all.length > SEARCH_PAGE_CAP, nextCursor };
+  const page: SearchPage<T> = { rows, total: all.length, truncated: all.length > pageSize, nextCursor };
+  return partial ? { ...page, partial: true } : page;
 }
 
 export interface FunctionMatch {
@@ -183,7 +211,7 @@ export interface FunctionMatch {
  *  the artifact, paginated. The safe, typed replacement for the cut `query`
  *  (§14): "finding the licence-validity function" without dumping the
  *  whole function table. */
-export function searchFunctions(artifact: ArtifactService, query: string, opts: { readonly regex?: boolean; readonly cursor?: number } = {}): SearchPage<FunctionMatch> {
+export function searchFunctions(artifact: ArtifactService, query: string, opts: SearchOptions = {}): SearchPage<FunctionMatch> {
   const re = opts.regex === true ? new RegExp(query, "i") : new RegExp(escapeRegex(query), "i");
   const all: FunctionMatch[] = [];
   let scanned = 0;
@@ -194,7 +222,7 @@ export function searchFunctions(artifact: ArtifactService, query: string, opts: 
     const size = summary.lines !== null ? summary.lines[1] - summary.lines[0] + 1 : null;
     all.push({ fn, name: artifact.acceptedFnName(fn) ?? summary.overlayName ?? name, size });
   }
-  return paginate(all, opts.cursor ?? 0);
+  return paginate(all, opts.cursor ?? 0, clampSearchLimit(opts.limit));
 }
 
 export interface SourceMatch {
@@ -211,31 +239,111 @@ const SOURCE_MATCH_TEXT_CAP = 200;
  *  source range, paginated. Skips functions with no recorded range (no
  *  `--split`/`init` output for them — native/unresolved, same cases
  *  `source`/`context` already skip). */
-export function searchSource(artifact: ArtifactService, query: string, opts: { readonly regex?: boolean; readonly cursor?: number } = {}): SearchPage<SourceMatch> {
-  const re = opts.regex === true ? new RegExp(query, "i") : new RegExp(escapeRegex(query), "i");
-  const all: SourceMatch[] = [];
-  let scanned = 0;
-  for (const { fn, name } of artifact.listFns()) {
-    if (scanned >= SEARCH_SCAN_CAP) break;
-    const summary = artifact.fn(fn);
-    if (summary.lines === null) continue;
-    scanned++;
-    let text: string;
+/** Module text read once per file for the duration of ONE scan. The old
+ *  `search/source` called `artifact.source(fn)` per function, which
+ *  `readFileSync`s and splits the WHOLE module file every time — 15,000
+ *  functions over 4,510 modules re-read the same text dozens of times each.
+ *  Bounded to {@link MODULE_TEXT_CACHE} files so a bundle-wide scan holds a
+ *  handful of module files, never the whole rendered tree; functions are
+ *  walked in `fn` order and a module owns a contiguous run of them, so the
+ *  hit rate is ~1 read per module either way. Per-scan, never shared: a
+ *  later scan re-reads, so a re-decompile or a write is never served stale. */
+const MODULE_TEXT_CACHE = 64;
+
+class ModuleTextCache {
+  private readonly cache = new Map<string, readonly string[] | null>();
+  private readonly artifact: ArtifactService;
+  constructor(artifact: ArtifactService) {
+    this.artifact = artifact;
+  }
+  lines(file: string): readonly string[] | null {
+    const hit = this.cache.get(file);
+    if (hit !== undefined) return hit;
+    let value: readonly string[] | null;
     try {
-      text = artifact.source(fn);
+      value = readFileSync(this.artifact.modulePath(file), "utf8").split("\n");
     } catch {
-      continue;
+      value = null;
     }
-    const lines = text.split("\n");
-    const startLine = summary.lines[0];
+    if (this.cache.size >= MODULE_TEXT_CACHE) {
+      const oldest = this.cache.keys().next();
+      if (oldest.done !== true) this.cache.delete(oldest.value);
+    }
+    this.cache.set(file, value);
+    return value;
+  }
+}
+
+/** `search/source` as steps (one `yield` per function scanned) — the single
+ *  implementation behind both {@link searchSource} (drained straight
+ *  through: MCP/CLI) and {@link searchSourceAsync} (drained yielding, so the
+ *  ui-server keeps answering every other route while a search runs; see
+ *  `src/incremental.ts` for why this is not a worker). */
+export function* searchSourceSteps(artifact: ArtifactService, query: string, opts: SearchOptions = {}): Steps<SearchPage<SourceMatch>> {
+  const re = opts.regex === true ? new RegExp(query, "i") : new RegExp(escapeRegex(query), "i");
+  const cursor = Math.max(0, opts.cursor ?? 0);
+  const pageSize = clampSearchLimit(opts.limit);
+  // `limit` pushed down: with an explicit one, the scan stops as soon as it
+  // holds the requested page plus one row (all it takes to know whether
+  // there is a next page). Without one, the walk is exhaustive and `total`
+  // stays the exact match count, as it always was.
+  const stopAt = opts.limit !== undefined ? cursor + pageSize + 1 : Number.POSITIVE_INFINITY;
+  const all: SourceMatch[] = [];
+  const texts = new ModuleTextCache(artifact);
+  let scanned = 0;
+  let partial = false;
+  for (const r of artifact.listRanges()) {
+    if (scanned >= SEARCH_SCAN_CAP) {
+      partial = true;
+      break;
+    }
+    scanned++;
+    yield;
+    let lines: readonly string[];
+    if (artifact.hasActiveNames(r.fn)) {
+      // Renamed function: `source(fn)` re-renders it, so the disk text
+      // below would match against pre-rename names. Rare (only functions
+      // with accepted `reg:F:R` names), so the slow path is fine here.
+      try {
+        lines = artifact.source(r.fn).split("\n");
+      } catch {
+        continue;
+      }
+    } else {
+      const fileLines = texts.lines(r.file);
+      if (fileLines === null) continue;
+      lines = fileLines.slice(r.lines[0] - 1, r.lines[1]);
+    }
+    const startLine = r.lines[0];
+    let name: string | null | undefined;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!;
-      if (re.test(line)) {
-        all.push({ fn, name: summary.overlayName ?? name, file: summary.file, line: startLine + i, text: line.length > SOURCE_MATCH_TEXT_CAP ? line.slice(0, SOURCE_MATCH_TEXT_CAP) : line });
-      }
+      if (!re.test(line)) continue;
+      if (name === undefined) name = artifact.overlayNameOf(r.fn) ?? r.name;
+      all.push({ fn: r.fn, name, file: r.file, line: startLine + i, text: line.length > SOURCE_MATCH_TEXT_CAP ? line.slice(0, SOURCE_MATCH_TEXT_CAP) : line });
+    }
+    if (all.length >= stopAt) {
+      partial = true;
+      break;
     }
   }
-  return paginate(all, opts.cursor ?? 0);
+  return paginate(all, cursor, pageSize, partial);
+}
+
+/** `search/source` — bounded grep over every function's own rendered source
+ *  range, paginated. Skips functions with no recorded range (no
+ *  `--split`/`init` output for them — native/unresolved, same cases
+ *  `source`/`context` already skip). */
+export function searchSource(artifact: ArtifactService, query: string, opts: SearchOptions = {}): SearchPage<SourceMatch> {
+  return drainSync(searchSourceSteps(artifact, query, opts));
+}
+
+/** {@link searchSource}'s answer, computed without holding the event loop:
+ *  the ui-server route uses this one so a search never head-of-line-blocks
+ *  the jobs rail, the code pane or anything else (docs/BUGS.md
+ *  "search/source blocks the ui-server" row). */
+export function searchSourceAsync(artifact: ArtifactService, query: string, opts: SearchOptions = {}): Promise<SearchPage<SourceMatch>> {
+  return drainAsync(searchSourceSteps(artifact, query, opts));
 }
 
 export const LEADS_CAPS = { perClass: PER_CLASS_CAP, searchPage: SEARCH_PAGE_CAP, searchScan: SEARCH_SCAN_CAP } as const;
