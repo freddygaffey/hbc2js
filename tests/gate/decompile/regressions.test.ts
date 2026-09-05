@@ -311,10 +311,19 @@ for (const version of [84, 94, 96, 99] as const) {
       const candidatePath = join(dir, "candidate.js");
       writeFileSync(candidatePath, src);
       const reference = runHermes(vm.path, hbcPath, { timeout: 10000, bytecode: true });
-      assert.ok(reference.ok, `Hermes VM run failed at v${version}: ${reference.raw}`);
-      assert.equal(reference.lines[0], "write then read: written|1", `the VM itself did not read back the written value at v${version} -- the fixture, not the decompiler, would be wrong`);
+      // The v84 release `hermes` binary (Linux, tools/get-hermesc.sh 84) prints
+      // the whole trace and then dies by signal at teardown on this fixture
+      // (SIGSEGV after "read only: 6:3"; seen on deb 2026-09-05). A signal exit
+      // with a non-empty stdout is that teardown crash, not a failed run: the
+      // trace is complete, and the line-for-line comparison below still holds
+      // it to the VM. A non-zero *status* is still a failed run.
+      const teardownCrash = !reference.ok && reference.status === null && !reference.timedOut && reference.stdout.length > 0;
+      if (teardownCrash) t.diagnostic(`Hermes VM v${version} exited by signal after printing ${reference.lines.length} lines; comparing the trace it produced`);
+      assert.ok(reference.ok || teardownCrash, `Hermes VM run failed at v${version}: ${reference.raw}`);
+      const referenceLines = teardownCrash ? reference.stdout.replace(/\n$/, "").split("\n") : reference.lines;
+      assert.equal(referenceLines[0], "write then read: written|1", `the VM itself did not read back the written value at v${version} -- the fixture, not the decompiler, would be wrong`);
       const candidate = await runProgram(candidatePath, { timeout: 10000 });
-      assert.deepEqual(printLines(candidate.records), reference.lines, `decompiled v${version} output diverges from the Hermes VM:\n${src}`);
+      assert.deepEqual(printLines(candidate.records), referenceLines, `decompiled v${version} output diverges from the Hermes VM:\n${src}`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
