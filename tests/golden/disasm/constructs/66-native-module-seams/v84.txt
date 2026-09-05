@@ -1,114 +1,200 @@
 ; hbc2js disassembly of 66-native-module-seams/v84.hbc
-; version=84 layout=B opcodeTable=hbc84 functions=9 strings=22 globalCodeIndex=0
-function #0 "global"  params=1 frame=13 env=0 flags=dbg  @0x00000240 size=233
-  0000  DeclareGlobalVar     s13 "NativeModules"
-  0005  DeclareGlobalVar     s15 "TurboModuleRegistry"
-  000a  DeclareGlobalVar     s20 "requireNativeComponent"
-  000f  DeclareGlobalVar     s11 "useCrypto"
-  0014  DeclareGlobalVar     s8 "useMissing"
-  0019  DeclareGlobalVar     s14 "useTurbo"
-  001e  DeclareGlobalVar     s21 "useComponent"
-  0023  CreateEnvironment    r2
-  0025  CreateClosure        r1, r2, f1 "requireNativeComponent"
-  002a  GetGlobalObject      r0
-  002c  PutById              r0, r1, #c1, s20 "requireNativeComponent"
-  0032  CreateClosure        r1, r2, f2 "useCrypto"
-  0037  PutById              r0, r1, #c2, s11 "useCrypto"
-  003d  CreateClosure        r1, r2, f3 "useMissing"
-  0042  PutById              r0, r1, #c3, s8 "useMissing"
-  0048  CreateClosure        r1, r2, f4 "useTurbo"
-  004d  PutById              r0, r1, #c4, s14 "useTurbo"
-  0053  CreateClosure        r1, r2, f5 "useComponent"
-  0058  PutById              r0, r1, #c5, s21 "useComponent"
-  005e  NewObject            r1
-  0060  NewObject            r3
-  0062  CreateClosure        r4, r2, f6 "generateKey"
-  0067  PutNewOwnByIdShort   r3, r4, s16 "generateKey"
-  006b  PutNewOwnByIdShort   r1, r3, s12 "Crypto"
-  006f  NewObject            r3
-  0071  CreateClosure        r4, r2, f7 "foo"
-  0076  PutNewOwnByIdShort   r3, r4, s10 "foo"
-  007a  PutNewOwnByIdShort   r1, r3, s9 "Missing"
-  007e  PutById              r0, r1, #c6, s13 "NativeModules"
-  0084  NewObject            r1
-  0086  CreateClosure        r2, r2, f8 "get"
-  008b  PutNewOwnByIdShort   r1, r2, s17 "get"
-  008f  PutById              r0, r1, #c7, s15 "TurboModuleRegistry"
-  0095  TryGetById           r3, r0, #c1, s19 "print"
-  009b  GetByIdShort         r1, r0, #c2, s11 "useCrypto"
-  00a0  LoadConstUndefined   r2
-  00a2  Call1                r1, r1, r2
-  00a6  Call2                r1, r3, r2, r1
-  00ab  TryGetById           r3, r0, #c1, s19 "print"
-  00b1  GetByIdShort         r1, r0, #c3, s8 "useMissing"
-  00b6  Call1                r1, r1, r2
-  00ba  Call2                r1, r3, r2, r1
-  00bf  TryGetById           r3, r0, #c1, s19 "print"
-  00c5  GetByIdShort         r1, r0, #c4, s14 "useTurbo"
-  00ca  Call1                r1, r1, r2
+; version=84 layout=B opcodeTable=hbc84 functions=13 strings=31 globalCodeIndex=0
+function #0 "global"  params=1 frame=17 env=0 flags=dbg  @0x00000300 size=238
+  0000  DeclareGlobalVar     s20 "__hbc_registry"
+  0005  DeclareGlobalVar     s19 "__hbc_instances"
+  000a  DeclareGlobalVar     s23 "app"
+  000f  DeclareGlobalVar     s17 "__d"
+  0014  DeclareGlobalVar     s21 "__r"
+  0019  CreateEnvironment    r1
+  001b  CreateClosure        r2, r1, f1 "__d"
+  0020  GetGlobalObject      r0
+  0022  PutById              r0, r2, #c1, s17 "__d"
+  0028  CreateClosure        r2, r1, f2 "__r"
+  002d  PutById              r0, r2, #c2, s21 "__r"
+  0033  NewObject            r2
+  0035  PutById              r0, r2, #c3, s20 "__hbc_registry"
+  003b  NewObject            r2
+  003d  PutById              r0, r2, #c4, s19 "__hbc_instances"
+  0043  GetByIdShort         r6, r0, #c1, s17 "__d"
+  0048  LoadConstUndefined   r2
+  004a  CreateClosure        r5, r1, f3 ""
+  004f  LoadConstZero        r4
+  0051  NewArray             r3, 0
+  0055  Call4                r3, r6, r2, r5, r4, r3
+  005c  GetByIdShort         r5, r0, #c1, s17 "__d"
+  0061  CreateClosure        r4, r1, f8 ""
+  0066  LoadConstUInt8       r3, 1
+  0069  NewArrayWithBuffer   r1, 1, 1, lit@0x0000
+  0071  Call4                r1, r5, r2, r4, r3, r1
+  0078  GetByIdShort         r1, r0, #c2, s21 "__r"
+  007d  Call2                r1, r1, r2, r3
+  0082  PutById              r0, r1, #c5, s23 "app"
+  0088  TryGetById           r3, r0, #c3, s24 "print"
+  008e  GetByIdShort         r4, r0, #c4, s23 "app"
+  0093  GetByIdShort         r1, r4, #c5, s12 "useCrypto"
+  0098  Call1                r1, r1, r4
+  009c  Call2                r1, r3, r2, r1
+  00a1  TryGetById           r3, r0, #c3, s24 "print"
+  00a7  GetByIdShort         r4, r0, #c4, s23 "app"
+  00ac  GetByIdShort         r1, r4, #c6, s9 "useMissing"
+  00b1  Call1                r1, r1, r4
+  00b5  Call2                r1, r3, r2, r1
+  00ba  TryGetById           r3, r0, #c3, s24 "print"
+  00c0  GetByIdShort         r4, r0, #c4, s23 "app"
+  00c5  GetByIdShort         r1, r4, #c7, s15 "useTurbo"
+  00ca  Call1                r1, r1, r4
   00ce  Call2                r1, r3, r2, r1
-  00d3  TryGetById           r1, r0, #c1, s19 "print"
-  00d9  GetByIdShort         r0, r0, #c5, s21 "useComponent"
-  00de  Call1                r0, r0, r2
-  00e2  Call2                r0, r1, r2, r0
-  00e7  Ret                  r0
+  00d3  TryGetById           r1, r0, #c3, s24 "print"
+  00d9  GetByIdShort         r3, r0, #c4, s23 "app"
+  00de  GetByIdShort         r0, r3, #c8, s30 "useComponent"
+  00e3  Call1                r0, r0, r3
+  00e7  Call2                r0, r1, r2, r0
+  00ec  Ret                  r0
 
-function #1 "requireNativeComponent"  params=2 frame=2 env=0 flags=dbg  @0x00000329 size=21
-  0000  LoadConstString      r1, s4 "component("
+function #1 "__d"  params=4 frame=3 env=0 flags=dbg  @0x000003ee size=34
+  0000  GetGlobalObject      r0
+  0002  GetByIdShort         r2, r0, #c1, s20 "__hbc_registry"
+  0007  NewObject            r1
+  0009  LoadParam            r0, 1
+  000c  PutNewOwnByIdShort   r1, r0, s27 "factory"
+  0010  LoadParam            r0, 3
+  0013  PutNewOwnByIdShort   r1, r0, s18 "deps"
+  0017  LoadParam            r0, 2
+  001a  PutByVal             r2, r0, r1
+  001e  LoadConstUndefined   r0
+  0020  Ret                  r0
+
+function #2 "__r"  params=2 frame=21 env=0 flags=dbg  @0x00000410 size=98
+  0000  LoadParam            r1, 1
+  0003  GetGlobalObject      r0
+  0005  GetByIdShort         r2, r0, #c1, s19 "__hbc_instances"
+  000a  GetByVal             r2, r2, r1
+  000e  JmpTrue              L1, r2
+  0011  GetByIdShort         r2, r0, #c2, s20 "__hbc_registry"
+  0016  GetByVal             r8, r2, r1
+  001a  NewObject            r2
+  001c  NewObject            r3
+  001e  PutNewOwnByIdShort   r2, r3, s26 "exports"
+  0022  GetByIdShort         r3, r0, #c1, s19 "__hbc_instances"
+  0027  PutByVal             r3, r1, r2
+  002b  GetByIdShort         r7, r8, #c3, s27 "factory"
+  0030  GetByIdShort         r12, r0, #c4, s21 "__r"
+  0035  GetByIdShort         r10, r2, #c5, s26 "exports"
+  003a  GetByIdShort         r9, r8, #c6, s18 "deps"
+  003f  LoadThisNS           r13
+  0041  Mov                  r14, r8
+  0044  Mov                  r11, r2
+  0047  Call                 r3, r7, 6
+  004b  GetByIdShort         r2, r2, #c5, s26 "exports"
+  0050  Ret                  r2
+L1:
+  0052  GetByIdShort         r0, r0, #c1, s19 "__hbc_instances"
+  0057  GetByVal             r0, r0, r1
+  005b  GetByIdShort         r0, r0, #c5, s26 "exports"
+  0060  Ret                  r0
+
+function #3 ""  params=6 frame=5 env=0 flags=dbg  @0x00000472 size=75
+  0000  CreateEnvironment    r0
+  0002  LoadParam            r1, 4
+  0005  NewObject            r2
+  0007  NewObject            r3
+  0009  CreateClosure        r4, r0, f4 "generateKey"
+  000e  PutNewOwnByIdShort   r3, r4, s28 "generateKey"
+  0012  PutNewOwnByIdShort   r2, r3, s13 "Crypto"
+  0016  NewObject            r3
+  0018  CreateClosure        r4, r0, f5 "foo"
+  001d  PutNewOwnByIdShort   r3, r4, s11 "foo"
+  0021  PutNewOwnByIdShort   r2, r3, s10 "Missing"
+  0025  PutById              r1, r2, #c1, s14 "NativeModules"
+  002b  NewObject            r2
+  002d  CreateClosure        r3, r0, f6 "get"
+  0032  PutNewOwnByIdShort   r2, r3, s29 "get"
+  0036  PutById              r1, r2, #c2, s16 "TurboModuleRegistry"
+  003c  CreateClosure        r0, r0, f7 ""
+  0041  PutById              r1, r0, #c3, s22 "requireNativeComponent"
+  0047  LoadConstUndefined   r0
+  0049  Ret                  r0
+
+function #4 "generateKey"  params=2 frame=2 env=0 flags=dbg  @0x000004bd size=21
+  0000  LoadConstString      r1, s7 "key("
   0004  LoadParam            r0, 1
   0007  Add                  r1, r1, r0
-  000b  LoadConstString      r0, s0 ")"
+  000b  LoadConstString      r0, s1 ")"
   000f  Add                  r0, r1, r0
   0013  Ret                  r0
 
-function #2 "useCrypto"  params=1 frame=11 env=0 flags=dbg  @0x0000033e size=28
-  0000  GetGlobalObject      r0
-  0002  GetByIdShort         r0, r0, #c1, s13 "NativeModules"
-  0007  GetByIdShort         r2, r0, #c2, s12 "Crypto"
-  000c  GetByIdShort         r1, r2, #c3, s16 "generateKey"
-  0011  LoadConstString      r0, s3 "aes-256"
-  0015  Call2                r0, r1, r2, r0
-  001a  Ret                  r0
-
-function #3 "useMissing"  params=1 frame=9 env=0 flags=dbg  @0x0000035a size=23
-  0000  GetGlobalObject      r0
-  0002  GetByIdShort         r0, r0, #c1, s13 "NativeModules"
-  0007  GetByIdShort         r1, r0, #c2, s9 "Missing"
-  000c  GetByIdShort         r0, r1, #c3, s10 "foo"
-  0011  Call1                r0, r0, r1
-  0015  Ret                  r0
-
-function #4 "useTurbo"  params=1 frame=11 env=0 flags=dbg  @0x00000371 size=28
-  0000  GetGlobalObject      r0
-  0002  GetByIdShort         r2, r0, #c1, s15 "TurboModuleRegistry"
-  0007  GetByIdShort         r1, r2, #c2, s17 "get"
-  000c  LoadConstString      r0, s1 "X"
-  0010  Call2                r0, r1, r2, r0
-  0015  GetByIdShort         r0, r0, #c3, s18 "name"
-  001a  Ret                  r0
-
-function #5 "useComponent"  params=1 frame=11 env=0 flags=dbg  @0x0000038d size=20
-  0000  GetGlobalObject      r0
-  0002  GetByIdShort         r2, r0, #c1, s20 "requireNativeComponent"
-  0007  LoadConstUndefined   r1
-  0009  LoadConstString      r0, s2 "Y"
-  000d  Call2                r0, r2, r1, r0
-  0012  Ret                  r0
-
-function #6 "generateKey"  params=2 frame=2 env=0 flags=dbg  @0x000003a1 size=21
-  0000  LoadConstString      r1, s6 "key("
-  0004  LoadParam            r0, 1
-  0007  Add                  r1, r1, r0
-  000b  LoadConstString      r0, s0 ")"
-  000f  Add                  r0, r1, r0
-  0013  Ret                  r0
-
-function #7 "foo"  params=1 frame=1 env=0 flags=none  @0x000003b6 size=6
-  0000  LoadConstString      r0, s7 "missing-foo"
+function #5 "foo"  params=1 frame=1 env=0 flags=none  @0x000004d2 size=6
+  0000  LoadConstString      r0, s8 "missing-foo"
   0004  Ret                  r0
 
-function #8 "get"  params=2 frame=2 env=0 flags=dbg  @0x000003bc size=11
+function #6 "get"  params=2 frame=2 env=0 flags=dbg  @0x000004d8 size=11
   0000  NewObject            r0
   0002  LoadParam            r1, 1
-  0005  PutNewOwnByIdShort   r0, r1, s18 "name"
+  0005  PutNewOwnByIdShort   r0, r1, s25 "name"
   0009  Ret                  r0
+
+function #7 ""  params=2 frame=2 env=0 flags=dbg  @0x000004e3 size=21
+  0000  LoadConstString      r1, s5 "component("
+  0004  LoadParam            r0, 1
+  0007  Add                  r1, r1, r0
+  000b  LoadConstString      r0, s1 ")"
+  000f  Add                  r0, r1, r0
+  0013  Ret                  r0
+
+function #8 ""  params=6 frame=13 env=1 flags=dbg  @0x000004f8 size=74
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r2, 4
+  0005  LoadParam            r3, 5
+  0008  LoadConstZero        r0
+  000a  GetByVal             r4, r3, r0
+  000e  LoadParam            r3, 2
+  0011  LoadConstUndefined   r0
+  0013  Call2                r3, r3, r0, r4
+  0018  StoreToEnvironment   r1, 0, r3
+  001c  CreateClosure        r3, r1, f9 ""
+  0021  PutById              r2, r3, #c1, s12 "useCrypto"
+  0027  CreateClosure        r3, r1, f10 ""
+  002c  PutById              r2, r3, #c2, s9 "useMissing"
+  0032  CreateClosure        r3, r1, f11 ""
+  0037  PutById              r2, r3, #c3, s15 "useTurbo"
+  003d  CreateClosure        r1, r1, f12 ""
+  0042  PutById              r2, r1, #c4, s30 "useComponent"
+  0048  Ret                  r0
+
+function #9 ""  params=1 frame=11 env=0 flags=dbg  @0x00000542 size=33
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r0, r0, #c1, s14 "NativeModules"
+  000c  GetByIdShort         r2, r0, #c2, s13 "Crypto"
+  0011  GetByIdShort         r1, r2, #c3, s28 "generateKey"
+  0016  LoadConstString      r0, s4 "aes-256"
+  001a  Call2                r0, r1, r2, r0
+  001f  Ret                  r0
+
+function #10 ""  params=1 frame=9 env=0 flags=dbg  @0x00000563 size=28
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r0, r0, #c1, s14 "NativeModules"
+  000c  GetByIdShort         r1, r0, #c2, s10 "Missing"
+  0011  GetByIdShort         r0, r1, #c3, s11 "foo"
+  0016  Call1                r0, r0, r1
+  001a  Ret                  r0
+
+function #11 ""  params=1 frame=11 env=0 flags=dbg  @0x0000057f size=33
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r2, r0, #c1, s16 "TurboModuleRegistry"
+  000c  GetByIdShort         r1, r2, #c2, s29 "get"
+  0011  LoadConstString      r0, s2 "X"
+  0015  Call2                r0, r1, r2, r0
+  001a  GetByIdShort         r0, r0, #c3, s25 "name"
+  001f  Ret                  r0
+
+function #12 ""  params=1 frame=11 env=0 flags=dbg  @0x000005a0 size=23
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  GetByIdShort         r1, r2, #c1, s22 "requireNativeComponent"
+  000c  LoadConstString      r0, s3 "Y"
+  0010  Call2                r0, r1, r2, r0
+  0015  Ret                  r0
