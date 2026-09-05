@@ -307,3 +307,36 @@ function evaluate(e: Expr, env: ReadonlyMap<string, number | boolean>): boolean 
       return undefined;
   }
 }
+
+// ---------------------------------------------------------------------------
+// F22-3 (docs/specs/passes/22-try-shape-try-clean.md §3.1): a small whitelist
+// of opcodes the MIT Hermes `BytecodeList.def` documents as unable to raise a
+// JS exception. Everything else — every arithmetic/comparison opcode
+// (`valueOf`/`Symbol.toPrimitive` can throw) and every property access — can
+// throw. Used by `try-shape` to prove a range guard is dead: refuse
+// generously, this list only ever grows by measurement, never by guessing.
+const NEVER_THROWS: ReadonlySet<string> = new Set([
+  "Mov",
+  "MovLong",
+  "LoadParam",
+  "LoadParamLong",
+  "LoadThisNS",
+  "Jmp",
+  "JmpLong",
+  "JmpTrue",
+  "JmpTrueLong",
+  "JmpFalse",
+  "JmpFalseLong",
+  "JmpUndefined",
+  "JmpUndefinedLong",
+  "Ret",
+  "Catch",
+  "Unreachable",
+]);
+
+/** `false` only for the whitelist above (plus every `LoadConst*` variant);
+ *  `true` for everything else. */
+export function canThrow(insn: Instruction): boolean {
+  if (insn.name.startsWith("LoadConst")) return false;
+  return !NEVER_THROWS.has(insn.name);
+}

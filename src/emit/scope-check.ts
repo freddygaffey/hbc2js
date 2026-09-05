@@ -244,7 +244,7 @@ function scan(program: readonly Stmt[], helperNames: readonly string[], globalIn
         return;
       case "try": {
         walkNested(s.block, scopes, where);
-        const handlerScope = new Set<string>([s.param]);
+        const handlerScope = new Set<string>(s.param === null ? [] : [s.param]);
         const nested = new Set<string>();
         collect(s.handler, nested);
         walkBody(s.handler, [...scopes, handlerScope, nested], where);

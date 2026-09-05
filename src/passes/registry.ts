@@ -19,6 +19,8 @@ import { regSplit } from "./reg-split/index.ts";
 import { switchRaise } from "./switch-raise/index.ts";
 import { jsxRecover } from "./jsx-recover/index.ts";
 import { templateLiteral } from "./template-literal/index.ts";
+import { tryClean } from "./try-clean/index.ts";
+import { tryShape } from "./try-shape/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
 
@@ -83,7 +85,28 @@ import { varNaming } from "./var-naming/index.ts";
  *  already in its collision set, and needs `call-shape` to have turned a
  *  disguised call back into a real callee so its call-result heuristic
  *  sees one. */
-export const REGISTRY: readonly Pass[] = [loopCond as Pass, forHeader as Pass, switchRaise as Pass, ifChain as Pass, labelClean as Pass, exprRebuild as Pass, globalAccess as Pass, callShape as Pass, defaultParams as Pass, destructure as Pass, spreadRest as Pass, templateLiteral as Pass, optionalChain as Pass, objectLiteral as Pass, jsxRecover as Pass, fnNaming as Pass, regSplit as Pass, varNaming as Pass];
+export const REGISTRY: readonly Pass[] = [
+  loopCond as Pass,
+  forHeader as Pass,
+  switchRaise as Pass,
+  ifChain as Pass,
+  tryShape as Pass,
+  labelClean as Pass,
+  exprRebuild as Pass,
+  globalAccess as Pass,
+  callShape as Pass,
+  defaultParams as Pass,
+  destructure as Pass,
+  spreadRest as Pass,
+  templateLiteral as Pass,
+  optionalChain as Pass,
+  objectLiteral as Pass,
+  tryClean as Pass,
+  jsxRecover as Pass,
+  fnNaming as Pass,
+  regSplit as Pass,
+  varNaming as Pass,
+];
 
 export interface EnabledPassOptions {
   readonly only?: readonly string[];
