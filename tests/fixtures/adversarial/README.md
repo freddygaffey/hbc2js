@@ -4,8 +4,8 @@ Deliberately hard-to-decompile JavaScript code designed to stress-test and find 
 
 ## Test status summary
 
-- **Total fixtures**: 47
-- **PASS through decompiler**: 40 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
+- **Total fixtures**: 48
+- **PASS through decompiler**: 41 at every compiled version (PASS-vs-VM, per D14/D22a — see the two triage notes below); `02-proxy-trap-counting`, once the one confirmed real bug, now PASSes at v94/v96/v99
 - **DIVERGE (harness verdict)**: 2, all v99-only — `21-class-private-fields` (**confirmed real bug**, `src/emit`, reproducer `constructs/58-class-accessor-pair-split`) and `43-fuzz-async-guard-shared-range` (**confirmed real bug, not yet root-caused**: candidate genuinely disagrees with the v99 Hermes VM's own trace — see docs/BUGS.md 2026-09-02, construct-fuzzer seed-base 777000 row). `20-symbol-keyed-properties` (**toolchain artefact**: npm-hermesc-v99 vs source-built-VM-v99 builtin-table mismatch; decompiler agrees with the VM) is now **PASS-with-caveat**, not DIVERGE — as of 2026-09-02 `src/harness/ladder.ts`'s D14 VM-agrees-with-candidate override is evidence-based (fires whenever `candidatePrint === hermesPrint`, not only for a curated fixture name), so this fixture's own VM-agrees evidence now overrules the Node-vs-candidate divergence directly; the underlying toolchain builtin-table gap itself is unfixed (see docs/BUGS.md's toolchain row). See "CONSOLIDATION 26 triage" below and the fuzz row above for `43`.
 - **ERROR (decompiler threw)**: 0
 - **SKIP (v94/v96 compile failure, v99 ok)**: 5 (class fixtures)
@@ -236,6 +236,27 @@ adversarial/**`, not run by `npm test`). `expected.txt` is Node's own
 captured output, as for every other fixture here — it is not expected to
 match either side's runtime wording in the try/catch branches; the fixture's
 value is the VM-vs-candidate comparison, not the Node baseline.
+
+### 48-fuzz-dowhile-nonadvancing-counter (added 2026-09-05, QUEUE 11, construct-fuzzer family F2 residual) -- PASS
+
+Terminating counterpart of construct-fuzzer find
+`reports/fuzz/finds/v99-seed777142.js`. Three `do`/`while` shapes: a counter
+loop whose `-Infinity` accumulator `++` can never advance, a loop whose test
+is a compile-time-false constant so the body must still run exactly once, and
+an `Infinity`-valued arithmetic loop feeding an array and a `join`. The find
+itself is **non-terminating by construction** -- its third loop grows an array
+under a counter `++` cannot advance, so it runs until an engine's array/heap
+ceiling -- and therefore cannot be a fixture at all (a fixture is compiled and
+traced at every version, forever; see
+`docs/reports/2026-09-05-finds-reclassified-post-fixwave4.md`, "No fixtures,
+and why"). This fixture bounds that one loop with a separate finite counter
+and keeps every surrounding construct, so the family becomes checkable: PASS
+at v94/v96/v99 against the real Hermes VM, measured
+(`tests/sweep/adversarial/fuzz-dowhile-nonadvancing-counter.test.ts`). It is
+not a red-before/green-after regression test -- the find's own bug was in
+`src/harness/ladder.ts`, fixed in `50b87c3`/`636b412` with ladder tests -- it
+is standing cover for the decompiler side of a family that the ladder can only
+ever report INCONCLUSIVE on.
 
 ## Compilation note
 
