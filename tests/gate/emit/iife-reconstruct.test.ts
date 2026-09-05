@@ -101,7 +101,12 @@ test("iife-reconstruct: a hosted closure refuses (E_UNBOUND_IDENT guard)", () =>
 });
 
 test("iife-reconstruct: interleaved environments refuse as overlapping ranges", () => {
-  const r = twoEnvs([store("_e1_0", "a"), store("_e2_0", "b"), store("_e1_0", "c")]);
+  // The interleaving must be one the section 7 regrouping cannot prove apart
+  // (docs/PUSHBACK.md P-43): a property store may run a setter, so it never
+  // moves past another environment's store. The provable case is covered by
+  // "iife-group: an interleaved group of provably independent stores ...".
+  const call: Stmt = { k: "expr", expr: { k: "call", callee: ident("f"), args: [] } };
+  const r = twoEnvs([store("_e1_0", "a"), store("_e2_0", "b"), call, store("_e1_0", "c")]);
   assert.deepEqual(r.wrapped, []);
   assert.deepEqual(new Set(r.refusals.map((x) => x.reason)), new Set(["overlapping statement ranges"]));
 });
@@ -164,3 +169,82 @@ test("iife-reconstruct: a single owned environment is never wrapped", () => {
   assert.deepEqual(r.refusals, []);
   assert.equal(r.stmts.filter((s) => s.k === "iife").length, 0);
 });
+
+// --- section 7: grouping interleaved sibling environments -------------------
+// `src/emit/iife-group.ts`. A group whose reordering is proved is wrapped; a
+// group with one unprovable swap keeps its order and refuses exactly as before
+// (`overlapping statement ranges`), with the blocking reason in `detail`.
+
+/** `x = <ident>` -- the shape the regrouping is allowed to move. */
+const set = (target: string, from: string): Stmt => store(target, from);
+
+test("iife-group: an interleaved group of provably independent stores is regrouped and wrapped", () => {
+  const r = twoEnvs([set("_e1_0", "a"), set("_e2_0", "b"), set("x", "_fn1"), set("y", "_fn2")]);
+  assert.deepEqual(r.wrapped, [1, 2], `expected both environments wrapped, refusals: ${JSON.stringify(r.refusals)}`);
+  assert.deepEqual(r.refusals, []);
+  assert.equal(r.stmts.filter((s) => s.k === "iife").length, 2);
+  // Each wrapper holds its own environment's statements and no other's.
+  for (const s of r.stmts) {
+    if (s.k !== "iife") continue;
+    const envs = new Set([...JSON.stringify(s.body).matchAll(/_e(\d+)_\d+/g)].map((m) => m[1]));
+    assert.equal(envs.size, 1, `a wrapper spans two environments: ${[...envs].join(",")}`);
+  }
+});
+
+test("iife-group: one unprovable swap leaves the whole group flat", () => {
+  // `arr[0] = _fn1` is a property store: it may run a setter, so it may not be
+  // moved past environment 2's store. This is fixture 79's shape.
+  const propStore: Stmt = { k: "expr", expr: { k: "assign", target: { k: "member", obj: ident("arr"), prop: { k: "lit", text: "0" }, computed: true }, value: ident("_fn1") } };
+  const r = twoEnvs([set("_e1_0", "a"), set("_e2_0", "b"), propStore, set("y", "_fn2")]);
+  assert.deepEqual(r.wrapped, []);
+  assert.deepEqual(
+    r.refusals.map((x) => x.reason),
+    ["overlapping statement ranges", "overlapping statement ranges"],
+  );
+  assert.ok(
+    r.refusals.every((x) => (x.detail ?? "").startsWith("swap ")),
+    `expected a blocking-swap detail, got ${JSON.stringify(r.refusals)}`,
+  );
+  assert.equal(r.stmts.filter((s) => s.k === "iife").length, 0);
+});
+
+test("iife-group: a statement naming two environments is never regrouped", () => {
+  // The largest class on react-navigation-example-0.85.3 (622 of the 757
+  // `overlapping statement ranges` environments): one statement names slots of
+  // two of them, so no reordering can put each in a wrapper of its own.
+  const r = twoEnvs([set("_e1_0", "a"), set("_e2_0", "_e1_0"), set("x", "_fn1"), set("y", "_fn2")]);
+  assert.deepEqual(r.wrapped, []);
+  assert.ok(
+    r.refusals.every((x) => x.reason === "overlapping statement ranges" && x.detail === "statement in two environments"),
+    `unexpected refusals: ${JSON.stringify(r.refusals)}`,
+  );
+});
+
+// --- fixture 79: the interleaved shape, refused ----------------------------
+
+const FIXTURE79 = join(repoRoot(), "tests", "fixtures", "constructs", "79-interleaved-envs");
+
+function decompiled79(version: number): string {
+  const bytes = new Uint8Array(readFileSync(join(FIXTURE79, `v${version}.hbc`)));
+  try {
+    return decompile(bytes).code;
+  } catch {
+    return decompile(bytes, { opcodeTable: "hbc98-late" }).code;
+  }
+}
+
+for (const version of [98, 99]) {
+  test(`79-interleaved-envs v${version}: the interleaved group stays flat`, () => {
+    if (!existsSync(join(FIXTURE79, `v${version}.hbc`))) return;
+    const code = decompiled79(version);
+    // Sibling environments are there (the fixture's point) ...
+    const flat = code.split("\n").filter((line) => {
+      if (!/^\s*let /.test(line)) return false;
+      return new Set([...line.matchAll(/_e(\d+)_\d+/g)].map((m) => m[1])).size > 1;
+    });
+    assert.ok(flat.length > 0, `v${version}: expected a flat prologue spanning two environments`);
+    // ... and none of them is wrapped: every swap the regrouping would need
+    // moves a property store past an environment store.
+    assert.equal(innerIifes(code), 0, `v${version}: an interleaved group was wrapped`);
+  });
+}
