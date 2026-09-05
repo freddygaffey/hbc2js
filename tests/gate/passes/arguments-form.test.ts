@@ -167,6 +167,58 @@ test("arguments-form owns only the helper call: the direct reads and the control
   }
 });
 
+// ---------------------------------------------------------------------------
+// Identity regression (BUGS.md 2026-09-05, `73-arguments-identity`).
+// ---------------------------------------------------------------------------
+
+test("73-arguments-identity: every reify site is unwrapped at every version (no __hbc_arguments( left)", () => {
+  for (const version of VERSIONS) {
+    const on = js("73-arguments-identity", version);
+    assert.doesNotMatch(on, /__hbc_arguments\(/, `${version}: expected every reify site to be rewritten to a bare arguments read`);
+    const off = js("73-arguments-identity", version, "none");
+    // identityNoParams, sliceEach (one or two reify sites depending on
+    // whether the version's own emit CSEs sliceEach's two reads into one
+    // register), identityStrict: at least 3 raw reify sites at every version.
+    assert.ok(count(off, REIFY) >= 3, `${version}: expected the baseline (rung off) to still reify at least 3 sites, saw ${count(off, REIFY)}`);
+  }
+});
+
+test("inlineSingleUseTemp (rewrite.ts) keeps a reify temp alive when it has a SECOND read later in the same list (BUGS 2026-09-05, sliceEach)", async () => {
+  const { inlineSingleUseTemp } = (await import(`${DIR}/rewrite.ts`)) as Any;
+  // `let r0 = arguments; r2 = slice.call(r0); ...; r1 = r0;` -- two reads of
+  // r0, the second one two statements after the temp's own definition. Before
+  // the fix, `inlineSingleUseTemp` only looked at the statement immediately
+  // following the temp's definition, saw exactly one read there, and folded
+  // the temp away regardless of the later second read -- leaving `r1 = r0;`
+  // referring to a register nothing assigns any more (silently `undefined`).
+  const body = [
+    { k: "init", name: "r0", value: { k: "argumentsObject" } },
+    { k: "expr", expr: { k: "assign", target: { k: "ident", name: "r2" }, value: { k: "ident", name: "r0" } } },
+    { k: "expr", expr: { k: "assign", target: { k: "ident", name: "r1" }, value: { k: "ident", name: "r0" } } },
+  ];
+  const after = inlineSingleUseTemp(body as Any) as Any[];
+  // r0's definition must survive (still a `let r0 = arguments;`-shaped init),
+  // and the second read must still read r0 -- neither statement may vanish
+  // or end up referring to a name nothing defines.
+  assert.equal(after.length, 3, "no statement may be dropped when r0 has a second read");
+  assert.equal(after[0]!.k, "init");
+  assert.equal(after[0]!.name, "r0");
+  assert.equal(after[0]!.value.k, "argumentsObject");
+  assert.equal(after[2]!.expr.value.k, "ident");
+  assert.equal(after[2]!.expr.value.name, "r0");
+});
+
+test("inlineSingleUseTemp still folds a genuine single-use temp (no regression on the intended case)", async () => {
+  const { inlineSingleUseTemp } = (await import(`${DIR}/rewrite.ts`)) as Any;
+  const body = [
+    { k: "init", name: "r0", value: { k: "argumentsObject" } },
+    { k: "expr", expr: { k: "assign", target: { k: "ident", name: "r2" }, value: { k: "ident", name: "r0" } } },
+  ];
+  const after = inlineSingleUseTemp(body as Any) as Any[];
+  assert.equal(after.length, 1, "the sole read folds the temp away, as before this fix");
+  assert.equal(after[0]!.expr.value.k, "argumentsObject");
+});
+
 test("arguments-form refuses a sloppy function whose parameter is written (R-A3 case a)", async () => {
   const { match } = await rung();
   // `function f(a1) { a1 = 99; return __hbc_arguments(arguments)[0]; }` -- the
