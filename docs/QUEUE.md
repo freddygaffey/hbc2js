@@ -140,6 +140,7 @@ Each landing names its acceptance test files and exact test titles in spec 26 §
 ## Reference — the full Stage plan (Fred's roadmap text, kept for provenance)
 
 ### PIVOT (Fred 2026-09-03 morning): STAGE 2 TOOLING IS NOW THE PRIORITY
+**SUPERSEDED 2026-09-05 (Fred, after the Stage-3 UI landed): "the code is not very readable at this stage ... Keep on building the ladder." The ladder is a DEFAULT lane again: specs 21 (for-in/for-of) and 22 (try-shape/try-clean) are in implementation; next arguments-form + literal-forms, class-recover, async/yield; in parallel spec 27 native-side L1-L8. The paragraph below is kept for provenance only.**
 Fred: remaining rungs "aren't strictly necessary — the main body of most of the code reads quite nice." The ladder is OPPORTUNISTIC-ONLY: remaining rungs (for-in/for-of, try-clean, arguments-form, literal-forms, try-shape; hard: generators/async, class-recover, finally-dedup, closure-naming) are picked up ONLY when a Stage-2 need or fuzz finding demands one — no default ladder lane. Default lane = the Stage-2 sequence (P2.1 → P2.7), each a researched spec by a stronger agent behind a decision-8 spec+review gate; testing-lane leftovers slot in as the second agent when disjoint.
 
 ### STAGE 2 — Analysis & tagging environment (roadmap: docs/specs/re-tooling-roadmap-IDEAS.md)
