@@ -41,7 +41,7 @@ function randomStmt(r: () => number, n: number): Stmt {
   if (pick < 0.6) return { k: "expr", expr: { k: "call", callee: id("use"), args: [id(reg)] } };
   if (pick < 0.75) return { k: "expr", expr: { k: "call", callee: id("sink"), args: [lit(String(n))] } };
   if (pick < 0.85) return { k: "if", test: id(reg), then: [{ k: "expr", expr: { k: "call", callee: id("use"), args: [id(reg)] } }], else: [] };
-  if (pick < 0.95) return { k: "while", test: lit(true), body: [{ k: "break", label: null }] };
+  if (pick < 0.95) return { k: "while", label: null, test: id("cond"), body: [{ k: "break", label: null }] };
   return { k: "break", label: null };
 }
 
