@@ -32,7 +32,6 @@ Concrete, non-overlapping. Model: **Opus** = design/hard/checker-critical or sem
 8. **optional-chain matcher without a base guard** (BUGS 2026-09-02 row) — *Sonnet*. `src/passes/optional-chain/match.ts` `matchBaseGuard` requires every run to open with a base guard; holds at v94, not elsewhere. Rung-owned assertions.
 9. **object-literal rung** (BUGS 2026-09-01 row) — *Opus (new rung spec + checker)*. `NewObject`+`PutById` chains come back as `r3 = {}; r3.x = …` instead of an object literal with own-property definitions. Files: `src/emit` / M5 ladder + spec. Why: readability of `src/` module bodies.
 10. **CFG recursion-guard on flat block chains** (BUGS 2026-08-30 row) — *Opus (hard)*. `src/structure/structure.ts` `ramsey` `maxDepth` (1500) overflows V8's real call stack on a long flat chain with no nesting; make the structurer iterative or raise/guard soundly.
-11. **Reduce the 4 remaining fuzz DIVERGENT finds to fixtures** (BUGS 2026-09-04 family-F2 row) — *Opus (semantic)*. 3 share the per-iteration-`let`-capture signature (`src/cfg` env/closure graph); 1 (`v99-seed777142`) is a mis-lowered loop condition. Reduce each with a signature-preserving predicate via `tools/fuzz/minimise-live.mjs`, land as a construct/adversarial fixture, move to PASS.
 12. **material-top-tabs sigdb coverage** (BUGS 2026-09-02 row) — *Sonnet*. `tools/pkgsig/db` has no `@react-navigation/material-top-tabs`; react-navigation-example module 1611 is a pure barrel/index that goes unattributed. Cheap, closes a classification gap.
 
 ---
@@ -53,6 +52,7 @@ Concrete, non-overlapping. Model: **Opus** = design/hard/checker-critical or sem
 
 - **`query string-uses <id>` verb** — LANDED (`1e1fe39`). Returns the use SITES, not just id+count (hunt-backlog gap #2); was QUEUE "Now" #1.
 - **Scoped single-function readable decompile** — LANDED (`0e5a700`, `feat(decompile): scoped single-function readable decompile (--fn N / decompileFunction)`). Was QUEUE "Now" #2.
+- **QUEUE 11 "reduce the 4 remaining fuzz DIVERGENT finds"** — CLOSED as stale (`4dff2f8`, P-36). All four re-run INCONCLUSIVE at 9df2ba7 (fixed by fix-wave 4 `50b87c3`+`636b412`); the item's `src/cfg` and loop-condition attributions were wrong. Landed terminating adversarial fixture 48 as standing cover. Trap: a re-run needs `tools/hermes-vm` or the finds look DIVERGENT against Node.
 - **`require(N)` dynamic-dispatch points-to pass** — LANDED (`b32fd49`, `feat(artifact): require(N) dynamic-dispatch points-to pass — resolve the receiver, not just the name`). Was QUEUE "Now" #3.
 - **Copy-`envRemap` declaration-site fix (the 2 `_e2192_0`)** — LANDED (`a58ac14`; see the closure-duplication line below). Leftover 3 diagnosis was corrected in place (`0952e04`): the `let` was already emitted, in the loop block — fixed by making the copy inline at its creation site. Was QUEUE "Now" #4.
 - **native `bridge-module` surface** — LANDED (`0a45c69`, `artifact: implement native.jsonl's bridge-module surface (BUGS 2026-09-02)`). Feeds the NativeModules JS↔native linkage (hunt gap #1); built on by spec 27. Was QUEUE "Now" #8.
