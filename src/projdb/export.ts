@@ -49,8 +49,9 @@ import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseKey } from "../name-overlay/id.ts";
 import { DbRevisionStore } from "./revision-store.ts";
+import type { DbRevision } from "./revision-store.ts";
 import { bookmarkAdapter, commentAdapter, findingAdapter, nameAdapter, tagAdapter } from "./annotations.ts";
-import type { FindingEvidenceValue } from "./annotations.ts";
+import type { FindingEvidenceValue, FindingValue } from "./annotations.ts";
 
 const UNASSIGNED_MODULE = "_unassigned";
 
@@ -228,10 +229,19 @@ export function writeAnnotationsShard(db: DatabaseSync, analysisDir: string, bin
 /** Writes the `findings/<id>.json` shard for the CURRENTLY ACTIVE finding
  *  record whose rid is `rid` — a no-op (returns `null`) if `rid` is not the
  *  live head of its slot (e.g. it has since been superseded), matching the
- *  bulk pass's own `if (!r.active) continue` skip. */
-export function writeFindingShardForRid(db: DatabaseSync, analysisDir: string, binding: StateBinding, rid: number, result: { written: string[]; unchanged: string[] }): { shardId: string; hash: string } | null {
-  const r = new DbRevisionStore(db, findingAdapter).allRecords().find((rec) => Number(rec.rid) === rid);
-  if (r === undefined || !r.active) return null;
+ *  bulk pass's own `if (!r.active) continue` skip.
+ *
+ *  `record`, when passed, IS the finding record for `rid` (already in the
+ *  caller's hand from its own `allRecords()` iteration) and is used as-is,
+ *  skipping the re-scan of every finding revision that a fresh
+ *  `new DbRevisionStore(db, findingAdapter).allRecords().find(...)` would
+ *  otherwise do on every single call. A caller that only has the bare
+ *  `rid` (no record in hand) may omit it; the scan then happens exactly as
+ *  before. See docs/BUGS.md ("writeFindingShardForRid re-scans all
+ *  records per call"). */
+export function writeFindingShardForRid(db: DatabaseSync, analysisDir: string, binding: StateBinding, rid: number, result: { written: string[]; unchanged: string[] }, record?: DbRevision<FindingValue>): { shardId: string; hash: string } | null {
+  const r = record ?? new DbRevisionStore(db, findingAdapter).allRecords().find((rec) => Number(rec.rid) === rid);
+  if (r === undefined || Number(r.rid) !== rid || !r.active) return null;
   const id = findingContentId(r.target, r.value.evidence);
   const shardId = `findings/${id}`;
   const hash = writeShard(
@@ -295,7 +305,7 @@ export function exportProject(db: DatabaseSync, projectDir: string): ExportResul
     const id = findingContentId(r.target, r.value.evidence);
     findingShardOf.set(r.rid, `findings/${id}`);
     if (!r.active) continue;
-    const w = writeFindingShardForRid(db, analysisDir, binding, Number(r.rid), result);
+    const w = writeFindingShardForRid(db, analysisDir, binding, Number(r.rid), result, r);
     if (w !== null) shardHash.set(w.shardId, w.hash);
   }
 

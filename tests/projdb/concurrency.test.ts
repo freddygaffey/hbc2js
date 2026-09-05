@@ -84,13 +84,17 @@ function runWorker(input: { writerId: string; ownDir: string; sharedAnalysisDir:
  *  submitted IDENTICALLY by both writers (dedup); `distinctCount` tuples are
  *  private to each writer, in disjoint target ranges (no lost writes, no
  *  cross-writer id collisions). Total write calls across both workers:
- *  `sharedCount * 2 + distinctCount * 2`. Known cost note: `writeFindingShardForRid`
- *  (`src/projdb/export.ts`) re-scans ALL of a DB's finding records on every
- *  call (`DbRevisionStore.allRecords()`), making both this per-finding write
- *  loop and `exportProject`'s own bulk finding pass O(n^2) in finding count —
- *  see docs/BUGS.md ("writeFindingShardForRid re-scans all records per
- *  call") — which is why the default (gate) scale below is far under 1000
- *  and the true spec-scale (§R3 metric 3, 1000 findings) run is sweep-gated. */
+ *  `sharedCount * 2 + distinctCount * 2`. Formerly-O(n^2) cost note (fixed —
+ *  see docs/BUGS.md "writeFindingShardForRid re-scans all records per
+ *  call", resolved): `writeFindingShardForRid` (`src/projdb/export.ts`) used
+ *  to re-scan ALL of a DB's finding records on every call
+ *  (`DbRevisionStore.allRecords()`), making both this per-finding write loop
+ *  (`concurrency-worker.ts`) and `exportProject`'s own bulk finding pass
+ *  O(n^2) in finding count; both call sites now pass the record they
+ *  already have in hand, so the write loop is O(n). The default (gate)
+ *  scale below stays far under 1000 for plain test-runtime hygiene; the
+ *  true spec-scale (§R3 metric 3, 1000 findings) run stays sweep-gated
+ *  (still spins up two real worker threads and does real filesystem I/O). */
 async function runConcurrencyProof(sharedCount: number, distinctCount: number): Promise<void> {
   const shared = makeTuples(0, sharedCount, "shared-finding");
   const distinctA = makeTuples(10_000, distinctCount, "writerA-finding");

@@ -30,6 +30,8 @@ import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { dbSetFinding } from "../../src/projdb/annotations.ts";
+import type { DbRevision } from "../../src/projdb/revision-store.ts";
+import type { FindingValue } from "../../src/projdb/annotations.ts";
 import { exportProject, stateBindingOf, writeFindingShardForRid } from "../../src/projdb/export.ts";
 
 interface Tuple {
@@ -51,7 +53,12 @@ const ddl = readFileSync(new URL("../../src/projdb/schema.sql", import.meta.url)
 const db = new DatabaseSync(":memory:");
 db.exec(ddl);
 
-const rids: number[] = [];
+// Keeps the freshly-minted record alongside its rid — `dbSetFinding`
+// already hands it back, so step 2 below can pass it straight into
+// `writeFindingShardForRid` instead of making that function re-scan every
+// finding revision in the DB per call (docs/BUGS.md
+// "writeFindingShardForRid re-scans all records per call").
+const records: DbRevision<FindingValue>[] = [];
 let i = 0;
 for (const t of tuples) {
   const r = dbSetFinding(
@@ -61,7 +68,7 @@ for (const t of tuples) {
     { source: "tool", who: writerId },
     { ts: `2026-09-04T00:00:00.${String(i).padStart(3, "0")}Z` },
   );
-  rids.push(Number(r.record.rid));
+  records.push(r.record);
   i++;
 }
 
@@ -73,7 +80,7 @@ const ownResult = exportProject(db, ownDir);
 // contention-free-shard-files claim under test.
 const binding = stateBindingOf(db);
 const sharedResult = { written: [] as string[], unchanged: [] as string[] };
-for (const rid of rids) writeFindingShardForRid(db, sharedAnalysisDir, binding, rid, sharedResult);
+for (const r of records) writeFindingShardForRid(db, sharedAnalysisDir, binding, Number(r.rid), sharedResult, r);
 
 parentPort?.postMessage({
   writerId,
