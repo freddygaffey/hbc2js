@@ -421,3 +421,15 @@ export function registerLiveAfter(fn: StructuredFunction, block: BlockId, index:
   };
   return walk(block, index);
 }
+
+// docs/specs/passes/29-yield-loop.md section 3 -- spec 25's F25-4
+// `restructureSegments` and the statement-list path helpers it shares with the
+// generator rungs. Framework, re-exported here because D12a lets a pass reach
+// `../tree.ts` and nothing else.
+export { childLists, mapChildLists, restructureSegments } from "./restructure.ts";
+export type { Restructure } from "./restructure.ts";
+
+// docs/specs/passes/25-yield-async-recovery.md section 3 + 29-yield-loop.md
+// section 3 -- the generator-shape analysis both generator rungs share.
+export { makeCheck, makeMatch, recover, rewriteGeneratorGroup } from "./generator-shape.ts";
+export type { RecoverOptions, Recovered, Recovery, Refusal, Refused, YieldSite } from "./generator-shape.ts";

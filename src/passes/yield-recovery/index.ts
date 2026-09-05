@@ -2,7 +2,7 @@ import type { Stmt } from "../ast.ts";
 import type { Pass } from "../types.ts";
 import { check } from "./check.ts";
 import { match } from "./match.ts";
-import type { YieldSite } from "./match.ts";
+import type { YieldSite } from "../tree.ts";
 import { rewrite } from "./rewrite.ts";
 
 /** The v<=96 opcode-driven coroutine (`docs/LOWERING-CATALOGUE.md` row 17,
