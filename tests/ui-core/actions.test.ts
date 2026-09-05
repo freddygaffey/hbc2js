@@ -27,6 +27,10 @@ function stubApi(): ActionApi {
     openGraph: noop,
     toggleGraphFollow: noop,
     cycleGraphLod: noop,
+    listingLineDown: noop,
+    listingLineUp: noop,
+    listingTokenLeft: noop,
+    listingTokenRight: noop,
     nextFn: noop,
     prevFn: noop,
     nextModule: noop,
@@ -137,5 +141,66 @@ test("view.fold/view.unfold need a listing on screen (a module, or any selection
       !registry.enabledFor(onIdentifierNoFn).map((a) => a.id).includes(id),
       `${id} should be disabled for an identifier selection with no fn (no listing to fold)`,
     );
+  }
+});
+
+// -- bur 13 (docs/UI-BURS.md #13): arrow-key navigation in the listing -----
+
+test("listing.lineDown/lineUp/tokenLeft/tokenRight are registered and gated like view.fold", () => {
+  const registry = createStandardRegistry();
+  for (const id of ["listing.lineDown", "listing.lineUp", "listing.tokenLeft", "listing.tokenRight"] as const) {
+    assert.ok(registry.get(id), `${id} should be registered`);
+  }
+  const onModule: ActionContext = { selection: { kind: "module", moduleId: "m1" }, focusPane: "editor", api: stubApi() };
+  const onFn: ActionContext = { selection: { kind: "fn", fn: 1 }, focusPane: "editor", api: stubApi() };
+  const onNothing: ActionContext = { selection: { kind: "none" }, focusPane: "editor", api: stubApi() };
+  for (const id of ["listing.lineDown", "listing.lineUp", "listing.tokenLeft", "listing.tokenRight"] as const) {
+    assert.ok(registry.enabledFor(onModule).map((a) => a.id).includes(id), `${id} should be enabled on a module selection`);
+    assert.ok(registry.enabledFor(onFn).map((a) => a.id).includes(id), `${id} should be enabled on an fn selection`);
+    assert.ok(!registry.enabledFor(onNothing).map((a) => a.id).includes(id), `${id} should be disabled with no selection`);
+  }
+});
+
+test("listing.lineDown/lineUp/tokenLeft/tokenRight call the matching ActionApi method", () => {
+  const registry = createStandardRegistry();
+  const calls: string[] = [];
+  const api: ActionApi = {
+    ...stubApi(),
+    listingLineDown: () => {
+      calls.push("down");
+    },
+    listingLineUp: () => {
+      calls.push("up");
+    },
+    listingTokenLeft: () => {
+      calls.push("left");
+    },
+    listingTokenRight: () => {
+      calls.push("right");
+    },
+  };
+  const ctx: ActionContext = { selection: { kind: "fn", fn: 1 }, focusPane: "editor", api };
+  registry.run("listing.lineDown", ctx);
+  registry.run("listing.lineUp", ctx);
+  registry.run("listing.tokenLeft", ctx);
+  registry.run("listing.tokenRight", ctx);
+  assert.deepEqual(calls, ["down", "up", "left", "right"]);
+});
+
+test("every shipped preset binds Down/Up/Left/Right to the listing navigation actions (bur 13)", () => {
+  for (const name of ["default", "vim", "ghidra"] as const) {
+    const preset = loadPreset(name);
+    assert.equal(preset["Down"], "listing.lineDown", `${name}: Down is not bound to listing.lineDown`);
+    assert.equal(preset["Up"], "listing.lineUp", `${name}: Up is not bound to listing.lineUp`);
+    assert.equal(preset["Left"], "listing.tokenLeft", `${name}: Left is not bound to listing.tokenLeft`);
+    assert.equal(preset["Right"], "listing.tokenRight", `${name}: Right is not bound to listing.tokenRight`);
+    const km = createKeymap({ preset });
+    assert.deepEqual(km.feed({ key: "ArrowDown" }), { actionId: "listing.lineDown", count: 1 });
+    km.reset();
+    assert.deepEqual(km.feed({ key: "ArrowUp" }), { actionId: "listing.lineUp", count: 1 });
+    km.reset();
+    assert.deepEqual(km.feed({ key: "ArrowLeft" }), { actionId: "listing.tokenLeft", count: 1 });
+    km.reset();
+    assert.deepEqual(km.feed({ key: "ArrowRight" }), { actionId: "listing.tokenRight", count: 1 });
   }
 });

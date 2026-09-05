@@ -381,7 +381,56 @@ target and its reference count before commit. `validateIdentifierName()` in
 syntax, not a reserved word, not `undefined`/`arguments`/…), ready for that
 dialog and for any future inline editor. Nothing else in the pane accepts
 text. Not yet built, and not needed by either bur: an inline editor drawn
-over the identifier, and arrow-key motion from token to token.
+over the identifier — arrow-key motion from token to token landed as bur 13,
+below.
+
+### Arrow-key navigation (bur 13)
+
+Up/Down/Left/Right move the listing's selection the way the mouse does,
+in every preset (default, vim, ghidra) — not only vim's own `j`/`k`
+motions, which are a `@replit/codemirror-vim` layer entirely outside this
+registry. Four actions in `src/ui-core/actions.ts` (`listing.lineDown`,
+`listing.lineUp`, `listing.tokenLeft`, `listing.tokenRight`), gated exactly
+like `view.fold`/`view.unfold` (a module, or any selection carrying an
+`fn`), bound to bare `Down`/`Up`/`Left`/`Right` in all three shipped
+presets (`src/ui-core/presets/*.json`):
+
+- **Down/Up** step to the next/previous line, keeping the same column
+  where possible;
+- **Left/Right** step to the previous/next token ON THE CURRENT LINE (no
+  wrap to the next/previous line).
+
+`ui/src/listing/listing-nav-store.ts` holds the live handle — same
+module-level-store shape as `./fold-store.ts` — that `CodeView.tsx`
+registers (`registerFold` prop, so only the primary listing block, never
+the disasm block). The move itself resolves through `hitAtPos`, the same
+document-position-to-token resolver a mouse click uses (`pointerHit` in
+`CodeView.tsx` now delegates to it), so a keyboard move finds exactly the
+token a click at that spot would have found — same word boundaries, same
+syntax-tree `kind` lookup — and reports it through the SAME
+`onSelectToken` callback a click uses. That is what makes "scrolls into
+view" and "the graph follow toggle tracks it" come for free: the callback
+calls `select()` on the shared selection store exactly like a click did,
+which is what `highlightLine`'s scroll-into-view effect and the graph
+follow toggle already react to.
+
+The "current" line/token for a keyboard move is read from the SAME
+`data-selected-line`/`data-selected-token` attributes the pane already
+exposes as its contract (see above) — no separate cursor state to drift
+out of sync with a click. Before anything has ever been selected, a move
+starts from the top of the document.
+
+Because the shared keymap listener (`ui/src/actions/keys.ts`) already
+ignores any `input`/`textarea`/`select`/contenteditable target, arrow keys
+never steal from the search box, the command palette or a dialog — those
+are all `<input>` elements, the same guard every other chord already
+relies on.
+
+Gate coverage: `tests/ui-core/actions.test.ts` (registration, gating,
+`ActionApi` routing, chord binding in all three presets) and
+`tests/gate/ui/keymap-default.test.ts` (the specific action ids every
+preset's `Down`/`Up`/`Left`/`Right` must resolve to); `ui/e2e/listing-nav.
+spec.ts` presses ArrowDown/ArrowUp against a real listing.
 
 ### Source↔disasm alignment
 

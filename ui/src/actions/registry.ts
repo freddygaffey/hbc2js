@@ -25,6 +25,10 @@ import { workersApi } from "../workers/wire.ts";
 import { api } from "../api.ts";
 import type { FnSummary } from "../contracts.ts";
 import { foldActive, unfoldActive } from "../listing/fold-store.ts";
+import {
+  listingLineDown as moveListingLineDown, listingLineUp as moveListingLineUp,
+  listingTokenLeft as moveListingTokenLeft, listingTokenRight as moveListingTokenRight,
+} from "../listing/listing-nav-store.ts";
 import { openDisasm } from "../panes/disasm-store.ts";
 import { setStringsPrefill } from "../panes/strings-store.ts";
 import { setTablesPrefill } from "../panes/tables-store.ts";
@@ -433,6 +437,24 @@ export const actionApi: ActionApi = {
   forward: () => void forward(),
   fold: () => setStatus(foldActive() ? "folded" : "no listing to fold"),
   unfold: () => setStatus(unfoldActive() ? "unfolded" : "no listing to unfold"),
+  // Bur 13: arrow-key navigation in the listing. `listingLineDown`/Up and
+  // `listingTokenLeft`/Right (../listing/listing-nav-store.ts) resolve the
+  // move through the SAME token/line hit-testing a click uses, then report
+  // it through the pane's own `onSelectToken` callback — so it calls
+  // `select()` exactly like a click did, which is what makes the graph
+  // follow toggle and the jump list track it "like a click would" for free.
+  listingLineDown: () => {
+    if (!moveListingLineDown()) setStatus("no listing on screen, or already at the last line");
+  },
+  listingLineUp: () => {
+    if (!moveListingLineUp()) setStatus("no listing on screen, or already at the first line");
+  },
+  listingTokenLeft: () => {
+    if (!moveListingTokenLeft()) setStatus("no listing on screen, or already at the first token on this line");
+  },
+  listingTokenRight: () => {
+    if (!moveListingTokenRight()) setStatus("no listing on screen, or already at the last token on this line");
+  },
 };
 
 /** Which pane has focus right now — actions may gate on it (`when`). */

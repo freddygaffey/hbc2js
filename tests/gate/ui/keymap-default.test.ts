@@ -92,3 +92,24 @@ test("every shipped preset binds graph.followToggle and graph.lodCycle", () => {
     assert.equal(preset["gz"], "graph.lodCycle", `${name}: "gz" is not bound to graph.lodCycle`);
   }
 });
+
+// -- bur 13 (docs/UI-BURS.md #13): arrow keys move the selection down (and
+// up, and left/right between tokens) in the listing, in every preset — not
+// only vim's own `j`/`k` motions. The generic firing assertion at the top of
+// this file already replays "Down"/"Up"/"Left"/"Right" as real
+// ArrowDown/Up/Left/Right KeyboardEvents for every chord a preset binds; this
+// test pins the SPECIFIC action ids so a future rebind cannot silently point
+// the arrows somewhere else without failing here first.
+test("every shipped preset binds Up/Down/Left/Right to the listing navigation actions", () => {
+  const registry = createStandardRegistry();
+  for (const id of ["listing.lineDown", "listing.lineUp", "listing.tokenLeft", "listing.tokenRight"]) {
+    assert.notEqual(registry.get(id), undefined, `${id} is not in the standard registry`);
+  }
+  for (const name of PRESET_NAMES) {
+    const preset = loadPreset(name);
+    assert.equal(preset["Down"], "listing.lineDown", `${name}: "Down" is not bound to listing.lineDown`);
+    assert.equal(preset["Up"], "listing.lineUp", `${name}: "Up" is not bound to listing.lineUp`);
+    assert.equal(preset["Left"], "listing.tokenLeft", `${name}: "Left" is not bound to listing.tokenLeft`);
+    assert.equal(preset["Right"], "listing.tokenRight", `${name}: "Right" is not bound to listing.tokenRight`);
+  }
+});

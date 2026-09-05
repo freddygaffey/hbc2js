@@ -22,5 +22,9 @@
   "?": "project.shortcuts",
   "Ctrl-,": "project.settings",
   "gf": "graph.followToggle",
-  "gz": "graph.lodCycle"
+  "gz": "graph.lodCycle",
+  "Down": "listing.lineDown",
+  "Up": "listing.lineUp",
+  "Left": "listing.tokenLeft",
+  "Right": "listing.tokenRight"
 }

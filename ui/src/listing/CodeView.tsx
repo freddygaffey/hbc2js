@@ -41,6 +41,7 @@ import { hbcEditorTheme, hbcHighlightStyle } from "./cm-theme.ts";
 import { disasmHighlight } from "./disasm-highlight.ts";
 import { vimEnabled } from "../keymap-config.ts";
 import { setActiveFoldView } from "./fold-store.ts";
+import { setActiveListingNav } from "./listing-nav-store.ts";
 import { classifyWord, isWordChar, kindFromNodeName, wordOccurrences, type ListingToken } from "./token.ts";
 
 // NOTE: this component installs NO `contextmenu` handler and stops no
@@ -130,20 +131,17 @@ export interface PointerHit {
   readonly line: number;
 }
 
-/** Resolve the token under a mouse event. Word boundaries come from the
- *  document text (so `$foo` stays one token, unlike CodeMirror's own word
- *  categoriser); the KIND comes from the syntax tree when there is one —
- *  that is what tells a `PropertyName` from a `String` from the keyword
- *  `function` — and falls back to `classifyWord` for the plain-text disasm
- *  block and for text the incremental parser has not reached. */
-export function pointerHit(v: EditorView, x: number, y: number): PointerHit | null {
-  const pos = v.posAtCoords({ x, y });
-  if (pos === null) return null;
+/** Resolve the token AT a document position — the shared tail both a mouse
+ *  hit (`pointerHit`, below) and a keyboard move (bur 13, ./listing-nav-
+ *  store.ts) resolve through, so a `listing.lineDown`/`tokenRight` chord
+ *  finds exactly the token a click at that spot would have found: same word
+ *  boundaries, same syntax-tree `kind` lookup, same fallback. */
+export function hitAtPos(v: EditorView, pos: number): PointerHit | null {
   const state = v.state;
   const docLine = state.doc.lineAt(pos);
   const text = docLine.text;
   let col = pos - docLine.from;
-  // Clicking just past the end of a word still means that word.
+  // Landing just past the end of a word still means that word.
   if (!isWordChar(text[col]) && isWordChar(text[col - 1])) col -= 1;
   if (!isWordChar(text[col])) return { token: null, line: docLine.number };
   let from = col;
@@ -155,6 +153,38 @@ export function pointerHit(v: EditorView, x: number, y: number): PointerHit | nu
   const nodeName = syntaxTree(state).resolveInner(absFrom, 1).name;
   const kind = kindFromNodeName(nodeName) ?? classifyWord(word);
   return { token: { from: absFrom, to: docLine.from + to, text: word, kind, line: docLine.number }, line: docLine.number };
+}
+
+/** Resolve the token under a mouse event. Word boundaries come from the
+ *  document text (so `$foo` stays one token, unlike CodeMirror's own word
+ *  categoriser); the KIND comes from the syntax tree when there is one —
+ *  that is what tells a `PropertyName` from a `String` from the keyword
+ *  `function` — and falls back to `classifyWord` for the plain-text disasm
+ *  block and for text the incremental parser has not reached. */
+export function pointerHit(v: EditorView, x: number, y: number): PointerHit | null {
+  const pos = v.posAtCoords({ x, y });
+  if (pos === null) return null;
+  return hitAtPos(v, pos);
+}
+
+/** Every word token on one line, as absolute `[from, to)` doc offsets, in
+ *  left-to-right order. Bur 13's `Left`/`Right` step between these. */
+export function tokensOnLine(v: EditorView, lineNo: number): Array<{ readonly from: number; readonly to: number }> {
+  const docLine = v.state.doc.line(lineNo);
+  const text = docLine.text;
+  const out: Array<{ from: number; to: number }> = [];
+  let i = 0;
+  while (i < text.length) {
+    if (!isWordChar(text[i])) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < text.length && isWordChar(text[j])) j += 1;
+    out.push({ from: docLine.from + i, to: docLine.from + j });
+    i = j;
+  }
+  return out;
 }
 
 export interface CodeViewProps {
@@ -222,6 +252,53 @@ export function CodeView({ text, language, highlightLine, onSelectToken, onActiv
         return false;
       },
     });
+
+    // Bur 13: the current keyboard-navigation position, resolved from the
+    // SAME `data-selected-line`/`data-selected-token` attributes `show()`
+    // writes on every click — no separate cursor state to drift out of sync
+    // with what a click just set. Falls back to the top of the document
+    // before anything has ever been selected.
+    const currentPos = (v: EditorView): number => {
+      const lineAttr = hostEl.getAttribute("data-selected-line");
+      const lineNo = Math.min(Math.max(1, lineAttr === null ? 1 : Number(lineAttr) || 1), v.state.doc.lines);
+      const docLine = v.state.doc.line(lineNo);
+      const tokenAttr = hostEl.getAttribute("data-selected-token");
+      if (tokenAttr !== null && tokenAttr !== "") {
+        const idx = docLine.text.indexOf(tokenAttr);
+        if (idx !== -1) return docLine.from + idx;
+      }
+      return docLine.from;
+    };
+    const applyHit = (v: EditorView, hit: PointerHit): void => {
+      show(v, hit);
+      handlers.current.select?.(hit.token, hit.line);
+    };
+    const moveLine = (v: EditorView, delta: number): boolean => {
+      const pos = currentPos(v);
+      const from = v.state.doc.lineAt(pos);
+      const col = pos - from.from;
+      const targetNo = Math.min(Math.max(1, from.number + delta), v.state.doc.lines);
+      if (targetNo === from.number) return false;
+      const target = v.state.doc.line(targetNo);
+      const targetPos = Math.min(target.from + col, target.to);
+      applyHit(v, hitAtPos(v, targetPos) ?? { token: null, line: targetNo });
+      return true;
+    };
+    const moveToken = (v: EditorView, delta: number): boolean => {
+      const pos = currentPos(v);
+      const lineNo = v.state.doc.lineAt(pos).number;
+      const tokens = tokensOnLine(v, lineNo);
+      if (tokens.length === 0) return false;
+      let idx = tokens.findIndex((t) => pos >= t.from && pos <= t.to);
+      if (idx === -1) idx = tokens.findIndex((t) => t.from >= pos);
+      if (idx === -1) idx = tokens.length - 1;
+      const nextIdx = Math.min(Math.max(0, idx + delta), tokens.length - 1);
+      if (nextIdx === idx) return false;
+      const hit = hitAtPos(v, tokens[nextIdx]!.from);
+      if (hit === null) return false;
+      applyHit(v, hit);
+      return true;
+    };
     const extensions: Extension[] = [
       ...(vimEnabled ? [vim()] : []),
       lineNumbers(),
@@ -244,11 +321,17 @@ export function CodeView({ text, language, highlightLine, onSelectToken, onActiv
     ];
     const v = new EditorView({ state: EditorState.create({ doc: text, extensions }), parent: hostEl });
     view.current = v;
-    if (registerFold) setActiveFoldView(v);
+    if (registerFold) {
+      setActiveFoldView(v);
+      setActiveListingNav({ moveLine: (delta) => moveLine(v, delta), moveToken: (delta) => moveToken(v, delta) });
+    }
     return () => {
       v.destroy();
       view.current = null;
-      if (registerFold) setActiveFoldView(null);
+      if (registerFold) {
+        setActiveFoldView(null);
+        setActiveListingNav(null);
+      }
     };
     // The editor is created once per language/label; `text` is pushed in by
     // the effect below, so switching functions never remounts the DOM.

@@ -64,6 +64,16 @@ export interface ActionApi {
    *  no-ops. */
   toggleGraphFollow(): void | Promise<void>;
   cycleGraphLod(): void | Promise<void>;
+  /** Bur 13 (docs/UI-BURS.md #13): arrow-key navigation inside the listing.
+   *  `listingLineDown`/`listingLineUp` step the selection to the next/
+   *  previous line; `listingTokenLeft`/`listingTokenRight` step it to the
+   *  previous/next token on the CURRENT line (no wrap). A shell with no
+   *  listing on screen — or no listing pane at all — implements these as
+   *  no-ops, exactly like the graph toggles above. */
+  listingLineDown(): void | Promise<void>;
+  listingLineUp(): void | Promise<void>;
+  listingTokenLeft(): void | Promise<void>;
+  listingTokenRight(): void | Promise<void>;
   nextFn(): void | Promise<void>;
   prevFn(): void | Promise<void>;
   nextModule(): void | Promise<void>;
@@ -297,6 +307,38 @@ export function standardActions(): Action[] {
       group: "view",
       when: alwaysFalse,
       run: (ctx) => ctx.api.openGraph(ctx.selection),
+    },
+    // Bur 13: Up/Down/Left/Right in the listing (docs/UI-BURS.md #13),
+    // gated the same way as `view.fold`/`view.unfold` — a listing needs a
+    // module or a function-carrying selection on screen before there is
+    // anything to move a cursor over.
+    {
+      id: "listing.lineDown",
+      title: "Move down a line",
+      group: "navigate",
+      when: hasListingTarget,
+      run: (ctx) => ctx.api.listingLineDown(),
+    },
+    {
+      id: "listing.lineUp",
+      title: "Move up a line",
+      group: "navigate",
+      when: hasListingTarget,
+      run: (ctx) => ctx.api.listingLineUp(),
+    },
+    {
+      id: "listing.tokenLeft",
+      title: "Move left a token",
+      group: "navigate",
+      when: hasListingTarget,
+      run: (ctx) => ctx.api.listingTokenLeft(),
+    },
+    {
+      id: "listing.tokenRight",
+      title: "Move right a token",
+      group: "navigate",
+      when: hasListingTarget,
+      run: (ctx) => ctx.api.listingTokenRight(),
     },
     // ENABLED as of spec 23 (docs/specs/23-ui-workers.md §6: accept/reject
     // and the two enqueue actions are "ordinary entries in spec 22 §3.1's
