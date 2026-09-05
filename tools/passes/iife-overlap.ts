@@ -35,6 +35,10 @@ export interface GroupRecord {
   readonly nested: boolean;
   /** Every member's range starts and ends inside every other's: total overlap. */
   readonly interleaved: boolean;
+  /** Spec 27 section 9.4: why each member base used in the region was NOT
+   *  proved a fresh, unescaped allocation. Empty when every base was proved
+   *  (or the region has no member access at all). */
+  readonly escapes: readonly string[];
 }
 
 function classifyShape(members: readonly GroupMember[]): { nested: boolean; interleaved: boolean } {
@@ -54,10 +58,15 @@ function classifyShape(members: readonly GroupMember[]): { nested: boolean; inte
 export function classify(bytes: Uint8Array, moduleName: string): GroupRecord[] {
   const records: GroupRecord[] = [];
   const original = grouping.plan;
-  grouping.plan = (body, members, mentions): GroupOutcome => {
-    const outcome = original(body, members, mentions);
+  grouping.plan = (body, members, mentions, opts): GroupOutcome => {
+    const outcome = original(body, members, mentions, opts);
     const shape = classifyShape(members);
-    records.push({ outcome: "plan" in outcome ? "PLAN" : outcome.reason, envs: members.length, ...shape });
+    records.push({
+      outcome: "plan" in outcome ? "PLAN" : outcome.reason,
+      envs: members.length,
+      ...shape,
+      escapes: [...(outcome.codes ?? new Map()).values()].sort(),
+    });
     return outcome;
   };
   try {
@@ -89,6 +98,14 @@ function tally(rows: readonly GroupRecord[]): string {
   out.push(`planned (reordering proved): ${sum((r) => r.outcome === "PLAN")}`);
   out.push(`with a strictly nested range: ${sum((r) => r.nested)}`);
   out.push(`with a crossing (interleaved) range: ${sum((r) => r.interleaved)}`);
+  out.push(`refused on a swap involving a member access: ${sum((r) => /assign:member|=member/.test(r.outcome))}`);
+  // Spec 27 section 9.4 -- what the escape analysis could not prove, per base.
+  const byCode = new Map<string, number>();
+  for (const r of rows) for (const c of r.escapes) byCode.set(c, (byCode.get(c) ?? 0) + 1);
+  out.push("");
+  out.push("| escape refusal (section 9.4) | bases |");
+  out.push("|---|---|");
+  for (const [k, v] of [...byCode.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) out.push(`| \`${k}\` | ${v} |`);
   return out.join("\n");
 }
 

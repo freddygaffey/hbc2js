@@ -48,7 +48,17 @@ export type Expr =
    * `effectSequence` ignore the flag entirely: it changes no observable
    * behaviour by itself.
    */
-  | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[]; readonly fromRegExpTable?: true }
+  /**
+   * `fromNewArray` marks the emitter's rendering of the `NewArray` /
+   * `NewFastArray` opcode (`src/emit/lower.ts`): an INTRINSIC allocation of an
+   * empty array of the given length, not a construct call on whatever
+   * `globalThis.Array` happens to hold. A source-level `new Array(x)` compiles
+   * to a global read plus `Construct` and never carries the flag. Only
+   * `src/emit/iife-escape.ts` (spec 27 section 9, F1) reads it, to know the
+   * statement runs no user code; printing, `sameShape` and `effectSequence`
+   * ignore it, exactly as they ignore `fromRegExpTable`.
+   */
+  | { readonly k: "new"; readonly callee: Expr; readonly args: readonly Expr[]; readonly fromRegExpTable?: true; readonly fromNewArray?: true }
   /**
    * F23-3: a regex literal `/pattern/flags`, the `literal-forms` rung's (L-R)
    * sole writer output for a `fromRegExpTable` `new RegExp` node. `pattern`/

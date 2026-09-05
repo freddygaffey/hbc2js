@@ -348,7 +348,7 @@ export function reconstructIifes(input: IifeReconstructInput): IifeReconstructio
   for (const group of overlapComponents(candidates)) {
     if (group.length < 2) continue;
     const members = group.map((c) => ({ env: c.env, names: c.mine, from: c.from, to: c.to }));
-    const outcome = grouping.plan(input.body, members, (i, names) => mentionsAny(input.body[i], names));
+    const outcome = grouping.plan(input.body, members, (i, names) => mentionsAny(input.body[i], names), { outer: input.header });
     if ("plan" in outcome) plans.push(outcome.plan);
     else for (const c of group) groupReason.set(c.env, outcome.reason);
   }
