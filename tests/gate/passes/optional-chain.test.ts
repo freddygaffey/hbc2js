@@ -209,6 +209,49 @@ test("optional-chain: refuses when a write to the sentinel register sits BETWEEN
 });
 
 // ---------------------------------------------------------------------------
+// Precondition 3, interleaved dead reset (docs/BUGS.md, `48-optional-
+// chaining-nullish` v96's own `user?.profile?.name`, base-guard-elision
+// follow-up 2026-09-05): a hoisting batch can put another local's own
+// `rX = undefined` reset BETWEEN a guard's spilled compare and its own
+// real `rRes = undefined` reset — `matchChainGuard` used to require the
+// reset at a fixed offset right after the compare and refuse the whole
+// guard when anything else sat in between.
+// ---------------------------------------------------------------------------
+
+/** v99 spilled-compare shape (`v99Body` above) with an extra, unrelated
+ *  dead reset (`r8 = undefined`) interleaved between the compare and the
+ *  chain's own reset. */
+function interleavedDeadResetBody(): readonly Stmt[] {
+  return [
+    asg(id("r2"), lit("null")),
+    asg(id("r3"), { k: "bin", op: "==", left: id("r9"), right: id("r2") }),
+    asg(id("r8"), lit("undefined")), // unrelated dead reset — never read anywhere in fnBody
+    asg(id("r7"), lit("undefined")),
+    iff(id("r3"), [brk("L1")]),
+    asg(id("r7"), mem(id("r9"), "name")),
+    brk("L1"),
+  ];
+}
+
+test("optional-chain: an interleaved dead reset between the compare and the real reset does not defeat the guard (docs/BUGS.md, base-guard-elision follow-up)", () => {
+  const body = interleavedDeadResetBody();
+  const m = match(body, { ...ctx, fnBody: body }); // r8 has no other use anywhere in fnBody -> provably dead
+  assert.ok(m !== null, "an interleaved dead reset for an unrelated register must be skipped, not treated as this run's own reset");
+  assert.equal(m!.data.kind, "chain");
+  const after = rewrite(m!);
+  const res = check(body, after, { ...ctx, fnBody: body });
+  assert.equal(res.ok, true, res.reason);
+});
+
+test("optional-chain: an interleaved reset that IS read elsewhere is never treated as dead (refuses, same as before)", () => {
+  const body = interleavedDeadResetBody();
+  // r8 is read later, elsewhere in fnBody -> not provably dead -> must not be skipped.
+  const fnBody: readonly Stmt[] = [...body, { k: "expr", expr: { k: "assign", target: id("r10"), value: id("r8") } }];
+  const m = match(body, { ...ctx, fnBody });
+  assert.equal(m, null, "a live interleaved reset must not be skipped — the guard shape genuinely does not match at the fixed offset");
+});
+
+// ---------------------------------------------------------------------------
 // N-rule positives.
 // ---------------------------------------------------------------------------
 
@@ -380,20 +423,45 @@ test("optional-chain: 48-optional-chaining-nullish (v99) — the null-sentinel-r
   const code = decompileFixture("48-optional-chaining-nullish", "v99");
   assert.match(code, /\?\./);
   assert.match(code, /\?\?/);
-  // Real measured counts on this fixture post-fix: 9 `?.` occurrences
-  // (L1/L2/L3 3-link chains, `.fetch?.()`/`.missingMethod?.()`, `?.property`)
-  // and 3 `??` occurrences (the three nullish-coalescing sites) — assert
+  // Real measured counts on this fixture post-fix: 10 `?.` occurrences
+  // (L1/L2/L3 3-link chains including `user?.profile?.name`,
+  // `.fetch?.()`/`.missingMethod?.()`, `?.property`) and 3 `??`
+  // occurrences (the three nullish-coalescing sites whose left side is not
+  // statically provable non-nullish at this compiler version) — assert
   // with headroom rather than pinning the exact numbers (CLAUDE.md: no
   // exact-output comparison against a shared fixture).
-  assert.ok(countMatches(code, /\?\./g) >= 6, `expected >=6 ?. occurrences after the fix, got ${countMatches(code, /\?\./g)}`);
+  assert.ok(countMatches(code, /\?\./g) >= 9, `expected >=9 ?. occurrences after the fix, got ${countMatches(code, /\?\./g)}`);
   assert.ok(countMatches(code, /\?\?/g) >= 3, `expected >=3 ?? occurrences after the fix, got ${countMatches(code, /\?\?/g)}`);
   assert.equal(nullGuardCount(code), 0); // no residual v94-shape inline `==`/`!=` guard
-  // The v99 spilled-compare shape's residual guard (`if (rX) { break L; }`,
-  // never matched by `nullGuardCount` above since it has no inline `==`/
-  // `!=`) is now down to at most 1 — `user?.profile?.name` (L0), left
-  // unrewritten for an unrelated, separately-tracked reason (a dead
-  // `r1 = undefined` store interleaved between its own compare and its
-  // guard, unrelated to `isNullSentinel` — not this row's fix to make).
-  const bareGuardCount = countMatches(code, /if \(\w+\) \{\s*break \w+;\s*\}/g);
-  assert.ok(bareGuardCount <= 1, `expected <=1 residual bare guard (L0's own, separately-tracked gap), got ${bareGuardCount}`);
+  // The v99 spilled-compare shape's residual guard (`if (rX) { break L; }`)
+  // used to leave `user?.profile?.name` (L0) unrewritten — a dead reset for
+  // an unrelated, later-declared local sat interleaved between this
+  // guard's own compare and its real reset, at a fixed statement offset
+  // `matchChainGuard` did not tolerate (docs/BUGS.md, base-guard-elision
+  // follow-up, `skipDeadResets`). Fixed: zero residual bare guards now.
+  assert.equal(countMatches(code, /if \(\w+\) \{\s*break \w+;\s*\}/g), 0, "no chain should be left half-matched (raw guard block) at v99 any more");
+});
+
+// ---------------------------------------------------------------------------
+// Cross-version parity (docs/BUGS.md, base-guard-elision follow-up
+// 2026-09-05): the same fixture, compiled at every supported bytecode
+// version, must never leave a chain half-matched — a raw `if (rX) { break
+// L; }` guard block with no surviving `?.`/`??` to show for it. The exact
+// `?.` token *count* legitimately differs across versions (a newer
+// hermesc's own optimizer statically proves more bases non-nullish and
+// elides more guards — docs/lowering/optional-chaining.md §7 — and folds
+// away more of the `?? `-with-a-provably-non-nullish-left sites, neither
+// of which this rung's matcher can or should "recover" from, since the
+// operator/guard is genuinely gone from the bytecode) so this is not an
+// exact-count comparison (CLAUDE.md); it is the rung-owned invariant that
+// every guard the matcher's preconditions accept is fully consumed into a
+// chain, at every version.
+// ---------------------------------------------------------------------------
+test("optional-chain: 48-optional-chaining-nullish — zero residual bare guards at every compiled version", () => {
+  for (const version of ["v84", "v94", "v96", "v98", "v99"]) {
+    const code = decompileFixture("48-optional-chaining-nullish", version);
+    assert.match(code, /\?\./, `${version}: expected at least one ?. to be recovered`);
+    const bareGuardCount = countMatches(code, /if \(\w+\) \{\s*break \w+;\s*\}/g);
+    assert.equal(bareGuardCount, 0, `${version}: expected 0 residual bare guards, got ${bareGuardCount}`);
+  }
 });

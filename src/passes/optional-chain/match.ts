@@ -311,6 +311,33 @@ function matchReset(s: Stmt | undefined): { readonly reg: string } | null {
   return { reg: s.expr.target.name };
 }
 
+/** Skips forward over zero or more *provably dead* reset statements
+ *  (`rX = undefined` where `rX` has exactly one write — this one — and no
+ *  read anywhere in the whole function) starting at `list[idx]`. The
+ *  compiler's declaration-hoisting batch can interleave another local's
+ *  own dead reset between a chain guard's compare and its real reset
+ *  (`48-optional-chaining-nullish` v96's own `user?.profile?.name`,
+ *  docs/BUGS.md), which used to make `matchChainGuard` see a reset for the
+ *  wrong register at a fixed offset and refuse the whole guard. A register
+ *  this is dead for can never be the run's own `rRes` (which is read again
+ *  later, outside the run, by construction), so this can never mask the
+ *  real reset — only skip statements that could not have been it. The
+ *  skipped statements are absorbed into the matched span exactly like any
+ *  other bookkeeping statement (`rewrite.ts` drops `[startIndex,
+ *  endIndex)` wholesale) — sound because a write with no reads anywhere
+ *  has no observable effect. */
+function skipDeadResets(list: readonly Stmt[], idx: number, fnBody: readonly Stmt[]): number {
+  let i = idx;
+  while (i < list.length) {
+    const r = matchReset(list[i]);
+    if (r === null) break;
+    const uses = identUses(fnBody, r.reg);
+    if (uses.reads !== 0 || uses.writes !== 1) break; // not provably dead: might be the real reset
+    i++;
+  }
+  return i;
+}
+
 function matchTailBreak(s: Stmt | undefined, label: string): boolean {
   return s !== undefined && s.k === "break" && s.label === label;
 }
@@ -407,27 +434,31 @@ function readLinkStmt(list: readonly Stmt[], cursor: number, current: Expr | nul
  * exclusivity is checked separately once the whole run is known).
  */
 function matchChainGuard(list: readonly Stmt[], idx: number, fnBody: readonly Stmt[], expectedReg: Expr | null, expectedRRes: string | null, expectedLabel: string | null): { readonly rRes: string; readonly tested: Expr; readonly label: string; readonly consumed: number } | null {
-  // v94: reset, then an inline `if (X == N) break L`.
-  const reset0 = matchReset(list[idx]);
+  // v94: reset, then an inline `if (X == N) break L` — a hoisting batch may
+  // interleave one or more unrelated dead resets before the real one.
+  const j0 = skipDeadResets(list, idx, fnBody);
+  const reset0 = matchReset(list[j0]);
   if (reset0 !== null && (expectedRRes === null || reset0.reg === expectedRRes)) {
-    const g = matchGuardIf(list[idx + 1], expectedLabel);
+    const g = matchGuardIf(list[j0 + 1], expectedLabel);
     if (g !== null) {
       const eq = looseEqNull(g.test, "==");
       if (eq !== null && isNullSentinelAt(eq.right, fnBody, list, idx) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
-        return { rRes: reset0.reg, tested: eq.left, label: g.label, consumed: 2 };
+        return { rRes: reset0.reg, tested: eq.left, label: g.label, consumed: j0 - idx + 2 };
       }
     }
   }
-  // v99: a spilled compare first, then the reset, then `if (rC) break L`.
+  // v99: a spilled compare first, then the reset (again, possibly preceded
+  // by interleaved dead resets), then `if (rC) break L`.
   const s0 = list[idx];
   if (s0 !== undefined && s0.k === "expr" && s0.expr.k === "assign" && s0.expr.target.k === "ident" && isRegisterName(s0.expr.target.name)) {
     const eq = looseEqNull(s0.expr.value, "==");
     if (eq !== null && isNullSentinelAt(eq.right, fnBody, list, idx) && (expectedReg === null || sameRegOrExpr(eq.left, expectedReg))) {
       const rC = s0.expr.target.name;
-      const reset1 = matchReset(list[idx + 1]);
+      const j1 = skipDeadResets(list, idx + 1, fnBody);
+      const reset1 = matchReset(list[j1]);
       if (reset1 !== null && (expectedRRes === null || reset1.reg === expectedRRes)) {
-        const g = matchGuardIf(list[idx + 2], expectedLabel);
-        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { rRes: reset1.reg, tested: eq.left, label: g.label, consumed: 3 };
+        const g = matchGuardIf(list[j1 + 1], expectedLabel);
+        if (g !== null && g.test.k === "ident" && g.test.name === rC) return { rRes: reset1.reg, tested: eq.left, label: g.label, consumed: j1 - idx + 2 };
       }
     }
   }

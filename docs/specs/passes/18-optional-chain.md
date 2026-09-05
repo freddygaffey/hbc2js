@@ -242,6 +242,19 @@ recomputed in `check`:
    `rRes` is consumed as `undefined`).
 3. Every reset writes literal `undefined` to the same `rRes`, and `rRes` has
    no read between the first reset and the commit (`result-read-early`).
+   Between a guard's compare and its own real reset, a compiler
+   declaration-hoisting batch can interleave one or more *unrelated* dead
+   resets (another local's own `rX = undefined`, never read anywhere in the
+   function) — `matchChainGuard`'s `skipDeadResets`
+   (`src/passes/optional-chain/match.ts`, 2026-09-05, `docs/BUGS.md`
+   base-guard-elision follow-up) skips forward over any such statement
+   before matching the real reset at the next position; a register this
+   holds for can never be the run's own `rRes` (which is, by this same
+   precondition, always read again later outside the run), so the skip can
+   never mask the real reset. Observed on `48-optional-chaining-nullish`'s
+   own `user?.profile?.name` at both v96 (its outer base guard) and v99
+   (its only guard), where it used to leave the whole chain as a raw
+   `if (rX) { break L; }` block.
 4. Link registers (`rT`, spilled compares `rC`) are dead after the run
    (`defUse`; `state-escapes`).
 5. Each link's base operand is exactly the preceding guarded register
