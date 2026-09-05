@@ -113,14 +113,17 @@ async function nodeInViewport(page: Page, selector: string): Promise<Locator | n
 const codeView = (page: Page): Locator => page.getByTestId("code-view").first();
 
 test.describe("Graph double-click opens the listing (bur 14)", () => {
-  // FIXME (docs/BUGS.md "graph: dblclick on a non-focus neighbour node
-  // while maximised never un-maximises", 2026-09-05): this test was
-  // previously masked by a selector bug that could pick an "ext:m:N"
+  // Fixed (docs/BUGS.md "graph: dblclick on a non-focus neighbour node
+  // while maximised never un-maximises", 2026-09-05, resolved): this test
+  // was previously masked by a selector bug that could pick an "ext:m:N"
   // external-reference node instead of a real "fn:N" node (fixed in the
   // same commit, see nodeInViewport's selector below) -- with a real
   // function neighbour now reliably targeted, the un-maximise assertion
-  // fails for real. Do not delete; lift the fixme once that row closes.
-  test.fixme("dblclick a neighbour node: listing shows that fn, definition line selected and in view", async ({
+  // failed for real. Root cause: `onNodeClick` re-rooted the graph on the
+  // clicked node synchronously, relaying it out from under the second half
+  // of the double-click before the browser could synthesize `dblclick`
+  // (see the `pendingFocusRef` comment in GraphPane.tsx).
+  test("dblclick a neighbour node: listing shows that fn, definition line selected and in view", async ({
     page,
     request,
   }) => {
@@ -154,8 +157,11 @@ test.describe("Graph double-click opens the listing (bur 14)", () => {
     await expect(codeView(page)).toBeVisible({ timeout: WAIT });
     await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
 
-    // The listing landed on the double-clicked function...
-    await expect(page.getByText(`fn ${targetFn}`, { exact: true })).toBeVisible({ timeout: WAIT });
+    // The listing landed on the double-clicked function... (scoped to the
+    // breadcrumb: the graph pane itself is still on screen, un-maximised
+    // rather than unmounted, and also renders a "fn N" label on the node
+    // and in its own header, so a page-wide text search is ambiguous).
+    await expect(page.getByTestId("breadcrumbs").getByText(`fn ${targetFn}`, { exact: true })).toBeVisible({ timeout: WAIT });
     // ...with a real line selected (its definition line)...
     await expect
       .poll(async () => Number(await codeView(page).getAttribute("data-selected-line")), { timeout: WAIT })

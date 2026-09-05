@@ -414,6 +414,12 @@ export function CodeView({
         ...(line === null ? [] : [EditorView.scrollIntoView(v.state.doc.line(line).from, { y: "center" })]),
       ],
     });
+    // Bur 13: `data-selected-line` is the single source of truth keyboard
+    // navigation (`currentPos`, above) resumes from — previously only a
+    // literal click in the editor set it, so landing here from anywhere
+    // else (graph double-click, xrefs, search) left arrow-key navigation
+    // starting from line 1 instead of where the analyst just arrived.
+    if (line !== null) host.current?.setAttribute("data-selected-line", String(line));
   }, [highlightLine, text]);
 
   return <div ref={host} data-readonly="true" className="hbc-scroll h-full min-h-0 w-full overflow-hidden" data-testid="code-view" />;
