@@ -313,6 +313,26 @@ Header carries `{"renderHash":"…"}`. One row per **function**:
   every query answer that includes a `file:line` also includes the id, and ids
   are what tools store (Design D's rule, inherited here).
 
+### 2.8 `native/*` — the APK's native half (spec 27)
+
+Written by `src/native/ingest.ts` (spec 27 L1), **beside** `index/`, never
+inside it: `native/{classes,methods,strings,resources,assets}.jsonl` +
+`native/manifest.json` (the decoded AndroidManifest) + `native/ingest.json`
+(the provenance block, also merged into this artifact's `manifest.json` under
+`native` when one exists). Header schema is `hbc2js-native/1` with a `source`
+of `dex|axml|arsc|zip`; rows are sorted by primary key so a diff is a line
+diff, exactly like `index/`.
+
+Native binding keys (`native:type:`, `native:method:`, `native:str:`,
+`native:res:`) are namespaced siblings of `src/name-overlay/id.ts`'s
+`reg:`/`env:`/`fn:` keys and are constructed only by that file's `nativeKey()`
+helpers. §4's truth rules apply unchanged, plus two native-specific ones
+(spec 27 §4): a method-body value the minimal DEX parser cannot read stays
+unresolved rather than being guessed, and asset/resource **bytes are never
+copied into a table** — assets are inventory only (path/size/sha256/kind).
+Full contract, landing sequence and refusal posture: `docs/specs/27-native-
+side.md`.
+
 ## 3. Query surface
 
 **The files ARE the contract** — a tool that wants to stream everything reads
