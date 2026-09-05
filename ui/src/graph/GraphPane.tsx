@@ -12,7 +12,7 @@ import { api } from "../api.ts";
 import type { CallsFrom, Severity, WhoCalls, WhoCallsByName } from "../contracts.ts";
 import { useFindings, useFn, useModule } from "../hooks.ts";
 import { displayName } from "../listing/names.ts";
-import { select, useSelection } from "../state/selection.ts";
+import { useSelection } from "../state/selection.ts";
 import {
   buildCallModel, buildModuleModel, calleeNodeForSelection, EMPTY_MODEL, GRAPH_NODE_CAP, lodCard,
   LOD_NOMINAL_ZOOM, modelForLevel, neighbourSet,
@@ -21,8 +21,9 @@ import {
 import { layoutGraph, NODE_H_NEAR, type Size } from "./layout.ts";
 import { nodeTypes, type HbcFlowNode } from "./nodes.tsx";
 import {
-  cycleGraphLod, expandGraphNode, focusGraphNode, graphBack, originKey, resetGraphView, rootGraph, setGraphFollow,
-  setGraphLodFromZoom, setGraphMaximised, setHoverNode, setNodePosition, targetForSelection, useGraphState,
+  cycleGraphLod, expandGraphNode, focusGraphNode, graphBack, openGraphTargetInListing, originKey, resetGraphView,
+  rootGraph, setGraphFollow, setGraphLodFromZoom, setGraphMaximised, setHoverNode, setNodePosition, targetForSelection,
+  useGraphState,
 } from "./store.ts";
 
 /** How much slack `fitView` leaves around the neighbourhood. Small, because
@@ -296,8 +297,10 @@ export function GraphPane({ visible }: { readonly visible: boolean }): ReactNode
             onNodeDoubleClick={(_e, node) => {
               const m = node.data.model;
               if (m.ref < 0) return;
-              if (m.kind === "module") select({ kind: "module", moduleId: String(m.ref) });
-              else select({ kind: "fn", fn: m.ref });
+              // Bur 14 (docs/UI-BURS.md #14): actually land on the code —
+              // select AND reveal the listing (un-maximise the graph if it
+              // is covering the whole window).
+              openGraphTargetInListing({ kind: m.kind, ref: m.ref });
             }}
             proOptions={{ hideAttribution: false }}
           >

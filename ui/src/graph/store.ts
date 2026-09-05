@@ -4,7 +4,7 @@
 // reason: the actions (`graph.open`/`graph.expand`/`graph.focus`) run
 // outside React and must be able to set it.
 import { useSyncExternalStore } from "react";
-import type { Selection } from "../state/selection.ts";
+import { select, type Selection } from "../state/selection.ts";
 import { lodLevel as lodLevelFor, nextLodLevel, type GraphKind, type LodLevel } from "./model.ts";
 import type { Point } from "./layout.ts";
 
@@ -121,6 +121,25 @@ export function targetForSelection(sel: Selection): GraphTarget | null {
 
 export function originKey(t: GraphTarget | null): string | null {
   return t === null ? null : `${t.kind}:${t.ref}`;
+}
+
+/** The listing selection a graph target implies — the inverse of
+ *  `targetForSelection`. Pure (no store access), so bur 14's Playwright
+ *  fixture and a plain vitest both cover it without mounting React Flow. */
+export function selectionForGraphTarget(target: GraphTarget): Selection {
+  return target.kind === "module" ? { kind: "module", moduleId: String(target.ref) } : { kind: "fn", fn: target.ref };
+}
+
+/** Bur 14 (docs/UI-BURS.md #14): double-click on a graph node must actually
+ *  land the analyst on the code, not just push a selection nothing shows.
+ *  Two parts: (1) select the node's fn/module, which the listing already
+ *  knows how to scroll to and highlight (`../panes/CenterPane.tsx`); (2) if
+ *  the graph pane is maximised it sits `fixed inset-0 z-50` over the WHOLE
+ *  window (see GraphPane.tsx), hiding the listing behind it even though the
+ *  selection changed underneath — so un-maximise to reveal it. */
+export function openGraphTargetInListing(target: GraphTarget): void {
+  select(selectionForGraphTarget(target));
+  if (state.maximised) setGraphMaximised(false);
 }
 
 /** Re-root the graph on `target`, forgetting the trail and every expansion.
