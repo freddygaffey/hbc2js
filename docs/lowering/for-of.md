@@ -168,3 +168,45 @@ shows the same `Mov`-refreshed source operand as (a).
 
 Versions 84/96/98 were not re-dumped, for the reason given in
 `for-in.md` §7: 94 and 99 bracket both opcode tables.
+
+---
+
+## 8. Per-version deltas measured while landing the `for-of` rung (2026-09-05)
+
+Read off `06-for-of-array` and `07-for-of-iterable` at all five versions by
+dumping the stage-A tree (`loop-cond`, `for-header`) with `structure()` +
+`applyPasses`, not from the disassembly alone. Three shapes §2/§7 did not
+carry, each of which refused an otherwise-sound site:
+
+1. **Shared, merge-point cleanup for a loop with a source `break`
+   (v84/v94/v96 only).** The break path needs its own
+   `IteratorClose`-then-`break`, so it gets its own `try` nested inside the
+   loop's; the two regions then share one handler, which becomes a *merge
+   point*. Neither `try` carries the cleanup as its `handler`: both carry
+   `break L`, `L` labels a wrapper around them, and the real
+   `Catch rX ; IteratorClose state, 1 ; Throw rX` is the wrapper's following
+   sibling.
+
+   ```
+   labeled L2 {
+     try r0 { block ... ; if ... { try r1 { ... ; IteratorClose state,0 ; break L1 }
+                                   handler { break L2 } }
+                          else { ... ; continue L0 } }
+     handler { break L2 }
+   }
+   Catch r5 ; IteratorClose r9,1 ; Throw r5      <- sibling, not a handler
+   ```
+
+   v98/v99 compile the same source to the ordinary single-`try` shape of §2,
+   with `throw bN` as the `try`'s own handler.
+
+2. **The setup block's `IteratorBegin` is not always its last instruction.**
+   v96/v98/v99 schedule the body's own constant loads after it:
+   `... ; Mov r6,r1 ; IteratorBegin r4,r6 ; LoadConstUInt8 r5,30`. Only the
+   `IteratorBegin` itself is iterator plumbing; the constant load is a real
+   value the body reads.
+
+3. **A normal close is `Mov`-aliased at v99.** `Mov r0, r4 ;
+   IteratorClose r0, 0 ; Jmp` — the close names a scratch copy of the state
+   register, exactly as §7 records for the header's `IteratorNext` source.
+
