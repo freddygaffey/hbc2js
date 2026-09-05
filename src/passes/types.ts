@@ -65,6 +65,18 @@ export interface PassContext {
    * returns, so it cannot affect a rewrite or the PL-08 fixed point.
    */
   readonly refuse?: (node: unknown, reason: string) => void;
+
+  /**
+   * F24-4 (docs/specs/passes/24-class-recover.md section 2): the bytecode's
+   * own answer to "what is function `fnIdx` called, and what may it be
+   * invoked as". `name` is the function-table name; `role` is
+   * `FunctionHeader.prohibitInvoke` (`src/parse/functions.ts`) rendered the
+   * way `src/disasm/print.ts` renders it -- `"ctor"` for a function that may
+   * only be `new`-ed (a class constructor), `"nc"` for one that may only be
+   * called (a method or accessor), `"plain"` for anything else. Absent is a
+   * refusal, never a guess (spec 24 R-C2).
+   */
+  readonly functionMeta?: (fnIdx: number) => { readonly name: string; readonly role: "ctor" | "nc" | "plain" } | null;
 }
 
 export interface Match<TNode, TData = unknown> {

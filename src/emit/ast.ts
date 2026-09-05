@@ -129,6 +129,17 @@ export type Expr =
    */
   | { readonly k: "yield"; readonly arg: Expr | null; readonly delegate: boolean }
   | { readonly k: "await"; readonly arg: Expr }
+  /**
+   * F24-1 (docs/specs/passes/24-class-recover.md section 2): a recovered
+   * `class` head. Built only by the `class-recover` rung; the emitter never
+   * produces one. `members` is in *install order* -- the order the
+   * `DefineOwnByVal`/`DefineOwnGetterSetterByVal` instructions ran in -- and
+   * that order is load-bearing: it is what the rung's checker re-derives.
+   * Nothing in `members` is evaluated at class-definition time except a
+   * computed key and a field initialiser, which is what makes the rewrite
+   * effect-neutral (see `effectSequence` in `src/passes/ast.ts`).
+   */
+  | { readonly k: "class"; readonly name: string | null; readonly superClass: Expr | null; readonly members: readonly ClassMember[] }
   | {
       readonly k: "func";
       readonly name: string | null;
@@ -157,6 +168,17 @@ export type Expr =
       readonly generator?: true;
       readonly async?: true;
     };
+
+/** F24-1: one member of a recovered `class` body. `value` is `null` only for
+ *  a `field` with no initialiser; for `method`/`get`/`set` it is the `func`
+ *  expression the class-creation group installed. */
+export interface ClassMember {
+  readonly kind: "method" | "get" | "set" | "field";
+  readonly static: boolean;
+  readonly computed: boolean;
+  readonly key: Expr;
+  readonly value: Expr | null;
+}
 
 /** `name={value}` (a string `lit` value prints bare, `name="text"`, when it
  *  is JSX-safe), or `{...spread}`. `value: null` is the bare `name` (`true`)
@@ -325,6 +347,11 @@ export type Stmt =
   /** F25-1: `generator`/`async` mark a `function*` / `async function`
    *  declaration recovered by the spec-25 rungs. */
   | { readonly k: "func"; readonly name: string; readonly params: readonly Param[]; readonly body: readonly Stmt[]; readonly generator?: true; readonly async?: true }
+  /** F24-1: `class N ... { }` in declaration position. The `class-recover`
+   *  rung emits an assignment of a `class` *expression* instead whenever the
+   *  constructor value is held in a register (PUSHBACK P-37); this node is the
+   *  declaration form the AST owes the language. */
+  | { readonly k: "classdecl"; readonly name: string; readonly value: Expr }
   | { readonly k: "directive"; readonly text: string }
   /**
    * `(function () { … })();` — the whole module's wrapper. Without it every

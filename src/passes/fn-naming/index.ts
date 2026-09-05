@@ -29,8 +29,18 @@ import { rewrite } from "./rewrite.ts";
  *  neither rung is registered yet, and `registry.ts`'s `enabledPasses`
  *  validates every `after`/`before` name against the *actual* registry,
  *  throwing `E_PASS_ORDER` for a dependency on a pass that exists nowhere in
- *  it. When either lands, the ordering should be enforced from its own side
- *  (`after: ["fn-naming"]`). */
+ *  it. When either lands, the ordering should be enforced from its own side.
+ *
+ *  **Corrected 2026-09-05 (PUSHBACK P-21, ruled for D23).** `class-recover`
+ *  has landed and declares `before: ["fn-naming", "reg-split", "var-naming"]`
+ *  — the opposite of the `after: ["fn-naming"]` this comment used to
+ *  predict. D23 postdates that prediction: a structure-recovery rung runs
+ *  while every register still carries its bytecode identity, and
+ *  `class-recover` reads register identity twice over (it follows the
+ *  class-creation destination registers through `Object.defineProperty`
+ *  targets and resolves a register-held method key). It needs nothing from
+ *  `fn-naming`: every member name comes from the install's key and the class
+ *  name from the constructor's bytecode function name (F24-4). */
 export const fnNaming: Pass<readonly Stmt[], FnNamingSite> = {
   name: "fn-naming",
   stage: "B",

@@ -1,6 +1,6 @@
 // docs/specs/05-emitter.md §2 — the in-house printer. Byte-stable output, no
 // dependency, explicit precedence so parentheses are added exactly where needed.
-import type { Expr, Origin, Param, Pattern, PatternElement, Stmt } from "./ast.ts";
+import type { ClassMember, Expr, Origin, Param, Pattern, PatternElement, Stmt } from "./ast.ts";
 import { originOf } from "./origin.ts";
 import { jsxToCall } from "./ast.ts";
 
@@ -91,6 +91,7 @@ function precedence(e: Expr): number {
     case "array":
     case "object":
     case "func":
+    case "class": // F24-1: a class expression is a primary expression
     case "spread": // F17: never wrapped in parens by `expr()`; ASSIGNMENT is a safe lower bound
     case "template": // F14: a template literal is a primary expression
     case "jsx": // D20: a JSX element is a primary expression (and so is the call it lowers to, at MEMBER — PRIMARY is the safe lower bound for both renderings)
@@ -343,6 +344,13 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
         out.push(`${p}(${expr(s.expr, 0)});`);
         return;
       }
+      // F24-1: a bare `class` expression in statement position would parse as
+      // a class *declaration* (and a nameless one is a syntax error), so it is
+      // parenthesised exactly as the object-pattern case above is.
+      if (s.expr.k === "class") {
+        out.push(`${p}(${render(s.expr)});`);
+        return;
+      }
       out.push(`${p}${expr(s.expr, 0)};`);
       return;
     case "decl":
@@ -438,6 +446,10 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
       if (funcMarks !== undefined) funcMarks.push({ name: s.name, startIdx, endIdxExclusive: out.length });
       return;
     }
+    case "classdecl":
+      // F24-1: declaration position -- no parentheses, no trailing semicolon.
+      out.push(`${p}${s.value.k === "class" ? withMarksSuspended(() => renderClass({ ...s.value, k: "class", name: s.name } as Extract<Expr, { k: "class" }>)) : `class ${s.name} { }`}`);
+      return;
     case "directive":
       out.push(`${p}"${s.text}";`);
       return;
@@ -459,6 +471,56 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
 export function expr(e: Expr, min: number): string {
   const text = render(e);
   return precedence(e) < min ? `(${text})` : text;
+}
+
+/** F24-1: run `f` with the line-map/function-mark collectors switched off.
+ *  See the `class` case of `render` for why. */
+function withMarksSuspended<T>(f: () => T): T {
+  const savedOrigins = originMarks;
+  const savedFuncs = funcMarks;
+  originMarks = undefined;
+  funcMarks = undefined;
+  try {
+    return f();
+  } finally {
+    originMarks = savedOrigins;
+    funcMarks = savedFuncs;
+  }
+}
+
+/** F24-1: `class N extends S { ... }`, members in array order (which is the
+ *  install order the `class-recover` rung captured). */
+function renderClass(e: Extract<Expr, { k: "class" }>): string {
+  const head = `class${e.name !== null ? ` ${e.name}` : ""}${e.superClass !== null ? ` extends ${expr(e.superClass, MEMBER)}` : ""} {`;
+  const lines: string[] = [];
+  for (const m of e.members) lines.push(...classMemberLines(m));
+  return lines.length === 0 ? `${head}}` : `${head}\n${lines.join("\n")}\n}`;
+}
+
+function classMemberKey(m: ClassMember): string {
+  if (m.computed) return `[${expr(m.key, ASSIGNMENT)}]`;
+  if (m.key.k === "ident") return m.key.name;
+  // A member key arrives as the string literal the install used. Print it
+  // bare when it is a valid identifier -- `speak() {}`, not `"speak"() {}` --
+  // and as the string literal otherwise (which a class body also accepts).
+  if (m.key.k === "lit") {
+    const text = m.key.text;
+    const bare = text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : null;
+    if (bare !== null && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(bare)) return bare;
+  }
+  return render(m.key);
+}
+
+function classMemberLines(m: ClassMember): string[] {
+  const key = `${m.static ? "static " : ""}${classMemberKey(m)}`;
+  if (m.kind === "field") return [`  ${key}${m.value === null ? "" : ` = ${expr(m.value, ASSIGNMENT)}`};`];
+  const fn = m.value;
+  if (fn === null || fn.k !== "func") return [`  ${key} = ${fn === null ? "undefined" : expr(fn, ASSIGNMENT)};`];
+  const prefix = `${fn.async === true ? "async " : ""}${m.kind === "get" ? "get " : m.kind === "set" ? "set " : ""}${fn.generator === true ? "*" : ""}`;
+  const out: string[] = [`  ${prefix}${key}(${paramList(fn.params)}) {`];
+  printBody(fn.body, 2, out, { indent: "  " });
+  out.push("  }");
+  return out;
 }
 
 function render(e: Expr): string {
@@ -545,6 +607,14 @@ function render(e: Expr): string {
     case "jsx":
       // D20: JSX only under `--jsx`; otherwise the exact call it stands for.
       return jsxOutput ? renderJsx(e) : render(jsxToCall(e));
+    case "class":
+      // F24-1. The body prints with the same convention the `func` expression
+      // above uses: its own two-space indentation, spliced into whatever entry
+      // the enclosing statement is building. The line-map marks are suspended
+      // across it -- a member body is not a physical line of the enclosing
+      // `out` array, so a mark taken inside it could not name one (spec 05
+      // section 16's "partial by design").
+      return withMarksSuspended(() => renderClass(e));
     case "func": {
       const out: string[] = [];
       const header = `${e.async === true ? "async " : ""}function${e.generator === true ? "*" : ""} ${e.name ?? ""}(${paramList(e.params)}) {`;
