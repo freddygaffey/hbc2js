@@ -115,7 +115,7 @@ export function classify(bytes: Uint8Array, moduleName: string, superRecords?: M
         // and `foldSuperBody` then answers R-SC0 (its own super site is gone).
         // A recorded FOLD is final.
         if (superRecords.get(key)?.code === "FOLD") continue;
-        const outcome = foldSuperBody(before, cls, ctor.body);
+        const outcome = foldSuperBody(before, cls, ctor.body, ctor.params);
         superRecords.set(key, {
           code: "code" in outcome ? outcome.code : "FOLD",
           shape: ctorShape(ctor.body),
