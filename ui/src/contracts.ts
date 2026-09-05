@@ -540,3 +540,39 @@ export interface FnCfg {
   readonly truncated: boolean;
   readonly cap: number;
 }
+
+// -- spec 27 §L5: native-side (APK) read verbs -------------------------
+
+export type SeamStatus = "linked" | "js-only" | "native-only";
+
+/** The seam half of `GET /api/native/impl/:fn` — a narrow projection of the
+ *  server's `native/seams.jsonl` row (docs/specs/10-artifact-format.md
+ *  §2.8), just what the Context-pane row shows. */
+export interface NativeImplSeam {
+  readonly key: string;
+  readonly jsName: string | null;
+  readonly jsMethod: string | null;
+  readonly status: SeamStatus;
+  readonly firstParty: boolean | null;
+}
+
+/** The native-module half, `null` on a `js-only` seam. */
+export interface NativeImplModule {
+  readonly key: string;
+  readonly jsName: string | null;
+  readonly kind: string;
+  readonly firstParty: boolean | null;
+}
+
+export interface NativeImplRow {
+  readonly seam: NativeImplSeam;
+  readonly module: NativeImplModule | null;
+}
+
+/** `GET /api/native/impl/:fn` — every seam whose JS evidence cites `fn` as a
+ *  call site (spec 27 §L5's Context-pane "native impl" row). Empty when
+ *  this fn participates in no seam or the project has no native side. */
+export interface NativeImpl {
+  readonly fn: number;
+  readonly rows: readonly NativeImplRow[];
+}
