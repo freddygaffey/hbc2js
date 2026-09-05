@@ -849,11 +849,17 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     envParent: envParentMap(input.envGraph),
     movableChild: (childName) => movableChild(input.envGraph, fn.index, childName),
   });
-  for (const r of rebuilt.refusals) {
-    input.diagnostic({ severity: "info", code: "W_IIFE_REFUSED", message: `iife-reconstruct left env ${r.env} of fn#${fn.index} flat: ${r.reason}`, context: { functionIndex: fn.index, reason: r.reason } });
-  }
+  // One summary line per function, like F24-5's `W_NO_CAPTURE_HOSTED`: spec 27
+  // wrapping (or refusing to wrap) is a placement statement, not a problem, and
+  // it exists so the counts stay observable on a real bundle.
   if (rebuilt.wrapped.length > 0) {
-    input.diagnostic({ severity: "info", code: "W_IIFE_RECONSTRUCTED", message: `iife-reconstruct wrapped ${rebuilt.wrapped.length} inlined IIFE(s) in fn#${fn.index}`, context: { functionIndex: fn.index, count: rebuilt.wrapped.length } });
+    input.diagnostic({ severity: "info", code: "W_IIFE_RECONSTRUCTED", message: `fn#${fn.index}: reconstructed ${rebuilt.wrapped.length} inlined IIFE(s) (spec 27)`, context: { functionIndex: fn.index, count: rebuilt.wrapped.length } });
+  }
+  if (rebuilt.refusals.length > 0) {
+    const byReason = new Map<string, number>();
+    for (const r of rebuilt.refusals) byReason.set(r.reason, (byReason.get(r.reason) ?? 0) + 1);
+    const reasons = [...byReason.entries()].sort((a, b) => b[1] - a[1]).map(([reason, count]) => `${reason} x${count}`).join(", ");
+    input.diagnostic({ severity: "info", code: "W_IIFE_REFUSED", message: `fn#${fn.index}: left ${rebuilt.refusals.length} sibling environment(s) flat (spec 27): ${reasons}`, context: { functionIndex: fn.index, count: rebuilt.refusals.length, reason: reasons } });
   }
   return { k: "func", name, params, body: rebuilt.stmts };
 }

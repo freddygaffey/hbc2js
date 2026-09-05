@@ -85,7 +85,13 @@ test("every gate binary decompiles with strictEnv and reports no error diagnosti
       // is emitted inside that function instead of at module level. It is a
       // placement statement, not a problem -- it exists so the count is
       // observable on a real bundle.
-      const unexpected = r.diagnostics.filter((d) => d.code !== "W_NO_CAPTURE_HOSTED" && d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED" && d.code !== "W_PASS_VERSION_SKIP" && d.code !== "W_PASS_REFUSED");
+      // W_IIFE_RECONSTRUCTED / W_IIFE_REFUSED (docs/specs/passes/27-iife-reconstruct.md)
+      // are the same kind of summary: one line per function saying how many
+      // inlined IIFEs the emitter put back, and one saying how many sibling
+      // environments a guard left flat (with the reason counts). Refusing is
+      // the designed outcome of every guard in that spec's refusal table and
+      // changes nothing about the output.
+      const unexpected = r.diagnostics.filter((d) => d.code !== "W_NO_CAPTURE_HOSTED" && d.code !== "W_FORCED_OPCODE_TABLE" && d.code !== "W_ORPHAN_FUNCTION" && d.code !== "W_UNUSED_LABEL" && d.code !== "W_EXPANSION_CAP" && d.code !== "W_UNREACHABLE_BLOCK" && d.code !== "W_LOOP_LOCAL_ENV" && d.code !== "W_PASS_ABANDONED" && d.code !== "W_PASS_VERSION_SKIP" && d.code !== "W_PASS_REFUSED" && d.code !== "W_IIFE_RECONSTRUCTED" && d.code !== "W_IIFE_REFUSED");
       if (unexpected.length > 0) failures.push(`${b.fixture} v${b.version}${b.variant}: ${unexpected.map((d) => d.code).join(", ")}`);
     } catch (e) {
       failures.push(`${b.fixture} v${b.version}${b.variant}: ${e instanceof Error ? e.message : String(e)}`);
