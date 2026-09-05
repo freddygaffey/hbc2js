@@ -260,3 +260,63 @@ for (const version of [94, 96, 99] as const) {
     }
   });
 }
+
+// docs/BUGS.md `arity/arguments-aliasing` (campaign-2, 2026-09-05). The lazy
+// `arguments` opcodes take the function's lazy-arguments register as their last
+// operand: `GetArgumentsPropByVal dst, idx, lazyReg` and `GetArgumentsLength
+// dst, lazyReg`. That register holds `undefined` until a `ReifyArguments*`
+// materialises the object into it, and the materialised object afterwards -- so
+// once a function has written into `arguments`, every later lazy read must go
+// through the written object, not the frame's incoming arguments. `src/emit`
+// ignored the operand and always emitted the host `arguments`, which silently
+// dropped every write: at v84 the VM prints `write then read: written|1` and the
+// candidate printed `incoming|1`. Fixed by routing the reads of a function that
+// reifies through `__hbc_argsLive`; a function that never reifies keeps the
+// plain `arguments` form. Fixture `69-arguments-reify-readback` keeps every
+// touched index outside the declared parameter list, so Node's mapped sloppy
+// `arguments` and Hermes's unmapped one agree (D14) and the fixture measures the
+// reify/read-back path only.
+for (const version of [84, 94, 96, 98, 99] as const) {
+  test(`69-arguments-reify-readback v${version}: a write into a reified 'arguments' is visible to the later lazy reads`, async (t) => {
+    void t;
+    const name = "69-arguments-reify-readback";
+    const src = code(name, version);
+    const expected = readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", name, "expected.txt"), "utf8").trimEnd().split("\n");
+    const dir = mkdtempSync(join(tmpdir(), "hbc2js-args-reify-"));
+    try {
+      const candidatePath = join(dir, "candidate.js");
+      writeFileSync(candidatePath, src);
+      const candidate = await runProgram(candidatePath, { timeout: 10000 });
+      assert.deepEqual(printLines(candidate.records), expected, `decompiled v${version} output diverges from the oracle -- a write through the reified 'arguments' object was lost:\n${src}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// The same fixture against the real Hermes VM (D14 ground truth) wherever one
+// exists, so the oracle above is not merely Node agreeing with Node.
+for (const version of [84, 94, 96, 99] as const) {
+  test(`69-arguments-reify-readback v${version}: the reified read-back matches the Hermes VM`, async (t) => {
+    const vm = findHermesVm(version);
+    if (vm === null) {
+      t.skip(`no Hermes VM for v${version} (see docs/TOOLCHAIN.md "Hermes VM (source build)")`);
+      return;
+    }
+    const name = "69-arguments-reify-readback";
+    const hbcPath = path(name, version);
+    const src = code(name, version);
+    const dir = mkdtempSync(join(tmpdir(), "hbc2js-args-reify-vm-"));
+    try {
+      const candidatePath = join(dir, "candidate.js");
+      writeFileSync(candidatePath, src);
+      const reference = runHermes(vm.path, hbcPath, { timeout: 10000, bytecode: true });
+      assert.ok(reference.ok, `Hermes VM run failed at v${version}: ${reference.raw}`);
+      assert.equal(reference.lines[0], "write then read: written|1", `the VM itself did not read back the written value at v${version} -- the fixture, not the decompiler, would be wrong`);
+      const candidate = await runProgram(candidatePath, { timeout: 10000 });
+      assert.deepEqual(printLines(candidate.records), reference.lines, `decompiled v${version} output diverges from the Hermes VM:\n${src}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

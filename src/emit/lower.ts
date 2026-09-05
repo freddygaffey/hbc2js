@@ -30,6 +30,22 @@ export function prop(obj: Expr, name: string): Expr {
   return isSafePropertyName(name) ? member(obj, lit(name), false) : member(obj, lit(quote(name)), true);
 }
 
+/**
+ * The object a lazy `GetArguments*` read must go through. Operand
+ * `lazyOperand` is the function's lazy-arguments register: `undefined` until a
+ * `ReifyArguments*` materialises the object into it, the object itself after.
+ * A function that never reifies can only ever read the frame, so it keeps the
+ * plain `arguments` form; one that does routes through `__hbc_argsLive` so a
+ * write made through the reified object is visible to the later lazy reads,
+ * exactly as the real VM does (docs/BUGS.md `arity/arguments-aliasing`,
+ * fixture 69-arguments-reify-readback).
+ */
+function argsSource(f: FunctionEmitter, insn: Instruction, lazyOperand: number): Expr {
+  if (!f.argumentsReified) return f.argsExpr;
+  f.useHelper("__hbc_argsLive");
+  return call(id("__hbc_argsLive"), [RG(insn, lazyOperand), f.argsExpr]);
+}
+
 const BINARY: Readonly<Record<string, Parameters<typeof bin>[0]>> = {
   Add: "+",
   AddN: "+",
@@ -812,11 +828,11 @@ export function lowerInstruction(f: FunctionEmitter, insn: Instruction, index: n
       f.useHelper("__hbc_arguments");
       return set(V(insn, 0), call(id("__hbc_arguments"), [f.argsExpr]));
     case "GetArgumentsLength":
-      return set(V(insn, 0), prop(f.argsExpr, "length"));
+      return set(V(insn, 0), prop(argsSource(f, insn, 1), "length"));
     case "GetArgumentsPropByVal":
     case "GetArgumentsPropByValLoose":
     case "GetArgumentsPropByValStrict":
-      return set(V(insn, 0), member(f.argsExpr, RG(insn, 1), true));
+      return set(V(insn, 0), member(argsSource(f, insn, 2), RG(insn, 1), true));
   }
 
   // --- this, globals, misc --------------------------------------------------
