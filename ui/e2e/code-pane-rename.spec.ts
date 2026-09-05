@@ -154,4 +154,58 @@ test.describe("code pane: double = rename, triple = jump (bur 15)", () => {
     // outrun by it.
     await expect(page.getByRole("dialog")).toBeHidden();
   });
+  // The bug this test exists for (Fred, 2026-09-05): "The rename opens up a
+  // pop up very nicely on a double click, but then it doesn't actually
+  // rename anything." The two tests above only checked that the dialog
+  // OPENS — which is exactly how a write that changed nothing on screen got
+  // through. This one submits and asserts the OUTCOME, in the code pane, the
+  // function list and the top bar, and after a reload.
+  test("submitting the rename dialog renames the function everywhere and survives a reload", async ({ page }) => {
+    test.skip(process.env["PW_READONLY"] === "1", "read-only rig: never writes to Fred's live project");
+    await page.goto("/");
+    const firstFn = await openFirstModuleAndFn(page);
+    await firstFn.click();
+    await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
+    const fn = await selectedFn(page);
+    expect(fn, "a function should be selected").not.toBeNull();
+
+    // The function's OWN header ident (`function <ident>(` on the first line
+    // of its rendered source): not a nameable local, so the dialog falls
+    // back to renaming the enclosing function — target `fn:N`, the case that
+    // was broken. Reading it off the pane keeps the test independent of how
+    // the emitter chose to name this fixture's functions.
+    const text = await listingText(page);
+    const header = /function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/.exec(text);
+    expect(header, "the pane should show a function header").not.toBeNull();
+    const point = await wordPoint(page, header![1]!);
+    expect(point, `"${header![1]!}" should be on screen`).not.toBeNull();
+
+    await page.mouse.dblclick(point!.x, point!.y);
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: WAIT });
+    // The dialog states its own target; this test is about the `fn:N` one.
+    await expect(dialog).toContainText(`fn:${fn!}`, { timeout: WAIT });
+
+    const newName = `renamedByE2e${Date.now().toString(36)}`;
+    const input = page.locator("#hbc-rename-input");
+    await input.fill(newName);
+    await dialog.getByRole("button", { name: "Rename" }).click();
+    await expect(dialog).toBeHidden({ timeout: WAIT });
+
+    // (1) the code pane re-renders with the new declaration
+    await expect
+      .poll(async () => listingText(page), { timeout: WAIT })
+      .toContain(`function ${newName}(`);
+    // (2) the top bar breadcrumb and (3) the function list row
+    await expect(page.getByTestId("breadcrumbs")).toContainText(newName, { timeout: WAIT });
+    await expect(page.locator(`[data-fn="${fn!}"]`).first()).toContainText(newName, { timeout: WAIT });
+
+    // (4) it is server state, not client state: reload and look again
+    await page.reload();
+    await expect(page.locator(`[data-fn="${fn!}"]`).first()).toContainText(newName, { timeout: WAIT });
+    await page.locator(`[data-fn="${fn!}"]`).first().click();
+    await expect
+      .poll(async () => listingText(page), { timeout: WAIT })
+      .toContain(`function ${newName}(`);
+  });
 });

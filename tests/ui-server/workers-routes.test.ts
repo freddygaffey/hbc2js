@@ -163,8 +163,16 @@ test("enqueue -> runner tick -> suggestion visible -> promote -> acceptedName; a
     prov: { source: "human", who: "analyst@duck.com" },
   });
   assert.equal(promoted.status, 200);
-  const context = (await get(`/api/fn/${FN}/context`)).json as { readonly metadata?: { readonly acceptedName?: string | null } };
+  const context = (await get(`/api/fn/${FN}/context`)).json as {
+    readonly metadata?: { readonly acceptedName?: string | null };
+    readonly source?: { readonly text: string };
+  };
   assert.equal(context.metadata?.acceptedName, nameRow.text);
+  // Promotion goes through the same `set_name` path a human rename does, so
+  // it must RENDER too, not just be reported (the "rename doesn't work in the
+  // UI" bug, tests/ui-server/fn-rename.test.ts): the accepted name is the
+  // function's declared name in the served source.
+  assert.match(context.source!.text, new RegExp(`function\\s+${nameRow.text}\\s*\\(`), "an accepted (promoted) name is the rendered declaration");
 
   // Reject writes nothing authoritative — it only notes the rid on the job.
   const rejected = await post("/api/suggestions/reject", { rid: commentRow.rid });
