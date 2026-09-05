@@ -24,7 +24,9 @@ import assert from "node:assert/strict";
 import { timeScale } from "../../support/tiers.ts";
 import type { Stmt } from "../../../src/emit/ast.ts";
 import { id, lit } from "../../../src/emit/ast.ts";
-import { applyAstPasses, defUse, expressionOnlyCheck } from "../../../src/passes/ast.ts";
+import { applyAstPasses, defUse, expressionOnlyCheck, isPure } from "../../../src/passes/ast.ts";
+import type { ExprRebuildSite } from "../../../src/passes/expr-rebuild/match.ts";
+import { substituteTopLevel } from "../../../src/passes/expr-rebuild/rewrite.ts";
 import { exprRebuild } from "../../../src/passes/expr-rebuild/index.ts";
 import type { ModuleView } from "../../../src/passes/tree.ts";
 import type { Pass, PassContext } from "../../../src/passes/types.ts";
@@ -173,6 +175,108 @@ test("expressionOnlyCheck's read-before-def half costs a fraction of the whole-l
       `expressionOnlyCheck over 500 splices of a ${pairs * 2}-statement list cost ${incremental.toFixed(1)} CPU ms, ` +
         `${(ratio * 100).toFixed(0)}% of the ${brute.toFixed(1)} ms the pre-fix whole-list defUse(after) walk alone costs ` +
         `for the same 500 sites (budget ${(budget * 100).toFixed(0)}%). The pre-fix algorithm scores ~100% here by construction.`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// docs/BUGS.md's same superlinear row, part 4: the *writer and checker* half.
+// Before this fix an applied site rebuilt the whole immutable statement array
+// four times over - `rewrite` built `[...list.slice(0, i), ...list.slice(i +
+// 1)]` (three allocations, ~2x `list.length` element copies) and then, for
+// R1a, did it a second time to place the substituted statement, and `check`
+// called `rewrite` all over again purely to re-derive an expected `after`
+// whose every element outside the touched window was already
+// reference-identical to the real one, then compared the two lists
+// element-wise. `registerUseDelta` added two more whole-list scans on top to
+// rediscover a window the re-classified site already names. That was the
+// 6.8 s `rewrite` frame, the 3.9 s `expected.every(sameStmt)` frame and much
+// of the 2.7 s of GC in the 8,000-site profile quoted in that row.
+//
+// Now the writer allocates once and the checker allocates nothing: it
+// re-derives the expected element at each position from `before` and the
+// re-classified site (`verifyExpectedShape` in `expr-rebuild/check.ts`), and
+// `registerUseDelta` gets its window from `i`/`j` directly.
+//
+// Same self-calibrating shape as the test above: numerator and denominator
+// are measured in the same process, on the same lists, interleaved site by
+// site, so a loaded machine slows both equally. The denominator is literally
+// the work this change removed - the pre-fix writer's build, run twice (once
+// for the writer, once for the checker's re-derivation) plus the whole-list
+// element-wise comparison - so the pre-fix implementation scores strictly
+// *above* 1.0 here by construction, since its total was exactly this
+// denominator plus everything the numerator still does.
+//
+// What this test does NOT claim (docs/PUSHBACK.md P-32, P-33): that per-site
+// cost is now constant in list length. The one remaining whole-array build in
+// the writer is the floor for an immutable `readonly Stmt[]`, so with sites
+// growing in proportion to list length the benchmark is still ~4x for a 2x
+// growth in N. Removing that needs a persistent list representation, not
+// another memo.
+
+/** The pre-fix writer, kept here as the denominator's reference
+ *  implementation only - `expr-rebuild/rewrite.ts` no longer builds lists
+ *  this way. Never used to produce a list the checker sees. */
+function wholeListRebuild(list: readonly Stmt[], site: ExprRebuildSite): readonly Stmt[] {
+  const { rule, i, j, reg, value } = site;
+  if (rule === "R1c") return [...list.slice(0, i), ...list.slice(i + 1)];
+  if (rule === "R1b") {
+    if (isPure(value)) return [...list.slice(0, i), ...list.slice(i + 1)];
+    return [...list.slice(0, i), { k: "expr", expr: value } as Stmt, ...list.slice(i + 1)];
+  }
+  const withoutStore = [...list.slice(0, i), ...list.slice(i + 1)];
+  const newJ = j - 1;
+  const rewritten = substituteTopLevel(withoutStore[newJ]!, reg, value);
+  return [...withoutStore.slice(0, newJ), rewritten, ...withoutStore.slice(newJ + 1)];
+}
+
+function sameStmtRef(a: Stmt, b: Stmt): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+function cpuSince(t0: NodeJS.CpuUsage): number {
+  const d = process.cpuUsage(t0);
+  return (d.user + d.system) / 1000;
+}
+
+function rewriteAndCheckVsWholeListRebuild(pairs: number, sites: number): { readonly bounded: number; readonly removed: number } {
+  const ctxBase = baseCtx(fakeModule());
+  let cur = foldCandidateRootBody(pairs);
+  let bounded = 0;
+  let removed = 0;
+  for (let s = 0; s < sites; s++) {
+    const ctx = { ...ctxBase, applied: [], fnBody: cur } as unknown as PassContext;
+    const m = exprRebuild.match(cur, ctx); // the driver's half, deliberately untimed
+    assert.notEqual(m, null, `site ${s} of ${sites} still matches`);
+    const t0 = process.cpuUsage();
+    const after = exprRebuild.rewrite(m!, ctx);
+    const verdict = exprRebuild.check(cur, after, ctx);
+    bounded += cpuSince(t0);
+    assert.equal(verdict.ok, true, `site ${s}: ${JSON.stringify(verdict)}`);
+    const t1 = process.cpuUsage();
+    wholeListRebuild(cur, m!.data); // what the writer used to build
+    const expected = wholeListRebuild(cur, m!.data); // what the checker used to build again
+    const same = expected.length === after.length && expected.every((x, k) => sameStmtRef(x, after[k]!));
+    removed += cpuSince(t1);
+    assert.equal(same, true, "the reference rebuild agrees with the shipped writer");
+    cur = after;
+  }
+  return { bounded, removed };
+}
+
+test("expr-rebuild's writer and checker cost less than the whole-list rebuild-and-compare they replaced, at every list length", () => {
+  rewriteAndCheckVsWholeListRebuild(200, 200); // warmup: JIT, not measured
+  const budget = 0.8;
+  for (const pairs of [1000, 2000]) {
+    const { bounded, removed } = rewriteAndCheckVsWholeListRebuild(pairs, pairs);
+    // A floor keeps the ratio meaningful if the denominator rounds to ~0.
+    const ratio = bounded / Math.max(removed, 1);
+    assert.ok(
+      ratio < budget,
+      `expr-rebuild's rewrite+check over ${pairs} applied sites of a ${pairs * 2}-statement list cost ${bounded.toFixed(1)} CPU ms, ` +
+        `${(ratio * 100).toFixed(0)}% of the ${removed.toFixed(1)} ms the two pre-fix whole-list rebuilds plus the whole-list ` +
+        `comparison cost on their own for the same sites (budget ${(budget * 100).toFixed(0)}%). The pre-fix implementation ` +
+        `scores above 100% here by construction: its total was this denominator plus everything the numerator still does.`,
     );
   }
 });
