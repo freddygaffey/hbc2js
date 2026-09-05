@@ -18,6 +18,7 @@ import { EXC_VALUE, envSlot, excName, fnName, GEN_DONE, GEN_STATE, labelName, PC
 import { writtenRegisters } from "../cfg/reg-effects.ts";
 import { argSlotBase } from "./semantics.ts";
 import { resolveShapes } from "./shapes.ts";
+import { reconstructIifes } from "./iife-reconstruct.ts";
 
 export interface FunctionEmitter {
   readonly analysis: ModuleAnalysis;
@@ -841,7 +842,49 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     // never treat it as a register-frame boundary.
     return { k: "func", name, params, body: [label, ...prologue, { k: "return", arg: { k: "func", name: null, params: [p("__sent"), p("__isReturn"), p("__isThrow")], body, sameFrame: true } }] };
   }
-  return { k: "func", name, params, body: [label, ...prologue, ...body] };
+  const rebuilt = reconstructIifes({
+    header: [label, ...prologue],
+    body,
+    ownedEnvSlots: input.ownedEnvSlots,
+    envParent: envParentMap(input.envGraph),
+    movableChild: (childName) => movableChild(input.envGraph, fn.index, childName),
+  });
+  // One summary line per function, like F24-5's `W_NO_CAPTURE_HOSTED`: spec 27
+  // wrapping (or refusing to wrap) is a placement statement, not a problem, and
+  // it exists so the counts stay observable on a real bundle.
+  if (rebuilt.wrapped.length > 0) {
+    input.diagnostic({ severity: "info", code: "W_IIFE_RECONSTRUCTED", message: `fn#${fn.index}: reconstructed ${rebuilt.wrapped.length} inlined IIFE(s) (spec 27)`, context: { functionIndex: fn.index, count: rebuilt.wrapped.length } });
+  }
+  if (rebuilt.refusals.length > 0) {
+    const byReason = new Map<string, number>();
+    for (const r of rebuilt.refusals) byReason.set(r.reason, (byReason.get(r.reason) ?? 0) + 1);
+    const reasons = [...byReason.entries()].sort((a, b) => b[1] - a[1]).map(([reason, count]) => `${reason} x${count}`).join(", ");
+    input.diagnostic({ severity: "info", code: "W_IIFE_REFUSED", message: `fn#${fn.index}: left ${rebuilt.refusals.length} sibling environment(s) flat (spec 27): ${reasons}`, context: { functionIndex: fn.index, count: rebuilt.refusals.length, reason: reasons } });
+  }
+  return { k: "func", name, params, body: rebuilt.stmts };
+}
+
+/**
+ * Spec 27: only a function created exactly once, here, by a `Create*Closure`
+ * of this body may travel into a reconstructed IIFE. Anything else is HOSTED
+ * (an orphan, or a per-creation-context copy) and is named from another
+ * function, which the wrapper would hide.
+ */
+function movableChild(envGraph: EnvGraph, functionIndex: number, childName: string): boolean {
+  const m = /^_fn(\d+)$/.exec(childName);
+  if (m === null) return false;
+  const child = Number(m[1]);
+  const sites = envGraph.closureCreationSites.get(child);
+  if (sites === undefined || sites.size !== 1) return false;
+  for (const key of sites.keys()) if (key.slice(0, key.indexOf(":")) !== String(functionIndex)) return false;
+  return true;
+}
+
+/** env id -> parent env id, for spec 27's "parent of a sibling" guard. */
+function envParentMap(envGraph: EnvGraph): Map<number, number | null> {
+  const out = new Map<number, number | null>();
+  for (const node of envGraph.nodes) out.set(node.id, node.parent);
+  return out;
 }
 
 /**
