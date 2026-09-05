@@ -36,9 +36,9 @@ spec states the per-version shape it has read (catalogue confidence rule).
 | `loop-cond` | 2, 3 | 02, 03, 11 | all | `loop{block c; if c break}` → `LoopForm` while/do-while annotation | done |
 | `for-header` | 4 | 04, 11 | all | init block before + step at body tail → `LoopForm.init/step` | done |
 | `finally-dedup` | 12 (+54) | 12, 13, 16, 54 | all | k structurally-equal copies of a finally body + synthesized catch-rethrow → one `finalizer` | **hard** §5.1 |
-| `yield-recovery` | 17 | 23–26 | ≤96 | `switch(generator-state)` resume dispatcher + `__state = k; return v` → `function*` with `yield` | batch 4 |
+| `yield-recovery` | 17 | 23–26 | 84, 94, 96 | `switch(generator-state)` resume dispatcher + `__state = k; return v` → `function*` with `yield` | batch 4; spec [`25-yield-async-recovery.md`](25-yield-async-recovery.md) — **stage B, not stage A** (§1.0, PUSHBACK P-24), acyclic suspend graphs only (R-Y5) |
 | `gen-lowered` | 18 (ABI ✅ measured, T13) | 23–26 | ≥97 | `CreateGenerator` wrapper + `__pc` state machine → `function*` | **hard** §5.2 |
-| `async-recovery` | 19 | 27, 28 | all | `spawnAsync(body)` around a recovered generator → `async function` + `await` | batch 4, `after: [yield-recovery, gen-lowered]` |
+| `async-recovery` | 19 | 27, 28 | all | `spawnAsync(body)` around a recovered generator → `async function` + `await` | batch 4, `after: [yield-recovery, gen-lowered]`; spec [`25-yield-async-recovery.md`](25-yield-async-recovery.md) — **stage B** (P-24); refuses at ≥97 with R-A4 until `gen-lowered` lands |
 | `if-chain` | 1 | 01 | all | `else { if … }` → `else if`; `if (c) return; else {…}` → early return | done |
 | `switch-raise` | 6, 7 (8 is ⛔: not until a fixture exists) | 09, 10, 52, 53 | all (opcode rename at 99) | jump-table `switch` node + `JStrictEqual` compare chain on one register → `switch` with fall-through | **done (S1, jump-table)**; S2 blocked on F13 |
 | `for-in` | 9 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | batch 2 |
