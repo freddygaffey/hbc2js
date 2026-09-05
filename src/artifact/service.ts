@@ -53,7 +53,8 @@ import type {
 import { exportedNamesOf } from "./exported-names.ts";
 import { scanObjectTables, type ObjectTableRow, type ObjectTableScan } from "./object-tables.ts";
 import { walkFunction, type StringUseSite as WalkStringUseSite } from "./semantic-walk.ts";
-import { compareTemplateInjections, scanTemplateInjections, type TemplateInjectionRow, type TemplateInjectionScan } from "./template-injections.ts";
+import { compareTemplateInjections, scanTemplateInjectionsSteps, type TemplateInjectionRow, type TemplateInjectionScan } from "./template-injections.ts";
+import { drainAsync, drainSync, type Steps } from "../incremental.ts";
 import { parseNativeJsonl, type NativeManifest, type NativeModuleRow, type NativeResourceRow, type SeamRow, type SeamStatus } from "../native/schema.ts";
 
 function readJson<T>(path: string): T {
@@ -798,12 +799,20 @@ export class ArtifactService {
    *  filter over an array. Live verb — needs `--hbc`, because chunks/holes
    *  are read from the bytecode, not artifact rows. */
   private templateInjectionScan: TemplateInjectionScan | undefined;
-  private ensureTemplateInjections(): TemplateInjectionScan {
+  /** In-flight `templateInjectionsAsync` scan, so two concurrent requests
+   *  share ONE scan instead of racing two whole-bundle passes. */
+  private templateInjectionPending: Promise<TemplateInjectionScan> | undefined;
+
+  private *templateInjectionSteps(): Steps<TemplateInjectionScan> {
     if (this.templateInjectionScan === undefined) {
       const module = this.ensureModule("template-injections");
-      this.templateInjectionScan = scanTemplateInjections(module, (fn) => this.moduleOfFn(fn));
+      this.templateInjectionScan = yield* scanTemplateInjectionsSteps(module, (fn) => this.moduleOfFn(fn));
     }
     return this.templateInjectionScan;
+  }
+
+  private ensureTemplateInjections(): TemplateInjectionScan {
+    return drainSync(this.templateInjectionSteps());
   }
 
   /** §14.3 `query template-injections` — the WebView-injection anti-pattern
@@ -812,7 +821,28 @@ export class ArtifactService {
    *  substitution. Ranked by substitutions-inside-quotes desc, then `fn`
    *  (`compareTemplateInjections`). */
   templateInjections(opts: TemplateInjectionsOptions = {}): TemplateInjectionsResult {
-    const scan = this.ensureTemplateInjections();
+    return this.templateInjectionsFrom(this.ensureTemplateInjections(), opts);
+  }
+
+  /** The same answer as {@link templateInjections}, computed without ever
+   *  holding the event loop for more than one `YIELD_SLICE_MS` slice — the
+   *  ui-server route uses this one, because the underlying scan decodes
+   *  EVERY function in the bundle (23 s on a real 12 MB app, docs/BUGS.md
+   *  "template-injections blocks the ui-server" row) and `limit` cannot be
+   *  pushed into it: the rows are ranked, so the top `limit` of them is only
+   *  known once every function has been scanned. The scan is cached after
+   *  the first call, exactly as before. */
+  async templateInjectionsAsync(opts: TemplateInjectionsOptions = {}): Promise<TemplateInjectionsResult> {
+    if (this.templateInjectionScan !== undefined) return this.templateInjectionsFrom(this.templateInjectionScan, opts);
+    if (this.templateInjectionPending === undefined) {
+      this.templateInjectionPending = drainAsync(this.templateInjectionSteps()).finally(() => {
+        this.templateInjectionPending = undefined;
+      });
+    }
+    return this.templateInjectionsFrom(await this.templateInjectionPending, opts);
+  }
+
+  private templateInjectionsFrom(scan: TemplateInjectionScan, opts: TemplateInjectionsOptions): TemplateInjectionsResult {
     const rows = (opts.module !== undefined ? scan.rows.filter((r) => r.module === opts.module) : scan.rows).slice().sort(compareTemplateInjections);
     const limit = opts.all === true ? rows.length : (opts.limit ?? TEMPLATE_INJECTIONS_DEFAULT_LIMIT);
     return {
@@ -994,6 +1024,37 @@ export class ArtifactService {
       out.push({ fn, name: this.functionsByFn.get(fn)?.name ?? null, lines: r !== undefined ? r.lines : null });
     }
     return out;
+  }
+
+  /** Every function that has a recorded source range, as cheap rows —
+   *  `{fn, name, file, lines}`, sorted by `fn`. The whole-artifact walk
+   *  `search/source` (`src/mcp/leads.ts`) needs: `fn()` per function is
+   *  O(native rows) PLUS an overlay query each, which is why one
+   *  `/api/search/source` took 5.0 s on the rn-template fixture (4,199 fns)
+   *  and 83 s on a real 12 MB app. Same "raw table for a full-table pass"
+   *  shape as `listFns`; the caller applies its own caps. */
+  listRanges(): readonly { readonly fn: number; readonly name: string | null; readonly file: string; readonly lines: readonly [number, number] }[] {
+    const out: { fn: number; name: string | null; file: string; lines: readonly [number, number] }[] = [];
+    for (const [fn, r] of this.rangesByFn) out.push({ fn, name: this.functionsByFn.get(fn)?.name ?? null, file: r.file, lines: r.lines });
+    out.sort((a, b) => a.fn - b.fn);
+    return out;
+  }
+
+  /** The `overlayName` `fn()` reports, without the rest of `fn()`'s work —
+   *  for a scanner that needs the accepted name of a MATCHED row only. */
+  overlayNameOf(fn: number): string | null {
+    if (this.overlay === undefined) return null;
+    for (const r of this.overlay.search({ fn })) return r.name;
+    return null;
+  }
+
+  /** Whether `source(fn)` will re-render this function from its accepted
+   *  register names instead of slicing the module file on disk. A scanner
+   *  that reads module files itself (`search/source`) must fall back to
+   *  `source(fn)` for exactly these functions, or it would match a renamed
+   *  function against its pre-rename text. */
+  hasActiveNames(fn: number): boolean {
+    return this.activeNamesFor(fn).size > 0;
   }
 
   /** §3.1 `query module <id>`. */

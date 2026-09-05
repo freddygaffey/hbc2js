@@ -21,7 +21,7 @@ import type { ResolvedFinding } from "../project/findings.ts";
 import type { FindingStatus, Severity, Tag } from "../project/schema.ts";
 import { hasProjectDb, openProjectDbReadonly } from "../projdb/artifact-read.ts";
 import { ErrorCode, Hbc2jsError } from "../errors.ts";
-import { computeLeads, searchFunctions, searchSource, LEADS_CAPS, type LeadsResult, type SearchPage, type FunctionMatch, type SourceMatch } from "./leads.ts";
+import { computeLeads, searchFunctions, searchSource, searchSourceAsync, LEADS_CAPS, type LeadsResult, type SearchOptions, type SearchPage, type FunctionMatch, type SourceMatch } from "./leads.ts";
 import { buildInventory } from "../deps/inventory.ts";
 import { resolveDbLayers, loadSignatures } from "../deps/db.ts";
 import { deriveCandidatePackages } from "../deps/candidates.ts";
@@ -338,7 +338,18 @@ export class McpResources {
    *  substitution. Rows are inlined with the CONTAINING function's
    *  `fnName`/`size`, same convention as `objectTables`. */
   templateInjections(opts: TemplateInjectionsOptions = {}) {
-    const r = this.artifact.templateInjections(opts);
+    return this.inlineTemplateInjections(this.artifact.templateInjections(opts));
+  }
+
+  /** {@link templateInjections}, drained without freezing a shared event
+   *  loop — the underlying scan decodes every function in the bundle (23 s
+   *  on a real 12 MB app) and cannot be cut short by `limit`, because the
+   *  rows are ranked. The ui-server route uses this one. */
+  async templateInjectionsAsync(opts: TemplateInjectionsOptions = {}) {
+    return this.inlineTemplateInjections(await this.artifact.templateInjectionsAsync(opts));
+  }
+
+  private inlineTemplateInjections(r: ReturnType<ArtifactService["templateInjections"]>) {
     return {
       ...r,
       rows: r.rows.map((row) => {
@@ -558,14 +569,22 @@ export class McpResources {
   /** `search/functions` — name substring/regex search over every function,
    *  paginated (§14 addition 3, the typed replacement for the cut
    *  `query`). */
-  searchFunctions(query: string, opts: { readonly regex?: boolean; readonly cursor?: number } = {}): SearchPage<FunctionMatch> {
+  searchFunctions(query: string, opts: SearchOptions = {}): SearchPage<FunctionMatch> {
     return searchFunctions(this.artifact, query, opts);
   }
 
   /** `search/source` — bounded grep over rendered source, paginated (§14
    *  addition 3). */
-  searchSource(query: string, opts: { readonly regex?: boolean; readonly cursor?: number } = {}): SearchPage<SourceMatch> {
+  searchSource(query: string, opts: SearchOptions = {}): SearchPage<SourceMatch> {
     return searchSource(this.artifact, query, opts);
+  }
+
+  /** `search/source`, computed off the event loop\'s critical path — same
+   *  answer as {@link searchSource}, but the scan hands control back every
+   *  few milliseconds so a caller sharing a thread with an http server (the
+   *  ui-server) keeps answering every other route while it runs. */
+  searchSourceAsync(query: string, opts: SearchOptions = {}): Promise<SearchPage<SourceMatch>> {
+    return searchSourceAsync(this.artifact, query, opts);
   }
 
   // -- scan/{secrets|deps|semgrep} (§14 addition 2) ------------------------
