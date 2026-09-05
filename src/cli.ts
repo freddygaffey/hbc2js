@@ -2,7 +2,7 @@
 // docs/specs/00-project-skeleton.md §6.3 — the only place in the codebase allowed to
 // touch stdout/stderr or call process.exit.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import v8 from "node:v8";
 import { ErrorCode, Hbc2jsError } from "./errors.ts";
 import { parseHbc } from "./parse/module.ts";
@@ -43,6 +43,7 @@ import { rawFrameBodies } from "./name-overlay/frames.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
 import { reconstructNativeProject } from "./native/reconstruct.ts";
+import { ingestNative, openApk } from "./native/ingest.ts";
 import { ProjectService } from "./project/service.ts";
 import type { AnnotationRow } from "./project/service.ts";
 import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
@@ -1188,6 +1189,27 @@ async function runDepsCmd(argv: readonly string[]): Promise<number> {
           // no existing package.json — write a fresh one.
         }
         writeFileSync(pkgJsonPath, JSON.stringify({ ...existing, dependencies: deps }, null, 2) + "\n");
+      }
+      // spec 27 §L9 (closing the L8 gap): when the input is an `.apk`,
+      // ingest its native side into `<out>/native/*.jsonl` first — the same
+      // `ingestNative`/`buildNativeTables` API `check-native` verifies, not
+      // a re-derivation — so a single `deps <app.apk> --out <dir>` run
+      // yields both the JS-side `package.json` above and the native tables
+      // the L8 reconstruction hook below reads. Never fails the run: a
+      // native-ingestion problem is reported to stderr, exactly like the
+      // `nativeChannelForApk` swallow-on-failure convention in
+      // `src/deps/index.ts` ("native is optional-by-construction", §1.4).
+      // Non-APK input is unchanged: no `native/` directory is written.
+      // Re-running is idempotent: `ingestNative` rewrites the same tables
+      // from the same bytes each time (spec 27 §4.1 "pure function of
+      // input bytes").
+      if (extname(args.input).toLowerCase() === ".apk") {
+        try {
+          ingestNative(openApk(args.input), args.out);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          process.stderr.write(`hbc2js deps --out: native ingestion skipped — ${message}\n`);
+        }
       }
       // spec 27 §L8: the native-side reconstruction hook — a silent no-op
       // when `args.out` holds no `native/*.jsonl` tables (never fails the

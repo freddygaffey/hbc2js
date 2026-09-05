@@ -3,15 +3,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { ingestNative, openApk } from "../../../src/native/ingest.ts";
+import { requireHermesc, runHermesc } from "../../support/hermesc.ts";
 
 const CLI = join(repoRoot(), "src", "cli.ts");
 const RN_TEMPLATE = join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc");
 const PARTY_APK = join(repoRoot(), "tests", "fixtures", "native", "party.apk");
+const SYNTHETIC_APK = join(repoRoot(), "tests", "fixtures", "native", "synthetic.apk");
 
 function runCli(args: readonly string[]): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", shell: false });
@@ -101,6 +103,49 @@ test("deps --offline --out <dir>, once native tables are ingested into <dir>, re
     assert.equal(pkgJson.dependencies["react-native-gesture-handler"], "*", "the native-only dep must be merged in");
     assert.equal(pkgJson.dependencies["react-native"], "0.72.17", "the JS-fingerprint channel's own version is untouched");
   } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+// spec 27 §L9 (closing the L8 gap): a single `deps <apk> --out <dir>` call,
+// on an `.apk` that carries BOTH a real Hermes bundle and a native side,
+// must yield native/*.jsonl + .env + package.json deps + native-todo/ in
+// one run -- no separate `ingestNative` call, unlike the L8 test above.
+// `synthetic.apk` (docs/specs/27-native-side.md §3 "primary" fixture) is
+// the committed native fixture; this test builds a fresh, uncommitted APK
+// in a temp dir by adding a `hermesc`-compiled `assets/index.android.bundle`
+// beside its existing entries (`zip`/`unzip`, the same external tools
+// `src/deps/apk.ts` already shells out to at runtime) -- hermetic, and the
+// committed fixture itself is never modified.
+test("deps <apk> --out <dir>, single run: native/*.jsonl + .env + package.json deps + native-todo/ (spec 27 L9)", (t) => {
+  const hermesc = requireHermesc(t, 94);
+  if (hermesc === null) return;
+  const srcDir = mkdtempSync(join(tmpdir(), "hbc2js-deps-cli-e2e-apk-src-"));
+  const outDir = mkdtempSync(join(tmpdir(), "hbc2js-deps-cli-e2e-apk-out-"));
+  try {
+    spawnSync("unzip", ["-o", SYNTHETIC_APK, "-d", srcDir], { encoding: "utf8" });
+    writeFileSync(join(srcDir, "probe.js"), "var hello = 'native-l9';\n");
+    const emit = runHermesc(hermesc, ["-emit-binary", "-out=assets/index.android.bundle", "probe.js"], srcDir);
+    assert.equal(emit.status, 0, emit.stderr);
+    const combinedApk = join(srcDir, "combined.apk");
+    const zipResult = spawnSync("zip", ["-r", "-X", "combined.apk", "AndroidManifest.xml", "classes.dex", "classes2.dex", "resources.arsc", "assets"], { cwd: srcDir, encoding: "utf8" });
+    assert.equal(zipResult.status, 0, zipResult.stderr);
+
+    const r = runCli(["deps", combinedApk, "--offline", "--out", outDir]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const nativeFiles = readdirSync(join(outDir, "native"));
+    for (const f of ["classes.jsonl", "methods.jsonl", "react-modules.jsonl", "env.jsonl", "manifest.json"]) {
+      assert.ok(nativeFiles.includes(f), `expected native/${f} from a single deps --out run`);
+    }
+    const envText = readFileSync(join(outDir, ".env"), "utf8");
+    assert.match(envText, /^APIGEE_DOMAIN=https:\/\/api\.example\.test$/m, ".env must carry the recovered env value");
+    const pkgJson = JSON.parse(readFileSync(join(outDir, "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    assert.equal(pkgJson.dependencies["react-native-keychain"], "*", "the third-party native dep must be merged in");
+    assert.ok(existsSync(join(outDir, "native-todo", "Crypto", "Crypto.java")), "the first-party module must get a native-todo stub");
+    assert.ok(existsSync(join(outDir, "native-todo", "Crypto", "RESYNTHESIZE.md")));
+  } finally {
+    rmSync(srcDir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
 });
