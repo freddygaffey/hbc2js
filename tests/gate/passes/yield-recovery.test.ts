@@ -150,14 +150,22 @@ test("R-Y6 evidence: 25-generator-delegation lowers yield* through the __hbc_del
 // Framework and registration premises (spec 25 sections 1.0, 2, 5).
 // ---------------------------------------------------------------------------
 
-test("F25-1 premise: src/emit/ast.ts has no yield/await/generator/async node, and does carry sameFrame", () => {
+// PUSHBACK P-28: as shipped this test asserted the *absence* of every F25-1
+// node ("F25-1 would be a duplicate if a yield node already existed"). That is
+// a pre-condition, true exactly once -- F25-1 is a required framework item of
+// the same spec (section 2), and neither rung can be built without it, so the
+// assertion could not survive the landing it was written for. Re-pointed at the
+// landed state: the same four facts, asserted positively. The `sameFrame`
+// assertion -- section 1.0's actual stage-B evidence, and the anchor both
+// matchers key on -- is carried over verbatim.
+test("F25-1: src/emit/ast.ts declares the yield/await nodes and the generator/async flags, and still carries sameFrame", () => {
   const ast = readFileSync(join(repoRoot(), "src", "emit", "ast.ts"), "utf8");
-  assert.doesNotMatch(ast, /k: "yield"/, "F25-1 would be a duplicate if a yield node already existed");
-  assert.doesNotMatch(ast, /k: "await"/, "F25-1 would be a duplicate if an await node already existed");
-  assert.doesNotMatch(ast, /readonly generator\?/, "F25-1 adds the generator flag to the func node");
-  assert.doesNotMatch(ast, /readonly async\?/, "F25-1 adds the async flag to the func node");
-  // Section 1.0's third stage-B argument: the step closure is already a
-  // first-class stage-B AST node with a dedicated marker.
+  assert.match(ast, /k: "yield"/, "F25-1 adds the yield node");
+  assert.match(ast, /k: "await"/, "F25-1 adds the await node");
+  assert.match(ast, /readonly generator\?/, "F25-1 adds the generator flag to the func node");
+  assert.match(ast, /readonly async\?/, "F25-1 adds the async flag to the func node");
+  // Section 1.0's third stage-B argument: the step closure is a first-class
+  // stage-B AST node with a dedicated marker, and stays one.
   assert.match(ast, /readonly sameFrame\?: true;/);
 });
 

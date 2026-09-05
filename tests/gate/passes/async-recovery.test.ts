@@ -126,10 +126,13 @@ test("baseline: the async idiom is identical with passes on and off (PL-05)", ()
 // Framework and registration premises.
 // ---------------------------------------------------------------------------
 
-test("F25-1 premise: src/emit/ast.ts has no await node today", () => {
+// PUSHBACK P-28 (see tests/gate/passes/yield-recovery.test.ts): the shipped
+// form asserted F25-1 had not been implemented yet, which cannot hold once the
+// rung it exists for lands. Same two facts, asserted positively.
+test("F25-1: src/emit/ast.ts declares the await node and the async flag", () => {
   const ast = readFileSync(join(repoRoot(), "src", "emit", "ast.ts"), "utf8");
-  assert.doesNotMatch(ast, /k: "await"/);
-  assert.doesNotMatch(ast, /readonly async\?/);
+  assert.match(ast, /k: "await"/);
+  assert.match(ast, /readonly async\?/);
 });
 
 test("PL-06 premise: catalogue row 19 is verified and points at spec 25", () => {
