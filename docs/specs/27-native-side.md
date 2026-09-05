@@ -367,6 +367,19 @@ spec).
 
 **Depends on:** L1, L2.
 
+**Landed (2026-09-05).** `src/native/seams.ts` + `SeamRow` in
+`src/native/schema.ts`; `native/seams.jsonl` (header `source:"join"`) is
+written by `ingestNative` only when the same directory holds a JS artifact,
+and is documented in docs/specs/10-artifact-format.md §2.8. Fixtures:
+`tests/fixtures/constructs/66-native-module-seams` (JS half, every committed
+bytecode version) + `tests/fixtures/native/seams.apk` (native half; the
+L1/L2-pinned APKs are untouched). **One honest deviation, recorded in
+docs/BUGS.md:** the JS tables carry no receiver for a host-object member
+chain, so every row is `resolved:"string-only"` (`points-to`/`by-name` are
+unreachable until a JS-side signal exists), and an unmatched `NativeModules`
+member string is emitted `js-only` rather than dropped — over-reporting a
+method name as a candidate module, never fabricating a link.
+
 ---
 
 ### L4 — First-party vs third-party labelling · Sonnet

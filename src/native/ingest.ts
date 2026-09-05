@@ -26,7 +26,9 @@ import {
   type NativeProvenance,
   type NativeResourceRow,
   type NativeStringRow,
+  type SeamRow,
 } from "./schema.ts";
+import { writeSeams } from "./seams.ts";
 import { readZipDirectory, readZipEntry } from "./zip.ts";
 
 /** A read-only view of an APK or an extracted directory. */
@@ -266,6 +268,9 @@ export interface IngestResult {
   readonly tables: NativeTables;
   readonly files: ReadonlyMap<string, string>;
   readonly provenance: NativeProvenance;
+  /** spec 27 L3: rows written to `native/seams.jsonl`, or `null` when this
+   *  directory holds no JS artifact to join against (no file is written). */
+  readonly seams: readonly SeamRow[] | null;
 }
 
 /** Read `container` and write `<outDir>/native/*`. When `outDir` already holds
@@ -278,6 +283,11 @@ export function ingestNative(container: NativeContainer, outDir: string): Ingest
   const provenance = nativeProvenance(container, tables, files);
   mkdirSync(join(outDir, "native"), { recursive: true });
   for (const [name, text] of files) writeFileSync(join(outDir, ...name.split("/")), text);
+  // spec 27 L3: the JS<->native join, written only when BOTH halves exist.
+  // Deliberately after the native tables above and outside `provenance`: the
+  // provenance block describes what was read from the APK's bytes, and a seam
+  // row is a join over two artifacts, not a byte reading.
+  const seams = writeSeams(outDir, tables.reactModules);
   writeFileSync(join(outDir, "native", "ingest.json"), JSON.stringify(provenance, null, 2) + "\n");
   const artifactManifest = join(outDir, "manifest.json");
   if (existsSync(artifactManifest)) {
@@ -285,5 +295,5 @@ export function ingestNative(container: NativeContainer, outDir: string): Ingest
     parsed["native"] = provenance;
     writeFileSync(artifactManifest, JSON.stringify(parsed, null, 2) + "\n");
   }
-  return { tables, files, provenance };
+  return { tables, files, provenance, seams: seams === null ? null : seams.rows };
 }

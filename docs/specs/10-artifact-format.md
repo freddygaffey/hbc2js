@@ -348,6 +348,48 @@ match, not a general instruction interpreter — see `dex.ts`'s
 `unresolved` (the row is still emitted, `jsName:null` — never dropped, never
 invented). `firstParty` is always `null` at L2; L4 fills it.
 
+`native/seams.jsonl` (spec 27 L3, `src/native/seams.ts`) is the JS<->native
+**join**, written only when this directory holds BOTH a JS artifact
+(`index/strings.json` + `index/string-uses.jsonl` + `index/globals.jsonl`) and
+the native tables above; with no JS half the file is simply absent (an absent
+seam table says "not joinable", which is the truth). Its header `source` is
+`join` — the one native table that is not a byte reading: every signal it uses
+is already materialised by `src/artifact/*` or by `react-modules.jsonl`, and
+nothing is re-derived from bytecode or DEX bytes here. Row:
+
+```json
+{"key":"seam:Crypto.generateKey","jsName":"Crypto","jsMethod":"generateKey",
+ "jsEvidence":{"stringUses":["sid:41"],"callSites":["fn:3"],"resolved":"string-only"},
+ "native":{"module":"native:module:Crypto","method":"native:method:Lcom/example/seam/CryptoModule;->generateKey(Ljava/lang/String;Lcom/facebook/react/bridge/Promise;)V"},
+ "status":"linked","channel":"NativeModules","firstParty":null}
+```
+
+- **`status`** is `linked` (both halves), `js-only` (a JS reference with no
+  native impl in this APK — `native:null`, a real unresolved boundary, never
+  dropped and never guessed) or `native-only` (a native module no JS reference
+  reached — `jsEvidence:null`, symmetric with `native:null`).
+- **`channel`** names the JS-side host anchor the row came from
+  (`NativeModules` member reads, a `TurboModuleRegistry` string literal, a
+  `requireNativeComponent` string literal); `null` on a `native-only` row.
+- **Matching is exact name equality or nothing** (spec 27 §4.3): a JS `Crypto`
+  never links to a native `CryptoStore`. `jsMethod` is likewise only claimed
+  when the JS side uses a member string that exactly equals one of that
+  module's exported native methods.
+- **`resolved`** is the strength of the JS-side evidence
+  (`points-to|by-name|string-only`). **Known gap (v1): every row is
+  `string-only`.** The materialised JS tables carry no receiver for a
+  host-object member chain — `calls-resolved.jsonl` resolves `require(N)`
+  module exports only, and `string-uses.jsonl` gives the same `property-get`
+  role to the `X` of `NativeModules.X` and the `m` of `X.m`. Consequence, also
+  recorded in `docs/BUGS.md`: in the `NativeModules` channel a member string
+  that matches no native module and is not consumed as a linked module's
+  method is reported as a `js-only` seam, so an unresolved boundary is never
+  dropped, at the cost of over-reporting method names as candidate modules. A
+  `js-only` row is an unresolved boundary, never a claimed link, so this can
+  never fabricate a seam. Closing the gap is a JS-side change (a distinct
+  host-member string-use role, or a receiver on a resolved call edge), not an
+  L3 one — L3 never invents a signal.
+
 ## 3. Query surface
 
 **The files ARE the contract** — a tool that wants to stream everything reads

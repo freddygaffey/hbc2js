@@ -219,6 +219,92 @@ const RN_MODULES_DEX = [
   },
 ];
 
+/** classes.dex for `seams.apk` (docs/specs/27-native-side.md L3's own
+ *  fixture — again separate bytes, so L1's and L2's pinned .apk files are
+ *  untouched). The native half of the `66-native-module-seams` construct
+ *  fixture: the CryptoModule-shaped regression (`@ReactModule(name="Crypto")`
+ *  + `@ReactMethod generateKey`), a `CryptoStore` module that must NEVER link
+ *  to the JS `Crypto` reference (the no-substring-matching proof), a native
+ *  module the JS side never mentions (`native-only`), a view manager named
+ *  `Y` (the `requireNativeComponent("Y")` half) and a TurboModule spec for
+ *  `X` (the `TurboModuleRegistry.get("X")` half). */
+const SEAMS_DEX = [
+  {
+    name: "Lcom/example/seam/CryptoModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "CryptoModule.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "Crypto" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [
+      {
+        name: "generateKey",
+        ret: "V",
+        params: [STRING, PROMISE],
+        access: 0x1,
+        annotations: [{ type: REACT_METHOD_ANN, visibility: 1, elements: {} }],
+      },
+      { name: "wipe", ret: "V", params: [], access: 0x2 },
+    ],
+  },
+  {
+    name: "Lcom/example/seam/CryptoStoreModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "CryptoStoreModule.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "CryptoStore" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [
+      {
+        name: "generateKey",
+        ret: "V",
+        params: [STRING, PROMISE],
+        access: 0x1,
+        annotations: [{ type: REACT_METHOD_ANN, visibility: 1, elements: {} }],
+      },
+    ],
+  },
+  {
+    name: "Lcom/example/seam/AnalyticsModule;",
+    super: RCBJM,
+    access: 0x11,
+    sourceFile: "AnalyticsModule.java",
+    annotations: [{ type: REACT_MODULE_ANN, visibility: 1, elements: { name: { string: "Analytics" } } }],
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [
+      {
+        name: "track",
+        ret: "V",
+        params: [STRING],
+        access: 0x1,
+        annotations: [{ type: REACT_METHOD_ANN, visibility: 1, elements: {} }],
+      },
+    ],
+  },
+  {
+    name: "Lcom/example/seam/NativeXSpec;",
+    super: RCBJM,
+    interfaces: [TURBO_MARKER],
+    access: 0x401, // public abstract
+    sourceFile: "NativeXSpec.java",
+    virtualMethods: [{ name: "ping", ret: STRING, params: [], access: 0x401 }],
+  },
+  {
+    name: "Lcom/example/seam/YViewManager;",
+    super: SIMPLE_VIEW_MANAGER,
+    access: 0x11,
+    sourceFile: "YViewManager.java",
+    directMethods: [{ name: "<init>", ret: "V", params: [], access: 0x10001 }],
+    virtualMethods: [{ name: "getName", ret: STRING, params: [], access: 0x1, body: { constString: "Y" } }],
+  },
+];
+
+const SEAMS_MANIFEST = {
+  name: "manifest",
+  attrs: [{ ns: null, name: "package", value: { s: "com.example.seam" } }],
+  children: [{ name: "uses-sdk", attrs: [a("minSdkVersion", { int: 24 }), a("targetSdkVersion", { int: 34 })] }],
+};
+
 const RN_MODULES_MANIFEST = {
   name: "manifest",
   attrs: [{ ns: null, name: "package", value: { s: "com.example.rn" } }],
@@ -264,11 +350,20 @@ export function generate(outDir) {
   ]);
   writeFileSync(join(outDir, "rn-modules.apk"), rnModules);
 
+  // The L3-owned fourth fixture (docs/specs/27-native-side.md L3): the native
+  // half of the `66-native-module-seams` construct fixture.
+  const seamsApk = buildZip([
+    { name: "AndroidManifest.xml", data: buildAxml(SEAMS_MANIFEST) },
+    { name: "classes.dex", data: buildDex(SEAMS_DEX) },
+  ]);
+  writeFileSync(join(outDir, "seams.apk"), seamsApk);
+
   return {
     apk: join(outDir, "synthetic.apk"),
     bare: join(outDir, "no-resources.apk"),
     rnModules: join(outDir, "rn-modules.apk"),
-    sizes: { apk: apk.length, bare: bare.length, rnModules: rnModules.length },
+    seams: join(outDir, "seams.apk"),
+    sizes: { apk: apk.length, bare: bare.length, rnModules: rnModules.length, seams: seamsApk.length },
   };
 }
 
@@ -276,5 +371,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const out = process.argv[2] ?? join(root, "tests", "fixtures", "native");
   const r = generate(out);
-  process.stdout.write(`wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes) and ${r.rnModules} (${r.sizes.rnModules} bytes)\n`);
+  process.stdout.write(`wrote ${r.apk} (${r.sizes.apk} bytes), ${r.bare} (${r.sizes.bare} bytes), ${r.rnModules} (${r.sizes.rnModules} bytes) and ${r.seams} (${r.sizes.seams} bytes)\n`);
 }

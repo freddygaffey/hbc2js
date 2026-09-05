@@ -6,8 +6,11 @@ import { createHash } from "node:crypto";
 /** §1.4: the header schema id shared by every `native/*.jsonl` file. */
 export const NATIVE_SCHEMA = "hbc2js-native/1";
 
-export type NativeKind = "classes" | "methods" | "strings" | "resources" | "assets" | "react-modules";
-export type NativeSource = "dex" | "axml" | "arsc" | "zip";
+export type NativeKind = "classes" | "methods" | "strings" | "resources" | "assets" | "react-modules" | "seams";
+/** `join` (spec 27 L3) is not a byte source: a `seams.jsonl` row is derived
+ *  from the ALREADY-materialised native tables and JS artifact index rows,
+ *  never re-read from bytes. */
+export type NativeSource = "dex" | "axml" | "arsc" | "zip" | "join";
 
 /** §1.4: the first line of every native table. */
 export interface NativeHeader {
@@ -182,4 +185,50 @@ export function assetKind(path: string): NativeAssetRow["kind"] {
   if (lower.endsWith(".png")) return "png";
   if (lower.endsWith(".ttf") || lower.endsWith(".otf") || lower.endsWith(".woff") || lower.endsWith(".woff2")) return "font";
   return "other";
+}
+
+// --- spec 27 L3 -- JS<->native linkage join (`native/seams.jsonl`) ---------
+
+/** Which JS-side host anchor produced the JS half of a seam row. `null` on a
+ *  `native-only` row (there is no JS half at all). */
+export type SeamChannel = "NativeModules" | "TurboModuleRegistry" | "requireNativeComponent";
+
+/** Strength of the JS-side evidence, spec 27 L3's own vocabulary:
+ *  - `points-to`: a proven receiver (an `index/calls-resolved.jsonl` edge).
+ *    Never produced today -- that pass resolves `require(N)` module exports,
+ *    not host-object receivers, so no seam can cite one yet (see
+ *    docs/specs/10-artifact-format.md 2.8's "known gap").
+ *  - `by-name`: the receiver is named by a resolved call edge.
+ *  - `string-only`: the name is a string used in a function that also touches
+ *    the host anchor -- the honest strength of every row v1 emits. */
+export type SeamResolved = "points-to" | "by-name" | "string-only";
+
+export type SeamStatus = "linked" | "js-only" | "native-only";
+
+export interface SeamJsEvidence {
+  /** `sid:<n>` ids, each resolvable in `index/string-uses.jsonl`/`strings.json`. */
+  readonly stringUses: readonly string[];
+  /** `fn:<n>` ids of the functions the strings above were used in. */
+  readonly callSites: readonly string[];
+  readonly resolved: SeamResolved;
+}
+
+export interface SeamNativeRef {
+  readonly module: string; // native:module:X
+  readonly method: string | null; // native:method:...
+}
+
+/** `native/seams.jsonl` (spec 27 L3). One row per seam, citing BOTH sides'
+ *  evidence; `jsEvidence` is `null` exactly on a `native-only` row and
+ *  `native` is `null` exactly on a `js-only` row. */
+export interface SeamRow {
+  readonly key: string; // seam:X.method / seam:X
+  readonly jsName: string | null;
+  readonly jsMethod: string | null;
+  readonly jsEvidence: SeamJsEvidence | null;
+  readonly native: SeamNativeRef | null;
+  readonly status: SeamStatus;
+  readonly channel: SeamChannel | null;
+  /** Filled by L4; always `null` at L3. */
+  readonly firstParty: boolean | null;
 }
