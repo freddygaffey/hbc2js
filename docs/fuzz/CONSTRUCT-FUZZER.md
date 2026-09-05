@@ -378,3 +378,15 @@ a seed base campaign-2 never touched.
        --out /tmp/campaign3-signatures.md'
   ssh deb 'cat /tmp/campaign3-signatures.md' > docs/reports/<date>-campaign3-signatures.md
   ```
+- **Morning-after harvest (2026-09-05):** v94/v96/v99 reached their
+  `--target 10000` and exited cleanly; v84 was still running (partial,
+  harvested as-is). ~98.6-98.9% pass rate on all four; 0/64 known
+  signatures fired; the 2 raw NEW signature strings both collapsed into one
+  already-diagnosed fuzzer/VM-limit artifact (`-Infinity` loop bound ->
+  Hermes RangeError vs Node OOM/timeout, confirmed to reproduce with no
+  decompilation involved) — **not a decompiler bug**, no new `docs/BUGS.md`
+  row. Also confirmed the `campaign3-v96-4000000/finds/` directory's 20
+  `v98-*` files are stale smoke-test leftovers (shared finds-dir race,
+  already documented in the campaign-2 rediff report), not campaign 3 v96
+  output. Full detail: `docs/reports/2026-09-05-campaign3-signatures.md`.
+  Re-harvest v84 once it reaches its own target.
