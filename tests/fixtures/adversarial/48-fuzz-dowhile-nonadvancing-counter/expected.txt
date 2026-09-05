@@ -1,0 +1,4 @@
+iterations=-Infinity final n=-20
+body runs even though condition is false: x=999
+squares: Infinity,Infinity,Infinity
+k unchanged by ++: -Infinity steps advanced: 3
