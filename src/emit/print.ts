@@ -406,7 +406,7 @@ function printStmt(s: Stmt, depth: number, out: string[], opts: PrintOptions): v
     case "try":
       out.push(`${p}try {`);
       printBody(s.block, depth + 1, out, opts);
-      out.push(`${p}} catch (${s.param}) {`);
+      out.push(s.param === null ? `${p}} catch {` : `${p}} catch (${s.param}) {`);
       printBody(s.handler, depth + 1, out, opts);
       out.push(`${p}}`);
       return;

@@ -53,8 +53,14 @@ export type Stmt =
   /**
    * Exception region. Carved by spec 03, wrapped here, never inferred.
    * `cfgBlock` is the synthetic try-head node (§4.5 note below).
+   *
+   * `shape` (F22-1, docs/specs/passes/22-try-shape-try-clean.md §3.1) is an
+   * optional annotation `src/passes/try-shape` writes and the emitter
+   * (`src/emit/function.ts`) reads: it is transparent to verify.ts, exactly
+   * like `LoopForm`/`hideLabel`/`elseIf` — the body and handler subtrees it
+   * sits on are untouched.
    */
-  | { readonly k: "try"; readonly region: number; readonly cfgBlock: BlockId; readonly body: Stmt; readonly handler: Stmt; readonly catchRegister: number }
+  | { readonly k: "try"; readonly region: number; readonly cfgBlock: BlockId; readonly body: Stmt; readonly handler: Stmt; readonly catchRegister: number; readonly shape?: TryShape }
   /**
    * Assign the §4.4 dispatch variable. Not in spec 04's node list: `dispatch`
    * mode is specified as "rewrite entering edges as `__state0 = k; continue L`",
@@ -98,6 +104,19 @@ export interface LoopForm {
    * it in batch 1.
    */
   readonly iter?: { readonly kind: "for-in" | "for-of"; readonly iterBlock: BlockId; readonly close: readonly BlockId[] };
+}
+
+/** See the `try` node's `shape` field. Written by `src/passes/try-shape`,
+ *  read by `src/emit/function.ts`'s `planTries`/`case "try"` lowering
+ *  (docs/specs/passes/22-try-shape-try-clean.md §3.1). */
+export interface TryShape {
+  /** No instruction in the handler reads `catchRegister`: the handler needs
+   *  no `__exc = e` copy and no catch binding. */
+  readonly bindsExc: boolean;
+  /** `"redundant"`: the emitter's `__pc` range guard is provably always true
+   *  when the handler runs, so it may be omitted. `"needed"` is the default
+   *  and an absent `shape` means the same. */
+  readonly guard: "needed" | "redundant";
 }
 
 export type Scrutinee =

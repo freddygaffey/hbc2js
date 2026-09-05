@@ -36,7 +36,7 @@ export function declaredNames(stmts: readonly Stmt[]): Set<string> {
     stmt: (s) => {
       if (s.k === "decl") for (const n of s.names) bound.add(n);
       else if (s.k === "init") bound.add(s.name);
-      else if (s.k === "try") bound.add(s.param);
+      else if (s.k === "try") { if (s.param !== null) bound.add(s.param); }
       else if (s.k === "func") {
         bound.add(s.name);
         for (const param of s.params) bound.add(param.name);

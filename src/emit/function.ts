@@ -102,7 +102,11 @@ function planTries(structured: StructuredFunction): TryPlan {
   };
   while (stack.length > 0) {
     const n = stack.pop()!;
-    if (n.k === "try") {
+    // F22-2 (docs/specs/passes/22-try-shape-try-clean.md §3.1): try-shape has
+    // already proven this region's guard is always true when the handler
+    // runs. Contribute no `guard` entry and do not set `needsPc` for it —
+    // exactly as if this region had no over-reach at all.
+    if (n.k === "try" && n.shape?.guard !== "redundant") {
       const region = structured.graph.cfg.regions[n.region]!;
       const inBody = bodyBlocksOf(n.body);
       // A `cfgBlock: -1` try is §4.4's dispatch nest, whose extent is the whole
@@ -525,7 +529,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         const block: Stmt[] = [];
         lowerTree(node.body, block);
         const handler: Stmt[] = [];
-        const param = excName(node.region);
+        const excParam = excName(node.region);
         const range = tryPlan.guard.get(node.region);
         if (range !== undefined) {
           // The try's lexical extent is wider than the region's byte range
@@ -535,13 +539,19 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
           handler.push({
             k: "if",
             test: un("!", { k: "logical", op: "&&", left: bin(">=", id(PC_VAR), num(range[0])), right: bin("<=", id(PC_VAR), num(range[1])) }),
-            then: [{ k: "throw", arg: id(param) }],
+            then: [{ k: "throw", arg: id(excParam) }],
             else: [],
           });
         }
-        handler.push(assign(id(EXC_VALUE), id(param)));
+        // F22-2: a guard's `throw _excN` reads the binding regardless of
+        // `shape.bindsExc`, so a guarded handler always keeps it. Otherwise
+        // try-shape's `bindsExc: false` means no instruction in the handler
+        // reads `catchRegister`, so neither the copy nor the surface binding
+        // is needed.
+        const needsBinding = range !== undefined || node.shape?.bindsExc !== false;
+        if (needsBinding) handler.push(assign(id(EXC_VALUE), id(excParam)));
         lowerTree(node.handler, handler);
-        out.push({ k: "try", block, param, handler });
+        out.push({ k: "try", block, param: needsBinding ? excParam : null, handler });
         return;
       }
     }

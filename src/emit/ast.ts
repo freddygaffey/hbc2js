@@ -279,7 +279,10 @@ export type Stmt =
   | { readonly k: "continue"; readonly label: string | null; readonly origin?: Origin }
   | { readonly k: "return"; readonly arg: Expr | null; readonly origin?: Origin }
   | { readonly k: "throw"; readonly arg: Expr; readonly origin?: Origin }
-  | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string; readonly handler: readonly Stmt[] }
+  /** `param: null` prints `catch { }` (try-clean/try-shape §3.2, an unread
+   *  catch binding — the emitter's own `Catch r = __exc` lowering still runs
+   *  inside `handler`; only the surface binding name is dropped). */
+  | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string | null; readonly handler: readonly Stmt[] }
   | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[]; readonly origin?: Origin }
   | { readonly k: "func"; readonly name: string; readonly params: readonly Param[]; readonly body: readonly Stmt[] }
   | { readonly k: "directive"; readonly text: string }
