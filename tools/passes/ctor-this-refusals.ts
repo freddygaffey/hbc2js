@@ -29,6 +29,8 @@ import { walk } from "../../src/passes/ast.ts";
 import { ctorThis } from "../../src/passes/ctor-this/index.ts";
 import type { ClassExpr } from "../../src/passes/ctor-this/match.ts";
 import { classesIn, ctorMember, foldCtorBody } from "../../src/passes/ctor-this/match.ts";
+import { superCall } from "../../src/passes/super-call/index.ts";
+import { foldSuperBody } from "../../src/passes/super-call/match.ts";
 import { splitProject } from "../../src/split/index.ts";
 
 export interface ClassRecord {
@@ -91,9 +93,39 @@ function classKey(fnIdx: number, cls: ClassExpr): string {
   return `${fnIdx}|${cls.name ?? ""}|${cls.members.length}|${ctor === null ? -1 : ctor.params.length}`;
 }
 
-/** Runs one whole-bundle decompile with passes on, spying on `ctor-this`. */
-export function classify(bytes: Uint8Array, moduleName: string): Map<string, ClassRecord> {
+/**
+ * Runs one whole-bundle decompile with passes on, spying on `ctor-this` --
+ * and, when `superRecords` is given, on `super-call` (row R13, spec 28) in the
+ * same run, so one decompile re-measures both rungs. `super-call` runs FIRST,
+ * so its spy sees the untouched derived-constructor lowering while
+ * `ctor-this`'s sees whatever survived it.
+ */
+export function classify(bytes: Uint8Array, moduleName: string, superRecords?: Map<string, ClassRecord>): Map<string, ClassRecord> {
   const records = new Map<string, ClassRecord>();
+  const scSpy = superCall as unknown as { match: typeof superCall.match };
+  const scOriginal = scSpy.match;
+  if (superRecords !== undefined) {
+    scSpy.match = (before, ctx) => {
+      const priv = hasPrivateNames(before);
+      for (const cls of classesIn(before)) {
+        const ctor = ctorMember(cls);
+        if (ctor === null) continue;
+        const key = classKey(ctx.functionIndex, cls);
+        // The driver's fixed point re-visits a class it has already folded,
+        // and `foldSuperBody` then answers R-SC0 (its own super site is gone).
+        // A recorded FOLD is final.
+        if (superRecords.get(key)?.code === "FOLD") continue;
+        const outcome = foldSuperBody(before, cls, ctor.body);
+        superRecords.set(key, {
+          code: "code" in outcome ? outcome.code : "FOLD",
+          shape: ctorShape(ctor.body),
+          privateNames: priv,
+          functionIndex: ctx.functionIndex,
+        });
+      }
+      return scOriginal(before, ctx);
+    };
+  }
   const spy = ctorThis as unknown as { match: typeof ctorThis.match };
   const original = spy.match;
   spy.match = (before, ctx) => {
@@ -115,6 +147,7 @@ export function classify(bytes: Uint8Array, moduleName: string): Map<string, Cla
     splitProject(bytes, { moduleName, passes: {} });
   } finally {
     spy.match = original;
+    scSpy.match = scOriginal;
   }
   return records;
 }
@@ -168,9 +201,12 @@ async function main(argv: readonly string[]): Promise<void> {
   }
   const bundle = positional[0];
   if (bundle === undefined) throw new Error("usage: ctor-this-refusals.ts <bundle.hbc> [--corpus <json>] [--bucket <substring>]");
-  const records = [...classify(new Uint8Array(readFileSync(bundle)), basename(bundle)).values()];
-  process.stdout.write(`# ctor-this refusal classification -- ${basename(bundle)}\n`);
-  process.stdout.write(tally(records, "whole bundle") + "\n");
+  const superMap = new Map<string, ClassRecord>();
+  const records = [...classify(new Uint8Array(readFileSync(bundle)), basename(bundle), superMap).values()];
+  const superRows = [...superMap.values()];
+  process.stdout.write(`# ctor-this / super-call refusal classification -- ${basename(bundle)}\n`);
+  process.stdout.write(tally(records, "ctor-this (R-CT*), whole bundle") + "\n");
+  process.stdout.write(tally(superRows, "super-call (R-SC*), whole bundle") + "\n");
   process.stdout.write(tally(records.filter((r) => r.privateNames), "classes with a Symbol(\"#name\") private name in scope") + "\n");
   if (corpus !== undefined) {
     const { moduleOf, hot, hits } = corpusIndex(corpus, bucket);
