@@ -27,8 +27,6 @@ import type { LabelId, Stmt } from "../../../src/structure/ir.ts";
 import type { CheckResult, Match, PassContext } from "../../../src/passes/types.ts";
 import { addr, imm, insn, reg, synthCfg } from "./synth.ts";
 
-const SKIP = "spec 21 acceptance — unimplemented";
-
 /** Runtime specifier: unresolvable at type-check time on purpose (spec 21 §8). */
 const passModule = async (file: string): Promise<Record<string, unknown>> =>
   (await import(new URL(`../../../src/passes/for-in/${file}.ts`, import.meta.url).href)) as Record<string, unknown>;
@@ -105,7 +103,7 @@ function forInSynth(opts: { exhaustedBreaksTo?: LabelId; scratchTouched?: boolea
 
 // ---------------------------------------------------------------------------
 
-test("ACCEPTANCE spec 21: for-in is a registered stage-A rung on catalogue row 9", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: for-in is a registered stage-A rung on catalogue row 9", async () => {
   const { forIn } = (await passModule("index")) as { forIn: { name: string; stage: string; catalogue: readonly (number | string)[]; after?: readonly string[]; before?: readonly string[] } };
   const { REGISTRY } = await import("../../../src/passes/registry.ts");
   assert.equal(forIn.name, "for-in");
@@ -120,7 +118,7 @@ test("ACCEPTANCE spec 21: for-in is a registered stage-A rung on catalogue row 9
   assert.ok(names.indexOf("for-in") < names.indexOf("label-clean"), "registered before label-clean");
 });
 
-test("ACCEPTANCE spec 21: fixture 05 prints one `for (… in …)` per source loop, at every version", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: fixture 05 prints one `for (… in …)` per source loop, at every version", async () => {
   const counts = new Map<string, number>();
   for (const v of ["v84", "v94", "v96", "v98", "v99"]) counts.set(v, forInHeads(decompiled("05-for-in-object", v)));
   // 05-for-in-object's source has exactly two `for...in` loops.
@@ -128,7 +126,7 @@ test("ACCEPTANCE spec 21: fixture 05 prints one `for (… in …)` per source lo
   assert.equal(new Set(counts.values()).size, 1, "version parity: the same number of loops is recovered at every version");
 });
 
-test("ACCEPTANCE spec 21: no enumerator machinery survives in fixture 05's output", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: no enumerator machinery survives in fixture 05's output", async () => {
   for (const v of ["v94", "v99"]) {
     const code = decompiled("05-for-in-object", v);
     assert.equal(callSites(code, "__hbc_pnames"), 0, `${v}: a GetPNameList helper call survived`);
@@ -136,13 +134,13 @@ test("ACCEPTANCE spec 21: no enumerator machinery survives in fixture 05's outpu
   }
 });
 
-test("ACCEPTANCE spec 21: fixture 05 still passes the equivalence oracle at every version", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: fixture 05 still passes the equivalence oracle at every version", async () => {
   const report = await runTier({ tier: "gate", decompiler: hbc2jsDecompiler, only: ["05-for-in-object"] });
   assert.deepEqual(report.results.filter((r) => r.verdict !== "PASS").map((r) => `${r.fixture.name}: ${r.verdict}`), []);
   assert.ok(report.summary.pass >= 5, `expected the fixture to run at all 5 versions, got ${report.summary.pass}`);
 });
 
-test("ACCEPTANCE spec 21: the matcher accepts the measured shape and refuses a second exit label", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the matcher accepts the measured shape and refuses a second exit label", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const control = forInSynth();
   assert.notEqual(match(control.loop, control.ctx), null, "control: the measured for-in shape must match");
@@ -153,7 +151,7 @@ test("ACCEPTANCE spec 21: the matcher accepts the measured shape and refuses a s
   assert.equal(match(bad.loop, bad.ctx), null, "two different exits is not the for-in idiom");
 });
 
-test("ACCEPTANCE spec 21: the matcher refuses when the enumerator scratch registers are touched", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the matcher refuses when the enumerator scratch registers are touched", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const control = forInSynth();
   assert.notEqual(match(control.loop, control.ctx), null, "control: the measured for-in shape must match");
@@ -164,7 +162,7 @@ test("ACCEPTANCE spec 21: the matcher refuses when the enumerator scratch regist
   assert.equal(match(bad.loop, bad.ctx), null, "a body write to the index scratch must refuse the site");
 });
 
-test("ACCEPTANCE spec 21: the matcher refuses when the exhaustion test reads a different register", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the matcher refuses when the exhaustion test reads a different register", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const control = forInSynth();
   assert.notEqual(match(control.loop, control.ctx), null, "control: the measured for-in shape must match");
@@ -174,7 +172,7 @@ test("ACCEPTANCE spec 21: the matcher refuses when the exhaustion test reads a d
   assert.equal(match(bad.loop, bad.ctx), null, "the guard must test the key register the opcode just wrote");
 });
 
-test("ACCEPTANCE spec 21: the rung is idempotent — an already-annotated loop does not match again", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the rung is idempotent — an already-annotated loop does not match again", async () => {
   const { match } = (await passModule("match")) as { match: MatchFn };
   const { rewrite } = (await passModule("rewrite")) as { rewrite: (m: Match<Stmt, unknown>) => Stmt };
   const control = forInSynth();
@@ -186,7 +184,7 @@ test("ACCEPTANCE spec 21: the rung is idempotent — an already-annotated loop d
   assert.equal(match(after, ctx2), null, "PL-08: a second run must rewrite nothing");
 });
 
-test("ACCEPTANCE spec 21: the checker refuses a rewrite that changed the tree shape", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: the checker refuses a rewrite that changed the tree shape", async () => {
   const { check } = (await passModule("check")) as { check: CheckFn };
   const control = forInSynth();
   // Annotation-only (LADDER §4.3): sameShape(before, after) is the whole
@@ -202,7 +200,7 @@ test("ACCEPTANCE spec 21: the checker refuses a rewrite that changed the tree sh
   assert.match(verdict.reason ?? "", /shape/i);
 });
 
-test("ACCEPTANCE spec 21: for-in never claims a for-of site", { skip: SKIP }, async () => {
+test("ACCEPTANCE spec 21: for-in never claims a for-of site", async () => {
   // §4.3: the two rungs must not see each other's shapes. 06-for-of-array
   // contains three `for...of` loops and no `for...in` at all.
   for (const v of ["v94", "v99"]) {

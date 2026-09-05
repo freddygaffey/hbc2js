@@ -10,7 +10,7 @@ import { join, resolve, sep } from "node:path";
 import { repoRoot } from "../../support/paths.ts";
 import { REGISTRY } from "../../../src/passes/registry.ts";
 // Passes intentionally unregistered (code kept) — see docs/BUGS.md.
-const DISABLED_PASSES = new Set<string>(["for-in", "for-of"]);
+const DISABLED_PASSES = new Set<string>([]);
 
 const passesDir = join(repoRoot(), "src", "passes");
 

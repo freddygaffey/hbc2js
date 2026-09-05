@@ -363,6 +363,10 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
   // precedes the loop, its step from a block inside the body; both are printed
   // once, in the head, and trimmed where they would otherwise appear.
   const trims = new Map<BlockId, number>();
+  /** spec 21 for-of: a block's leading N instructions are the header's own
+   *  per-iteration `Mov <binding>, v` (§2.2) — resolved into the loop's own
+   *  `left` already, printed nowhere. */
+  const fromTrims = new Map<BlockId, number>();
   let pendingInit: Expr | null = null;
   /** spec 21 for-of: handler blocks whose enclosing `try` prints as its body alone (the handler is the compiler's synthesized `IteratorClose`/`Throw` cleanup). */
   const dropTryHandlers = new Set<BlockId>();
@@ -379,6 +383,7 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     const only = it[0]!;
     return "cfgBlock" in only ? (only as { cfgBlock: BlockId }).cfgBlock : null;
   };
+
 
   /** All plain expression statements, or null. */
   const asExprs = (stmts: readonly Stmt[]): Expr | null => {
@@ -518,14 +523,30 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
       for (const c of form.close.slice(0, -1)) trims.set(c, 0);
     }
 
+    // The Ramsey structurer sinks the loop's *exit* continuation inside it
+    // (spec 21 sec1/sec2): whichever of `guard.then`/`guard.else` is not the
+    // loop's own per-iteration body is everything that runs after the loop
+    // in the original program, and -- annotation-only, nothing moved in the
+    // tree -- printing it there is this call's job, not the guard's. Wrapped
+    // case (a source `break` shares the exit with the exhaustion test, spec
+    // 21 sec2.2): the exit is trivial (`break <wrapperLabel>` inside the
+    // guard) and the real continuation is whatever in `items` follows the
+    // labeled header wrapper.
     let body: Stmt[] = [];
-    lowerTree(form.negate ? guard.else : guard.then, body);
-    if (wrapperLabel === null) lowerItems(items.slice(2), body);
-    else body = unlabelBreaks(body, wrapperLabel);
+    const exit: IrStmt[] = [];
+    if (wrapperLabel === null) {
+      lowerTree(form.negate ? guard.else : guard.then, body);
+      exit.push(form.negate ? guard.then : guard.else, ...items.slice(2));
+    } else {
+      lowerTree(form.negate ? guard.else : guard.then, body);
+      body = unlabelBreaks(body, wrapperLabel);
+      exit.push(...items.slice(1));
+    }
 
     const decl = bindingDecl(form.binding);
     const stmt = { k: form.kind, label: labelOf(node.label), decl, left: id(reg(form.binding)), right: id(reg(form.source)), body } as Stmt;
     out.push(withOrigin(stmt, terminatorOrigin(form.cond, isConditionalJump)));
+    lowerItems(exit, out);
     return true;
   };
 
@@ -591,7 +612,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     switch (node.k) {
       case "block": {
         const to = trims.get(node.cfgBlock);
-        out.push(...(to === undefined ? lowerBlock(node.cfgBlock) : lowerBlock(node.cfgBlock, { to })));
+        const from = fromTrims.get(node.cfgBlock);
+        const range = to === undefined && from === undefined ? undefined : { ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) };
+        out.push(...lowerBlock(node.cfgBlock, range));
         return;
       }
       case "seq":

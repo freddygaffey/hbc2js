@@ -39,7 +39,16 @@ export function match(node: Stmt, ctx: PassContext): ForOfMatch | null {
   if (fn === undefined) return null; // P1
   if (usesOf(node.body, node.label).continues !== 1) return null; // P2
 
-  const body = items(node.body);
+  // With a source `break` (fixture 06's first loop), the structurer wraps
+  // the header in a `labeled` block so the exhaustion exit and the source
+  // `break` share a target distinct from the loop's own `continue` (spec 21
+  // sec2.2; mirrored at print time in src/emit/function.ts's `lowerIterLoop`).
+  const rawItems = items(node.body);
+  let body = rawItems;
+  if (rawItems[0]?.k === "labeled") {
+    const inner = items(rawItems[0].body);
+    if (inner.length === 2 && inner[0]?.k === "block" && inner[1]?.k === "if" && inner[1].cfgBlock === inner[0].cfgBlock) body = inner;
+  }
   if (body.length < 2 || body[0]!.k !== "block" || body[1]!.k !== "if") return null;
   const bH = body[0]!.cfgBlock;
   const guard = body[1] as IfNode;
@@ -88,17 +97,39 @@ export function match(node: Stmt, ctx: PassContext): ForOfMatch | null {
   const normalCloses = findNormalCloses(fn, tryNode.body, state);
   if (normalCloses === null) return null;
 
-  // P7/P8: liveness at every normal exit.
+  // P7/P8: liveness at every normal exit. `form.binding` (and what prints
+  // as the loop's own `left`) stays `v` — `IteratorNext`'s own destination,
+  // what every measured fixture's body actually reuses — but a per-iteration
+  // `Mov v -> body-register` some sites add on top (§2.2) is what the source
+  // program's *real* binding is, so P8's liveness question is asked of that
+  // register, not of `v` itself (which the exit path may go on using for
+  // something else entirely, e.g. a `return` of the last value — not a
+  // leak of the *loop's* binding).
+  const livenessBinding = bodyBindingReg(fn, tryNode.body, v);
   const exit = fn.graph.cfg.blocks[bH]?.succs.find((s) => s.kind === "branch-taken")?.to;
   if (exit === undefined) return null;
   if (registerLiveAfter(fn, exit, 0, state)) return null;
-  if (registerLiveAfter(fn, exit, 0, v)) return null;
+  if (registerLiveAfter(fn, exit, 0, livenessBinding)) return null;
   for (const c of normalCloses) if (registerLiveAfter(fn, c, 0, state)) return null;
 
   const close = [...normalCloses, handlerBlock];
   const form: IterForm = { kind: "for-of", cond: bH, at: "head", negate, iter: bH, setup: setupStmt.cfgBlock, close, binding: v, source: srcInHeader };
   const start = fn.graph.blocks[bH]?.block?.start ?? 0;
   return { root: node, nodes: [node, guard, tryNode], data: { loop: node, form }, at: { functionIndex: ctx.functionIndex, offset: start } };
+}
+
+/** The first block of `body`'s own leading `Mov <dst>, v`, if any (§2.2's
+ *  `Mov r6, r11 ; v = value`) — the register the source program's binding
+ *  actually is, for P8's liveness question only; `v` itself when there is
+ *  no such `Mov` (`form.binding` and the emitter both keep using `v`
+ *  either way — see the call site's comment). */
+function bodyBindingReg(fn: StructuredFunction, body: Stmt, v: number): number {
+  const first = items(body)[0];
+  if (first === undefined || first.k !== "block") return v;
+  const insns = instructionsOf(fn, first.cfgBlock);
+  const mov = insns?.[0];
+  if (mov === undefined || mov.name !== "Mov" || regOperand(mov, 1) !== v) return v;
+  return regOperand(mov, 0) ?? v;
 }
 
 function regOperand(insn: Instruction, i: number): number | undefined {
@@ -160,10 +191,13 @@ function locateTry(guard: IfNode, flatRest: readonly Stmt[], loopLabel: number):
 }
 
 function endsWithContinue(s: Stmt, label: number): boolean {
-  if (s.k !== "try") return false;
-  const it = items(s.body);
-  const last = it[it.length - 1];
-  return last !== undefined && last.k === "continue" && last.label === label;
+  // Not literally the try body's last statement: a source `break` inside
+  // the per-iteration body (fixture 06's first loop) puts the loop's own
+  // `continue` behind a nested `if` (the break-condition test) instead —
+  // P2 already proved exactly one `continue` to this label exists anywhere
+  // in the loop, so "reachable inside this try's body at all" is the real
+  // test, not "is the try's tail".
+  return s.k === "try" && usesOf(s.body, label).continues >= 1;
 }
 
 function handlerCfgBlock(handler: Stmt): number | null {
