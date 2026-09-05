@@ -161,6 +161,42 @@ the launcher printed.
 
 **Depends on:** nothing (do it before L4–L10 so no rig is written twice).
 
+**Landed 2026-09-05** (Claude Sonnet 5, lean worker). `src/ui-server/server.ts`
+mints a `randomBytes(24)` hex token per process (`UiServerOptions.noAuth`
+skips it) and gates every `/api/*` request (including `/api/events`, checked
+ahead of that route's own branch) on `Authorization: Bearer <token>` OR
+`?token=<token>` — the query form exists because a browser's native
+`EventSource` cannot set headers at all, and both the launch URL and
+`ui/src/hooks.ts`'s SSE connection use it. `DEFAULT_PORT` is now `0`
+(kernel-assigned); every existing caller already passed `port: 0` (tests) or
+`--port` (the real rigs), so this only changes behaviour for a caller that
+gives neither. `UiServerOptions.origin` (CLI `--origin <url>`), when given,
+replaces the loopback-any CORS check with an exact match against that one
+origin; the default (no `--origin`) keeps the prior loopback-any behaviour,
+since the launcher does not in general know which port a separately-served
+SPA (`vite dev`/`vite preview`) will bind — full "narrows to the exact
+origin" enforcement needs the launcher and the SPA server to be one
+coordinated process, which is out of this landing's scope (documented as a
+partial completion, not a pushback: nothing existing was inverted). `src/
+cli.ts`'s `ui-server` subcommand gained `--no-auth` and `--origin <url>` and
+prints the token in the launch URL: `http://host:port/?token=...`.
+`ui/src/api.ts`'s `bootstrapToken()` lifts `?token=` out of `location` into
+`sessionStorage` on first load (module-level side effect, so importing
+`api.ts` at all does it) and exposes `authHeaders()`/`authQueryParam()`,
+consumed by every fetch call site in `ui/src/` (`actions/writes.ts`,
+`listing/{use-screens,wire}.ts`, `workers/wire.ts`, `hooks.ts`'s
+`EventSource`). `ui/e2e/playwright.config.ts`'s own `ui-server` command
+gained `--no-auth` (a throwaway per-run project, no token ceremony needed);
+`ui/e2e/prepare-fixture.mjs` needed no change (it never starts the server
+itself). Six existing `startUiServer(...)` test call sites that make REAL
+HTTP requests (two in `tests/ui-server/routes.test.ts`, one in `tests/
+ui-server/events-bus.test.ts`) needed `noAuth: true` added since auth is now
+on by default; the many more callers that only ever exercise the pure
+`handle()` function were untouched (auth is server.ts's own gate, `handle()`
+stays transport-agnostic). New `tests/ui-server/auth.test.ts` — not under
+`tests/gate`, so `docs/test-count-baseline.json` needed no bump (0 `test(`
+call sites added there).
+
 ---
 
 ### L3 — Token layer completion + `docs/ui-refs/` · Sonnet

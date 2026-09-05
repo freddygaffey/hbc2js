@@ -2,12 +2,30 @@
 // default: "one Node process: HTTP JSON server over `src/mcp/{resources,
 // tools,leads}.ts` + static UI, localhost only" and "Auth: none (localhost
 // bind)". This file is the ONLY http binding in the package (`routes.ts`
-// stays transport-agnostic); it binds `127.0.0.1` by default and adds no
-// auth of its own — that is the spec's own decision, not an oversight, and
-// is revisited only at the "full build" (spec 19 §5.2), same row.
+// stays transport-agnostic); it binds `127.0.0.1` by default.
+//
+// Spec 26 L2 (docs/specs/26-ui-full-ide.md): the MVP's "no auth" default is
+// revisited here. Every run now mints a per-process bearer token (unless
+// `noAuth: true` — CLI `--no-auth`, used by the e2e rigs, which never leaves
+// loopback and needs no token ceremony). Every `/api/*` request (including
+// `/api/events`, which is handled by its own branch below) must present it
+// either as `Authorization: Bearer <token>` or, since `EventSource` cannot
+// set headers, `?token=<token>` on the URL — the SPA does the former for
+// ordinary fetches and the latter for its one `EventSource` connection
+// (`ui/src/hooks.ts`). Static asset serving (`serveStatic`) stays
+// unauthenticated: the launch URL itself carries the token
+// (`http://host:port/?token=...`), so the shell must be reachable before it
+// has anywhere to read the token from; the shell then lifts it into
+// `sessionStorage` (`ui/src/api.ts`) and only THEN starts calling `/api/*`.
+// `origin` (CLI `--origin`), when given, replaces the loopback-any CORS
+// check below with an exact match against that one origin — the default
+// (no `--origin`) keeps the prior loopback-any behaviour because the
+// launcher does not know, in general, which port a separately-served SPA
+// (`vite dev`/`vite preview`) will use.
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse, Server } from "node:http";
 import { EventEmitter } from "node:events";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +63,13 @@ export interface UiServerOptions {
    *  it — the tests use this so a fixture's tiny bundle does not warm work
    *  it never asks for. No-op either way when `hbc` is not given. */
   readonly prewarm?: boolean;
+  /** Spec 26 L2: disables both the per-run bearer token AND the CORS
+   *  narrowing below (CLI `--no-auth`) — the e2e rigs' mode, since they
+   *  never leave loopback and mint their own throwaway project per run. */
+  readonly noAuth?: boolean;
+  /** Spec 26 L2: when given (CLI `--origin <url>`), CORS reflects ONLY this
+   *  exact origin instead of the loopback-any default. */
+  readonly origin?: string;
 }
 
 export interface UiServerHandle {
@@ -57,23 +82,46 @@ export interface UiServerHandle {
   /** The ctx every route runs against. Exposed so a caller (and the tests)
    *  can inspect server-lifetime state such as the segregation cache. */
   readonly ctx: UiServerCtx;
+  /** The minted per-run bearer token, or `undefined` under `noAuth: true`.
+   *  The CLI (`src/cli.ts`) prints this in the launch URL's `?token=`. */
+  readonly token?: string;
   close(): Promise<void>;
 }
 
-const DEFAULT_PORT = 7331;
+// Spec 26 L2: kernel-assigned by default (CLI `--port` pins it); every
+// existing caller of `startUiServer` already passes `port: 0` explicitly
+// (tests) or `--port` (the real rigs), so this default only ever bites a
+// caller that asks for neither.
+const DEFAULT_PORT = 0;
 const DEFAULT_HOST = "127.0.0.1";
 
 // Vite dev server origins only (spec 22 §1's own framing: this IS the UI's
 // backend, not a public API) — never a wildcard, never a non-loopback host.
+// This is the default; `opts.origin` (spec 26 L2) replaces it with an exact
+// match when given.
 const ALLOWED_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-function corsHeaders(origin: string | undefined): Record<string, string> {
-  if (origin === undefined || !ALLOWED_ORIGIN.test(origin)) return {};
+function corsHeaders(origin: string | undefined, allowedOrigin: string | undefined): Record<string, string> {
+  if (origin === undefined) return {};
+  const ok = allowedOrigin !== undefined ? origin === allowedOrigin : ALLOWED_ORIGIN.test(origin);
+  if (!ok) return {};
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
+}
+
+/** Spec 26 L2: a request without the right token is a 401, unless the
+ *  server was started with `noAuth: true`. Accepted two ways: the ordinary
+ *  `Authorization: Bearer <token>` header (every plain `fetch`), or
+ *  `?token=<token>` on the URL (the one path a browser's native
+ *  `EventSource` can use, since it cannot set headers at all). */
+function isAuthorized(req: IncomingMessage, url: URL, token: string | undefined): boolean {
+  if (token === undefined) return true;
+  const header = req.headers.authorization;
+  if (header === `Bearer ${token}`) return true;
+  return url.searchParams.get("token") === token;
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
@@ -321,13 +369,15 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
   // above) — one bus per server instance, emitted right after a write
   // route lands below.
   const writeBus = newWriteBus();
+  // Spec 26 L2: minted once per process, `undefined` under `noAuth: true`.
+  const token = opts.noAuth === true ? undefined : randomBytes(24).toString("hex");
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now();
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
-    const cors = corsHeaders(req.headers.origin);
+    const cors = corsHeaders(req.headers.origin, opts.origin);
 
     const logLine = (status: number): void => {
       process.stderr.write(`${new Date().toISOString()} ${method} ${path} ${status} ${Date.now() - started}ms\n`);
@@ -337,6 +387,16 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
       res.writeHead(204, cors);
       res.end();
       logLine(204);
+      return;
+    }
+
+    // Spec 26 L2: every `/api/*` route — including `/api/events`, handled
+    // by its own branch just below — requires the token first. A rejected
+    // request never reaches `handle()`/`serveEvents` at all.
+    if (path.startsWith("/api/") && !isAuthorized(req, url, token)) {
+      res.writeHead(401, { "Content-Type": "application/json", ...cors });
+      res.end(JSON.stringify({ reason: "unauthorized" }));
+      logLine(401);
       return;
     }
 
@@ -425,6 +485,7 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
         port,
         host,
         ctx,
+        ...(token !== undefined ? { token } : {}),
         close: () =>
           new Promise<void>((res2, rej2) => {
             pool?.stop();

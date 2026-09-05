@@ -80,9 +80,12 @@ Usage:
   hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
   hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the git pre-commit hook (§11); \`init\` does this best-effort already
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
-  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off] [--no-prewarm]   serve the Stage-3 UI's JSON API (+ static ui/dist/,
+  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off] [--no-prewarm] [--no-auth] [--origin <url>]
+                                              serve the Stage-3 UI's JSON API (+ static ui/dist/,
                                               docs/specs/22-ui-mvp.md §1/§3) over that project directory, localhost only
-                                              (--no-prewarm skips the post-listen whole-bundle frame warm, docs/UI.md "Cold start")
+                                              (--no-prewarm skips the post-listen whole-bundle frame warm, docs/UI.md "Cold start";
+                                              --no-auth disables the spec-26 L2 per-run bearer token, for the e2e rigs; --port
+                                              defaults to 0 (kernel-assigned) when omitted; --origin pins CORS to one exact origin)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -759,6 +762,11 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
   // prewarmed right after `listen` by default; `--no-prewarm` skips it
   // (tests use this so a fixture's tiny bundle never warms unasked-for work).
   const prewarm = !argv.includes("--no-prewarm");
+  // Spec 26 L2: `--no-auth` is the e2e rigs' mode (never leaves loopback,
+  // mints its own throwaway project per run); `--origin` narrows CORS to
+  // one exact origin when a caller knows the paired SPA's origin up front.
+  const noAuth = argv.includes("--no-auth");
+  const origin = flagValue(argv, "--origin");
   try {
     const handle = await startUiServer({
       projectDir,
@@ -766,8 +774,14 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
       ...(hbc !== undefined ? { hbc } : {}),
       ...(port !== undefined ? { port } : {}),
       ...(prewarm ? {} : { prewarm: false }),
+      ...(noAuth ? { noAuth: true } : {}),
+      ...(origin !== undefined ? { origin } : {}),
     });
-    process.stdout.write(`hbc2js ui-server: listening on http://${handle.host}:${handle.port} (project ${projectDir}, workers ${workers ? "on" : "off"})\n`);
+    // Spec 26 L2: "print it in the launch URL" — the SPA lifts `?token=`
+    // from `location` into `sessionStorage` on first load (ui/src/api.ts)
+    // and sends it back as `Authorization: Bearer` from then on.
+    const launchUrl = `http://${handle.host}:${handle.port}/${handle.token !== undefined ? `?token=${handle.token}` : ""}`;
+    process.stdout.write(`hbc2js ui-server: listening on ${launchUrl} (project ${projectDir}, workers ${workers ? "on" : "off"})\n`);
     await new Promise<void>(() => {}); // serve forever; Ctrl-C/SIGTERM stops it (no --detach in this MVP, spec 22 §1)
     return 0;
   } catch (e) {

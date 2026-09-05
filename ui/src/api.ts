@@ -16,6 +16,64 @@ import { mockApi } from "./mock.ts";
 export const API_BASE: string = import.meta.env["VITE_API_BASE"] ?? "http://127.0.0.1:7331";
 export const USING_MOCK: boolean = (import.meta.env["VITE_API_MOCK"] ?? "1") !== "0";
 
+// Spec 26 L2 (docs/specs/26-ui-full-ide.md): the server mints a per-run
+// bearer token and prints it in the launch URL's `?token=`. On first load
+// this lifts it out of `location` into `sessionStorage` (so a reload of the
+// SAME tab, which drops the query string once React Router or a manual
+// address-bar edit rewrites the URL, keeps working); every later load reads
+// it back from there. `--no-auth` servers mint no token, `AUTH_TOKEN` stays
+// `undefined`, and every helper below degrades to sending nothing — exactly
+// today's unauthenticated behaviour.
+const TOKEN_STORAGE_KEY = "hbc2js.token";
+
+// Minimal structural shapes rather than `lib.dom`'s `Window`/`Storage`: this
+// file is reached by the ROOT gate's typecheck (via test imports), whose
+// tsconfig has no DOM lib (`tests/support/import-meta-env.d.ts` does the
+// same thing for `import.meta.env`, just for a different global). The real
+// browser objects satisfy these shapes structurally, so nothing is lost at
+// runtime — this is a type-only narrowing.
+interface MinimalStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+interface MinimalWindow {
+  readonly location: { readonly href: string };
+  readonly sessionStorage: MinimalStorage;
+}
+
+function bootstrapToken(): string | undefined {
+  const w = (globalThis as { window?: MinimalWindow }).window;
+  if (w === undefined) return undefined;
+  try {
+    const fromUrl = new URL(w.location.href).searchParams.get("token");
+    if (fromUrl !== null && fromUrl !== "") {
+      w.sessionStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
+      return fromUrl;
+    }
+    return w.sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? undefined;
+  } catch {
+    // Storage disabled (private mode, a test DOM with no sessionStorage) —
+    // fall back to unauthenticated; the server will 401 if it needed one.
+    return undefined;
+  }
+}
+
+export const AUTH_TOKEN: string | undefined = bootstrapToken();
+
+/** Spread into a plain `fetch`'s headers. Empty object when there is no
+ *  token (mock mode, `--no-auth`, or storage disabled). */
+export function authHeaders(): Record<string, string> {
+  return AUTH_TOKEN !== undefined ? { Authorization: `Bearer ${AUTH_TOKEN}` } : {};
+}
+
+/** `EventSource` cannot set headers, so `/api/events` takes the token as a
+ *  query param instead (`src/ui-server/server.ts`'s `isAuthorized` accepts
+ *  either). Empty string when there is no token — callers append it only
+ *  when non-empty. */
+export function authQueryParam(): string {
+  return AUTH_TOKEN !== undefined ? `token=${encodeURIComponent(AUTH_TOKEN)}` : "";
+}
+
 /** `GET /api/object-tables`'s filter options (spec 17 §14.2) — the Tables
  *  tab's filter bar (`ui/src/panes/TablesPane.tsx`). All optional; an
  *  omitted field is left off the query string, so the server's own
@@ -95,7 +153,7 @@ export class ApiError extends Error {
 async function get<T>(path: string, params: Readonly<Record<string, string | number | undefined>> = {}): Promise<T> {
   const url = new URL(`/api${path}`, API_BASE);
   for (const [k, v] of Object.entries(params)) if (v !== undefined) url.searchParams.set(k, String(v));
-  const res = await fetch(url, { headers: { accept: "application/json" } });
+  const res = await fetch(url, { headers: { accept: "application/json", ...authHeaders() } });
   if (!res.ok) throw new ApiError(res.status, path, await res.text().catch(() => res.statusText));
   return (await res.json()) as T;
 }

@@ -4,7 +4,7 @@
 // precisely, and the log poll (landing 6) has its own 1 s interval.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { API_BASE, USING_MOCK, api, ApiError, type ObjectTablesQuery } from "./api.ts";
+import { API_BASE, USING_MOCK, api, ApiError, authQueryParam, type ObjectTablesQuery } from "./api.ts";
 import type { FunctionListPage, FunctionListRow, ModuleListPage } from "./listing/wire.ts";
 import type {
   Bounded, CallsFrom, FnContext, FnSummary, FunctionMatch, LeadsResult, LogEntry, LogTail,
@@ -214,7 +214,10 @@ export const useLog = (): LogFeedState => {
 
   useEffect(() => {
     if (USING_MOCK || typeof EventSource === "undefined") return undefined;
-    const es = new EventSource(`${API_BASE}/api/events`);
+    // Spec 26 L2: `EventSource` cannot set an `Authorization` header, so the
+    // token (if any — `--no-auth` servers mint none) rides the query string.
+    const tokenQuery = authQueryParam();
+    const es = new EventSource(`${API_BASE}/api/events${tokenQuery !== "" ? `?${tokenQuery}` : ""}`);
     const onLog = (ev: MessageEvent<string>): void => {
       try {
         const data = JSON.parse(ev.data) as LogTail;

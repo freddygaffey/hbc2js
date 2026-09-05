@@ -8,7 +8,7 @@
 // on refusal (e.g. a finding whose evidence does not resolve, spec 17 §14).
 // `ToolError.reason` is that string VERBATIM — never reworded, because the
 // server's refusal is the only thing that tells the user what to fix.
-import { API_BASE, USING_MOCK } from "../api.ts";
+import { API_BASE, USING_MOCK, authHeaders } from "../api.ts";
 import type { EvidenceRef, Provenance, Severity, Tag } from "../contracts.ts";
 
 /** `McpTools.ToolResult`: the record id plus a one-line confirmation. */
@@ -42,7 +42,7 @@ async function post(path: string, body: unknown): Promise<ToolResult> {
   }
   const res = await fetch(new URL(`/api/tools/${path}`, API_BASE), {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
+    headers: { "content-type": "application/json", accept: "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   const text = await res.text();

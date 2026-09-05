@@ -43,7 +43,7 @@ function buildFixture(): string {
 async function withServer<T>(fn: (h: Awaited<ReturnType<typeof startUiServer>>) => Promise<T>): Promise<T> {
   const outDir = buildFixture();
   try {
-    const h = await startUiServer({ projectDir: outDir, hbc: RN_TEMPLATE, port: 0, host: "127.0.0.1", workers: false, prewarm: false });
+    const h = await startUiServer({ projectDir: outDir, hbc: RN_TEMPLATE, port: 0, host: "127.0.0.1", workers: false, prewarm: false, noAuth: true });
     try {
       return await fn(h);
     } finally {

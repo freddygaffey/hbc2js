@@ -434,7 +434,7 @@ test("unknown route 404s", async () => {
 test("GET /api/events forwards a log event after a set-name write", async () => {
   const ssOutDir = buildFixture();
   try {
-    const handle2 = await startUiServer({ projectDir: ssOutDir, hbc: RN_TEMPLATE, port: 0, host: "127.0.0.1" });
+    const handle2 = await startUiServer({ projectDir: ssOutDir, hbc: RN_TEMPLATE, port: 0, host: "127.0.0.1", noAuth: true });
     try {
       const es = await fetch(`http://127.0.0.1:${handle2.port}/api/events`);
       assert.equal(es.status, 200);
@@ -597,7 +597,7 @@ test("GET /api/segregation 404s for a project with no module files", async () =>
 
 test("the server warms the segregation cache at startup, so the first tree request is instant", async () => {
   const { segregationCached } = await import("../../src/ui-server/segregation.ts");
-  const h = await startUiServer({ projectDir: outDir, hbc: RN_TEMPLATE, port: 0, workers: false });
+  const h = await startUiServer({ projectDir: outDir, hbc: RN_TEMPLATE, port: 0, workers: false, noAuth: true });
   try {
     assert.equal(typeof h.ctx.artifactDir, "string", "the handle must expose the ctx routes run against");
     // `setImmediate` fires after the listen callback and starts the
