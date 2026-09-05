@@ -2,27 +2,28 @@
 // `diff:GetOwnPrivateBySym/GetByVal`) -- rung `private-fields` (stage B),
 // docs/specs/passes/24-class-recover.md's private-name follow-up.
 //
-// T2 equivalence (tests/gate/decompile/equivalence.test.ts) found this rung's
-// first landing UNSAFE: `AddOwnPrivateBySym`'s install always runs inside the
-// constructor, and every constructor this codebase decompiles (base or
-// derived) builds a *separate* plain object via `Object.create(new.target
-// .prototype)` and explicitly `return`s it -- the real `this` is never
-// referenced at all (fixtures 32-36 all share this shape; see
-// tests/gate/passes/class-recover.test.ts's own fixtures). A native
-// `#name = v;` field write only succeeds on an object that received the
-// class's private-field brand during ITS OWN [[Construct]] -- i.e. on the
-// real `this`, never on a same-shaped stand-in object -- so folding the
-// install into a class-field declaration silently changes behaviour:
-// `r1.#balance = v` throws `TypeError: Cannot write private member #balance
-// to an object whose class did not declare it`, which is exactly what the
-// T2 harness caught (trace diverges at record 0, the `new BankAccount(...)`
-// call). `match.ts`'s `isThisArg` now requires the install's own target to
-// resolve to literal `this`; since no committed fixture's constructor ever
-// touches `this`, this rung currently refuses on all of them -- proven safe
-// (refusal, not silent breakage) rather than proven positive on a real
-// fixture. The positive path (an install that *does* target `this`) is
-// covered by a hand-built AST case below, the same way the escape refusal
-// already was.
+// History, because it is the whole reason this file's fixture case reads the
+// way it does. T2 equivalence (tests/gate/decompile/equivalence.test.ts)
+// found this rung's first landing UNSAFE: `AddOwnPrivateBySym`'s install
+// always runs inside the constructor, and every constructor this codebase
+// decompiled at the time built a *separate* plain object via
+// `Object.create(new.target.prototype)` and explicitly `return`ed it -- the
+// real `this` was never referenced at all. A native `#name = v;` field write
+// only succeeds on an object that received the class's private-field brand
+// during ITS OWN [[Construct]], so folding the install into a class-field
+// declaration there silently changed behaviour: `r1.#balance = v` throws
+// `TypeError: Cannot write private member #balance to an object whose class
+// did not declare it` (trace diverged at record 0, the `new BankAccount(...)`
+// call). `match.ts`'s `isThisArg` therefore requires the install's own target
+// to resolve to literal `this`, and the rung refused everywhere.
+//
+// The `ctor-this` rung (docs/specs/passes/26-ctor-this.md, landed 2026-09-05)
+// removes the stand-in: in a recovered BASE class it proves the allocated
+// object IS the receiver the language binds to `this` and substitutes it. So
+// `isThisArg` now holds on fixture 35 and this rung folds it for real -- the
+// fixture case below asserts the `#name` syntax, and T2 at v99 is what proves
+// it runs. The hand-built refusal cases stay exactly as they were: the
+// `isThisArg` guard is unchanged, it is its *input* that changed.
 //
 // Rung-owned properties only (CLAUDE.md testing rules / CONSOLIDATION section
 // B item 7). No whole-output string comparison against the shared fixture.
@@ -43,20 +44,30 @@ const js = (version: "v98" | "v99", mode: "on" | "none" = "on"): string =>
   }).code;
 
 for (const version of ["v98", "v99"] as const) {
-  test(`private-fields: ${version} refuses fixture 35 (its constructor's install target is not literal 'this') -- output matches --passes=none's Symbol form`, () => {
+  test(`private-fields: ${version} folds fixture 35's #balance/#history into real private syntax (ctor-this made the install target literal 'this')`, () => {
     const on = js(version);
-    const none = js(version, "none");
-    // Same shape as --passes=none for the private-name block specifically:
-    // no rung is unsafe enough to fold it, so the Symbol/computed-member
-    // form survives every stage-B rung, same as the fully-disabled baseline.
-    assert.match(on, /Symbol\("#balance"\)/);
-    assert.match(on, /Symbol\("#history"\)/);
-    assert.doesNotMatch(on, /#balance\s*=/);
-    assert.doesNotMatch(on, /\.#balance\b/);
-    assert.doesNotMatch(on, /#balance in \w+/);
-    // Not byte-identical to --passes=none (other rungs, e.g. class-recover
-    // itself, still run) -- only the private-name shape is asserted equal.
-    assert.equal(on.includes('Symbol("#balance")'), none.includes('Symbol("#balance")'));
+    // The two instance fields fold: a real declaration in the class body and
+    // real `.#name` accesses in the methods that read them.
+    assert.match(on, /#balance/);
+    assert.match(on, /\.#balance\b/);
+    assert.match(on, /\.#history\b/);
+    // ...and the symbol-keyed lowering of those two names is gone.
+    assert.doesNotMatch(on, /Symbol\("#balance"\)/);
+    assert.doesNotMatch(on, /Symbol\("#history"\)/);
+    // The private *method* `#record` and its `PrivateIsIn` brand check are
+    // not folded by this rung (it owns field declarations and field
+    // accesses only); the class brand symbol survives as a Symbol, which is
+    // exactly the shape the checker's "no new free name" obligation allows.
+    assert.match(on, /Symbol\("BankAccount"\)/);
+    // Regression (this landing): dropping an alias store in its `k:"init"`
+    // spelling must not take the register's declaration with it while a
+    // later statement still assigns it -- `withdraw`'s `r0` is reassigned to
+    // `globalThis` on the throwing arm, and an undeclared assignment inside
+    // a class body (always strict) is a ReferenceError.
+    for (const m of on.matchAll(/^\s*(\w+) = globalThis;$/gm)) {
+      const name = m[1]!;
+      assert.match(on, new RegExp(`let (\\w+, )*${name}\\b`), `${name} is assigned but never declared`);
+    }
   });
 }
 

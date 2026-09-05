@@ -205,6 +205,13 @@ function foldInBody(body: readonly Stmt[], envName: string, displayName: string,
   // restriction (it writes to whatever object it is given), which is
   // exactly why that shape is the correct, safe fallback and this rung
   // must refuse rather than "fix" it.
+  //
+  // Fixing it is a *different* rung's job, and it is now done upstream:
+  // `ctor-this` (docs/specs/passes/26-ctor-this.md, R12) proves that in a
+  // BASE class that stand-in IS the object `[[Construct]]` bound to `this`
+  // and substitutes the literal `this` before this rung ever runs. So this
+  // guard is unchanged and still exactly as strict; its input changed, and
+  // fixture 35 folds.
   const isThisArg = (e: Expr, regs: ReadonlyMap<string, Expr>): boolean => resolve(regs, e).k === "this";
   const regSources = new Map<string, Stmt>();
   const claimedSources = new Set<Stmt>();

@@ -35,7 +35,7 @@ export const privateFields: Pass<readonly Stmt[], PrivateFieldsGroup> = {
   stage: "B",
   targets: ["35-class-private-fields"],
   catalogue: [20],
-  after: ["class-recover"],
+  after: ["class-recover", "ctor-this"],
   before: ["fn-naming", "reg-split", "var-naming"],
   versions: (hbcVersion, layoutClass) => hbcVersion >= 98 && layoutClass === "E",
   match,
