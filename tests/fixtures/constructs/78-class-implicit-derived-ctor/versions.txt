@@ -1,0 +1,13 @@
+v84: FAILS - hermesc rejects the `class` keyword entirely ("invalid statement
+     encountered"): this build (hermes-engine-cli@0.8.1, HBC v84) has no IRGen
+     lowering for ClassDeclaration/ClassExpression at all. See
+     32-class-basic/versions.txt for the full diagnosis.
+v94: FAILS - identical error, same root cause (react-native@0.72.17's bundled
+     hermesc also lacks class lowering in IRGen).
+v96: FAILS - identical error, same root cause (react-native@0.73.11's bundled
+     hermesc, classic-Hermes lineage, never grew class support).
+v98: OK - classes, `extends` and rest parameters all supported.
+v99: OK - same.
+
+Only v98.hbc/v99.hbc exist in this directory; tests/fixtures/build.sh skips
+v84/v94/v96 for this fixture, matching this file.

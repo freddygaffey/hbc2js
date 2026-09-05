@@ -1,6 +1,7 @@
 # Spec 28 — `super-call`: rebuild a derived class constructor (readability row R14)
 
-Status: **implemented 2026-09-05** (`src/passes/super-call/`). Acceptance tests:
+Status: **implemented 2026-09-05** (`src/passes/super-call/`); refusal **R-SC6
+folded the same day** (section 9). Acceptance tests:
 `tests/gate/passes/super-call.test.ts`.
 
 ## 1. Why
@@ -189,8 +190,10 @@ Versions: `hbcVersion >= 98 && layoutClass === "E"`, the same gate
 | R-SC3 | the single site is not a top-level store of the constructor's own frame — it is inside a loop, a `try`, an `if` or a closure | |
 | R-SC4 | the stand-in register is written again after the super call | the rung cannot then say the register *is* `this` |
 | R-SC5 | the stand-in register name also occurs inside a nested closure, where the same register number is a different frame's local | same reason as `ctor-this`'s R-CT5 |
-| R-SC6 | the implicit/forwarding derived constructor: `return __hbc_b_applyArguments(arguments, Object.getPrototypeOf(_eD_S), undefined, new.target)` (fixture 33's `class Puppy extends Dog {}`) | rebuilding it needs a parameter-list change (`constructor(...a) { super(...a); }`), which is a writer this rung does not have yet; `docs/BUGS.md` |
-| R-SC7 | the super arguments are not a plain array literal, or contain a spread element | `docs/BUGS.md` |
+| R-SC6 | *(retired 2026-09-05 -- the implicit/forwarding derived constructor is now folded; section 9)* | was: `return __hbc_b_applyArguments(...)`. The code is not reused for anything else, so an old report's R-SC6 still reads as this shape |
+| R-SC7 | the super arguments are not a plain array literal, or contain a spread element | `docs/BUGS.md`. Fixture 78's `Explicit` is this shape at v98/v99 (hermesc reaches it through `copyRestArgs` + `arraySpread` + `applyWithNewTarget`, so today it lands in R-SC0 -- no `Reflect.construct` site at all -- rather than in R-SC7 itself) |
+| R-SC8 | in the section 9 forward, an operand is not provably the constructor's own: the target is not `Object.getPrototypeOf(B)` with `B` this class's own binding, the `new.target` argument is not the frame's own `new.target` literal, the forwarded list is not the frame's own `arguments`, or a receiver is passed (the helper's *apply* path, not the construct path) | R-SC1's twin, for the forward |
+| R-SC9 | the forward is not the constructor's whole body: another statement, another `arguments` read (in the constructor or a nested arrow), a declared parameter, a returned expression that is not the forward, or a directive other than `"use strict"` | shape, not correctness |
 
 Reads of the stand-in register *before* the super call are not refused and not
 rewritten: the register is reused by the operand sequence itself
@@ -216,3 +219,113 @@ everything this rung touches lives inside a constructor body, which
 `tools/passes/ctor-this-refusals.ts` reports R-SC codes alongside the R-CT
 ones (`--codes`), so the same command re-measures both rungs on a bundle.
 Numbers at landing are in `docs/AGENT-LOG.md` and in the landing report.
+
+## 9. R-SC6 folded: the implicit derived constructor
+
+Measured on fixture 78 (`tests/fixtures/constructs/78-class-implicit-derived-ctor`)
+at v98 and v99, and on fixture 33's `class Puppy extends Dog {}`, a derived
+class with **no constructor of its own** gets one whose entire body is
+
+```js
+constructor() {
+  // fn#3 "Implicit"
+  "use strict";
+  return __hbc_b_applyArguments(arguments, Object.getPrototypeOf(_e0_0), undefined, new.target);
+}
+```
+
+`__hbc_b_applyArguments` (`src/runtime/helpers.ts`, spelled from
+`src/emit/builtins.ts`'s own intrinsic table -- a forward spelled any other
+way is not this emitter's output and is never claimed) is
+
+```js
+if (newTarget !== undefined) return Reflect.construct(fn, Array.prototype.slice.call(callerArgs), newTarget);
+return Reflect.apply(fn, thisArg, callerArgs);
+```
+
+and a class constructor can only ever be reached with a NewTarget (ES2024
+10.2.1 step 2 throws before the body runs otherwise), so the construct branch
+is the only reachable one. That branch is
+`Construct(GetSuperConstructor(), <the caller's whole argument list>, newTarget)`
+followed by returning the result -- which is ECMAScript 15.7.14 step 14's
+default derived constructor, `constructor(...args) { super(...args); }`,
+statement for statement. The rewrite is therefore an identity given what
+`foldForwardBody` proves: R-SC8's four operand obligations and R-SC9's shape
+obligations (the forward is the constructor's whole body, `arguments` is read
+nowhere else, and the constructor declares no parameters of its own).
+
+### 9.1 Why the explicit form and not an elided constructor
+
+The recovered text is `constructor(...args) { super(...args); }`, never "no
+constructor at all", even though the source almost certainly had none:
+
+* **Provenance.** The emitted constructor carries the `// fn#N "<name>"`
+  comment that maps it to a real Hermes function. Deleting the member would
+  delete the only anchor between function #N and the output, which every
+  per-function tool (`tools/passes/*`, the round-trip corpus, the name
+  overlay) keys on. Keeping one emitted function per bytecode function is a
+  pipeline-wide invariant; a readability rung is the wrong place to break it.
+* **It costs one line.** The elided form is shorter but says the same thing,
+  and the explicit form is legal source an author could have written.
+* **It is not needed to disambiguate.** hermesc does *not* lower the explicit
+  `constructor(...a) { super(...a); }` to this shape -- fixture 78 pins that
+  it lowers to `copyRestArgs` + an array spread + `applyWithNewTarget`
+  instead. So the forward really does mean "the source had no constructor",
+  and a future rung may elide it; that is a separate, purely cosmetic step
+  which must first answer the provenance question above. Recorded here rather
+  than done, deliberately.
+
+### 9.2 The `"use strict"` directive is dropped
+
+The rebuilt constructor has a **non-simple parameter list**, and ES2024 15.2.1
+(Early Errors for FunctionBody) makes a "use strict" directive prologue a
+SyntaxError there. The directive is deleted, which is a no-op: a class body is
+always strict code (ES2024 15.7). Any *other* directive is refused (R-SC9)
+rather than dropped. This was caught by the checker's own `parses(after)`
+obligation, which is exactly what it is for.
+
+### 9.3 The parameter list
+
+This is the ladder's first stage-B rung to change a function's parameter list,
+and **no framework helper was missing**: `Param` (`src/emit/ast.ts`) already
+carries `rest?: true`, `mapStmts`/`mapParams` already carry a params list
+through unchanged, and `spread-rest`'s writer (`src/passes/spread-rest/rewrite.ts`)
+already rebuilds one as `{ ...fn, params: [...] }`. The class member is
+rebuilt the same way, in `foldAll`: `{ ...ctor, params, body }`. The rest
+parameter is named `args`; it can shadow nothing that is read, because the
+body it lands in contains no other name.
+
+### 9.4 What the constructor may also contain
+
+The forward must be the constructor's **last** statement; before it the rung
+accepts only what the emitter puts there and what it can account for: the
+`// fn#N` provenance comment (kept), the `"use strict"` directive (dropped,
+9.2), a hoisted `function` declaration this frame merely hosts (kept -- a
+declaration runs no user code and is legal before `super()`), a register `let`
+(kept only while something still reads it), and the operand moves the forward
+itself consumed. Those moves are how the operands actually reach the call
+(`r5 = r2; r3 = r1; applyArguments(arguments, r5, r4, r3)`), so the matcher
+chases each operand with `derefChain`: up to four hops, each resolved against
+the stores preceding the hop it came from and never a later one, so a register
+reused after its move is never followed. The moves are then deleted in
+reverse, and only when nothing that survives -- a later head statement, a
+nested closure -- still reads the target; a store that cannot be deleted is
+R-SC9 rather than left behind. The rest parameter is renamed (`args2`, ...)
+if any surviving statement would be shadowed by `args`.
+
+### 9.5 Residue on react-navigation-example-0.85.3
+
+`node tools/passes/ctor-this-refusals.ts` before -> after: FOLD 39 -> 52,
+R-SC6 168 -> 0, and a new R-SC9 147 -- so 13 of the 168 folded and 147 became
+a *narrower* refusal. 136 of those 147 have the shape `R-SC9 func`: a
+forwarding constructor whose frame also hosts a hoisted `function`
+declaration. Section 9.4 accepts the declaration itself, so what still refuses
+them is `argumentsUses(body) !== 1`: the check counts an `arguments` mention
+anywhere in the constructor, **nested frames included**, and a hosted
+declaration that uses its own `arguments` therefore reads as a second use of
+the constructor's. That is deliberately conservative (over-refusing is safe),
+and it is the next step: a non-arrow nested `func` has its own `arguments`
+object, so the count should skip nested frames unless `sameFrame === true`
+(the generator-resume closure, `src/emit/ast.ts`) -- the same distinction
+`countUses` already makes. Not done here: it changes what the rung claims on
+136 real constructors and deserves its own measurement.

@@ -299,7 +299,10 @@ test("review-M4-H3: __hbc_b_applyWithNewTarget constructs with the given new.tar
   }
   function Derived(): void {}
   Derived.prototype = { kind: "derived" };
-  const o = h["__hbc_b_applyWithNewTarget"](Base, [], Derived);
+  // Four arguments, the builtin's own signature (func, argArray, thisArg,
+  // newTarget) and what `src/emit/lower.ts` lowers -- see docs/PUSHBACK.md
+  // P-44 (filed as P-43, renumbered at merge) and the docs/BUGS.md row: the receiver is unused on this path.
+  const o = h["__hbc_b_applyWithNewTarget"](Base, [], undefined, Derived);
   assert.equal(o.tag, "base");
   assert.equal(Object.getPrototypeOf(o), Derived.prototype, "new.target supplies the prototype");
 });
