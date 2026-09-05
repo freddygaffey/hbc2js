@@ -366,6 +366,11 @@ finalizer recovery from a dead handler block), and is not proposed here.
 ## 10. Goldens that will move when the rung lands
 
 `12-try-catch-finally-return` (`f2` only), `13-try-finally-no-catch`
-(`cleanup` only) at all five versions. `16` and `54` are refusals and must not
-move; if they do, the rung is wrong. No bundle golden moves on `rn-template`
+(`cleanup` only) at all five versions. `16` is a refusal and does not move at any
+version. `54` DOES move, at all five versions, and correctly: its `nested`
+folds its outer finalizer, while `applyWithGuard` -- the equal-range pair the
+fixture exists for, and the only site section 7 item 5 names -- refuses with
+R-FD3 and is byte-identical to skipping the rung. This sentence's
+generalisation from that one site to the whole fixture was wrong; **PUSHBACK
+P-50**. No bundle golden moves on `rn-template`
 (16 candidate sites, all inside module bodies whose goldens are per-function).
