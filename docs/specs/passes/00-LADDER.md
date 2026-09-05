@@ -270,8 +270,15 @@ in `ir.ts` plus verifier support (spec 04 change, not a pass). Fixture 16's
 does the same, so the rewrite is legal, but the copies are not `sameCode`
 (one ends in `Throw r`, one falls through).
 *Fallback:* copies stay; `try-clean` still removes dead `__pc` stores.
-*Evidence:* copy count per site over the corpus (`duplicatedBlocks`), rows 12
-and 54 re-read at 84/96/98, a table of which copy contains which terminator.
+*Evidence:* **measured 2026-09-05, see [`30-finally-dedup.md`](30-finally-dedup.md)
+section 8** -- and it corrected this row: `duplicatedBlocks` is the
+structurer's record of its own node splitting and is **0 at every finalizer
+site**, so the copy count has to come from a rethrow-handler detector instead
+(rn-template 16 sites, rn-template `noopt` 33, react-navigation 502; rows 12
+and 54 re-read at 84/94/96/98/99, with the per-copy terminator table). A copy
+is an instruction *range* inside a block, not a subtree, so the `finalizer`
+merge is not a subtree merge; spec 30 sections 3 and 5 cost both designs and
+**PUSHBACK P-49** asks for the ruling. Spec written, rung not built.
 
 ### 5.2 `gen-lowered` (D9 v2, v≥97)
 *Hard:* the resume ABI is now **✅ measured (T13, rows 18/19, read at 98 and
