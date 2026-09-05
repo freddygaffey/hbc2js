@@ -355,6 +355,20 @@ class-recover: { stage: "B", catalogue: [20],
   install the prototype value separately, so that the two class objects are
   distinguishable. Ships with the `docs/BUGS.md` row and its own regression
   test; **C4 is refused until F24-3 lands**.
+  **F24-3 landed 0f1919d** (2026-09-05): confirmed against the
+  MIT-licensed Hermes VM source (`Interpreter-slowpaths.cpp`'s
+  `caseCreateClass` writes the prototype value to the aliased register
+  first, then the constructor value LAST -- "Write the result last in case
+  it is the same register as the prototype" -- so an aliased register always
+  ends up holding the constructor) that the same hazard applies to
+  `CreateDerivedClass`, not only `CreateBaseClass`; both cases in
+  `src/emit/lower.ts` now only write a separate prototype binding when the
+  two operand registers are genuinely distinct, reading `<ctor>.prototype`
+  lazily otherwise. New fixture `tests/fixtures/constructs/67-class-static-and-new`
+  (both a base and a derived static-only class, each instantiated with a bare
+  `new`) exercises both opcodes' aliased shape at v98 and v99; targeted unit
+  test `tests/gate/emit/class-ctor-proto-alias.test.ts` asserts the
+  install/read shape on fixtures 34 and 67 directly.
 * **F24-4** (`src/passes/types.ts`): `PassContext.functionMeta?: (fnIdx:
   number) => { readonly name: string; readonly role: "ctor" | "nc" | "plain" }`.
   Both halves already exist and are simply not reachable from a rung: the
