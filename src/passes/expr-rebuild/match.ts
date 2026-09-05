@@ -27,7 +27,7 @@ export interface ExprRebuildSite {
 
 export type ExprRebuildMatch = Match<readonly Stmt[], ExprRebuildSite>;
 
-export type RefuseReason = "not-dead" | "impure-move" | "input-clobbered" | "use-under-control-flow" | "two-reads" | "protocol-name" | "generator-frame" | "loop-variant-input";
+export type RefuseReason = "not-dead" | "impure-move" | "input-clobbered" | "use-under-control-flow" | "two-reads" | "protocol-name" | "generator-frame" | "loop-variant-input" | "env-slot-order";
 
 export type ClassifyResult = { readonly ok: true; readonly rule: ExprRebuildRule; readonly j: number } | { readonly ok: false; readonly reason: RefuseReason };
 
@@ -312,6 +312,35 @@ function forHeaderVerdict(s: Stmt, reg: string): Verdict | null {
     if (c.reads + c.nested > 0) return "read";
   }
   return null;
+}
+
+/** The environment id of a lexical environment-slot name (`_e<env>_<slot>`,
+ *  `src/emit/names.ts`'s `envSlot`), or `null` for anything else (a register
+ *  `rN`, a hoisted var, a free name). Written out here rather than imported
+ *  because a rung may not import `src/emit` (D12a); the shape is pinned by
+ *  `tests/gate/passes/env-slot-order.test.ts`. */
+const ENV_SLOT_RE = /^_e(\d+)_\d+$/;
+function envIdOf(name: string): string | null {
+  const m = ENV_SLOT_RE.exec(name);
+  return m === null ? null : m[1]!;
+}
+
+/** Environment ids whose slots a *pure* `Expr` reads (deduplicated). */
+function envIdsReadBy(e: Expr): readonly string[] {
+  const out: string[] = [];
+  for (const name of namesReadBy(e)) {
+    const id = envIdOf(name);
+    if (id !== null && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/** Does `s` (assumed `isPureStmt`, so its only write is a top-level
+ *  `ident = <pure>`) store into a slot of one of `envs`? */
+function writesEnvOf(s: Stmt, envs: readonly string[]): boolean {
+  if (s.k !== "expr" || s.expr.k !== "assign" || s.expr.target.k !== "ident") return false;
+  const id = envIdOf(s.expr.target.name);
+  return id !== null && envs.includes(id);
 }
 
 /** Does `s` (assumed `isPureStmt`) write one of `regs`? */
@@ -798,10 +827,28 @@ export function classifySite(list: readonly Stmt[], fnBody: readonly Stmt[], i: 
     if (loopGuard !== null) return { ok: false, reason: loopGuard };
     if (isPure(value)) {
       const inputs = namesReadBy(value);
+      // docs/BUGS.md 2026-09-01 "captured-variable declaration order" row:
+      // folding a read of one environment slot forward past a *store* to a
+      // different slot of the SAME environment is value-safe (the two slots
+      // are independent bindings) but it swaps the two operations' order in
+      // the emitted JS, and therefore the order of the
+      // `LoadFromEnvironment`/`StoreToEnvironment` pair hermesc emits when
+      // the decompiled source is recompiled. `arr[i++]` with `arr` at slot 0
+      // and `i` at slot 1 is the shape that shows it: the baseline emits
+      // `r1 = _e1_0; r0 = _e1_1; ...; _e1_1 = r2; r0 = r1[r0];` (slot 0 read
+      // first, exactly as the original bytecode does) and folding `_e1_0`
+      // into the member base turns it into `_e1_1` read first. ECMAScript
+      // member-expression evaluation order agrees with the bytecode: in
+      // `arr[i++]` the base `arr` is evaluated before the index. So keep the
+      // temp where the baseline put it whenever the travel would cross a
+      // store into the same environment. Cross-environment moves and moves
+      // over register-only statements are untouched.
+      const envs = envIdsReadBy(value);
       for (let x = i + 1; x < j; x++) {
         const t = list[x]!;
         if (!isSimple(t) || !isPureStmt(t) || mentions(t, reg)) return { ok: false, reason: "impure-move" };
         if (writesAnyOf(t, inputs)) return { ok: false, reason: "input-clobbered" };
+        if (envs.length > 0 && writesEnvOf(t, envs)) return { ok: false, reason: "env-slot-order" };
       }
     } else if (j !== i + 1) {
       return { ok: false, reason: "impure-move" };

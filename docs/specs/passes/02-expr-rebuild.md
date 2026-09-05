@@ -129,6 +129,20 @@ one list.
 * `not-dead` — neither (D-a) nor (D-b).
 * `impure-move` — `E` impure and `j > i + 1`.
 * `input-clobbered` — a skipped statement writes a register `E` reads.
+* `env-slot-order` — `E` reads a lexical environment slot (`_e<env>_<slot>`)
+  and a skipped statement stores into a slot of the **same** environment.
+  Value-safe (two slots are two independent bindings) but it swaps the two
+  operations in the emitted JS, and therefore the order of the
+  `LoadFromEnvironment`/`StoreToEnvironment` pair hermesc emits when the
+  decompiled source is recompiled. The shape is `arr[i++]` with `arr` and `i`
+  captured by one environment at different slots: the baseline emits the
+  base's load first, exactly as the original bytecode and as ECMAScript
+  member-expression evaluation order both require, and folding the base into
+  the member expression moves it past the index's store-back. Added 2026-09-05
+  with `tests/fixtures/constructs/71-env-slot-captured-index` and
+  `tests/gate/passes/env-slot-order.test.ts` (docs/BUGS.md 2026-09-01
+  "captured-variable declaration order" row). Cross-environment moves, and
+  moves over register-only statements, are unaffected.
 * `use-under-control-flow` — the only read is inside a body, not a test.
 * `two-reads` — `L[j]` reads `rX` more than once (folding would duplicate an
   effect or an allocation).

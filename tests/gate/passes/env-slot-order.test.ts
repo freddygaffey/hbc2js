@@ -31,7 +31,7 @@
 // `_e46_0` inside a hoisted nested closure) — not yet fixed; see that row.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { repoRoot } from "../../support/paths.ts";
@@ -136,3 +136,103 @@ for (const version of VERSIONS) {
     assert.ok(checked > 0, `v${version}: no named closure in the fixture owned an environment — fixture shape changed under this test`);
   });
 }
+
+// ---------------------------------------------------------------------------
+// The multi-slot case the row was actually about: base and index captured by
+// the SAME environment at DIFFERENT slots (fixture 71-env-slot-captured-index,
+// added with the fix). `arr[i++]` / `obj[k++] = v` / `fn(a, n++)` all evaluate
+// the BASE before the index, both in ECMAScript and in the bytecode Hermes
+// emits for them, so the closure's own `LoadFromEnvironment` pair is
+// base-then-index at every version (the slot NUMBERS differ -- v84 puts the
+// base at slot 1, v94+ at slot 0 -- which is exactly why the assertion is
+// "the recompiled sequence equals the original's", never a literal).
+// expr-rebuild used to fold the base's load forward past the store-back of
+// the incremented index, which is value-safe but swaps the two loads.
+// ---------------------------------------------------------------------------
+
+const CAPTURED_INDEX_CLOSURES = ["next", "put", "step"];
+
+function loadConstruct(fixture: string, version: Version): Uint8Array {
+  return new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", fixture, `v${version}.hbc`)));
+}
+
+/** name -> the ordered `Load/Store*Environment` slot immediates of every
+ *  function called `name`. Unlike `envShapesByName` this does NOT filter by
+ *  environment register: these closures create no environment of their own
+ *  (they reach their factory's through `GetEnvironment`/`GetParentEnvironment`,
+ *  which is spelled differently per version) and each touches exactly one
+ *  environment, so program order over all of them is the sequence we mean. */
+function envSlotSequenceByName(bytes: Uint8Array, names: readonly string[]): Map<string, readonly string[]> {
+  let mod;
+  try {
+    mod = parseHbc(bytes);
+  } catch {
+    mod = parseHbc(bytes, { opcodeTable: "hbc98-late" });
+  }
+  const out = new Map<string, readonly string[]>();
+  for (let i = 0; i < mod.functions.length; i++) {
+    const header = mod.functions[i]!;
+    if (!names.includes(header.name)) continue;
+    if (out.has(header.name)) continue;
+    const fn = decodeFunction(mod, i);
+    const slots: string[] = [];
+    for (const insn of fn.instructions) {
+      const m = /^(Load|Store|StoreNP)(From|To)Environment$/.exec(insn.name);
+      if (m === null) continue;
+      const isLoad = m[1] === "Load";
+      const slot = isLoad ? insn.operands[2]!.value : insn.operands[1]!.value;
+      slots.push(`${isLoad ? "Load" : "Store"}:${slot}`);
+    }
+    out.set(header.name, slots);
+  }
+  return out;
+}
+
+for (const version of VERSIONS) {
+  test(`71-env-slot-captured-index v${version}: the base's env-slot load still precedes the index's after decompile+recompile (env-slot-order row, multi-slot case)`, (t) => {
+    if (findHermesc(version) === null) {
+      if (requireOracles()) throw new Error(`hermesc v${version} required (HBC2JS_REQUIRE_ORACLES=1)`);
+      t.skip(`hermesc v${version} not found (run tools/get-hermesc.sh ${version})`);
+      return;
+    }
+    const original = loadConstruct("71-env-slot-captured-index", version);
+    const decompiled = decompile(original, { moduleName: "x", resolveV98Ambiguity: true }).code;
+    const recompiled = recompile(version, decompiled);
+    const before = envSlotSequenceByName(original, CAPTURED_INDEX_CLOSURES);
+    const after = envSlotSequenceByName(recompiled, CAPTURED_INDEX_CLOSURES);
+    let checked = 0;
+    for (const name of CAPTURED_INDEX_CLOSURES) {
+      const b = before.get(name);
+      assert.ok(b !== undefined, `v${version}: fixture shape changed - no function named ${name}`);
+      // Fixture pin: two loads of two distinct slots, then a store back into
+      // the SECOND one loaded (the index). If this ever stops holding the
+      // fixture no longer exercises the row and the test must be revisited.
+      assert.ok(b.length >= 3, `v${version}: ${name} has too few env ops to be the shape this test pins: ${b.join(",")}`);
+      assert.ok(b[0]!.startsWith("Load:") && b[1]!.startsWith("Load:") && b[0] !== b[1], `v${version}: ${name} does not load two distinct env slots first: ${b.join(",")}`);
+      assert.ok(b.includes(`Store:${b[1]!.slice("Load:".length)}`), `v${version}: ${name} does not store back into the second-loaded slot: ${b.join(",")}`);
+      const a = after.get(name);
+      assert.ok(a !== undefined, `v${version}: ${name} disappeared from the decompile+recompile round trip`);
+      assert.deepEqual(a, b, `v${version}: ${name}'s env-slot operation sequence changed across decompile+recompile (base load reordered against the index)`);
+      checked++;
+    }
+    assert.equal(checked, CAPTURED_INDEX_CLOSURES.length);
+  });
+}
+
+// The bundle function the row was reproduced on: rn-template-0.72 v94
+// module 14 fn#224 (`hermesc -O`), a hoisted nested closure over environment
+// 46 whose body used to read `_e46_1` (the index) before `_e46_0` (the array).
+// Structural: the first READ of an `_e46_*` slot inside the emitted function
+// must be slot 0, matching the original bytecode's own load order.
+test("rn-template-0.72 v94 fn#224: the captured array (slot 0) is read before the captured index (slot 1)", (t) => {
+  const bundle = join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc");
+  if (!existsSync(bundle)) {
+    t.skip("rn-template-0.72/index.android.hbc not present");
+    return;
+  }
+  const code = decompile(new Uint8Array(readFileSync(bundle)), { moduleName: "x", functionIndex: 224 }).code;
+  const reads = [...code.matchAll(/=\s*_e46_(\d+)\b/g)].map((m) => Number(m[1]));
+  assert.ok(reads.length >= 2, `fn#224 no longer reads two environment-46 slots (bundle or function numbering changed): ${reads.join(",")}`);
+  assert.equal(reads[0], 0, `fn#224 reads _e46_${reads[1]} before _e46_0 - the base's load was folded past the index's store-back again`);
+  assert.ok(reads.includes(1), "fn#224 no longer reads _e46_1 (bundle or function numbering changed)");
+});
