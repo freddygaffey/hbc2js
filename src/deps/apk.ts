@@ -138,30 +138,60 @@ export interface ExtractedBundle {
 
 const HERMES_MAGIC = Buffer.from([0xc6, 0x1f, 0xbc, 0x03, 0xc1, 0x03, 0x19, 0x1f]);
 
+function isHermesMagic(bytes: Uint8Array): boolean {
+  return bytes.length >= 12 && Buffer.from(bytes.subarray(0, 8)).equals(HERMES_MAGIC);
+}
+
+/** Ordered, de-duplicated candidate bundle paths present in the zip: the
+ *  conventional exact names first, then any custom-named `assets/*.hbc`
+ *  entry -- a Hermes bundle doesn't have to be called `index.android.
+ *  bundle` (docs/BUGS.md 2026-09-06: com.oculus.twilight ships
+ *  `assets/TwilightBundle.js.hbc`). Exported for unit testing. */
+export function pickApkBundleCandidates(entries: readonly string[], namedCandidates: readonly string[] = ["assets/index.android.bundle", "assets/index.bundle"]): string[] {
+  const out: string[] = [];
+  for (const c of namedCandidates) if (entries.includes(c)) out.push(c);
+  for (const e of entries) if (/^assets\/.*\.hbc$/i.test(e) && !out.includes(e)) out.push(e);
+  return out;
+}
+
 /** Find and extract the Metro JS/Hermes bundle from an APK — the same
  *  candidate-path search as `tools/extract-apk-bundle.sh` (kept in sync by
  *  hand; this one returns bytes in-process for `hbc2js deps app.apk`
- *  instead of writing into the committed local-corpus fixture tree). */
+ *  instead of writing into the committed local-corpus fixture tree).
+ *
+ *  When more than one candidate is present, a conventionally-named asset
+ *  can be a non-Hermes stub shipped alongside the real, custom-named
+ *  bundle; prefer whichever candidate actually starts with the Hermes
+ *  magic header over one that merely has the expected name
+ *  (docs/BUGS.md 2026-09-06). */
 export function extractBundleFromApk(apkPath: string): ExtractedBundle {
   if (!which("unzip")) {
     throw new Error("`unzip` not found on PATH; cannot extract a bundle from an .apk");
   }
   const entries = listZipEntries(apkPath);
-  const candidates = ["assets/index.android.bundle", "assets/index.bundle"];
-  let entryPath = candidates.find((c) => entries.includes(c));
-  if (entryPath === undefined) {
-    entryPath = entries.find((e) => /^assets\/.*\.hbc$/.test(e));
+  const namedCandidates = ["assets/index.android.bundle", "assets/index.bundle"];
+  const candidates = pickApkBundleCandidates(entries, namedCandidates);
+  if (candidates.length === 0) {
+    throw new Error(`no bundle found in ${apkPath} (looked for ${namedCandidates.join(", ")} and assets/*.hbc)`);
   }
-  if (entryPath === undefined) {
-    throw new Error(`no bundle found in ${apkPath} (looked for ${candidates.join(", ")} and assets/*.hbc)`);
+  let chosenPath = candidates[0]!;
+  let chosenBytes = readZipEntry(apkPath, chosenPath);
+  if (candidates.length > 1 && (chosenBytes === null || !isHermesMagic(chosenBytes))) {
+    for (const cand of candidates.slice(1)) {
+      const bytes = readZipEntry(apkPath, cand);
+      if (bytes !== null && isHermesMagic(bytes)) {
+        chosenPath = cand;
+        chosenBytes = bytes;
+        break;
+      }
+    }
   }
-  const bytes = readZipEntry(apkPath, entryPath);
-  if (bytes === null) {
-    throw new Error(`found ${entryPath} in ${apkPath} but could not read it`);
+  if (chosenBytes === null) {
+    throw new Error(`found ${chosenPath} in ${apkPath} but could not read it`);
   }
-  const isHermes = bytes.length >= 12 && Buffer.from(bytes.subarray(0, 8)).equals(HERMES_MAGIC);
-  const hbcVersion = isHermes ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8, true) : null;
-  return { bytes, entryPath, isHermes, hbcVersion };
+  const isHermes = isHermesMagic(chosenBytes);
+  const hbcVersion = isHermes ? new DataView(chosenBytes.buffer, chosenBytes.byteOffset, chosenBytes.byteLength).getUint32(8, true) : null;
+  return { bytes: chosenBytes, entryPath: chosenPath, isHermes, hbcVersion };
 }
 
 // Android permission -> npm-package hint, for guess.ts's `apkHints` (D17a

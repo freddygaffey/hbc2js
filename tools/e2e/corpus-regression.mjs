@@ -93,23 +93,73 @@ export const CORPUS_APPS = [
  *  gracefully". `*` entries are resolved against the zip's own file list. */
 const CANDIDATE_ASSET_PATHS = ["assets/index.android.bundle", "assets/index.bundle", "assets/app.bundle", "assets/main.jsbundle"];
 
+// Same 8-byte Hermes bytecode magic header src/deps/apk.ts's HERMES_MAGIC
+// checks (parser/src's own probe, not re-derived here) -- used to prefer a
+// real Hermes bundle over a conventionally-named stub (docs/BUGS.md
+// 2026-09-06: com.oculus.twilight ships a placeholder
+// `assets/index.android.bundle` alongside the real, custom-named
+// `assets/TwilightBundle.js.hbc`).
+const HERMES_MAGIC_HEX = "c61fbc03c103191f";
+
 function defaultCorpusDir() {
   return process.env["HBC2JS_CORPUS_DIR"] ?? join(homedir(), "hbc2js-local-corpus", "apks");
 }
 
-/** Finds a bundle entry inside the APK zip: tries the conventional paths
- *  first, then falls back to any `assets/**` entry that looks like a
- *  Hermes/Metro bundle by name (`*.bundle`, `*.hbc`, or a large `main*`
- *  candidate). Returns the in-zip path, or null ("no bundle found"). */
+function shQuote(s) {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+/** True if `entry` inside `apkPath` starts with the Hermes bytecode magic
+ *  header. Reads through a `head`-truncated shell pipe so checking an
+ *  8-byte header never has to buffer a 100+MB bundle in memory or on disk;
+ *  `head` closing its end of the pipe early is enough to stop `unzip`. */
+function isHermesEntry(apkPath, entry) {
+  const r = spawnSync("sh", ["-c", `unzip -p ${shQuote(apkPath)} ${shQuote(entry)} 2>/dev/null | head -c 8 | od -An -tx1`], { encoding: "utf8" });
+  if (r.status !== 0 && r.stdout === "") return false;
+  return r.stdout.replace(/\s+/g, "") === HERMES_MAGIC_HEX;
+}
+
+/** Every candidate bundle path present in the zip, in priority order and
+ *  de-duplicated: the conventional exact names first, then ANY custom-
+ *  named `assets/*.hbc` entry (a Hermes bundle doesn't have to be called
+ *  `index.android.bundle`), then any other `assets/**` entry that merely
+ *  looks like a bundle by name. Exported for unit testing (no `unzip`
+ *  spawn needed -- callers pass the entry list directly). */
+export function pickBundleCandidates(entries) {
+  const out = [];
+  const add = (e) => {
+    if (!out.includes(e)) out.push(e);
+  };
+  for (const cand of CANDIDATE_ASSET_PATHS) {
+    if (entries.includes(cand)) add(cand);
+  }
+  for (const e of entries) {
+    if (/^assets\/.*\.hbc$/i.test(e)) add(e);
+  }
+  for (const e of entries) {
+    if (/^assets\/.*\.bundle$/i.test(e)) add(e);
+  }
+  for (const e of entries) {
+    if (/^assets\/.*bundle/i.test(e)) add(e);
+  }
+  return out;
+}
+
+/** Finds a bundle entry inside the APK zip: builds the full ordered
+ *  candidate list (conventional exact names, then `assets/*.hbc`, then
+ *  bundle-shaped fallbacks; see `pickBundleCandidates`) and, when more than
+ *  one candidate is present, prefers whichever one actually starts with
+ *  the Hermes magic header over one that merely has a conventional name --
+ *  a same-zip placeholder/stub asset must never shadow the real bundle.
+ *  Returns the in-zip path, or null ("no bundle found"). */
 function findBundleEntry(apkPath) {
   const listing = spawnSync("unzip", ["-Z1", apkPath], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (listing.status !== 0) return null;
   const entries = listing.stdout.split("\n").filter((l) => l.length > 0);
-  for (const cand of CANDIDATE_ASSET_PATHS) {
-    if (entries.includes(cand)) return cand;
-  }
-  const fallback = entries.find((e) => /^assets\/.*\.(bundle|hbc)$/i.test(e)) ?? entries.find((e) => /^assets\/.*bundle/i.test(e));
-  return fallback ?? null;
+  const candidates = pickBundleCandidates(entries);
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  return candidates.find((c) => isHermesEntry(apkPath, c)) ?? candidates[0];
 }
 
 /** Extracts one APK's bundle to a fresh temp dir and returns its local
@@ -231,9 +281,15 @@ function navigatorCountFromSegregate(seg) {
 
 /** Per-app overfit/local-maximum flags -- everything here is a WARNING
  *  surfaced without ground truth, not proof of a bug (brief part 2). */
-function detectOverfitFlags(appMetrics, corpusMedianVarNamedPct) {
+export function detectOverfitFlags(appMetrics, corpusMedianVarNamedPct) {
   const flags = [];
   if (appMetrics.decompile.status === "crash") flags.push(`decompile crash (${appMetrics.decompile.errorCode ?? "?"})`);
+  // A decompile that yields ZERO modules is never a silent "ok" -- it means
+  // the wrong asset was picked (e.g. a non-bundle stub) or the real bundle
+  // is empty; either way it needs a human look, not a green row
+  // (docs/BUGS.md 2026-09-06: com.oculus.twilight reported "ok @ 0%" this
+  // way when the harness picked a stub instead of TwilightBundle.js.hbc).
+  if (appMetrics.decompile.status === "ok" && appMetrics.totalModules === 0) flags.push("0 modules decompiled (likely wrong bundle asset picked)");
   if (appMetrics.decompile.status === "ok" && appMetrics.totalModules > 0 && appMetrics.validJsPct === 0) flags.push("0% valid-JS modules");
   if (appMetrics.decompile.status === "ok" && appMetrics.screens.detected > 0 && appMetrics.navigators.detected === 0) {
     flags.push(`${appMetrics.screens.detected} screen(s) detected with 0 navigators (no navigator evidence)`);
