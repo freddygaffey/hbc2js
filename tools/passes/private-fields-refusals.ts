@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import type { Expr, Stmt } from "../../src/emit/ast.ts";
 import { walk } from "../../src/passes/ast.ts";
 import { privateFields } from "../../src/passes/private-fields/index.ts";
-import { ctorBody, findCandidates, findClass, foldInBody } from "../../src/passes/private-fields/match.ts";
+import { ctorBody, findCandidates, findClass, foldInBody, foldOne } from "../../src/passes/private-fields/match.ts";
 import { splitProject } from "../../src/split/index.ts";
 
 interface Refusal {
@@ -125,6 +125,16 @@ function diagnose(before: readonly Stmt[], functionIndex: number): readonly Refu
           ? "static-member-other-escape"
           : "instance-member-other-escape";
       out.push({ reason, detail: `${escapedMember.kind}${escapedMember.isStatic ? " (static)" : ""}`, functionIndex });
+      continue;
+    }
+    // R-PF1, the last gate `foldOne` applies: the defining frame itself still
+    // mentions the symbol (or the register it reached its env slot through)
+    // after the fold, so the name cannot be retired. The dominant shape is
+    // hermesc INLINING a construction of this very class into the defining
+    // frame, which installs the field by symbol on an object that never ran
+    // the real constructor.
+    if (foldOne(before, c) === null) {
+      out.push({ reason: "defining-body-escape", detail: "the defining frame still mentions the symbol after the fold", functionIndex });
       continue;
     }
     out.push({ reason: "folded", detail: `#${c.displayName.length} char name`, functionIndex });

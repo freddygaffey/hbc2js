@@ -169,3 +169,101 @@ test("private-fields: refuses a private name that escapes its class (stored outs
   assert.deepEqual(folded, []);
   assert.equal(after, before);
 });
+
+// ---------------------------------------------------------------------------
+// One register hop between `Symbol("#name")` and the env slot the class's own
+// members read (agent/pf-symbol-deref, docs/BUGS.md 2026-09-01 row, the
+// 2026-09-08 "STILL OPEN (a)" paragraph). hermesc emits the private name's
+// creation and its `StoreToEnvironment` as two AST stores whenever the
+// register it lands in is read again in the defining frame:
+//   `let r5 = Symbol("#x"); _e0_0 = r5;`
+// A class member can only ever see `_e0_0`, so the candidate has to be rooted
+// at the slot -- rooted at `r5` (what this rung used to do) the constructor's
+// install is invisible and the whole class refuses `ctor-no-install`.
+
+const oneHopBefore = (extra: readonly Any[] = [], between: readonly Any[] = []): Any[] => {
+  const ctor = {
+    k: "func",
+    name: null,
+    params: [],
+    body: [{ k: "init", kind: "let", name: "r4", value: { k: "ident", name: "_e0_0" } }, install(THIS, "r4", { k: "lit", text: "1" }), { k: "return", arg: THIS }],
+  };
+  const reader = {
+    k: "func",
+    name: null,
+    params: [],
+    body: [{ k: "return", arg: { k: "member", obj: THIS, prop: { k: "ident", name: "_e0_0" }, computed: true } }],
+  };
+  const cls = {
+    k: "class",
+    name: "C",
+    superClass: null,
+    members: [
+      { kind: "method", static: false, computed: false, key: { k: "ident", name: "constructor" }, value: ctor },
+      { kind: "method", static: false, computed: false, key: { k: "lit", text: "read" }, value: reader },
+    ],
+  };
+  return [
+    { k: "init", kind: "let", name: "r5", value: sym("#x") },
+    ...between,
+    { k: "expr", expr: { k: "assign", target: { k: "ident", name: "_e0_0" }, value: { k: "ident", name: "r5" } } },
+    { k: "init", kind: "let", name: "r7", value: cls },
+    ...extra,
+  ];
+};
+
+test("private-fields: follows one register hop into the env slot the class reads (`let r5 = Symbol(\"#x\"); _e0_0 = r5;`)", async () => {
+  const { findCandidates, foldAll } = (await import("../../../src/passes/private-fields/match.ts")) as Any;
+  const before = oneHopBefore();
+  assert.deepEqual(findCandidates(before), [{ envName: "_e0_0", displayName: "#x", regName: "r5" }]);
+  const { folded, after } = foldAll(before);
+  assert.deepEqual(folded, ["#x"]);
+  const printed = JSON.stringify(after);
+  assert.ok(printed.includes('"kind":"field"') && printed.includes('"text":"#x"'), "expected a #x field member");
+  assert.ok(!printed.includes("Symbol"), "the Symbol( creation should be gone");
+  assert.ok(!printed.includes('"r5"'), "the register the symbol passed through should be gone");
+});
+
+test("private-fields: refuses the hop when the register is rewritten between the Symbol() and the slot store", async () => {
+  const { findCandidates, foldAll } = (await import("../../../src/passes/private-fields/match.ts")) as Any;
+  const between = [{ k: "expr", expr: { k: "assign", target: { k: "ident", name: "r5" }, value: { k: "lit", text: "0" } } }];
+  const before = oneHopBefore([], between);
+  // The slot store now copies something else entirely: no hop, the candidate
+  // stays rooted at the register, and nothing folds.
+  assert.deepEqual(findCandidates(before), [{ envName: "r5", displayName: "#x", regName: null }]);
+  const { folded, after } = foldAll(before);
+  assert.deepEqual(folded, []);
+  assert.equal(after, before);
+});
+
+test("private-fields: refuses (R-PF1) when the defining frame still reads the symbol after the fold", async () => {
+  const { foldAll } = (await import("../../../src/passes/private-fields/match.ts")) as Any;
+  // hermesc inlines a construction of this very class into the defining frame
+  // and installs the field there by symbol, on an object that never ran the
+  // real constructor -- folding the class's accessors to `this.#x` would make
+  // that object's reads throw. Refuse, whichever of the two names it uses.
+  for (const name of ["r5", "_e0_0"]) {
+    const extra = [{ k: "expr", expr: { k: "call", callee: { k: "ident", name: "leak" }, args: [{ k: "ident", name }] } }];
+    const { folded, after } = foldAll(oneHopBefore(extra));
+    assert.deepEqual(folded, [], `${name} still read: must refuse`);
+    assert.equal(JSON.stringify(after).includes('"kind":"field"'), false, `${name} still read: no field may appear`);
+  }
+});
+
+for (const version of ["v98", "v99"] as const) {
+  test(`private-fields: ${version} fixture 81 refuses #x (R-PF1) and stays a running program -- PUSHBACK P-53`, () => {
+    const code = decompile(new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "constructs", "81-derived-ctor-private-fields", `${version}.hbc`))), {
+      resolveV98Ambiguity: true,
+      passes: {},
+    }).code;
+    // Fixture 81's `new B(7)` is INLINED by hermesc into the same frame that
+    // defines the class, and that inlined copy installs `#x` by symbol on an
+    // object that never runs B's constructor. Folding the class body there
+    // makes `b.x` throw (and strands the register: forcing the fold makes the
+    // pass checker refuse the whole function, E_UNBOUND_IDENT). The rung must
+    // refuse, so the fixture keeps its symbol-keyed shape.
+    assert.match(code, /Symbol\("#x"\)/);
+    assert.doesNotMatch(code, /#x = 1/);
+    assert.doesNotMatch(code, /could not decompile/);
+  });
+}

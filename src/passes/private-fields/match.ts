@@ -30,7 +30,7 @@
 // which would (wrongly) call a register that held a *different* private name
 // earlier in the same list an alias of this one too.
 import type { Expr, Stmt } from "../ast.ts";
-import { identUses, mapStmts, walk } from "../ast.ts";
+import { identUses, identUsesMany, mapStmts, walk } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
 export interface PrivateFieldsGroup {
@@ -64,17 +64,69 @@ function simpleStore(s: Stmt): { readonly name: string; readonly value: Expr } |
   return null;
 }
 
-/** Every top-level `<ident> = Symbol("#name")` store in `before` -- the
- *  emitter's lowering of `CreatePrivateName` followed by its `StoreToEnvironment`
- *  (`src/emit/lower.ts`'s "private names" block keeps the two as one AST
- *  store, same as every other env-slot write). */
-export function findCandidates(before: readonly Stmt[]): readonly { readonly envName: string; readonly displayName: string }[] {
-  const out: { envName: string; displayName: string }[] = [];
+/** An env slot as the emitter spells one (`_e0_0`, `_e181_13`) -- the same
+ *  shape `src/passes/super-call/match.ts`'s own `ENV_SLOT` matches. A slot is
+ *  the frame's shared binding, so it is what a class member's body reads;
+ *  a register is this frame's own temporary and means nothing inside one. */
+const ENV_SLOT = /^_e\d+_\d+$/;
+
+/** One private name this rung may try to fold.
+ *
+ *  `envName` is the name a *member body* sees the symbol under -- the env slot
+ *  when hermesc used one, the register otherwise. `regName` is the extra
+ *  defining-frame register the symbol passed through on its way into that slot
+ *  (`let r5 = Symbol("#x"); _e0_0 = r5;`), or `null` when the emitter stored
+ *  `Symbol("#name")` straight into the slot. Both names have to be deleted,
+ *  and both have to be free of surviving reads, for the fold to be safe. */
+export interface PrivateFieldCandidate {
+  readonly envName: string;
+  readonly displayName: string;
+  readonly regName: string | null;
+}
+
+/** Every top-level private-name creation in `before` -- the emitter's lowering
+ *  of `CreatePrivateName` plus its `StoreToEnvironment`, in either of the two
+ *  spellings hermesc produces:
+ *
+ *    `_e0_0 = Symbol("#x");`                  (one store; fixture 35)
+ *    `let r5 = Symbol("#x"); _e0_0 = r5;`     (two; fixture 81, and the shape
+ *                                              the react-navigation bundle's
+ *                                              derived classes use)
+ *
+ *  The second appears whenever hermesc keeps the symbol in a register for a
+ *  moment (register pressure around a derived class's own construction), and
+ *  it is the reason a candidate carries a *slot* name rather than whatever
+ *  name the `Symbol(...)` call was first stored under: the class's members can
+ *  only ever read the slot. Exactly ONE register hop is followed, and only
+ *  into an env slot -- the same one-hop rule `derefChain` states in
+ *  `src/passes/super-call/match.ts` ("the emitter never chains more than one
+ *  move per operand in this shape, and a longer chain is a shape this rung has
+ *  not measured"). The hop is dropped the moment the register is written
+ *  again before the slot store, so a register that held a *different* value by
+ *  then is never followed (the position-blind mistake this file's header
+ *  comment already warns about, in its store-scanning half). */
+export function findCandidates(before: readonly Stmt[]): readonly PrivateFieldCandidate[] {
+  const out: { envName: string; displayName: string; regName: string | null }[] = [];
+  // Register -> the candidate it currently holds, live only while nothing has
+  // overwritten it and it has not already been followed into a slot.
+  const inRegister = new Map<string, { envName: string; displayName: string; regName: string | null }>();
   for (const s of before) {
     const store = simpleStore(s);
     if (store === null) continue;
     const displayName = privateSymbolName(store.value);
-    if (displayName !== null) out.push({ envName: store.name, displayName });
+    if (displayName !== null) {
+      const c = { envName: store.name, displayName, regName: null };
+      out.push(c);
+      if (!ENV_SLOT.test(store.name)) inRegister.set(store.name, c);
+      continue;
+    }
+    inRegister.delete(store.name); // this register now holds something else
+    if (!ENV_SLOT.test(store.name) || !isIdent(store.value)) continue;
+    const src = inRegister.get(store.value.name);
+    if (src === undefined) continue;
+    src.regName = src.envName;
+    src.envName = store.name;
+    inRegister.delete(store.value.name); // one hop only
   }
   return out;
 }
@@ -408,8 +460,11 @@ function redeclare(body: readonly Stmt[], droppedInits: readonly string[]): read
 
 /** Folds one candidate across the whole function tree: the constructor (the
  *  only place an install may occur) and every other member's body. Returns
- *  the new tree, or `null` (refuse this one name; `before` is untouched). */
-function foldOne(before: readonly Stmt[], envName: string, displayName: string): readonly Stmt[] | null {
+ *  the new tree, or `null` (refuse this one name; `before` is untouched).
+ *  Exported for `tools/passes/private-fields-refusals.ts`, which needs the
+ *  final arbiter (R-PF1 below) to classify a refusal honestly. */
+export function foldOne(before: readonly Stmt[], candidate: PrivateFieldCandidate): readonly Stmt[] | null {
+  const { envName, displayName, regName } = candidate;
   const cls = findClass(before);
   if (cls === null) return null;
   const ctor = ctorBody(cls);
@@ -436,19 +491,48 @@ function foldOne(before: readonly Stmt[], envName: string, displayName: string):
   const newCls: ClassExpr = { ...cls, members: [field, ...newMembers] };
 
   const fx = (e: Expr): Expr => (e === cls ? newCls : e);
+  // The creation store (`<createdIn> = Symbol("#x")`) and, when the symbol
+  // reached its env slot through one register hop, that hop's own store
+  // (`<envName> = <regName>`) both become dead once the field is a real
+  // declaration.
+  const createdIn = regName ?? envName;
   const withoutDecl = before.filter((s) => {
     const store = simpleStore(s);
-    return !(store !== null && store.name === envName && privateSymbolName(store.value) !== null);
+    if (store === null) return true;
+    if (store.name === createdIn && privateSymbolName(store.value) !== null) return false;
+    return !(regName !== null && store.name === envName && isIdent(store.value) && store.value.name === regName);
   });
-  const trimmed = withoutDecl.map((s) => (s.k === "decl" ? { ...s, names: s.names.filter((n) => n !== envName) } : s)).filter((s) => !(s.k === "decl" && s.names.length === 0));
-  return mapStmts(trimmed, (s) => s, fx);
+  const dead = new Set([envName, createdIn]);
+  const trimmed = withoutDecl.map((s) => (s.k === "decl" ? { ...s, names: s.names.filter((n) => !dead.has(n)) } : s)).filter((s) => !(s.k === "decl" && s.names.length === 0));
+  const after = mapStmts(trimmed, (s) => s, fx);
+
+  // R-PF1 (defining-body escape). Every reference to this private name inside
+  // the class has just been rewritten into `#name` syntax, and the symbol's
+  // own creation has been deleted -- so ANY surviving mention of the slot or
+  // of the register it came through is a reference this rung has no shape for
+  // and must not strand. It is not merely a dangling name: a native `#name`
+  // field only exists on objects branded during their own `[[Construct]]`,
+  // and the shape that puts such a mention here is hermesc INLINING a
+  // construction of this very class into the defining frame
+  // (`r4 = Reflect.construct(Object.getPrototypeOf(B), [...], B);
+  //   Object.defineProperty(r4, r5, {...});`) -- an object that never runs the
+  // real constructor, so folding the class's accessors to `this.#x` while that
+  // copy keeps the symbol-keyed install makes `r4.x` throw where the unfolded
+  // shape does not. That is the same hazard `isThisArg` above refuses inside
+  // the constructor, one frame out; fixture 81 is exactly it. Refuse the name.
+  const surviving = identUsesMany(after, dead);
+  for (const n of dead) {
+    const u = surviving.get(n)!;
+    if (u.reads + u.writes + u.nested > 0) return null;
+  }
+  return after;
 }
 
 export function foldAll(before: readonly Stmt[]): { readonly after: readonly Stmt[]; readonly folded: readonly string[] } {
   let tree = before;
   const folded: string[] = [];
   for (const c of findCandidates(before)) {
-    const next = foldOne(tree, c.envName, c.displayName);
+    const next = foldOne(tree, c);
     if (next !== null) {
       tree = next;
       folded.push(c.displayName);
