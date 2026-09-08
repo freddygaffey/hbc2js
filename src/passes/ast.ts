@@ -788,6 +788,28 @@ export function identUsesMany(stmts: readonly Stmt[], names: Iterable<string>): 
   // frame, every other name is the same binding.
   let followNested = false;
   for (const n of wanted) if (!isRegisterName(n)) followNested = true;
+  // When every wanted name is a register name, this query is a *restriction*
+  // of `registerUses`: `countUses`'s traversal does not depend on `wanted`
+  // at all (the predicate only gates `bump`), and both calls pass
+  // `followNested = false`, so counting "these registers" and counting
+  // "every register" visit exactly the same nodes and agree name for name.
+  // Taking the restriction instead means the walk is paid once per list
+  // identity (and carried across `expr-rebuild`'s splices by
+  // `noteRegisterUsesSplice`) rather than once per caller per generation --
+  // the term left at the top of the profile by part 6
+  // (`docs/reports/2026-09-05-perf6-index.md`), whose callers are
+  // `var-naming`/`fn-naming`'s per-site checkers and every single-name
+  // `identUses` on a register.
+  if (!followNested && wanted.size > 0) {
+    const all = registerUses(stmts);
+    const restricted = new Map<string, IdentUses>();
+    // Same key order a cold walk produces: first-appearance order for the
+    // names that occur (`all` is in that order), then the zero-fill in
+    // `wanted` order, exactly as the loop below this branch does.
+    for (const [name, u] of all) if (wanted.has(name)) restricted.set(name, u);
+    for (const n of wanted) if (!restricted.has(n)) restricted.set(n, { reads: 0, writes: 0, nested: 0 });
+    return restricted;
+  }
   const counts = countUses(stmts, (n) => wanted.has(n), followNested);
   for (const n of wanted) if (!counts.has(n)) counts.set(n, { reads: 0, writes: 0, nested: 0 });
   return counts;
@@ -812,10 +834,61 @@ const registerUsesMemo = new WeakMap<readonly Stmt[], ReadonlyMap<string, IdentU
 export function registerUses(stmts: readonly Stmt[]): ReadonlyMap<string, IdentUses> {
   let m = registerUsesMemo.get(stmts);
   if (m === undefined) {
-    m = countUses(stmts, isRegisterName, false);
+    m = foldStmtRegisterUses(stmts);
     registerUsesMemo.set(stmts, m);
   }
   return m;
+}
+
+const stmtRegisterUsesMemo = new WeakMap<Stmt, ReadonlyMap<string, IdentUses>>();
+
+/**
+ * `registerUses([s])` for one statement, memoised on the **statement's** own
+ * identity rather than a list's.
+ *
+ * A rewrite builds a new list out of the very same statement objects for
+ * every position it did not touch (`spliceList`), so a statement's own
+ * counts survive every generation of every list it is ever a member of,
+ * where a list-keyed memo goes cold on each one. This is the same discipline
+ * `expr-rebuild/stmt-index.ts`'s `stmtInterest` already uses, and it is what
+ * makes a cold `registerUses` of a whole function body a fold of memo hits
+ * (`O(statements + names)`) instead of a full tree walk.
+ */
+export function stmtRegisterUses(s: Stmt): ReadonlyMap<string, IdentUses> {
+  let m = stmtRegisterUsesMemo.get(s);
+  if (m === undefined) {
+    m = countUses([s], isRegisterName, false);
+    stmtRegisterUsesMemo.set(s, m);
+  }
+  return m;
+}
+
+/**
+ * `registerUses` from scratch, as the componentwise sum of its statements'
+ * own counts.
+ *
+ * Sound because `countUses` is a plain left-to-right accumulation with no
+ * cross-statement state -- the same concatenativity `noteRegisterUsesSplice`
+ * above relies on, applied one statement at a time -- and it reproduces a
+ * cold walk key for key *and in the same key order*: a walk creates a name's
+ * entry the first time it bumps it, which is the first statement that
+ * mentions it, in list order.
+ *
+ * Never hands out a count object that a later fold could mutate: the first
+ * statement to mention a name shares that statement's own (immutable) entry,
+ * and every further contribution builds a fresh one.
+ */
+function foldStmtRegisterUses(stmts: readonly Stmt[]): ReadonlyMap<string, IdentUses> {
+  if (stmts.length === 1) return stmtRegisterUses(stmts[0]!);
+  const out = new Map<string, IdentUses>();
+  for (const s of stmts) {
+    for (const [name, u] of stmtRegisterUses(s)) {
+      const c = out.get(name);
+      if (c === undefined) out.set(name, u);
+      else out.set(name, { reads: c.reads + u.reads, writes: c.writes + u.writes, nested: c.nested + u.nested });
+    }
+  }
+  return out;
 }
 
 const ZERO_USES: IdentUses = { reads: 0, writes: 0, nested: 0 };
