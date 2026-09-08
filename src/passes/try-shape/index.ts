@@ -12,16 +12,16 @@ import { rewrite } from "./rewrite.ts";
  * `try-clean` (stage B) is what actually deletes the residue this leaves
  * behind.
  *
- * `after: ["finally-dedup"]` is spec 22 §7's declared ordering, but
- * `finally-dedup` is not in the registry yet — `enabledPasses` throws
- * `E_PASS_ORDER` for a dependency on an unregistered pass, so that
- * constraint ships in the commit that lands `finally-dedup`, not here.
+ * `after: ["finally-dedup"]` is spec 22 §7's declared ordering; it ships here
+ * as of 2026-09-05, the commit that landed `finally-dedup`
+ * (docs/specs/passes/30-finally-dedup.md).
  */
 export const tryShape: Pass<Stmt, TryShape> = {
   name: "try-shape",
   stage: "A",
   targets: ["12-try-catch-finally-return", "13-try-finally-no-catch", "14-nested-try-catch", "15-catch-without-binding", "16-finally-with-break-continue"],
   catalogue: [11],
+  after: ["finally-dedup"],
   before: ["label-clean"],
   match,
   rewrite,

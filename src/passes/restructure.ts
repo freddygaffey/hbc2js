@@ -42,6 +42,8 @@ export function childLists(s: Stmt): readonly { readonly seg: string; readonly l
       return [
         { seg: "try-block", list: s.block },
         { seg: "try-handler", list: s.handler },
+        // spec 30: the recovered `finally` body is a child list like any other.
+        ...(s.finalizer === undefined ? [] : [{ seg: "try-finalizer", list: s.finalizer }]),
       ];
     case "switch":
       return s.cases.map((c, i) => ({ seg: `case:${i}`, list: c.body }));
@@ -62,7 +64,7 @@ export function mapChildLists(s: Stmt, f: (list: readonly Stmt[], seg: string) =
     case "labeled":
       return { ...s, body: f(s.body, `labeled:${s.label}`) };
     case "try":
-      return { ...s, block: f(s.block, "try-block"), handler: f(s.handler, "try-handler") };
+      return { ...s, block: f(s.block, "try-block"), handler: f(s.handler, "try-handler"), ...(s.finalizer === undefined ? {} : { finalizer: f(s.finalizer, "try-finalizer") }) };
     case "switch":
       return { ...s, cases: s.cases.map((c, i) => ({ ...c, body: f(c.body, `case:${i}`) })) };
     default:

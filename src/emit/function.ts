@@ -113,7 +113,9 @@ function planTries(structured: StructuredFunction): TryPlan {
     // already proven this region's guard is always true when the handler
     // runs. Contribute no `guard` entry and do not set `needsPc` for it —
     // exactly as if this region had no over-reach at all.
-    if (n.k === "try" && n.shape?.guard !== "redundant") {
+    // spec 30 section 3.2: a folded `try`/`finally` prints no `catch` clause,
+    // so there is no clause for a `__pc` range guard to sit in.
+    if (n.k === "try" && n.finalizer === undefined && n.shape?.guard !== "redundant") {
       const region = structured.graph.cfg.regions[n.region]!;
       const inBody = bodyBlocksOf(n.body);
       // A `cfgBlock: -1` try is §4.4's dispatch nest, whose extent is the whole
@@ -288,6 +290,15 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
    * [from, to) — a loop head's init/step slices. The block prelude (pc, provenance)
    * belongs to the first slice only.
    */
+  /** spec 30: instruction indices of a block that print nowhere because they
+   *  are a suppressed copy of a `finally` body (or, on the handler-side
+   *  block, the `Catch` and the compiler's rethrow that bracket it). Keyed by
+   *  block because a copy can sit in a `block`, a `return` or a `throw` leaf. */
+  const finallySkips = new Map<BlockId, Set<number>>();
+  /** spec 30: leaves whose own `return`/`throw` statement is not printed --
+   *  case B, where the finalizer's transfer overrides the copy site's. */
+  const dropExitTransfer = new Set<BlockId>();
+
   const lowerBlock = (blockId: BlockId, range?: { readonly from?: number; readonly to?: number; readonly skip?: ReadonlySet<number> }): Stmt[] => {
     const out: Stmt[] = [];
     // `cfgBlock: -1` is §4.4's dispatch switch, which stands for no CFG block.
@@ -299,8 +310,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
     if (from === 0 && tryPlan.needsPc) out.push(assign(id(PC_VAR), num(blockId)));
     if (from === 0 && input.provenanceComments && aug.block.start >= 0) out.push({ k: "comment", text: `@0x${aug.block.start.toString(16)}` });
     const plan = planBlock(aug.block, fn.instructions);
+    const folded = finallySkips.get(blockId);
     for (const [i, insn] of aug.block.instructions.entries()) {
-      if (i < from || i >= to || range?.skip?.has(i) === true) continue;
+      if (i < from || i >= to || range?.skip?.has(i) === true || folded?.has(i) === true) continue;
       const before = out.length;
       lowerInstruction(f, insn, i, plan, out);
       // §16: every statement this instruction produced points back at it.
@@ -725,6 +737,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       case "return":
         out.push(...lowerBlock(node.cfgBlock));
+        // spec 30 case B: this exit's transfer *is* the finalizer's, printed
+        // once inside `finally { }`.
+        if (dropExitTransfer.has(node.cfgBlock)) return;
         out.push(withOrigin({ k: "return", arg: isOpcodeGeneratorBody ? { k: "array", elements: [returnValueOf(node.cfgBlock), id(GEN_DONE)] } : returnValueOf(node.cfgBlock) } as Stmt, terminatorOrigin(node.cfgBlock, isRet)));
         return;
       case "throw":
@@ -734,6 +749,9 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         // same statement `dropTryHandlers` deletes in the ordinary shape.
         if (dropTryHandlers.has(node.cfgBlock)) return;
         out.push(...lowerBlock(node.cfgBlock));
+        // spec 30 case A: the compiler's `Throw <catchRegister>` rethrow at the
+        // end of the handler-side finalizer copy, implied by JS `finally`.
+        if (dropExitTransfer.has(node.cfgBlock)) return;
         out.push(withOrigin({ k: "throw", arg: throwValueOf(node.cfgBlock) } as Stmt, terminatorOrigin(node.cfgBlock, isThrow)));
         return;
       case "unreachable":
@@ -762,6 +780,32 @@ export function emitFunction(input: EmitFunctionInput): Stmt {
         return;
       }
       case "try": {
+        // spec 30 section 3.2: `finally-dedup` proved this region's handler is
+        // one of k copies of a source `finally` body. Print the handler-side
+        // copy once as `finally { ... }`, suppress the other copies where they
+        // sit, and print no `catch` clause at all -- the synthesized handler
+        // *is* the finalizer.
+        const fin = node.finalizer;
+        if (fin !== undefined) {
+          for (const c of fin.copies) {
+            const skip = new Set<number>();
+            for (let i = c.from; i < c.to; i++) if (c.retained?.includes(i) !== true) skip.add(i);
+            finallySkips.set(c.cfgBlock, skip);
+            if (!fin.handlerIsRethrowOnly) dropExitTransfer.add(c.cfgBlock);
+          }
+          const hlen = structured.graph.blocks[fin.source.cfgBlock]?.block?.instructions.length ?? 0;
+          const hskip = new Set<number>();
+          for (let i = 0; i < fin.source.from; i++) hskip.add(i);
+          for (let i = fin.source.to; i < hlen; i++) hskip.add(i);
+          finallySkips.set(fin.source.cfgBlock, hskip);
+          if (fin.handlerIsRethrowOnly) dropExitTransfer.add(fin.source.cfgBlock);
+          const foldedBlock: Stmt[] = [];
+          lowerTree(node.body, foldedBlock);
+          const finalizer: Stmt[] = [];
+          lowerTree(node.handler, finalizer);
+          out.push({ k: "try", block: foldedBlock, param: null, handler: [], hasCatch: false, finalizer });
+          return;
+        }
         // spec 21 §3 item 3: a for-of's synthesized cleanup try — its handler
         // is exactly the abrupt `IteratorClose` block `lowerIterLoop` already
         // recorded — prints as its body alone, no `try`/`catch` at all.

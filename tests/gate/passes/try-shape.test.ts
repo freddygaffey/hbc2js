@@ -88,7 +88,13 @@ for (const version of ["v94", "v99"]) {
     // spec's own worked example, fixture 12, measures as *redundant* at
     // both versions — its only over-reaching block is a bare `return` of a
     // literal, which `canThrow` correctly refuses to treat as risky).
-    const on = js("13-try-finally-no-catch", version);
+    // `finally-dedup` (spec 30, landed 2026-09-05) folds this very region
+    // into a `try`/`finally` with no `catch` clause and therefore no guard at
+    // all, which would make this rung's own property unobservable here. It is
+    // skipped so that what is measured is still try-shape's decision (00-LADDER
+    // section 4.2's known debt: a new rung must not silently retire an older
+    // rung's test).
+    const on = js("13-try-finally-no-catch", version, ["finally-dedup"]);
     // v99 leaves this function as `_fn2` (orphan: no closure-creation site
     // to recover its declared name from), so anchor on the `// fn#… "name"`
     // comment fn-naming always prints instead of the (possibly unrenamed)
@@ -105,8 +111,9 @@ for (const version of ["v94", "v99"]) {
     // block (LoadConstString/Ret only — neither can throw); the inner has
     // no over-reach at all. Neither guard is ever consulted, so both
     // disappear and `f2` ends up with no `__pc` scaffolding whatsoever.
-    const on = js("12-try-catch-finally-return", version);
-    const off = js("12-try-catch-finally-return", version, ["try-shape"]);
+    // `finally-dedup` skipped for the same reason as the test above.
+    const on = js("12-try-catch-finally-return", version, ["finally-dedup"]);
+    const off = js("12-try-catch-finally-return", version, ["try-shape", "finally-dedup"]);
     assert.ok(count(on, GUARD) < count(off, GUARD), `expected fewer guards with try-shape on (${count(on, GUARD)} vs ${count(off, GUARD)})`);
     const fn = on.slice(on.indexOf("function f2"), on.indexOf("function f3"));
     assert.doesNotMatch(fn, GUARD1);

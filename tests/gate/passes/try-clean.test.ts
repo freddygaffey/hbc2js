@@ -262,8 +262,14 @@ for (const version of ["v94", "v99"]) {
     let onTotal = 0;
     let offTotal = 0;
     for (const fixture of ["12-try-catch-finally-return", "13-try-finally-no-catch", "14-nested-try-catch", "15-catch-without-binding", "16-finally-with-break-continue"]) {
-      const on = js(fixture, version);
-      const off = js(fixture, version, ["try-clean"]);
+      // `finally-dedup` (spec 30, landed 2026-09-05) folds 12's `f2` and 13's
+      // `cleanup` into a `try`/`finally` with no `catch` clause and so no
+      // `__pc` scaffolding at all, which would make this rung's aggregate
+      // property unobservable. Skipped on both sides so what is measured is
+      // still `try-clean`'s own deletions (00-LADDER's known debt: a new rung
+      // must not silently retire an older rung's test).
+      const on = js(fixture, version, ["finally-dedup"]);
+      const off = js(fixture, version, ["try-clean", "finally-dedup"]);
       const onPc = count(on, PC_STORE);
       const offPc = count(off, PC_STORE);
       onTotal += onPc;

@@ -30,6 +30,7 @@ import { switchRaise } from "./switch-raise/index.ts";
 import { jsxRecover } from "./jsx-recover/index.ts";
 import { templateLiteral } from "./template-literal/index.ts";
 import { tryClean } from "./try-clean/index.ts";
+import { finallyDedup } from "./finally-dedup/index.ts";
 import { tryShape } from "./try-shape/index.ts";
 import type { Pass, Stage } from "./types.ts";
 import { varNaming } from "./var-naming/index.ts";
@@ -98,6 +99,10 @@ import { yieldRecovery } from "./yield-recovery/index.ts";
  *  disguised call back into a real callee so its call-result heuristic
  *  sees one. */
 export const REGISTRY: readonly Pass[] = [
+  // 00-LADDER section 4.2: `finally-dedup` opens the block, before `loop-cond`
+  // -- fixture 16's duplicated finalizer sits inside a loop whose tail guard
+  // `loop-cond` would otherwise claim first.
+  finallyDedup as Pass,
   loopCond as Pass,
   forHeader as Pass,
   forIn as Pass,

@@ -352,7 +352,11 @@ export type Stmt =
   /** `param: null` prints `catch { }` (try-clean/try-shape §3.2, an unread
    *  catch binding — the emitter's own `Catch r = __exc` lowering still runs
    *  inside `handler`; only the surface binding name is dropped). */
-  | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string | null; readonly handler: readonly Stmt[] }
+  /** `hasCatch: false` prints no `catch` clause at all -- only `finally-dedup`
+   *  (spec 30 section 3.2) sets it, because the synthesized handler it
+   *  consumed *is* the `finally` body. `finalizer` is the recovered
+   *  `finally { ... }` block, absent on every `try` no rung has folded. */
+  | { readonly k: "try"; readonly block: readonly Stmt[]; readonly param: string | null; readonly handler: readonly Stmt[]; readonly hasCatch?: false; readonly finalizer?: readonly Stmt[] }
   | { readonly k: "switch"; readonly disc: Expr; readonly cases: readonly SwitchCase[]; readonly origin?: Origin }
   /** F25-1: `generator`/`async` mark a `function*` / `async function`
    *  declaration recovered by the spec-25 rungs. */

@@ -35,7 +35,7 @@ spec states the per-version shape it has read (catalogue confidence rule).
 |---|---|---|---|---|---|
 | `loop-cond` | 2, 3 | 02, 03, 11 | all | `loop{block c; if c break}` → `LoopForm` while/do-while annotation | done |
 | `for-header` | 4 | 04, 11 | all | init block before + step at body tail → `LoopForm.init/step` | done |
-| `finally-dedup` | 12 (+54) | 12, 13, 16, 54 | all | k structurally-equal copies of a finally body + synthesized catch-rethrow → one `finalizer` | **hard** §5.1 |
+| `finally-dedup` | 12 (+54) | 12, 13, 16, 54 | all | k copies of a finally body + synthesized catch-rethrow → one `finalizer` annotation, printed once as `finally { }` | **done (2026-09-05, spec 30)**; design B (annotation-only, §4.3 corrected below), `before: [loop-cond]`, and `try-shape` now declares `after: [finally-dedup]` |
 | `yield-recovery` | 17 | 23–26 | 84, 94, 96 | `switch(generator-state)` resume dispatcher + `__state = k; return v` → `function*` with `yield` | batch 4; spec [`25-yield-async-recovery.md`](25-yield-async-recovery.md) — **stage B, not stage A** (§1.0, PUSHBACK P-24), acyclic suspend graphs only (R-Y5). **Landed 2026-09-05** as a stage-B rung in the structure-recovery block (registry: after `object-literal`, before `jsx-recover`/`fn-naming`); recovers `23`'s `sequence`, `24`'s `g2`, `25`'s `inner` (P-32) and 1 of rn-template's 7 sites; R-Y4/R-Y5/R-Y6 refusals carry `docs/BUGS.md` rows |
 | `gen-lowered` | 18 (ABI ✅ measured, T13) | 23–26 | ≥97 | `CreateGenerator` wrapper + `__pc` state machine → `function*` | **hard** §5.2 |
 | `yield-loop` | R15 | 23, 26 | 84, 94, 96 | the CYCLIC form of the same idiom: a suspend graph with a BACK EDGE -> `while (true) { ... yield ... }` | spec [`29-yield-loop.md`](29-yield-loop.md); stage B, `after: [yield-recovery]`, `before: [async-recovery, fn-naming, reg-split, var-naming]`. **Landed 2026-09-05**; builds spec 25's F25-4 `restructureSegments` (`src/passes/restructure.ts`) and recovers `23`'s `counter` and `26`'s `naturals` at v84/v94/v96, closing spec 25's R-Y5. `26`'s `fibonacci` stays R-Y9, `24` R-Y4, `25`'s delegating groups R-Y6; 0 further rn-template sites (its 6 residual sites are not back edges) |
@@ -45,7 +45,7 @@ spec states the per-version shape it has read (catalogue confidence rule).
 | `for-in` | 9 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21) | 05 | all | `GetPNameList` before a formed loop whose test is `GetNextPName`/`JmpUndefined` → `for (k in o)` | **done** (2026-09-05, agent/forin): registered in `src/passes/registry.ts`; `tests/gate/passes/for-in.test.ts` skip lifted unchanged, 10/10. Verified against the real Hermes VM (byte-for-byte at v84). The landing also fixed the stage-B AST traversal gap (`src/passes/ast.ts` and two rungs' own private duplicates in `reg-split`/`expr-rebuild`) that a first attempt found DIVERGENT — `docs/BUGS.md`'s 2026-09-05 row, now resolved. |
 | `for-of` | 10 (✅ verified, v94+v99 — re-read done 2026-09-05, spec 21; v99 `Mov`-refreshes the `IteratorNext` source and the normal-close state register) | 06, 07 | all | `IteratorBegin` + `IteratorNext` loop + two `IteratorClose` sites → `for (v of it)` | **done** (2026-09-05, agent/forin): registered in `src/passes/registry.ts`; `tests/gate/passes/for-of.test.ts` skip lifted, assertions unchanged (the acceptance fixture's exit block stopped reading the binding register — PUSHBACK P-20), 10/10. `06-for-of-array` and `07-for-of-iterable` both report 3 `for (… of …)` heads at all five versions with no residual iterator helper in 06, gate tier 555 PASS / 0 DIVERGENT. Three lowering shapes the spec had not transcribed were closed in the landing: the v84/v94/v96 **merge-point cleanup** (a `break`-carrying loop's two `try`s share one handler through a `labeled` wrapper — `IterForm.mergeLabel`), the v96/v98/v99 setup block that schedules constant loads *after* its `IteratorBegin`, and v99's `Mov`-aliased normal close. `docs/BUGS.md`'s `for-of-break-handler-shape` row is fixed. |
 | `label-clean` | 5 (single-version; the rung is IR hygiene, row is evidence only) | 08, 11 | all | unused labels; `labeled{…; break L}` whose only use is the final break; `seq` of one | done (rung 7, re-enabled 2026-08-31 after infinite-loop fix) |
-| `try-shape` | 11 | 12-16 | all | `try` whose handler never reads `catchRegister` → `catch {}`; `__pc` range guard provably always true when the handler runs → no guard printed | **done (2026-09-05, spec 22)**; `after: [finally-dedup]` not yet declared — `finally-dedup` is unbuilt (§5.1), add it when that rung lands; annotation-only, not CF-preserving (§4.3 corrected below, spec 22 §6.1) |
+| `try-shape` | 11 | 12-16 | all | `try` whose handler never reads `catchRegister` → `catch {}`; `__pc` range guard provably always true when the handler runs → no guard printed | **done (2026-09-05, spec 22)**; `after: [finally-dedup]` declared 2026-09-05, when that rung landed (spec 30); annotation-only, not CF-preserving (§4.3 corrected below, spec 22 §6.1) |
 
 Row 27 (obfuscated control-flow flattening) needs **no rung**: Hermes's own
 front end collapses the dispatcher. The obfuscation rung that remains is
@@ -245,8 +245,8 @@ are never rewritten by any rung except the generator rungs.
 
 | Class | Rungs | Obligation |
 |---|---|---|
-| **CF-preserving (stage A)** | finally-dedup, switch-raise, if-chain, yield/gen, label-clean | `blocksMultiset(before)` = `blocksMultiset(after)` minus the duplicates the rung *declares* it removed; every `break`/`continue` label in `after` resolves; then the driver's whole-function round-trip |
-| **Annotation-only (stage A)** | loop-cond, for-header, for-in, for-of, try-shape | `sameShape(before, after)` + the semantic predicate the annotation asserts (`firstTestHolds`, liveness of the step register, the iterator register is not read after `IteratorClose`) |
+| **CF-preserving (stage A)** | switch-raise, if-chain, yield/gen, label-clean | `blocksMultiset(before)` = `blocksMultiset(after)` minus the duplicates the rung *declares* it removed; every `break`/`continue` label in `after` resolves; then the driver's whole-function round-trip |
+| **Annotation-only (stage A)** | loop-cond, for-header, for-in, for-of, try-shape, finally-dedup | `sameShape(before, after)` + the semantic predicate the annotation asserts (`firstTestHolds`, liveness of the step register, the iterator register is not read after `IteratorClose`) |
 | **Expression-only (stage B)** | expr-rebuild, call-shape, global-access, sugar rungs, try-clean, jsx | `effectSequence(before)` deep-equals `effectSequence(after)`; `parses(after)`; no `rN` read before its def was introduced. An *effect* is, in order: `call`/`new` (callee + arg count), `member` write, `delete`, `throw`, `return`, `assign` to a name with `nested > 0` or non-`rN`, and any `member` **read** (getters are effects). Pure operations may move; nothing else may. This is O(n) over the statement list — no round-trip, no CFG. |
 | **Class-shape (stage B)** | class-recover | The rung deletes call effects (every owned `Object.defineProperty`, both `Object.setPrototypeOf`) and *moves* function declarations, so expression-only is not available to it (P-23, ruled 2026-09-05; spec 22 §6.1 handled the same mismatch for `try-shape`). Obligation, per `docs/specs/passes/24-class-recover.md` §3.4: (1) **undo** — rebuild `after` from a *re-derived* group and require it to equal the writer's output; (2) **effects modulo the declared deletions** — `effectSequence(after)` equals `before`'s with exactly the declared statement indices dropped, and every dropped statement is an owned `Object.defineProperty`/`Object.setPrototypeOf`, a moved declaration, or the register store that fed one; (3) `freeNames(after)` ⊆ `freeNames(before)`, every moved declaration's name absent from `after`, `parses(after)`; (4) **constructor identity** — the class's constructor is the function index the class-creation instruction named and `functionMeta(idx).role === "ctor"`. |
 | **Alpha-renaming (stage B)** | fn-naming, var-naming, closure-naming | `freeNames` unchanged after renaming back; the new name is not in `freeNames` of any enclosing or nested `func`; printing `before` and `after` with the rename undone is byte-identical |
@@ -278,7 +278,19 @@ site**, so the copy count has to come from a rethrow-handler detector instead
 and 54 re-read at 84/94/96/98/99, with the per-copy terminator table). A copy
 is an instruction *range* inside a block, not a subtree, so the `finalizer`
 merge is not a subtree merge; spec 30 sections 3 and 5 cost both designs and
-**PUSHBACK P-49** asks for the ruling. Spec written, rung not built.
+**PUSHBACK P-49** asks for the ruling.
+
+*Landed 2026-09-05 (design B, annotation-only)*: `try` carries a
+`FinallyForm` (`src/structure/ir.ts`), `src/emit/function.ts` prints the
+handler-side range once as `finally { }` and suppresses the other copies
+where they sit, and no block moves -- so this row is **annotation-only**, not
+CF-preserving, and section 4.3 above is corrected. Two things the spec did not
+predict, both measured while landing it: the v96 copies ARE opcode-identical
+(the bijection has to be rebound at each definition, and one leading `Mov`
+has to be retained because it also defines the exit's value -- refusal R-FD8),
+and fixture 54's `nested` folds its outer `finally` soundly (only
+`applyWithGuard` is the R-FD3 equal-range case), which spec 30 section 10 had
+said would not happen -- **PUSHBACK P-50**.
 
 ### 5.2 `gen-lowered` (D9 v2, v≥97)
 *Hard:* the resume ABI is now **✅ measured (T13, rows 18/19, read at 98 and
