@@ -33,7 +33,7 @@
 // `readonly Stmt[]` per applied site, which is the same order of work); it
 // removes this layer's much larger constant on top of it.
 import type { Stmt } from "../ast.ts";
-import { registerUses } from "../ast.ts";
+import { stmtRegisterUses } from "../ast.ts";
 
 export interface StmtInterest {
   /** Register names occurring anywhere in the statement's own frame. */
@@ -87,7 +87,7 @@ function containsJump(list: readonly Stmt[]): boolean {
 export function stmtInterest(s: Stmt): StmtInterest {
   let it = stmtInterestMemo.get(s);
   if (it !== undefined) return it;
-  const regs = new Set(registerUses([s]).keys());
+  const regs = new Set(stmtRegisterUses(s).keys());
   const jump = containsJump([s]);
   const passThrough = s.k === "if" || s.k === "labeled" || s.k === "iife" || s.k === "try" || (s.k === "switch" && s.cases.length > 0);
   it = { regs, jump, passThrough };
