@@ -134,7 +134,14 @@ function diagnose(before: readonly Stmt[], functionIndex: number): readonly Refu
     // frame, which installs the field by symbol on an object that never ran
     // the real constructor.
     if (foldOne(before, c) === null) {
-      out.push({ reason: "defining-body-escape", detail: "the defining frame still mentions the symbol after the fold", functionIndex });
+      // Sub-shape, identifier-free: is the surviving mention the INLINED
+      // construction R-PF1 exists for (`Reflect.construct(...)` in the
+      // defining frame plus a symbol-keyed install on a non-`this` receiver
+      // there), or something else this rung has not looked at yet?
+      const inlined = installsOnForeignReceiver(before, c.envName) || (c.regName !== null && installsOnForeignReceiver(before, c.regName));
+      let construct = false;
+      walk(before, { expr: (e) => { if (e.k === "call" && e.callee.k === "member" && !e.callee.computed && e.callee.obj.k === "ident" && e.callee.obj.name === "Reflect") construct = true; } });
+      out.push({ reason: "defining-body-escape", detail: `foreign install in defining frame: ${inlined ? "yes" : "no"}; Reflect.construct there: ${construct ? "yes" : "no"}`, functionIndex });
       continue;
     }
     out.push({ reason: "folded", detail: `#${c.displayName.length} char name`, functionIndex });
