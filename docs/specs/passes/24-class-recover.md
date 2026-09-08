@@ -285,6 +285,39 @@ constructor. That is not a class-body member install (it targets the
 Refused wholesale (R-C6); the class head itself (C1) still recovers, and the
 `#`-field installs stay as they are.
 
+**How `private-fields` reads that shape (2026-09-08, `agent/pf-symbol-deref`).**
+The rung this spec hands the shape to keys every candidate on the name the
+*class members* see the symbol under, which is an env slot. hermesc writes
+that slot in either of two spellings, and only the first was recognised until
+now:
+
+```
+_e0_0 = Symbol("#x");                  // one store (fixture 35)
+let r5 = Symbol("#x"); _e0_0 = r5;     // two (fixture 81, and most of the
+                                       //  react-navigation bundle)
+```
+
+The two-store spelling appears when the register is read again in the defining
+frame. `findCandidates` now follows exactly **one** register hop into an env
+slot -- the same one-hop rule `derefChain` states in
+`src/passes/super-call/match.ts` -- and drops the hop the moment that register
+is written again before the slot store. Inside the constructor the further
+`r4 = _e0_0;` copy needs nothing new: `foldInBody`'s ordered alias scan already
+resolves it, which is why rooting the candidate at the slot is the whole fix.
+
+Because the fold now retires two stores rather than one, `foldOne` ends with
+**R-PF1 (defining-frame escape)**: after the rewrite, neither the slot nor the
+register may still be mentioned anywhere in the defining frame, or the name is
+refused. This is a soundness rule, not tidiness. The shape that leaves a
+mention behind is hermesc *inlining* a construction of the very class being
+folded into the frame that defines it (`r4 = Reflect.construct(Object
+.getPrototypeOf(B), [...], B); Object.defineProperty(r4, r5, {...});`): that
+object never runs the real constructor, so it never receives the class's
+private-field brand, and folding the class's accessors to `this.#x` makes its
+reads throw -- the same hazard `isThisArg` refuses inside the constructor, one
+frame out. Fixture `81-derived-ctor-private-fields` is exactly that shape and
+therefore keeps its symbol-keyed output (docs/PUSHBACK.md P-53).
+
 ### 1.8 Corpus reach
 
 `tests/fixtures/bundles/rn-template-0.72/index.android.hbc` is v94 (layout C), so it has
@@ -516,7 +549,10 @@ Each is a distinct counted `abandoned` reason.
   native private field only ever attaches to the object a class's own
   `[[Construct]]` really brands, so `private-fields` refuses on all of them
   today (T2 equivalence caught the unguarded version, docs/BUGS.md's row
-  reopened 2026-09-05). See docs/specs/passes/00-LADDER.md's
+  reopened 2026-09-05; `ctor-this` and `super-call` have since removed the
+  stand-in for base and derived constructors, and 2026-09-08 the candidate is
+  keyed on the env slot through one register hop, guarded by R-PF1 -- see
+  section 1.7). See docs/specs/passes/00-LADDER.md's
   `private-fields` row and `tests/gate/passes/private-fields.test.ts`.
 * **R-C7 `enumerable-member`** — a descriptor with `enumerable: true` for a
   method/accessor. Class members are non-enumerable; an enumerable one did not

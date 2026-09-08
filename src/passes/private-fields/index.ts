@@ -27,6 +27,16 @@ import { rewrite } from "./rewrite.ts";
  * node `class-recover` builds. `after: ["class-recover"]`; `before` every
  * renaming rung.
  *
+ * **Candidate rooting (2026-09-08).** A candidate is keyed on the env slot
+ * the class's members read, not on whatever name `Symbol("#name")` was first
+ * stored under: hermesc emits `let r5 = Symbol("#x"); _e0_0 = r5;` whenever
+ * that register is read again in the defining frame, and `findCandidates`
+ * follows exactly one hop into the slot (spec 24 section 1.7). The fold then
+ * retires both stores, so it also carries **R-PF1**: any surviving mention of
+ * the slot or the register in the defining frame refuses the name, because the
+ * shape that leaves one behind is an INLINED construction of the same class
+ * installing the field by symbol on an object that never ran the constructor.
+ *
  * **Versions.** 98 and 99, layout E -- the same gate `class-recover` uses;
  * there is nothing to fold where there is no class to fold it into.
  */
