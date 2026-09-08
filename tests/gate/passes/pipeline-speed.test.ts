@@ -270,9 +270,15 @@ test("P-1: on rn-template, decompiling with every pass on costs at most 12x pass
 // sites become exactly 26 `for-of` + 12 `for-in` sites, `try-shape` claims 163
 // sites, `loop-cond`/`for-header`/`label-clean` counts are unchanged, and no
 // `try`/`catch` or `__hbc_*` helper appears or disappears anywhere.
+//
+// Pin moved 2026-09-08 at the `finally-dedup` landing (spec 30 design B,
+// agent/finally-dedup-2). Old hash 6c2f2dbe..., new hash 35bb93de.... Reviewed
+// before/after diff: docs/reports/2026-09-08-finally-dedup-rn-template-diff.md
+// -- 12 lines at exactly the three folded sites (fn#446, fn#2074, fn#3177):
+// each `try` gains its `finalizer=`/`copies=` annotation, nothing else moves.
 test("P-1/part-2: rn-template passes-on output hash is unchanged by the check.ts register-delta rewrite", () => {
   const bytes = new Uint8Array(readFileSync(join(repoRoot(), "tests", "fixtures", "bundles", "rn-template-0.72", "index.android.hbc")));
   const text = decompileTree(bytes, { passes: {}, analysis: { strictEnv: false }, verify: false, resolveV98Ambiguity: true });
   const hash = createHash("sha256").update(text).digest("hex");
-  assert.equal(hash, "6c2f2dbe2bbae0aeaa33514ba59153930da48bcdc870bfd1006d36c65d074de1");
+  assert.equal(hash, "35bb93de5e562e7f93dfa134dc0dbb41e67a33b027e9842d31828486a4e16ab2");
 });
