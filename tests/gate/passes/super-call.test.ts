@@ -529,3 +529,81 @@ test("super-call: a spread/apply argument list is refused (R-SC7, docs/BUGS.md)"
   const out = foldSuperBody(module, cls, body);
   assert.equal("code" in out && out.code, "R-SC7");
 });
+
+// --- section 10: the private-field derived constructor ----------------------
+
+test("super-call: one register reused for the class load and getPrototypeOf still resolves the binding (section 10)", () => {
+  const { module, cls } = moduleWith(OK_BODY);
+  // hermesc reuses r2 for both when the constructor is short of registers:
+  // `r2 = _e0_1; r2 = Object.getPrototypeOf(r2);`. Resolving the binding by
+  // searching back from the super site finds the self-overwriting store
+  // again; it has to be resolved from the callee store's own index.
+  const body: readonly Stmt[] = [
+    store("r3", lit("new.target")),
+    store("r2", ident("_e0_1")),
+    store("r2", getProto(ident("r2"))),
+    store("r4", ident("a1")),
+    store("r2", construct(ident("r2"), { k: "array", elements: [ident("r4")] }, ident("r3"))),
+    { k: "expr", expr: { k: "assign", target: { k: "member", obj: ident("r2"), prop: lit("x"), computed: false }, value: ident("r4") } },
+    { k: "return", arg: ident("r2") },
+  ];
+  const out = foldSuperBody(module, cls, body);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+});
+
+test("super-call: a brand-check store the next statement throws past is not a rewrite (R-SC4, section 10)", () => {
+  const { module, cls } = moduleWith(OK_BODY);
+  // `r0 = __hbc_b_throwTypeError("..."); throw ...;` -- the helper never
+  // returns, so no path can read the store. It must not count as a write to
+  // the stand-in, and the writer must demote it to its bare call so the
+  // substituted body is not `this = f(...)`.
+  const brand: readonly Stmt[] = [
+    store("r0", { k: "call", callee: ident("__hbc_b_throwTypeError"), args: [lit('"Cannot initialize private field twice."')] }),
+    { k: "throw", arg: { k: "call", callee: ident("Error"), args: [lit('"hbc2js: unreachable"')] } } as unknown as Stmt,
+  ];
+  const body: readonly Stmt[] = [...OK_BODY.slice(0, 6), { k: "if", test: ident("a1"), then: [...brand], else: [] }, OK_BODY[6]!];
+  const out = foldSuperBody(module, cls, body);
+  assert.ok(!("code" in out), `expected a fold, got ${JSON.stringify(out)}`);
+  const text = JSON.stringify(out);
+  assert.doesNotMatch(text, /"target":\{"k":"this"\}/, "the dead store must be demoted to its bare call, not left as `this = f()`");
+  assert.match(text, /__hbc_b_throwTypeError/, "the dead store's call itself is kept");
+});
+
+test("super-call: a live write to the stand-in that is not throw-guarded still refuses (R-SC4)", () => {
+  const { module, cls } = moduleWith(OK_BODY);
+  const body: readonly Stmt[] = [
+    ...OK_BODY.slice(0, 6),
+    { k: "if", test: ident("a1"), then: [store("r0", { k: "call", callee: ident("__hbc_b_throwTypeError"), args: [lit('"x"')] })], else: [] },
+    OK_BODY[6]!,
+  ];
+  const out = foldSuperBody(module, cls, body);
+  assert.equal("code" in out && out.code, "R-SC4");
+});
+
+for (const version of ["v98", "v99"] as const) {
+  test(`super-call: 81-derived-ctor-private-fields ${version} -- B's private-field constructor is rebuilt as super(...)`, () => {
+    const ctor = ctorOf(js("81-derived-ctor-private-fields", version), "B");
+    assert.match(ctor, /\bsuper\(/);
+    assert.equal(ctor.split(/\bsuper\(/).length - 1, 1);
+    assert.doesNotMatch(ctor, /Reflect\.construct/);
+    assert.doesNotMatch(ctor, /super\(\) called twice/);
+    // The stand-in is gone: both the brand check and the `#x` install now
+    // address the literal `this`, which is the receiver `private-fields`
+    // (row 20) needs before it can fold anything here.
+    assert.match(ctor, /hasOwnProperty\.call\(this,/);
+    assert.match(ctor, /Object\.defineProperty\(this,/);
+    assert.match(ctor, /\bthis\.y = /);
+    // The brand-check store is demoted to its bare call, never `this = f()`.
+    assert.match(ctor, /^\s+__hbc_b_throwTypeError\(/m);
+    assert.doesNotMatch(ctor, /this = /);
+  });
+
+  test(`super-call: 81-derived-ctor-private-fields ${version} -- --passes=none still shows the untouched lowering (PL-05)`, () => {
+    const off = js("81-derived-ctor-private-fields", version, "none");
+    assert.match(off, /Reflect\.construct/);
+    // No rebuilt super call: `super(` also occurs inside the guard's own
+    // "super() called twice" message, so the property to assert is that the
+    // untouched lowering is still there rather than the absence of the text.
+    assert.doesNotMatch(off, /\n\s+super\(/);
+  });
+}

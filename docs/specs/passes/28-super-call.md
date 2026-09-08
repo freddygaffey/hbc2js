@@ -502,3 +502,83 @@ this bucket was never causally downstream of `super-call`'s own fold count;
 it is a shared checkpoint metric across the whole class-rung ladder, rooted
 in `src/passes/private-fields`' own row. The remaining 56 `R-SC9 func`
 refusals are the next residue, not classified by this landing.
+
+## 10. The private-field derived constructor (2026-09-08)
+
+The brief for this section asked for a *different* rung: "after `super-call`
+has rebuilt `super(...)`, substitute `this` for the register that receives
+it", read off `ctor-this`'s R-CT1 count (140 classes with a private name in
+scope on react-navigation-example-0.85.3). That substitution is **already
+this rung's**, and has been since its first landing: section 2's worked
+example ends in `this.breed = r1_3`, section 3 makes the argument, R-SC4 and
+R-SC5 are exactly the two refusals that protect it, and section 5 says in as
+many words that extending `ctor-this` instead would be busywork. R-CT1 is a
+*vacuous* refusal code -- `ctor-this` declines every derived class, folded or
+not -- so its count is not a count of missed folds. Recorded as `PUSHBACK
+P-52`.
+
+What the 140 do contain is a real, previously unmeasured blocker, found by
+building the brief's fixture 81 and reading the refusal the rung actually
+gives it. A derived constructor **with a private field** refuses twice over,
+for reasons that have nothing to do with `this`:
+
+1. **R-SC1, "the getPrototypeOf argument is not a single binding this rung
+   can resolve".** The brand check hermesc emits for `#x` costs registers, so
+   the allocator reuses ONE register for both the class load and the
+   `getPrototypeOf` result -- `r2 = _e0_1; r2 = Object.getPrototypeOf(r2);`
+   -- where fixture 33's `Dog` has two (`r0 = _e0_1; r2 =
+   Object.getPrototypeOf(r0)`). The matcher resolved the binding with
+   `deref(body, at, ...)`, i.e. searching back from the *super site*, which
+   finds the self-overwriting store again and answers "a call, not a
+   binding". Fixed by resolving it from the index of the store the callee
+   itself came from (`calleeStoreAt`) -- which is `derefChain`'s own
+   documented rule, "each hop resolves against the stores that precede the
+   hop it came from, never a later one", applied to the single hop `deref`
+   makes here. Nothing is loosened: a register written between the
+   `getPrototypeOf` store and the site still fails, because the search still
+   starts at that store and walks backwards only.
+
+2. **R-SC4, "the stand-in register is written again after the super call".**
+   The brand check's failure arm is `r2 = __hbc_b_throwTypeError("Cannot
+   initialize private field twice."); throw new Error("hbc2js:
+   unreachable");` -- a store no path can read, because the helper never
+   returns. `ctor-this` has discounted exactly this shape since its own
+   landing (spec 26 section 5 item 3, R-CT3) and demotes each one to its bare
+   call, which is what keeps the substituted body legal JS (`this = f()` is
+   not). `super-call` meets the identical shape in a derived constructor, so
+   the helper is now shared rather than copied: `deadCallStores` moved to
+   `src/passes/ast.ts` and both rungs call it, and `super-call`'s writer
+   gained the same `demote` step. The R-SC4 guard is `writes -
+   deadCallStores > 0`, so a live write still refuses (pinned by its own
+   unit test alongside the dead one).
+
+Both fixes are in the matcher/writer only; the checker's three obligations
+(section 7) are unchanged and re-derive the new output the same way.
+
+**Known residue, left deliberately.** The folded body still carries the two
+operand stores `let r2 = _e0_1; r2 = Object.getPrototypeOf(r2);` as dead
+noise: the head-deletion loop refuses to drop a store whose target is read in
+the tail, and it counts those reads *before* substitution, when the tail's
+`r2`s are still `r2` rather than `this`. Correct, just not tidy; not a
+`docs/BUGS.md` row, for the same reason section 9.7's `_eD_S = this;` residue
+is not one.
+
+**Still refused downstream.** `private-fields` (row 20) does not yet fold this
+constructor's `#x`: after the substitution the install reads
+`Object.defineProperty(this, r4, ...)` with `r4 = _e0_0` one store earlier,
+and that rung matches a direct symbol operand, not a register holding one.
+That is its own rung's residue and is recorded in the `docs/BUGS.md`
+`diff:GetOwnPrivateBySym/GetByVal` row tail, not fixed here.
+
+**Also found, not fixed.** `class-recover` recovers fixture 81's `class B`
+but recovers *nothing at all* from a module that also holds a second derived
+class with a private field, and nothing from a derived class with a private
+field and no prototype member. Both were found while building fixture 81
+(which is why the fixture ships the single-class shape); they are a different
+rung's bug and are recorded in the same `docs/BUGS.md` row tail.
+
+Fixture: `tests/fixtures/constructs/81-derived-ctor-private-fields` (v98 and
+v99). Unit tests: the reused-register callee, the brand-check store that must
+not count as a write and must be demoted, and the live write that must still
+refuse (`tests/gate/passes/super-call.test.ts`).
+

@@ -43,7 +43,7 @@
 // the stand-in is never rewritten afterwards and never mentioned in a nested
 // frame (R-SC4/R-SC5), and the arguments are a plain list (R-SC7).
 import type { Expr, Param, Stmt } from "../ast.ts";
-import { identUses, mapStmts, stmtLists, walk } from "../ast.ts";
+import { deadCallStores, identUses, mapStmts, stmtLists, walk } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
 export type ClassExpr = Extract<Expr, { k: "class" }>;
@@ -123,6 +123,19 @@ function lastStoreBefore(body: readonly Stmt[], upto: number, name: string): Exp
 function deref(body: readonly Stmt[], upto: number, e: Expr): Expr | null {
   if (e.k !== "ident") return e;
   return lastStoreBefore(body, upto, e.name);
+}
+
+/** The index of the top-level store that produced `e` (a bare identifier),
+ *  or `upto` when `e` is not an identifier or has no preceding store. Used to
+ *  bound the *next* dereference hop, so a register that is overwritten by the
+ *  very store being followed is never resolved against itself. */
+function calleeStoreAt(body: readonly Stmt[], upto: number, e: Expr): number {
+  if (e.k !== "ident") return upto;
+  for (let i = upto - 1; i >= 0; i--) {
+    const st = simpleStore(body[i]!);
+    if (st !== null && st.name === e.name) return i;
+  }
+  return upto;
 }
 
 /** `deref`, chased through the emitter's register-to-register moves: the
@@ -635,7 +648,17 @@ export function foldSuperBody(module: readonly Stmt[], cls: ClassExpr, body: rea
   const callee = deref(body, at, site.callee);
   if (callee === null || !isObjectCall(callee, "getPrototypeOf", 1)) return { code: "R-SC1", reason: "the super constructor is not Object.getPrototypeOf(<class>)" };
   const bindingRef = callee.args[0]!;
-  const binding = bindingRef.k === "ident" && ENV_SLOT.test(bindingRef.name) ? bindingRef : deref(body, at, bindingRef);
+  // Resolve the binding against the stores preceding the store the callee
+  // itself came from, never the super site: hermesc reuses one register for
+  // both the class load and the getPrototypeOf result whenever the
+  // constructor is short of registers (`r2 = _e0_1; r2 =
+  // Object.getPrototypeOf(r2)`, which is what a private-field install in a
+  // derived constructor produces), and searching back from the site would
+  // find that self-overwriting store again and answer "a call, not a
+  // binding". This is `derefChain`'s own rule -- each hop resolves against
+  // the stores that precede the hop it came from -- applied to the one hop
+  // `deref` makes here. Spec 28 section 10.
+  const binding = bindingRef.k === "ident" && ENV_SLOT.test(bindingRef.name) ? bindingRef : deref(body, calleeStoreAt(body, at, site.callee), bindingRef);
   if (binding === null || binding.k !== "ident") return { code: "R-SC1", reason: "the getPrototypeOf argument is not a single binding this rung can resolve" };
   if (!classBindingSlots(module, cls).has(binding.name)) return { code: "R-SC1", reason: `the superclass expression reads ${binding.name}, which is not provably this class's own binding` };
 
@@ -672,7 +695,14 @@ export function foldSuperBody(module: readonly Stmt[], cls: ClassExpr, body: rea
   const tailStmts = body.filter((_s, i) => i > at && !consumed.has(i));
   for (const name of standins) {
     if (mentionedInNestedFunction(body, name)) return { code: "R-SC5", reason: `the stand-in register ${name} also occurs inside a nested closure, where it is a different frame's local` };
-    if (identUses(tailStmts, name).writes > 0) return { code: "R-SC4", reason: `the stand-in register ${name} is written again after the super call` };
+    // A store whose value is a call and whose very next statement is an
+    // unconditional `throw` can never be read: it is the brand-check noise
+    // hermesc emits in a private-field constructor (`r2 =
+    // __hbc_b_throwTypeError("Cannot initialize private field twice.");
+    // throw ...;`). `ctor-this` already discounts exactly these for R-CT3
+    // (spec 26 section 5 item 3) and the writer below demotes each to its
+    // bare call, so the substituted body stays legal JS. Spec 28 section 10.
+    if (identUses(tailStmts, name).writes - deadCallStores(tailStmts, name) > 0) return { code: "R-SC4", reason: `the stand-in register ${name} is written again after the super call` };
   }
 
   const superStmt: Stmt = { k: "expr", expr: { k: "call", callee: SUPER, args: [...args] } };
@@ -696,7 +726,18 @@ export function foldSuperBody(module: readonly Stmt[], cls: ClassExpr, body: rea
     if (mentionedInNestedFunction(body, st.name)) continue;
     head = [...head.slice(0, i), ...head.slice(i + 1)];
   }
-  const tail = mapStmts(tailStmts, (s) => (s.k === "decl" ? { ...s, names: s.names.filter((n) => !standins.has(n) || identUses(body.slice(0, at), n).reads + identUses(body.slice(0, at), n).writes > 0) } : s), (e) => (e.k === "ident" && standins.has(e.name) ? THIS : e))
+  // `mapStmts` is post-order, so a surviving dead store reads as
+  // `this = f(...)` (or is still the `init` that declared the stand-in) by the
+  // time this sees it; both are demoted to the bare call, the same way
+  // `ctor-this`'s writer does it. The guard above proved there is no *live*
+  // store left to confuse with one.
+  const demote = (s: Stmt): Stmt => {
+    if (s.k === "expr" && s.expr.k === "assign" && s.expr.target.k === "this") return { ...s, expr: s.expr.value };
+    if (s.k === "init" && standins.has(s.name)) return { k: "expr", expr: s.value, ...(s.origin !== undefined ? { origin: s.origin } : {}) };
+    if (s.k === "decl") return { ...s, names: s.names.filter((n) => !standins.has(n) || identUses(body.slice(0, at), n).reads + identUses(body.slice(0, at), n).writes > 0) };
+    return s;
+  };
+  const tail = mapStmts(tailStmts, demote, (e) => (e.k === "ident" && standins.has(e.name) ? THIS : e))
     .filter((s) => !(s.k === "decl" && s.names.length === 0));
   // A derived constructor that falls off its end yields its `this` binding, and
   // the super() above dominates the end, so a trailing `return this;` is noise.

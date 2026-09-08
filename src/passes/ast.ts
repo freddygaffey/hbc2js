@@ -2113,3 +2113,28 @@ export function classSiteAt(cfg: FunctionCfg, offset: number): ClassSite | null 
   }
   return index.get(offset) ?? null;
 }
+
+/** Stores to `reg` whose value can never be read: a store whose value is a
+ *  call and whose very next statement in the SAME list is an unconditional
+ *  `throw`. Hermes emits exactly one of these per constructor that
+ *  brand-checks itself -- `r1 = __hbc_b_throwTypeError("Cannot initialize
+ *  private field twice."); throw new Error("hbc2js: unreachable");` -- and the
+ *  store is pure noise there: the helper never returns. Counting them lets a
+ *  rung that substitutes `this` for `reg` keep its writes guard exact and
+ *  demote each dead store to a bare expression statement, which is what keeps
+ *  the substituted body legal JS (`this = f()` is not). Shared by `ctor-this`
+ *  (R-CT3) and `super-call` (R-SC4), which meet the same Hermes-emitted shape
+ *  in a base and in a derived constructor respectively.
+ */
+export function deadCallStores(body: readonly Stmt[], reg: string): number {
+  let n = 0;
+  for (const list of stmtLists(body)) {
+    for (let i = 0; i < list.length; i++) {
+      const st = list[i]!;
+      const value = st.k === "init" && st.name === reg ? st.value : st.k === "expr" && st.expr.k === "assign" && st.expr.target.k === "ident" && st.expr.target.name === reg ? st.expr.value : null;
+      if (value === null || value.k !== "call") continue;
+      if (list[i + 1]?.k === "throw") n++;
+    }
+  }
+  return n;
+}

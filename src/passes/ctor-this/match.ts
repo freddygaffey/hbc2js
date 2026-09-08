@@ -35,7 +35,7 @@
 // closure, where the same register NUMBER is a different frame's local and
 // substituting `this` would be a silent miscompile (R-CT5).
 import type { Expr, Stmt } from "../ast.ts";
-import { identUses, mapStmts, stmtLists, walk } from "../ast.ts";
+import { deadCallStores, identUses, mapStmts, stmtLists, walk } from "../ast.ts";
 import type { Match, PassContext } from "../types.ts";
 
 export interface CtorThisGroup {
@@ -153,27 +153,6 @@ function declaredInBody(body: readonly Stmt[], name: string): boolean {
   return false;
 }
 
-/** Stores to `reg` whose value can never be read: the statement is a call
- *  store and the very next statement in the SAME list is an unconditional
- *  `throw`. Hermes emits exactly one of these per constructor that
- *  brand-checks itself -- `r1 = __hbc_b_throwTypeError("Cannot initialize
- *  private field twice."); throw new Error("hbc2js: unreachable");` -- and
- *  the store is pure noise there: the helper never returns. Counting them
- *  lets the writes guard below stay exact (two writes plus these) and the
- *  writer demote each one to a bare expression statement, which is what
- *  keeps the substituted body legal JS (`this = f()` is not). */
-function deadStoresTo(body: readonly Stmt[], reg: string): number {
-  let n = 0;
-  for (const list of stmtLists(body)) {
-    for (let i = 0; i < list.length; i++) {
-      const store = simpleStore(list[i]!);
-      if (store === null || store.name !== reg || store.value.k !== "call") continue;
-      if (list[i + 1]?.k === "throw") n++;
-    }
-  }
-  return n;
-}
-
 /** Every `return` in the constructor's OWN frame: `stmtLists` stops at a
  *  `func` boundary, so a nested closure's returns are never counted. */
 function frameReturns(body: readonly Stmt[]): readonly Extract<Stmt, { k: "return" }>[] {
@@ -238,7 +217,7 @@ export function foldCtorBody(cls: ClassExpr, body: readonly Stmt[]): { readonly 
   // register into a nested frame, so a third write anywhere -- including one
   // buried inside an expression -- refuses here.
   const uses = identUses(body, reg);
-  const dead = deadStoresTo(body, reg);
+  const dead = deadCallStores(body, reg);
   const allocWrites = span === 1 ? 1 : protoReg === reg ? 2 : 1;
   if (uses.writes !== allocWrites + dead) return { code: "R-CT3", reason: `the stand-in register is written ${uses.writes} times, not exactly the ${allocWrites} the allocation needs (plus ${dead} provably dead store(s))` };
   if (mentionedInNestedFunction(body, reg)) return { code: "R-CT5", reason: "the stand-in register name also occurs inside a nested closure, where it is a different frame's local" };
