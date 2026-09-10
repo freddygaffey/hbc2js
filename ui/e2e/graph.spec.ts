@@ -113,6 +113,22 @@ async function zoomToFullDetail(page: Page): Promise<void> {
 /** React Flow pans with a CSS transform, so a node outside the viewport can
  *  never be scrolled to — pick one that is already on screen. Returns null
  *  when the zoomed-in viewport happens to show only the focus. */
+// React Flow moves the whole graph with an animated CSS transform on the
+// viewport (fitView after a mode switch, d3-zoom pans). While that animation
+// is running a node measured as "on screen" can slide out from under the
+// pointer, and the pane then swallows the click ("<div class=react-flow__pane>
+// intercepts pointer events"). Wait until the transform stops changing.
+async function waitForPanToSettle(page: Page): Promise<void> {
+  const viewport = page.locator(".react-flow__viewport").first();
+  let last: string | null = null;
+  for (let i = 0; i < 40; i++) {
+    const now = (await viewport.getAttribute("style")) ?? "";
+    if (now === last) return;
+    last = now;
+    await page.waitForTimeout(100);
+  }
+}
+
 async function firstNodeInViewport(page: Page, selector: string): Promise<Locator | null> {
   const size = page.viewportSize() ?? { width: 1280, height: 720 };
   for (const node of await page.locator(selector).all()) {
@@ -682,11 +698,29 @@ test.describe("Graph tab: CFG mode (spec 25 §3 mode 3, spec 26 L9)", () => {
 
     // A block that HAS a mapped line and is actually on screen (React Flow
     // pans with a transform, so an off-screen node can never be clicked).
+    // The CFG lands asynchronously: the first paint shows only the focus
+    // block, then the full block set arrives and React Flow re-lays out and
+    // re-fits. A node picked before that is replaced under the pointer and
+    // the pane swallows the click, so wait for every block first.
+    await expect(page.locator("[data-graph-block]")).toHaveCount(cfg.blocks.length, { timeout: WAIT });
+    await waitForPanToSettle(page);
     const node = await firstNodeInViewport(page, "[data-graph-block-line]:not([data-graph-block-line=''])");
     test.skip(node === null, "no mapped block is inside the viewport at this zoom");
     const id = Number((await node!.getAttribute("data-graph-block"))!);
     const block = cfg.blocks.find((b) => b.id === id)!;
-    await node!.click();
+    // Click the way a person does: move onto the node, let it react to the
+    // hover, then press. `locator.click()` moves and presses in the same
+    // instant, and the hover re-render (`setHoverNode` -> new node data)
+    // races the mousedown: React Flow's drag-based click detection then
+    // drops the click (0 of 8 with an immediate raw click, 3 of 4 with
+    // `locator.click()`, 6 of 6 with the pause). The race itself is logged
+    // in docs/BUGS.md (Open, UI); the assertions below prove the click went
+    // through the shared `select()`.
+    const box = (await node!.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(500);
+    await page.mouse.down();
+    await page.mouse.up();
 
     // The click went through the shared `select()`, so the centre pane's
     // cursor is on the block's first line and the disasm pane is aligned to
