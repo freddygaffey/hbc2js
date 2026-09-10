@@ -1,0 +1,146 @@
+; hbc2js disassembly of 77-object-literal-computed/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=6 strings=19 globalCodeIndex=0
+function #0 "global"  params=1 frame=18 env=0 flags=dbg  @0x000001b8 size=457
+  0000  DeclareGlobalVar     s11 "fromParam"
+  0005  DeclareGlobalVar     s14 "fromCall"
+  000a  DeclareGlobalVar     s10 "computeKey"
+  000f  DeclareGlobalVar     s12 "mixed"
+  0014  DeclareGlobalVar     s5 "aliasRisk"
+  0019  CreateEnvironment    r0
+  001b  CreateClosure        r1, r0, f1 "fromParam"
+  0020  GetGlobalObject      r3
+  0022  PutById              r3, r1, #c1, s11 "fromParam"
+  0028  CreateClosure        r1, r0, f2 "fromCall"
+  002d  PutById              r3, r1, #c2, s14 "fromCall"
+  0033  CreateClosure        r1, r0, f3 "computeKey"
+  0038  PutById              r3, r1, #c3, s10 "computeKey"
+  003e  CreateClosure        r1, r0, f4 "mixed"
+  0043  PutById              r3, r1, #c4, s12 "mixed"
+  0049  CreateClosure        r0, r0, f5 "aliasRisk"
+  004e  PutById              r3, r0, #c5, s5 "aliasRisk"
+  0054  GetByIdShort         r4, r3, #c1, s11 "fromParam"
+  0059  LoadConstUndefined   r2
+  005b  LoadConstString      r1, s13 "dyn"
+  005f  LoadConstUInt8       r0, 11
+  0062  Call3                r7, r4, r2, r1, r0
+  0068  TryGetById           r1, r3, #c2, s17 "print"
+  006e  GetByIdShort         r0, r7, #c3, s13 "dyn"
+  0073  LoadConstString      r4, s0 " "
+  0077  Add                  r5, r0, r4
+  007b  TryGetById           r6, r3, #c4, s7 "Object"
+  0081  GetByIdShort         r0, r6, #c5, s16 "keys"
+  0086  Call2                r7, r0, r6, r7
+  008b  GetByIdShort         r0, r7, #c6, s15 "join"
+  0090  LoadConstString      r6, s1 ","
+  0094  Call2                r0, r0, r7, r6
+  0099  Add                  r0, r5, r0
+  009d  Call2                r0, r1, r2, r0
+  00a2  GetByIdShort         r1, r3, #c7, s14 "fromCall"
+  00a7  LoadConstUInt8       r0, 22
+  00aa  Call2                r8, r1, r2, r0
+  00af  TryGetById           r1, r3, #c2, s17 "print"
+  00b5  GetByIdShort         r0, r8, #c8, s6 "k1"
+  00ba  Add                  r5, r0, r4
+  00be  TryGetById           r7, r3, #c4, s7 "Object"
+  00c4  GetByIdShort         r0, r7, #c5, s16 "keys"
+  00c9  Call2                r7, r0, r7, r8
+  00ce  GetByIdShort         r0, r7, #c6, s15 "join"
+  00d3  Call2                r0, r0, r7, r6
+  00d8  Add                  r0, r5, r0
+  00dc  Call2                r0, r1, r2, r0
+  00e1  GetByIdShort         r5, r3, #c9, s12 "mixed"
+  00e6  LoadConstString      r1, s8 "c"
+  00ea  LoadConstUInt8       r0, 33
+  00ed  Call3                r8, r5, r2, r1, r0
+  00f3  TryGetById           r1, r3, #c2, s17 "print"
+  00f9  GetByIdShort         r0, r8, #c10, s4 "a"
+  00fe  Add                  r5, r0, r4
+  0102  GetByIdShort         r0, r8, #c11, s8 "c"
+  0107  Add                  r0, r5, r0
+  010b  TryGetById           r7, r3, #c4, s7 "Object"
+  0111  GetByIdShort         r5, r7, #c5, s16 "keys"
+  0116  Call2                r7, r5, r7, r8
+  011b  GetByIdShort         r5, r7, #c6, s15 "join"
+  0120  Call2                r5, r5, r7, r6
+  0125  Add                  r0, r0, r4
+  0129  Add                  r0, r0, r5
+  012d  Call2                r0, r1, r2, r0
+  0132  GetByIdShort         r5, r3, #c12, s5 "aliasRisk"
+  0137  LoadConstString      r1, s9 "b"
+  013b  LoadConstUInt8       r0, 44
+  013e  Call3                r8, r5, r2, r1, r0
+  0144  TryGetById           r1, r3, #c2, s17 "print"
+  014a  GetByIdShort         r0, r8, #c13, s9 "b"
+  014f  Add                  r5, r0, r4
+  0153  TryGetById           r7, r3, #c4, s7 "Object"
+  0159  GetByIdShort         r0, r7, #c5, s16 "keys"
+  015e  Call2                r7, r0, r7, r8
+  0163  GetByIdShort         r0, r7, #c6, s15 "join"
+  0168  Call2                r0, r0, r7, r6
+  016d  Add                  r0, r5, r0
+  0171  Call2                r0, r1, r2, r0
+  0176  GetByIdShort         r5, r3, #c12, s5 "aliasRisk"
+  017b  LoadConstString      r1, s18 "z"
+  017f  LoadConstUInt8       r0, 55
+  0182  Call3                r7, r5, r2, r1, r0
+  0188  TryGetById           r1, r3, #c2, s17 "print"
+  018e  GetByIdShort         r0, r7, #c14, s18 "z"
+  0193  Add                  r5, r0, r4
+  0197  GetByIdShort         r0, r7, #c13, s9 "b"
+  019c  Add                  r0, r5, r0
+  01a0  TryGetById           r5, r3, #c4, s7 "Object"
+  01a6  GetByIdShort         r3, r5, #c5, s16 "keys"
+  01ab  Call2                r5, r3, r5, r7
+  01b0  GetByIdShort         r3, r5, #c6, s15 "join"
+  01b5  Call2                r3, r3, r5, r6
+  01ba  Add                  r0, r0, r4
+  01be  Add                  r0, r0, r3
+  01c2  Call2                r0, r1, r2, r0
+  01c7  Ret                  r0
+
+function #1 "fromParam"  params=3 frame=3 env=0 flags=dbg  @0x00000381 size=15
+  0000  NewObject            r0
+  0002  LoadParam            r2, 2
+  0005  LoadParam            r1, 1
+  0008  PutOwnByVal          r0, r2, r1, 1
+  000d  Ret                  r0
+
+function #2 "fromCall"  params=2 frame=10 env=0 flags=dbg  @0x00000390 size=25
+  0000  NewObject            r0
+  0002  GetGlobalObject      r1
+  0004  GetByIdShort         r2, r1, #c1, s10 "computeKey"
+  0009  LoadConstUndefined   r1
+  000b  Call1                r2, r2, r1
+  000f  LoadParam            r1, 1
+  0012  PutOwnByVal          r0, r1, r2, 1
+  0017  Ret                  r0
+
+function #3 "computeKey"  params=1 frame=2 env=0 flags=none  @0x000003a9 size=13
+  0000  LoadConstString      r1, s3 "k"
+  0004  LoadConstUInt8       r0, 1
+  0007  Add                  r0, r1, r0
+  000b  Ret                  r0
+
+function #4 "mixed"  params=3 frame=3 env=0 flags=dbg  @0x000003b6 size=29
+  0000  NewObject            r0
+  0002  LoadParam            r2, 2
+  0005  LoadConstUInt8       r1, 1
+  0008  Add                  r1, r2, r1
+  000c  PutNewOwnByIdShort   r0, r1, s4 "a"
+  0010  LoadConstUInt8       r2, 100
+  0013  LoadParam            r1, 1
+  0016  PutOwnByVal          r0, r2, r1, 1
+  001b  Ret                  r0
+
+function #5 "aliasRisk"  params=3 frame=4 env=0 flags=dbg  @0x000003d3 size=38
+  0000  LoadParam            r2, 2
+  0003  NewObject            r0
+  0005  LoadConstUInt8       r1, 1
+  0008  Add                  r3, r2, r1
+  000c  LoadParam            r1, 1
+  000f  PutOwnByVal          r0, r3, r1, 1
+  0014  LoadConstUInt8       r1, 2
+  0017  Add                  r2, r2, r1
+  001b  LoadConstString      r1, s9 "b"
+  001f  PutOwnByVal          r0, r2, r1, 1
+  0024  Ret                  r0

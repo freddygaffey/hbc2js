@@ -1,0 +1,116 @@
+; hbc2js disassembly of 75-sibling-envs/v94.hbc
+; version=94 layout=C opcodeTable=hbc94 functions=8 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=13 env=0 flags=dbg  @0x0000016c size=128
+  0000  DeclareGlobalVar     s6 "r"
+  0005  DeclareGlobalVar     s5 "makeReaders"
+  000a  CreateEnvironment    r0
+  000c  CreateClosure        r1, r0, f1 "makeReaders"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r1, #c1, s5 "makeReaders"
+  0019  GetByIdShort         r3, r0, #c1, s5 "makeReaders"
+  001e  LoadConstUndefined   r2
+  0020  NewArrayWithBuffer   r1, 3, 3, lit@0x0000
+  0028  Call2                r1, r3, r2, r1
+  002d  PutById              r0, r1, #c2, s6 "r"
+  0033  TryGetById           r3, r0, #c2, s7 "print"
+  0039  GetByIdShort         r4, r0, #c3, s6 "r"
+  003e  GetByIdShort         r1, r4, #c4, s2 "ab"
+  0043  Call1                r1, r1, r4
+  0047  Call2                r1, r3, r2, r1
+  004c  TryGetById           r3, r0, #c2, s7 "print"
+  0052  GetByIdShort         r4, r0, #c3, s6 "r"
+  0057  GetByIdShort         r1, r4, #c5, s3 "c"
+  005c  Call1                r1, r1, r4
+  0060  Call2                r1, r3, r2, r1
+  0065  TryGetById           r1, r0, #c2, s7 "print"
+  006b  GetByIdShort         r3, r0, #c3, s6 "r"
+  0070  GetByIdShort         r0, r3, #c6, s4 "def"
+  0075  Call1                r0, r0, r3
+  0079  Call2                r0, r1, r2, r0
+  007e  Ret                  r0
+
+function #1 "makeReaders"  params=2 frame=11 env=2 flags=dbg  @0x000001ec size=46
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r0, 1
+  0005  StoreToEnvironment   r1, 0, r0
+  0009  NewObject            r0
+  000b  StoreToEnvironment   r1, 1, r0
+  000f  CreateClosure        r3, r1, f2 ""
+  0014  LoadConstUndefined   r2
+  0016  Call1                r3, r3, r2
+  001a  CreateClosure        r3, r1, f4 ""
+  001f  Call1                r3, r3, r2
+  0023  CreateClosure        r1, r1, f6 ""
+  0028  Call1                r1, r1, r2
+  002c  Ret                  r0
+
+function #2 ""  params=1 frame=4 env=2 flags=dbg  @0x0000021a size=49
+  0000  CreateEnvironment    r0
+  0002  GetEnvironment       r1, 0
+  0005  LoadFromEnvironment  r3, r1, 0
+  0009  LoadConstZero        r2
+  000b  GetByVal             r2, r3, r2
+  000f  StoreToEnvironment   r0, 0, r2
+  0013  LoadConstUInt8       r2, 1
+  0016  GetByVal             r2, r3, r2
+  001a  StoreToEnvironment   r0, 1, r2
+  001e  LoadFromEnvironment  r1, r1, 1
+  0022  CreateClosure        r0, r0, f3 ""
+  0027  PutById              r1, r0, #c1, s2 "ab"
+  002d  LoadConstUndefined   r0
+  002f  Ret                  r0
+
+function #3 ""  params=1 frame=2 env=0 flags=dbg  @0x0000024b size=17
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadFromEnvironment  r0, r0, 1
+  000b  Add                  r0, r1, r0
+  000f  Ret                  r0
+
+function #4 ""  params=1 frame=4 env=1 flags=dbg  @0x0000025c size=39
+  0000  CreateEnvironment    r0
+  0002  GetEnvironment       r1, 0
+  0005  LoadFromEnvironment  r3, r1, 0
+  0009  LoadConstUInt8       r2, 2
+  000c  GetByVal             r2, r3, r2
+  0010  StoreToEnvironment   r0, 0, r2
+  0014  LoadFromEnvironment  r1, r1, 1
+  0018  CreateClosure        r0, r0, f5 ""
+  001d  PutById              r1, r0, #c1, s3 "c"
+  0023  LoadConstUndefined   r0
+  0025  Ret                  r0
+
+function #5 ""  params=1 frame=2 env=0 flags=dbg  @0x00000283 size=16
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadConstUInt8       r0, 10
+  000a  Mul                  r0, r1, r0
+  000e  Ret                  r0
+
+function #6 ""  params=1 frame=4 env=3 flags=dbg  @0x00000293 size=60
+  0000  CreateEnvironment    r0
+  0002  GetEnvironment       r1, 0
+  0005  LoadFromEnvironment  r3, r1, 0
+  0009  LoadConstZero        r2
+  000b  GetByVal             r2, r3, r2
+  000f  StoreToEnvironment   r0, 0, r2
+  0013  LoadConstUInt8       r2, 1
+  0016  GetByVal             r2, r3, r2
+  001a  StoreToEnvironment   r0, 1, r2
+  001e  LoadConstUInt8       r2, 2
+  0021  GetByVal             r2, r3, r2
+  0025  StoreToEnvironment   r0, 2, r2
+  0029  LoadFromEnvironment  r1, r1, 1
+  002d  CreateClosure        r0, r0, f7 ""
+  0032  PutById              r1, r0, #c1, s4 "def"
+  0038  LoadConstUndefined   r0
+  003a  Ret                  r0
+
+function #7 ""  params=1 frame=3 env=0 flags=dbg  @0x000002cf size=25
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  LoadFromEnvironment  r1, r0, 1
+  000b  Add                  r1, r2, r1
+  000f  LoadFromEnvironment  r0, r0, 2
+  0013  Add                  r0, r1, r0
+  0017  Ret                  r0

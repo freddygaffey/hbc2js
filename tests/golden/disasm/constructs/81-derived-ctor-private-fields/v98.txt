@@ -1,0 +1,83 @@
+; hbc2js disassembly of 81-derived-ctor-private-fields/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=4 strings=12 globalCodeIndex=0
+function #0 "global"  params=1 frame=24 env=0 flags=dbg,overflowed  @0x00000150 size=164
+  0000  CreateFunctionEnvironment r4, 2
+  0003  LoadConstUndefined   r2
+  0005  CreateBaseClass      r6, r5, r2, 1
+  000b  CreatePrivateName    r5, s6 "#x"
+  0011  StoreToEnvironment   r4, 0, r5
+  0015  CreateDerivedClass   r8, r7, r4, r6, 2
+  001c  Mov                  r10, r7
+  001f  LoadConstString      r9, s7 "x"
+  0023  CreateClosure        r7, r4, f3 "x"
+  0028  DefineOwnGetterSetterByVal r10, r9, r7, r2, 0
+  002e  StoreToEnvironment   r4, 1, r8
+  0032  LoadParentNoTraps    r4, r8
+  0035  CreateThisForSuper   r7, r4, r8, 0
+  003a  LoadConstUInt8       r0, 7
+  003d  Mov                  r16, r7
+  0040  Mov                  r15, r0
+  0043  CallWithNewTarget    r4, r4, r8, 2
+  0048  SelectObject         r4, r7, r4
+  004c  LoadConstEmpty       r7
+  004e  ThrowIfThisInitialized r7
+  0050  PrivateIsIn          r3, r5, r4, r0
+  0055  JmpTrue              L1, r3
+  0058  LoadConstUInt8       r1, 1
+  005b  AddOwnPrivateBySym   r4, r1, r5
+  005f  PutByIdStrict        r4, r0, #c0, s11 "y"
+  0065  GetGlobalObject      r5
+  0067  TryGetById           r11, r5, #c1, s9 "print"
+  006d  GetByIdShort         r14, r4, #c2, s8 "base"
+  0072  GetByIdShort         r13, r4, #c3, s11 "y"
+  0077  GetByIdShort         r12, r4, #c4, s7 "x"
+  007c  LoadConstString      r15, s3 "b:"
+  0080  LoadConstUndefined   r16
+  0082  Call                 r7, r11, 5
+  0086  TryGetById           r5, r5, #c1, s9 "print"
+  008c  InstanceOf           r3, r4, r6
+  0090  LoadConstString      r4, s5 "instanceof:"
+  0094  Call3                r4, r5, r2, r4, r3
+  009a  Ret                  r4
+L1:
+  009c  LoadConstString      r15, s2 "Cannot initialize private field …"
+  00a0  CallBuiltin          r4, b44 "throwTypeError", 2
+
+function #1 "A"  params=2 frame=2 env=0 flags=strict,dbg,overflowed,ctor  @0x000001f4 size=21
+  0000  GetNewTarget         r0
+  0002  GetByIdShort         r0, r0, #c0, s10 "prototype"
+  0007  NewObjectWithParent  r0, r0
+  000a  LoadParam            r1, 1
+  000d  PutByIdStrict        r0, r1, #c0, s8 "base"
+  0013  Ret                  r0
+
+function #2 "B"  params=2 frame=16 env=0 flags=strict,dbg,overflowed,ctor  @0x00000209 size=74
+  0000  GetParentEnvironment r4, 0
+  0003  LoadParam            r3, 1
+  0006  GetNewTarget         r6
+  0008  LoadFromEnvironment  r2, r4, 1
+  000c  LoadParentNoTraps    r2, r2
+  000f  CreateThisForSuper   r5, r2, r6, 0
+  0014  Mov                  r8, r5
+  0017  Mov                  r7, r3
+  001a  CallWithNewTarget    r2, r2, r6, 2
+  001f  SelectObject         r2, r5, r2
+  0023  LoadConstEmpty       r5
+  0025  ThrowIfThisInitialized r5
+  0027  LoadFromEnvironment  r4, r4, 0
+  002b  PrivateIsIn          r1, r4, r2, r0
+  0030  JmpTrue              L1, r1
+  0033  LoadConstUInt8       r0, 1
+  0036  AddOwnPrivateBySym   r2, r0, r4
+  003a  PutByIdStrict        r2, r3, #c0, s11 "y"
+  0040  Ret                  r2
+L1:
+  0042  LoadConstString      r7, s2 "Cannot initialize private field …"
+  0046  CallBuiltin          r2, b44 "throwTypeError", 2
+
+function #3 "x"  params=1 frame=2 env=0 flags=strict,dbg,overflowed,nc  @0x00000253 size=17
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadParam            r0, 0
+  000a  GetOwnPrivateBySym   r0, r0, 0, r1
+  000f  Ret                  r0

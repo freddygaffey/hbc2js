@@ -1,0 +1,191 @@
+; hbc2js disassembly of 71-env-slot-captured-index/v96.hbc
+; version=96 layout=C opcodeTable=hbc96 functions=12 strings=24 globalCodeIndex=0
+function #0 "global"  params=1 frame=15 env=0 flags=dbg  @0x00000238 size=404
+  0000  DeclareGlobalVar     s15 "c"
+  0005  DeclareGlobalVar     s23 "w"
+  000a  DeclareGlobalVar     s22 "v"
+  000f  DeclareGlobalVar     s17 "makeCursor"
+  0014  DeclareGlobalVar     s19 "makeWriter"
+  0019  DeclareGlobalVar     s18 "makeInvoker"
+  001e  CreateEnvironment    r1
+  0020  CreateClosure        r2, r1, f1 "makeCursor"
+  0025  GetGlobalObject      r0
+  0027  PutById              r0, r2, #c1, s17 "makeCursor"
+  002d  CreateClosure        r2, r1, f5 "makeWriter"
+  0032  PutById              r0, r2, #c2, s19 "makeWriter"
+  0038  CreateClosure        r2, r1, f8 "makeInvoker"
+  003d  PutById              r0, r2, #c3, s18 "makeInvoker"
+  0043  GetByIdShort         r4, r0, #c1, s17 "makeCursor"
+  0048  LoadConstUndefined   r2
+  004a  NewArrayWithBuffer   r3, 3, 3, lit@0x0000
+  0052  Call2                r3, r4, r2, r3
+  0057  PutById              r0, r3, #c4, s15 "c"
+  005d  TryGetById           r4, r0, #c2, s12 "print"
+  0063  GetByIdShort         r5, r0, #c3, s15 "c"
+  0068  GetByIdShort         r3, r5, #c4, s13 "next"
+  006d  Call1                r3, r3, r5
+  0071  Call2                r3, r4, r2, r3
+  0076  TryGetById           r4, r0, #c2, s12 "print"
+  007c  GetByIdShort         r5, r0, #c3, s15 "c"
+  0081  GetByIdShort         r3, r5, #c4, s13 "next"
+  0086  Call1                r3, r3, r5
+  008a  Call2                r3, r4, r2, r3
+  008f  TryGetById           r4, r0, #c2, s12 "print"
+  0095  GetByIdShort         r5, r0, #c3, s15 "c"
+  009a  GetByIdShort         r3, r5, #c5, s14 "at"
+  009f  Call1                r3, r3, r5
+  00a3  Call2                r3, r4, r2, r3
+  00a8  TryGetById           r4, r0, #c2, s12 "print"
+  00ae  GetByIdShort         r5, r0, #c3, s15 "c"
+  00b3  GetByIdShort         r3, r5, #c6, s10 "base"
+  00b8  Call1                r3, r3, r5
+  00bc  Call2                r3, r4, r2, r3
+  00c1  GetByIdShort         r4, r0, #c7, s19 "makeWriter"
+  00c6  NewObject            r3
+  00c8  Call2                r3, r4, r2, r3
+  00cd  PutById              r0, r3, #c5, s23 "w"
+  00d3  TryGetById           r4, r0, #c2, s12 "print"
+  00d9  GetByIdShort         r6, r0, #c8, s23 "w"
+  00de  GetByIdShort         r5, r6, #c9, s20 "put"
+  00e3  LoadConstString      r3, s7 "x"
+  00e7  Call2                r3, r5, r6, r3
+  00ec  Call2                r3, r4, r2, r3
+  00f1  TryGetById           r4, r0, #c2, s12 "print"
+  00f7  GetByIdShort         r6, r0, #c8, s23 "w"
+  00fc  GetByIdShort         r5, r6, #c9, s20 "put"
+  0101  LoadConstString      r3, s8 "y"
+  0105  Call2                r3, r5, r6, r3
+  010a  Call2                r3, r4, r2, r3
+  010f  TryGetById           r4, r0, #c2, s12 "print"
+  0115  GetByIdShort         r5, r0, #c8, s23 "w"
+  011a  GetByIdShort         r3, r5, #c10, s21 "slot"
+  011f  Call1                r3, r3, r5
+  0123  Call2                r3, r4, r2, r3
+  0128  GetByIdShort         r3, r0, #c11, s18 "makeInvoker"
+  012d  CreateClosure        r1, r1, f11 ""
+  0132  Call2                r1, r3, r2, r1
+  0137  PutById              r0, r1, #c6, s22 "v"
+  013d  TryGetById           r3, r0, #c2, s12 "print"
+  0143  GetByIdShort         r5, r0, #c12, s22 "v"
+  0148  GetByIdShort         r4, r5, #c13, s11 "step"
+  014d  LoadConstString      r1, s5 "p"
+  0151  Call2                r1, r4, r5, r1
+  0156  Call2                r1, r3, r2, r1
+  015b  TryGetById           r3, r0, #c2, s12 "print"
+  0161  GetByIdShort         r5, r0, #c12, s22 "v"
+  0166  GetByIdShort         r4, r5, #c13, s11 "step"
+  016b  LoadConstString      r1, s6 "q"
+  016f  Call2                r1, r4, r5, r1
+  0174  Call2                r1, r3, r2, r1
+  0179  TryGetById           r1, r0, #c2, s12 "print"
+  017f  GetByIdShort         r3, r0, #c12, s22 "v"
+  0184  GetByIdShort         r0, r3, #c14, s16 "count"
+  0189  Call1                r0, r0, r3
+  018d  Call2                r0, r1, r2, r0
+  0192  Ret                  r0
+
+function #1 "makeCursor"  params=2 frame=3 env=2 flags=dbg  @0x000003cc size=46
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r0, 1
+  0005  StoreToEnvironment   r1, 0, r0
+  0009  LoadConstZero        r0
+  000b  StoreNPToEnvironment r1, 1, r0
+  000f  NewObject            r0
+  0011  CreateClosure        r2, r1, f2 "next"
+  0016  PutNewOwnByIdShort   r0, r2, s13 "next"
+  001a  CreateClosure        r2, r1, f3 "base"
+  001f  PutNewOwnByIdShort   r0, r2, s10 "base"
+  0023  CreateClosure        r1, r1, f4 "at"
+  0028  PutNewOwnByIdShort   r0, r1, s14 "at"
+  002c  Ret                  r0
+
+function #2 "next"  params=1 frame=4 env=0 flags=dbg  @0x000003fa size=27
+  0000  GetEnvironment       r3, 0
+  0003  LoadFromEnvironment  r1, r3, 0
+  0007  LoadFromEnvironment  r0, r3, 1
+  000b  ToNumeric            r0, r0
+  000e  Inc                  r2, r0
+  0011  StoreToEnvironment   r3, 1, r2
+  0015  GetByVal             r0, r1, r0
+  0019  Ret                  r0
+
+function #3 "base"  params=1 frame=1 env=0 flags=dbg  @0x00000415 size=14
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r0, r0, #c1, s9 "length"
+  000c  Ret                  r0
+
+function #4 "at"  params=1 frame=1 env=0 flags=none  @0x00000423 size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 1
+  0007  Ret                  r0
+
+function #5 "makeWriter"  params=2 frame=3 env=2 flags=dbg  @0x0000042c size=37
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r0, 1
+  0005  StoreToEnvironment   r1, 0, r0
+  0009  LoadConstZero        r0
+  000b  StoreNPToEnvironment r1, 1, r0
+  000f  NewObject            r0
+  0011  CreateClosure        r2, r1, f6 "put"
+  0016  PutNewOwnByIdShort   r0, r2, s20 "put"
+  001a  CreateClosure        r1, r1, f7 "slot"
+  001f  PutNewOwnByIdShort   r0, r1, s21 "slot"
+  0023  Ret                  r0
+
+function #6 "put"  params=2 frame=4 env=0 flags=dbg  @0x00000451 size=34
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r3, r0, 0
+  0007  LoadFromEnvironment  r1, r0, 1
+  000b  ToNumeric            r2, r1
+  000e  Inc                  r1, r2
+  0011  StoreToEnvironment   r0, 1, r1
+  0015  LoadParam            r1, 1
+  0018  PutByVal             r3, r2, r1
+  001c  LoadFromEnvironment  r0, r0, 1
+  0020  Ret                  r0
+
+function #7 "slot"  params=1 frame=2 env=0 flags=dbg  @0x00000473 size=15
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadConstZero        r0
+  0009  GetByVal             r0, r1, r0
+  000d  Ret                  r0
+
+function #8 "makeInvoker"  params=2 frame=3 env=2 flags=dbg  @0x00000482 size=37
+  0000  CreateEnvironment    r1
+  0002  LoadParam            r0, 1
+  0005  StoreToEnvironment   r1, 0, r0
+  0009  LoadConstZero        r0
+  000b  StoreNPToEnvironment r1, 1, r0
+  000f  NewObject            r0
+  0011  CreateClosure        r2, r1, f9 "step"
+  0016  PutNewOwnByIdShort   r0, r2, s11 "step"
+  001a  CreateClosure        r1, r1, f10 "count"
+  001f  PutNewOwnByIdShort   r0, r1, s16 "count"
+  0023  Ret                  r0
+
+function #9 "step"  params=2 frame=13 env=0 flags=dbg  @0x000004a7 size=34
+  0000  GetEnvironment       r1, 0
+  0003  LoadFromEnvironment  r3, r1, 0
+  0007  LoadFromEnvironment  r0, r1, 1
+  000b  ToNumeric            r2, r0
+  000e  Inc                  r0, r2
+  0011  StoreToEnvironment   r1, 1, r0
+  0015  LoadConstUndefined   r1
+  0017  LoadParam            r0, 1
+  001a  Call3                r0, r3, r1, r0, r2
+  0020  Ret                  r0
+
+function #10 "count"  params=1 frame=1 env=0 flags=none  @0x00000423 size=9
+  0000  GetEnvironment       r0, 0
+  0003  LoadFromEnvironment  r0, r0, 1
+  0007  Ret                  r0
+
+function #11 ""  params=3 frame=2 env=0 flags=dbg  @0x000004c9 size=20
+  0000  LoadParam            r1, 1
+  0003  LoadConstString      r0, s1 "#"
+  0007  Add                  r1, r1, r0
+  000b  LoadParam            r0, 2
+  000e  Add                  r0, r1, r0
+  0012  Ret                  r0

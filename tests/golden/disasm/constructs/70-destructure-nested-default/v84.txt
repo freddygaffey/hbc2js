@@ -1,0 +1,149 @@
+; hbc2js disassembly of 70-destructure-nested-default/v84.hbc
+; version=84 layout=B opcodeTable=hbc84 functions=3 strings=6 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=0 flags=dbg  @0x00000120 size=187
+  0000  DeclareGlobalVar     s2 "nestedArrayDefault"
+  0005  DeclareGlobalVar     s3 "nestedObjectDefault"
+  000a  CreateEnvironment    r1
+  000c  CreateClosure        r2, r1, f1 "nestedArrayDefault"
+  0011  GetGlobalObject      r0
+  0013  PutById              r0, r2, #c1, s2 "nestedArrayDefault"
+  0019  CreateClosure        r1, r1, f2 "nestedObjectDefault"
+  001e  PutById              r0, r1, #c2, s3 "nestedObjectDefault"
+  0024  TryGetById           r3, r0, #c1, s4 "print"
+  002a  GetByIdShort         r4, r0, #c2, s2 "nestedArrayDefault"
+  002f  NewArrayWithBuffer   r1, 2, 1, lit@0x0000
+  0037  NewArrayWithBuffer   r2, 1, 1, lit@0x0005
+  003f  PutOwnByIndex        r1, r2, 1
+  0043  LoadConstUndefined   r2
+  0045  Call2                r1, r4, r2, r1
+  004a  Call2                r1, r3, r2, r1
+  004f  TryGetById           r3, r0, #c1, s4 "print"
+  0055  GetByIdShort         r4, r0, #c2, s2 "nestedArrayDefault"
+  005a  NewArrayWithBuffer   r1, 2, 1, lit@0x0000
+  0062  NewArray             r5, 0
+  0066  PutOwnByIndex        r1, r5, 1
+  006a  Call2                r1, r4, r2, r1
+  006f  Call2                r1, r3, r2, r1
+  0074  TryGetById           r3, r0, #c1, s4 "print"
+  007a  GetByIdShort         r4, r0, #c3, s3 "nestedObjectDefault"
+  007f  NewObject            r5
+  0081  LoadConstUInt8       r1, 20
+  0084  PutNewOwnByIdShort   r5, r1, s5 "x"
+  0088  NewArray             r1, 1
+  008c  PutOwnByIndex        r1, r5, 0
+  0090  Call2                r1, r4, r2, r1
+  0095  Call2                r1, r3, r2, r1
+  009a  TryGetById           r1, r0, #c1, s4 "print"
+  00a0  GetByIdShort         r3, r0, #c3, s3 "nestedObjectDefault"
+  00a5  NewArray             r0, 1
+  00a9  NewObject            r4
+  00ab  PutOwnByIndex        r0, r4, 0
+  00af  Call2                r0, r3, r2, r0
+  00b4  Call2                r0, r1, r2, r0
+  00b9  Ret                  r0
+
+function #1 "nestedArrayDefault"  params=2 frame=12 env=0 flags=exc,dbg  @0x000001db size=166
+  .try T1..T2 -> L8 ; handler 0
+  0000  LoadConstUndefined   r9
+  0002  LoadConstUndefined   r4
+  0004  LoadConstUndefined   r3
+  0006  LoadParam            r6, 1
+  0009  IteratorBegin        r1, r6
+  000c  LoadConstUndefined   r2
+  000e  LoadConstUndefined   r5
+  0010  IteratorNext         r7, r1, r6
+  0014  Mov                  r8, r1
+  0017  StrictEq             r8, r8, r9
+  001b  Mov                  r2, r8
+  001e  JmpTrue              L1, r8
+  0021  Mov                  r5, r7
+  0024  JStrictNotEqual      L2, r7, r9
+L1:
+  0028  LoadConstUInt8       r5, 1
+L2:
+  002b  Mov                  r4, r5
+  002e  LoadConstUndefined   r5
+  0030  Mov                  r7, r2
+  0033  JmpTrue              L3, r7
+  0036  IteratorNext         r6, r1, r6
+  003a  Mov                  r7, r1
+  003d  StrictEq             r7, r7, r9
+  0041  Mov                  r2, r7
+  0044  JmpTrue              L3, r7
+  0047  Mov                  r5, r6
+L3:
+  004a  Mov                  r6, r5
+  004d  Mov                  r8, r6
+  0050  IteratorBegin        r5, r8
+  0053  LoadConstUndefined   r6
+  0055  LoadConstUndefined   r7
+  0057  IteratorNext         r8, r5, r8
+  005b  Mov                  r10, r5
+  005e  StrictEq             r10, r10, r9
+  0062  Mov                  r6, r10
+  0065  JmpTrue              L4, r10
+  0068  Mov                  r7, r8
+  006b  JStrictNotEqual      L5, r8, r9
+L4:
+  006f  LoadConstUInt8       r7, 2
+L5:
+  0072  Mov                  r3, r7
+  0075  JmpTrue              L6, r6
+  0078  IteratorClose        r5, 0
+L6:
+  007b  Mov                  r5, r2
+  007e  JmpTrue              L7, r5
+  0081  IteratorClose        r1, 0
+L7:
+  0084  ThrowIfEmpty         r5, r4
+  0087  LoadConstString      r4, s0 ":"
+  008b  Add                  r4, r5, r4
+  008f  ThrowIfEmpty         r3, r3
+  0092  Add                  r3, r4, r3
+  0096  Ret                  r3
+L8:
+  0098  Catch                r0
+  009a  Jmp                  L9
+  009c  Catch                r0
+L9:
+  009e  JmpTrue              L10, r2
+  00a1  IteratorClose        r1, 1
+L10:
+  00a4  Throw                r0
+
+function #2 "nestedObjectDefault"  params=2 frame=10 env=0 flags=exc,dbg  @0x00000281 size=80
+  .try T1..T2 -> L4 ; handler 0
+  0000  LoadConstUInt8       r5, 3
+  0003  LoadConstUndefined   r6
+  0005  LoadConstUndefined   r3
+  0007  LoadParam            r7, 1
+  000a  IteratorBegin        r1, r7
+  000d  LoadConstUndefined   r2
+  000f  LoadConstUndefined   r4
+  0011  IteratorNext         r7, r1, r7
+  0015  Mov                  r8, r1
+  0018  StrictEq             r8, r8, r6
+  001c  Mov                  r2, r8
+  001f  JmpTrue              L1, r8
+  0022  Mov                  r4, r7
+L1:
+  0025  GetByIdShort         r4, r4, #c1, s5 "x"
+  002a  JStrictNotEqual      L2, r4, r6
+  002e  Mov                  r4, r5
+L2:
+  0031  Mov                  r3, r4
+  0034  Mov                  r4, r2
+  0037  JmpTrue              L3, r4
+  003a  IteratorClose        r1, 0
+L3:
+  003d  ThrowIfEmpty         r3, r3
+  0040  Ret                  r3
+L4:
+  0042  Catch                r0
+  0044  Jmp                  L5
+  0046  Catch                r0
+L5:
+  0048  JmpTrue              L6, r2
+  004b  IteratorClose        r1, 1
+L6:
+  004e  Throw                r0

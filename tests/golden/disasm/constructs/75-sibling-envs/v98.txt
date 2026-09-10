@@ -1,0 +1,83 @@
+; hbc2js disassembly of 75-sibling-envs/v98.hbc
+; version=98 layout=E opcodeTable=hbc98-late functions=5 strings=8 globalCodeIndex=0
+function #0 "global"  params=1 frame=14 env=0 flags=dbg,overflowed  @0x00000128 size=126
+  0000  DeclareGlobalVar     s5 "makeReaders"
+  0005  DeclareGlobalVar     s6 "r"
+  000a  GetGlobalObject      r1
+  000c  LoadConstUndefined   r0
+  000e  CreateClosure        r2, r0, f1 "makeReaders"
+  0013  PutByIdLoose         r1, r2, #c0, s5 "makeReaders"
+  0019  GetByIdShort         r3, r1, #c0, s5 "makeReaders"
+  001e  NewArrayWithBuffer   r2, 3, 3, lit@0x0000
+  0026  Call2                r2, r3, r0, r2
+  002b  PutByIdLoose         r1, r2, #c1, s6 "r"
+  0031  TryGetById           r3, r1, #c1, s7 "print"
+  0037  GetByIdShort         r4, r1, #c2, s6 "r"
+  003c  GetByIdShort         r2, r4, #c3, s2 "ab"
+  0041  Call1                r2, r2, r4
+  0045  Call2                r2, r3, r0, r2
+  004a  TryGetById           r3, r1, #c1, s7 "print"
+  0050  GetByIdShort         r4, r1, #c2, s6 "r"
+  0055  GetByIdShort         r2, r4, #c4, s3 "c"
+  005a  Call1                r2, r2, r4
+  005e  Call2                r2, r3, r0, r2
+  0063  TryGetById           r2, r1, #c1, s7 "print"
+  0069  GetByIdShort         r3, r1, #c2, s6 "r"
+  006e  GetByIdShort         r1, r3, #c5, s4 "def"
+  0073  Call1                r1, r1, r3
+  0077  Call2                r1, r2, r0, r1
+  007c  Ret                  r1
+
+function #1 "makeReaders"  params=2 frame=5 env=0 flags=dbg,overflowed  @0x000001a6 size=115
+  0000  LoadParam            r3, 1
+  0003  NewObject            r1
+  0005  CreateFunctionEnvironment r2, 2
+  0008  GetByIndex           r4, r3, 0
+  000c  StoreToEnvironment   r2, 0, r4
+  0010  GetByIndex           r4, r3, 1
+  0014  StoreToEnvironment   r2, 1, r4
+  0018  CreateClosure        r2, r2, f2 ""
+  001d  PutByIdLoose         r1, r2, #c0, s2 "ab"
+  0023  CreateFunctionEnvironment r2, 1
+  0026  LoadConstUndefined   r0
+  0028  StoreNPToEnvironment r2, 0, r0
+  002c  GetByIndex           r4, r3, 2
+  0030  StoreToEnvironment   r2, 0, r4
+  0034  CreateClosure        r2, r2, f3 ""
+  0039  PutByIdLoose         r1, r2, #c1, s3 "c"
+  003f  CreateFunctionEnvironment r2, 3
+  0042  StoreNPToEnvironment r2, 0, r0
+  0046  StoreNPToEnvironment r2, 1, r0
+  004a  StoreNPToEnvironment r2, 2, r0
+  004e  GetByIndex           r4, r3, 0
+  0052  StoreToEnvironment   r2, 0, r4
+  0056  GetByIndex           r4, r3, 1
+  005a  StoreToEnvironment   r2, 1, r4
+  005e  GetByIndex           r3, r3, 2
+  0062  StoreToEnvironment   r2, 2, r3
+  0066  CreateClosure        r2, r2, f4 ""
+  006b  PutByIdLoose         r1, r2, #c2, s4 "def"
+  0071  Ret                  r1
+
+function #2 ""  params=1 frame=2 env=0 flags=dbg,overflowed  @0x00000219 size=17
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r1, r0, 0
+  0007  LoadFromEnvironment  r0, r0, 1
+  000b  Add                  r0, r1, r0
+  000f  Ret                  r0
+
+function #3 ""  params=1 frame=2 env=0 flags=dbg,overflowed  @0x0000022a size=16
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r1, r1, 0
+  0007  LoadConstUInt8       r0, 10
+  000a  Mul                  r0, r1, r0
+  000e  Ret                  r0
+
+function #4 ""  params=1 frame=3 env=0 flags=dbg,overflowed  @0x0000023a size=25
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r2, r0, 0
+  0007  LoadFromEnvironment  r1, r0, 1
+  000b  Add                  r1, r2, r1
+  000f  LoadFromEnvironment  r0, r0, 2
+  0013  Add                  r0, r1, r0
+  0017  Ret                  r0

@@ -1,0 +1,189 @@
+; hbc2js disassembly of 71-env-slot-captured-index/v99.hbc
+; version=99 layout=E opcodeTable=hbc99-mar2026 functions=12 strings=24 globalCodeIndex=0
+function #0 "global"  params=1 frame=15 env=0 flags=dbg,overflowed  @0x0000023c size=402
+  0000  DeclareGlobalVar     s17 "makeCursor"
+  0005  DeclareGlobalVar     s19 "makeWriter"
+  000a  DeclareGlobalVar     s18 "makeInvoker"
+  000f  DeclareGlobalVar     s15 "c"
+  0014  DeclareGlobalVar     s23 "w"
+  0019  DeclareGlobalVar     s22 "v"
+  001e  GetGlobalObject      r1
+  0020  LoadConstUndefined   r0
+  0022  CreateClosure        r2, r0, f1 "makeCursor"
+  0027  PutByIdLoose         r1, r2, #c0, s17 "makeCursor"
+  002d  CreateClosure        r2, r0, f2 "makeWriter"
+  0032  PutByIdLoose         r1, r2, #c1, s19 "makeWriter"
+  0038  CreateClosure        r2, r0, f3 "makeInvoker"
+  003d  PutByIdLoose         r1, r2, #c2, s18 "makeInvoker"
+  0043  GetByIdShort         r3, r1, #c0, s17 "makeCursor"
+  0048  NewArrayWithBuffer   r2, 3, 3, lit@0x0000
+  0050  Call2                r2, r3, r0, r2
+  0055  PutByIdLoose         r1, r2, #c3, s15 "c"
+  005b  TryGetById           r3, r1, #c1, s12 "print"
+  0061  GetByIdShort         r4, r1, #c2, s15 "c"
+  0066  GetByIdShort         r2, r4, #c3, s13 "next"
+  006b  Call1                r2, r2, r4
+  006f  Call2                r2, r3, r0, r2
+  0074  TryGetById           r3, r1, #c1, s12 "print"
+  007a  GetByIdShort         r4, r1, #c2, s15 "c"
+  007f  GetByIdShort         r2, r4, #c3, s13 "next"
+  0084  Call1                r2, r2, r4
+  0088  Call2                r2, r3, r0, r2
+  008d  TryGetById           r3, r1, #c1, s12 "print"
+  0093  GetByIdShort         r4, r1, #c2, s15 "c"
+  0098  GetByIdShort         r2, r4, #c4, s14 "at"
+  009d  Call1                r2, r2, r4
+  00a1  Call2                r2, r3, r0, r2
+  00a6  TryGetById           r3, r1, #c1, s12 "print"
+  00ac  GetByIdShort         r4, r1, #c2, s15 "c"
+  00b1  GetByIdShort         r2, r4, #c5, s10 "base"
+  00b6  Call1                r2, r2, r4
+  00ba  Call2                r2, r3, r0, r2
+  00bf  GetByIdShort         r3, r1, #c6, s19 "makeWriter"
+  00c4  NewObject            r2
+  00c6  Call2                r2, r3, r0, r2
+  00cb  PutByIdLoose         r1, r2, #c4, s23 "w"
+  00d1  TryGetById           r3, r1, #c1, s12 "print"
+  00d7  GetByIdShort         r5, r1, #c7, s23 "w"
+  00dc  GetByIdShort         r4, r5, #c8, s20 "put"
+  00e1  LoadConstString      r2, s7 "x"
+  00e5  Call2                r2, r4, r5, r2
+  00ea  Call2                r2, r3, r0, r2
+  00ef  TryGetById           r3, r1, #c1, s12 "print"
+  00f5  GetByIdShort         r5, r1, #c7, s23 "w"
+  00fa  GetByIdShort         r4, r5, #c8, s20 "put"
+  00ff  LoadConstString      r2, s8 "y"
+  0103  Call2                r2, r4, r5, r2
+  0108  Call2                r2, r3, r0, r2
+  010d  TryGetById           r3, r1, #c1, s12 "print"
+  0113  GetByIdShort         r4, r1, #c7, s23 "w"
+  0118  GetByIdShort         r2, r4, #c9, s21 "slot"
+  011d  Call1                r2, r2, r4
+  0121  Call2                r2, r3, r0, r2
+  0126  GetByIdShort         r3, r1, #c10, s18 "makeInvoker"
+  012b  CreateClosure        r2, r0, f4 ""
+  0130  Call2                r2, r3, r0, r2
+  0135  PutByIdLoose         r1, r2, #c5, s22 "v"
+  013b  TryGetById           r3, r1, #c1, s12 "print"
+  0141  GetByIdShort         r5, r1, #c11, s22 "v"
+  0146  GetByIdShort         r4, r5, #c12, s11 "step"
+  014b  LoadConstString      r2, s5 "p"
+  014f  Call2                r2, r4, r5, r2
+  0154  Call2                r2, r3, r0, r2
+  0159  TryGetById           r3, r1, #c1, s12 "print"
+  015f  GetByIdShort         r5, r1, #c11, s22 "v"
+  0164  GetByIdShort         r4, r5, #c12, s11 "step"
+  0169  LoadConstString      r2, s6 "q"
+  016d  Call2                r2, r4, r5, r2
+  0172  Call2                r2, r3, r0, r2
+  0177  TryGetById           r2, r1, #c1, s12 "print"
+  017d  GetByIdShort         r3, r1, #c11, s22 "v"
+  0182  GetByIdShort         r1, r3, #c13, s16 "count"
+  0187  Call1                r1, r1, r3
+  018b  Call2                r1, r2, r0, r1
+  0190  Ret                  r1
+
+function #1 "makeCursor"  params=2 frame=4 env=0 flags=none  @0x000003ce size=51
+  0000  CreateFunctionEnvironment r2, 2
+  0003  LoadParam            r1, 1
+  0006  StoreToEnvironment   r2, 0, r1
+  000a  LoadConstZero        r0
+  000c  StoreNPToEnvironment r2, 1, r0
+  0010  NewObjectWithBuffer  r1, sh0(numProps=3), lit@0x0007
+  0016  CreateClosure        r3, r2, f5 "next"
+  001b  PutOwnBySlotIdx      r1, r3, 0
+  001f  CreateClosure        r3, r2, f6 "base"
+  0024  PutOwnBySlotIdx      r1, r3, 1
+  0028  CreateClosure        r2, r2, f7 "at"
+  002d  PutOwnBySlotIdx      r1, r2, 2
+  0031  Ret                  r1
+
+function #2 "makeWriter"  params=2 frame=4 env=0 flags=none  @0x00000401 size=42
+  0000  CreateFunctionEnvironment r2, 2
+  0003  LoadParam            r1, 1
+  0006  StoreToEnvironment   r2, 0, r1
+  000a  LoadConstZero        r0
+  000c  StoreNPToEnvironment r2, 1, r0
+  0010  NewObjectWithBuffer  r1, sh1(numProps=2), lit@0x0008
+  0016  CreateClosure        r3, r2, f8 "put"
+  001b  PutOwnBySlotIdx      r1, r3, 0
+  001f  CreateClosure        r2, r2, f9 "slot"
+  0024  PutOwnBySlotIdx      r1, r2, 1
+  0028  Ret                  r1
+
+function #3 "makeInvoker"  params=2 frame=4 env=0 flags=none  @0x0000042b size=42
+  0000  CreateFunctionEnvironment r2, 2
+  0003  LoadParam            r1, 1
+  0006  StoreToEnvironment   r2, 0, r1
+  000a  LoadConstZero        r0
+  000c  StoreNPToEnvironment r2, 1, r0
+  0010  NewObjectWithBuffer  r1, sh2(numProps=2), lit@0x0008
+  0016  CreateClosure        r3, r2, f10 "step"
+  001b  PutOwnBySlotIdx      r1, r3, 0
+  001f  CreateClosure        r2, r2, f11 "count"
+  0024  PutOwnBySlotIdx      r1, r2, 1
+  0028  Ret                  r1
+
+function #4 ""  params=3 frame=2 env=0 flags=dbg,overflowed  @0x00000455 size=20
+  0000  LoadConstString      r1, s1 "#"
+  0004  LoadParam            r0, 1
+  0007  Add                  r1, r0, r1
+  000b  LoadParam            r0, 2
+  000e  Add                  r0, r1, r0
+  0012  Ret                  r0
+
+function #5 "next"  params=1 frame=4 env=0 flags=dbg,overflowed  @0x00000469 size=28
+  0000  GetParentEnvironment r3, 0
+  0003  LoadFromEnvironment  r2, r3, 0
+  0007  LoadFromEnvironment  r1, r3, 1
+  000b  LoadConstUInt8       r0, 1
+  000e  AddN                 r0, r1, r0
+  0012  StoreNPToEnvironment r3, 1, r0
+  0016  GetByVal             r2, r2, r1
+  001a  Ret                  r2
+
+function #6 "base"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x00000485 size=14
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIdShort         r0, r0, #c0, s9 "length"
+  000c  Ret                  r0
+
+function #7 "at"  params=1 frame=2 env=0 flags=none  @0x00000493 size=9
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 1
+  0007  Ret                  r0
+
+function #8 "put"  params=2 frame=5 env=0 flags=dbg,overflowed  @0x0000049c size=35
+  0000  GetParentEnvironment r2, 0
+  0003  LoadFromEnvironment  r4, r2, 0
+  0007  LoadFromEnvironment  r1, r2, 1
+  000b  LoadConstUInt8       r0, 1
+  000e  AddN                 r0, r1, r0
+  0012  StoreNPToEnvironment r2, 1, r0
+  0016  LoadParam            r3, 1
+  0019  PutByValLoose        r4, r1, r3
+  001d  LoadFromEnvironment  r1, r2, 1
+  0021  Ret                  r1
+
+function #9 "slot"  params=1 frame=1 env=0 flags=dbg,overflowed  @0x000004bf size=13
+  0000  GetParentEnvironment r0, 0
+  0003  LoadFromEnvironment  r0, r0, 0
+  0007  GetByIndex           r0, r0, 0
+  000b  Ret                  r0
+
+function #10 "step"  params=2 frame=15 env=0 flags=dbg,overflowed  @0x000004cc size=35
+  0000  GetParentEnvironment r3, 0
+  0003  LoadFromEnvironment  r4, r3, 0
+  0007  LoadFromEnvironment  r1, r3, 1
+  000b  LoadConstUInt8       r0, 1
+  000e  AddN                 r0, r1, r0
+  0012  StoreNPToEnvironment r3, 1, r0
+  0016  LoadConstUndefined   r2
+  0018  LoadParam            r3, 1
+  001b  Call3                r3, r4, r2, r3, r1
+  0021  Ret                  r3
+
+function #11 "count"  params=1 frame=2 env=0 flags=none  @0x00000493 size=9
+  0000  GetParentEnvironment r1, 0
+  0003  LoadFromEnvironment  r0, r1, 1
+  0007  Ret                  r0
