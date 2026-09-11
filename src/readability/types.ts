@@ -280,9 +280,10 @@ export type ParseOutcome =
  *  (\`\`\`json ... \`\`\`) even when told not to -- observed from
  *  \`claude -p --model haiku\` on 2026-09-11. The fence is presentation,
  *  not content: strip one outer fence (with an optional language tag) and
- *  surrounding whitespace before parsing. Anything else is left untouched. */
+ *  surrounding whitespace before parsing; prose before or after the fence
+ *  (also observed) is dropped with it. Fence-free text is left untouched. */
 export function stripCodeFence(text: string): string {
-  const m = /^\s*```[A-Za-z0-9_-]*\s*\n([\s\S]*?)\n?```\s*$/.exec(text);
+  const m = /```[A-Za-z0-9_-]*[ \t]*\n([\s\S]*?)\n?```/.exec(text);
   return m?.[1] ?? text;
 }
 

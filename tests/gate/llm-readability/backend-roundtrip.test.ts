@@ -104,3 +104,12 @@ test("parseReadabilityResult: a markdown code fence around the JSON is presentat
   // Fence-free garbage is still a rejected candidate, never a throw.
   assert.equal(parseReadabilityResult("```json\nnot json\n```").ok, false);
 });
+
+test("parseReadabilityResult: prose before or after the fenced JSON is dropped with the fence (observed from claude -p on 2026-09-11)", () => {
+  const inner = '{"names":[],"abstained":true}';
+  const chatty = "```json\n" + inner + "\n```\n\nThe binding at `{fn: 1, reg: 1}` is `r1`, which receives parameter `a1`.";
+  const plain = parseReadabilityResult(inner);
+  assert.equal(plain.ok, true);
+  assert.deepEqual(parseReadabilityResult(chatty), plain);
+  assert.deepEqual(parseReadabilityResult("Here is the answer:\n\n" + chatty), plain);
+});

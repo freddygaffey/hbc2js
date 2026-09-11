@@ -31,6 +31,9 @@ import { cacheKey, resolveClaudeCliConfig, resolveHaikuConfig, SKILL_FOR_KIND } 
 import { loadSkill } from "../../src/readability/skills.ts";
 import type { Recording, RecordingEntry } from "../../src/workers/backends/replay.ts";
 
+/** Largest per-function source a naming prompt may carry (bytes). */
+const MAX_SOURCE_BYTES = 48 * 1024;
+
 function usage(): never {
   process.stderr.write("usage: node tools/readability/record.ts <input.hbc> <output.recording.json> [--limit N] [--backend claude-cli|haiku]\n");
   process.exit(2);
@@ -76,6 +79,14 @@ async function main(): Promise<void> {
     const nameable = listNameable(frames, fn, store);
     if (nameable.length === 0) continue;
     const source = service.render({ fn }).code;
+    // A naming prompt is one function's source. The global wrapper (fn 0)
+    // and a few giant module bodies render to megabytes -- the whole program
+    // in fn 0's case -- which no naming skill can use and which the claude
+    // CLI refuses on stdin above 10 MB. Skip those targets, say so, move on.
+    if (source.length > MAX_SOURCE_BYTES) {
+      process.stderr.write(`record: skip fn ${fn} (${source.length} bytes of source > ${MAX_SOURCE_BYTES})\n`);
+      continue;
+    }
     for (const reg of nameable) {
       if (recorded >= limit) break;
       if (reg.named !== null) continue;
