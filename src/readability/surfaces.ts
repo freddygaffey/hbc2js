@@ -91,6 +91,14 @@ export interface ReadabilityContext {
   readonly projectDir: string;
   readonly treeDir: string;
   readonly backend: WorkerBackend;
+  /** The `src/readability/backends.ts` id `backend` was built from, when the
+   *  caller built it that way. Purely informational to this module -- it is
+   *  what lets `WorkerRunner` REBUILD the same backend inside
+   *  `src/workers/readability-worker.ts`, since a `WorkerBackend` instance
+   *  is not structured-clone-safe. A context whose backend was handed in
+   *  directly (a test's `FakeBackend`, an MCP caller's own object) leaves it
+   *  undefined and simply keeps the in-process path. */
+  readonly backendId?: string;
   readonly hbcPath?: string;
   readonly oracle?: TreeEquivOracle;
   readonly functionOracle?: FunctionEquivOracle;
