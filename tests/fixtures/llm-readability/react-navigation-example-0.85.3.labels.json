@@ -1,0 +1,128 @@
+{
+  "$comment": "Spec 28 section 9.6 labelled-sample format. Ground truth, NOT a judgement of any one proposal: `referenceName` is what the module/function is really called, so the same sample grades any backend. Labels here are derived mechanically from the bundle's own sourcemap (tests/fixtures/bundles/react-navigation-example-0.85.3/react-navigation-example.map), which is shipped with the fixture and is authoritative for this app; `tests/gate/llm-readability/quality.test.ts` re-checks every `source` against that map, so a stale entry fails the gate rather than rotting. Register-level labels are added in landing 1 from the debug bundle (react-navigation-example.debug.hbc carries debug info); the module/function entries below are what can be labelled without a decompile.",
+  "app": "react-navigation-example-0.85.3",
+  "bundle": "tests/fixtures/bundles/react-navigation-example-0.85.3/react-navigation-example.hbc",
+  "labelledBy": "spec-agent 2026-09-11",
+  "labelSource": "sourcemap:react-navigation-example.map",
+  "ts": "2026-09-11",
+  "targets": [
+    {
+      "id": "rn-ex-01",
+      "kind": "module",
+      "source": "/example/src/index.tsx",
+      "referenceName": "src/index.js",
+      "alsoAccept": ["src/App.js", "src/ExampleApp.js"],
+      "role": "screen",
+      "securityRelevant": false,
+      "note": "the example app's own entry module; the only /example/src module in the bundle"
+    },
+    {
+      "id": "rn-ex-02",
+      "kind": "module",
+      "source": "/packages/core/src/BaseNavigationContainer.tsx",
+      "referenceName": "BaseNavigationContainer.js",
+      "alsoAccept": ["NavigationContainer.js"],
+      "role": "navigator",
+      "securityRelevant": false,
+      "note": "holds the navigation state root and the container ref"
+    },
+    {
+      "id": "rn-ex-03",
+      "kind": "module",
+      "source": "/packages/core/src/useNavigationBuilder.tsx",
+      "referenceName": "useNavigationBuilder.js",
+      "alsoAccept": [],
+      "role": "util",
+      "securityRelevant": false,
+      "note": "hook module; the filename must be the hook it exports"
+    },
+    {
+      "id": "rn-ex-04",
+      "kind": "module",
+      "source": "/packages/routers/src/StackRouter.tsx",
+      "referenceName": "StackRouter.js",
+      "alsoAccept": ["stackRouter.js"],
+      "role": "navigator",
+      "securityRelevant": false,
+      "note": "reducer-shaped router: action types are string literals, strong evidence"
+    },
+    {
+      "id": "rn-ex-05",
+      "kind": "module",
+      "source": "/packages/routers/src/TabRouter.tsx",
+      "referenceName": "TabRouter.js",
+      "alsoAccept": ["tabRouter.js"],
+      "role": "navigator",
+      "securityRelevant": false,
+      "note": "sibling of StackRouter; a backend that names both the same is inconsistent"
+    },
+    {
+      "id": "rn-ex-06",
+      "kind": "module",
+      "source": "/packages/drawer/src/navigators/createDrawerNavigator.tsx",
+      "referenceName": "createDrawerNavigator.js",
+      "alsoAccept": ["DrawerNavigator.js"],
+      "role": "navigator",
+      "securityRelevant": false,
+      "note": "factory module named for its default export"
+    },
+    {
+      "id": "rn-ex-07",
+      "kind": "module",
+      "source": "/packages/core/src/theming/ThemeProvider.tsx",
+      "referenceName": "ThemeProvider.js",
+      "alsoAccept": ["theming/ThemeProvider.js"],
+      "role": "component",
+      "securityRelevant": false,
+      "note": "context provider component; PascalCase is required by the skill"
+    },
+    {
+      "id": "rn-ex-08",
+      "kind": "module",
+      "source": "/packages/native/src/useLinking.native.tsx",
+      "referenceName": "useLinking.js",
+      "alsoAccept": ["useLinking.native.js"],
+      "role": "util",
+      "securityRelevant": true,
+      "note": "deep-link URL intake: a trust boundary. A wrong or flattering name here is the misrepresentation class spec 28 section 7 requires zero of"
+    },
+    {
+      "id": "rn-ex-09",
+      "kind": "module",
+      "source": "/packages/core/src/findFocusedRoute.tsx",
+      "referenceName": "findFocusedRoute.js",
+      "alsoAccept": [],
+      "role": "util",
+      "securityRelevant": false,
+      "note": "single pure exported helper; the easiest class of module to name"
+    },
+    {
+      "id": "rn-ex-10",
+      "kind": "module",
+      "source": "/packages/core/src/checkDuplicateRouteNames.tsx",
+      "referenceName": "checkDuplicateRouteNames.js",
+      "alsoAccept": [],
+      "role": "util",
+      "securityRelevant": false,
+      "note": "dev-only validator; carries a long warning string literal as evidence"
+    },
+    {
+      "id": "rn-ex-11",
+      "kind": "function",
+      "source": "/packages/routers/src/CommonActions.tsx",
+      "referenceName": "navigate",
+      "alsoAccept": ["navigateAction", "createNavigateAction"],
+      "securityRelevant": false,
+      "note": "action creator returning {type: \"NAVIGATE\", payload}; the literal names it"
+    },
+    {
+      "id": "rn-ex-12",
+      "kind": "function",
+      "source": "/packages/core/src/useEventEmitter.tsx",
+      "referenceName": "useEventEmitter",
+      "alsoAccept": ["createEventEmitter"],
+      "securityRelevant": false,
+      "note": "hook whose body registers listeners keyed by event type"
+    }
+  ]
+}
