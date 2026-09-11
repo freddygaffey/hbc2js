@@ -1472,21 +1472,41 @@ function runNameOverlay(argv: readonly string[]): void {
 // section 5, "one core, two callers").
 // ---------------------------------------------------------------------------
 
-/** Every nameable, not-yet-named register in `fn`, as `NamePassTarget`s. The
- *  function's own render (overlay-free at this point) IS the `body`/`source`
- *  the cache key and the prompt both use. */
+/** Every nameable, not-yet-named register in `fn`, as ONE `NamePassFunctionTarget`
+ *  (spec 28 section 9.1: one model call per function, not per register) --
+ *  the default for `name llm-fill`. `renderFn` is `decompileFunction`'s
+ *  scoped single-function render (BUGS 2026-09-11 "render() is O(whole-bundle)
+ *  per call": this is what stopped calling `NameService.render({fn})`, which
+ *  re-emits the whole module per call). Returns `[]` when `fn` has nothing
+ *  left to name. */
 function llmFillTargetsForFn(
-  service: NameService,
   frames: ReadonlyMap<number, readonly Stmt[]>,
   store: OverlayStore,
   fn: number,
+  renderFn: (fn: number) => string,
+): readonly NamePassTarget[] {
+  const nameable = listNameable(frames, fn, store).filter((reg) => reg.named === null); // spec 28 section 2: never rename an already-named slot
+  if (nameable.length === 0) return [];
+  const source = renderFn(fn);
+  const ids = nameable.map((reg) => regId(fn, reg.reg));
+  return [{ kind: "suggest-name", fn, regs: ids, context: { fn, targets: ids.map((id) => shortForm(id)), source } }];
+}
+
+/** `--per-register`'s old landing-1 shape: one `NamePassTarget` (one backend
+ *  call) per nameable register, kept for the tests and calling patterns that
+ *  still want it. */
+function llmFillTargetsForFnPerRegister(
+  frames: ReadonlyMap<number, readonly Stmt[]>,
+  store: OverlayStore,
+  fn: number,
+  renderFn: (fn: number) => string,
 ): readonly NamePassTarget[] {
   const nameable = listNameable(frames, fn, store);
   if (nameable.length === 0) return [];
-  const source = service.render({ fn }).code;
+  const source = renderFn(fn);
   const out: NamePassTarget[] = [];
   for (const reg of nameable) {
-    if (reg.named !== null) continue; // spec 28 section 2: never rename an already-named slot
+    if (reg.named !== null) continue;
     const id = regId(fn, reg.reg);
     out.push({ bindingId: id, kind: "suggest-name", context: { target: shortForm(id), fn, reg: reg.reg, source } });
   }
@@ -1525,23 +1545,28 @@ async function runNameLlmFill(argv: readonly string[]): Promise<number> {
   if (hbc === undefined || hbc.startsWith("-")) {
     fail(
       ErrorCode.E_USAGE,
-      "name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>]",
+      "name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>] [--per-register]",
       2,
       json,
     );
   }
   const budgetRaw = flagValue(argv, "--budget-tokens");
   const budgetTokens = budgetRaw !== undefined ? Number(budgetRaw) : undefined;
+  const perRegister = argv.includes("--per-register");
   const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
   const analysis = buildAnalysis(hbc);
   const store = OverlayStore.load(storePath, hbc);
   const service = new NameService(analysis, store);
   const frames = rawFrameBodies(analysis);
   const backend = llmFillBackend(argv, json);
+  // Scoped per-function render, not `service.render({fn})` (BUGS 2026-09-11):
+  // reads `hbc`'s own bytes once, independent of `buildAnalysis`'s copy.
+  const bytes = readFileSync(hbc);
+  const renderFn = (fn: number): string => decompileFunction(bytes, fn, { strictEnv: false }).code;
 
   const targets: NamePassTarget[] = [];
   for (let fn = 0; fn < analysis.module.functions.length; fn++) {
-    targets.push(...llmFillTargetsForFn(service, frames, store, fn));
+    targets.push(...(perRegister ? llmFillTargetsForFnPerRegister(frames, store, fn, renderFn) : llmFillTargetsForFn(frames, store, fn, renderFn)));
   }
 
   const result = await runNamePass(targets, { backend, service, ...(budgetTokens !== undefined ? { budgetTokens } : {}) });
