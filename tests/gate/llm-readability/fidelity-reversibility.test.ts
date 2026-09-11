@@ -18,6 +18,10 @@ import { listNameable } from "../../../src/artifact/frame-queries.ts";
 import { FakeBackend } from "../../../src/workers/backend.ts";
 import { runNamePass } from "../../../src/readability/name-pass.ts";
 import type { NamePassTarget } from "../../../src/readability/name-pass.ts";
+import { defaultTreeEquivOracle, readTree, runFileOp, treeHash } from "../../../src/readability/file-ops.ts";
+import type { TreeEquivOracle } from "../../../src/readability/file-ops.ts";
+import { listTransactions, revertTransaction, traceAllEmitted } from "../../../src/readability/transactions.ts";
+import { makeTree } from "../../support/readability-tree.ts";
 
 const HAIKU_BACKEND_PATH = join(repoRoot(), "src", "workers", "backends", "haiku.ts");
 const TXN_LOG_PATH = join(repoRoot(), "src", "readability", "transactions.ts");
@@ -155,12 +159,62 @@ test("spec 28 section 7 (fidelity): decompiled JS is byte-identical with the ove
   assert.equal(reverted, before, "decompiled JS must be byte-identical with the overlay applied then reverted");
 });
 
+// Landing 3's three legs. They run a REAL file-op pass -- the real gate, the
+// real DB write path, the real revert -- over the gate-fast fixture tree, for
+// the reason spelled out in the NOTE above FIXTURE: the held-out app is a
+// 15,551-function decompile and belongs in `tests/sweep/`, not the 2-minute
+// gate. The BEHAVIOURAL leg of the tree oracle is injected (no gate test may
+// require a Hermes VM to be present); the STRUCTURAL leg -- require graph and
+// export surface -- is the shipped one, and `file-ops.test.ts` proves that a
+// DIVERGENT or INCONCLUSIVE verdict refuses the op.
+const PASS_ORACLE: TreeEquivOracle = () => ({
+  verdict: "PASS",
+  why: "trace-equivalent over the reconstructed tree",
+  oracle: "hbc2js equiv --hbc fixture.hbc tree/",
+  lines: 37,
+});
+
+function fileOpPass(f: ReturnType<typeof makeTree>): { hashes: string[]; ids: string[] } {
+  const hashes = [treeHash(readTree(f.treeDir))];
+  const ids: string[] = [];
+  const base = { db: f.db, projectDir: f.projectDir, treeDir: f.treeDir, oracle: PASS_ORACLE };
+  const requests = [
+    { op: "make" as const, path: "src/helper.js", content: "function helper() { return 1; }\n", origins: f.bindings.slice(0, 1), evidence: "extracted helper" },
+    { op: "rename" as const, from: "src/module_1.js", to: "src/Login.js", evidence: "route literal /login" },
+    { op: "move" as const, from: "src/Login.js", to: "src/auth/Login.js", evidence: "auth feature folder" },
+    { op: "combine" as const, from: ["src/auth/Login.js", "src/module_2.js"], to: "src/auth/Session.js", evidence: "one unit" },
+  ];
+  let i = 0;
+  for (const req of requests) {
+    const attempt = runFileOp(req, { ...base, ts: `2026-09-11T00:00:0${String(i)}Z` });
+    assert.equal(attempt.accepted, true, attempt.detail);
+    assert.equal(attempt.priorTreeHash, hashes[i]);
+    hashes.push(treeHash(readTree(f.treeDir)));
+    ids.push(attempt.txId ?? "");
+    i++;
+  }
+  return { hashes, ids };
+}
+
 test("spec 28 section 7 (reversibility): reverting any one transaction restores the prior tree exactly", (t) => {
   if (!existsSync(TXN_LOG_PATH)) {
     t.skip(`${TXN_LOG_PATH} does not exist yet -- spec 28 LANDING 3 (DB transaction log + file ops)`);
     return;
   }
-  t.skip("landing 3 owns this: apply N transactions, revert each in turn, assert the tree hash returns to its predecessor");
+  const f = makeTree("hbc2js-l3-reversibility-");
+  try {
+    const { hashes, ids } = fileOpPass(f);
+    assert.equal(ids.length, 4);
+    for (let j = ids.length - 1; j >= 0; j--) {
+      revertTransaction(f.db, f.projectDir, f.treeDir, ids[j] ?? "", "fred", `2026-09-11T02:00:0${String(j)}Z`);
+      assert.equal(treeHash(readTree(f.treeDir)), hashes[j], `revert of transaction ${String(j)} must restore the prior tree hash exactly`);
+    }
+    // 100%: every transaction in the pass was reverted, and every revert is
+    // itself recorded, so the undo is auditable rather than a silent rollback.
+    assert.equal(listTransactions(f.db).length, 8);
+  } finally {
+    f.db.close();
+  }
 });
 
 test("spec 28 section 7 (traceability): 100% of emitted files trace to binding IDs on a real tree, zero orphans", (t) => {
@@ -168,7 +222,22 @@ test("spec 28 section 7 (traceability): 100% of emitted files trace to binding I
     t.skip(`${TXN_LOG_PATH} does not exist yet -- spec 28 LANDING 3 (DB transaction log + file ops)`);
     return;
   }
-  t.skip("landing 3 owns this: after a full file-op pass over the held-out app, every file has >= 1 origin");
+  const f = makeTree("hbc2js-l3-traceability-");
+  try {
+    fileOpPass(f);
+    const traced = traceAllEmitted(f.db);
+    assert.ok(traced.length > 0, "the pass must have emitted files for this to be a real measurement");
+    assert.equal(traced.filter((x) => x.orphan).length, 0, "zero orphans: every emitted file traces back to bytecode");
+    for (const x of traced) {
+      assert.ok(x.origins.length >= 1, `${x.path} has no origin`);
+      assert.ok(x.modules.length >= 1, `${x.path} reaches no module index`);
+    }
+    // The chain is `{fn,reg} -> module -> origin -> file`, so at least one
+    // emitted file must reach a register-level id, not just a module index.
+    assert.ok(traced.some((x) => x.origins.some((o) => o.binding !== undefined)));
+  } finally {
+    f.db.close();
+  }
 });
 
 test("spec 28 section 7 (tree fidelity): the reconstructed tree passes hbc2js equiv --hbc as a whole", (t) => {
@@ -176,5 +245,20 @@ test("spec 28 section 7 (tree fidelity): the reconstructed tree passes hbc2js eq
     t.skip(`${TXN_LOG_PATH} does not exist yet -- spec 28 LANDING 3 (tree-level equiv gate)`);
     return;
   }
-  t.skip("landing 3 owns this: run the tree-level oracle after make/rename/combine/split and require PASS");
+  const f = makeTree("hbc2js-l3-tree-equiv-");
+  try {
+    fileOpPass(f);
+    const rows = listTransactions(f.db);
+    assert.equal(rows.length, 4);
+    for (const row of rows) {
+      assert.equal(row.tx.equiv.scope, "tree", "a file op is proven at TREE granularity, not per file");
+      assert.ok(equivAccepts(row.tx.equiv), "no accepted file op may carry a non-PASS proof");
+      assert.deepEqual(validateTransaction(row.tx), []);
+    }
+    // The shipped oracle with nothing to compare against is INCONCLUSIVE, and
+    // INCONCLUSIVE is never PASS -- a tree can never be accepted unproven.
+    assert.equal(defaultTreeEquivOracle({ treeDir: f.treeDir, entry: "index.js" }).verdict, "INCONCLUSIVE");
+  } finally {
+    f.db.close();
+  }
 });

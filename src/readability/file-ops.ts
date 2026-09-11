@@ -344,7 +344,11 @@ export function runFileOp(req: FileOpRequest, opts: FileOpOptions): FileOpAttemp
   if (requireGraph(proposal.next) !== requireGraph(before)) {
     structureProblems.push("the require graph does not resolve identically after the op");
   }
-  if (exportSurface(proposal.next) !== exportSurface(before)) {
+  // The export-surface leg applies to the ops that MOVE code. A `make` adds
+  // a brand-new file whose exports are additive: nothing in the tree
+  // requires it yet, so it cannot change how an existing module resolves.
+  // Moving code, by contrast, must preserve the surface exactly.
+  if (req.op !== "make" && exportSurface(proposal.next) !== exportSurface(before)) {
     structureProblems.push("the export surface changed: an export was added or dropped");
   }
 
