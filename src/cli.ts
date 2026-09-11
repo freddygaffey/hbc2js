@@ -42,10 +42,7 @@ import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
 import type { Stmt } from "./emit/ast.ts";
 import type { WorkerBackend } from "./workers/backend.ts";
-import { HeuristicBackend } from "./workers/backends/heuristic.ts";
-import { HaikuBackend } from "./workers/backends/haiku.ts";
-import { ReplayBackend, loadRecording } from "./workers/backends/replay.ts";
-import { resolveHaikuConfig, SKILLS_DIR } from "./readability/types.ts";
+import { backendForId, resolveBackendId, BackendSelectionError } from "./readability/backends.ts";
 import { runNamePass, namedCount } from "./readability/name-pass.ts";
 import { gateRewrite, rewriteSidecar } from "./readability/rewrite.ts";
 import type { RewriteProposal } from "./readability/types.ts";
@@ -1486,16 +1483,30 @@ function llmFillTargetsForFn(
   return out;
 }
 
+// Default `claude-cli` (spec 28 section 9.1 "ClaudeCliBackend (default)",
+// Fred's 2026-09-11 ruling): runs on Fred's Claude plan through the CLI, not
+// the metered API. `--backend haiku` opts into the API and needs
+// `ANTHROPIC_API_KEY`; `HBC2JS_LLM_BACKEND` overrides the default, `--backend`
+// overrides the env.
 function llmFillBackend(argv: readonly string[], json: boolean): WorkerBackend {
-  const name = flagValue(argv, "--backend") ?? "heuristic";
-  if (name === "haiku") return new HaikuBackend(resolveHaikuConfig(process.env));
-  if (name === "replay") {
+  const explicit = flagValue(argv, "--backend");
+  let id;
+  try {
+    id = resolveBackendId(explicit, process.env);
+  } catch (e) {
+    fail(ErrorCode.E_USAGE, e instanceof Error ? e.message : String(e), 2, json);
+  }
+  if (id === "replay") {
     const recording = flagValue(argv, "--recording");
     if (recording === undefined) fail(ErrorCode.E_USAGE, "name llm-fill --backend replay requires --recording <file>", 2, json);
-    return new ReplayBackend(loadRecording(recording), { model: resolveHaikuConfig(process.env).model, skillsDir: SKILLS_DIR });
+    return backendForId(id, { env: process.env, recordingPath: recording });
   }
-  if (name === "heuristic") return new HeuristicBackend();
-  fail(ErrorCode.E_USAGE, `name llm-fill --backend must be haiku|replay|heuristic, got ${name}`, 2, json);
+  try {
+    return backendForId(id, { env: process.env });
+  } catch (e) {
+    if (e instanceof BackendSelectionError) fail(ErrorCode.E_USAGE, e.message, 2, json);
+    throw e;
+  }
 }
 
 async function runNameLlmFill(argv: readonly string[]): Promise<number> {
@@ -1504,7 +1515,7 @@ async function runNameLlmFill(argv: readonly string[]): Promise<number> {
   if (hbc === undefined || hbc.startsWith("-")) {
     fail(
       ErrorCode.E_USAGE,
-      "name llm-fill <input.hbc> [--backend haiku|replay|heuristic] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>]",
+      "name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>]",
       2,
       json,
     );

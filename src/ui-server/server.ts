@@ -36,6 +36,9 @@ import { JobQueue } from "../workers/queue.ts";
 import { Presence } from "../workers/presence.ts";
 import { WorkerRunner } from "../workers/runner.ts";
 import { HeuristicBackend } from "../workers/backends/heuristic.ts";
+import type { WorkerBackend, WorkerJobRequest, WorkerJobResponse } from "../workers/backend.ts";
+import { backendForId, resolveBackendId } from "../readability/backends.ts";
+import { SKILL_FOR_KIND } from "../readability/types.ts";
 import { handle, tailLog, WRITE_TOOL_PATHS, type UiServerCtx } from "./routes.ts";
 import { segregation } from "./segregation.ts";
 import { tailWorkerEvents, type WorkersCtx } from "./workers-routes.ts";
@@ -198,11 +201,54 @@ interface WorkerPool {
   stop(): void;
 }
 
+/** Job kinds a skill is routed for (spec 28's `SKILL_FOR_KIND`) — everything
+ *  else (e.g. spec 23's non-LLM kinds) keeps using `HeuristicBackend`, which
+ *  needs no key, no binary and no spawn. */
+const LLM_JOB_KINDS: ReadonlySet<string> = new Set(Object.keys(SKILL_FOR_KIND));
+
+/** Sends LLM-shaped jobs to `llm`, everything else to `fallback` — the UI
+ *  pool has exactly one `WorkerBackend`, so this is how spec 28 section 9.1's
+ *  default (`claude-cli`, opt-in `haiku`) coexists with the zero-config
+ *  heuristic backend that has always driven non-LLM job kinds. */
+class RoutedWorkerBackend implements WorkerBackend {
+  readonly id: string;
+  private readonly llm: WorkerBackend;
+  private readonly fallback: WorkerBackend;
+  constructor(llm: WorkerBackend, fallback: WorkerBackend) {
+    this.llm = llm;
+    this.fallback = fallback;
+    this.id = `${llm.id}+${fallback.id}`;
+  }
+  run(req: WorkerJobRequest, signal?: AbortSignal): Promise<WorkerJobResponse> {
+    return (LLM_JOB_KINDS.has(req.kind) ? this.llm : this.fallback).run(req, signal);
+  }
+}
+
+/** Fred's ruling (2026-09-11, verbatim): "It should run on the Claude plan on
+ *  the shell ... they should not be using the API because API is more
+ *  expensive." `claude-cli` is therefore the UI pool's default for LLM-kind
+ *  jobs (`HBC2JS_LLM_BACKEND=haiku` opts into the metered API); a bad env
+ *  value falls back to the heuristic-only pool rather than crashing the
+ *  server (this function is called from a "never throws" context). */
+function buildUiBackend(env: Readonly<Record<string, string | undefined>>): WorkerBackend {
+  const fallback = new HeuristicBackend();
+  try {
+    const llmId = resolveBackendId(undefined, env);
+    if (llmId === "heuristic" || llmId === "fake") return fallback;
+    const llm = backendForId(llmId, { env });
+    return new RoutedWorkerBackend(llm, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
 /** Builds the spec-23 worker surface over the project DB and starts ONE pool
- *  loop over `HeuristicBackend`. Returns undefined (workers simply absent,
- *  routes 503) when the project has no `.hbcproj` — a JSONL-only project has
- *  no `jobs` table to queue into, and inventing one is not this server's
- *  job. Never throws: a server that can serve source must still start. */
+ *  loop over `buildUiBackend`'s choice (spec 28 section 9.1's default,
+ *  `claude-cli`, routed only to LLM-kind jobs; `HeuristicBackend` otherwise).
+ *  Returns undefined (workers simply absent, routes 503) when the project has
+ *  no `.hbcproj` — a JSONL-only project has no `jobs` table to queue into,
+ *  and inventing one is not this server's job. Never throws: a server that
+ *  can serve source must still start. */
 function startWorkers(projectDir: string, mcp: McpContext, concurrency: number): WorkerPool | undefined {
   const path = dbPath(projectDir);
   if (!existsSync(path)) return undefined;
@@ -214,7 +260,7 @@ function startWorkers(projectDir: string, mcp: McpContext, concurrency: number):
   }
   const queue = new JobQueue(db);
   const presence = new Presence(db);
-  const backend = new HeuristicBackend();
+  const backend = buildUiBackend(process.env);
   const session = presence.open({ kind: "worker", who: `worker:${backend.id}`, meta: { pool: concurrency } });
   const runner = new WorkerRunner({
     db,
