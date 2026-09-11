@@ -41,8 +41,10 @@ export interface WorkersCtx {
   readonly queue: JobQueue;
   readonly presence: Presence;
   readonly runner: WorkerRunner;
-  /** The backend id in play (`heuristic`, `fake`, later `cli`/`http`) — the
-   *  UI shows it so "why is this name so literal" has a visible answer. */
+  /** The backend id in play (`heuristic`, `fake`, `claude-cli+heuristic`,
+   *  `haiku+heuristic` — spec 28 section 9.1 routes LLM-kind jobs to a model
+   *  backend and keeps everything else on `heuristic`) — the UI shows it so
+   *  "why is this name so literal" has a visible answer. */
   readonly backendId: string;
   /** Concurrency cap the pool runs at (spec 23 §2.2: "the UI shows the cap"). */
   readonly concurrency: number;

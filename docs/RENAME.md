@@ -80,7 +80,7 @@ named {0,6} → g [low, gate:overridden]
 ## `name llm-fill` — batch naming through an LLM (spec 28 landing 1)
 
 ```
-hbc2js name llm-fill <in.hbc> [--backend haiku|replay|heuristic] \
+hbc2js name llm-fill <in.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] \
                       [--budget-tokens N] [--recording <file>] \
                       [--store <path>] [--json]
 ```
@@ -90,12 +90,19 @@ query `name list` uses) and runs spec 28's per-target loop
 (`src/readability/name-pass.ts`: cache -> skill -> generate -> validate ->
 write -> equiv backstop) over each one:
 
-- `--backend haiku` calls the real Anthropic API (`src/workers/backends/
-  haiku.ts`, needs `ANTHROPIC_API_KEY`); `--backend replay` answers from a
-  committed recording (`--recording <file>`, see
-  `tools/readability/record.ts`); `--backend heuristic` (default) is the
-  offline spec-23 backend, which does not speak the JSON contract yet, so it
-  abstains on every target rather than crash.
+- `--backend claude-cli` (**default**, spec 28 section 9.1, Fred's 2026-09-11
+  ruling: run on the Claude plan through the CLI, not the metered API) spawns
+  `claude -p` (`src/workers/backends/claude-cli.ts`); it needs the `claude`
+  binary on `PATH` (or `HBC2JS_CLAUDE_BIN`), nothing else. `--backend haiku`
+  opts into the real Anthropic API (`src/workers/backends/haiku.ts`, needs
+  `ANTHROPIC_API_KEY`) -- kept because it is easy to integrate, but never the
+  default (API calls are metered; the CLI runs on the plan Fred already
+  pays for). `--backend replay` answers from a committed recording
+  (`--recording <file>`, see `tools/readability/record.ts`); `--backend
+  heuristic` is the offline spec-23 backend, which does not speak the JSON
+  contract yet, so it abstains on every target rather than crash.
+  `HBC2JS_LLM_BACKEND` overrides the default; `--backend` overrides the env.
+  One place resolves an id to a backend: `src/readability/backends.ts`.
 - A written name lands in the overlay as `source:"llm"`, `gate:"passed"` (or
   `"overridden"`) exactly like `name set` would — **never** `tier:"confirmed"`;
   promotion is a separate, human (or stronger-model) action (spec 28 D28-1).

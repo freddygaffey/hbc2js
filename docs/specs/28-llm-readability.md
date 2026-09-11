@@ -402,12 +402,14 @@ a decision now, not a preference:
 
 ## 9. Settled contracts
 
-### 9.1 `HaikuBackend implements WorkerBackend`
+### 9.1 `HaikuBackend implements WorkerBackend` (opt-in API backend)
 
 Lives in `src/workers/backends/haiku.ts` (landing 1). It is the third
 implementation of the interface already in `src/workers/backend.ts`
 (`{ id, run(req, signal) }`), alongside `FakeBackend` and `HeuristicBackend`;
-the runner is unchanged.
+the runner is unchanged. **Landing 1b makes it opt-in**: the DEFAULT backend
+is `ClaudeCliBackend` (9.1a below, Fred's 2026-09-11 ruling), because the API
+is metered and the CLI runs on a plan Fred already pays for.
 
 **Constructor config** is `HaikuBackendConfig` (`src/readability/types.ts`),
 resolved by `resolveHaikuConfig(env, overrides, projectDir)` in that precedence:
@@ -459,8 +461,67 @@ behind the same interface (`FakeBackend`, or a replay backend reading committed
 JSON), never `HaikuBackend`. `src/readability/**` imports no transport module at
 all and no model SDK is added to `package.json`; both are asserted mechanically
 in `tests/gate/llm-readability/interface-shape.test.ts`. The one place a socket
-may ever be opened is `src/workers/backends/haiku.ts`, which the gate does not
-import.
+may ever be opened is `src/workers/backends/haiku.ts` (landing 1b adds a
+second, narrower exception: `src/workers/backends/claude-cli.ts` spawns a
+subprocess, never a socket directly), and the gate does not import either.
+
+### 9.1a `ClaudeCliBackend` (default) -- landing 1b, Fred's 2026-09-11 ruling
+
+Fred (verbatim, 2026-09-11): "It should run on the Claude plan on the shell.
+I think you can pass in a prompt to the agent through a flag on the command
+line. they should not be using the API because API is more expensive." and
+"You should have an API option if it's easy to integrate, but you should not
+be going through API as default."
+
+`src/workers/backends/claude-cli.ts` is therefore the DEFAULT `WorkerBackend`
+for every job kind `SKILL_FOR_KIND` routes; `HaikuBackend` (9.1 above) is now
+the **opt-in** API backend, selected with `--backend haiku` or
+`HBC2JS_LLM_BACKEND=haiku`, and still requires `ANTHROPIC_API_KEY`.
+
+**Config**: `ClaudeCliBackendConfig` (`src/readability/types.ts`), resolved by
+`resolveClaudeCliConfig(env, overrides, projectDir)` with the same precedence
+and the same shared fields as `HaikuBackendConfig` (`model` -- default the
+alias `"haiku"`, not a full model id, since `claude --model` accepts aliases;
+`budgetTokens`, `cacheDir`, `skillsDir`, `maxOutputTokens` -- kept for
+config-surface parity, not passed as an argument because the `claude` CLI has
+no per-call output-token flag), plus `claudeBin` (default `"claude"`, env
+`HBC2JS_CLAUDE_BIN`) and `timeoutMs` (default 120000, env
+`HBC2JS_CLAUDE_TIMEOUT_MS`).
+
+**What it sends**: `child_process.spawn(claudeBin, [...], {stdio: [...]})` --
+no shell, so prompt content is never re-interpreted --
+`-p <canonicalised context>`, `--model <model>`, `--output-format json`,
+`--tools ""`, `--no-session-persistence`, `--system-prompt <skill.body>`. This
+differs from `HaikuBackend`'s single concatenated user message: the CLI has a
+dedicated system-prompt channel, so the skill discipline (system prompt) and
+the per-job data (`-p` prompt) are two fields, not one.
+
+**What it returns**: the CLI's `--output-format json` prints one JSON object
+with `result` (mapped to `WorkerJobResponse.text`), `is_error`, `stop_reason`,
+`usage.{input_tokens,output_tokens,cache_creation_input_tokens,
+cache_read_input_tokens}` (all four count toward `cost.tokensIn`;
+`output_tokens` is `cost.tokensOut`) and `total_cost_usd` (recorded as
+`cost.usd`, informational only -- the project's budget accounting stays
+tokens, per 9.1's table, never dollars). `is_error: true`, a non-zero exit, a
+timeout, or unparseable stdout all throw `TransientBackendError` (retryable);
+a missing binary throws `ReadabilityConfigError` (permanent -- fix the
+install, do not retry). `stop_reason: "max_tokens"` is a rejected candidate,
+not a throw: whatever text came back is handed on exactly like any other
+result, and `parseReadabilityResult` downstream treats anything that fails to
+parse as an abstention.
+
+**Cache keys**: the SAME `cacheKey` function and fields as `HaikuBackend`
+(9.1's cache-key discipline), so a recording made against either backend
+replays for the other as long as the `model` field in the request matches.
+
+**Selection**: one place maps a backend id to a constructor --
+`src/readability/backends.ts`'s `backendForId`/`resolveBackendId`. Precedence:
+`--backend` (CLI) > `HBC2JS_LLM_BACKEND` (env) > `claude-cli` (default). IDs:
+`claude-cli`, `haiku`, `replay`, `heuristic`, `fake`. `hbc2js name llm-fill`,
+`tools/readability/record.ts` and the UI worker pool (`src/ui-server/
+server.ts`'s `buildUiBackend`, routing only `SKILL_FOR_KIND`'s job kinds to
+the LLM backend and everything else to `HeuristicBackend`) all resolve through
+it, so the default cannot drift between callers.
 
 ### 9.2 Skill files
 
@@ -681,6 +742,38 @@ synthetic recording (`tests/fixtures/llm-readability/synthetic.recording
 Real per-run coverage/cost numbers on NSW or the held-out app need the
 recording or `HBC2JS_NSW_HBC`, neither available to this landing's agent --
 queued as this landing's one follow-up, not a correctness gap.
+
+**1b status: LANDED (backend), smoke INCONCLUSIVE, 2026-09-11.**
+`src/workers/backends/claude-cli.ts` (`ClaudeCliBackend`, the new DEFAULT),
+`resolveClaudeCliConfig`/`ClaudeCliBackendConfig` (`src/readability/types.ts`),
+`src/readability/backends.ts` (`backendForId`/`resolveBackendId`, the one
+id-to-constructor map `hbc2js name llm-fill`, `tools/readability/record.ts`
+and the UI worker pool all resolve through), and the UI pool's
+`buildUiBackend`/`RoutedWorkerBackend` (`src/ui-server/server.ts`, routing
+`SKILL_FOR_KIND`'s job kinds to the LLM backend and everything else to
+`HeuristicBackend`) all ship, with 12 stub-driven tests
+(`tests/workers/claude-cli-backend.test.ts`, `tests/support/stub-claude.mjs`)
+covering argv/stdin construction, JSON/usage parsing, cache-hit skip,
+`is_error`/non-zero-exit/timeout/missing-binary/malformed-JSON ->
+`TransientBackendError` vs `ReadabilityConfigError`, `max_tokens` as a
+rejected candidate not a throw, and the same `cacheKey` shape as
+`HaikuBackend`. The section 10 exit-criterion smoke (item 5 of the landing
+brief, `node tools/readability/record.ts react-navigation-example.hbc ...
+--backend claude-cli --limit 5`) did NOT produce a recording: both allowed
+real-CLI attempts failed (`docs/BUGS.md`, 2026-09-11 row) --
+`spawn E2BIG` (fixed in this commit: the prompt moved from an argv token to
+stdin, since a rendered function's source can exceed the OS argument limit),
+then an unhandled `EPIPE` writing to a child that closed its stdin before
+reading it (also fixed in this commit: a `child.stdin` error handler, plus a
+regression test for each crash). Zero tokens were spent on the first attempt
+(the child process never started); the second attempt's token/cost numbers
+were not recovered because the crash happened before the backend could parse
+a response. Whether the real `claude` build actually reads a large `-p`
+prompt from stdin at all is still open (`docs/BUGS.md` row, cluster
+`toolchain`) -- the fix makes both failure modes safe (a clear
+`TransientBackendError`/no crash) but does not by itself prove stdin delivery
+works; that needs one more real invocation, budgeted to the next agent
+touching this file.
 
 ### Landing 2 -- rewrite path (function-level, equiv-gated)
 

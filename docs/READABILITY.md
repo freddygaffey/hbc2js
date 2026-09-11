@@ -13,6 +13,13 @@ rewrite that changes a result, a rewrite the oracle could not prove either way
 render is never edited in place; a candidate only ever lives in a temp file for
 the length of the oracle run.
 
+`--code <candidate.js>` is read from a file, so this verb never picks a model
+backend itself -- whoever produced the candidate (a human, another agent, or
+`hbc2js name llm-fill`/`tools/readability/record.ts`, both of which default to
+`--backend claude-cli`: spec 28 section 9.1, Fred's 2026-09-11 ruling to run on
+the Claude plan through the CLI rather than the metered API) is irrelevant to
+the gate below, which only ever asks the equivalence oracle.
+
 ## Using it
 
 ```

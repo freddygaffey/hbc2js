@@ -80,16 +80,28 @@ export interface ConfigOverrides {
 
 export class ReadabilityConfigError extends Error {}
 
-/** Resolve config from explicit overrides, then env, then defaults. Pure:
- *  `env` is passed in, never read from `process.env` here, so a test is
- *  deterministic. Throws `ReadabilityConfigError` on an unusable value rather
- *  than silently shrinking a budget to zero. */
-export function resolveHaikuConfig(
-  env: Readonly<Record<string, string | undefined>> = {},
-  overrides: ConfigOverrides = {},
-  projectDir = ".",
-): HaikuBackendConfig {
-  const model = overrides.model ?? env[MODEL_ENV] ?? DEFAULT_HAIKU_MODEL;
+interface SharedResolvedConfig {
+  readonly model: string;
+  readonly budgetTokens: number;
+  readonly maxOutputTokens: number;
+  readonly cacheDir: string;
+  readonly skillsDir: string;
+}
+
+/** The fields `HaikuBackendConfig` and `ClaudeCliBackendConfig` share
+ *  (spec 28 section 9.1: "same config surface"), resolved from explicit
+ *  overrides, then env, then defaults -- pure, so a test is deterministic.
+ *  Throws `ReadabilityConfigError` on an unusable value rather than silently
+ *  clamping it. `defaultModel` differs per backend: the HTTP backend wants a
+ *  full Anthropic model id, the CLI backend wants an alias the `claude`
+ *  binary understands (`haiku`, `sonnet`, `opus`). */
+function resolveSharedConfig(
+  env: Readonly<Record<string, string | undefined>>,
+  overrides: ConfigOverrides,
+  projectDir: string,
+  defaultModel: string,
+): SharedResolvedConfig {
+  const model = overrides.model ?? env[MODEL_ENV] ?? defaultModel;
   if (model.trim() === "") throw new ReadabilityConfigError(`${MODEL_ENV}: model id must not be empty`);
 
   const budgetTokens = overrides.budgetTokens ?? numberFromEnv(env[BUDGET_ENV], BUDGET_ENV) ?? DEFAULT_BUDGET_TOKENS;
@@ -109,7 +121,20 @@ export function resolveHaikuConfig(
 
   const cacheDir = overrides.cacheDir ?? env[CACHE_DIR_ENV] ?? `${projectDir}/cache/llm-readability`;
   const skillsDir = overrides.skillsDir ?? SKILLS_DIR;
-  return { model, budgetTokens, cacheDir, skillsDir, maxOutputTokens, apiKeyEnv: API_KEY_ENV };
+  return { model, budgetTokens, maxOutputTokens, cacheDir, skillsDir };
+}
+
+/** Resolve config from explicit overrides, then env, then defaults. Pure:
+ *  `env` is passed in, never read from `process.env` here, so a test is
+ *  deterministic. Throws `ReadabilityConfigError` on an unusable value rather
+ *  than silently shrinking a budget to zero. */
+export function resolveHaikuConfig(
+  env: Readonly<Record<string, string | undefined>> = {},
+  overrides: ConfigOverrides = {},
+  projectDir = ".",
+): HaikuBackendConfig {
+  const shared = resolveSharedConfig(env, overrides, projectDir, DEFAULT_HAIKU_MODEL);
+  return { ...shared, apiKeyEnv: API_KEY_ENV };
 }
 
 function numberFromEnv(raw: string | undefined, name: string): number | undefined {
@@ -117,6 +142,65 @@ function numberFromEnv(raw: string | undefined, name: string): number | undefine
   const n = Number(raw);
   if (!Number.isFinite(n)) throw new ReadabilityConfigError(`${name}: not a number: ${raw}`);
   return n;
+}
+
+// ---------------------------------------------------------------------------
+// ClaudeCliBackend configuration (spec 28 section 9.1 "ClaudeCliBackend
+// (default)" -- Fred 2026-09-11: "It should run on the Claude plan on the
+// shell ... they should not be using the API because API is more expensive.")
+// ---------------------------------------------------------------------------
+
+/** `claude -p` accepts a model alias, not a full Anthropic model id. */
+export const DEFAULT_CLAUDE_CLI_MODEL = "haiku";
+/** Env var overriding the `claude` binary invoked; a bare command name is
+ *  resolved against `PATH` the way `child_process.spawn` already does. */
+export const CLAUDE_BIN_ENV = "HBC2JS_CLAUDE_BIN";
+export const DEFAULT_CLAUDE_BIN = "claude";
+/** Env var overriding the per-call wall-clock timeout. */
+export const CLAUDE_TIMEOUT_ENV = "HBC2JS_CLAUDE_TIMEOUT_MS";
+export const DEFAULT_CLAUDE_TIMEOUT_MS = 120000;
+
+export interface ClaudeCliBackendConfig {
+  /** Model alias/id handed to `claude --model`; `DEFAULT_CLAUDE_CLI_MODEL`
+   *  unless config/env overrides it. */
+  readonly model: string;
+  readonly budgetTokens: number;
+  readonly cacheDir: string;
+  readonly skillsDir: string;
+  /** Kept for config-surface parity with `HaikuBackendConfig`; the `claude`
+   *  CLI has no per-call output-token flag (`claude --help`, checked
+   *  2026-09-11), so this field is not passed as an argument today. */
+  readonly maxOutputTokens: number;
+  /** Binary invoked as a subprocess; `DEFAULT_CLAUDE_BIN` unless overridden. */
+  readonly claudeBin: string;
+  /** Wall-clock cap for one call, in milliseconds. */
+  readonly timeoutMs: number;
+}
+
+export interface ClaudeCliConfigOverrides extends ConfigOverrides {
+  readonly claudeBin?: string;
+  readonly timeoutMs?: number;
+}
+
+/** Same precedence and validation as `resolveHaikuConfig` (explicit
+ *  overrides, then env, then defaults), plus the two fields the CLI backend
+ *  needs that the HTTP backend does not. */
+export function resolveClaudeCliConfig(
+  env: Readonly<Record<string, string | undefined>> = {},
+  overrides: ClaudeCliConfigOverrides = {},
+  projectDir = ".",
+): ClaudeCliBackendConfig {
+  const shared = resolveSharedConfig(env, overrides, projectDir, DEFAULT_CLAUDE_CLI_MODEL);
+
+  const claudeBin = overrides.claudeBin ?? env[CLAUDE_BIN_ENV] ?? DEFAULT_CLAUDE_BIN;
+  if (claudeBin.trim() === "") throw new ReadabilityConfigError(`${CLAUDE_BIN_ENV}: binary name must not be empty`);
+
+  const timeoutMs = overrides.timeoutMs ?? numberFromEnv(env[CLAUDE_TIMEOUT_ENV], CLAUDE_TIMEOUT_ENV) ?? DEFAULT_CLAUDE_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new ReadabilityConfigError(`${CLAUDE_TIMEOUT_ENV}: timeout must be a positive whole number of milliseconds, got ${String(timeoutMs)}`);
+  }
+
+  return { ...shared, claudeBin, timeoutMs };
 }
 
 // ---------------------------------------------------------------------------
