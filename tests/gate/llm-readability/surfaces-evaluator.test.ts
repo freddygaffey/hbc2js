@@ -125,10 +125,39 @@ test("spec 28 section 1e: the MCP tools and UI actions are registered end to end
   assert.deepEqual(result, { suggestions: [], total: 0 });
 });
 
-test("spec 28 section 1d.1: the evaluation loop runs end to end for an automated caller", (t) => {
+test("spec 28 section 1d.1: the evaluation loop runs end to end for an automated caller", async (t) => {
   if (!existsSync(EVAL_PATH)) {
     t.skip(`${EVAL_PATH} does not exist yet -- spec 28 LANDING 5 (evaluation loop)`);
     return;
   }
-  t.skip("landing 5 owns this: an MCP call with requested=agent returns a report, and nothing is promoted by it");
+  const { registerReadabilityTools } = await import("../../../src/mcp/tools.ts");
+  const { makeTree } = await import("../../support/readability-tree.ts");
+  const { FakeBackend } = await import("../../../src/workers/backend.ts");
+  const { createAgentEvaluatorPlugin } = await import("../../../src/readability/evaluate.ts");
+  const { listTransactions } = await import("../../../src/readability/transactions.ts");
+  const { db, treeDir, projectDir } = makeTree();
+  const hbcPath = join(repoRoot(), "tests", "fixtures", "constructs", "04-for-loop-basic", "v84.hbc");
+
+  // A backend that grades every name "accurate" -- the point of this test is
+  // that a report comes back and nothing is promoted by it, not what the
+  // grade is.
+  const backend = new FakeBackend({ replies: { "suggest-name": () => JSON.stringify({ names: [{ bindingId: { kind: "reg", fn: 0, reg: 0 }, name: "x", confidence: "low", evidence: "e" }] }) } });
+  const evalBackend = new FakeBackend({ replies: { evaluate: () => JSON.stringify({ verdict: "accurate", rationale: "matches evidence" }) } });
+  const evaluator = createAgentEvaluatorPlugin({ backend: evalBackend });
+
+  const before = listTransactions(db).length;
+  const handlers = registerReadabilityTools({ db, projectDir, treeDir, backend, hbcPath, surface: "mcp", evaluator });
+  const resolved = (await handlers.suggest_names({ target: { fn: 0 }, evaluate: "agent" })) as {
+    suggestions: unknown[];
+    evaluation?: { verdicts: readonly { verdict: string }[] };
+  };
+  assert.ok(resolved.evaluation !== undefined, "requesting evaluate:agent over MCP must return a report");
+  assert.ok(!Object.keys(resolved.evaluation as object).includes("promote"), "the report carries judgements only");
+  assert.equal(listTransactions(db).length, before, "an evaluation report must never touch the DB tier");
+
+  // The `ui` surface never spawns an evaluator, even with the same plugin
+  // wired and the same mode requested (section 1d.1).
+  const uiHandlers = registerReadabilityTools({ db, projectDir, treeDir, backend, hbcPath, surface: "ui", evaluator });
+  const uiResult = (await uiHandlers.suggest_names({ target: { fn: 0 }, evaluate: "agent" })) as { evaluation?: unknown };
+  assert.equal(uiResult.evaluation, undefined, "the ui surface must never spawn an evaluator");
 });

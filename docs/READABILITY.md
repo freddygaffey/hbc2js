@@ -200,3 +200,100 @@ The suggestion pane's evidence/confidence/equiv-status columns, the
 before/after diff, and the batch promote/revert filters (tier, confidence,
 module, security-relevant) are this landing's open UI follow-up -- not yet
 wired by this agent, queued next.
+
+## The evaluation loop -- opt-in, pluggable, never promotes (landing 5)
+
+Correctness is always the equivalence oracle above, and that is never
+pluggable. *Quality* review -- is this proposed name actually right, or does
+it misrepresent the code -- is a different question, and who answers it
+depends on how the tool was called (spec 28 section 1d.1):
+
+- **A human on the UI** is always the reviewer. The `ui` surface never spawns
+  an evaluator, even if a caller asks for one -- `evaluationModeFor` forces
+  `human-ui` unconditionally for that surface.
+- **An automated caller (MCP/CLI)** gets nothing extra by default (`none`:
+  raw `suggested` + equiv-verified results) unless it wires an evaluator
+  itself. That is the "opt-in" half: the harness never spawns a model on its
+  own initiative.
+
+### Wiring an evaluator
+
+`src/readability/evaluate.ts` is the whole surface. An `EvaluatorPlugin` is
+any object with `{id, mode, evaluate(items, signal?) -> Promise<EvaluationReport>}`.
+Three are shipped:
+
+- `NONE_PLUGIN` -- the default; an empty report.
+- `createInlineCallerPlugin()` -- no backend call at all. Every item comes
+  back with a `pending-caller` verdict: a placeholder for the calling agent
+  (an orchestrator that is itself watching the result) to overwrite with its
+  own judgement after grading inline. Use this when the caller IS the
+  reviewer and does not want a second model spawned on its behalf.
+- `createAgentEvaluatorPlugin({backend, id?})` -- a real second pass: any
+  `WorkerBackend` at all (cheap self-eval for bulk names, a stronger model for
+  hard targets), one `evaluate` job-kind call per item, `skills/hbc-evaluate.md`.
+
+A caller wires a plugin on `ReadabilityContext` (`surfaces.ts`):
+
+```ts
+const ctx: ReadabilityContext = {
+  db, projectDir, treeDir, backend, hbcPath,
+  surface: "mcp",                    // never "ui" unless a human really is present
+  evaluator: createAgentEvaluatorPlugin({ backend: evalBackend }),
+};
+const result = await suggestNames(ctx, { target: { fn }, evaluate: "agent" });
+// result.evaluation is an EvaluationReport, or undefined when the mode
+// resolved to "none"/"human-ui" or no evaluator was wired.
+```
+
+`suggest_names`, `classify_module` and `rewrite_function` all take an
+`evaluate?: EvaluationMode` argument and return an `evaluation?:
+EvaluationReport`. `runEvaluation(items, plugin, signal?)` -- the function
+every plugin call actually goes through -- takes NO database and NO tier
+argument, so an evaluation report cannot promote anything by construction: it
+is judgements only (`{evaluator, mode, verdicts}`, no `promote`/`tier`/`txId`
+field at all). Only a human or the ordinary `promote_change` path decides
+what becomes `confirmed`.
+
+### The adversarial re-check (spec 28 section 1b step 8)
+
+A separate, narrower question from the "agent" evaluator above: **does this
+name misrepresent what the function does?** It runs automatically inside
+`runNamePass` when the caller wires `opts.adversarial = {backend}`, over
+every name the pass just wrote that is either:
+
+- flagged `securityRelevant` on its `NamePassTarget` (from a labelled sample,
+  or from existing secrets/finding evidence in the project), or
+- `high` confidence with `reach` above `ADVERSARIAL_REACH_THRESHOLD` (20
+  call sites).
+
+Each qualifying name gets one more backend call (`adversarial-recheck` job
+kind, `skills/hbc-adversarial.md`). A `misleading` verdict demotes the
+proposal to `low` confidence and prefixes its evidence with
+`[flagged: misleading] <rationale> (was: <original evidence>)` -- `low`
+confidence is never a promotion candidate (spec 28 section 4), so a demoted
+name cannot slip through auto-promote, and the marker is visible wherever
+that evidence is shown (the suggestion pane, `list_suggestions`). The
+demotion is applied via `OverlayStore.demote`, an in-place patch of the
+active record's confidence/evidence -- it does NOT create a new supersession
+record, so it stays inside the same write `runNamePass`'s own equiv backstop
+(section 9.4's NAME row) already tracks by timestamp; a correction made in a
+later, separate review pass should go through `setName` instead, so it is its
+own reviewable/revertible transaction.
+
+On demand, outside a naming pass: `hbc2js readability review <input.hbc>
+--adversarial [--security-relevant fn:reg,fn:reg,...] [--backend
+haiku|replay|heuristic] [--recording <file>] [--store <path>]`. It reviews
+the overlay's `source:"llm"` suggestion queue (no flags: just lists it) and,
+with `--adversarial`, runs the same re-check over it, demoting any
+`misleading` verdict in place and saving the store. `--security-relevant`
+takes a comma-separated `fn:reg` list; every `high`-confidence suggestion
+qualifies regardless (the reach leg has no CLI-level reach data yet).
+
+### What it cannot do
+
+An evaluator -- any of the three, or a caller's own -- never touches the
+`suggested`/`confirmed` tier, never writes a transaction, and never reverts
+anything. It ANNOTATES (`EvaluationReport.verdicts`) or, for the adversarial
+re-check specifically, demotes a confidence level; promotion and reversal
+stay exactly where spec 28 section 1d put them: a human, or the configured
+promoter, working the review queue.

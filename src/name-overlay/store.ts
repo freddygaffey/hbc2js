@@ -236,6 +236,20 @@ export class OverlayStore {
     }
   }
 
+  /** In-place confidence/evidence correction for the ACTIVE record (spec 28
+   *  landing 5, section 1b step 8's adversarial re-check): advisory, like
+   *  `flagCollision` above -- it does NOT supersede (no new revision, no
+   *  chain growth), so a same-pass correction stays inside the single write
+   *  a batch's own equiv backstop (`name-pass.ts`) already tracks by `ts`.
+   *  A correction made in a LATER, separate pass should go through
+   *  `setName` instead, so it is its own reviewable/revertible record. */
+  demote(id: BindingId, patch: { readonly confidence: Confidence; readonly evidence: string }): NameRecord | null {
+    const key = bindingKey(id);
+    if (this.engine.get(key) === undefined) return null;
+    this.engine.patchActive(key, (v) => ({ ...v, confidence: patch.confidence, evidence: patch.evidence }));
+    const patched = this.engine.get(key);
+    return patched ? toNameRecord(patched) : null;
+  }
 }
 
 export { bindingKey, parseKey };

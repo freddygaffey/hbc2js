@@ -153,10 +153,60 @@ test("spec 28 section 7 (quality): >= 80% of high-confidence names on the labell
   t.skip("landing 1 owns this: run the naming pass over the held-out app and feed its proposals to highConfidenceAccuracy");
 });
 
-test("spec 28 section 7 (quality): zero name misrepresenting a security-relevant function survives the verify pass", (t) => {
+test("spec 28 section 7 (quality): zero name misrepresenting a security-relevant function survives the verify pass", async (t) => {
   if (!existsSync(HAIKU_BACKEND_PATH)) {
     t.skip(`${HAIKU_BACKEND_PATH} does not exist yet -- spec 28 LANDING 1; the adversarial re-check itself is LANDING 5`);
     return;
   }
-  t.skip("landing 5 owns this: the adversarial re-check must drive `misleading` to zero on security-relevant targets");
+  const { FakeBackend } = await import("../../../src/workers/backend.ts");
+  const { runAdversarialRecheck, applyAdversarialDemotion } = await import("../../../src/readability/evaluate.ts");
+  const rater = new ReferenceNameRater();
+  const s = sample();
+
+  // A planted misleading proposal on the sample's one security-relevant
+  // target (rn-ex-08, "deep-link URL intake: a trust boundary"), plus three
+  // accurate high-confidence proposals -- so the pre-recheck accuracy run
+  // shows exactly the misrepresentation class section 7 requires zero of.
+  const proposals = new Map<string, { name: string; confidence: Confidence; evidence: string }>([
+    ["rn-ex-03", { name: "useNavigationBuilder.js", confidence: "high", evidence: "hook module" }],
+    ["rn-ex-04", { name: "StackRouter.js", confidence: "high", evidence: 'action type "PUSH"' }],
+    ["rn-ex-08", { name: "trustedInternalUtils.js", confidence: "high", evidence: "url handling helpers" }],
+  ]);
+  const before = highConfidenceAccuracy(rater, s, proposals);
+  assert.ok(before !== undefined);
+  assert.equal(before.misleading, 1, "the planted proposal must actually trip the rater before any recheck runs");
+
+  // The adversarial re-check: a backend that (like a real hostile pass would)
+  // catches the mismatch between "trustedInternalUtils" and evidence that
+  // never establishes trust or internal-only status.
+  const backend = new FakeBackend({
+    replies: {
+      "adversarial-recheck": (req) => {
+        const ctx = req.context as { targetId: string };
+        return ctx.targetId === "rn-ex-08"
+          ? JSON.stringify({ verdict: "misleading", rationale: "name implies trusted/internal; evidence shows only url handling" })
+          : JSON.stringify({ verdict: "accurate", rationale: "no mismatch" });
+      },
+    },
+  });
+  const byId = new Map(s.targets.map((t) => [t.id, t]));
+  const adversarialTargets = [...proposals.entries()].map(([targetId, p]) => ({
+    targetId,
+    proposedName: p.name,
+    confidence: p.confidence,
+    evidence: p.evidence,
+    securityRelevant: byId.get(targetId)?.securityRelevant ?? false,
+  }));
+  const verdicts = await runAdversarialRecheck(adversarialTargets, backend);
+  assert.equal(verdicts.length, 1, "only the security-relevant target should ever be re-checked in this batch");
+  assert.equal(verdicts[0]?.misleading, true);
+
+  const demoted = applyAdversarialDemotion(proposals, verdicts);
+  assert.equal(demoted.get("rn-ex-08")?.confidence, "low", "a misleading verdict must demote the proposal below auto-promote");
+  assert.match(demoted.get("rn-ex-08")?.evidence ?? "", /^\[flagged: misleading\]/);
+
+  const after = highConfidenceAccuracy(rater, s, demoted);
+  assert.ok(after !== undefined);
+  assert.equal(after.misleading, 0, "zero misleading names on security-relevant targets must survive the re-check");
+  assert.equal(after.n, 2, "the demoted proposal drops out of the high-confidence set entirely");
 });

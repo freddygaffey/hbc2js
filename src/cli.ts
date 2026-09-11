@@ -21,7 +21,7 @@ import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
 import { decompile, decompileAst, decompileFunction, decompileTree, nodeCheck, parseForDecompile } from "./decompile.ts";
 import { analyseModule } from "./cfg/index.ts";
-import { NameService, OverlayStore, regId, shortForm } from "./name-overlay/index.ts";
+import { NameService, OverlayStore, bindingKey, regId, shortForm } from "./name-overlay/index.ts";
 import type { Confidence, NameRecord, Source } from "./name-overlay/index.ts";
 import { describePasses } from "./passes/index.ts";
 import { runDeps } from "./deps/index.ts";
@@ -47,6 +47,7 @@ import { HaikuBackend } from "./workers/backends/haiku.ts";
 import { ReplayBackend, loadRecording } from "./workers/backends/replay.ts";
 import { resolveHaikuConfig, SKILLS_DIR } from "./readability/types.ts";
 import { runNamePass, namedCount } from "./readability/name-pass.ts";
+import { runAdversarialRecheck } from "./readability/evaluate.ts";
 import { gateRewrite, rewriteSidecar } from "./readability/rewrite.ts";
 import type { RewriteProposal } from "./readability/types.ts";
 import type { NamePassTarget } from "./readability/name-pass.ts";
@@ -77,6 +78,7 @@ Usage:
   hbc2js deps <bundle.hbc|.apk>    identify npm dependencies (D17/D17a/D17b)
   hbc2js name <set|get|revert|search|list|context> …   Design-D naming overlay (rename-tool-DESIGN-D-overlay.md)
   hbc2js readability rewrite <input.hbc> --fn N --code <file>   equiv-gated function rewrite (spec 28 section 9.7)
+  hbc2js readability review <input.hbc> [--adversarial]         review the suggestion queue; --adversarial re-checks high-value names (spec 28 section 9.7)
   hbc2js render --hbc <in.hbc>     render source with the naming overlay applied
   hbc2js segregate <split-dir>     segregate a flat split tree into src/node_modules form (spec 08)
   hbc2js query <verb> --artifact <dir> …   query the P2.1 decompile artifact (docs/specs/10-artifact-format.md §3)
@@ -1596,6 +1598,74 @@ async function runReadabilityRewrite(argv: readonly string[]): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// `hbc2js readability review <input.hbc> [--adversarial]` — spec 28 section
+// 9.7's `readability review` verb (landing 5). Reviews the LLM-sourced
+// suggestions already sitting in the overlay store (section 1d's queue);
+// `--adversarial` runs section 1b step 8's re-check over the high-value ones
+// (security-relevant via `--security-relevant fn:reg,...`, or `high`
+// confidence) and demotes any `misleading` verdict in place. Never touches
+// the network on its own -- `--backend haiku` is the only path that can, same
+// as `name llm-fill`.
+// ---------------------------------------------------------------------------
+function parseSecurityRelevantFlag(argv: readonly string[]): ReadonlySet<string> {
+  const raw = flagValue(argv, "--security-relevant");
+  if (raw === undefined || raw.trim() === "") return new Set();
+  const out = new Set<string>();
+  for (const pair of raw.split(",")) {
+    const [fnRaw, regRaw] = pair.split(":");
+    const fn = Number(fnRaw);
+    const reg = Number(regRaw);
+    if (!Number.isInteger(fn) || !Number.isInteger(reg)) continue;
+    out.add(bindingKey(regId(fn, reg)));
+  }
+  return out;
+}
+
+async function runReadabilityReview(argv: readonly string[]): Promise<number> {
+  const json = argv.includes("--json");
+  const adversarial = argv.includes("--adversarial");
+  const hbc = argv[0];
+  if (hbc === undefined || hbc.startsWith("-")) {
+    fail(
+      ErrorCode.E_USAGE,
+      "readability review <input.hbc> [--adversarial] [--backend haiku|replay|heuristic] [--recording <file>] [--security-relevant fn:reg,...] [--store <path>] [--json]",
+      2,
+      json,
+    );
+  }
+  const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
+  const store = OverlayStore.load(storePath, hbc);
+  const suggested = store.search({ source: "llm" });
+
+  let flagged = 0;
+  if (adversarial && suggested.length > 0) {
+    const backend = llmFillBackend(argv, json);
+    const securityRelevant = parseSecurityRelevantFlag(argv);
+    const targets = suggested.map((r) => ({
+      targetId: bindingKey(r.id),
+      proposedName: r.name,
+      confidence: r.confidence,
+      evidence: r.evidence,
+      securityRelevant: securityRelevant.has(bindingKey(r.id)),
+    }));
+    const verdicts = await runAdversarialRecheck(targets, backend);
+    const byId = new Map(suggested.map((r) => [bindingKey(r.id), r]));
+    for (const v of verdicts) {
+      if (!v.misleading) continue;
+      const record = byId.get(v.targetId);
+      if (record === undefined) continue;
+      const flaggedEvidence = `[flagged: misleading] ${v.rationale} (was: ${record.evidence})`;
+      if (store.demote(record.id, { confidence: "low", evidence: flaggedEvidence }) !== null) flagged += 1;
+    }
+    store.save(storePath);
+  }
+  const summary = { reviewed: suggested.length, adversarial, flagged };
+  if (json) process.stdout.write(`${JSON.stringify(summary)}\n`);
+  else process.stdout.write(`reviewed ${String(suggested.length)} suggested name(s)${adversarial ? `, flagged ${String(flagged)} misleading` : ""}\n`);
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
 // `hbc2js query <verb> …` — docs/specs/10-artifact-format.md §3. A thin
 // formatting wrapper over `ArtifactService`; the caps + truncation markers
 // here are the CLI's own presentation of §3.1's bounds, never a second
@@ -2256,6 +2326,10 @@ function main(): void {
   }
   if (argv[0] === "readability" && argv[1] === "rewrite") {
     void runReadabilityRewrite(argv.slice(2)).then((code) => process.exit(code));
+    return;
+  }
+  if (argv[0] === "readability" && argv[1] === "review") {
+    void runReadabilityReview(argv.slice(2)).then((code) => process.exit(code));
     return;
   }
   if (argv[0] === "name" && argv[1] === "llm-fill") {
