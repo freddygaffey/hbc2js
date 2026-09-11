@@ -32,7 +32,7 @@ import { syntaxOk } from "../harness/mutate.ts";
 import { runFunctionEquiv } from "../harness/hbc-equiv.ts";
 import type { FunctionEquivRequest, FunctionEquivResult } from "../harness/hbc-equiv.ts";
 import { equivAccepts } from "./types.ts";
-import type { BindingOrigin, EmittedFile, EquivProof, RewriteProposal, TransactionProblem } from "./types.ts";
+import type { BindingOrigin, EmittedFile, EquivProof, ReadabilityTransaction, RewriteProposal, TransactionProblem } from "./types.ts";
 import type { Confidence } from "../name-overlay/store.ts";
 
 export type RewriteVerdict = "ACCEPTED" | "REJECTED_PARSE" | "REJECTED_SHAPE" | "REJECTED_DIVERGENT" | "REJECTED_INCONCLUSIVE";
@@ -378,6 +378,27 @@ export async function runRewritePass(proposals: readonly RewriteProposal[], opts
     }
   }
   return { attempts, code, records };
+}
+
+/** Landing 4 (spec 28 section 9.5, docs/PUSHBACK.md P-58 "landing 3 maps it
+ *  in"): a `RewriteChangeRecord` carries every field a `ReadabilityTransaction`
+ *  needs (`op: "rewrite"` is `TRANSACTION_OPS`' first-class member) except the
+ *  record's own `change`/`fn`/`confidence`/`code` bookkeeping fields, which
+ *  are not part of the transaction shape. This is what lets `surfaces.ts`
+ *  hand an ACCEPTED rewrite to `recordTransaction` unchanged. */
+export function rewriteRecordToTransaction(r: RewriteChangeRecord): ReadabilityTransaction {
+  return {
+    id: r.id,
+    op: "rewrite",
+    who: r.who,
+    tier: r.tier,
+    ts: r.ts,
+    inputs: r.inputs,
+    outputs: r.outputs,
+    equiv: r.equiv,
+    evidence: r.evidence,
+    prior: r.prior,
+  };
 }
 
 /** The JSON sidecar landing 3's transaction log will subsume. Derived data:

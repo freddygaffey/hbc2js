@@ -162,3 +162,41 @@ happened in between. `traceAllEmitted(db)` is the whole-tree version, and
 On the command line, `hbc2js hbcproj verify <project.hbcproj> --full`
 re-validates every transaction's proof and origins alongside spec 18's own
 round-trip validators.
+
+## MCP tools and the suggestion pane (landing 4)
+
+`src/readability/surfaces.ts` exposes the seven tools spec 28 section 9.7
+pins (`READABILITY_MCP_TOOLS`) as plain functions over a `ReadabilityContext`
+(`{db, projectDir, treeDir, backend, hbcPath?, oracle?, functionOracle?,
+who?}`): `suggest_names`, `rewrite_function`, `classify_module`, `file_op`,
+`promote_change`, `revert_change`, `list_suggestions`. `src/mcp/tools.ts`'s
+`registerReadabilityTools(ctx)` wraps each one with JSON-schema argument
+validation (`READABILITY_TOOL_SCHEMAS`) so a malformed call from an external
+agent never reaches `surfaces.ts` at all -- "an external agent gets exactly
+the UI's safety" (section 9.7). `promote_change`/`revert_change` are
+deliberately NOT `promote`/`revert`: those names already exist on the spec-17
+MCP surface with a different argument shape (name-overlay promotion), and
+`surfaces-evaluator.test.ts` asserts the two vocabularies never collide.
+
+`promote_change` refuses any `who` starting with `worker:` -- only a human or
+an opt-in evaluator (landing 5) may promote (section 1d) -- and
+`revert_change` is exact and byte-for-byte (section 9.5's guarantee), same as
+the CLI/direct-`transactions.ts` path above.
+
+**Known gap (docs/PUSHBACK.md P-59, open)**: `suggest_names` and
+`classify_module` do NOT write into the `readability_tx` table `rewrite`/
+`file_op` use. That table's `EmittedFile.path` is a real path under `treeDir`
+(a revert writes bytes straight to it), and a NAME/classification proposal
+has no tree file yet at the point these two tools run -- they operate on a
+fresh decompile, the same stage landing 1's CLI pass does. Both are still
+equiv-verified (the section 9.4 NAME-row backstop, run once per batch) and
+reviewable (the name-overlay's own supersession chain, `NameRecord.rid`), but
+their `txIds`/`txId` come back empty/`undefined`, and `list_suggestions`
+currently only lists rewrite/file-op transactions. `rewrite_function` and
+`file_op` have no such gap: both materialise their accepted output into
+`treeDir` before recording, so a later revert has real bytes to restore.
+
+The suggestion pane's evidence/confidence/equiv-status columns, the
+before/after diff, and the batch promote/revert filters (tier, confidence,
+module, security-relevant) are this landing's open UI follow-up -- not yet
+wired by this agent, queued next.

@@ -601,3 +601,113 @@ export class McpTools {
     return { report: lines.join("\n") };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Spec 28 landing 4 (section 9.7): the readability tools -- the seven names
+// pinned in READABILITY_MCP_TOOLS (src/readability/types.ts). Same discipline
+// as the class above
+// (transport-agnostic, no protocol/SDK binding, deferred to `src/mcp/context.ts`
+// per spec 17 section 6): this section wraps `src/readability/surfaces.ts`'s
+// plain functions with the JSON-schema argument validation an external agent
+// needs -- "an external agent gets exactly the UI's safety" (spec 28 section
+// 9.7) means it cannot even reach `surfaces.ts` with a malformed call. It adds
+// no storage logic of its own: every handler is a direct pass-through to a
+// `surfaces.ts` function, which is what actually enforces the oracle/DB rules.
+// `promote`/`revert` above are spec-17's, with a different argument shape;
+// these are deliberately the `_change`-suffixed pair spec 28 section 9.7
+// names to avoid the collision (spec 28's own "Review responses" R3).
+import {
+  classifyModule as readabilityClassifyModule,
+  fileOp as readabilityFileOp,
+  listSuggestions as readabilityListSuggestions,
+  promoteChange as readabilityPromoteChange,
+  revertChange as readabilityRevertChange,
+  rewriteFunction as readabilityRewriteFunction,
+  suggestNames as readabilitySuggestNames,
+  ReadabilitySurfaceError,
+} from "../readability/surfaces.ts";
+import type { ReadabilityContext } from "../readability/surfaces.ts";
+import { FILE_OP_KINDS, READABILITY_MCP_TOOLS } from "../readability/types.ts";
+import type { ReadabilityMcpTool } from "../readability/types.ts";
+
+/** A hand-rolled JSON-schema SUBSET (`type`/`properties`/`required`/`enum`) --
+ *  enough to validate the section 9.7 argument table without adding a schema
+ *  library dependency (`interface-shape.test.ts`'s sibling rule for this
+ *  directory: no new runtime dependency for a shape every field here can
+ *  already express). */
+export interface JsonSchema {
+  readonly type: "object";
+  readonly properties: Readonly<Record<string, { readonly type: string; readonly enum?: readonly string[] }>>;
+  readonly required: readonly string[];
+}
+
+export const READABILITY_TOOL_SCHEMAS: Readonly<Record<ReadabilityMcpTool, JsonSchema>> = {
+  suggest_names: { type: "object", properties: { target: { type: "object" }, budgetTokens: { type: "number" }, evaluate: { type: "string" } }, required: ["target"] },
+  rewrite_function: { type: "object", properties: { fn: { type: "number" }, budgetTokens: { type: "number" }, evaluate: { type: "string" } }, required: ["fn"] },
+  classify_module: { type: "object", properties: { module: { type: "number" }, evaluate: { type: "string" } }, required: ["module"] },
+  file_op: { type: "object", properties: { op: { type: "string", enum: FILE_OP_KINDS }, inputs: { type: "object" }, outputs: { type: "object" }, evidence: { type: "string" } }, required: ["op", "evidence"] },
+  promote_change: { type: "object", properties: { txId: { type: "string" }, suggestionId: { type: "string" }, who: { type: "string" } }, required: ["who"] },
+  revert_change: { type: "object", properties: { txId: { type: "string" } }, required: ["txId"] },
+  list_suggestions: { type: "object", properties: { filter: { type: "object" }, limit: { type: "number" } }, required: [] },
+};
+
+/** Refuses (never throws a raw `TypeError`) on a missing required field or a
+ *  wrong primitive type/enum value. Object-typed fields (`target`, `filter`,
+ *  ...) are checked for presence/shape only here -- their own internal shape
+ *  is `surfaces.ts`'s job (e.g. suggest_names' "exactly one of {fn}|
+ *  {module}" rule), so validation is never duplicated between the two
+ *  layers. */
+export function validateReadabilityArgs(tool: ReadabilityMcpTool, args: unknown): readonly string[] {
+  const schema = READABILITY_TOOL_SCHEMAS[tool];
+  const problems: string[] = [];
+  if (typeof args !== "object" || args === null || Array.isArray(args)) return [`${tool}: arguments must be an object`];
+  const obj = args as Record<string, unknown>;
+  for (const key of schema.required) {
+    if (!(key in obj) || obj[key] === undefined) problems.push(`${tool}: missing required field "${key}"`);
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    const field = schema.properties[key];
+    if (field === undefined) continue;
+    if (field.type === "number" && typeof value !== "number") problems.push(`${tool}: "${key}" must be a number`);
+    if (field.type === "string" && typeof value !== "string") problems.push(`${tool}: "${key}" must be a string`);
+    if (field.enum !== undefined && typeof value === "string" && !field.enum.includes(value)) {
+      problems.push(`${tool}: "${key}" must be one of ${field.enum.join("|")}`);
+    }
+  }
+  return problems;
+}
+
+export class ReadabilityToolArgumentError extends Error {
+  readonly problems: readonly string[];
+  constructor(tool: ReadabilityMcpTool, problems: readonly string[]) {
+    super(`${tool}: invalid arguments: ${problems.join("; ")}`);
+    this.problems = problems;
+  }
+}
+
+function checked<T>(tool: ReadabilityMcpTool, args: unknown): T {
+  const problems = validateReadabilityArgs(tool, args);
+  if (problems.length > 0) throw new ReadabilityToolArgumentError(tool, problems);
+  return args as T;
+}
+
+/** The seven tools, bound to one `ReadabilityContext`, each validating its
+ *  own arguments before ever calling `surfaces.ts` -- "an external agent
+ *  gets exactly the UI's safety" (section 9.7), machine-checked by
+ *  `tests/mcp/readability-tools.test.ts`. `READABILITY_MCP_TOOLS`' order
+ *  fixes the key order below, so a missing handler is a compile error. */
+export function registerReadabilityTools(ctx: ReadabilityContext): Readonly<Record<ReadabilityMcpTool, (args: unknown) => unknown>> {
+  const handlers: Record<ReadabilityMcpTool, (args: unknown) => unknown> = {
+    suggest_names: (args) => readabilitySuggestNames(ctx, checked("suggest_names", args)),
+    rewrite_function: (args) => readabilityRewriteFunction(ctx, checked("rewrite_function", args)),
+    classify_module: (args) => readabilityClassifyModule(ctx, checked("classify_module", args)),
+    file_op: (args) => readabilityFileOp(ctx, checked("file_op", args)),
+    promote_change: (args) => readabilityPromoteChange(ctx, checked("promote_change", args)),
+    revert_change: (args) => readabilityRevertChange(ctx, checked("revert_change", args)),
+    list_suggestions: (args) => readabilityListSuggestions(ctx, checked("list_suggestions", args ?? {})),
+  };
+  for (const tool of READABILITY_MCP_TOOLS) {
+    if (handlers[tool] === undefined) throw new ReadabilitySurfaceError(`registerReadabilityTools: no handler for ${tool}`);
+  }
+  return handlers;
+}

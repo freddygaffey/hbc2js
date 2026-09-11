@@ -151,6 +151,18 @@ export function insertTransactionRow(
   );
 }
 
+/** Landing 4 (spec 28 section 9.7 `promote_change`): flips a row's `tier` in
+ *  place. `id` is a content hash of the IMMUTABLE fields only (`op`, `inputs`,
+ *  `outputs`, `evidence` -- see `transactionId`'s own doc comment), so
+ *  changing `tier` never invalidates it; `who` (the original author) is left
+ *  untouched deliberately, so promoting a change never erases who proposed
+ *  it. Returns `false` when `id` names no row, so the caller can refuse
+ *  cleanly instead of silently no-op-ing. */
+export function updateTransactionTier(db: DatabaseSync, id: string, tier: "suggested" | "confirmed"): boolean {
+  const result = db.prepare(`UPDATE readability_tx SET tier = ? WHERE id = ?`).run(tier, id);
+  return result.changes > 0;
+}
+
 /** JSON -> DB, for `rebuildProject`. Restores every `readability_tx` row and
  *  every blob from the shard family so a rebuilt DB re-exports the same
  *  shards byte for byte (spec 18 section R3 metric 1). `seq` is restored from

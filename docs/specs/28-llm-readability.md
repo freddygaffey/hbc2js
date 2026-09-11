@@ -766,6 +766,32 @@ and landing 3 maps it in).
   promote and revert, and cannot produce an unverified or untraced change --
   shown by a test that tries and is refused.
 
+**Status: LANDED (core) 2026-09-11.** `src/readability/surfaces.ts` (the seven
+functions over a `ReadabilityContext`), `src/mcp/tools.ts`'s
+`registerReadabilityTools`/`READABILITY_TOOL_SCHEMAS`/`validateReadabilityArgs`
+(spec-17's `promote`/`revert` untouched), 6 round-trip tests in
+`tests/gate/llm-readability/surfaces.test.ts` (one per tool plus the exit
+criterion, all against `FakeBackend`/stub oracles, no network, no real Hermes
+VM) and 4 in `tests/mcp/readability-tools.test.ts` (schema validation +
+registration). `surfaces-evaluator.test.ts`'s registration leg stops skipping
+and asserts a real round trip through the registered handlers. Exit criterion
+MET on construct fixture `04-for-loop-basic`: a driver using only
+`surfaces.ts` suggests a rewrite, lists it in the review queue, is REFUSED
+promoting it as `worker:haiku`, promotes it as a human, reverts it, and is
+separately REFUSED (b) a DIVERGENT rewrite (never reaches a transaction) and
+(c) a zero-origin `file_op` (refused before the tree is touched).
+
+**One deviation, recorded**: `suggest_names`/`classify_module` do not write
+into the `readability_tx` table -- `txIds`/`txId` come back empty/`undefined`
+(docs/PUSHBACK.md P-59, open: the transaction log's `EmittedFile.path` is a
+real tree file, and a NAME/classification proposal has none yet at this
+stage). Both are still equiv-verified (the section 9.4 NAME-row backstop) and
+reviewable (the name-overlay's own supersession chain). `rewrite_function` and
+`file_op` have no such gap. UI wiring (the suggestion pane's evidence/
+confidence/equiv-status columns and batch promote/revert filters) and the
+P-57 skill-file batch are this landing's open follow-up, not yet built by
+this agent -- next in queue, not a correctness gap in what shipped.
+
 ### Landing 5 -- evaluation loop
 
 - **Files**: `src/readability/evaluate.ts` (the plug-in host, mode selection,

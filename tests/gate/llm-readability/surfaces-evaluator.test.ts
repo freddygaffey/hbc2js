@@ -104,12 +104,25 @@ test("spec 28 section 1d.1: an evaluator is a plug-in, not a hard-wired model, a
   assert.ok(!Object.keys(report).includes("promote"));
 });
 
-test("spec 28 section 1e: the MCP tools and UI actions are registered end to end", (t) => {
+test("spec 28 section 1e: the MCP tools and UI actions are registered end to end", async (t) => {
   if (!existsSync(join(repoRoot(), "src", "readability", "surfaces.ts"))) {
     t.skip("src/readability/surfaces.ts does not exist yet -- spec 28 LANDING 4 (MCP tools + UI actions)");
     return;
   }
-  t.skip("landing 4 owns this: each tool round-trips through the MCP server and returns equiv-verified, DB-tracked results");
+  // Landing 4: every tool is registered with a schema, and a round trip
+  // through the registered handler returns equiv-verified, DB-tracked
+  // results -- the same properties `tests/gate/llm-readability/surfaces.test.ts`
+  // and `tests/mcp/readability-tools.test.ts` check in depth; this leg only
+  // proves registration is real, not faked to satisfy the vocabulary check
+  // above.
+  const { registerReadabilityTools } = await import("../../../src/mcp/tools.ts");
+  const { makeTree } = await import("../../support/readability-tree.ts");
+  const { FakeBackend } = await import("../../../src/workers/backend.ts");
+  const { db, treeDir, projectDir } = makeTree();
+  const handlers = registerReadabilityTools({ db, projectDir, treeDir, backend: new FakeBackend({}) });
+  assert.deepEqual(Object.keys(handlers).sort(), [...READABILITY_MCP_TOOLS].sort());
+  const result = handlers.list_suggestions({}) as { suggestions: unknown[]; total: number };
+  assert.deepEqual(result, { suggestions: [], total: 0 });
 });
 
 test("spec 28 section 1d.1: the evaluation loop runs end to end for an automated caller", (t) => {

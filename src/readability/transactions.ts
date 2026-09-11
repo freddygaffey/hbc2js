@@ -25,6 +25,7 @@ import {
   readTransactionRow,
   readTransactionRows,
   sha256Hex,
+  updateTransactionTier,
 } from "../projdb/readability-shards.ts";
 import type { ReadabilityTxRow } from "../projdb/readability-shards.ts";
 import { validateTransaction } from "./types.ts";
@@ -221,6 +222,37 @@ export function revertTransaction(db: DatabaseSync, projectDir: string, treeDir:
 
   exportProject(db, projectDir);
   return { txId, revertTxId: revertTx.id, restored: restore.map((r) => ({ path: r.path, sha256: r.sha256 })), removed: remove };
+}
+
+// ---------------------------------------------------------------------------
+// Promotion (spec 28 section 1d/9.7's `promote_change`)
+// ---------------------------------------------------------------------------
+
+export interface PromoteResult {
+  readonly txId: string;
+  readonly tier: "confirmed";
+}
+
+/** `suggested -> confirmed` for a rewrite/file-op transaction, section 1d:
+ *  "Haiku never self-promotes -- a human or Opus decides what becomes
+ *  canonical." Refuses a `who` starting with `worker:` exactly like
+ *  `validateTransaction`'s `self-promoted` rule, and refuses an unknown
+ *  `txId` -- there is no silent no-op here, only a written promotion or a
+ *  thrown refusal. Idempotent: promoting an already-`confirmed` row again is
+ *  a no-op success, not an error. */
+export function promoteTransaction(db: DatabaseSync, projectDir: string, txId: string, who: string): PromoteResult {
+  if (who.startsWith("worker:")) {
+    throw new TransactionRefused(`promote: ${who} may not write tier=confirmed (spec 28 section 1)`, [
+      { code: "self-promoted", detail: `${who} may not promote ${txId}` },
+    ]);
+  }
+  const row = readTransactionRow(db, txId);
+  if (row === undefined) throw new TransactionRefused(`promote: no transaction ${txId}`, []);
+  if (row.tx.tier !== "confirmed") {
+    updateTransactionTier(db, txId, "confirmed");
+    exportProject(db, projectDir);
+  }
+  return { txId, tier: "confirmed" };
 }
 
 // ---------------------------------------------------------------------------

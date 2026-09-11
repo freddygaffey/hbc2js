@@ -711,3 +711,16 @@ Tests: `tests/mcp/tier.test.ts` (suggested doesn't move the accepted slot/displa
 `src/mcp/context.ts`'s `McpContext` is the shared-pair decision spec 17 §2's doc comment deferred: it builds ONE `ArtifactService`/`ProjectService` pair and hands out `.resources`/`.tools` constructed OVER those same instances, via a new optional third constructor parameter both `McpResources`/`McpTools` gained (`services?: {artifact, project}` — internal-only, every existing 2-arg call is unaffected). A write through `.tools` reloads the shared `ProjectService`'s own in-memory caches (`reloadFromDb()`, unchanged); since `.resources` reads through that SAME instance, the next read sees the write immediately, no rebuild anywhere. `src/ui-server/server.ts` now builds `ctx` from one `McpContext` and no longer rebuilds `ctx.resources` after a write (`UiServerCtx.resources` is `readonly` again); `WRITE_TOOL_PATHS` (`src/ui-server/routes.ts`) is kept as a still-useful "which tool routes are writes" classification even though nothing rebuilds off it anymore.
 
 Tests: `tests/mcp/context.test.ts` (`.resources`/`.tools` share one instance; a `.tools` write is visible to `.resources`'s very next read with no rebuild; the existing 2-arg constructors still build separate instances). `tests/ui-server/routes.test.ts`'s write tests and the SSE test (`GET /api/events forwards a log event after a set-name write`) had their manual `refreshCtxResources()` replica of the old workaround deleted and still pass — the read-after-write property now holds structurally, not by a call a test has to remember to make.
+
+## 17. Readability tools pointer (spec 28 landing 4, 2026-09-11)
+
+Spec 28 ("LLM readability layer") adds a second family of MCP tools --
+`suggest_names`, `rewrite_function`, `classify_module`, `file_op`,
+`promote_change`, `revert_change`, `list_suggestions` -- registered
+alongside this spec's own tools by `registerReadabilityTools` at the bottom
+of `src/mcp/tools.ts`, over `src/readability/surfaces.ts`. They are
+deliberately `_change`-suffixed (not `promote`/`revert`) so they never
+collide with THIS spec's `promote(input: PromoteInput)` above, which keeps
+its own name-overlay argument shape unchanged; `docs/READABILITY.md`'s "MCP
+tools and the suggestion pane" section is the readability tools' own
+reference.
