@@ -16,6 +16,7 @@ import { Hbc2jsError } from "../errors.ts";
 import { listModules, listFunctions, listLeads, moduleSource, invalidateModuleSourceCache } from "./list.ts";
 import { segregation } from "./segregation.ts";
 import { WORKER_ROUTES, type WorkersCtx } from "./workers-routes.ts";
+import { READABILITY_ROUTES, type ReadabilityRoutesCtx } from "./readability-routes.ts";
 import { SCREENS_ROUTES } from "./screens.ts";
 import { RECOMPILE_ROUTES } from "./sandbox.ts";
 import { CFG_ROUTES } from "./cfg.ts";
@@ -56,6 +57,13 @@ export interface UiServerCtx {
    *  `/api/jobs|sessions|worker-events|suggestions` route then answers 503
    *  rather than an empty list. */
   readonly workers?: WorkersCtx;
+  /** Spec 28 landing 4c's readability surface (`readability-routes.ts`):
+   *  `suggest_names`/`rewrite_function`/`file_op`/`promote_change`/
+   *  `revert_change`/`list_suggestions` over a `ReadabilityContext`.
+   *  `undefined` = no readable tree / backend configured for this project;
+   *  every `/api/readability/*` route then answers 503, same convention as
+   *  `workers`. */
+  readonly readability?: ReadabilityRoutesCtx;
 }
 
 function ok(json: unknown): UiResponse {
@@ -497,7 +505,15 @@ const BASE_ROUTES: readonly Route[] = [
  *  routes (`workers-routes.ts`, which owns their doc comments). `handle()`
  *  below still walks a single list, so there is exactly one place a request
  *  can 404. */
-const ROUTES: readonly Route[] = [...BASE_ROUTES, ...WORKER_ROUTES, ...SCREENS_ROUTES, ...RECOMPILE_ROUTES, ...CFG_ROUTES, ...NATIVE_ROUTES];
+const ROUTES: readonly Route[] = [
+  ...BASE_ROUTES,
+  ...WORKER_ROUTES,
+  ...READABILITY_ROUTES,
+  ...SCREENS_ROUTES,
+  ...RECOMPILE_ROUTES,
+  ...CFG_ROUTES,
+  ...NATIVE_ROUTES,
+];
 
 /** `/api/log/tail?since=<seq>` — spec 21 §1.3's "read log entries after its
  *  cursor" half of the doorbell pairing (this MVP does poll only, §1
