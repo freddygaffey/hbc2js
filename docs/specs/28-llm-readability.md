@@ -930,14 +930,52 @@ separately REFUSED (b) a DIVERGENT rewrite (never reaches a transaction) and
 
 **One deviation, recorded**: `suggest_names`/`classify_module` do not write
 into the `readability_tx` table -- `txIds`/`txId` come back empty/`undefined`
-(docs/PUSHBACK.md P-59, open: the transaction log's `EmittedFile.path` is a
-real tree file, and a NAME/classification proposal has none yet at this
-stage). Both are still equiv-verified (the section 9.4 NAME-row backstop) and
-reviewable (the name-overlay's own supersession chain). `rewrite_function` and
-`file_op` have no such gap. UI wiring (the suggestion pane's evidence/
-confidence/equiv-status columns and batch promote/revert filters) and the
-P-57 skill-file batch are this landing's open follow-up, not yet built by
-this agent -- next in queue, not a correctness gap in what shipped.
+(docs/PUSHBACK.md P-59, resolved: the transaction log's `EmittedFile.path` is
+a real tree file, and a NAME/classification proposal has none yet at this
+stage, so both write through the name-overlay's own supersession chain
+instead, addressed by `suggestionId`). Both are still equiv-verified (the
+section 9.4 NAME-row backstop) and reviewable. `rewrite_function` and
+`file_op` have no such gap.
+
+**Status: LANDED (UI) 2026-09-11.** `src/ui-server/readability-routes.ts`
+puts `list_suggestions`/`promote_change`/`revert_change` and the four section
+9.7 UI actions on HTTP (`GET /api/readability/suggestions`, `POST
+/api/readability/{promote,revert}`, `POST /api/readability/actions/
+{suggest-names,rewrite-function,combine-files,review}`), spliced into
+`src/ui-server/routes.ts` the same way the spec-23 worker routes are.
+`ui/src/workers/readability-wire.ts`/`readability-hooks.ts` are the client;
+`ui/src/panes/WorkersPane.tsx` gains a "Readability" section (a different
+pipeline from the jobs rail above it in the same pane, not a parallel pane):
+tier/confidence/module/security-relevant filters, a suggestion list with
+confidence/evidence/equiv-status columns (the equiv verdict, oracle and scope
+on hover), a before/after path panel for `rewrite` transactions, per-row and
+batch promote/revert over the current filter, reach ordering (module-order
+fallback -- no xref caller-count reaches this pane yet, docs/BUGS.md), and
+the four UI actions in the section header. 8 server-route tests
+(`tests/ui-server/readability-routes.test.ts`) and 6 DOM tests
+(`ui/src/panes/WorkersPane.readability.dom.test.tsx`).
+
+Two things this pass did NOT build, recorded rather than silently dropped:
+(1) **PUSHBACK P-61**: the four actions run to completion and answer directly
+instead of enqueuing a pollable `JobRow` -- `JOB_KINDS`/`WorkerRunner` (spec
+23) have no readability-aware branch, and extending them was out of this
+task's file scope. (2) a true before/after **text** diff for a rewrite
+transaction: `EmittedFile`/the transaction's `prior` carry paths and hashes,
+not rendered content, so the panel shows paths/hashes only (docs/BUGS.md);
+reading the actual bytes back off `treeDir` is a follow-up endpoint. Combine
+files' file list is a manual comma-separated input, not the tree's own
+multi-select (no route into `ui/src/panes/LeftPane.tsx`'s tree selection was
+built this pass). The P-57 skill-file batch is unrelated prior work, already
+landed. Playwright coverage was left out per the brief's own escape hatch:
+`ui/e2e/playwright.config.ts`'s `webServer` starts `src/cli.ts ui-server`
+directly (no `--readability`/backend-pinning flag exists), and
+`src/ui-server/server.ts` -- production wiring, out of this task's file
+scope (`workers-routes.ts` + `readability-routes.ts` only) -- never builds a
+`ReadabilityRoutesCtx`, so `/api/readability/*` 503s under every e2e run
+today regardless of fixture. Wiring `server.ts` to build one (reusing the
+worker pool's already-open project db and a configured backend) is this
+landing's next open item, tracked in the landing report, not a correctness
+gap in the routes/pane that did ship.
 
 ### Landing 5 -- evaluation loop
 

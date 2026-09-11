@@ -7,7 +7,7 @@
 // and the name only becomes truth when a human presses Accept (spec 23 §4 —
 // promotion carries the HUMAN's provenance, never the worker's). Reject
 // writes nothing: the suggestion stays as history, greyed.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Empty, ToolButton } from "../components/primitives.tsx";
 import { ResultTable } from "../components/ResultTable.tsx";
 import { useSelection } from "../state/selection.ts";
@@ -15,6 +15,22 @@ import { setStatus } from "../actions/store.ts";
 import { invalidateFn } from "../actions/registry.ts";
 import { useCancelJob, useEnqueue, useJobs, usePromote, useReject, useSessions, useSuggestions } from "../workers/hooks.ts";
 import { WorkersUnavailable, type JobRow, type JobStatus, type SessionRow, type SuggestionRow } from "../workers/wire.ts";
+import {
+  useCombineFilesAction,
+  useReadabilitySuggestions,
+  useReviewAction,
+  useRewriteFunctionAction,
+  useRevertSuggestion,
+  useSuggestNamesAction,
+  usePromoteSuggestion as usePromoteReadabilitySuggestion,
+} from "../workers/readability-hooks.ts";
+import {
+  ReadabilityUnavailable,
+  type ReadabilityFilter,
+  type ReadabilitySuggestionRow,
+  type SuggestionConfidence,
+  type SuggestionTier,
+} from "../workers/readability-wire.ts";
 
 const STATUS_CLASS: Readonly<Record<JobStatus, string>> = {
   queued: "text-text-muted",
@@ -85,7 +101,334 @@ function SuggestionRowView({
 
 function errorLine(e: unknown): string {
   if (e instanceof WorkersUnavailable) return e.message;
+  if (e instanceof ReadabilityUnavailable) return e.message;
   return e instanceof Error ? e.message : String(e);
+}
+
+// -- spec 28 landing 4c: the readability suggestion pane -------------------
+//
+// A DIFFERENT pipeline from the jobs/suggestions section above (this file's
+// own header note on ./workers/wire.ts vs ./workers/readability-wire.ts):
+// names/rewrites/file-ops here go through the overlay + transaction log
+// (src/readability/surfaces.ts), never the `[ai-suggested]` annotation
+// convention the jobs rail uses.
+
+/** Reach ordering (spec 28 §1d: "highest-reach first"). No caller-count
+ *  (xref) data reaches this pane yet, so the fallback the brief names
+ *  applies: module order (a name row's own `bindingId.fn` is the nearest
+ *  proxy for names, since a name has no module field at all). Ascending —
+ *  module 0 / the earliest functions are treated as "highest reach" (entry
+ *  code), matching the fallback's own module-order framing. */
+function reachKey(row: ReadabilitySuggestionRow): number {
+  if (row.kind === "name") return row.bindingId.fn;
+  return row.tx.inputs[0]?.module ?? Number.POSITIVE_INFINITY;
+}
+
+function sortByReach(rows: readonly ReadabilitySuggestionRow[]): readonly ReadabilitySuggestionRow[] {
+  return [...rows].sort((a, b) => reachKey(a) - reachKey(b));
+}
+
+function rowId(row: ReadabilitySuggestionRow): string {
+  return row.kind === "name" ? row.suggestionId : row.tx.id;
+}
+
+function rowIdArgs(row: ReadabilitySuggestionRow): { readonly txId?: string; readonly suggestionId?: string } {
+  return row.kind === "name" ? { suggestionId: row.suggestionId } : { txId: row.tx.id };
+}
+
+const EQUIV_CLASS: Readonly<Record<string, string>> = {
+  PASS: "text-sev-ok",
+  FAIL: "text-sev-crit",
+  DIVERGENT: "text-sev-crit",
+  INCONCLUSIVE: "text-sev-med",
+};
+
+function EquivBadge({ row }: { readonly row: ReadabilitySuggestionRow }): ReactNode {
+  if (row.kind === "name") return <span className="text-text-muted">—</span>;
+  const { verdict, scope, oracle } = row.tx.equiv;
+  return (
+    <span className={EQUIV_CLASS[verdict] ?? "text-text-muted"} title={`scope: ${scope}\noracle: ${oracle}`}>
+      {verdict}
+    </span>
+  );
+}
+
+function ReadabilityRowView({
+  row,
+  selected,
+  onToggle,
+  onPromote,
+  onRevert,
+}: {
+  readonly row: ReadabilitySuggestionRow;
+  readonly selected: boolean;
+  readonly onToggle: () => void;
+  readonly onPromote: () => void;
+  readonly onRevert: () => void;
+}): ReactNode {
+  const id = rowId(row);
+  const isSuggested = row.kind === "name" ? row.tier === "suggested" : row.tx.tier === "suggested";
+  return (
+    <div className="border-b border-border px-3 py-2 text-xs" data-testid={`readability-row-${id}`}>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          aria-label={`select suggestion ${id}`}
+          checked={selected}
+          onChange={onToggle}
+        />
+        <span className="text-text-muted">{row.kind === "name" ? "name" : row.tx.op}</span>
+        {row.kind === "name" && <span className="font-mono text-text">{row.name}</span>}
+        {row.kind === "name" && <span className="text-text-muted">{row.confidence}</span>}
+        <EquivBadge row={row} />
+        <span className="text-text-muted">{row.kind === "name" ? row.tier : row.tx.tier}</span>
+        <span className="ml-auto flex gap-1">
+          {isSuggested && (
+            <ToolButton active onClick={onPromote} tip="promote to confirmed">
+              Accept
+            </ToolButton>
+          )}
+          <ToolButton onClick={onRevert} tip="one-click undo (spec 28 §1d)">
+            Revert
+          </ToolButton>
+        </span>
+      </div>
+      <div className="pt-1 text-text-muted">{row.kind === "name" ? row.evidence : row.tx.evidence}</div>
+      {row.kind === "tx" && row.tx.op === "rewrite" && (
+        <div className="mt-1 grid grid-cols-2 gap-2 rounded-ui bg-surface-2 p-2 font-mono text-[11px]" data-testid={`readability-diff-${id}`}>
+          <div>
+            <div className="text-text-muted">before (prior)</div>
+            {row.tx.prior.files.map((f) => (
+              <div key={f.path} className="truncate text-text-muted" title={f.sha256}>
+                {f.path}
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="text-text-muted">after (output)</div>
+            {row.tx.outputs.map((f) => (
+              <div key={f.path} className="truncate text-text">
+                {f.path}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TIER_OPTIONS: readonly SuggestionTier[] = ["suggested", "confirmed"];
+const CONFIDENCE_OPTIONS: readonly SuggestionConfidence[] = ["low", "med", "high"];
+
+function ReadabilitySection({ fn, moduleId }: { readonly fn: number | undefined; readonly moduleId: string | undefined }): ReactNode {
+  const [tier, setTier] = useState<SuggestionTier | "">("");
+  const [confidence, setConfidence] = useState<SuggestionConfidence | "">("");
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [securityRelevant, setSecurityRelevant] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [combineOpen, setCombineOpen] = useState(false);
+  const [combineInputs, setCombineInputs] = useState("");
+  const [combineOutput, setCombineOutput] = useState("");
+  const [combineEvidence, setCombineEvidence] = useState("");
+
+  const filter: ReadabilityFilter = {
+    ...(tier !== "" ? { tier } : {}),
+    ...(confidence !== "" ? { confidence } : {}),
+    ...(moduleFilter !== "" && Number.isInteger(Number(moduleFilter)) ? { module: Number(moduleFilter) } : {}),
+    ...(securityRelevant ? { securityRelevant: true } : {}),
+  };
+
+  const suggestions = useReadabilitySuggestions(filter);
+  const promote = usePromoteReadabilitySuggestion();
+  const revert = useRevertSuggestion();
+  const suggestNamesAction = useSuggestNamesAction();
+  const rewriteAction = useRewriteFunctionAction();
+  const combineAction = useCombineFilesAction();
+  const reviewAction = useReviewAction();
+
+  const off = suggestions.error instanceof ReadabilityUnavailable;
+  const rows = sortByReach(suggestions.data?.suggestions ?? []);
+
+  const toggle = (id: string): void => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const doPromote = (row: ReadabilitySuggestionRow): void => {
+    promote.mutate(
+      { id: rowIdArgs(row), who: "ui" },
+      { onSuccess: () => setStatus(`promoted ${rowId(row)} to confirmed`), onError: (e) => setStatus(errorLine(e)) },
+    );
+  };
+  const doRevert = (row: ReadabilitySuggestionRow): void => {
+    revert.mutate(rowIdArgs(row), { onSuccess: () => setStatus(`reverted ${rowId(row)}`), onError: (e) => setStatus(errorLine(e)) });
+  };
+
+  const batchPromote = (): void => {
+    for (const row of rows) if (selected.has(rowId(row))) doPromote(row);
+  };
+  const batchRevert = (): void => {
+    for (const row of rows) if (selected.has(rowId(row))) doRevert(row);
+  };
+
+  const targetModule = moduleId !== undefined && Number.isInteger(Number(moduleId)) ? Number(moduleId) : undefined;
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <span className="text-xs font-medium text-text">Readability</span>
+        <select
+          aria-label="tier filter"
+          className="rounded-ui bg-surface-2 px-1 py-0.5 text-xs text-text"
+          value={tier}
+          onChange={(e) => setTier(e.target.value as SuggestionTier | "")}
+        >
+          <option value="">tier: any</option>
+          {TIER_OPTIONS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="confidence filter"
+          className="rounded-ui bg-surface-2 px-1 py-0.5 text-xs text-text"
+          value={confidence}
+          onChange={(e) => setConfidence(e.target.value as SuggestionConfidence | "")}
+        >
+          <option value="">confidence: any</option>
+          {CONFIDENCE_OPTIONS.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label="module filter"
+          className="w-16 rounded-ui bg-surface-2 px-1 py-0.5 text-xs text-text"
+          placeholder="module"
+          value={moduleFilter}
+          onChange={(e) => setModuleFilter(e.target.value)}
+        />
+        <label className="flex items-center gap-1 text-xs text-text-muted">
+          <input type="checkbox" checked={securityRelevant} onChange={(e) => setSecurityRelevant(e.target.checked)} />
+          security-relevant
+        </label>
+        <ToolButton
+          active={!off}
+          onClick={() =>
+            reviewAction.mutate(undefined, {
+              onSuccess: (r) => setStatus(`review: ${r.pending} suggestion(s) pending`),
+              onError: (e) => setStatus(errorLine(e)),
+            })
+          }
+          tip="review suggestions (spec 28 §9.7)"
+        >
+          Review
+        </ToolButton>
+        <ToolButton
+          active={!off}
+          onClick={() =>
+            suggestNamesAction.mutate(fn !== undefined ? { fn } : { module: targetModule ?? 0 }, {
+              onSuccess: () => setStatus("suggest names: done"),
+              onError: (e) => setStatus(errorLine(e)),
+            })
+          }
+          tip="suggest names for this module"
+        >
+          Suggest names
+        </ToolButton>
+        {fn !== undefined && (
+          <ToolButton
+            active={!off}
+            onClick={() =>
+              rewriteAction.mutate(fn, {
+                onSuccess: (r) => setStatus(r.accepted ? "make readable: accepted" : "make readable: refused by the equivalence gate"),
+                onError: (e) => setStatus(errorLine(e)),
+              })
+            }
+            tip="make this function readable"
+          >
+            Make readable
+          </ToolButton>
+        )}
+        <ToolButton active={!off} onClick={() => setCombineOpen((v) => !v)} tip="combine these files">
+          Combine files
+        </ToolButton>
+        <span className="ml-auto flex gap-1">
+          <ToolButton onClick={batchPromote} tip="promote every selected suggestion">
+            Promote selected
+          </ToolButton>
+          <ToolButton onClick={batchRevert} tip="revert every selected suggestion">
+            Revert selected
+          </ToolButton>
+        </span>
+      </div>
+
+      {combineOpen && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
+          <input
+            aria-label="combine inputs (comma-separated paths)"
+            className="w-56 rounded-ui bg-surface-2 px-1 py-0.5 text-text"
+            placeholder="src/a.js, src/b.js"
+            value={combineInputs}
+            onChange={(e) => setCombineInputs(e.target.value)}
+          />
+          <input
+            aria-label="combine output path"
+            className="w-40 rounded-ui bg-surface-2 px-1 py-0.5 text-text"
+            placeholder="combined.js"
+            value={combineOutput}
+            onChange={(e) => setCombineOutput(e.target.value)}
+          />
+          <input
+            aria-label="combine evidence"
+            className="w-56 rounded-ui bg-surface-2 px-1 py-0.5 text-text"
+            placeholder="evidence"
+            value={combineEvidence}
+            onChange={(e) => setCombineEvidence(e.target.value)}
+          />
+          <ToolButton
+            active
+            onClick={() => {
+              const inputs = combineInputs.split(",").map((s) => s.trim()).filter((s) => s !== "");
+              combineAction.mutate(
+                { inputs, outputs: [combineOutput], evidence: combineEvidence },
+                { onSuccess: () => setStatus("combine files: accepted"), onError: (e) => setStatus(errorLine(e)) },
+              );
+            }}
+            tip="run the combine file-op"
+          >
+            Run
+          </ToolButton>
+        </div>
+      )}
+
+      {off ? (
+        <Empty>{errorLine(suggestions.error)}</Empty>
+      ) : rows.length === 0 ? (
+        <Empty>No readability suggestions match this filter.</Empty>
+      ) : (
+        <div className="hbc-scroll min-h-0 max-h-64 overflow-auto">
+          {rows.map((row) => (
+            <ReadabilityRowView
+              key={rowId(row)}
+              row={row}
+              selected={selected.has(rowId(row))}
+              onToggle={() => toggle(rowId(row))}
+              onPromote={() => doPromote(row)}
+              onRevert={() => doRevert(row)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function WorkersPane({ fn }: { readonly fn: number }): ReactNode {
@@ -198,6 +541,8 @@ export function WorkersPane({ fn }: { readonly fn: number }): ReactNode {
               ]}
             />
           </div>
+
+          <ReadabilitySection fn={hasTarget ? target : undefined} moduleId={selection.moduleId} />
         </div>
       )}
     </div>
