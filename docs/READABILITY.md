@@ -329,8 +329,8 @@ and the four spec 28 section 9.7 UI actions are their own endpoints --
 `POST /api/readability/actions/{suggest-names,rewrite-function,
 combine-files,review}` -- each calling straight into `suggestNames`/
 `rewriteFunction`/`fileOp` and answering once the call settles (see
-docs/PUSHBACK.md P-60 for why these are not queued jobs the way `/api/jobs`
-work is).
+docs/PUSHBACK.md P-61 for why these are not queued jobs the way `/api/jobs`
+work is; P-60 is a different row, spec 28 landing 5's evaluator job kinds).
 
 `ui/src/panes/WorkersPane.tsx`'s "AI" tab (docs/UI.md "AI workers") gains a
 "Readability" section below the jobs rail: tier/confidence/module/

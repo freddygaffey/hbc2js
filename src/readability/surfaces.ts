@@ -479,6 +479,8 @@ export interface NameSuggestionItem {
   readonly evidence: string;
   readonly tier: "suggested" | "confirmed";
   readonly ts: string;
+  /** See `NameRecord.securityRelevant`; absent when never flagged. */
+  readonly securityRelevant?: boolean;
 }
 
 /** A rewrite/file-op transaction from the log, unchanged shape. */
@@ -518,6 +520,11 @@ export function listSuggestions(ctx: ReadabilityContext, args: ListSuggestionsAr
   let names = OverlayStore.load(overlayPathFor(ctx)).allRecords().filter((r) => r.active);
   if (filter?.confidence !== undefined) names = names.filter((r) => r.confidence === filter.confidence);
   if (filter?.tier !== undefined) names = names.filter((r) => overlayTier(r) === filter.tier);
+  // 2026-09-11 (docs/BUGS.md, resolved landing 4d): `NameRecord.securityRelevant`
+  // now carries the ground truth `suggest_names`/`runNamePass` already had on
+  // the target -- `false`/absent both read as "not flagged" here, matching
+  // the boolean query-string filter (`qBool` in `readability-routes.ts`).
+  if (filter?.securityRelevant !== undefined) names = names.filter((r) => (r.securityRelevant ?? false) === filter.securityRelevant);
   items.push(
     ...names.map((r): NameSuggestionItem => ({
       kind: "name",
@@ -528,6 +535,7 @@ export function listSuggestions(ctx: ReadabilityContext, args: ListSuggestionsAr
       evidence: r.evidence,
       tier: overlayTier(r),
       ts: r.ts,
+      ...(r.securityRelevant !== undefined ? { securityRelevant: r.securityRelevant } : {}),
     })),
   );
 

@@ -15,10 +15,13 @@
 // file scope (see the PUSHBACK row this file's header cites). The four UI
 // actions below therefore call the surface function directly and answer
 // once it settles, rather than enqueuing a `JobRow` a client would poll --
-// PUSHBACK P-60 records this as a design decision the spec text did not
+// PUSHBACK P-61 records this as a design decision the spec text did not
 // settle ("job enqueues through the spec-23 queue" assumes a JobKind that
-// does not exist yet).
-import { existsSync } from "node:fs";
+// does not exist yet). (P-60 is a different row, spec 28 landing 5's two
+// new evaluator `JobKind`s -- corrected here 2026-09-11, landing 4d, this
+// file previously cited the wrong number.)
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   fileOp,
   listSuggestions,
@@ -29,9 +32,11 @@ import {
   ReadabilitySurfaceError,
   type ListSuggestionsFilter,
   type ReadabilityContext,
+  type SuggestionItem,
 } from "../readability/surfaces.ts";
 import { TransactionRefused } from "../readability/transactions.ts";
 import { FileOpError } from "../readability/file-ops.ts";
+import { readBlob } from "../projdb/readability-shards.ts";
 import type { UiRequest, UiResponse } from "./routes.ts";
 
 /** Hung off `UiServerCtx.readability` (undefined = this server was started
@@ -111,13 +116,49 @@ function filterFromQuery(req: UiRequest): ListSuggestionsFilter {
     ...(tier === "suggested" || tier === "confirmed" ? { tier } : {}),
     ...(confidence === "low" || confidence === "med" || confidence === "high" ? { confidence } : {}),
     ...(module !== undefined ? { module } : {}),
-    // `securityRelevant` is accepted here for forward compatibility with the
-    // spec-28 §9.7 `list_suggestions` filter table, but `listSuggestions`
-    // itself does not yet apply it (no ground-truth field on a `NameRecord`
-    // or a `ReadabilityTransaction` to filter by) -- docs/BUGS.md row filed
-    // alongside this file, not silently dropped.
+    // 2026-09-11 (landing 4d, docs/BUGS.md resolved): `listSuggestions`
+    // applies this to name suggestions (`NameRecord.securityRelevant`, from
+    // `NamePassTarget.securityRelevant`) -- a `ReadabilityTransaction`
+    // (rewrite/file-op) still carries no such field, so it is a no-op over
+    // those items, same precedent as the `confidence` filter above.
     ...(securityRelevant !== undefined ? { securityRelevant } : {}),
   };
+}
+
+/** Best-effort current bytes for an emitted path -- `undefined` (never a
+ *  thrown error) when the file is gone, which the panel should treat the
+ *  same as "no new content to show" rather than a 500. */
+function readCurrentTreeFile(treeDir: string, path: string): string | undefined {
+  try {
+    return readFileSync(join(treeDir, path), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Spec 28 landing 4d ("diff content", docs/BUGS.md resolved): the before/
+ *  after panel needs RENDERED TEXT, not just the `prior.files[].sha256`/
+ *  `EmittedFile.path` the transaction shape (`types.ts`) already carries
+ *  (deliberately unchanged here, per the brief -- this is route-response-only
+ *  enrichment). `priorContent` reads the exact bytes the transaction log
+ *  already stores for `revert` (`readBlob`, keyed by the recorded sha256);
+ *  `newContent` reads whatever `treeDir` currently holds at each output path
+ *  (the accepted rewrite's own write, `surfaces.ts`'s `rewriteFunction`) --
+ *  both keyed by path, both omitted (not empty-string) when unavailable. A
+ *  `name` suggestion has no tree file at all, so it is returned unchanged. */
+function withDiffContent(r: ReadabilityRoutesCtx, item: SuggestionItem): SuggestionItem {
+  if (item.kind !== "tx") return item;
+  const priorContent: Record<string, string> = {};
+  for (const f of item.tx.prior.files) {
+    const content = readBlob(r.context.db, f.sha256);
+    if (content !== undefined) priorContent[f.path] = content;
+  }
+  const newContent: Record<string, string> = {};
+  for (const o of item.tx.outputs) {
+    const content = readCurrentTreeFile(r.context.treeDir, o.path);
+    if (content !== undefined) newContent[o.path] = content;
+  }
+  return { ...item, priorContent, newContent } as SuggestionItem;
 }
 
 export const READABILITY_ROUTES: readonly Route[] = [
@@ -130,7 +171,7 @@ export const READABILITY_ROUTES: readonly Route[] = [
       const limit = qNum(req.query["limit"]);
       const filter = filterFromQuery(req);
       const result = listSuggestions(r.context, { filter, ...(limit !== undefined ? { limit } : {}) });
-      return ok({ ...result, backend: r.backendId });
+      return ok({ ...result, suggestions: result.suggestions.map((s) => withDiffContent(r, s)), backend: r.backendId });
     },
   },
   {

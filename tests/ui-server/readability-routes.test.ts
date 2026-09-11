@@ -5,6 +5,7 @@
 // against the shared construct fixture's decompiled output.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "../support/paths.ts";
 import { makeTree } from "../support/readability-tree.ts";
@@ -139,6 +140,34 @@ test("combine-files action: validates shape, runs the file op, and lists the res
   const listed = (await get(ui, "/api/readability/suggestions")).json as { suggestions: readonly { readonly kind: string }[]; total: number };
   assert.equal(listed.total, 1);
   assert.equal(listed.suggestions[0]?.kind, "tx");
+});
+
+test("GET /api/readability/suggestions: a rewrite/file-op tx carries rendered before/after content, not just paths+hashes (docs/BUGS.md, resolved landing 4d)", async () => {
+  const { ui, readability } = baseCtx();
+  const res = await post(ui, "/api/readability/actions/combine-files", {
+    inputs: ["src/module_1.js", "src/module_2.js"],
+    outputs: ["combined.js"],
+    evidence: "both files are the same loop helper",
+  });
+  assert.equal(res.status, 200);
+
+  const listed = (await get(ui, "/api/readability/suggestions")).json as {
+    suggestions: readonly { readonly kind: string; readonly newContent?: Record<string, string>; readonly priorContent?: Record<string, string> }[];
+  };
+  const tx = listed.suggestions.find((s) => s.kind === "tx");
+  assert.ok(tx !== undefined);
+  // The output path's current tree bytes, read live off `treeDir` -- not a
+  // field on the `ReadabilityTransaction` shape itself (the brief: "not to
+  // the transaction shape"), just this route's own response enrichment.
+  assert.equal(typeof tx!.newContent?.["combined.js"], "string");
+  assert.ok(tx!.newContent!["combined.js"]!.length > 0);
+  const onDisk = readFileSync(join(readability.context.treeDir, "combined.js"), "utf8");
+  assert.equal(tx!.newContent!["combined.js"], onDisk);
+  // `combine`'s `prior` covers the whole tree it read to prove
+  // tree-equivalence, so `priorContent` is non-empty and includes the two
+  // input files' ORIGINAL bytes (the DB-held blob `revert` would restore).
+  assert.equal(typeof tx!.priorContent?.["src/module_1.js"], "string");
+  assert.ok(tx!.priorContent!["src/module_1.js"]!.length > 0);
 });
 
 test("review action: opens with a pending count and no side effect", async () => {

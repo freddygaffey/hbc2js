@@ -32,6 +32,7 @@ import {
   suggestNames,
 } from "../../../src/readability/surfaces.ts";
 import type { ReadabilityContext } from "../../../src/readability/surfaces.ts";
+import { OverlayStore, regId } from "../../../src/name-overlay/index.ts";
 
 const FIXTURE = "04-for-loop-basic";
 const VERSION = 84;
@@ -246,4 +247,35 @@ test("P-59: an MCP-only driver suggests names, lists them, promotes one as a hum
   const reverted = revertChange(ctx, { suggestionId: promoted.txId });
   assert.equal(reverted.txId, promoted.txId);
   assert.ok(reverted.revertedTxId.length > 0);
+});
+
+test("list_suggestions: securityRelevant filters name suggestions (docs/BUGS.md, resolved landing 4d)", () => {
+  const { db, treeDir, projectDir } = makeTree();
+  const overlayPath = join(projectDir, "test-overlay.names.json");
+  const ctx: ReadabilityContext = { db, projectDir, treeDir, backend: new FakeBackend(), hbcPath: hbcPath(), overlayPath };
+
+  // Direct `OverlayStore.setName` (not `NameService.setName`, which has no
+  // gate-frame for arbitrary register ids and does not forward
+  // `securityRelevant` at all): this test only needs two real overlay
+  // records with distinct `securityRelevant` values, not a gated rename.
+  const store = new OverlayStore();
+  const safeId = regId(FN, 1);
+  const riskyId = regId(FN, 2);
+  store.setName(safeId, "loopCount", { confidence: "high", evidence: "loop bound", source: "llm", gate: "passed", securityRelevant: false });
+  store.setName(riskyId, "authToken", { confidence: "high", evidence: "reads a header", source: "llm", gate: "passed", securityRelevant: true });
+  store.save(overlayPath);
+
+  const all = listSuggestions(ctx);
+  assert.equal(all.suggestions.filter((s) => s.kind === "name").length, 2);
+
+  const flagged = listSuggestions(ctx, { filter: { securityRelevant: true } });
+  const flaggedNames = flagged.suggestions.filter((s): s is Extract<typeof s, { kind: "name" }> => s.kind === "name");
+  assert.equal(flaggedNames.length, 1);
+  assert.equal(flaggedNames[0]!.name, "authToken");
+  assert.equal(flaggedNames[0]!.securityRelevant, true);
+
+  const notFlagged = listSuggestions(ctx, { filter: { securityRelevant: false } });
+  const notFlaggedNames = notFlagged.suggestions.filter((s): s is Extract<typeof s, { kind: "name" }> => s.kind === "name");
+  assert.equal(notFlaggedNames.length, 1);
+  assert.equal(notFlaggedNames[0]!.name, "loopCount");
 });

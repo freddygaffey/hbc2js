@@ -30,10 +30,9 @@ export interface NameSuggestionRow {
 }
 
 /** `EmittedFile` (src/readability/types.ts): a path plus the bytecode
- *  origins it traces to — no rendered content over the wire today (see
- *  docs/BUGS.md's landing-4c row: a true before/after diff needs a
- *  follow-up endpoint that reads `treeDir`, which this landing does not
- *  add). The pane's diff view falls back to path + prior hash. */
+ *  origins it traces to. Rendered content for the before/after panel comes
+ *  separately, on `TxSuggestionRow.priorContent`/`newContent` below (landing
+ *  4d) — this shape stays a structural copy of the wire type, unchanged. */
 export interface EmittedFileRow {
   readonly path: string;
   readonly origins: readonly { readonly module: number }[];
@@ -59,6 +58,15 @@ export interface ReadabilityTxRow {
 export interface TxSuggestionRow {
   readonly kind: "tx";
   readonly tx: ReadabilityTxRow;
+  /** Spec 28 landing 4d ("diff content", docs/BUGS.md resolved): rendered
+   *  text for the before/after panel, keyed by path — `priorContent` reads
+   *  the DB-held blob the transaction log already keeps for `revert`;
+   *  `newContent` reads whatever `treeDir` currently holds at each output
+   *  path. Either map may omit a path (file gone / blob missing) — the
+   *  panel falls back to the path + hash it already showed for that one
+   *  entry, never a crash. */
+  readonly priorContent?: Readonly<Record<string, string>>;
+  readonly newContent?: Readonly<Record<string, string>>;
 }
 
 export type ReadabilitySuggestionRow = NameSuggestionRow | TxSuggestionRow;

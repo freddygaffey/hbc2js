@@ -42,6 +42,13 @@ export interface NameRecord {
    *  to add because this name clashed in-frame, or absent when it rendered
    *  cleanly. Advisory metadata; never changes behaviour. */
   readonly renderedAs?: string;
+  /** Spec 28 section 9.7's `list_suggestions` filter (docs/BUGS.md,
+   *  2026-09-11, resolved landing 4d): ground truth about the TARGET this
+   *  name was proposed for (`NamePassTarget.securityRelevant`,
+   *  `readability/name-pass.ts`), carried through so a review pane can
+   *  filter on it. Absent/`undefined` means "not flagged" (never a guess);
+   *  advisory metadata, never changes gating. */
+  readonly securityRelevant?: boolean;
 }
 
 /** Caller-supplied metadata for `setName`. `gate`/`confidence` may be forced by
@@ -54,6 +61,8 @@ export interface NameMeta {
   readonly gate: Gate;
   /** ISO timestamp; injectable so tests are deterministic (spec §11.9). */
   readonly ts?: string;
+  /** See `NameRecord.securityRelevant`. */
+  readonly securityRelevant?: boolean;
 }
 
 export interface SetResult {
@@ -82,12 +91,15 @@ interface StoreFile {
 /** The engine's `value` shape: every `NameRecord` field except the ones the
  *  engine already owns (`rid`, `ts`, `supersedes`, `active`) and the ones that
  *  fold into the slot key (`id`). */
-type NameFields = Pick<NameRecord, "name" | "confidence" | "evidence" | "source" | "gate" | "renderedAs">;
+type NameFields = Pick<NameRecord, "name" | "confidence" | "evidence" | "source" | "gate" | "renderedAs" | "securityRelevant">;
 
 /** Reconstruct a `NameRecord` from an engine revision, in the field order the
- *  on-disk format has always used (byte-identical contract). */
+ *  on-disk format has always used (byte-identical contract). `securityRelevant`
+ *  is appended last (added 2026-09-11, landing 4d) so an old sidecar with no
+ *  such field round-trips unchanged -- `undefined` is omitted, never written
+ *  as `false`. */
 function toNameRecord(r: Revision<NameFields>): NameRecord {
-  const { name, confidence, evidence, source, gate, renderedAs } = r.value;
+  const { name, confidence, evidence, source, gate, renderedAs, securityRelevant } = r.value;
   return {
     rid: r.rid,
     id: parseKey(r.target),
@@ -100,15 +112,24 @@ function toNameRecord(r: Revision<NameFields>): NameRecord {
     supersedes: r.supersedes,
     active: r.active,
     ...(renderedAs !== undefined ? { renderedAs } : {}),
+    ...(securityRelevant !== undefined ? { securityRelevant } : {}),
   };
 }
 
 function toRevision(r: NameRecord): Revision<NameFields> {
-  const { name, confidence, evidence, source, gate, renderedAs } = r;
+  const { name, confidence, evidence, source, gate, renderedAs, securityRelevant } = r;
   return {
     rid: r.rid,
     target: bindingKey(r.id),
-    value: { name, confidence, evidence, source, gate, ...(renderedAs !== undefined ? { renderedAs } : {}) },
+    value: {
+      name,
+      confidence,
+      evidence,
+      source,
+      gate,
+      ...(renderedAs !== undefined ? { renderedAs } : {}),
+      ...(securityRelevant !== undefined ? { securityRelevant } : {}),
+    },
     ts: r.ts,
     supersedes: r.supersedes,
     active: r.active,
@@ -180,7 +201,14 @@ export class OverlayStore {
   setName(id: BindingId, name: string, meta: NameMeta): SetResult {
     const { record, superseded } = this.engine.set(
       bindingKey(id),
-      { name, confidence: meta.confidence, evidence: meta.evidence, source: meta.source, gate: meta.gate },
+      {
+        name,
+        confidence: meta.confidence,
+        evidence: meta.evidence,
+        source: meta.source,
+        gate: meta.gate,
+        ...(meta.securityRelevant !== undefined ? { securityRelevant: meta.securityRelevant } : {}),
+      },
       meta.ts ?? this.now(),
     );
     return { record: toNameRecord(record), superseded: superseded ? toNameRecord(superseded) : null };

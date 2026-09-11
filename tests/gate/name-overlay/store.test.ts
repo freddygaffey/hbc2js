@@ -121,3 +121,21 @@ test("a missing sidecar loads as an empty store, not an error", () => {
   assert.equal(s.getName(regId(0, 0)), null);
   assert.deepEqual(s.search({}), []);
 });
+
+test("securityRelevant round-trips through setName and the JSON sidecar (docs/BUGS.md, resolved landing 4d); omitted when never set", () => {
+  const s = new OverlayStore();
+  s.setName(regId(0, 1), "authToken", { confidence: "high", evidence: "reads a header", source: "llm", gate: "passed", securityRelevant: true });
+  s.setName(regId(0, 2), "loopCount", { confidence: "high", evidence: "loop bound", source: "llm", gate: "passed" });
+  assert.equal(s.getName(regId(0, 1))!.securityRelevant, true);
+  assert.equal(s.getName(regId(0, 2))!.securityRelevant, undefined);
+
+  const dir = mkdtempSync(join(tmpdir(), "hbc2js-overlay-secrel-"));
+  const path = join(dir, "t.names.json");
+  s.save(path);
+  const raw = readFileSync(path, "utf8");
+  assert.ok(raw.includes('"securityRelevant": true'), "the flagged record's field must be on disk");
+
+  const reloaded = OverlayStore.load(path);
+  assert.equal(reloaded.getName(regId(0, 1))!.securityRelevant, true);
+  assert.equal(reloaded.getName(regId(0, 2))!.securityRelevant, undefined);
+});
