@@ -82,8 +82,9 @@ data (rebuildable, never authoritative).
 
 ## Writing a candidate a gate will accept
 
-There is no skill file for rewrites yet (docs/PUSHBACK.md P-57 says why); this
-is the contract a prompt or a human should follow.
+`skills/hbc-name.md`'s `## Rewrite` section (`version: 2`, docs/PUSHBACK.md
+P-57, resolved) is the prompt contract; this is the same rule for a prompt
+or a human writing a candidate by hand.
 
 - Emit exactly one `function _fnN(...) { ... }` declaration, same name, same
   parameter count. Nothing before it, nothing after it.

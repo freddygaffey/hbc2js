@@ -1,7 +1,7 @@
 ---
 id: hbc-name
 kind: suggest-name
-version: 1
+version: 2
 ---
 
 # hbc-name -- naming registers and functions in decompiled Hermes bytecode
@@ -84,3 +84,54 @@ Emit `{"names": [], "abstained": true}` when:
 Abstaining is a correct answer and costs nothing. Inventing a plausible name
 for an unknown binding is the single worst thing you can do here: a confident
 wrong label is more damaging than `r4`.
+
+## Rewrite
+
+Landing 2's function-level rewrite (spec 28 section 9.7's `rewrite_function`,
+`hbc2js readability rewrite`) is the SAME job (`kind: suggest-name`) and the
+same request, asking for a restatement instead of, or alongside, names: an
+optional `rewrite` field next to `names` in the same JSON object. Faithful
+code is source; a rewrite is a reversible hypothesis about a MORE READABLE
+restatement of the exact same behaviour, gated the same way a name is
+(equivalence-checked before it lands, discarded on any divergence, never
+trusted on your say-so).
+
+- Emit exactly one `function _fnN(...) { ... }` declaration, same name, same
+  parameter count. Nothing before it, nothing after it.
+- Change only what makes it readable: local names, loop form, redundant
+  temps, obvious re-association. Never change what is printed, thrown,
+  returned, or in what order.
+- Do not touch property keys, globals, or anything reached by a string --
+  those are outside the rename domain (spec 28 section 0a rule 1) and will
+  either be refused or diverge.
+- Prefer a conservative rewrite where the function is barely exercised. Thin
+  coverage means the oracle has less to prove with, and an unprovable
+  rewrite is rejected exactly like a wrong one.
+- Say why in `evidence`. A rewrite with no stated reason is still gated, but
+  a reviewer has nothing to judge its quality by, and quality is the half
+  the oracle cannot check.
+- Abstain from `rewrite` (omit the field, or leave it out of an otherwise
+  normal names-only answer) when the body is already clear, or when you
+  cannot restate it without guessing at behaviour you cannot see.
+
+### Rewrite output contract
+
+Reply with one JSON object; `rewrite` is optional and sits beside `names`:
+
+```json
+{
+  "names": [],
+  "rewrite": {
+    "fn": 188,
+    "code": "function _fn188(sessionToken) {\n  return sessionToken.trim();\n}",
+    "confidence": "med",
+    "evidence": "restated the loop as a single trim call"
+  },
+  "abstained": false
+}
+```
+
+- `fn` is echoed back from the request, unchanged.
+- `code` is the complete replacement declaration, nothing else.
+- `confidence`/`evidence` follow the same rules as a name proposal above: an
+  entry with empty evidence is downgraded to `low` automatically.

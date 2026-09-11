@@ -1,82 +1,82 @@
 {
-  "ecae08e17cd4a60d448a1bd5d59e8a50d95f8d43b76752cf9eeb48e8a01b7da3": {
+  "856a07977eaf913f6994b0790cdbdec873678d18dc8d7be1f436ff2cae4ecf59": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":100,\"reg\":3},\"name\":\"sessionToken\",\"confidence\":\"high\",\"evidence\":\"literal \\\"sessionToken\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "e7a51877bd951a5e0b72e06e9516bb6339844b8896279a1f0fa125da024ff58b": {
+  "4ea14665c2d476e6133300ace2b9e540e2c07f707c257c0a533e4ff5a624dcae": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":101,\"reg\":3},\"name\":\"retryCount\",\"confidence\":\"high\",\"evidence\":\"literal \\\"retryCount\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "9fc90ed0dc9ae3bbaffea3dc4d76d54a4118b5e9ceba03cd4d7e72ee036bc939": {
+  "ce0d6be39736ed2873adc3fc012fe4f6b2b7b15bffe98134d8281bf9a0215b88": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":102,\"reg\":3},\"name\":\"apiEndpoint\",\"confidence\":\"high\",\"evidence\":\"literal \\\"apiEndpoint\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "490979bc7078b36e10be6caf66969aaf199d5cf0823a6754c7df16a08c95b0f5": {
+  "6e4da78ec24459708ae878b88c60c3af903cd325baa4759b789ecf7e8ce2e5ca": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":103,\"reg\":3},\"name\":\"userProfile\",\"confidence\":\"high\",\"evidence\":\"literal \\\"userProfile\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "754c136044f5c76cb9efa9252bb01d27c4efdc19ced956f6f314f3f8c7ef63d4": {
+  "c498d6fcd285b426a1f64f81d22ea464019f16a07c0906d0a93effbb008ff712": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":104,\"reg\":3},\"name\":\"cacheEntry\",\"confidence\":\"high\",\"evidence\":\"literal \\\"cacheEntry\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "8b58c20bffe3324a4679c65b284061c19520fc33c3bce0626fd5790cf75969d3": {
+  "b063c3b764af2fa6e70c5eee2866db6aaecd38f5d4804c4262ab14e93c8d74de": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":105,\"reg\":3},\"name\":\"navigationState\",\"confidence\":\"high\",\"evidence\":\"literal \\\"navigationState\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "982fe667f5a1dfae4d9b2613b7b6ebccf9f67507074d2189106f0b4a321251ae": {
+  "e2087a20994ae9f1f33e24086225c232a29f951297b525a820fef25a8956a208": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":106,\"reg\":3},\"name\":\"routeParams\",\"confidence\":\"high\",\"evidence\":\"literal \\\"routeParams\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "06725843f7b332775c471810cbb9ce9df55034a53685f83f011dbaf34b65209b": {
+  "1b9cdbce588d9a72476190f9c0f3b9af0ce2433810ab7a868e6929d24f1afaa4": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":107,\"reg\":3},\"name\":\"authHeader\",\"confidence\":\"high\",\"evidence\":\"literal \\\"authHeader\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "db5308fc45db1b8c577f57935f150d6331666e4b410ba514da2b67d60265a913": {
+  "96440e304bd295f5c5401cf01522a3781bb37c5d29479c8b0dc48b2355b21c17": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":108,\"reg\":3},\"name\":\"errorMessage\",\"confidence\":\"high\",\"evidence\":\"literal \\\"errorMessage\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "6f32edd82ace723475932398d96d13462c0b11d1f86668323aa8029f27911469": {
+  "95341f4994ba7446e4e0bd5f10779927408570013784dfc5ba293b69b40bbb07": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":109,\"reg\":3},\"name\":\"requestId\",\"confidence\":\"high\",\"evidence\":\"literal \\\"requestId\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "5866b31c21ccb95c37a716e1846b3d770e0bf8afcdcf7c5b07bd3101998c6a7a": {
+  "ff8fd84cd5baeabe919c7a1d9ed14fbfb0168655608c4675fa88d9aa2cd366f1": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":110,\"reg\":3},\"name\":\"screenTitle\",\"confidence\":\"high\",\"evidence\":\"literal \\\"screenTitle\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
       "tokensOut": 40
     }
   },
-  "2e843ae10cd34a503c82489f6a7059580bae4fd4f77cc8b1326adaf95f47efd1": {
+  "131e3e9f1590be88d8abd9b6fdef338cdf33d38213ca849176e32c54fc224e67": {
     "text": "{\"names\":[{\"bindingId\":{\"fn\":111,\"reg\":3},\"name\":\"dispatchAction\",\"confidence\":\"high\",\"evidence\":\"literal \\\"dispatchAction\\\" nearby\"}],\"abstained\":false}",
     "cost": {
       "tokensIn": 120,
