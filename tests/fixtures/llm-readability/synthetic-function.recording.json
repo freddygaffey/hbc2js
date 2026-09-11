@@ -1,0 +1,16 @@
+{
+  "02421319f9e78bb4e46d3ab85fcabeb25d1c6db05a8ccc60f1067cbb0c2b223f": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":200,\"reg\":3},\"name\":\"sessionToken\",\"confidence\":\"high\",\"evidence\":\"literal \\\"sessionToken\\\" nearby\"},{\"bindingId\":{\"fn\":200,\"reg\":7},\"name\":\"retryCount\",\"confidence\":\"high\",\"evidence\":\"literal \\\"retryCount\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 200,
+      "tokensOut": 60
+    }
+  },
+  "08791314dfecc42628264b2eaf8eb5347aea46d71ded710969e55ab2f9d9bb5a": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":201,\"reg\":3},\"name\":\"apiEndpoint\",\"confidence\":\"high\",\"evidence\":\"literal \\\"apiEndpoint\\\" nearby\"},{\"bindingId\":{\"fn\":202,\"reg\":9},\"name\":\"unrelated\",\"confidence\":\"high\",\"evidence\":\"off-target\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 220,
+      "tokensOut": 70
+    }
+  }
+}
