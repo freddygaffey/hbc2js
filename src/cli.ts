@@ -13,7 +13,7 @@ import { VERSION } from "./version.ts";
 import { runProgram } from "./harness/runner.ts";
 import type { RunOptions } from "./harness/runner.ts";
 import { compareTraces, TRACE_VERDICT } from "./harness/compare.ts";
-import { hbcVersion, findHermesVm, runHermes, findAllHermesVms } from "./harness/hermes-vm.ts";
+import { hbcVsJsUnderHermes } from "./harness/hbc-equiv.ts";
 import { normaliseModule, diffNormalised } from "./harness/roundtrip.ts";
 import { runTier, hbc2jsDecompiler } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
@@ -399,28 +399,17 @@ function runEquivNormalise(a: string, b: string, json: boolean): number {
   }
 }
 
+// The comparison itself lives in `src/harness/hbc-equiv.ts` (spec 28 landing
+// 2) so the rewrite gate can call the same oracle in-process instead of
+// spawning this CLI. This wrapper is presentation only.
 function runEquivHermes(a: string, b: string, o: EquivArgs): number {
-  const version = hbcVersion(a);
-  const vm = findHermesVm(version);
-  if (vm === null) {
-    const have = findAllHermesVms()
-      .map((h) => `v${h.hbcVersion}`)
-      .join(", ");
-    const why = `no Hermes VM for HBC version ${version}; available: ${have === "" ? "none" : have}. The Hermes VM refuses bytecode whose version is not exactly its own (HA-05: never falls back to Node).`;
-    process.stdout.write(o.json ? JSON.stringify({ verdict: TRACE_VERDICT.INCONCLUSIVE, why }, null, 2) + "\n" : `INCONCLUSIVE — ${why}\n`);
-    return 2;
-  }
-  const ra = runHermes(vm.path, a, { timeout: o.timeout, bytecode: true });
-  const rb = runHermes(vm.path, b, { timeout: o.timeout, bytecode: false });
-  let i = 0;
-  const n = Math.min(ra.lines.length, rb.lines.length);
-  while (i < n && ra.lines[i] === rb.lines[i]) i++;
-  const equal = ra.lines.length === rb.lines.length && i === ra.lines.length;
-  const verdict = equal ? (ra.lines.length > 0 ? TRACE_VERDICT.EQUIVALENT : TRACE_VERDICT.INCONCLUSIVE) : TRACE_VERDICT.DIVERGENT;
-  const why = equal ? (ra.lines.length > 0 ? `${ra.lines.length} output lines matched under Hermes v${version}` : "both programs produced no output; nothing was observed") : `output diverges at line ${i + 1}`;
-  if (o.json) process.stdout.write(JSON.stringify({ verdict, why, a, b }, null, 2) + "\n");
-  else process.stdout.write(`${verdict} — ${why}\n`);
-  return equivCode(verdict);
+  const r = hbcVsJsUnderHermes(a, b, { timeoutMs: o.timeout });
+  if (o.json) {
+    process.stdout.write(
+      (r.vm === undefined ? JSON.stringify({ verdict: r.verdict, why: r.why }, null, 2) : JSON.stringify({ verdict: r.verdict, why: r.why, a, b }, null, 2)) + "\n",
+    );
+  } else process.stdout.write(`${r.verdict} — ${r.why}\n`);
+  return equivCode(r.verdict);
 }
 
 async function runEquiv(argv: readonly string[]): Promise<number> {
