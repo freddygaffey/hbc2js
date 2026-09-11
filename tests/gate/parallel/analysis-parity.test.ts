@@ -103,7 +103,9 @@ test("construct fixtures: parallel raw frames are byte-identical to serial", asy
 test("HARD GATE: rn-template analysis and raw frames, workers=4 vs serial", async () => {
   const bytes = new Uint8Array(readFileSync(rnTemplatePath()));
   const serial = analyseModule(parseHbc(bytes), { strictEnv: true });
-  const parallel = await analyseModuleParallel(bytes, { strictEnv: true }, 4);
+  // `minFunctions: 0` forces the pool: rn-template (4,199 fns) is below the
+  // production threshold, and this gate is about identity, not about size.
+  const parallel = await analyseModuleParallel(bytes, { strictEnv: true, minFunctions: 0 }, 4);
   assert.equal(stageACoverage(parallel), serial.module.functions.length);
 
   // Every accessor, fully forced, equal and in the same order.
