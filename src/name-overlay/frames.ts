@@ -8,8 +8,8 @@
 import type { FunctionCfg, ModuleAnalysis } from "../cfg/types.ts";
 import type { Stmt } from "../emit/ast.ts";
 import { emitModule } from "../emit/index.ts";
-import { passHook } from "../passes/index.ts";
 import type { PassPipelineOptions } from "../passes/index.ts";
+import { stageAPassHook } from "../parallel/analysis-pool.ts";
 
 /** One captured frame: the raw `k:"func"` node and the cfg it was emitted
  *  from — everything a per-function re-render needs (`renderFrame`), captured
@@ -27,7 +27,10 @@ export function rawFrames(analysis: ModuleAnalysis, opts: { readonly passes?: Pa
   emitModule(analysis, {
     provenanceComments: false,
     strictEnv,
-    passes: passHook(analysis, opts.passes),
+    // Picks up `analyseModuleParallel`'s precomputed stage-A results when the
+    // caller built this analysis through the worker pool and the pass options
+    // match; otherwise this is exactly `passHook(analysis, opts.passes)`.
+    passes: stageAPassHook(analysis, opts.passes),
     // Identity stage-B hook: capture the raw body, apply nothing.
     astPasses: (fn, cfg) => {
       if (fn.k === "func") frames.set(cfg.functionIndex, { node: fn, cfg });
