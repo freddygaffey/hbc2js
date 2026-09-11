@@ -557,6 +557,20 @@ it came from, however many combines and splits happened in between. Zero orphans
 is a structural property enforced at write time by `validateTransaction`, not a
 statistic measured afterwards.
 
+**Names are overlay transactions (docs/PUSHBACK.md P-59).** A NAME proposal
+never enters this table: `EmittedFile.path` is a real path in `treeDir`, and
+a name has no tree file at the point it is proposed. The name-overlay
+(`NameService`/`OverlayStore`, the rename tool's own storage) is the
+transaction log for names -- its append-only supersession chain gives the
+same reversibility and provenance guarantee this section gives file ops,
+just over `{fn,reg}` bindings instead of paths: `OverlayStore.revert`
+restores the immediately-prior `NameRecord` exactly (byte-identical render,
+proved by section 9.4's NAME-row backstop), and every record already carries
+its own `source`/`gate` provenance stamp. `list_suggestions` (section 9.7)
+reads both this table and the overlay and returns one merged list;
+`promote_change`/`revert_change` take a `suggestionId` (the overlay record's
+`rid`) for a name, `txId` for anything in this table.
+
 ### 9.6 Evaluator plug-in interface (section 1d.1)
 
 Correctness is always the equiv oracle and is never pluggable. QUALITY review

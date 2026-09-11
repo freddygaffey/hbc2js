@@ -183,20 +183,34 @@ an opt-in evaluator (landing 5) may promote (section 1d) -- and
 `revert_change` is exact and byte-for-byte (section 9.5's guarantee), same as
 the CLI/direct-`transactions.ts` path above.
 
-**Known gap (docs/PUSHBACK.md P-59, open)**: `suggest_names` and
-`classify_module` do NOT write into the `readability_tx` table `rewrite`/
-`file_op` use. That table's `EmittedFile.path` is a real path under `treeDir`
-(a revert writes bytes straight to it), and a NAME/classification proposal
-has no tree file yet at the point these two tools run -- they operate on a
-fresh decompile, the same stage landing 1's CLI pass does. Both are still
-equiv-verified (the section 9.4 NAME-row backstop, run once per batch) and
-reviewable (the name-overlay's own supersession chain, `NameRecord.rid`), but
-their `txIds`/`txId` come back empty/`undefined`, and `list_suggestions`
-currently only lists rewrite/file-op transactions. `rewrite_function` and
-`file_op` have no such gap: both materialise their accepted output into
-`treeDir` before recording, so a later revert has real bytes to restore.
+**Names are overlay transactions (docs/PUSHBACK.md P-59, resolved).**
+`suggest_names` does NOT write into the `readability_tx` table `rewrite`/
+`file_op` use, and this is permanent, not a gap: that table's
+`EmittedFile.path` is a real path under `treeDir` (a revert writes bytes
+straight to it), and a NAME proposal has no tree file at the point
+`suggest_names` runs -- it operates on a fresh decompile, the same stage
+landing 1's CLI pass does. Instead, `suggest_names` writes through the
+name-overlay (`NameService`/`OverlayStore`), persisted to a sidecar under
+`projectDir` (`overlayPathFor`, never beside the real `.hbc` input, which may
+be a shared fixture). The overlay's own supersession chain already gives
+reversibility (`OverlayStore.revert`) and provenance
+(`NameRecord.source`/`gate`), so it needs no second bookkeeping system: a
+name suggestion is equiv-verified (the section 9.4 NAME-row backstop, run
+once per batch) and reviewable the same way the rename tool's own CLI review
+loop always was. `list_suggestions` merges both sources into one
+`SuggestionItem` union (`{kind:"name", suggestionId, ...}` from the overlay,
+`{kind:"tx", tx}` from the transaction log); `promote_change`/`revert_change`
+accept a `suggestionId` for the overlay case (`txId` still selects a
+transaction) -- promoting re-records the same name via `NameService.setName`
+(the "existing set_name promoter path") under the promoter's own `who` as
+`source:"human"`, refusing any `who` starting with `worker:` before either
+store is touched; reverting steps the overlay's active record back to
+whatever was active before it. `classify_module` stays advisory only
+(`txId`/`suggestionId` always `undefined`) -- landing 5's evaluator is its
+review path. `rewrite_function` and `file_op` were never affected: both
+materialise their accepted output into `treeDir` before recording, so a
+later revert has real bytes to restore.
 
 The suggestion pane's evidence/confidence/equiv-status columns, the
 before/after diff, and the batch promote/revert filters (tier, confidence,
-module, security-relevant) are this landing's open UI follow-up -- not yet
-wired by this agent, queued next.
+module, security-relevant) are documented in `docs/UI.md`.

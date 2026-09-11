@@ -203,3 +203,47 @@ test("exit criterion: a driver using only surfaces.ts can suggest, review, promo
   // (c) refused: a zero-origin output is an orphan and the transaction is refused.
   assert.throws(() => fileOp(ctx, { op: "make", path: "src/orphan.js", content: "module.exports = {};\n", origins: [], evidence: "nothing backs this" }));
 });
+
+test("P-59: an MCP-only driver suggests names, lists them, promotes one as a human who, reverts one, and is refused as worker:", async () => {
+  const { db, treeDir, projectDir } = makeTree();
+  const backend = new FakeBackend({
+    replies: {
+      "suggest-name": () =>
+        JSON.stringify({
+          names: [
+            { bindingId: { fn: 0, reg: 9 }, name: "loopCount", confidence: "high", evidence: "loop bound" },
+          ],
+          abstained: false,
+        }),
+    },
+  });
+  const ctx: ReadabilityContext = { db, projectDir, treeDir, backend, hbcPath: hbcPath() };
+
+  const suggested = await suggestNames(ctx, { target: { fn: 0 } });
+  assert.equal(suggested.equiv.verdict, "PASS");
+  assert.ok(suggested.suggestions.length > 0);
+  assert.deepEqual(suggested.txIds, []);
+
+  // Review: the overlay's suggestion shows up in list_suggestions, addressed
+  // by its own suggestionId (P-59), suggested tier.
+  const listed = listSuggestions(ctx);
+  const nameItems = listed.suggestions.filter((s): s is Extract<typeof s, { kind: "name" }> => s.kind === "name");
+  assert.ok(nameItems.length > 0, "list_suggestions should surface the overlay name suggestion");
+  const item = nameItems[0]!;
+  assert.equal(item.tier, "suggested");
+  assert.equal(item.name, "loopCount");
+
+  // Refused: a worker: who may not promote.
+  assert.throws(() => promoteChange(ctx, { suggestionId: item.suggestionId, who: "worker:haiku" }), TransactionRefused);
+
+  // Promote as a human who, through the same set_name promoter path.
+  const promoted = promoteChange(ctx, { suggestionId: item.suggestionId, who: "fred" });
+  assert.equal(promoted.tier, "confirmed");
+  const afterPromote = listSuggestions(ctx).suggestions.filter((s): s is Extract<typeof s, { kind: "name" }> => s.kind === "name");
+  assert.ok(afterPromote.some((s) => s.name === "loopCount" && s.tier === "confirmed"));
+
+  // Revert restores the prior overlay entry (byte-identical render, 9.4 NAME row).
+  const reverted = revertChange(ctx, { suggestionId: promoted.txId });
+  assert.equal(reverted.txId, promoted.txId);
+  assert.ok(reverted.revertedTxId.length > 0);
+});

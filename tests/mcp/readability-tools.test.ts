@@ -15,6 +15,7 @@ import {
   registerReadabilityTools,
   validateReadabilityArgs,
 } from "../../src/mcp/tools.ts";
+import { ReadabilitySurfaceError } from "../../src/readability/surfaces.ts";
 import type { ReadabilityContext } from "../../src/readability/surfaces.ts";
 
 function ctx(): ReadabilityContext {
@@ -31,14 +32,18 @@ test("spec 28 section 9.7: every MCP tool has a schema, and the handler set is e
 });
 
 test("spec 28 section 9.7: schema validation refuses a missing required field and a wrong type, before surfaces.ts ever runs", () => {
-  assert.deepEqual(validateReadabilityArgs("revert_change", {}), ['revert_change: missing required field "txId"']);
+  // revert_change takes txId OR suggestionId (P-59): neither is
+  // schema-required (same precedent as promote_change and suggest_names'
+  // "exactly one of {fn}|{module}") -- the "at least one" rule is
+  // surfaces.ts's job, not the schema's.
+  assert.deepEqual(validateReadabilityArgs("revert_change", {}), []);
   assert.deepEqual(validateReadabilityArgs("rewrite_function", { fn: "zero" }), ['rewrite_function: "fn" must be a number']);
   assert.deepEqual(validateReadabilityArgs("file_op", { op: "delete", evidence: "x" }), ['file_op: "op" must be one of make|rename|move|combine|split']);
   assert.deepEqual(validateReadabilityArgs("list_suggestions", {}), []);
   assert.deepEqual(validateReadabilityArgs("suggest_names", "not an object"), ["suggest_names: arguments must be an object"]);
 
   const handlers = registerReadabilityTools(ctx());
-  assert.throws(() => handlers.revert_change({}), ReadabilityToolArgumentError);
+  assert.throws(() => handlers.revert_change({}), ReadabilitySurfaceError);
   assert.throws(() => handlers.rewrite_function({ fn: "zero" }), ReadabilityToolArgumentError);
 });
 

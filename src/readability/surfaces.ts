@@ -13,29 +13,34 @@
 // (`FakeBackend` in the gate, `HaikuBackend` in production), never
 // constructed here.
 //
-// KNOWN GAP (docs/PUSHBACK.md P-59): `suggest_names`/`classify_module` write
-// through the name-overlay (`NameService`/`OverlayStore`, landing 1's own
-// storage), NOT the `readability_tx` table `rewrite`/`file_op` use. The
-// transaction log's `EmittedFile` is file-tree-shaped (a `path` plus the
-// origins that emit it, spec 28 section 9.5): a NAME change has no file yet
-// at the point this tool runs (it operates on the raw decompile, same as
-// landing 1's CLI pass), and forging a `path` for it would make a `revert`
-// materialise a bogus file into `treeDir`. `suggest_names` is still
-// equiv-verified (the section 9.4 NAME-row backstop, run once per batch) and
-// reviewable (the overlay's own supersession chain, `NameRecord.rid`), but
-// its `txIds` come back empty until a follow-up either extends the
-// transaction log with an overlay-shaped entry or gives the overlay its own
-// promote/revert table. `rewrite_function` and `file_op` do not have this
-// gap: both already produce a `ReadabilityTransaction` (P-58's mapping for
-// rewrite, `runFileOp` directly for file ops).
+// RESOLVED (docs/PUSHBACK.md P-59): `suggest_names` writes through the
+// name-overlay (`NameService`/`OverlayStore`, the rename tool's own storage,
+// docs/RENAME.md), NOT the `readability_tx` table `rewrite`/`file_op` use --
+// a NAME proposal has no tree file at the point it is made (it operates on
+// the raw decompile, same as landing 1's CLI pass), and forging a `path` for
+// it would make a `revert` materialise a bogus file into `treeDir`. Names
+// stay overlay transactions permanently (spec 28 section 9.5's new
+// paragraph), not a stopgap: the overlay chain already gives reversibility
+// (`OverlayStore.revert`) and provenance (`NameRecord.source`/`gate`) under
+// spec 18's shard/log integrity, same as the rename tool's own CLI review
+// loop. `suggest_names`'s own `txIds` still come back empty (a name has no
+// transaction id -- section 9.5's `EmittedFile` shape is unchanged), but its
+// writes ARE now durable across calls (persisted to `overlayPathFor(ctx)`,
+// a per-project sidecar under `projectDir`, never beside the real `.hbc`
+// input) and `list_suggestions`/`promote_change`/`revert_change` see them
+// via the record's own `rid`, addressed as `suggestionId`. `rewrite_function`
+// and `file_op` keep using the transaction log unchanged (P-58's mapping for
+// rewrite, `runFileOp` directly for file ops); `list_suggestions` merges
+// both sources into one `SuggestionItem` union.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseForDecompile } from "../decompile.ts";
 import { analyseModule } from "../cfg/index.ts";
 import type { ModuleAnalysis } from "../cfg/index.ts";
-import { NameService, OverlayStore, regId, shortForm } from "../name-overlay/index.ts";
+import { NameService, OverlayStore, bindingKey, regId, shortForm } from "../name-overlay/index.ts";
 import { rawFrameBodies } from "../name-overlay/frames.ts";
+import type { NameRecord } from "../name-overlay/store.ts";
 import { listNameable } from "../artifact/frame-queries.ts";
 import type { WorkerBackend } from "../workers/backend.ts";
 import { runNamePass } from "./name-pass.ts";
@@ -50,7 +55,9 @@ import {
   promoteTransaction,
   recordTransaction,
   revertTransaction,
+  sha256,
 } from "./transactions.ts";
+import { TransactionRefused } from "./transactions.ts";
 import { MODULE_ROLES, parseReadabilityResult } from "./types.ts";
 import type {
   EquivProof,
@@ -83,11 +90,25 @@ export interface ReadabilityContext {
   readonly oracle?: TreeEquivOracle;
   readonly functionOracle?: FunctionEquivOracle;
   readonly who?: string;
+  /** Where the name-overlay sidecar for this project lives (P-59). Defaults
+   *  to a file under `projectDir`, NEVER beside the real `.hbc` input --
+   *  `hbcPath` may point at a shared, git-tracked fixture, and a surface
+   *  must never write next to it. */
+  readonly overlayPath?: string;
 }
 
 function loadAnalysis(hbcPath: string): ModuleAnalysis {
   const bytes = new Uint8Array(readFileSync(hbcPath));
   return analyseModule(parseForDecompile(bytes, {}).module, { strictEnv: true });
+}
+
+/** P-59's resolution: the overlay sidecar for `suggest_names`'
+ *  `NameProposal`s, `list_suggestions`, `promote_change` and
+ *  `revert_change` -- always under `projectDir`, so it works for every
+ *  caller (`hbcPath` is not required by the review tools) and never
+ *  pollutes a shared fixture directory. */
+function overlayPathFor(ctx: ReadabilityContext): string {
+  return ctx.overlayPath ?? join(ctx.projectDir, "readability-overlay.names.json");
 }
 
 function nameableTargets(analysis: ModuleAnalysis, service: NameService, fns: readonly number[]): NamePassTarget[] {
@@ -138,10 +159,15 @@ export async function suggestNames(ctx: ReadabilityContext, args: SuggestNamesAr
   validateTarget(args.target);
   if (ctx.hbcPath === undefined) throw new ReadabilitySurfaceError("suggest_names: ctx.hbcPath is required");
   const analysis = loadAnalysis(ctx.hbcPath);
-  const service = new NameService(analysis, new OverlayStore());
+  const overlayPath = overlayPathFor(ctx);
+  const service = new NameService(analysis, OverlayStore.load(overlayPath));
   const fns = "fn" in args.target && args.target.fn !== undefined ? [args.target.fn] : analysis.module.functions.map((_, i) => i);
   const targets = nameableTargets(analysis, service, fns);
   const result = await runNamePass(targets, { backend: ctx.backend, service, ...(args.budgetTokens !== undefined ? { budgetTokens: args.budgetTokens } : {}) });
+  // Durable across calls (P-59): a live MCP/UI session calls `suggest_names`,
+  // `list_suggestions` and `promote_change` as separate invocations, so the
+  // write from this call has to survive on disk for the next one to see it.
+  service.store.save(overlayPath);
   const suggestions = result.outcomes.map((o) => o.proposal).filter((p): p is NameProposal => p !== undefined);
   return { suggestions, equiv: result.equiv, txIds: [], evaluation: undefined };
 }
@@ -299,22 +325,54 @@ export interface PromoteChangeResult {
   readonly tier: "confirmed";
 }
 
+/** Find the overlay record `rid` names, or `undefined` -- P-59: a
+ *  `suggestionId` addresses a `NameRecord` (any record in its supersession
+ *  chain, active or not; `active` is a rendering fact, not an identity one).
+ */
+function findOverlayRecord(ctx: ReadabilityContext, rid: string): NameRecord | undefined {
+  return OverlayStore.load(overlayPathFor(ctx)).allRecords().find((r) => r.rid === rid);
+}
+
 /** Section 9.7's `promote_change` / section 1d "only a human or an opt-in
  *  evaluator promotes": refuses a `who` starting with `worker:` BEFORE
- *  touching the DB (the same rule `validateTransaction`'s `self-promoted`
- *  code enforces on write; this is the read-side twin of it), and refuses
- *  when neither `txId` nor `suggestionId` names a live transaction. Both id
- *  fields resolve the same way today (section 9.7's gap, P-59: a NAME
- *  suggestion has no transaction id yet, so a `suggestionId` for one is
- *  refused, not silently accepted). */
+ *  touching either store (the same rule `validateTransaction`'s
+ *  `self-promoted` code enforces on write; this is the read-side twin of
+ *  it). `txId` promotes a rewrite/file-op transaction (`promoteTransaction`);
+ *  `suggestionId` promotes a name (P-59): re-records the SAME name through
+ *  `NameService.setName` -- the "existing set_name promoter path" -- under
+ *  the promoter's own `who` as `source: "human"`, which supersedes the
+ *  `source: "llm"` record in the overlay's own chain (spec 28 section 9.5's
+ *  new paragraph). Refuses when neither id names a live change. */
 export function promoteChange(ctx: ReadabilityContext, args: PromoteChangeArgs): PromoteChangeResult {
+  if (args.who.startsWith("worker:")) {
+    throw new TransactionRefused(`promote_change: ${args.who} may not write tier=confirmed (spec 28 section 1d)`, [
+      { code: "self-promoted", detail: `${args.who} may not promote` },
+    ]);
+  }
+  if (args.suggestionId !== undefined) {
+    const overlayPath = overlayPathFor(ctx);
+    const record = findOverlayRecord(ctx, args.suggestionId);
+    if (record === undefined) {
+      if (args.txId === undefined) throw new ReadabilitySurfaceError(`promote_change: no suggestion ${args.suggestionId}`);
+    } else {
+      if (ctx.hbcPath === undefined) throw new ReadabilitySurfaceError("promote_change: ctx.hbcPath is required to promote a name suggestion");
+      const analysis = loadAnalysis(ctx.hbcPath);
+      const store = OverlayStore.load(overlayPath);
+      const service = new NameService(analysis, store);
+      const outcome = service.setName(record.id, record.name, { confidence: record.confidence, evidence: record.evidence, source: "human" });
+      if (!outcome.ok) throw new ReadabilitySurfaceError(`promote_change: gate refused: ${outcome.reason}`);
+      store.save(overlayPath);
+      return { txId: outcome.result.record.rid, tier: "confirmed" };
+    }
+  }
   const id = args.txId ?? args.suggestionId;
   if (id === undefined) throw new ReadabilitySurfaceError("promote_change: one of txId|suggestionId is required");
   return promoteTransaction(ctx.db, ctx.projectDir, id, args.who);
 }
 
 export interface RevertChangeArgs {
-  readonly txId: string;
+  readonly txId?: string;
+  readonly suggestionId?: string;
 }
 
 export interface RevertChangeResult {
@@ -323,9 +381,34 @@ export interface RevertChangeResult {
   readonly restored: readonly { readonly path: string; readonly sha256: string }[];
 }
 
-/** Section 9.7's `revert_change`: one-click undo (section 1d), byte-exact
- *  (section 9.5's reversibility guarantee). */
+/** Section 9.7's `revert_change`: one-click undo (section 1d). `txId`
+ *  reverts a rewrite/file-op transaction, byte-exact (section 9.5's
+ *  reversibility guarantee). `suggestionId` reverts a name (P-59) through
+ *  the overlay's OWN supersession (`OverlayStore.revert`): the binding's
+ *  active record steps back to whatever was active before it (or clears, if
+ *  none) -- a byte-identical render to the state before the promoted/llm
+ *  write, proved by the same section 9.4 NAME-row backstop `suggest_names`
+ *  runs. `restored` reports the binding as a synthetic `path` (there is no
+ *  tree file for a name) plus a content hash of the name that is active
+ *  after the revert, for parity with the file-tree shape other callers
+ *  expect; it is empty when the revert clears to no active name. */
 export function revertChange(ctx: ReadabilityContext, args: RevertChangeArgs): RevertChangeResult {
+  if (args.suggestionId !== undefined) {
+    const overlayPath = overlayPathFor(ctx);
+    const record = findOverlayRecord(ctx, args.suggestionId);
+    if (record !== undefined) {
+      const store = OverlayStore.load(overlayPath);
+      const restored = store.revert(record.id);
+      store.save(overlayPath);
+      return {
+        txId: args.suggestionId,
+        revertedTxId: record.rid,
+        restored: restored !== null ? [{ path: `name:${bindingKey(record.id)}`, sha256: sha256(restored.name) }] : [],
+      };
+    }
+    if (args.txId === undefined) throw new ReadabilitySurfaceError(`revert_change: no suggestion ${args.suggestionId}`);
+  }
+  if (args.txId === undefined) throw new ReadabilitySurfaceError("revert_change: one of txId|suggestionId is required");
   const result = revertTransaction(ctx.db, ctx.projectDir, ctx.treeDir, args.txId, ctx.who ?? "reviewer");
   return { txId: args.txId, revertedTxId: result.revertTxId, restored: result.restored };
 }
@@ -333,10 +416,8 @@ export function revertChange(ctx: ReadabilityContext, args: RevertChangeArgs): R
 export interface ListSuggestionsFilter {
   readonly tier?: "suggested" | "confirmed";
   readonly module?: number;
-  /** Not applicable to file-op/rewrite transactions (no confidence field on
-   *  `ReadabilityTransaction`, P-59); accepted for schema parity with the
-   *  section 9.7 table and always a no-op filter until a NAME suggestion has
-   *  somewhere to record one. */
+  /** Applies to name suggestions (`NameRecord.confidence`, P-59); a no-op
+   *  over rewrite/file-op transactions (no confidence field there). */
   readonly confidence?: "low" | "med" | "high";
   readonly securityRelevant?: boolean;
 }
@@ -346,22 +427,72 @@ export interface ListSuggestionsArgs {
   readonly limit?: number;
 }
 
+/** A name proposal from the overlay (P-59), addressed by `suggestionId` (the
+ *  overlay record's own `rid`) rather than a transaction id. */
+export interface NameSuggestionItem {
+  readonly kind: "name";
+  readonly suggestionId: string;
+  readonly bindingId: NameRecord["id"];
+  readonly name: string;
+  readonly confidence: "low" | "med" | "high";
+  readonly evidence: string;
+  readonly tier: "suggested" | "confirmed";
+  readonly ts: string;
+}
+
+/** A rewrite/file-op transaction from the log, unchanged shape. */
+export interface TxSuggestionItem {
+  readonly kind: "tx";
+  readonly tx: ReadabilityTransaction;
+}
+
+export type SuggestionItem = NameSuggestionItem | TxSuggestionItem;
+
 export interface ListSuggestionsResult {
-  readonly suggestions: readonly ReadabilityTransaction[];
+  readonly suggestions: readonly SuggestionItem[];
   readonly total: number;
 }
 
-/** Section 9.7's `list_suggestions`, over the rewrite/file-op transaction
- *  log (P-59: NAME suggestions are not in this list yet). `total` is the
- *  count AFTER filtering, BEFORE `limit` -- so a caller can page. */
+/** `source: "llm"` is not yet reviewed (`tier: "suggested"`); anything a
+ *  human (or an opt-in evaluator, 9.6) has since re-recorded through
+ *  `promote_change` is `source: "human"`/`"heuristic"`, `tier: "confirmed"`
+ *  -- the overlay-side twin of `ReadabilityTransaction.tier`. */
+function overlayTier(record: NameRecord): "suggested" | "confirmed" {
+  return record.source === "llm" ? "suggested" : "confirmed";
+}
+
+/** Section 9.7's `list_suggestions`, merged over BOTH sources (P-59): the
+ *  overlay's active name records and the rewrite/file-op transaction log.
+ *  `total` is the count AFTER filtering, BEFORE `limit` -- so a caller can
+ *  page. */
 export function listSuggestions(ctx: ReadabilityContext, args: ListSuggestionsArgs = {}): ListSuggestionsResult {
-  let rows = listTransactions(ctx.db).map((r) => r.tx);
   const filter = args.filter;
-  if (filter?.tier !== undefined) rows = rows.filter((tx) => tx.tier === filter.tier);
-  if (filter?.module !== undefined) rows = rows.filter((tx) => tx.inputs.some((i) => i.module === filter.module));
-  const total = rows.length;
-  if (args.limit !== undefined) rows = rows.slice(0, args.limit);
-  return { suggestions: rows, total };
+  let items: SuggestionItem[] = [];
+
+  let txRows = listTransactions(ctx.db).map((r) => r.tx);
+  if (filter?.tier !== undefined) txRows = txRows.filter((tx) => tx.tier === filter.tier);
+  if (filter?.module !== undefined) txRows = txRows.filter((tx) => tx.inputs.some((i) => i.module === filter.module));
+  items.push(...txRows.map((tx): TxSuggestionItem => ({ kind: "tx", tx })));
+
+  let names = OverlayStore.load(overlayPathFor(ctx)).allRecords().filter((r) => r.active);
+  if (filter?.confidence !== undefined) names = names.filter((r) => r.confidence === filter.confidence);
+  if (filter?.tier !== undefined) names = names.filter((r) => overlayTier(r) === filter.tier);
+  items.push(
+    ...names.map((r): NameSuggestionItem => ({
+      kind: "name",
+      suggestionId: r.rid,
+      bindingId: r.id,
+      name: r.name,
+      confidence: r.confidence,
+      evidence: r.evidence,
+      tier: overlayTier(r),
+      ts: r.ts,
+    })),
+  );
+
+  const total = items.length;
+  if (args.limit !== undefined) items = items.slice(0, args.limit);
+  return { suggestions: items, total };
 }
 
 export { getTransaction };

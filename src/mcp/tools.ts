@@ -647,7 +647,7 @@ export const READABILITY_TOOL_SCHEMAS: Readonly<Record<ReadabilityMcpTool, JsonS
   classify_module: { type: "object", properties: { module: { type: "number" }, evaluate: { type: "string" } }, required: ["module"] },
   file_op: { type: "object", properties: { op: { type: "string", enum: FILE_OP_KINDS }, inputs: { type: "object" }, outputs: { type: "object" }, evidence: { type: "string" } }, required: ["op", "evidence"] },
   promote_change: { type: "object", properties: { txId: { type: "string" }, suggestionId: { type: "string" }, who: { type: "string" } }, required: ["who"] },
-  revert_change: { type: "object", properties: { txId: { type: "string" } }, required: ["txId"] },
+  revert_change: { type: "object", properties: { txId: { type: "string" }, suggestionId: { type: "string" } }, required: [] },
   list_suggestions: { type: "object", properties: { filter: { type: "object" }, limit: { type: "number" } }, required: [] },
 };
 
