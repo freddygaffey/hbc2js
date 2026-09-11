@@ -71,6 +71,11 @@ export default defineConfig({
             // ceremony needed, and the client build below never sets one.
             command: `node ${join(repoRoot, "src/cli.ts")} ui-server ${PROJECT_DIR} --port ${API_PORT} --hbc ${BUNDLE} --no-auth`,
             url: `http://127.0.0.1:${API_PORT}/api/segregation`,
+            // Spec 28 landing 1b made `claude-cli` the DEFAULT backend for
+            // LLM-kind jobs (Fred: the plan, never the API). A test rig must
+            // never spawn a model: pin the deterministic heuristic backend so
+            // the spec-23 suggest-name flow stays fast, offline and free.
+            env: { ...process.env, HBC2JS_LLM_BACKEND: "heuristic" },
             reuseExistingServer: false,
             // The route answers as soon as the server listens, but the box
             // measured this at ~30-45s of whole-bundle "warming analysis"
