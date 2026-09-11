@@ -32,7 +32,7 @@ test.describe("AI tab: suggest name reaches a real outcome (spec 23 SS6)", () =>
     await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
 
     await page.getByRole("tab", { name: "AI" }).click();
-    const suggestButton = page.getByRole("button", { name: "Suggest name" });
+    const suggestButton = page.getByRole("button", { name: "Suggest name", exact: true });
     await expect(suggestButton).toBeVisible({ timeout: WAIT });
     await suggestButton.click();
 
@@ -54,7 +54,7 @@ test.describe("AI tab: suggest name reaches a real outcome (spec 23 SS6)", () =>
     await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
 
     await page.getByRole("tab", { name: "AI" }).click();
-    await page.getByRole("button", { name: "Suggest name" }).click();
+    await page.getByRole("button", { name: "Suggest name", exact: true }).click();
     await expect(page.getByRole("button", { name: "Accept" }).first()).toBeVisible({ timeout: WAIT });
 
     // The row's own monospace text is the exact string the accept must
