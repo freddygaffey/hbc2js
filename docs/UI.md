@@ -1558,6 +1558,57 @@ key and no network. `hbc2js ui-server … --workers off` turns the pool off
 entirely; the tab then says so instead of drawing an empty rail, because the
 routes answer 503 rather than an empty list.
 
+### Readability section (spec 28 landing 4c)
+
+Below the jobs rail, the same "AI" tab gains a "Readability" section — a
+DIFFERENT pipeline from the jobs rail above it: names/rewrites/file-ops here
+go through spec 28's name-overlay and transaction log
+(`src/readability/surfaces.ts`), never the `[ai-suggested]` annotation
+convention the jobs rail uses, so it has its own client
+(`ui/src/workers/readability-wire.ts` + `readability-hooks.ts`) and its own
+routes (`GET /api/readability/suggestions`, `POST /api/readability/
+{promote,revert}`, `POST /api/readability/actions/*`).
+
+**Filters.** Tier (`suggested`/`confirmed`), confidence (`low`/`med`/`high`),
+module, and a security-relevant checkbox — the last one is accepted by the
+route but not yet applied server-side (docs/BUGS.md: no ground-truth field
+to filter by exists yet on a name record or transaction).
+
+**The list.** Each row is either a name suggestion (from the overlay) or a
+rewrite/file-op transaction (from the log) — `kind`, confidence (names
+only), evidence, and an equiv-status badge (`PASS`/`FAIL`/`DIVERGENT`/
+`INCONCLUSIVE`, with the proof's scope and oracle on hover). A `rewrite`
+transaction also shows a before/after panel — today that is prior-vs-output
+FILE PATHS (and the prior file's hash on hover), not rendered text: the
+transaction log's `EmittedFile`/`prior` carry paths and hashes, not content,
+over the wire (docs/BUGS.md).
+
+**Reach ordering.** Spec 28 §1d asks for highest-reach-first. No xref
+caller-count reaches this pane yet, so rows sort by module order (a name's
+own `{fn}` as the nearest proxy, since a name carries no module field) —
+the brief's own documented fallback.
+
+**Batch promote/revert.** A checkbox per row; "Promote selected"/"Revert
+selected" act on every checked row over the CURRENT filter, one `/promote`
+or `/revert` call per row.
+
+**The four actions**, spec 28 §9.7's `READABILITY_UI_ACTIONS`, in the
+section header: "Suggest names" (the selected function, or module 0 with no
+function selected — module-tree wiring is a follow-up), "Make readable"
+(the selected function only), "Combine files" (a small inline form: a
+comma-separated input list, one output path, evidence — not yet fed from
+the file tree's own multi-select), and "Review" (fetches a fresh pending
+count; there is nothing to enqueue for it, spec 28 §9.7).
+
+These four actions run to completion and answer directly rather than
+enqueuing a pollable job the way "Suggest name"/"Explain" above do
+(docs/PUSHBACK.md P-60: `JOB_KINDS`/`WorkerRunner`, spec 23, have no
+readability-aware branch yet). `src/ui-server/server.ts` does not build a
+`ReadabilityRoutesCtx` yet either, so every `/api/readability/*` route 503s
+against a real `ui-server` process today — the routes and the pane are real
+and tested against a hand-built ctx (`tests/ui-server/readability-routes.
+test.ts`), but production wiring is this landing's next open item.
+
 ## Graph view
 
 The **Graph** tab in the right-hand panel (spec 25, decision D28) draws the

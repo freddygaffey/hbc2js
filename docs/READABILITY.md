@@ -212,6 +212,29 @@ review path. `rewrite_function` and `file_op` were never affected: both
 materialise their accepted output into `treeDir` before recording, so a
 later revert has real bytes to restore.
 
-The suggestion pane's evidence/confidence/equiv-status columns, the
-before/after diff, and the batch promote/revert filters (tier, confidence,
-module, security-relevant) are documented in `docs/UI.md`.
+### The UI (landing 4c)
+
+The same seven functions are also on HTTP, over `src/ui-server/
+readability-routes.ts`: `GET /api/readability/suggestions` (the
+`ListSuggestionsFilter` query params) wraps `list_suggestions`, `POST
+/api/readability/{promote,revert}` wrap `promote_change`/`revert_change`,
+and the four spec 28 section 9.7 UI actions are their own endpoints --
+`POST /api/readability/actions/{suggest-names,rewrite-function,
+combine-files,review}` -- each calling straight into `suggestNames`/
+`rewriteFunction`/`fileOp` and answering once the call settles (see
+docs/PUSHBACK.md P-60 for why these are not queued jobs the way `/api/jobs`
+work is).
+
+`ui/src/panes/WorkersPane.tsx`'s "AI" tab (docs/UI.md "AI workers") gains a
+"Readability" section below the jobs rail: tier/confidence/module/
+security-relevant filters, the evidence/confidence/equiv-status columns,
+a before/after PATH panel for `rewrite` transactions (the transaction log
+carries paths and hashes over the wire, not rendered content -- a true text
+diff needs a follow-up endpoint that reads `treeDir`, docs/BUGS.md), reach
+ordering (module order -- no xref caller-count reaches this pane yet), batch
+promote/revert over the current filter, and the four actions in the section
+header. Full details, including what this pass did NOT wire (production
+`server.ts` support, so `/api/readability/*` still 503s against a real
+`ui-server` process; a real tree multi-select feeding "Combine files"), are
+in docs/UI.md's "Readability section" and spec 28 section 10 Landing 4's own
+status paragraph.
