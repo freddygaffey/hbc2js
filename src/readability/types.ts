@@ -220,8 +220,34 @@ export function parseReadabilityResult(text: string): ParseOutcome {
   if (abstainedRaw !== undefined && typeof abstainedRaw !== "boolean") {
     return { ok: false, error: "`abstained` must be a boolean when present" };
   }
-  const abstained = abstainedRaw ?? names.length === 0;
-  return { ok: true, result: { names, abstained } };
+  // A rewrite (spec 28 landing 2) is optional and, like a name, a CANDIDATE:
+  // parsing it here only says the model's JSON had the right shape. Whether it
+  // survives is decided by `gateRewrite` and the equivalence oracle alone.
+  const rewriteRaw = obj["rewrite"];
+  let rewrite: RewriteProposal | undefined;
+  if (rewriteRaw !== undefined && rewriteRaw !== null) {
+    rewrite = parseRewriteProposal(rewriteRaw);
+    if (rewrite === undefined) {
+      return { ok: false, error: "`rewrite` is not a {fn,code,confidence,evidence} object" };
+    }
+  }
+  const abstained = abstainedRaw ?? (names.length === 0 && rewrite === undefined);
+  return { ok: true, result: { names, abstained, ...(rewrite !== undefined ? { rewrite } : {}) } };
+}
+
+function parseRewriteProposal(r: unknown): RewriteProposal | undefined {
+  if (typeof r !== "object" || r === null || Array.isArray(r)) return undefined;
+  const o = r as Record<string, unknown>;
+  const fn = o["fn"];
+  const code = o["code"];
+  const confidence = o["confidence"];
+  const evidence = o["evidence"];
+  if (typeof fn !== "number" || !Number.isInteger(fn) || fn < 0) return undefined;
+  if (typeof code !== "string" || code.trim() === "") return undefined;
+  if (typeof confidence !== "string" || !CONFIDENCES.includes(confidence)) return undefined;
+  if (typeof evidence !== "string") return undefined;
+  const conf = (evidence.trim() === "" && confidence === "high" ? "low" : confidence) as Confidence;
+  return { fn, code, confidence: conf, evidence };
 }
 
 const CONFIDENCES: readonly string[] = ["low", "med", "high"];

@@ -500,6 +500,13 @@ was tried and rejected.
 | **REWRITE** (function-level, landing 2) | `hbc2js equiv --hbc <bundle.hbc> <rewrite.js>` restricted to the affected function, with fuzzed inputs where trace coverage is thin | verdict **PASS**. `DIVERGENT` and `INCONCLUSIVE` both reject; INCONCLUSIVE is never PASS (the harness rule) |
 | **FILE OP** (make / rename / move / combine / split, landing 3) | tree-level `hbc2js equiv --hbc <bundle.hbc> <tree/>` over the reconstructed tree: require graph resolves the same, exports preserved, behaviour identical | verdict **PASS** for the whole tree, not just the touched files |
 
+The REWRITE row's oracle is callable, not a CLI invocation: `src/harness/hbc-equiv.ts`
+exports `hbcVsJsUnderHermes` (the `equiv --hbc` comparison itself, which
+`src/cli.ts` now also calls) and `runFunctionEquiv` (the two-leg gate:
+`module-hbc` plus, when the module's trace coverage is thin, a
+`function-fuzz` differential of the faithful function against the rewritten one
+over spec 09's seeded corpus). Library code never shells out to the CLI.
+
 Every accepted change stores an `EquivProof` (`scope`, `verdict`, the verbatim
 `oracle` invocation, `coverage: {inputs, records}`, `ts`), so a proof is
 reproducible by hand and its strength is visible. `equivAccepts(proof)` is the
@@ -679,6 +686,33 @@ queued as this landing's one follow-up, not a correctness gap.
   `equiv --hbc` and every rejected one leaves the faithful output untouched;
   zero accepted rewrites with an INCONCLUSIVE proof.
 
+**Status: LANDED 2026-09-11.** `src/harness/hbc-equiv.ts` (the oracle:
+`hbcVsJsUnderHermes` + `runFunctionEquiv`, 7 tests in
+`tests/gate/harness/hbc-equiv.test.ts`), `src/readability/rewrite.ts`
+(`spliceRewrite` / `gateRewrite` / `runRewritePass` + the change record, 10
+tests in `tests/gate/llm-readability/rewrite.test.ts`), and
+`hbc2js readability rewrite` (3 tests in
+`tests/gate/cli/readability-rewrite.test.ts`, the section 9.7 verb, candidates
+read from a file so the gate never calls the network). Measured on construct
+fixture `04-for-loop-basic` v84 through the real Hermes VM: an equivalent
+restatement of `_fn0` is ACCEPTED with a PASS proof over 8 observed output
+lines; the same function with one extra `print` is REJECTED_DIVERGENT; an
+unparseable candidate is REJECTED_PARSE without the oracle running at all; an
+INCONCLUSIVE proof is refused exactly like a divergent one. Zero accepted
+rewrites carry a non-PASS proof (asserted over every attempt the file makes),
+and every rejection returns the faithful render byte for byte.
+
+Two deviations from the landing plan, both recorded: the **skill file is
+deferred** (docs/PUSHBACK.md P-57 -- bumping `skills/hbc-name.md` to version 2
+invalidates every key in the committed replay recording, and re-keying a
+fixture is a snapshot regeneration an implementation task may not do; the
+rewrite prompt contract is documented in `docs/READABILITY.md` instead, and the
+skill lands with the next recording regeneration), and an accepted rewrite is
+stored as a **`RewriteChangeRecord`** rather than a `ReadabilityTransaction`
+(docs/PUSHBACK.md P-58 -- section 9.5's `op` enum has no value for "rewrote one
+function"; the record carries every other field and the same validation rules,
+and landing 3 maps it in).
+
 ### Landing 3 -- DB transaction log + file ops
 
 - **Files**: `src/readability/transactions.ts` (new: the table, the shard
@@ -732,6 +766,12 @@ construction.
 | `quality.test.ts` | sample format conformance, every label traced to the held-out app's sourcemap, rater verdicts, accuracy arithmetic including a FAILING run and the empty case | landing 1 (the >= 80% measurement), landing 5 (the security clause) |
 | `fidelity-reversibility.test.ts` | transaction validity: orphan files, missing inputs, non-reversible ops, non-PASS proofs, worker self-promotion; INCONCLUSIVE is never PASS | landing 1 (apply-then-revert byte identity), landing 3 (revert exactness, traceability on a real tree, tree-level equiv) |
 | `surfaces-evaluator.test.ts` | spec-text/code vocabulary agreement for all three surfaces, snake_case and non-collision of tool names, evaluator mode defaults, plug-in round-trip with no promotion field | landing 4 (registration), landing 5 (the loop) |
+
+Landings add their own acceptance files alongside these: landing 2 shipped
+`tests/gate/llm-readability/rewrite.test.ts` (one test per rejection class plus
+the cross-cutting "no accepted rewrite carries a non-PASS proof"),
+`tests/gate/harness/hbc-equiv.test.ts` and
+`tests/gate/cli/readability-rewrite.test.ts`.
 
 No test asserts exact decompiler output on a shared fixture
 (`docs/CONSOLIDATION.md` section B item 7); the only fixture-derived assertions

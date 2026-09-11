@@ -47,6 +47,8 @@ import { HaikuBackend } from "./workers/backends/haiku.ts";
 import { ReplayBackend, loadRecording } from "./workers/backends/replay.ts";
 import { resolveHaikuConfig, SKILLS_DIR } from "./readability/types.ts";
 import { runNamePass, namedCount } from "./readability/name-pass.ts";
+import { gateRewrite, rewriteSidecar } from "./readability/rewrite.ts";
+import type { RewriteProposal } from "./readability/types.ts";
 import type { NamePassTarget } from "./readability/name-pass.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
@@ -74,6 +76,7 @@ Usage:
   hbc2js sweep [options]           run the sweep tier (spec 06 §7)
   hbc2js deps <bundle.hbc|.apk>    identify npm dependencies (D17/D17a/D17b)
   hbc2js name <set|get|revert|search|list|context> …   Design-D naming overlay (rename-tool-DESIGN-D-overlay.md)
+  hbc2js readability rewrite <input.hbc> --fn N --code <file>   equiv-gated function rewrite (spec 28 section 9.7)
   hbc2js render --hbc <in.hbc>     render source with the naming overlay applied
   hbc2js segregate <split-dir>     segregate a flat split tree into src/node_modules form (spec 08)
   hbc2js query <verb> --artifact <dir> …   query the P2.1 decompile artifact (docs/specs/10-artifact-format.md §3)
@@ -1538,6 +1541,58 @@ async function runNameLlmFill(argv: readonly string[]): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// `hbc2js readability rewrite <input.hbc> --fn N --code <file>` — spec 28
+// section 9.7's `readability rewrite` verb, landing 2. The candidate comes
+// from a FILE, not from the network: whoever produced it (the Haiku backend,
+// another agent, a human) is irrelevant to the gate, which only ever asks the
+// equivalence oracle. Exit 0 = accepted, 1 = rejected, 2 = usage.
+// ---------------------------------------------------------------------------
+async function runReadabilityRewrite(argv: readonly string[]): Promise<number> {
+  const json = argv.includes("--json");
+  const hbc = argv[0];
+  if (hbc === undefined || hbc.startsWith("-")) {
+    fail(
+      ErrorCode.E_USAGE,
+      "readability rewrite <input.hbc> --fn N --code <candidate.js> [--evidence <text>] [--out <sidecar.json>] [--out-js <file>] [--fuzz N] [--json]",
+      2,
+      json,
+    );
+  }
+  const fnRaw = flagValue(argv, "--fn");
+  const codePath = flagValue(argv, "--code");
+  if (fnRaw === undefined || codePath === undefined) {
+    fail(ErrorCode.E_USAGE, "readability rewrite needs --fn <index> and --code <candidate.js>", 2, json);
+  }
+  const fn = Number(fnRaw);
+  if (!Number.isInteger(fn) || fn < 0) fail(ErrorCode.E_USAGE, `readability rewrite --fn must be a function index, got ${String(fnRaw)}`, 2, json);
+  const fuzzRaw = flagValue(argv, "--fuzz");
+  const faithful = decompile(readFileSync(hbc)).code;
+  const proposal: RewriteProposal = {
+    fn,
+    code: readFileSync(codePath as string, "utf8"),
+    confidence: "med",
+    evidence: flagValue(argv, "--evidence") ?? `${codePath as string}`,
+  };
+  const attempt = await gateRewrite(proposal, {
+    faithfulCode: faithful,
+    hbcPath: hbc,
+    outputPath: flagValue(argv, "--out-js") ?? `${hbc}.js`,
+    ...(fuzzRaw !== undefined ? { fuzz: Number(fuzzRaw) } : {}),
+  });
+  const outJs = flagValue(argv, "--out-js");
+  if (attempt.accepted && outJs !== undefined) writeFileSync(outJs, attempt.code);
+  const sidecar = flagValue(argv, "--out");
+  if (attempt.record !== undefined && sidecar !== undefined) writeFileSync(sidecar, rewriteSidecar([attempt.record]));
+  if (json) {
+    process.stdout.write(`${JSON.stringify({ fn, verdict: attempt.verdict, accepted: attempt.accepted, detail: attempt.detail, equiv: attempt.proof ?? null })}\n`);
+  } else {
+    process.stdout.write(`${attempt.verdict} — ${attempt.detail}\n`);
+    if (!attempt.accepted) process.stdout.write("the faithful decompile is unchanged\n");
+  }
+  return attempt.accepted ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // `hbc2js query <verb> …` — docs/specs/10-artifact-format.md §3. A thin
 // formatting wrapper over `ArtifactService`; the caps + truncation markers
 // here are the CLI's own presentation of §3.1's bounds, never a second
@@ -2194,6 +2249,10 @@ function main(): void {
     // Explicit alias for the default decompile command, so `hbc2js decompile
     // <input.hbc> [--fn N]` reads as a verb (docs/CLI.md, hunt-tooling #3).
     runDecompile(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "readability" && argv[1] === "rewrite") {
+    void runReadabilityRewrite(argv.slice(2)).then((code) => process.exit(code));
     return;
   }
   if (argv[0] === "name" && argv[1] === "llm-fill") {
