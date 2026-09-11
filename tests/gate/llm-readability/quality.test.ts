@@ -130,12 +130,24 @@ test("spec 28: high-confidence accuracy is computed over high-confidence proposa
   assert.equal(bad.misleading, 1, "a misrepresented security-relevant target must be countable");
 });
 
+const HELD_OUT_RECORDING = join(
+  repoRoot(),
+  "tests",
+  "fixtures",
+  "llm-readability",
+  "react-navigation-example-0.85.3.recording.json",
+);
+
 test("spec 28 section 7 (quality): >= 80% of high-confidence names on the labelled sample are accurate", (t) => {
   const s: LabelledSample = sample();
   const first: LabelledTarget | undefined = s.targets[0];
   assert.ok(first !== undefined);
-  if (!existsSync(HAIKU_BACKEND_PATH)) {
-    t.skip(`${HAIKU_BACKEND_PATH} does not exist yet -- spec 28 LANDING 1 (naming path)`);
+  assert.ok(existsSync(HAIKU_BACKEND_PATH), "spec 28 landing 1 (HaikuBackend) has landed -- this leg no longer needs the path check");
+  if (!existsSync(HELD_OUT_RECORDING)) {
+    t.skip(
+      "landing 1: needs tests/fixtures/llm-readability/react-navigation-example-0.85.3.recording.json " +
+        "(run tools/readability/record.ts with ANTHROPIC_API_KEY)",
+    );
     return;
   }
   t.skip("landing 1 owns this: run the naming pass over the held-out app and feed its proposals to highConfidenceAccuracy");

@@ -1,0 +1,86 @@
+{
+  "ecae08e17cd4a60d448a1bd5d59e8a50d95f8d43b76752cf9eeb48e8a01b7da3": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":100,\"reg\":3},\"name\":\"sessionToken\",\"confidence\":\"high\",\"evidence\":\"literal \\\"sessionToken\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "e7a51877bd951a5e0b72e06e9516bb6339844b8896279a1f0fa125da024ff58b": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":101,\"reg\":3},\"name\":\"retryCount\",\"confidence\":\"high\",\"evidence\":\"literal \\\"retryCount\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "9fc90ed0dc9ae3bbaffea3dc4d76d54a4118b5e9ceba03cd4d7e72ee036bc939": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":102,\"reg\":3},\"name\":\"apiEndpoint\",\"confidence\":\"high\",\"evidence\":\"literal \\\"apiEndpoint\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "490979bc7078b36e10be6caf66969aaf199d5cf0823a6754c7df16a08c95b0f5": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":103,\"reg\":3},\"name\":\"userProfile\",\"confidence\":\"high\",\"evidence\":\"literal \\\"userProfile\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "754c136044f5c76cb9efa9252bb01d27c4efdc19ced956f6f314f3f8c7ef63d4": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":104,\"reg\":3},\"name\":\"cacheEntry\",\"confidence\":\"high\",\"evidence\":\"literal \\\"cacheEntry\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "8b58c20bffe3324a4679c65b284061c19520fc33c3bce0626fd5790cf75969d3": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":105,\"reg\":3},\"name\":\"navigationState\",\"confidence\":\"high\",\"evidence\":\"literal \\\"navigationState\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "982fe667f5a1dfae4d9b2613b7b6ebccf9f67507074d2189106f0b4a321251ae": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":106,\"reg\":3},\"name\":\"routeParams\",\"confidence\":\"high\",\"evidence\":\"literal \\\"routeParams\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "06725843f7b332775c471810cbb9ce9df55034a53685f83f011dbaf34b65209b": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":107,\"reg\":3},\"name\":\"authHeader\",\"confidence\":\"high\",\"evidence\":\"literal \\\"authHeader\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "db5308fc45db1b8c577f57935f150d6331666e4b410ba514da2b67d60265a913": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":108,\"reg\":3},\"name\":\"errorMessage\",\"confidence\":\"high\",\"evidence\":\"literal \\\"errorMessage\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "6f32edd82ace723475932398d96d13462c0b11d1f86668323aa8029f27911469": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":109,\"reg\":3},\"name\":\"requestId\",\"confidence\":\"high\",\"evidence\":\"literal \\\"requestId\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "5866b31c21ccb95c37a716e1846b3d770e0bf8afcdcf7c5b07bd3101998c6a7a": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":110,\"reg\":3},\"name\":\"screenTitle\",\"confidence\":\"high\",\"evidence\":\"literal \\\"screenTitle\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  },
+  "2e843ae10cd34a503c82489f6a7059580bae4fd4f77cc8b1326adaf95f47efd1": {
+    "text": "{\"names\":[{\"bindingId\":{\"fn\":111,\"reg\":3},\"name\":\"dispatchAction\",\"confidence\":\"high\",\"evidence\":\"literal \\\"dispatchAction\\\" nearby\"}],\"abstained\":false}",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 40
+    }
+  }
+}

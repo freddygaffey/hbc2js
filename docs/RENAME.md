@@ -77,6 +77,43 @@ named {0,6} → g [low, gate:overridden]
 
 `--json` on `set`/`get`/`search` emits the full record(s) instead.
 
+## `name llm-fill` — batch naming through an LLM (spec 28 landing 1)
+
+```
+hbc2js name llm-fill <in.hbc> [--backend haiku|replay|heuristic] \
+                      [--budget-tokens N] [--recording <file>] \
+                      [--store <path>] [--json]
+```
+
+Enumerates every nameable, not-yet-named register (`listNameable`, the same
+query `name list` uses) and runs spec 28's per-target loop
+(`src/readability/name-pass.ts`: cache -> skill -> generate -> validate ->
+write -> equiv backstop) over each one:
+
+- `--backend haiku` calls the real Anthropic API (`src/workers/backends/
+  haiku.ts`, needs `ANTHROPIC_API_KEY`); `--backend replay` answers from a
+  committed recording (`--recording <file>`, see
+  `tools/readability/record.ts`); `--backend heuristic` (default) is the
+  offline spec-23 backend, which does not speak the JSON contract yet, so it
+  abstains on every target rather than crash.
+- A written name lands in the overlay as `source:"llm"`, `gate:"passed"` (or
+  `"overridden"`) exactly like `name set` would — **never** `tier:"confirmed"`;
+  promotion is a separate, human (or stronger-model) action (spec 28 D28-1).
+  This landing writes directly through `NameService.setName`, the same call
+  `name set` makes; the DB transaction log's own `suggested`/`confirmed` tier
+  is spec 28 landing 3's file-op surface, not this one.
+- Every run ends with the section 9.4 NAME-row backstop: revert every name the
+  run wrote, render, and compare against the pre-run render. `PASS` re-applies
+  the writes; anything else discards the WHOLE batch (spec 28 section 0a: "no
+  silently-wrong subset").
+- Budget (`--budget-tokens`, tokens, not USD) is checked between targets, so a
+  cut-off run always finishes writing whichever target it started.
+
+```
+$ hbc2js name llm-fill app.hbc --backend heuristic --json
+{"targets":16,"named":0,"tokensUsed":0,"stoppedAtBudget":false,"equiv":"PASS"}
+```
+
 ## Programmatic (resident) API — the loop's primary form
 
 ```ts

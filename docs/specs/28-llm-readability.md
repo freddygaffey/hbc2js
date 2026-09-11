@@ -638,6 +638,34 @@ landing may make a test from an earlier landing skip again.
   >= 80% of `src/` modules carry a non-`rN`/non-`module_N` name; apply-then-revert
   is byte-identical; a second run costs <= 10% of the first.
 
+**Status: LANDED (plumbing) 2026-09-11.** `HaikuBackend` (plain `fetch`, no
+SDK), `src/readability/cache.ts`, `src/readability/name-pass.ts` (the shared
+gather-free loop: cache -> skill -> generate -> validate -> write -> equiv
+backstop), `src/workers/backends/replay.ts`, `tools/readability/record.ts` and
+`hbc2js name llm-fill` all ship. `coverage.test.ts`/`quality.test.ts`'s
+held-out-app ratio legs stay skipped with the exact message naming the missing
+recording (`tests/fixtures/llm-readability/react-navigation-example-0.85.3
+.recording.json`, produced by `tools/readability/record.ts` with
+`ANTHROPIC_API_KEY`, which this landing's agent does not have) -- that is the
+one exit-criterion number NOT yet measured. Every other landing-1 leg is real
+and green: `fidelity-reversibility.test.ts`'s fidelity leg (apply-then-revert
+byte-identical, on a construct fixture rather than the 15,551-function
+held-out app -- that bundle's full `rawFrameBodies`/`render()` pass exceeds the
+gate's time budget; the held-out-app version of this same property belongs in
+`tests/sweep/`, not measured yet), `cost-cache.test.ts`'s both legs (a stubbed-
+`fetch` HaikuBackend cache-hit measurement and a `FakeBackend` budget-stop),
+and `name-pass.test.ts`/`backends.test.ts` (new, `tests/gate/llm-readability/`
+and `tests/workers/`) proving the loop end to end: gate-refusal, abstention,
+malformed output, and the batch equiv backstop's PASS/DIVERGENT paths.
+Measured on a construct fixture (`04-for-loop-basic`) with `FakeBackend`: 8/16
+nameable registers named in one pass, apply-then-revert render byte-identical,
+0 orphaned/half-written targets across a budget-stopped run. The 12-target
+synthetic recording (`tests/fixtures/llm-readability/synthetic.recording
+.json`) proves the `ReplayBackend` path the same way a real recording would.
+Real per-run coverage/cost numbers on NSW or the held-out app need the
+recording or `HBC2JS_NSW_HBC`, neither available to this landing's agent --
+queued as this landing's one follow-up, not a correctness gap.
+
 ### Landing 2 -- rewrite path (function-level, equiv-gated)
 
 - **Files**: `src/readability/rewrite.ts` (candidate rewrite -> parse -> render

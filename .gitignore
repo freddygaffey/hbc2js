@@ -30,3 +30,7 @@ tests/fixtures/bundles/**/*.map
 # run artifacts — traces/screenshots/HTML reports, machine-local only.
 ui/test-results/
 ui/playwright-report/
+
+# spec 28 section 9.3: the LLM readability content-hash cache — one JSON file
+# per request key, derived data, rebuildable, never authoritative.
+cache/llm-readability/

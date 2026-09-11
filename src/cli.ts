@@ -40,6 +40,14 @@ import { installPreCommitHook } from "./projdb/hooks.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
+import type { Stmt } from "./emit/ast.ts";
+import type { WorkerBackend } from "./workers/backend.ts";
+import { HeuristicBackend } from "./workers/backends/heuristic.ts";
+import { HaikuBackend } from "./workers/backends/haiku.ts";
+import { ReplayBackend, loadRecording } from "./workers/backends/replay.ts";
+import { resolveHaikuConfig, SKILLS_DIR } from "./readability/types.ts";
+import { runNamePass, namedCount } from "./readability/name-pass.ts";
+import type { NamePassTarget } from "./readability/name-pass.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
 import { reconstructNativeProject } from "./native/reconstruct.ts";
@@ -1452,7 +1460,92 @@ function runNameOverlay(argv: readonly string[]): void {
     process.exit(0);
   }
 
-  fail(ErrorCode.E_USAGE, "name <set|get|revert|search|list|context> …", 2, json);
+  fail(ErrorCode.E_USAGE, "name <set|get|revert|search|list|context|llm-fill> …", 2, json);
+}
+
+// ---------------------------------------------------------------------------
+// `hbc2js name llm-fill <input.hbc>` — spec 28 section 3/9.7: the batch CLI
+// that drains the naming pass over every nameable register in a bundle. Same
+// core (`runNamePass`) the spec-23 workers use with backend `haiku` (spec 28
+// section 5, "one core, two callers").
+// ---------------------------------------------------------------------------
+
+/** Every nameable, not-yet-named register in `fn`, as `NamePassTarget`s. The
+ *  function's own render (overlay-free at this point) IS the `body`/`source`
+ *  the cache key and the prompt both use. */
+function llmFillTargetsForFn(
+  service: NameService,
+  frames: ReadonlyMap<number, readonly Stmt[]>,
+  store: OverlayStore,
+  fn: number,
+): readonly NamePassTarget[] {
+  const nameable = listNameable(frames, fn, store);
+  if (nameable.length === 0) return [];
+  const source = service.render({ fn }).code;
+  const out: NamePassTarget[] = [];
+  for (const reg of nameable) {
+    if (reg.named !== null) continue; // spec 28 section 2: never rename an already-named slot
+    const id = regId(fn, reg.reg);
+    out.push({ bindingId: id, kind: "suggest-name", context: { target: shortForm(id), fn, reg: reg.reg, source } });
+  }
+  return out;
+}
+
+function llmFillBackend(argv: readonly string[], json: boolean): WorkerBackend {
+  const name = flagValue(argv, "--backend") ?? "heuristic";
+  if (name === "haiku") return new HaikuBackend(resolveHaikuConfig(process.env));
+  if (name === "replay") {
+    const recording = flagValue(argv, "--recording");
+    if (recording === undefined) fail(ErrorCode.E_USAGE, "name llm-fill --backend replay requires --recording <file>", 2, json);
+    return new ReplayBackend(loadRecording(recording), { model: resolveHaikuConfig(process.env).model, skillsDir: SKILLS_DIR });
+  }
+  if (name === "heuristic") return new HeuristicBackend();
+  fail(ErrorCode.E_USAGE, `name llm-fill --backend must be haiku|replay|heuristic, got ${name}`, 2, json);
+}
+
+async function runNameLlmFill(argv: readonly string[]): Promise<number> {
+  const json = argv.includes("--json");
+  const hbc = argv[0];
+  if (hbc === undefined || hbc.startsWith("-")) {
+    fail(
+      ErrorCode.E_USAGE,
+      "name llm-fill <input.hbc> [--backend haiku|replay|heuristic] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>]",
+      2,
+      json,
+    );
+  }
+  const budgetRaw = flagValue(argv, "--budget-tokens");
+  const budgetTokens = budgetRaw !== undefined ? Number(budgetRaw) : undefined;
+  const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
+  const analysis = buildAnalysis(hbc);
+  const store = OverlayStore.load(storePath, hbc);
+  const service = new NameService(analysis, store);
+  const frames = rawFrameBodies(analysis);
+  const backend = llmFillBackend(argv, json);
+
+  const targets: NamePassTarget[] = [];
+  for (let fn = 0; fn < analysis.module.functions.length; fn++) {
+    targets.push(...llmFillTargetsForFn(service, frames, store, fn));
+  }
+
+  const result = await runNamePass(targets, { backend, service, ...(budgetTokens !== undefined ? { budgetTokens } : {}) });
+  store.save(storePath);
+  const named = namedCount(result.outcomes);
+  const summary = {
+    targets: targets.length,
+    named,
+    tokensUsed: result.tokensUsed,
+    stoppedAtBudget: result.stoppedAtBudget,
+    equiv: result.equiv.verdict,
+  };
+  if (json) process.stdout.write(`${JSON.stringify(summary)}\n`);
+  else {
+    process.stdout.write(
+      `named ${String(named)}/${String(targets.length)} targets (tokens ${String(result.tokensUsed)}, equiv ${result.equiv.verdict}` +
+        `${result.stoppedAtBudget ? ", budget-stopped" : ""})\n`,
+    );
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2112,6 +2205,10 @@ function main(): void {
     // Explicit alias for the default decompile command, so `hbc2js decompile
     // <input.hbc> [--fn N]` reads as a verb (docs/CLI.md, hunt-tooling #3).
     runDecompile(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "name" && argv[1] === "llm-fill") {
+    void runNameLlmFill(argv.slice(2)).then((code) => process.exit(code));
     return;
   }
   if (argv[0] === "name") {
