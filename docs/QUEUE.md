@@ -25,13 +25,12 @@ Concrete, non-overlapping. Model choice is the orchestrator's (Fred 2026-09-11: 
 
 Fred's two directions of 2026-09-11 rank above everything else:
 
-1. **Spec 28 -- LLM readability layer** (`docs/specs/28-llm-readability.md`). Spec agent first (Opus, IN FLIGHT below): promote DRAFT -> ACCEPTED and ship the section-7 acceptance tests (`tests/gate/llm-readability/`, red-skipped per landing). Then five landings, each tests+docs in one commit, full gate green before push:
-   1. HaikuBackend + `hbc-name`/`hbc-classify` skills + equiv-gate on the naming path -- *Sonnet* (Opus if the gate contract proves subtle).
-   2. Rewrite path, function-level, `equiv --hbc` gated -- *Opus* (checker-critical).
-   3. DB transaction log + file ops (make/rename/combine/split), extending spec 18 -- *Opus* (integrity).
-   4. MCP tools + UI actions -- *Sonnet*.
-   5. Evaluation loop (pluggable, opt-in evaluator; human UI review is the default) -- *Sonnet*.
-   Non-negotiables: every change passes equiv or falls back to the faithful original; every action is a reversible, provenance-stamped DB transaction; zero orphan files; nothing canonical until reviewed.
+1. **Spec 28 -- LLM readability layer: LANDED on main 13c6352c (2026-09-11)**, all five landings plus 1b (claude-cli default backend), 4b (P-59 review-tool unification, P-57 skill batch), 4c (UI pane), 4d (live wiring, queued actions). Follow-ups, in order:
+   1. **Held-out recording** -- orchestrator batch on the plan: `tools/readability/record.ts --backend claude-cli` over the react-navigation app, scope `--only src` (needs that flag first; ~55 s and ~5k tokens per target) -> commits `tests/fixtures/llm-readability/react-navigation-example-0.85.3.recording.json` so the section-7 coverage and quality legs go green. Do not run while another session is driving `name llm-fill` (shared plan rate limit).
+   2. **`surfaces.ts` `loadAnalysis` re-parses the whole .hbc per call** (BUGS 2026-09-11, 72 s on the 435-module fixture) -- *Sonnet*: cache the analysis per (path, mtime) on the ReadabilityContext.
+   3. **Sweep-tier runs on the real held-out app** for landing 1 (apply-then-revert fidelity) and landing 3 (file-op pass) behind `requireSweep` -- *Sonnet*.
+   4. **Readability log tail order vs incremental `exportWriteEffect`** (BUGS 2026-09-11, spec 18) -- *Opus* (integrity): decide (a) tail stays derived + `verify --full` heals, or (b) order the chain by ts; (b) changes every existing project's log bytes.
+   5. NEEDS FRED (UI design): tree multi-select for "combine these files"; a queued/running indicator for the async actions.
 2. **Exportable, buildable app** (Fred 2026-09-11: "an exportable and buildable app is where we should be targeting at the moment"). Ladder, each step a gate test on rn-template, then react-navigation, then NSW: (a) `hbc2js export` skeleton = split + segregate + `deps --out` + RN boilerplate (app.json, babel/metro config, index.js registration), gate `npm install` offline; (b) LIBRARY modules with a known package become real imports, decompiled copies dropped, gate `npx react-native bundle` with no unresolved module; (c) the bundle boots in `tools/e2e/boot-split.mjs` then RN-web; (d) NSW end to end. Spec first (*Opus*); finish line (bundle builds vs boots on device) NEEDS FRED.
 
 Carried over (ladder and correctness, unblocked):
@@ -50,7 +49,6 @@ Carried over (ladder and correctness, unblocked):
 
 ## IN FLIGHT
 
-- **`agent/spec28`** (Opus, lean, worktree from `53423a70`) -- spec 28 promotion + acceptance tests. Lands via gate-wt with a test-count baseline bump.
 - **Campaign runners on deb (own clone)** -- campaign 3 from `~/hbc2js-c3`; heavy fuzz compute stays on deb (deb-compute rule).
 - **Bulk sigdb round 2b** (`tools/pkgsig/bulk/round2b-runner.sh` on deb) -- measure Service NSW / rn-template attribution once the first incremental assemble exists (record in `docs/DEPS.md`).
 - **object-tables verb consumers** -- wiring `query object-tables` into the endpoint-table hunt UI/leads.
