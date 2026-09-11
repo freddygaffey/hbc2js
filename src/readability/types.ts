@@ -276,13 +276,23 @@ export type ParseOutcome =
   | { readonly ok: true; readonly result: ReadabilityResult }
   | { readonly ok: false; readonly error: string };
 
+/** Models routinely wrap a JSON answer in a markdown code fence
+ *  (\`\`\`json ... \`\`\`) even when told not to -- observed from
+ *  \`claude -p --model haiku\` on 2026-09-11. The fence is presentation,
+ *  not content: strip one outer fence (with an optional language tag) and
+ *  surrounding whitespace before parsing. Anything else is left untouched. */
+export function stripCodeFence(text: string): string {
+  const m = /^\s*```[A-Za-z0-9_-]*\s*\n([\s\S]*?)\n?```\s*$/.exec(text);
+  return m?.[1] ?? text;
+}
+
 /** Parse a backend's `WorkerJobResponse.text` into a `ReadabilityResult`.
  *  NEVER throws: a model can emit anything, and malformed output is a
  *  rejected candidate, not a crashed run. */
 export function parseReadabilityResult(text: string): ParseOutcome {
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(stripCodeFence(text));
   } catch (e) {
     return { ok: false, error: `not JSON: ${(e as Error).message}` };
   }

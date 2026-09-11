@@ -91,3 +91,16 @@ test("spec 28: the fake backend records every call, which is what the cost/cache
   assert.equal(fake.seen.length, 2);
   assert.equal(fake.id, "fake");
 });
+
+test("parseReadabilityResult: a markdown code fence around the JSON is presentation, not content (claude -p wraps answers in ```json)", () => {
+  const inner = '{"names":[{"bindingId":{"fn":1,"reg":2},"name":"retryCount","confidence":"high","evidence":"literal nearby"}],"abstained":false}';
+  const fenced = "```json\n" + inner + "\n```";
+  const plain = parseReadabilityResult(inner);
+  const stripped = parseReadabilityResult(fenced);
+  assert.equal(plain.ok, true);
+  assert.deepEqual(stripped, plain);
+  // A fence with no language tag, and trailing whitespace, also parses.
+  assert.deepEqual(parseReadabilityResult("```\n" + inner + "\n```  \n"), plain);
+  // Fence-free garbage is still a rejected candidate, never a throw.
+  assert.equal(parseReadabilityResult("```json\nnot json\n```").ok, false);
+});

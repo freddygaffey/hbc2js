@@ -6,6 +6,7 @@
 // and timeout handling, cache-first behaviour) runs against a real
 // subprocess without ever reaching the network.
 import { test } from "node:test";
+import { loadSkill } from "../../src/readability/skills.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -91,7 +92,7 @@ test("ClaudeCliBackend: a cache hit never spawns the binary", async (t) => {
   const key = cacheKey({
     kind: "suggest-name",
     skillId: "hbc-name",
-    skillVersion: 1,
+    skillVersion: loadSkill("hbc-name", cfg.skillsDir).version,
     model: cfg.model,
     body: bodyFromContext(request.context),
     context: canonicaliseContext(request.context),
