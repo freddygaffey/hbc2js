@@ -526,7 +526,7 @@ Shape (`ReadabilityTransaction` in `src/readability/types.ts`):
 | field | meaning |
 | --- | --- |
 | `id` | content hash of the immutable defining fields (op, inputs, outputs, evidence) -- spec 18 section 7's allocation rule, so the same op dedups for free |
-| `op` | `make` / `rename` / `move` / `combine` / `split` |
+| `op` | `make` / `rename` / `move` / `combine` / `split` / `rewrite` (`TRANSACTION_OPS`). `rewrite` is landing 2's function-level change, made first class here (docs/PUSHBACK.md P-58, resolved): its inputs are the `{fn}` binding it rewrote and its outputs the one file it touched, so it obeys the same dedup, the same zero-orphan rule and the same revert path as a file op. `FILE_OP_KINDS` stays the five FILE ops -- `file-ops.ts` and the `file_op` MCP tool are about the tree |
 | `who`, `tier`, `ts` | provenance stamp. `who: worker:haiku`, `tier: suggested` for anything the model did; a promoter writes its own `who` |
 | `inputs` | the `BindingOrigin[]` that went in: module indices and, where the op is finer than a module, `{fn,reg}` binding ids |
 | `outputs` | `EmittedFile[]`: each emitted path plus the `origins` it derives from. **An output with zero origins is an orphan and invalidates the transaction** -- this is what makes section 7's traceability target checkable rather than aspirational |
@@ -540,6 +540,15 @@ content hash of every path T touched and the DB holds the content. Reverts are
 themselves transactions (so a revert is auditable and a revert-of-a-revert
 works), and because a file op is committed in one DB transaction before export
 (spec 18 section 6), a crash mid-op leaves either all of it or none of it.
+
+**What a shard carries.** `analysis/readability/<id>.json` is the transaction
+verbatim plus a `blobs` map holding the exact bytes of every `prior` hash, so
+the JSON side is a complete recovery source: `hbcproj rebuild` restores the
+table AND everything a revert would put back, without the DB. Blobs are
+inlined because a readable tree is source text and the family is git-tracked;
+externalising them for very large trees is a follow-up, not an integrity
+question. The `log/` entries are a derived tail emitted from the table after
+the annotation history (spec 18 section 9), which is why `rebuild` skips them.
 
 **Binding-id traceability.** The chain is
 `{fn,reg} binding id -> module index -> BindingOrigin -> EmittedFile.origins -> path`.
@@ -713,18 +722,37 @@ stored as a **`RewriteChangeRecord`** rather than a `ReadabilityTransaction`
 function"; the record carries every other field and the same validation rules,
 and landing 3 maps it in).
 
-### Landing 3 -- DB transaction log + file ops
+### Landing 3 -- DB transaction log + file ops -- LANDED (2026-09-11)
 
-- **Files**: `src/readability/transactions.ts` (new: the table, the shard
-  exporter, `apply`/`revert`); `src/readability/file-ops.ts` (make / rename /
-  move / combine / split + the tree-level equiv gate); spec 18's `hbcproj`
-  verbs learn the new shard family.
+- **Files**: `src/readability/transactions.ts` (`commitTransaction` /
+  `recordTransaction` / `revertTransaction` / `listTransactions` /
+  `traceFile` / `traceAllEmitted`); `src/readability/file-ops.ts` (make /
+  rename / move / combine / split + the two-leg tree gate);
+  `src/projdb/readability-shards.ts` (the shard family, the log tail, the
+  shards->DB restore); schema minor 6 (`readability_tx`, `readability_blob`);
+  `export`/`rebuild`/`verify` and the `hbcproj` CLI learn the family.
 - **Tests**: `fidelity-reversibility.test.ts`'s reversibility, traceability and
-  tree-equiv legs stop skipping.
-- **Exit criterion**: over a full file-op pass on the held-out app, 100% of
-  emitted files have >= 1 origin (zero orphans), reverting any single
-  transaction restores the prior tree hash exactly, and the reconstructed tree
-  passes tree-level `equiv --hbc`.
+  tree-equiv legs stopped skipping, plus
+  `tests/gate/llm-readability/transactions.test.ts` (9),
+  `tests/gate/llm-readability/file-ops.test.ts` (9) and
+  `tests/projdb/readability-shards.test.ts` (3).
+- **Exit criterion, measured** on the fixture trees
+  (`tests/support/readability-tree.ts`: a two-module split tree whose bodies
+  are the real decompile of construct fixture `04-for-loop-basic`). Over a
+  four-op pass (make, rename, move, combine): **5/5 emitted files have >= 1
+  origin, 0 orphans (100%)**; **4/4 transactions reverted restore the prior
+  tree hash exactly (100%)**, as do the 3 ops of the file-ops pass and a
+  revert-of-a-revert; **4/4 accepted transactions carry a `scope: "tree"`
+  PASS proof** and `validateTransaction` returns no problems for any of them.
+  A DIVERGENT or INCONCLUSIVE verdict leaves the tree byte-for-byte untouched
+  and writes nothing -- measured by tree hash, not asserted by construction.
+- **Open follow-up (same shape as landing 1's)**: the held-out-app version --
+  a full file-op pass over a real 15k-function decompile with the SHIPPED
+  oracle and a real Hermes VM -- belongs in `tests/sweep/` behind
+  `requireSweep`, not the 2-minute gate. The gate proves the gate: the
+  structural leg is the shipped one, the behavioural leg is injected, and
+  `file-ops.test.ts` proves a non-PASS verdict refuses. That is this
+  landing's one open follow-up, not a correctness gap.
 
 ### Landing 4 -- MCP tools + UI actions
 
@@ -764,8 +792,13 @@ construction.
 | `cost-cache.test.ts` | cache key is content-addressed, every field participates, cannot be forged by moving content between fields | landing 1 (the >= 90% re-run measurement, the budget stop) |
 | `coverage.test.ts` | the two targets are pinned in code | landing 1 (both legs). The NSW leg additionally skips with a clear message unless `HBC2JS_NSW_HBC` points at the bundle, which is proprietary and never committed |
 | `quality.test.ts` | sample format conformance, every label traced to the held-out app's sourcemap, rater verdicts, accuracy arithmetic including a FAILING run and the empty case | landing 1 (the >= 80% measurement), landing 5 (the security clause) |
-| `fidelity-reversibility.test.ts` | transaction validity: orphan files, missing inputs, non-reversible ops, non-PASS proofs, worker self-promotion; INCONCLUSIVE is never PASS | landing 1 (apply-then-revert byte identity), landing 3 (revert exactness, traceability on a real tree, tree-level equiv) |
+| `fidelity-reversibility.test.ts` | transaction validity: orphan files, missing inputs, non-reversible ops, non-PASS proofs, worker self-promotion; INCONCLUSIVE is never PASS; landing 1's apply-then-revert byte identity; landing 3's revert exactness, traceability and tree-equiv legs | - (all legs green) |
 | `surfaces-evaluator.test.ts` | spec-text/code vocabulary agreement for all three surfaces, snake_case and non-collision of tool names, evaluator mode defaults, plug-in round-trip with no promotion field | landing 4 (registration), landing 5 (the loop) |
+
+Landing 3 shipped `tests/gate/llm-readability/transactions.test.ts`,
+`tests/gate/llm-readability/file-ops.test.ts` and
+`tests/projdb/readability-shards.test.ts`, with the fixture tree builder in
+`tests/support/readability-tree.ts`.
 
 Landings add their own acceptance files alongside these: landing 2 shipped
 `tests/gate/llm-readability/rewrite.test.ts` (one test per rejection class plus

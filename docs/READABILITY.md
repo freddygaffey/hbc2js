@@ -99,3 +99,66 @@ is the contract a prompt or a human should follow.
 - Say why in the evidence field. A rewrite with no stated reason is still
   gated, but a reviewer has nothing to judge its *quality* by, and quality is
   the half the oracle cannot check.
+
+## File operations and the transaction log (landing 3)
+
+Readability is not only within a function: the tool may reshape the file tree.
+Five ops, each one an equiv-gated, DB-recorded transaction
+(`src/readability/file-ops.ts`):
+
+| op | what it does |
+| --- | --- |
+| `make` | create a new file (extract a component/hook/util into its own file) |
+| `rename` | give a file a meaningful name in the SAME directory |
+| `move` | put a file in a different directory |
+| `combine` | merge modules that are really one unit into one file |
+| `split` | break a mega-module into several readable files |
+
+`rename` and `move` are deliberately distinct: passing a cross-directory `to`
+to `rename` is an error, and so is a same-directory `to` on `move`. The log
+then says what actually happened.
+
+**The gate has two legs and both must pass before anything is written.**
+
+1. **Structure**, in process, no VM: the require graph resolves identically
+   (every module id still has a file, every dependency id still resolves) and
+   the export surface is preserved. The export leg applies to the ops that
+   MOVE code -- a `make` adds a file nothing requires yet, so its exports
+   cannot change how an existing module resolves.
+2. **Behaviour**: `hbc2js equiv --hbc <bundle.hbc> <tree/>` over the tree's
+   entry, verdict PASS. DIVERGENT and INCONCLUSIVE both reject; INCONCLUSIVE
+   is never PASS, so forgetting the bundle is a refusal, not a free pass.
+
+The op is staged into a temporary copy of the tree and judged there. On a
+rejection the real tree is **byte-for-byte untouched**, nothing reaches the
+DB, and the attempt comes back with the oracle's verdict and reason so a human
+can see what was tried and refused.
+
+## Reverting a change
+
+Every accepted change -- name, rewrite, file op -- is a row in the readability
+transaction log (`analysis/readability/<id>.json`, spec 28 section 9.5). Each
+row records the `prior` state of every path it touched, as a sha256, and the
+DB holds those exact bytes. So:
+
+- **Revert is exact.** `revertTransaction(db, projectDir, treeDir, txId, who)`
+  puts every prior path back to exactly its recorded hash and removes anything
+  the transaction created that had no prior state.
+- **A revert is itself a transaction**, so the undo is auditable and
+  **reverting the revert redoes the original change**, byte for byte.
+- **A transaction is never reverted twice**; the second attempt is refused.
+- **A transaction that cannot be reverted is never recorded.** An output with
+  no binding origin, an op with no prior state, a proof that is not PASS, a
+  worker writing `tier: confirmed`, or prior content that does not hash to
+  what the transaction claims -- all are refused *before* the DB, the shard or
+  the log is touched.
+
+`traceFile(db, path)` walks the other direction: from a path in the readable
+tree back through `EmittedFile.origins -> BindingOrigin -> module index ->
+{fn,reg}` to the bytecode it came from, however many combines and splits
+happened in between. `traceAllEmitted(db)` is the whole-tree version, and
+"zero orphans" is that list with no `orphan: true`.
+
+On the command line, `hbc2js hbcproj verify <project.hbcproj> --full`
+re-validates every transaction's proof and origins alongside spec 18's own
+round-trip validators.

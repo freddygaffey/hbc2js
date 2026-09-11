@@ -34,6 +34,10 @@ analysis/                  # AUTHORITATIVE state — sharded JSON, git-tracked, 
   names/<module>.json      # {fn,reg}->name, one file per module
   findings/<id>.json       # one file per finding
   annotations/<module>.json
+  readability/<id>.json    # one file per readability transaction (spec 28 section 9.5):
+                           # make/rename/move/combine/split/rewrite, its inputs,
+                           # outputs, equiv proof, prior state and the blobs a
+                           # revert restores from
 log/<date>.jsonl           # append-only, hash-chained audit trail — git-tracked
 index/*.jsonl              # xref (calls/strings/globals/native) — rebuildable, gitignored
 scans/*.jsonl              # secrets/osv/semgrep — precomputed, rebuildable, gitignored
@@ -104,8 +108,19 @@ with a per-run prefix, never a shared counter.
 | `restore <shard\|--all>` | DB→JSON | discard a hand edit, re-export from the DB (DB wins) |
 | `rebuild` | JSON→DB | full regeneration (recovery / fresh clone) |
 | `export` | DB→JSON | materialise JSON from the DB |
-| `verify [--full]` | — | check content hashes + log chain; `--full` re-runs validators (CI) |
+| `verify [--full]` | — | check content hashes + log chain; `--full` re-runs validators (CI) and re-validates every readability transaction's proof and origins |
 | `init` | — | scaffold the project; install the git pre-commit hook |
+
+`export`, `rebuild`, `verify` and `status` cover four shard families:
+`names/`, `annotations/`, `findings/` and `readability/`. The readability
+family (spec 28 section 9.5) is authoritative like the others -- same
+content-hash lock, same `stateBinding`, same `log/` chain -- and its `log/`
+entries are a DERIVED TAIL: they are emitted from the `readability_tx` table
+after the annotation history, in `seq` order, so `rebuild` restores the rows
+from the shards and SKIPS the tail rather than replaying it (replaying it
+would double-count on the next export). An entry whose own day is older than
+the last annotation day is filed under that later day, because the chain has
+to stay continuous when `verify` walks the day files in name order.
 
 Flags: `adopt` acts only on diverged shards and needs `--adopt`/confirm (it
 overrides the lock); `--dry-run` previews; `--force` resolves conflicts (§10).
