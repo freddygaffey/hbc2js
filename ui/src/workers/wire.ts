@@ -24,6 +24,11 @@ export interface JobRow {
   readonly progressTotal: number | null;
   readonly attempts: number;
   readonly error: string | null;
+  /** Spec 28 landing 4d: the `readability-*` kinds' payload is read from
+   *  here by `readability-wire.ts`'s job poller — every other kind's own
+   *  `JobResult` (`src/workers/runner.ts`) also lives here, this client
+   *  type just never needed to read it directly until now. */
+  readonly result?: unknown;
   readonly cost: { readonly tokensIn?: number; readonly tokensOut?: number; readonly usd?: number } | null;
   readonly target: string;
   readonly elapsedMs: number | null;

@@ -955,18 +955,32 @@ the four UI actions in the section header. 8 server-route tests
 (`tests/ui-server/readability-routes.test.ts`) and 6 DOM tests
 (`ui/src/panes/WorkersPane.readability.dom.test.tsx`).
 
-Two things this pass did NOT build, recorded rather than silently dropped:
-(1) **PUSHBACK P-61**: the four actions run to completion and answer directly
-instead of enqueuing a pollable `JobRow` -- `JOB_KINDS`/`WorkerRunner` (spec
-23) have no readability-aware branch, and extending them was out of this
-task's file scope. (2) a true before/after **text** diff for a rewrite
-transaction: `EmittedFile`/the transaction's `prior` carry paths and hashes,
-not rendered content, so the panel shows paths/hashes only (docs/BUGS.md);
-reading the actual bytes back off `treeDir` is a follow-up endpoint. Combine
-files' file list is a manual comma-separated input, not the tree's own
-multi-select (no route into `ui/src/panes/LeftPane.tsx`'s tree selection was
-built this pass). The P-57 skill-file batch is unrelated prior work, already
-landed.
+Two things this pass did NOT build, recorded rather than silently dropped
+(both since resolved -- see the diff-content fix below this paragraph and
+landing 4d's P-61 resolution further down): (1) **PUSHBACK P-61**: the four
+actions ran to completion and answered directly instead of enqueuing a
+pollable `JobRow` -- `JOB_KINDS`/`WorkerRunner` (spec 23) had no
+readability-aware branch, and extending them was out of this task's file
+scope. (2) a true before/after **text** diff for a rewrite transaction:
+`EmittedFile`/the transaction's `prior` carried paths and hashes, not
+rendered content, so the panel showed paths/hashes only. Combine files'
+file list is STILL a manual comma-separated input, not the tree's own
+multi-select (no route into `ui/src/panes/LeftPane.tsx`'s tree selection --
+an interaction design call for Fred, unresolved). The P-57 skill-file batch
+is unrelated prior work, already landed.
+
+**Diff content fixed 2026-09-11 (docs/BUGS.md resolved).** `GET /api/
+readability/suggestions` now enriches each `tx` item with `priorContent`/
+`newContent` (rendered text, keyed by path) -- `prior` reads the DB-held
+blob the transaction log already keeps for `revert` (`readBlob`, keyed by
+the recorded sha256); `new` reads whatever `treeDir` currently holds at
+each output path. Response-only enrichment in `readability-routes.ts`; the
+`ReadabilityTransaction` shape itself (`src/readability/types.ts`) is
+unchanged, per the design constraint. The pane's before/after panel
+(`WorkersPane.tsx`) renders the text when present, falling back to path +
+hash otherwise. Same commit applied the `securityRelevant` filter
+`list_suggestions` had accepted but never used (`NameRecord`/`NameMeta`
+gained the field, threaded from `NamePassTarget`).
 
 **Status: LANDED (live wiring) 2026-09-11 (landing 4d).** `src/ui-server/
 server.ts` now builds a real `ReadabilityRoutesCtx` for a real `hbc2js
@@ -985,15 +999,48 @@ pane already handles -- never a crash. Proved by `tests/ui-server/
 server-readability.test.ts` (3 tests) starting the real server over a real
 socket and hitting every readability route.
 
-Two things this pass did NOT build, recorded rather than silently dropped:
-(1) **PUSHBACK P-61**: the four actions run to completion and answer
-directly instead of enqueuing a pollable `JobRow` -- `JOB_KINDS`/
-`WorkerRunner` (spec 23) still have no readability-aware branch; landing 4d
-did not extend them either (see P-61's own row in `docs/PUSHBACK.md` for
-the file-scope reasoning, unchanged). (2) Playwright coverage: attempted
-this pass in `ui/e2e/readability.spec.ts` against the fixture rig with
-`HBC2JS_LLM_BACKEND=heuristic` (already pinned by `playwright.config.ts`);
-see that file's own header for what it proves and any determinism caveat.
+**PUSHBACK P-61 resolved 2026-09-11.** `JOB_KINDS` (`src/workers/queue.ts`)
+gained `readability-suggest-names`/`readability-rewrite-function`/
+`readability-combine-files`; `WorkerRunner` (`src/workers/runner.ts`) gained
+`runReadabilityJob`, dispatching those three kinds straight to
+`src/readability/surfaces.ts` over a new optional `readability` ctx (never
+through a `WorkerBackend` prompt -- the surfaces call the backend
+themselves, same as before). `src/ui-server/readability-routes.ts`'s three
+WRITE actions now `enqueue` through the SAME `JobQueue`/`WorkerRunner`
+`/api/jobs` uses and answer `202 {jobId}` instead of running to completion
+inline; `ui/src/workers/readability-wire.ts` polls `/api/jobs` internally
+(the same jobs rail the "AI" tab's other buttons already poll), so
+`readability-hooks.ts` and `WorkersPane.tsx` needed NO shape change --
+`suggestNamesAction.mutate(...)` still resolves with the surface's own
+result once the job is done. `review` (section 9.7: "opens the queue; no
+job") is unchanged, still synchronous. Tests: `tests/workers/runner.test.ts`
+(+3: dispatch, malformed-input failure, no-readability-context failure),
+`tests/ui-server/readability-routes.test.ts` (+1, the other 8 updated to
+drive the enqueued job to completion via `runner.runOne()`),
+`tests/ui-server/server-readability.test.ts` (updated: `202` + polling the
+REAL background pool over a real socket).
+
+**Playwright coverage landed** in `ui/e2e/readability.spec.ts` (3 tests)
+against the fixture rig with `HBC2JS_LLM_BACKEND=heuristic` (already pinned
+by `playwright.config.ts`): the section renders under the AI tab, `Review`
+completes synchronously and deterministically (a fresh project starts with
+zero suggestions), and `Suggest names` is proved live by asserting the
+ENQUEUE (a real `readability-suggest-names` job appears in `/api/jobs`),
+not the ~70s cold completion -- see that file's header for the full
+reasoning, including a real PERFORMANCE FINDING it surfaced: a cold
+`suggest_names`/`rewrite_function`/`classify_module` call re-parses and
+re-analyses the WHOLE `.hbc` file every time (`loadAnalysis`, no cache),
+measured at 72s wall on this rig's own 435-module fixture bundle
+(`docs/BUGS.md`, open, out of this landing's scope). Running this suite
+alongside the existing `ai-suggestions.spec.ts` also surfaced a real,
+pre-existing selector collision (`getByRole("button", {name:"Suggest
+name"})` inexact-matching the new "Suggest names" button once both ship in
+the same "AI" tab) -- fixed in `ai-suggestions.spec.ts` with `exact: true`.
+The brief's full suggestion-row/promote/revert/tier-flip round trip needs a
+real LLM backend (out of scope for a CI rig) or a pre-seeded transaction;
+that round trip is already proven browser-free in
+`tests/gate/llm-readability/surfaces.test.ts`'s exit-criterion test and
+`tests/ui-server/readability-routes.test.ts`'s promote/revert test.
 
 ### Landing 5 -- evaluation loop
 

@@ -25,6 +25,9 @@ import type { Provenance } from "../project/schema.ts";
 import { TransientBackendError, type WorkerBackend, type WorkerJobRequest } from "./backend.ts";
 import { JobQueue, type Job, type JobKind } from "./queue.ts";
 import type { Presence } from "./presence.ts";
+import { fileOp, rewriteFunction, suggestNames, ReadabilitySurfaceError, type ReadabilityContext } from "../readability/surfaces.ts";
+import { TransactionRefused } from "../readability/transactions.ts";
+import { FileOpError } from "../readability/file-ops.ts";
 
 /** Body prefix every worker-written annotation carries (§4). The UI greps it
  *  to draw the accept/reject affordance. */
@@ -66,6 +69,14 @@ export interface WorkerRunnerOpts {
    *  (`src/ui-server/workers-routes.ts`) so the UI's accept/reject flow has
    *  something to accept. */
   readonly writeSuggestedNames?: boolean;
+  /** Spec 28 landing 4d (PUSHBACK P-61 resolved): when given, the three
+   *  `readability-*` job kinds dispatch straight to `src/readability/
+   *  surfaces.ts` over this context instead of failing terminally like every
+   *  other unimplemented kind. `undefined` (no readable tree / backend
+   *  configured on this server) makes those jobs fail terminally with a
+   *  clear reason, same "absent, not faked" convention `readability-routes.
+   *  ts` uses for the HTTP surface. */
+  readonly readability?: ReadabilityContext;
 }
 
 export class WorkerRunner {
@@ -78,6 +89,7 @@ export class WorkerRunner {
   private readonly sessionId: string | undefined;
   private readonly sourceLines: number;
   private readonly writeSuggestedNames: boolean;
+  private readonly readability: ReadabilityContext | undefined;
 
   constructor(opts: WorkerRunnerOpts) {
     this.db = opts.db;
@@ -89,6 +101,7 @@ export class WorkerRunner {
     this.sessionId = opts.sessionId;
     this.sourceLines = opts.sourceLines ?? 120;
     this.writeSuggestedNames = opts.writeSuggestedNames ?? false;
+    this.readability = opts.readability;
   }
 
   private prov(job: Job): Provenance {
@@ -125,6 +138,9 @@ export class WorkerRunner {
   async runOne(): Promise<Job | undefined> {
     const job = this.queue.claimNext();
     if (job === undefined) return undefined;
+    if (job.kind === "readability-suggest-names" || job.kind === "readability-rewrite-function" || job.kind === "readability-combine-files") {
+      return this.runReadabilityJob(job);
+    }
     if (job.kind !== "explain-fn" && job.kind !== "suggest-name") {
       // Skeleton scope (spec 23 §1 lists the full kind table): every other
       // kind fails terminally rather than silently doing nothing.
@@ -163,6 +179,70 @@ export class WorkerRunner {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return this.queue.fail(job.id, message, { transient: err instanceof TransientBackendError });
+    } finally {
+      if (this.presence !== undefined && this.sessionId !== undefined) this.presence.release(target, this.sessionId);
+    }
+  }
+
+  /** Spec 28 landing 4d: the three `readability-*` kinds (P-61 resolved).
+   *  Unlike `runOne`'s original two kinds, these never build a
+   *  `WorkerJobRequest`/call `this.backend` directly -- the readability
+   *  surfaces (`src/readability/surfaces.ts`) own their own backend call
+   *  (`this.readability.backend`), and their result is a structured object
+   *  (`SuggestNamesResult`/`RewriteFunctionResult`/`FileOpResult`), not the
+   *  free-text `[ai-suggested]` annotation the original kinds write. That
+   *  result is stored verbatim as `job.result` -- no `JobResult` envelope,
+   *  since these kinds already went through their own gate/transaction log
+   *  and have nothing to "accept" through `WorkerRunner.accept()`. Argument
+   *  shape errors (`ReadabilitySurfaceError`) and gate refusals
+   *  (`TransactionRefused`/`FileOpError`) are reported as a terminal
+   *  failure with the surface's own message -- never a silent no-op. */
+  private async runReadabilityJob(job: Job): Promise<Job | undefined> {
+    if (this.readability === undefined) {
+      return this.queue.fail(job.id, "readability is not configured on this server (no readable tree / backend)");
+    }
+    const target = this.targetOf(job);
+    if (this.presence !== undefined && this.sessionId !== undefined) this.presence.claim(target, this.sessionId);
+    try {
+      let result: unknown;
+      if (job.kind === "readability-suggest-names") {
+        const fn = typeof job.input["fn"] === "number" ? (job.input["fn"] as number) : undefined;
+        const moduleId = typeof job.input["module"] === "number" ? (job.input["module"] as number) : undefined;
+        if (fn === undefined && moduleId === undefined) {
+          throw new ReadabilitySurfaceError("readability-suggest-names: one of {fn}|{module} is required");
+        }
+        result = await suggestNames(this.readability, { target: fn !== undefined ? { fn } : { module: moduleId! } });
+      } else if (job.kind === "readability-rewrite-function") {
+        const fn = job.input["fn"];
+        if (typeof fn !== "number") throw new ReadabilitySurfaceError("readability-rewrite-function: fn is required");
+        result = await rewriteFunction(this.readability, { fn });
+      } else {
+        const inputs = job.input["inputs"];
+        const outputs = job.input["outputs"];
+        const evidence = job.input["evidence"];
+        if (!Array.isArray(inputs) || inputs.length < 2 || !inputs.every((p) => typeof p === "string")) {
+          throw new ReadabilitySurfaceError("readability-combine-files: inputs must be at least two file paths");
+        }
+        if (!Array.isArray(outputs) || outputs.length !== 1 || typeof outputs[0] !== "string") {
+          throw new ReadabilitySurfaceError("readability-combine-files: outputs must be exactly one file path (combine has one target)");
+        }
+        if (typeof evidence !== "string" || evidence === "") throw new ReadabilitySurfaceError("readability-combine-files: evidence is required");
+        result = fileOp(this.readability, { op: "combine", from: inputs as readonly string[], to: outputs[0] as string, evidence });
+      }
+      // §2.3: cancellation is a guarantee about WRITES -- re-read before
+      // "finishing" (the write already happened inside the surface call for
+      // an accepted rewrite/file-op, same as the original two kinds re-read
+      // before their own single write).
+      const live = this.queue.get(job.id);
+      if (live === undefined || live.status !== "running") return live;
+      return this.queue.finish(job.id, { result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const transient = err instanceof TransientBackendError;
+      // A refused gate (ReadabilitySurfaceError/TransactionRefused/FileOpError)
+      // is a normal, reportable outcome -- never retried, never confused with
+      // a transient backend hiccup.
+      return this.queue.fail(job.id, message, { transient: transient && !(err instanceof ReadabilitySurfaceError || err instanceof TransactionRefused || err instanceof FileOpError) });
     } finally {
       if (this.presence !== undefined && this.sessionId !== undefined) this.presence.release(target, this.sessionId);
     }

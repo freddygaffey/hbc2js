@@ -7,7 +7,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { openProjectDb } from "../../src/projdb/db.ts";
+import { repoRoot } from "../support/paths.ts";
 import { McpTools } from "../../src/mcp/tools.ts";
 import { McpResources } from "../../src/mcp/resources.ts";
 import { JobQueue } from "../../src/workers/queue.ts";
@@ -16,6 +18,9 @@ import { FakeBackend } from "../../src/workers/backend.ts";
 import { SUGGESTED_PREFIX, WorkerRunner, type JobResult } from "../../src/workers/runner.ts";
 import { readWorkerEvents } from "../../src/workers/events.ts";
 import { buildProject, projectDbPath, FN, RN_TEMPLATE } from "./support.ts";
+import { makeTree } from "../support/readability-tree.ts";
+import type { ReadabilityContext } from "../../src/readability/surfaces.ts";
+import type { TreeEquivOracle } from "../../src/readability/file-ops.ts";
 
 const outDir = buildProject();
 const db = openProjectDb(projectDbPath(outDir));
@@ -189,4 +194,61 @@ test("the runner claims its target while it works and releases it after", async 
   const after = readWorkerEvents(db, { limit: 100_000 }).slice(seqBefore).map((e) => e.type);
   assert.deepEqual(after, ["job.started", "claim.acquire", "job.done", "claim.release"]);
   presence.close(session.id);
+});
+
+// -- spec 28 landing 4d: the three `readability-*` job kinds (PUSHBACK P-61
+// resolved) -- a SEPARATE, self-contained `ReadabilityContext`/db from the
+// RN-template project above (`makeTree()`, the same fixture landing 3/4c's
+// own gate tests use), since these kinds never touch `resources`/`tools`.
+const READABILITY_FIXTURE = "04-for-loop-basic";
+const READABILITY_VERSION = 94;
+const PASS_TREE: TreeEquivOracle = () => ({ verdict: "PASS", why: "stub PASS", oracle: "test stub", lines: 4 });
+
+function readabilityHbcPath(): string {
+  return join(repoRoot(), "tests", "fixtures", "constructs", READABILITY_FIXTURE, `v${String(READABILITY_VERSION)}.hbc`);
+}
+
+function makeReadabilityRunner(backend: FakeBackend): { readonly runner: WorkerRunner; readonly readability: ReadabilityContext } {
+  const tree = makeTree();
+  const readability: ReadabilityContext = { db: tree.db, projectDir: tree.projectDir, treeDir: tree.treeDir, backend, hbcPath: readabilityHbcPath(), oracle: PASS_TREE };
+  const runner = new WorkerRunner({ db: tree.db, resources, tools, backend, queue: new JobQueue(tree.db), readability });
+  return { runner, readability };
+}
+
+test("readability-suggest-names: dispatches to src/readability/surfaces.ts and stores the surface's own result as job.result", async () => {
+  const backend = new FakeBackend({
+    replies: {
+      "suggest-name": () =>
+        JSON.stringify({ names: [{ bindingId: { fn: 0, reg: 9 }, name: "loopCount", confidence: "high", evidence: "loop bound" }], abstained: false }),
+    },
+  });
+  const { runner } = makeReadabilityRunner(backend);
+  runner.queue.enqueue({ kind: "readability-suggest-names", input: { fn: 0 } });
+  const finished = await runner.runOne();
+  assert.equal(finished?.status, "done");
+  const result = finished?.result as { suggestions: readonly { readonly name: string }[]; equiv: { readonly verdict: string } };
+  assert.ok(result.suggestions.length > 0);
+  assert.equal(result.equiv.verdict, "PASS");
+});
+
+test("readability-rewrite-function / readability-combine-files: malformed input fails the job terminally, never crashes the runner", async () => {
+  const { runner: rewriteRunner } = makeReadabilityRunner(new FakeBackend());
+  rewriteRunner.queue.enqueue({ kind: "readability-rewrite-function", input: {} });
+  const rewriteFinished = await rewriteRunner.runOne();
+  assert.equal(rewriteFinished?.status, "failed");
+  assert.match(rewriteFinished?.error ?? "", /fn is required/);
+
+  const { runner: combineRunner } = makeReadabilityRunner(new FakeBackend());
+  combineRunner.queue.enqueue({ kind: "readability-combine-files", input: { inputs: ["only-one.js"], outputs: ["out.js"], evidence: "e" } });
+  const combineFinished = await combineRunner.runOne();
+  assert.equal(combineFinished?.status, "failed");
+  assert.match(combineFinished?.error ?? "", /at least two file paths/);
+});
+
+test("a readability-* job fails terminally (not silently) when the runner has no readability context configured", async () => {
+  const runner = makeRunner(new FakeBackend());
+  runner.queue.enqueue({ kind: "readability-suggest-names", input: { fn: 0 } });
+  const finished = await runner.runOne();
+  assert.equal(finished?.status, "failed");
+  assert.match(finished?.error ?? "", /readability is not configured/);
 });

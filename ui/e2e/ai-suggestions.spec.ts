@@ -7,6 +7,13 @@
 // e2e-gate task: Fred found the rename dialog opens but "doesn't actually
 // rename anything"; this file is the AI-flow half of that same class of
 // escape, the palette-driven manual rename is code-pane-rename.spec.ts).
+//
+// `{ name: "Suggest name", exact: true }` (found running the full suite
+// alongside `readability.spec.ts`, spec 28 landing 4d): the readability
+// section's OWN "Suggest names" button (spec 28 §9.7) is a substring match
+// of this spec-23 jobs-rail button's accessible name, so an inexact
+// `getByRole` here resolved to two elements once landing 4c's readability
+// pane shipped in the same "AI" tab.
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
 const WAIT = process.env["PW_BASE_URL"] !== undefined ? 90_000 : 15_000;
@@ -32,7 +39,7 @@ test.describe("AI tab: suggest name reaches a real outcome (spec 23 SS6)", () =>
     await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
 
     await page.getByRole("tab", { name: "AI" }).click();
-    const suggestButton = page.getByRole("button", { name: "Suggest name" });
+    const suggestButton = page.getByRole("button", { name: "Suggest name", exact: true });
     await expect(suggestButton).toBeVisible({ timeout: WAIT });
     await suggestButton.click();
 
@@ -54,7 +61,7 @@ test.describe("AI tab: suggest name reaches a real outcome (spec 23 SS6)", () =>
     await expect(codeView(page).locator(".cm-content")).not.toBeEmpty({ timeout: WAIT });
 
     await page.getByRole("tab", { name: "AI" }).click();
-    await page.getByRole("button", { name: "Suggest name" }).click();
+    await page.getByRole("button", { name: "Suggest name", exact: true }).click();
     await expect(page.getByRole("button", { name: "Accept" }).first()).toBeVisible({ timeout: WAIT });
 
     // The row's own monospace text is the exact string the accept must

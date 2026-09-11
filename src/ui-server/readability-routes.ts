@@ -4,31 +4,26 @@
 // `workers-routes.ts`'s `WORKER_ROUTES` is. Pure functions over a ctx, no
 // `node:http`, so every route is unit-testable without a socket.
 //
-// This is a DIFFERENT pipeline from `workers-routes.ts`'s `/api/jobs` +
-// `/api/suggestions`: those run through `JobQueue`/`WorkerRunner` and the
-// older `[ai-suggested]` annotation-comment convention (spec 23). The
-// readability surfaces (`suggestNames`/`rewriteFunction`/`fileOp`) write
-// through the name-overlay and the `readability_tx` transaction log instead
-// (spec 28 landing 3-4, P-59) and never touch `JobQueue` -- `JOB_KINDS` has
-// no `rewrite-function`/`combine-files` member and `WorkerRunner` has no
-// readability-aware branch, and extending either is out of this landing's
-// file scope (see the PUSHBACK row this file's header cites). The four UI
-// actions below therefore call the surface function directly and answer
-// once it settles, rather than enqueuing a `JobRow` a client would poll --
-// PUSHBACK P-61 records this as a design decision the spec text did not
-// settle ("job enqueues through the spec-23 queue" assumes a JobKind that
-// does not exist yet). (P-60 is a different row, spec 28 landing 5's two
-// new evaluator `JobKind`s -- corrected here 2026-09-11, landing 4d, this
-// file previously cited the wrong number.)
+// `list_suggestions`/`promote_change`/`revert_change` (below) still call
+// straight into `src/readability/surfaces.ts`, same as landing 4c: they are
+// reads or single-record writes with nothing worth polling for. The three
+// WRITE-capable UI actions -- `suggest-names`/`rewrite-function`/
+// `combine-files` -- are DIFFERENT (spec 28 landing 4d, PUSHBACK P-61
+// resolved): they now ENQUEUE through the SAME `JobQueue`/`WorkerRunner`
+// spec 23's `/api/jobs` uses (`JOB_KINDS` gained a `readability-*` triple,
+// `WorkerRunner.runReadabilityJob` dispatches them to the surfaces), and
+// answer `{jobId}` for the pane to poll via the ordinary jobs rail, rather
+// than blocking the HTTP response on a potentially slow surface call (a
+// cold `suggest_names`/`rewrite_function` re-parses and re-analyses the
+// WHOLE bytecode file with no cache -- `docs/BUGS.md`, filed alongside this
+// change). `review` (section 9.7: "opens the queue; no job") is unchanged,
+// still synchronous -- there is nothing to enqueue for it.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  fileOp,
   listSuggestions,
   promoteChange,
   revertChange,
-  rewriteFunction,
-  suggestNames,
   ReadabilitySurfaceError,
   type ListSuggestionsFilter,
   type ReadabilityContext,
@@ -38,6 +33,7 @@ import { TransactionRefused } from "../readability/transactions.ts";
 import { FileOpError } from "../readability/file-ops.ts";
 import { readBlob } from "../projdb/readability-shards.ts";
 import type { UiRequest, UiResponse } from "./routes.ts";
+import type { WorkersCtx } from "./workers-routes.ts";
 
 /** Hung off `UiServerCtx.readability` (undefined = this server was started
  *  against a project with no readable tree / no configured backend, same
@@ -53,6 +49,11 @@ export interface ReadabilityRoutesCtx {
 
 interface RCtx {
   readonly readability?: ReadabilityRoutesCtx;
+  /** Spec 28 landing 4d: the three write actions enqueue through the SAME
+   *  pool `workers-routes.ts` uses -- `undefined` (workers off / no
+   *  `.hbcproj`) means there is nowhere to enqueue into, even when
+   *  `readability` itself is configured. */
+  readonly workers?: WorkersCtx;
 }
 
 type Handler = (params: readonly string[], req: UiRequest, ctx: RCtx) => UiResponse | Promise<UiResponse>;
@@ -75,6 +76,17 @@ function badRequest(reason: string): UiResponse {
  *  the honest answer is "not here", not an empty list. */
 function noReadability(): UiResponse {
   return { status: 503, json: { reason: "readability is not configured on this server (no readable tree / backend)" } };
+}
+
+/** Spec 28 landing 4d: a write action has somewhere to run the surface
+ *  (`readability` configured) but nowhere to QUEUE it (`--workers off` /
+ *  no `.hbcproj`) -- a different, equally honest 503 from `noReadability`'s. */
+function noWorkersForReadability(): UiResponse {
+  return { status: 503, json: { reason: "readability actions need the worker pool (--workers off, or no .hbcproj)" } };
+}
+
+function accepted(json: unknown): UiResponse {
+  return { status: 202, json };
 }
 
 function body(req: UiRequest): Record<string, unknown> {
@@ -219,59 +231,65 @@ export const READABILITY_ROUTES: readonly Route[] = [
         );
       }),
   },
-  // -- the four spec 28 section 9.7 UI actions, run to completion rather
-  // than queued (this file's header) -----------------------------------
+  // -- three of the four spec 28 section 9.7 UI actions: ENQUEUED (spec 28
+  // landing 4d, P-61 resolved) -- `review` (below) has nothing to enqueue
+  // and stays synchronous. Each handler validates the shape (a malformed
+  // request never reaches the queue), then `enqueue`s a `readability-*`
+  // job and answers 202 `{jobId}` for the pane to poll via `/api/jobs`,
+  // same convention `workers-routes.ts`'s own `POST /api/jobs` uses. -----
   {
     method: "POST",
     re: /^\/api\/readability\/actions\/suggest-names$/,
-    handler: (_p, req, ctx) =>
-      guarded(async () => {
-        const r = ctx.readability;
-        if (r === undefined) return noReadability();
-        const b = body(req);
-        const module = b["module"];
-        const fn = b["fn"];
-        if (typeof module !== "number" && typeof fn !== "number") {
-          return badRequest("readability/actions/suggest-names: one of {module}|{fn} is required");
-        }
-        const target = typeof fn === "number" ? { fn } : { module: module as number };
-        return ok(await suggestNames(r.context, { target }));
-      }),
+    handler: (_p, req, ctx) => {
+      const r = ctx.readability;
+      if (r === undefined) return noReadability();
+      if (ctx.workers === undefined) return noWorkersForReadability();
+      const b = body(req);
+      const module = b["module"];
+      const fn = b["fn"];
+      if (typeof module !== "number" && typeof fn !== "number") {
+        return badRequest("readability/actions/suggest-names: one of {module}|{fn} is required");
+      }
+      const input = typeof fn === "number" ? { fn } : { module: module as number };
+      const { job } = ctx.workers.queue.enqueue({ kind: "readability-suggest-names", input });
+      return accepted({ jobId: job.id, status: job.status });
+    },
   },
   {
     method: "POST",
     re: /^\/api\/readability\/actions\/rewrite-function$/,
-    handler: (_p, req, ctx) =>
-      guarded(async () => {
-        const r = ctx.readability;
-        if (r === undefined) return noReadability();
-        const b = body(req);
-        const fn = b["fn"];
-        if (typeof fn !== "number") return badRequest("readability/actions/rewrite-function: fn is required");
-        return ok(await rewriteFunction(r.context, { fn }));
-      }),
+    handler: (_p, req, ctx) => {
+      const r = ctx.readability;
+      if (r === undefined) return noReadability();
+      if (ctx.workers === undefined) return noWorkersForReadability();
+      const b = body(req);
+      const fn = b["fn"];
+      if (typeof fn !== "number") return badRequest("readability/actions/rewrite-function: fn is required");
+      const { job } = ctx.workers.queue.enqueue({ kind: "readability-rewrite-function", input: { fn } });
+      return accepted({ jobId: job.id, status: job.status });
+    },
   },
   {
     method: "POST",
     re: /^\/api\/readability\/actions\/combine-files$/,
-    handler: (_p, req, ctx) =>
-      guarded(() => {
-        const r = ctx.readability;
-        if (r === undefined) return noReadability();
-        const b = body(req);
-        const inputs = b["inputs"];
-        const outputs = b["outputs"];
-        const evidence = b["evidence"];
-        if (!Array.isArray(inputs) || inputs.length < 2 || !inputs.every((p) => typeof p === "string")) {
-          return badRequest("readability/actions/combine-files: inputs must be at least two file paths");
-        }
-        if (!Array.isArray(outputs) || outputs.length !== 1 || typeof outputs[0] !== "string") {
-          return badRequest("readability/actions/combine-files: outputs must be exactly one file path (combine has one target)");
-        }
-        if (typeof evidence !== "string" || evidence === "") return badRequest("readability/actions/combine-files: evidence is required");
-        const result = fileOp(r.context, { op: "combine", from: inputs as readonly string[], to: outputs[0], evidence });
-        return ok(result);
-      }),
+    handler: (_p, req, ctx) => {
+      const r = ctx.readability;
+      if (r === undefined) return noReadability();
+      if (ctx.workers === undefined) return noWorkersForReadability();
+      const b = body(req);
+      const inputs = b["inputs"];
+      const outputs = b["outputs"];
+      const evidence = b["evidence"];
+      if (!Array.isArray(inputs) || inputs.length < 2 || !inputs.every((p) => typeof p === "string")) {
+        return badRequest("readability/actions/combine-files: inputs must be at least two file paths");
+      }
+      if (!Array.isArray(outputs) || outputs.length !== 1 || typeof outputs[0] !== "string") {
+        return badRequest("readability/actions/combine-files: outputs must be exactly one file path (combine has one target)");
+      }
+      if (typeof evidence !== "string" || evidence === "") return badRequest("readability/actions/combine-files: evidence is required");
+      const { job } = ctx.workers.queue.enqueue({ kind: "readability-combine-files", input: { inputs, outputs, evidence } });
+      return accepted({ jobId: job.id, status: job.status });
+    },
   },
   {
     method: "POST",

@@ -1609,20 +1609,35 @@ comma-separated input list, one output path, evidence — not yet fed from
 the file tree's own multi-select), and "Review" (fetches a fresh pending
 count; there is nothing to enqueue for it, spec 28 §9.7).
 
-These four actions run to completion and answer directly rather than
-enqueuing a pollable job the way "Suggest name"/"Explain" above do
-(docs/PUSHBACK.md P-61: `JOB_KINDS`/`WorkerRunner`, spec 23, still have no
-readability-aware branch). `src/ui-server/server.ts` (landing 4d) now DOES
-build a real `ReadabilityRoutesCtx` for a real `ui-server` process — a
-`--llm-backend <id>` CLI flag picks the readability routes' own backend
-(mirrors `HBC2JS_LLM_BACKEND`), `treeDir` is `<projectDir>/src` (where
-`init`/`--split` always write it), and the project db is the SAME
-connection the worker pool uses. No readable tree, no db, or a bad backend
-id still yields the pane's ordinary "not configured" 503, never a crash
-(`tests/ui-server/server-readability.test.ts`). "Combine files" still takes
-a manual comma-separated path list rather than the tree's own multi-select
-— unchanged, an interaction design call for Fred (spec 28 section 10
-Landing 4).
+`src/ui-server/server.ts` (landing 4d) builds a real `ReadabilityRoutesCtx`
+for a real `ui-server` process — a `--llm-backend <id>` CLI flag picks the
+readability routes' own backend (mirrors `HBC2JS_LLM_BACKEND`), `treeDir`
+is `<projectDir>/src` (where `init`/`--split` always write it), and the
+project db is the SAME connection the worker pool uses. No readable tree,
+no db, or a bad backend id still yields the pane's ordinary "not
+configured" 503, never a crash (`tests/ui-server/server-readability.test.ts`).
+
+Three of the four actions — "Suggest names", "Make readable", "Combine
+files" — now ENQUEUE (docs/PUSHBACK.md P-61 resolved) through the SAME
+`JobQueue`/`WorkerRunner` "Suggest name"/"Explain" above already use:
+`JOB_KINDS` gained a `readability-*` triple, `WorkerRunner` dispatches them
+straight to `src/readability/surfaces.ts` (never through a backend prompt —
+the surfaces call the backend themselves), and the route answers `202
+{jobId}` instead of blocking. `ui/src/workers/readability-wire.ts` polls
+`/api/jobs` internally, so the pane's own buttons/mutations needed no
+change — clicking one still resolves once the job is done, it just no
+longer holds the HTTP connection open for however long that takes (a cold
+`suggest_names`/`rewrite_function` re-parses the WHOLE bytecode file with
+no cache, measured over a minute on a real ~450-module bundle,
+docs/BUGS.md) . "Review" (nothing to enqueue, spec 28 §9.7) is unchanged,
+still synchronous. The pane itself has no "queued/running" indicator yet
+for the three async actions — a button click shows nothing until the
+one-line status toast eventually appears, a known follow-up, not silently
+dropped.
+
+"Combine files" still takes a manual comma-separated path list rather than
+the tree's own multi-select — unchanged, an interaction design call for
+Fred (spec 28 section 10 Landing 4).
 
 ## Graph view
 

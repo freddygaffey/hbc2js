@@ -261,7 +261,7 @@ function buildUiBackend(env: Readonly<Record<string, string | undefined>>): Work
  *  `db` — the caller (`startUiServer`) owns that, since the readability ctx
  *  may still be using the same connection after `pool.stop()` runs. Never
  *  throws: a server that can serve source must still start. */
-function startWorkers(db: DatabaseSync, mcp: McpContext, concurrency: number): WorkerPool {
+function startWorkers(db: DatabaseSync, mcp: McpContext, concurrency: number, readability: ReadabilityContext | undefined): WorkerPool {
   const queue = new JobQueue(db);
   const presence = new Presence(db);
   const backend = buildUiBackend(process.env);
@@ -278,6 +278,11 @@ function startWorkers(db: DatabaseSync, mcp: McpContext, concurrency: number): W
     // `tier:"suggested"` name (promotable by rid) as well as a comment. It is
     // still never truth — promotion is.
     writeSuggestedNames: true,
+    // Spec 28 landing 4d (P-61 resolved): lets the three `readability-*`
+    // job kinds dispatch to the surfaces instead of failing terminally.
+    // `undefined` when this server has no readable tree / backend, same
+    // "absent, not faked" convention `readability-routes.ts` uses.
+    ...(readability !== undefined ? { readability } : {}),
   });
   let busy = false;
   const timer = setInterval(() => {
@@ -450,11 +455,14 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
       sharedDb = undefined;
     }
   }
+  // Built BEFORE the pool (spec 28 landing 4d): `WorkerRunner` needs this
+  // context to dispatch the three `readability-*` job kinds, so the pool
+  // has to be handed it at construction, not wired in after the fact.
+  const readability = buildReadabilityCtx(sharedDb, opts.projectDir, opts);
   const pool =
     sharedDb !== undefined && opts.workers !== false
-      ? startWorkers(sharedDb, mcp, Math.max(1, opts.workerConcurrency ?? DEFAULT_WORKER_CONCURRENCY))
+      ? startWorkers(sharedDb, mcp, Math.max(1, opts.workerConcurrency ?? DEFAULT_WORKER_CONCURRENCY), readability?.context)
       : undefined;
-  const readability = buildReadabilityCtx(sharedDb, opts.projectDir, opts);
   const ctx: UiServerCtx = {
     resources: mcp.resources,
     tools: mcp.tools,

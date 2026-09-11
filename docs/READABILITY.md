@@ -327,23 +327,35 @@ readability-routes.ts`: `GET /api/readability/suggestions` (the
 /api/readability/{promote,revert}` wrap `promote_change`/`revert_change`,
 and the four spec 28 section 9.7 UI actions are their own endpoints --
 `POST /api/readability/actions/{suggest-names,rewrite-function,
-combine-files,review}` -- each calling straight into `suggestNames`/
-`rewriteFunction`/`fileOp` and answering once the call settles (see
-docs/PUSHBACK.md P-61 for why these are not queued jobs the way `/api/jobs`
-work is; P-60 is a different row, spec 28 landing 5's evaluator job kinds).
+combine-files,review}`. `review` calls straight into `listSuggestions` and
+answers once it settles (nothing to enqueue, section 9.7). The other three
+ENQUEUE (docs/PUSHBACK.md P-61, resolved landing 4d) through the SAME
+`JobQueue`/`WorkerRunner` `/api/jobs` uses -- `JOB_KINDS` gained a
+`readability-*` triple, `WorkerRunner.runReadabilityJob` dispatches them to
+`suggestNames`/`rewriteFunction`/`fileOp`, and the route answers `202
+{jobId}` for the caller to poll (P-60 is a different row, spec 28 landing
+5's evaluator job kinds).
 
 `ui/src/panes/WorkersPane.tsx`'s "AI" tab (docs/UI.md "AI workers") gains a
 "Readability" section below the jobs rail: tier/confidence/module/
-security-relevant filters, the evidence/confidence/equiv-status columns,
-a before/after PATH panel for `rewrite` transactions (the transaction log
-carries paths and hashes over the wire, not rendered content -- a true text
-diff needs a follow-up endpoint that reads `treeDir`, docs/BUGS.md), reach
-ordering (module order -- no xref caller-count reaches this pane yet), batch
-promote/revert over the current filter, and the four actions in the section
-header. Landing 4d wired `server.ts` to build a real `ReadabilityRoutesCtx`
-(`--llm-backend` CLI flag, `treeDir` at `<projectDir>/src`, the shared
-project db), so `/api/readability/*` answers for real against a real
-`ui-server` process now. Full details, including what still is NOT wired (a
-real tree multi-select feeding "Combine files"; P-61's synchronous actions),
-are in docs/UI.md's "Readability section" and spec 28 section 10 Landing 4's
-own status paragraph.
+security-relevant filters (the last one now actually filters names,
+landing 4d, docs/BUGS.md resolved), the evidence/confidence/equiv-status
+columns, a before/after panel for `rewrite` transactions that renders
+RENDERED TEXT (landing 4d, docs/BUGS.md resolved: `priorContent`/
+`newContent` on the suggestions response, `prior` from the DB blob the
+transaction log keeps for `revert`, `new` read live off `treeDir` --
+falling back to path + hash when either is unavailable), reach ordering
+(module order -- no xref caller-count reaches this pane yet), batch
+promote/revert over the current filter, and the four actions in the
+section header. `ui/src/workers/readability-wire.ts` hides the
+enqueue-and-poll for the three write actions entirely -- `readability-
+hooks.ts` and `WorkersPane.tsx` call `readabilityApi.suggestNames`/etc.
+exactly as before landing 4d and get the surface's own result back, just
+without blocking the HTTP request for however long the call takes.
+`server.ts` builds a real `ReadabilityRoutesCtx` (`--llm-backend` CLI flag,
+`treeDir` at `<projectDir>/src`, the shared project db), so
+`/api/readability/*` answers for real against a real `ui-server` process.
+Full details, including the one item still NOT wired (a real tree
+multi-select feeding "Combine files" -- an interaction design call for
+Fred, unresolved), are in docs/UI.md's "Readability section" and spec 28
+section 10 Landing 4's own status paragraph.

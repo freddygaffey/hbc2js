@@ -65,7 +65,24 @@ function url(h: UiServerHandle, path: string): string {
   return `http://${h.host}:${h.port}${path}`;
 }
 
-test("a real ui-server process with --llm-backend fake answers every readability route with 200, not 503", async () => {
+/** Spec 28 landing 4d (P-61 resolved): the three write actions now enqueue
+ *  (`202 {jobId}`) instead of answering the surface's result directly --
+ *  this polls the REAL background pool (`server.ts`'s `startWorkers`, which
+ *  ticks every `WORKER_POLL_MS`) the same way the UI's own client
+ *  (`ui/src/workers/readability-wire.ts`) does, over a real socket. */
+async function pollJobDone(h: UiServerHandle, jobId: string, timeoutMs = 10_000): Promise<{ readonly status: string; readonly result?: unknown; readonly error?: string | null }> {
+  const start = Date.now();
+  for (;;) {
+    const res = await fetch(url(h, "/api/jobs"));
+    const { rows } = (await res.json()) as { rows: readonly { readonly id: string; readonly status: string; readonly result?: unknown; readonly error?: string | null }[] };
+    const job = rows.find((r) => r.id === jobId);
+    if (job !== undefined && (job.status === "done" || job.status === "failed" || job.status === "cancelled")) return job;
+    if (Date.now() - start > timeoutMs) throw new Error(`job ${jobId} did not finish within ${String(timeoutMs)}ms`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+test("a real ui-server process with --llm-backend fake answers every readability route (200/202), not 503, and the real background pool runs the enqueued jobs", async () => {
   await withServer(async (h) => {
     const list = await fetch(url(h, "/api/readability/suggestions"));
     assert.equal(list.status, 200, "the landing 4c blocker: this used to 503 unconditionally");
@@ -78,24 +95,33 @@ test("a real ui-server process with --llm-backend fake answers every readability
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fn: 0 }),
     });
-    assert.equal(suggest.status, 200);
-    const suggestJson = (await suggest.json()) as { suggestions: readonly unknown[]; equiv: { verdict: string } };
-    assert.equal(suggestJson.equiv.verdict, "PASS");
+    // Spec 28 landing 4d (P-61 resolved): enqueued, not run inline.
+    assert.equal(suggest.status, 202, "the four actions now enqueue rather than 503/200 directly");
+    const { jobId: suggestJobId } = (await suggest.json()) as { jobId: string };
+    const suggestJob = await pollJobDone(h, suggestJobId);
+    assert.equal(suggestJob.status, "done", "the real background pool (startWorkers) must actually claim and run this job");
+    const suggestResult = suggestJob.result as { suggestions: readonly unknown[]; equiv: { verdict: string } };
+    assert.equal(suggestResult.equiv.verdict, "PASS");
 
     const review = await fetch(url(h, "/api/readability/actions/review"), { method: "POST" });
-    assert.equal(review.status, 200);
+    assert.equal(review.status, 200, "review has nothing to enqueue and stays synchronous");
     const reviewJson = (await review.json()) as { opened: boolean; pending: number };
     assert.equal(reviewJson.opened, true);
 
     // rewrite-function: the FakeBackend's default reply names/parses nothing
-    // useful as a rewrite proposal, so this is expected to answer 200 with
-    // `accepted: false` rather than 500 -- the route itself must not crash.
+    // useful as a rewrite proposal, so the job is expected to finish `done`
+    // with `accepted: false` rather than fail -- the surface call itself
+    // must not throw just because the model abstained.
     const rewrite = await fetch(url(h, "/api/readability/actions/rewrite-function"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fn: 0 }),
     });
-    assert.equal(rewrite.status, 200);
+    assert.equal(rewrite.status, 202);
+    const { jobId: rewriteJobId } = (await rewrite.json()) as { jobId: string };
+    const rewriteJob = await pollJobDone(h, rewriteJobId);
+    assert.equal(rewriteJob.status, "done");
+    assert.equal((rewriteJob.result as { accepted: boolean }).accepted, false);
 
     // combine-files: malformed args are a 400, still not a 503/500 -- proves
     // the route is live and doing its own validation, not just absent.
