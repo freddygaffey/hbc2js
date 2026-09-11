@@ -1,7 +1,7 @@
 ---
 id: hbc-name
 kind: suggest-name
-version: 2
+version: 3
 ---
 
 # hbc-name -- naming registers and functions in decompiled Hermes bytecode
@@ -22,6 +22,15 @@ You are given, and may use, only what is in the request:
 - `strings` -- string literals the function loads: endpoint paths, keys,
   action types, error messages. These are the strongest evidence available.
 - `role` -- the module's segregation bucket and role signal, when classified.
+- `targets` -- OPTIONAL. When present, this request is about the WHOLE
+  function, not one register: a list of every nameable `{fn,reg}` in it,
+  in the `{fn,reg}` short form. Propose a name for as many of them as you
+  have real evidence for, in one `names[]` array (the output contract
+  already allows more than one entry). Leave a target out of `names[]`
+  entirely -- do not emit a low-effort guess -- when you would abstain on
+  it individually. A request with no `targets` field is the single-register
+  form: propose at most one name, for the one binding `source`/`summary`
+  describe.
 
 You never fetch anything else. If the evidence you need is absent, abstain.
 
@@ -65,7 +74,14 @@ Reply with one JSON object and nothing else:
 }
 ```
 
-- `bindingId` is echoed back from the request, unchanged.
+- `bindingId` is echoed back from the request, unchanged -- when `targets` is
+  present, one that matches exactly one entry of it. A `bindingId` that is
+  not in `targets` is dropped by the caller and never written, so do not
+  invent one.
+- When `targets` is present, `names` normally has FEWER entries than
+  `targets` -- one per binding you actually have evidence for, not a padded
+  list. `abstained: true` (with `names: []`) means none of them, not that
+  you are unsure about all of them individually.
 - `confidence` is `high` only when a literal or an unambiguous call names the
   value; `med` for a strong contextual inference; `low` for anything else.
 - `evidence` cites the specific literal, endpoint or call site. It is not a
