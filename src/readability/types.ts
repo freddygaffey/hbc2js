@@ -17,20 +17,26 @@ import type { Confidence } from "../name-overlay/store.ts";
 // Skills (spec 28 section 2, section 9.2)
 // ---------------------------------------------------------------------------
 
-export const SKILL_IDS = ["hbc-name", "hbc-classify", "hbc-doc"] as const;
+export const SKILL_IDS = ["hbc-name", "hbc-classify", "hbc-doc", "hbc-evaluate", "hbc-adversarial"] as const;
 export type SkillId = (typeof SKILL_IDS)[number];
 
-/** Shipped with landing 1. `hbc-doc` is DEFERRED (spec 28 section 8 default
- *  "after naming lands"), so it is a legal `SkillId` with no file on disk. */
-export const SHIPPED_SKILL_IDS: readonly SkillId[] = ["hbc-name", "hbc-classify"];
+/** Shipped with landing 1 (`hbc-name`, `hbc-classify`) and landing 5
+ *  (`hbc-evaluate`, `hbc-adversarial`). `hbc-doc` is DEFERRED (spec 28
+ *  section 8 default "after naming lands"), so it is a legal `SkillId` with
+ *  no file on disk. */
+export const SHIPPED_SKILL_IDS: readonly SkillId[] = ["hbc-name", "hbc-classify", "hbc-evaluate", "hbc-adversarial"];
 
 /** Which skill a job kind loads. A kind absent from this map is not served by
- *  the readability layer and stays on the heuristic/other backends. */
+ *  the readability layer and stays on the heuristic/other backends.
+ *  `evaluate` (the section 1d.1 "agent" evaluator plugin) and
+ *  `adversarial-recheck` (section 1b step 8) are landing 5 additions. */
 export const SKILL_FOR_KIND: Readonly<Partial<Record<JobKind, SkillId>>> = {
   "suggest-name": "hbc-name",
   "name-module": "hbc-classify",
   "explain-fn": "hbc-doc",
   "doc-screen": "hbc-doc",
+  evaluate: "hbc-evaluate",
+  "adversarial-recheck": "hbc-adversarial",
 };
 
 /** Repo-relative directory the skills live in (versioned, auditable). */
@@ -501,7 +507,11 @@ export interface LabelledSample {
   readonly targets: readonly LabelledTarget[];
 }
 
-export const RATER_VERDICTS = ["accurate", "inaccurate", "misleading"] as const;
+/** `pending-caller` (landing 5) is not a grading of a proposal against ground
+ *  truth -- it is the `inline-caller` evaluator plugin's placeholder verdict
+ *  shape (section 1d.1: "the calling/main agent evaluates inline"), which the
+ *  caller is expected to overwrite with its own judgement after grading. */
+export const RATER_VERDICTS = ["accurate", "inaccurate", "misleading", "pending-caller"] as const;
 export type RaterVerdictKind = (typeof RATER_VERDICTS)[number];
 
 export interface RaterVerdict {

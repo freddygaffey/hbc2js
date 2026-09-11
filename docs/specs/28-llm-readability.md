@@ -344,7 +344,15 @@ render, spec-18 caching.
 NEW (this spec): `src/workers/backends/haiku.ts` (the backend, ~one `run`
 method calling the Anthropic API with the skill), the 2-3 skill files, the
 `name llm-fill` batch CLI, the content-hash name cache, and the optional
-verify pass.
+verify pass. Landing 5 adds two more job kinds to spec 23's list --
+`evaluate` (the "agent" evaluator plugin, section 9.6, skill `hbc-evaluate`)
+and `adversarial-recheck` (section 1b step 8, skill `hbc-adversarial`) --
+because both `HaikuBackend` and `ReplayBackend` route the skill to prompt
+with solely from the job kind (`SKILL_FOR_KIND`), never from the caller's
+`prompt` string, so a second question needs a second kind (docs/PUSHBACK.md
+P-60). `src/readability/evaluate.ts` (the plug-in host + the adversarial
+re-check) and `skills/hbc-evaluate.md`/`skills/hbc-adversarial.md` are new;
+everything else in this list is unchanged.
 
 ## 6. Cost note
 
@@ -667,6 +675,32 @@ is, and it is **opt-in and not hard-wired to any model**.
   so a stale label fails rather than rots. Register-level labels are added in
   landing 1 from `react-navigation-example.debug.hbc`, which carries debug info.
 
+**Landed (landing 5)**: `src/readability/evaluate.ts` is the plug-in host.
+`runEvaluation(items, plugin, signal?)` hands a batch of `EvaluationItem`s to
+`plugin.evaluate` and returns the `EvaluationReport` UNCHANGED -- it takes no
+DB/tier argument at all, so it cannot promote by construction. Three shipped
+plugins: `NONE_PLUGIN` (mode `none`, empty report); `createInlineCallerPlugin()`
+(mode `inline-caller`, no backend call at all -- every item comes back with a
+`pending-caller` verdict, a fourth `RaterVerdictKind` alongside
+`accurate`/`inaccurate`/`misleading`, for the calling agent to overwrite after
+grading inline); `createAgentEvaluatorPlugin({backend, id?})` (mode `agent`,
+one `evaluate` job-kind call per item, `hbc-evaluate` skill, any
+`WorkerBackend`). The adversarial re-check (section 1b step 8) is
+`needsAdversarialRecheck`/`runAdversarialRecheck`/`applyAdversarialDemotion`
+in the same file: a target flagged `securityRelevant`, or `high` confidence
+with `reach` over `ADVERSARIAL_REACH_THRESHOLD` (20), gets one more call on
+the `adversarial-recheck` job kind with the `hbc-adversarial` skill; a
+`misleading` verdict demotes the proposal to `low` confidence and prefixes its
+evidence with `[flagged: misleading]` (docs/PUSHBACK.md P-59 means a NAME
+proposal has no transaction row to carry a first-class `flagged` field yet, so
+the marker lives in the evidence text the suggestion pane already shows).
+`name-pass.ts`'s `runNamePass` runs the re-check inline (before its own equiv
+backstop) when `opts.adversarial` is wired, using `OverlayStore.demote` (an
+in-place confidence/evidence patch, no new revision) so the demotion stays
+inside the same batch write the backstop already tracks. The CLI hook is
+`hbc2js readability review <input.hbc> --adversarial` (section 9.7). Two new
+`JobKind`s (`evaluate`, `adversarial-recheck`) and their skills are P-60.
+
 ### 9.7 Surfaces
 
 One core, three callers; no caller bypasses the oracle or the DB trace.
@@ -708,7 +742,13 @@ reach ordering (section 1d).
 **CLI**: `hbc2js name llm-fill <project> [--kinds ...] [--only src]
 [--budget-tokens N] [--backend haiku]` for the batch pass;
 `readability rewrite|file-op|review` for the function, tree and queue
-operations. Both batch and live are supported (D28-2).
+operations. Both batch and live are supported (D28-2). `readability review`'s
+own argument shape is landing 5's invention (the spec pinned only the verb
+name, section 9.7's `READABILITY_CLI_VERBS`, not a table): `hbc2js
+readability review <input.hbc> [--adversarial] [--security-relevant
+fn:reg,...] [--backend haiku|replay|heuristic] [--recording <file>] [--store
+<path>] [--json]` lists the overlay's `source:"llm"` suggestion queue and,
+with `--adversarial`, runs the section 1b step 8 re-check over it (P-60).
 
 ## 10. Landing plan
 
@@ -910,6 +950,35 @@ this agent -- next in queue, not a correctness gap in what shipped.
   back, nothing is promoted by it, and the adversarial re-check drives
   `misleading` verdicts on security-relevant targets to zero.
 
+**Status: LANDED 2026-09-11.** `src/readability/evaluate.ts` (section 9.6's
+narrative above has the full shape: `runEvaluation`, `NONE_PLUGIN`,
+`createInlineCallerPlugin`, `createAgentEvaluatorPlugin`, and the adversarial
+re-check trio). `evaluate?` is wired through `suggest_names`,
+`classify_module` and `rewrite_function` in `src/readability/surfaces.ts`
+(`ReadabilityContext` gains `surface?`/`evaluator?`; `maybeEvaluate` applies
+section 9.6's mode selection, so a UI context can request `evaluate: "agent"`
+and nothing is ever spawned -- tested). `name-pass.ts`'s `runNamePass` gained
+`opts.adversarial` and two `NamePassTarget` fields (`securityRelevant?`,
+`reach?`); the CLI gained `hbc2js readability review [--adversarial]`.
+`skills/hbc-evaluate.md` and `skills/hbc-adversarial.md` ship (D28-3's
+`hbc-doc` stays deferred -- naming coverage has not cleared section 7 without
+the held-out recording, landing 1's own open follow-up, so this landing does
+not attempt it, exactly as section 8 anticipates).
+
+Measured on `tests/fixtures/llm-readability/react-navigation-example-0.85.3
+.labels.json`: a planted misleading proposal on the sample's one
+security-relevant target (`rn-ex-08`, the deep-link URL intake) trips
+`highConfidenceAccuracy`'s `misleading` counter to 1 before any recheck; a
+`FakeBackend` adversarial pass that catches the plant demotes it to `low`
+confidence, and `misleading` measures 0 afterward -- section 7's clause,
+exercised end to end with no network. `surfaces-evaluator.test.ts`'s loop leg
+and `quality.test.ts`'s security clause both stop skipping with real
+assertions, not weakened ones. Two new job kinds (`evaluate`,
+`adversarial-recheck`) and the `readability review` argument shape are
+docs/PUSHBACK.md P-60 (open): the backend interface routes a skill from the
+job kind alone, so a second question needs a second kind, and the CLI verb
+had no argument table in the spec to begin with.
+
 ## 11. Acceptance tests shipped with this spec
 
 `tests/gate/llm-readability/`, written before any implementation, in the spec-13
@@ -920,13 +989,23 @@ construction.
 | file | green today | red-skipped until |
 | --- | --- | --- |
 | `interface-shape.test.ts` | config defaults, env precedence, validation refusals, skill routing, "no transport in `src/readability`, no model SDK in `package.json`" | - |
-| `skills.test.ts` | both shipped skills load, parse, declare their kind, carry all four sections and a JSON output contract; malformed skills refused; `hbc-doc` absent | - |
+| `skills.test.ts` | every shipped skill loads, parses, declares its kind, and carries all four sections; the naming skills' output contract is checked against the `NameProposal` wire shape, the landing-5 evaluator/adversarial skills' against their own `{verdict,rationale}` shape; malformed skills refused; `hbc-doc` absent | - |
 | `backend-roundtrip.test.ts` | a `suggest-name` job round-trips skill + context through `FakeBackend` into proposals; abstain; malformed output rejected not thrown; evidence-free `high` downgraded | - |
 | `cost-cache.test.ts` | cache key is content-addressed, every field participates, cannot be forged by moving content between fields | landing 1 (the >= 90% re-run measurement, the budget stop) |
 | `coverage.test.ts` | the two targets are pinned in code | landing 1 (both legs). The NSW leg additionally skips with a clear message unless `HBC2JS_NSW_HBC` points at the bundle, which is proprietary and never committed |
-| `quality.test.ts` | sample format conformance, every label traced to the held-out app's sourcemap, rater verdicts, accuracy arithmetic including a FAILING run and the empty case | landing 1 (the >= 80% measurement), landing 5 (the security clause) |
+| `quality.test.ts` | sample format conformance, every label traced to the held-out app's sourcemap, rater verdicts, accuracy arithmetic including a FAILING run and the empty case; landing 5's security clause (a planted misleading proposal on the sample's security-relevant target, demoted to zero after the adversarial re-check) | landing 1 (the >= 80% measurement -- still needs the held-out recording) |
 | `fidelity-reversibility.test.ts` | transaction validity: orphan files, missing inputs, non-reversible ops, non-PASS proofs, worker self-promotion; INCONCLUSIVE is never PASS; landing 1's apply-then-revert byte identity; landing 3's revert exactness, traceability and tree-equiv legs | - (all legs green) |
-| `surfaces-evaluator.test.ts` | spec-text/code vocabulary agreement for all three surfaces, snake_case and non-collision of tool names, evaluator mode defaults, plug-in round-trip with no promotion field | landing 4 (registration), landing 5 (the loop) |
+| `surfaces-evaluator.test.ts` | spec-text/code vocabulary agreement for all three surfaces, snake_case and non-collision of tool names, evaluator mode defaults, plug-in round-trip with no promotion field; landing 5's loop leg (an MCP `suggest_names` call with `evaluate:"agent"` returns a report that touches no transaction, and the `ui` surface never spawns the same wired plugin) | - (all legs green) |
+
+Landing 5 shipped `tests/gate/llm-readability/evaluate.test.ts` (mode
+selection table, all three plugins round-tripped, report-has-no-promotion-
+field structurally, the adversarial re-check's gating/demotion, and section
+7's clause over the labelled sample), plus regression tests in
+`tests/gate/llm-readability/name-pass.test.ts` (the re-check wired into
+`runNamePass`), `tests/gate/name-overlay/store.test.ts` (`OverlayStore.demote`,
+the in-place patch the re-check's same-batch correction relies on) and
+`tests/gate/cli/readability-review.test.ts` (the new CLI verb, including one
+full replay-backend round trip that demotes a planted misleading name).
 
 Landing 3 shipped `tests/gate/llm-readability/transactions.test.ts`,
 `tests/gate/llm-readability/file-ops.test.ts` and

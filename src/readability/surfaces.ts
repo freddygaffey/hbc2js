@@ -58,16 +58,20 @@ import {
   sha256,
 } from "./transactions.ts";
 import { TransactionRefused } from "./transactions.ts";
-import { MODULE_ROLES, parseReadabilityResult } from "./types.ts";
+import { evaluationModeFor as evaluationModeForBase, MODULE_ROLES, parseReadabilityResult } from "./types.ts";
 import type {
+  CallSurface,
   EquivProof,
+  EvaluationItem,
   EvaluationMode,
   EvaluationReport,
+  EvaluatorPlugin,
   ModuleRole,
   NameProposal,
   ReadabilityTransaction,
   RewriteProposal,
 } from "./types.ts";
+import { runEvaluation } from "./evaluate.ts";
 
 /** Thrown by every surface on a malformed argument -- section 9.7's
  *  "argument validation exactly per the table" -- and by `promote_change`'s
@@ -95,6 +99,32 @@ export interface ReadabilityContext {
    *  `hbcPath` may point at a shared, git-tracked fixture, and a surface
    *  must never write next to it. */
   readonly overlayPath?: string;
+  /** spec 28 sections 1d.1 / 9.6 (landing 5): which call surface this context
+   *  serves. `evaluationModeFor` uses it to pick a mode -- defaults to `mcp`
+   *  (this module's own default caller); a UI route MUST set `"ui"` so an
+   *  `evaluate` request can never spawn an evaluator (section 1d.1: a human
+   *  is present on the UI surface, and is always the reviewer). */
+  readonly surface?: CallSurface;
+  /** The evaluator a caller wired for `agent`/`inline-caller` modes (landing
+   *  5). Requesting a mode with no plugin wired is the same as requesting
+   *  `none` -- opt-in means a caller supplies the plugin, not just the mode
+   *  string (section 1d.1: pluggable, never hard-wired). */
+  readonly evaluator?: EvaluatorPlugin;
+}
+
+/** section 9.6/1d.1's mode selection plus the "opt-in requires a wired
+ *  plugin" rule: `none`/`human-ui` (and `agent`/`inline-caller` with no
+ *  `ctx.evaluator`) return `undefined` -- no plugin is ever called, so a UI
+ *  context can request `evaluate: "agent"` and nothing is spawned. */
+async function maybeEvaluate(
+  ctx: ReadabilityContext,
+  requested: EvaluationMode | undefined,
+  items: readonly EvaluationItem[],
+): Promise<EvaluationReport | undefined> {
+  const mode = evaluationModeForBase({ surface: ctx.surface ?? "mcp", ...(requested !== undefined ? { requested } : {}) });
+  if (mode === "none" || mode === "human-ui") return undefined;
+  if (ctx.evaluator === undefined) return undefined;
+  return runEvaluation(items, ctx.evaluator);
 }
 
 function loadAnalysis(hbcPath: string): ModuleAnalysis {
@@ -169,7 +199,12 @@ export async function suggestNames(ctx: ReadabilityContext, args: SuggestNamesAr
   // write from this call has to survive on disk for the next one to see it.
   service.store.save(overlayPath);
   const suggestions = result.outcomes.map((o) => o.proposal).filter((p): p is NameProposal => p !== undefined);
-  return { suggestions, equiv: result.equiv, txIds: [], evaluation: undefined };
+  const evaluation = await maybeEvaluate(
+    ctx,
+    args.evaluate,
+    suggestions.map((p) => ({ targetId: bindingKey(p.bindingId), proposedName: p.name, confidence: p.confidence, evidence: p.evidence })),
+  );
+  return { suggestions, equiv: result.equiv, txIds: [], evaluation };
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +254,10 @@ export async function classifyModule(ctx: ReadabilityContext, args: ClassifyModu
     return { confidence: "low", evidence: parsed.ok ? "" : parsed.error };
   }
   const top = parsed.result.names[0]!;
-  return { role: inferModuleRole(`${top.name} ${top.evidence}`), path: top.name, confidence: top.confidence, evidence: top.evidence, evaluation: undefined };
+  const evaluation = await maybeEvaluate(ctx, args.evaluate, [
+    { targetId: `module:${String(args.module)}`, proposedName: top.name, confidence: top.confidence, evidence: top.evidence },
+  ]);
+  return { role: inferModuleRole(`${top.name} ${top.evidence}`), path: top.name, confidence: top.confidence, evidence: top.evidence, evaluation };
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +318,10 @@ export async function rewriteFunction(ctx: ReadabilityContext, args: RewriteFunc
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, attempt.code, "utf8");
   }
-  return { rewrite: proposal, equiv: attempt.proof, accepted: true, txId: id, evaluation: undefined };
+  const evaluation = await maybeEvaluate(ctx, args.evaluate, [
+    { targetId: `fn:${String(args.fn)}`, proposedName: proposal.code.slice(0, 80), confidence: proposal.confidence, evidence: proposal.evidence },
+  ]);
+  return { rewrite: proposal, equiv: attempt.proof, accepted: true, txId: id, evaluation };
 }
 
 // ---------------------------------------------------------------------------

@@ -17,6 +17,8 @@ import { bindingKey } from "../name-overlay/id.ts";
 import type { BindingId } from "../name-overlay/id.ts";
 import { parseReadabilityResult } from "./types.ts";
 import type { EquivProof, NameProposal } from "./types.ts";
+import { runAdversarialRecheck } from "./evaluate.ts";
+import type { AdversarialTarget } from "./evaluate.ts";
 
 /** One target the loop should propose a name for: a register local (landing
  *  1) or, in principle, any binding the overlay can hold. `context` is the
@@ -29,6 +31,13 @@ export interface NamePassTarget {
   readonly bindingId: BindingId;
   readonly kind: Extract<JobKind, "suggest-name" | "name-module">;
   readonly context: Record<string, unknown>;
+  /** spec 28 section 1b step 8 (landing 5): flags this target for the
+   *  adversarial re-check when `opts.adversarial` is wired. Absent means
+   *  "not known to be security-relevant" -- the recheck still runs on it
+   *  when it lands `high` confidence with `reach` above the threshold
+   *  (`evaluate.ts`'s `needsAdversarialRecheck`). */
+  readonly securityRelevant?: boolean;
+  readonly reach?: number;
 }
 
 export type NamePassSkipReason =
@@ -45,6 +54,11 @@ export interface NamePassOutcome {
   readonly written: boolean;
   readonly reason?: NamePassSkipReason;
   readonly detail?: string;
+  /** True when the landing-5 adversarial re-check demoted this proposal
+   *  (`misleading` verdict -> confidence forced to `low`, evidence prefixed
+   *  `[flagged: misleading]`). Absent/false for everything the recheck did
+   *  not touch, including targets it never ran on. */
+  readonly flagged?: boolean;
 }
 
 export interface NamePassOptions {
@@ -56,6 +70,15 @@ export interface NamePassOptions {
   readonly budgetTokens?: number;
   readonly renderOptions?: RenderOptions;
   readonly signal?: AbortSignal;
+  /** spec 28 section 1b step 8 (landing 5), "runs inside the naming pass when
+   *  `evaluate` is `agent`": when wired, every WRITTEN high-value proposal
+   *  (`securityRelevant`, or `high` confidence with `reach` above the
+   *  threshold) gets one more backend call before the batch equiv backstop
+   *  runs. A `misleading` verdict demotes the name in the overlay itself (a
+   *  second `setName` call, its own supersession record) and is reflected in
+   *  the outcome (`flagged: true`). Absent means no recheck runs -- the
+   *  caller decides whether `evaluate` selected `agent` (section 9.6). */
+  readonly adversarial?: { readonly backend: WorkerBackend; readonly signal?: AbortSignal };
 }
 
 export interface NamePassResult {
@@ -127,6 +150,47 @@ export async function runNamePass(targets: readonly NamePassTarget[], opts: Name
     }
     written.push({ id: target.bindingId, ts: set.result.record.ts });
     outcomes.push({ target, proposal, written: true });
+  }
+
+  // The landing-5 adversarial re-check (section 1b step 8), BEFORE the batch
+  // backstop so a demotion is what the backstop proves stable, not the
+  // pre-recheck name. Runs only over targets this run actually wrote.
+  if (opts.adversarial !== undefined) {
+    const indexByTargetId = new Map<string, number>();
+    const adversarialTargets: AdversarialTarget[] = [];
+    outcomes.forEach((o, i) => {
+      if (!o.written || o.proposal === undefined) return;
+      const targetId = bindingKey(o.target.bindingId);
+      indexByTargetId.set(targetId, i);
+      adversarialTargets.push({
+        targetId,
+        proposedName: o.proposal.name,
+        confidence: o.proposal.confidence,
+        evidence: o.proposal.evidence,
+        securityRelevant: o.target.securityRelevant ?? false,
+        ...(o.target.reach !== undefined ? { reach: o.target.reach } : {}),
+      });
+    });
+    const verdicts = await runAdversarialRecheck(adversarialTargets, opts.adversarial.backend, opts.adversarial.signal ?? opts.signal);
+    for (const v of verdicts) {
+      if (!v.misleading) continue;
+      const idx = indexByTargetId.get(v.targetId);
+      const outcome = idx !== undefined ? outcomes[idx] : undefined;
+      if (outcome === undefined || outcome.proposal === undefined) continue;
+      const flaggedEvidence = `[flagged: misleading] ${v.rationale} (was: ${outcome.proposal.evidence})`;
+      // `demote` patches the ACTIVE record IN PLACE (no new revision, no
+      // chain growth, `OverlayStore.demote`'s own doc comment) -- this is a
+      // same-pass correction to a write the batch backstop below already
+      // tracks by `ts`, not a second reviewable transaction, so the single
+      // `written` entry for this target stays valid.
+      const patched = opts.service.store.demote(outcome.target.bindingId, { confidence: "low", evidence: flaggedEvidence });
+      if (patched === null) continue;
+      outcomes[idx as number] = {
+        ...outcome,
+        proposal: { ...outcome.proposal, confidence: "low", evidence: flaggedEvidence },
+        flagged: true,
+      };
+    }
   }
 
   // The batch backstop (spec 28 section 9.4 NAME row): revert every write

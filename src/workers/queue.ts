@@ -14,7 +14,10 @@ import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson, sha256Hex } from "../projdb/export.ts";
 import { appendWorkerEvent } from "./events.ts";
 
-/** §1's job kinds. */
+/** §1's job kinds. `evaluate` and `adversarial-recheck` are spec 28 landing
+ *  5 additions (section 1d.1's opt-in evaluation loop, section 1b step 8's
+ *  adversarial re-check) -- both routed to their own skill in
+ *  `src/readability/types.ts`'s `SKILL_FOR_KIND`, same as the original four. */
 export const JOB_KINDS = [
   "explain-fn",
   "suggest-name",
@@ -23,6 +26,8 @@ export const JOB_KINDS = [
   "doc-screen",
   "rerun-findings",
   "poc-finding",
+  "evaluate",
+  "adversarial-recheck",
 ] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 

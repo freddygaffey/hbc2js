@@ -77,6 +77,25 @@ test("search sees only the active record after a supersede", () => {
   assert.deepEqual(s.search({ fn: 1 }).map((r) => r.name), ["new"]);
 });
 
+test("demote (spec 28 landing 5): patches the active record's confidence/evidence in place, no new revision", () => {
+  const s = fixedStore();
+  const id = regId(3, 4);
+  const first = s.setName(id, "trustedInternalCounter", { confidence: "high", evidence: "e1", source: "llm", gate: "passed" });
+  const patched = s.demote(id, { confidence: "low", evidence: "[flagged: misleading] e1" });
+  assert.equal(patched?.rid, first.record.rid, "demote patches the SAME record, it does not supersede");
+  assert.equal(patched?.confidence, "low");
+  assert.equal(patched?.evidence, "[flagged: misleading] e1");
+  assert.equal(patched?.name, "trustedInternalCounter", "demote never touches the name itself");
+  // No chain growth: still exactly one record for this binding.
+  assert.equal(s.history(id).length, 1);
+  assert.equal(s.getName(id)?.confidence, "low");
+});
+
+test("demote on an unnamed binding is a no-op, returns null", () => {
+  const s = fixedStore();
+  assert.equal(s.demote(regId(9, 9), { confidence: "low", evidence: "x" }), null);
+});
+
 test("the JSON sidecar round-trips and is byte-deterministic (spec §11.9)", () => {
   const dir = mkdtempSync(join(tmpdir(), "overlay-store-"));
   const path = join(dir, "t.hbc.names.json");

@@ -29,14 +29,34 @@ test("spec 28: every shipped skill loads, parses, and declares the kind it is ro
   }
 });
 
+// Skills whose output feeds `parseReadabilityResult` (the
+// `{bindingId,name,confidence,evidence}[]` wire shape, spec 28 section 9.1).
+// The landing-5 evaluator/adversarial skills answer a DIFFERENT question
+// ("is this verdict accurate/misleading?", section 1d.1/1b step 8) with a
+// smaller `{verdict, rationale}` contract of their own -- they are not
+// naming skills and never produce a `NameProposal`.
+const NAME_SHAPED_SKILL_IDS = ["hbc-name", "hbc-classify"] as const;
+const VERDICT_SHAPED_SKILL_IDS = ["hbc-evaluate", "hbc-adversarial"] as const;
+
 test("spec 28: each shipped skill states its JSON output contract and an abstain rule", () => {
-  for (const id of SHIPPED_SKILL_IDS) {
+  assert.deepEqual(
+    [...NAME_SHAPED_SKILL_IDS, ...VERDICT_SHAPED_SKILL_IDS].sort(),
+    [...SHIPPED_SKILL_IDS].sort(),
+    "every shipped skill must be classified as either name-shaped or verdict-shaped",
+  );
+  for (const id of NAME_SHAPED_SKILL_IDS) {
     const skill = loadSkill(id, skillsDir);
     // The output contract must show the four fields the wire parser demands.
     for (const field of ["bindingId", "name", "confidence", "evidence"]) {
       assert.ok(skill.body.includes(field), `${id}: output contract does not mention ${field}`);
     }
     assert.match(skill.body, /"abstained"\s*:\s*true/, `${id}: abstain section must show the abstain payload`);
+  }
+  for (const id of VERDICT_SHAPED_SKILL_IDS) {
+    const skill = loadSkill(id, skillsDir);
+    for (const field of ["verdict", "rationale"]) {
+      assert.ok(skill.body.includes(field), `${id}: output contract does not mention ${field}`);
+    }
   }
 });
 

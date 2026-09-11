@@ -94,3 +94,32 @@ test("runNamePass: a name the reuse gate refuses is not written, and does not fa
   assert.equal(result.outcomes[0]?.reason, "gate-refused");
   assert.equal(service.getName(regId(0, 9)), null);
 });
+
+test("runNamePass: landing 5's adversarial re-check demotes a misleading name on a securityRelevant target, and the backstop still PASSes on the demoted state", async () => {
+  const service = svc();
+  const backend = new FakeBackend({ replies: { "suggest-name": () => nameReply(0, 9, "trustedInternalCounter", "high") } });
+  const adversarialBackend = new FakeBackend({
+    replies: { "adversarial-recheck": () => JSON.stringify({ verdict: "misleading", rationale: "asserts trust the evidence never shows" }) },
+  });
+  const t: NamePassTarget = { ...target(0, 9, "s"), securityRelevant: true };
+  const result = await runNamePass([t], { backend, service, adversarial: { backend: adversarialBackend } });
+
+  assert.equal(namedCount(result.outcomes), 1, "the name is still written -- flagged, not discarded");
+  assert.equal(result.outcomes[0]?.flagged, true);
+  assert.equal(result.outcomes[0]?.proposal?.confidence, "low", "a misleading verdict demotes below auto-promote");
+  assert.match(result.outcomes[0]?.proposal?.evidence ?? "", /^\[flagged: misleading\]/);
+
+  const record = service.getName(regId(0, 9));
+  assert.equal(record?.confidence, "low");
+  assert.match(record?.evidence ?? "", /^\[flagged: misleading\]/);
+  assert.equal(result.equiv.verdict, "PASS", "the backstop restores the DEMOTED record, not the pre-recheck one");
+});
+
+test("runNamePass: the adversarial re-check never runs when opts.adversarial is not wired", async () => {
+  const service = svc();
+  const backend = new FakeBackend({ replies: { "suggest-name": () => nameReply(0, 9, "trustedInternalCounter", "high") } });
+  const t: NamePassTarget = { ...target(0, 9, "s"), securityRelevant: true };
+  const result = await runNamePass([t], { backend, service });
+  assert.equal(result.outcomes[0]?.flagged, undefined);
+  assert.equal(service.getName(regId(0, 9))?.confidence, "high");
+});
