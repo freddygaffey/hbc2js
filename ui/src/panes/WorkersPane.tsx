@@ -195,7 +195,7 @@ function ReadabilityRowView({
       </div>
       <div className="pt-1 text-text-muted">{row.kind === "name" ? row.evidence : row.tx.evidence}</div>
       {row.kind === "tx" && row.tx.op === "rewrite" && (
-        <div className="mt-1 grid grid-cols-2 gap-2 rounded-ui bg-surface-2 p-2 font-mono text-[11px]" data-testid={`readability-diff-${id}`}>
+        <div className="mt-1 grid grid-cols-2 gap-2 rounded-ui bg-surface-2 p-2 font-mono text-xs" data-testid={`readability-diff-${id}`}>
           <div>
             <div className="text-text-muted">before (prior)</div>
             {row.tx.prior.files.map((f) => (
