@@ -298,6 +298,19 @@ export function equivAccepts(proof: EquivProof): boolean {
 export const FILE_OP_KINDS = ["make", "rename", "move", "combine", "split"] as const;
 export type FileOpKind = (typeof FILE_OP_KINDS)[number];
 
+/** Every op the readability transaction log can record: the five file-tree
+ *  ops above plus `rewrite`, the function-level change landing 2 gates
+ *  (docs/PUSHBACK.md P-58, resolved here). `rewrite` is a first-class op
+ *  rather than a second column because 9.5's id is a content hash over
+ *  (op, inputs, outputs, evidence): one enum keeps one dedup rule, one
+ *  `validateTransaction` and one revert path for every kind of change. Its
+ *  inputs are the one `{fn}` binding it rewrote and its outputs the one file
+ *  it touched, so it obeys the same zero-orphan rule as a file op.
+ *  `FILE_OP_KINDS` stays exactly the five FILE ops, because `file-ops.ts`
+ *  and the `file_op` MCP tool are about the tree, not about rewrites. */
+export const TRANSACTION_OPS = [...FILE_OP_KINDS, "rewrite"] as const;
+export type TransactionOp = (typeof TRANSACTION_OPS)[number];
+
 /** Where an emitted file's content came from in the bytecode. One per
  *  contributing module/binding: this is what makes traceability checkable. */
 export interface BindingOrigin {
@@ -315,7 +328,7 @@ export interface EmittedFile {
 export interface ReadabilityTransaction {
   /** Content hash of the immutable defining fields (spec 18 section 7). */
   readonly id: string;
-  readonly op: FileOpKind;
+  readonly op: TransactionOp;
   readonly who: string;
   readonly tier: "suggested" | "confirmed";
   readonly ts: string;
@@ -341,6 +354,9 @@ export function validateTransaction(tx: ReadabilityTransaction): readonly Transa
   for (const f of tx.outputs) {
     if (f.origins.length === 0) problems.push({ code: "orphan-file", detail: `${f.path} traces to no bytecode origin` });
   }
+  // `make` is the only op that can legally have no prior state: everything
+  // else -- including a `rewrite`, which always replaces a faithful render --
+  // must record what it replaced or it cannot be reverted.
   if (tx.prior.files.length === 0 && tx.op !== "make") {
     problems.push({ code: "not-reversible", detail: `${tx.id}: ${tx.op} records no prior state` });
   }

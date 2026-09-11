@@ -38,6 +38,7 @@
 //     since `stateBindingOf`'s hash is over the log table's raw `detail`
 //     strings, not a reparsed/re-sorted form (export.ts).
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { restoreTransactionShard } from "./readability-shards.ts";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { bookmarkAdapter, commentAdapter, findingAdapter, nameAdapter, tagAdapter } from "./annotations.ts";
@@ -259,7 +260,19 @@ export function rebuildProject(db: DatabaseSync, projectDir: string): RebuildRes
 
   db.exec("BEGIN;");
   try {
+    // Readability transactions (spec 28 §9.5) are restored from their own
+    // shard family, which carries the whole row plus the blobs a revert
+    // restores from. Their `log/` entries are a derived tail (export.ts's
+    // `exportLog`), so they are SKIPPED in the replay below rather than
+    // turned into ridless `log` rows -- otherwise a rebuilt DB would
+    // re-export them twice and the round-trip would stop being byte-exact.
+    for (const raw of readJsonFilesIn(join(analysisDir, "readability"))) {
+      if (!restoreTransactionShard(db, raw as Record<string, unknown>)) {
+        warnings.push("analysis/readability: a shard has no string `id` and was skipped");
+      }
+    }
     for (const entry of logEntries) {
+      if (entry.op === "readability") continue;
       // Non-annotation bookkeeping ops (`init`/`rebuild-index`/`import`/
       // `merge`/`export`/`render`, schema.sql §2.2's `op` enum) never had a
       // `revisions` row to begin with — the live db's own `log.rid` is SQL

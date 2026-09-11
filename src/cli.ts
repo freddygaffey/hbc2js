@@ -84,7 +84,7 @@ Usage:
   hbc2js secrets <verb> --artifact <dir> …   the P2.3 string-secrets indexer: scan/report/list/show/hosts/paths (docs/specs/12-string-secrets.md §5)
   hbc2js init <bundle.hbc> [--out <dir>]     create a project.hbcproj (docs/specs/16-project-db.md §4.1): split
                                               render + ix_* index rows in one SQLite file; refuses if it exists
-  hbc2js hbcproj export <project.hbcproj>    materialise analysis/ + log/ shards from the DB
+  hbc2js hbcproj export <project.hbcproj>    materialise analysis/ + log/ shards from the DB (names, annotations, findings, readability)
   hbc2js hbcproj rebuild <project.hbcproj>   regenerate a FRESH DB's annotation state from analysis/ + log/ (recovery)
   hbc2js hbcproj verify <project.hbcproj> [--full]   check shard hashes + the log/ chain; --full re-runs round-trip validators
   hbc2js hbcproj status <project.hbcproj>    classify every analysis/ shard clean/lag/hand-edit/conflict against the db
@@ -947,7 +947,7 @@ function runHbcproj(argv: readonly string[]): number {
     if (argv.includes("--help") || dbFile === undefined) {
       process.stdout.write(
         "hbc2js hbcproj verify <project.hbcproj> [--full]   check shard content-hashes + the log/ hash chain, classifying any divergence as lag or a hand edit (docs/specs/18-project-storage-integrity.md §8/§9); " +
-          "--full additionally re-runs the DB<->shards agreement and rebuild round-trip validators (§R3)\n",
+          "--full additionally re-runs the DB<->shards agreement and rebuild round-trip validators (§R3) and re-validates every readability transaction's proof and origins (docs/specs/28-llm-readability.md §9.5)\n",
       );
       return argv.includes("--help") ? 0 : 2;
     }
@@ -963,6 +963,9 @@ function runHbcproj(argv: readonly string[]): number {
       if (result.full !== undefined) {
         for (const d of result.full.detail) process.stdout.write(`full: ${d}\n`);
         process.stdout.write(`full: round-trip=${result.full.roundTrip ? "ok" : "FAIL"} db-shards-agree=${result.full.dbShardsAgree ? "ok" : "FAIL"}\n`);
+        process.stdout.write(
+          `full: readability-transactions=${result.full.readability.checked} checked, ${result.full.readability.problems.length === 0 ? "proofs + origins ok" : `${result.full.readability.problems.length} PROBLEM(S)`}\n`,
+        );
       }
       process.stdout.write(`hbc2js hbcproj verify: ${result.shards.length} shard(s) checked, ${result.logChain.length} log file(s) checked — ${result.ok ? "OK" : "FAILED"}\n`);
       return result.ok ? 0 : 1;

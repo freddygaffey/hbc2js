@@ -31,12 +31,15 @@ export const SCHEMA_VERSION = "hbc2js-proj/1";
  *  recomputing it; minor 5 adds `ix_calls_resolved`, the `require(N)`
  *  points-to pass's edges (docs/BUGS.md 2026-09-05 `ix_calls_resolved` row,
  *  `src/artifact/points-to.ts`) — until this minor a DB-backed artifact
- *  served zero points-to edges while the JSONL path served them. A minor bump is
+ *  served zero points-to edges while the JSONL path served them; minor 6 adds
+ *  `readability_tx`/`readability_blob`, the spec-28 section 9.5 readability
+ *  transaction log (make/rename/move/combine/split/rewrite) and the
+ *  content-addressed blobs its byte-exact revert restores from. A minor bump is
  *  additive BY DEFINITION: it may only create new objects, never alter or drop
  *  an existing one, so an older DB is migrated forward in place (§`migrateProjectDb`)
  *  and a NEWER minor still opens read/write with this build (its extra tables are
  *  simply unused) — unlike a major mismatch, which is refused. */
-export const SCHEMA_MINOR = 5;
+export const SCHEMA_MINOR = 6;
 
 export class ProjectDbVersionError extends Error {}
 

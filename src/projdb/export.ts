@@ -48,6 +48,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseKey } from "../name-overlay/id.ts";
+import { readTransactionRows, readabilityLogEntry, transactionShardContent } from "./readability-shards.ts";
+import type { ReadabilityTxRow } from "./readability-shards.ts";
 import { DbRevisionStore } from "./revision-store.ts";
 import type { DbRevision } from "./revision-store.ts";
 import { bookmarkAdapter, commentAdapter, findingAdapter, nameAdapter, tagAdapter } from "./annotations.ts";
@@ -309,10 +311,34 @@ export function exportProject(db: DatabaseSync, projectDir: string): ExportResul
     if (w !== null) shardHash.set(w.shardId, w.hash);
   }
 
+  // --- readability transactions, one file per content-hash id ----------
+  // (docs/specs/28-llm-readability.md §9.5). Same hash lock, same
+  // stateBinding, same log chain as every other family.
+  const readabilityRows = readTransactionRows(db);
+  for (const row of readabilityRows) {
+    const w = writeReadabilityShard(db, analysisDir, binding, row, result);
+    shardHash.set(w.shardId, w.hash);
+  }
+
   // --- log/<date>.jsonl, day-sharded, hash-chained (§5) ----------------
-  exportLog(db, logDir, shardHash, findingShardOf, result);
+  exportLog(db, logDir, shardHash, findingShardOf, result, readabilityRows);
 
   return result;
+}
+
+/** Writes the `readability/<id>.json` shard for one transaction row. Same
+ *  `writeShard` the other families use, so the hash lock, the stateBinding
+ *  and the re-export-is-a-no-op property are identical. */
+export function writeReadabilityShard(
+  db: DatabaseSync,
+  analysisDir: string,
+  binding: StateBinding,
+  row: ReadabilityTxRow,
+  result: { written: string[]; unchanged: string[] },
+): { shardId: string; hash: string } {
+  const shardId = `readability/${row.tx.id}`;
+  const hash = writeShard(join(analysisDir, "readability", `${row.tx.id}.json`), transactionShardContent(db, row), binding, result);
+  return { shardId, hash };
 }
 
 interface LogRow {
@@ -363,10 +389,12 @@ function exportLog(
   shardHash: ReadonlyMap<string, string>,
   findingShardOf: ReadonlyMap<string, string>,
   result: { written: string[]; unchanged: string[] },
+  readabilityRows: readonly ReadabilityTxRow[] = [],
 ): void {
   const rows = db.prepare(`SELECT rid, ts, op, actor_source, actor_who, actor_run, detail FROM log ORDER BY rid`).all() as unknown as LogRow[];
   const byDay = new Map<string, Record<string, unknown>[]>();
   let prevHash = "genesis";
+  let lastDay = "";
   for (const row of rows) {
     const revRow = db.prepare(`SELECT target, kind, slot, reactivates FROM revisions WHERE rid = ?`).get(row.rid) as unknown as RevTargetRow | undefined;
     const shards: { path: string; contentHash: string }[] = [];
@@ -401,6 +429,25 @@ function exportLog(
     const full = { ...entry, hash };
     prevHash = hash;
     const day = dayOf(row.ts);
+    if (day > lastDay) lastDay = day;
+    const arr = byDay.get(day) ?? [];
+    arr.push(full);
+    byDay.set(day, arr);
+  }
+  // Readability transactions chain AFTER the annotation history, in
+  // `readability_tx.seq` order (spec 28 §9.5). The chain must be continuous
+  // when `verify` walks the day files in NAME order, so an entry whose own
+  // day is older than the last annotation day is filed under that later day
+  // rather than breaking the chain -- deterministic, and identical whether
+  // the tail is written by this bulk pass or rebuilt from the shards.
+  for (const row of readabilityRows) {
+    const entry = { ...readabilityLogEntry(row, shardHash.get(`readability/${row.tx.id}`)), prevHash };
+    const hash = sha256Hex(canonicalJson(entry));
+    const full = { ...entry, hash };
+    prevHash = hash;
+    const txDay = dayOf(row.tx.ts);
+    const day = txDay > lastDay ? txDay : lastDay === "" ? txDay : lastDay;
+    lastDay = day;
     const arr = byDay.get(day) ?? [];
     arr.push(full);
     byDay.set(day, arr);

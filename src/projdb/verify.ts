@@ -26,6 +26,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson, exportProject, sha256Hex, stateBindingOf } from "./export.ts";
 import { rebuildProject } from "./rebuild.ts";
 import { openProjectDb } from "./db.ts";
+import { readTransactionRows } from "./readability-shards.ts";
+import { validateTransaction } from "../readability/types.ts";
 
 export type ShardStatus = "ok" | "lag" | "hand-edit" | "corrupt-json";
 
@@ -50,6 +52,13 @@ export interface FullVerifyResult {
    *  is actually committed under `analysis/`+`log/` — a coarser, DB-vs-disk
    *  agreement check independent of the hash/lag classification above. */
   readonly dbShardsAgree: boolean;
+  /** Every readability transaction (spec 28 §9.5) re-validated: the proof it
+   *  carries passed, every input is present and every emitted file has at
+   *  least one binding origin (zero orphans). `problems` is empty when the
+   *  log is sound; `checked` is how many transactions were re-validated, so
+   *  a green result over zero transactions is visibly distinct from a real
+   *  one. */
+  readonly readability: { readonly checked: number; readonly problems: readonly string[] };
   readonly detail: readonly string[];
 }
 
@@ -66,7 +75,7 @@ export interface VerifyResult {
 
 export function listShardFiles(analysisDir: string): string[] {
   const out: string[] = [];
-  for (const sub of ["names", "annotations", "findings"]) {
+  for (const sub of ["names", "annotations", "findings", "readability"]) {
     const dir = join(analysisDir, sub);
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) out.push(join(dir, f));
@@ -284,7 +293,18 @@ function runFull(db: DatabaseSync, projectDir: string): FullVerifyResult {
     rmSync(rebuiltDbPath, { force: true });
   }
 
-  return { roundTrip, dbShardsAgree, detail };
+  // Validator 3 (spec 28 §9.5): every readability transaction's PROOF and
+  // ORIGINS re-validated from the DB. `validateTransaction` is the same
+  // predicate the write path refused on, so a transaction that only became
+  // invalid through a hand edit or a partial restore is caught here.
+  const readabilityProblems: string[] = [];
+  const rows = readTransactionRows(db);
+  for (const row of rows) {
+    for (const p of validateTransaction(row.tx)) readabilityProblems.push(`readability ${row.tx.id}: ${p.code}: ${p.detail}`);
+  }
+  detail.push(...readabilityProblems);
+
+  return { roundTrip, dbShardsAgree, readability: { checked: rows.length, problems: readabilityProblems }, detail };
 }
 
 /** Runs the §8/§9 integrity checks for the project at `projectDir` against
@@ -301,7 +321,10 @@ export function verifyProject(db: DatabaseSync, projectDir: string, opts?: { rea
 
   const full = opts?.full === true ? runFull(db, projectDir) : undefined;
 
-  const ok = shards.every((s) => s.status === "ok" || s.status === "lag") && logChain.every((c) => c.ok) && (full === undefined || (full.roundTrip && full.dbShardsAgree));
+  const ok =
+    shards.every((s) => s.status === "ok" || s.status === "lag") &&
+    logChain.every((c) => c.ok) &&
+    (full === undefined || (full.roundTrip && full.dbShardsAgree && full.readability.problems.length === 0));
 
   return { shards, logChain, ...(full !== undefined ? { full } : {}), ok };
 }

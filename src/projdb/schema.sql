@@ -480,3 +480,35 @@ CREATE TABLE IF NOT EXISTS ix_calls_resolved (
 );
 CREATE INDEX IF NOT EXISTS ix_calls_resolved_callee ON ix_calls_resolved(callee); -- who-calls inversion
 -- <<< MIGRATION 5 <<<
+
+-- MIGRATION 6 -- the readability transaction log (docs/specs/28-llm-readability.md
+-- section 9.5). One row per accepted readability change (make / rename / move /
+-- combine / split / rewrite), plus the content-addressed blobs that make a
+-- revert byte-exact. Unlike MIGRATION 2's worker stratum these rows ARE
+-- authoritative analysis: they export to the `analysis/readability/<id>.json`
+-- shard family and they chain into `log/<date>.jsonl`, exactly like names,
+-- annotations and findings (spec 18 section 6's write order is unchanged --
+-- DB first, then the shard, then the log). Same discipline as MIGRATION 2-5:
+-- new tables only, `IF NOT EXISTS` on every object, never an ALTER on an
+-- existing object.
+-- >>> MIGRATION 6 >>>
+CREATE TABLE IF NOT EXISTS readability_tx (
+  seq      INTEGER PRIMARY KEY,        -- insertion order; the log tail's order
+  id       TEXT NOT NULL UNIQUE,       -- content hash of (op, inputs, outputs, evidence)
+  op       TEXT NOT NULL,              -- TransactionOp: make|rename|move|combine|split|rewrite
+  who      TEXT NOT NULL,              -- 'worker:haiku' | a human id
+  tier     TEXT NOT NULL CHECK (tier IN ('suggested','confirmed')),
+  ts       TEXT NOT NULL,              -- iso
+  inputs   TEXT NOT NULL,              -- JSON BindingOrigin[]
+  outputs  TEXT NOT NULL,              -- JSON EmittedFile[] (every one has >= 1 origin)
+  equiv    TEXT NOT NULL,              -- JSON EquivProof (verdict is always PASS)
+  evidence TEXT NOT NULL,
+  prior    TEXT NOT NULL,              -- JSON {files:[{path,sha256}]}
+  reverts  TEXT                        -- the tx id this one reverts, else NULL
+);
+CREATE INDEX IF NOT EXISTS readability_tx_reverts ON readability_tx(reverts);
+CREATE TABLE IF NOT EXISTS readability_blob (
+  sha256  TEXT PRIMARY KEY,            -- sha256 of `content`, hex
+  content TEXT NOT NULL                -- the exact bytes a revert restores
+) WITHOUT ROWID;
+-- <<< MIGRATION 6 <<<
