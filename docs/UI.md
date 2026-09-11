@@ -1570,18 +1570,27 @@ routes (`GET /api/readability/suggestions`, `POST /api/readability/
 {promote,revert}`, `POST /api/readability/actions/*`).
 
 **Filters.** Tier (`suggested`/`confirmed`), confidence (`low`/`med`/`high`),
-module, and a security-relevant checkbox — the last one is accepted by the
-route but not yet applied server-side (docs/BUGS.md: no ground-truth field
-to filter by exists yet on a name record or transaction).
+module, and a security-relevant checkbox — landing 4d (docs/BUGS.md
+resolved) applies the last one to NAME suggestions (`NameRecord.
+securityRelevant`, threaded from `NamePassTarget.securityRelevant` through
+`runNamePass`); a rewrite/file-op transaction still carries no such field,
+so the checkbox is a no-op over those rows, same as the `confidence` filter
+already was.
 
 **The list.** Each row is either a name suggestion (from the overlay) or a
 rewrite/file-op transaction (from the log) — `kind`, confidence (names
 only), evidence, and an equiv-status badge (`PASS`/`FAIL`/`DIVERGENT`/
 `INCONCLUSIVE`, with the proof's scope and oracle on hover). A `rewrite`
-transaction also shows a before/after panel — today that is prior-vs-output
-FILE PATHS (and the prior file's hash on hover), not rendered text: the
-transaction log's `EmittedFile`/`prior` carry paths and hashes, not content,
-over the wire (docs/BUGS.md).
+transaction also shows a before/after panel with RENDERED TEXT (landing
+4d, docs/BUGS.md resolved): `GET /api/readability/suggestions` enriches
+each `tx` item with `priorContent`/`newContent`, keyed by path — `prior`
+reads the exact bytes the transaction log already stores for `revert`
+(`readBlob`, keyed by the recorded sha256); `new` reads whatever `treeDir`
+currently holds at each output path. Neither is on the
+`ReadabilityTransaction` shape itself (`src/readability/types.ts`
+unchanged) — this is response-only enrichment in `readability-routes.ts`.
+A path missing from either map (blob gone / file gone) falls back to the
+path + hash the panel always showed, never a crash.
 
 **Reach ordering.** Spec 28 §1d asks for highest-reach-first. No xref
 caller-count reaches this pane yet, so rows sort by module order (a name's
@@ -1600,14 +1609,35 @@ comma-separated input list, one output path, evidence — not yet fed from
 the file tree's own multi-select), and "Review" (fetches a fresh pending
 count; there is nothing to enqueue for it, spec 28 §9.7).
 
-These four actions run to completion and answer directly rather than
-enqueuing a pollable job the way "Suggest name"/"Explain" above do
-(docs/PUSHBACK.md P-60: `JOB_KINDS`/`WorkerRunner`, spec 23, have no
-readability-aware branch yet). `src/ui-server/server.ts` does not build a
-`ReadabilityRoutesCtx` yet either, so every `/api/readability/*` route 503s
-against a real `ui-server` process today — the routes and the pane are real
-and tested against a hand-built ctx (`tests/ui-server/readability-routes.
-test.ts`), but production wiring is this landing's next open item.
+`src/ui-server/server.ts` (landing 4d) builds a real `ReadabilityRoutesCtx`
+for a real `ui-server` process — a `--llm-backend <id>` CLI flag picks the
+readability routes' own backend (mirrors `HBC2JS_LLM_BACKEND`), `treeDir`
+is `<projectDir>/src` (where `init`/`--split` always write it), and the
+project db is the SAME connection the worker pool uses. No readable tree,
+no db, or a bad backend id still yields the pane's ordinary "not
+configured" 503, never a crash (`tests/ui-server/server-readability.test.ts`).
+
+Three of the four actions — "Suggest names", "Make readable", "Combine
+files" — now ENQUEUE (docs/PUSHBACK.md P-61 resolved) through the SAME
+`JobQueue`/`WorkerRunner` "Suggest name"/"Explain" above already use:
+`JOB_KINDS` gained a `readability-*` triple, `WorkerRunner` dispatches them
+straight to `src/readability/surfaces.ts` (never through a backend prompt —
+the surfaces call the backend themselves), and the route answers `202
+{jobId}` instead of blocking. `ui/src/workers/readability-wire.ts` polls
+`/api/jobs` internally, so the pane's own buttons/mutations needed no
+change — clicking one still resolves once the job is done, it just no
+longer holds the HTTP connection open for however long that takes (a cold
+`suggest_names`/`rewrite_function` re-parses the WHOLE bytecode file with
+no cache, measured over a minute on a real ~450-module bundle,
+docs/BUGS.md) . "Review" (nothing to enqueue, spec 28 §9.7) is unchanged,
+still synchronous. The pane itself has no "queued/running" indicator yet
+for the three async actions — a button click shows nothing until the
+one-line status toast eventually appears, a known follow-up, not silently
+dropped.
+
+"Combine files" still takes a manual comma-separated path list rather than
+the tree's own multi-select — unchanged, an interaction design call for
+Fred (spec 28 section 10 Landing 4).
 
 ## Graph view
 

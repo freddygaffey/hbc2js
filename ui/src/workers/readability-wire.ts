@@ -11,6 +11,7 @@
 // Mock mode (`VITE_API_MOCK=1`) answers from a tiny fixed pool, same
 // convention as `./wire.ts`; a write in mock mode refuses loudly.
 import { API_BASE, USING_MOCK, authHeaders } from "../api.ts";
+import { workersApi } from "./wire.ts";
 
 export type SuggestionTier = "suggested" | "confirmed";
 export type SuggestionConfidence = "low" | "med" | "high";
@@ -30,10 +31,9 @@ export interface NameSuggestionRow {
 }
 
 /** `EmittedFile` (src/readability/types.ts): a path plus the bytecode
- *  origins it traces to — no rendered content over the wire today (see
- *  docs/BUGS.md's landing-4c row: a true before/after diff needs a
- *  follow-up endpoint that reads `treeDir`, which this landing does not
- *  add). The pane's diff view falls back to path + prior hash. */
+ *  origins it traces to. Rendered content for the before/after panel comes
+ *  separately, on `TxSuggestionRow.priorContent`/`newContent` below (landing
+ *  4d) — this shape stays a structural copy of the wire type, unchanged. */
 export interface EmittedFileRow {
   readonly path: string;
   readonly origins: readonly { readonly module: number }[];
@@ -59,6 +59,15 @@ export interface ReadabilityTxRow {
 export interface TxSuggestionRow {
   readonly kind: "tx";
   readonly tx: ReadabilityTxRow;
+  /** Spec 28 landing 4d ("diff content", docs/BUGS.md resolved): rendered
+   *  text for the before/after panel, keyed by path — `priorContent` reads
+   *  the DB-held blob the transaction log already keeps for `revert`;
+   *  `newContent` reads whatever `treeDir` currently holds at each output
+   *  path. Either map may omit a path (file gone / blob missing) — the
+   *  panel falls back to the path + hash it already showed for that one
+   *  entry, never a crash. */
+  readonly priorContent?: Readonly<Record<string, string>>;
+  readonly newContent?: Readonly<Record<string, string>>;
 }
 
 export type ReadabilitySuggestionRow = NameSuggestionRow | TxSuggestionRow;
@@ -123,6 +132,36 @@ function mockWrite(): never {
 
 const MOCK_SUGGESTIONS: ReadabilitySuggestionsResult = { suggestions: [], total: 0, backend: "mock" };
 
+// -- spec 28 landing 4d (PUSHBACK P-61 resolved): `suggest-names`/
+// `rewrite-function`/`combine-files` now ENQUEUE (`POST /actions/*` answers
+// `202 {jobId}`) instead of running to completion inline — this module polls
+// the SAME `/api/jobs` list `ui/src/workers/wire.ts`'s jobs rail already
+// polls until the job is terminal, then resolves/rejects with exactly the
+// shape the surface call used to return directly. Callers of `readabilityApi`
+// (`readability-hooks.ts`, and its mocks in tests) see NO shape change —
+// this is the one place the enqueue-and-poll happens.
+const JOB_POLL_MS = 500;
+// Generous: a cold `suggest_names`/`rewrite_function` re-parses and
+// re-analyses the WHOLE bytecode file with no cache (docs/BUGS.md), which
+// measured over a minute on a real ~450-module bundle — this is a network
+// polling budget, not a UI freeze, so it costs nothing while it waits.
+const JOB_POLL_TIMEOUT_MS = 180_000;
+
+async function awaitReadabilityJob<T>(jobId: string): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const { rows } = await workersApi.jobs();
+    const job = rows.find((j) => j.id === jobId);
+    if (job !== undefined) {
+      if (job.status === "done") return job.result as T;
+      if (job.status === "failed") throw new ReadabilityApiError(500, job.error ?? `job ${jobId} failed`);
+      if (job.status === "cancelled") throw new ReadabilityApiError(499, `job ${jobId} was cancelled`);
+    }
+    if (Date.now() - start > JOB_POLL_TIMEOUT_MS) throw new ReadabilityApiError(504, `job ${jobId} did not finish in time`);
+    await new Promise((resolvePoll) => setTimeout(resolvePoll, JOB_POLL_MS));
+  }
+}
+
 export const readabilityApi = {
   suggestions: (filter: ReadabilityFilter = {}, limit?: number): Promise<ReadabilitySuggestionsResult> =>
     USING_MOCK ? Promise.resolve(MOCK_SUGGESTIONS) : call(`/suggestions${query(filter, limit)}`),
@@ -130,12 +169,21 @@ export const readabilityApi = {
     USING_MOCK ? mockWrite() : call("/promote", { method: "POST", body: JSON.stringify({ ...id, who }) }),
   revert: (id: { readonly txId?: string; readonly suggestionId?: string }): Promise<{ readonly txId: string; readonly revertedTxId: string }> =>
     USING_MOCK ? mockWrite() : call("/revert", { method: "POST", body: JSON.stringify(id) }),
-  suggestNames: (target: { readonly module: number } | { readonly fn: number }): Promise<{ readonly suggestions: readonly unknown[] }> =>
-    USING_MOCK ? mockWrite() : call("/actions/suggest-names", { method: "POST", body: JSON.stringify(target) }),
-  rewriteFunction: (fn: number): Promise<{ readonly accepted: boolean }> =>
-    USING_MOCK ? mockWrite() : call("/actions/rewrite-function", { method: "POST", body: JSON.stringify({ fn }) }),
-  combineFiles: (inputs: readonly string[], outputs: readonly string[], evidence: string): Promise<{ readonly accepted: boolean }> =>
-    USING_MOCK ? mockWrite() : call("/actions/combine-files", { method: "POST", body: JSON.stringify({ inputs, outputs, evidence }) }),
+  suggestNames: async (target: { readonly module: number } | { readonly fn: number }): Promise<{ readonly suggestions: readonly unknown[] }> => {
+    if (USING_MOCK) mockWrite();
+    const { jobId } = await call<{ jobId: string }>("/actions/suggest-names", { method: "POST", body: JSON.stringify(target) });
+    return awaitReadabilityJob(jobId);
+  },
+  rewriteFunction: async (fn: number): Promise<{ readonly accepted: boolean }> => {
+    if (USING_MOCK) mockWrite();
+    const { jobId } = await call<{ jobId: string }>("/actions/rewrite-function", { method: "POST", body: JSON.stringify({ fn }) });
+    return awaitReadabilityJob(jobId);
+  },
+  combineFiles: async (inputs: readonly string[], outputs: readonly string[], evidence: string): Promise<{ readonly accepted: boolean }> => {
+    if (USING_MOCK) mockWrite();
+    const { jobId } = await call<{ jobId: string }>("/actions/combine-files", { method: "POST", body: JSON.stringify({ inputs, outputs, evidence }) });
+    return awaitReadabilityJob(jobId);
+  },
   review: (): Promise<{ readonly opened: boolean; readonly pending: number }> =>
     USING_MOCK ? Promise.resolve({ opened: true, pending: 0 }) : call("/actions/review", { method: "POST", body: "{}" }),
 };

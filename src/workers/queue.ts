@@ -17,7 +17,17 @@ import { appendWorkerEvent } from "./events.ts";
 /** §1's job kinds. `evaluate` and `adversarial-recheck` are spec 28 landing
  *  5 additions (section 1d.1's opt-in evaluation loop, section 1b step 8's
  *  adversarial re-check) -- both routed to their own skill in
- *  `src/readability/types.ts`'s `SKILL_FOR_KIND`, same as the original four. */
+ *  `src/readability/types.ts`'s `SKILL_FOR_KIND`, same as the original four.
+ *  `readability-{suggest-names,rewrite-function,combine-files}` are spec 28
+ *  landing 4d (PUSHBACK P-61 resolved): the three WRITE-capable UI actions
+ *  from `src/ui-server/readability-routes.ts` now enqueue through THIS
+ *  queue instead of running to completion inline -- `WorkerRunner`'s
+ *  `runReadabilityJob` dispatches them straight to `src/readability/
+ *  surfaces.ts` (never through a `WorkerBackend` prompt the way the
+ *  original four kinds are; those surfaces call the backend themselves).
+ *  `readability review` (the fourth action) has nothing to enqueue --
+ *  section 9.7's "opens the queue; no job" -- and keeps its synchronous
+ *  route, unchanged. */
 export const JOB_KINDS = [
   "explain-fn",
   "suggest-name",
@@ -28,6 +38,9 @@ export const JOB_KINDS = [
   "poc-finding",
   "evaluate",
   "adversarial-recheck",
+  "readability-suggest-names",
+  "readability-rewrite-function",
+  "readability-combine-files",
 ] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 

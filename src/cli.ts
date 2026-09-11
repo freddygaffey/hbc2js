@@ -92,12 +92,14 @@ Usage:
   hbc2js hbcproj restore <project.hbcproj> (<shard>|--all)   discard a hand edit / catch up a lagging shard from the db
   hbc2js hbcproj install-hooks <project.hbcproj> [--force]   (re)install the git pre-commit hook (§11); \`init\` does this best-effort already
                                               (docs/specs/18-project-storage-integrity.md §9 step 0)
-  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off] [--no-prewarm] [--no-auth] [--origin <url>]
+  hbc2js ui-server <projectDir> [--port N] [--hbc <bundle.hbc>] [--workers off] [--no-prewarm] [--no-auth] [--origin <url>] [--llm-backend <id>]
                                               serve the Stage-3 UI's JSON API (+ static ui/dist/,
                                               docs/specs/22-ui-mvp.md §1/§3) over that project directory, localhost only
                                               (--no-prewarm skips the post-listen whole-bundle frame warm, docs/UI.md "Cold start";
                                               --no-auth disables the spec-26 L2 per-run bearer token, for the e2e rigs; --port
-                                              defaults to 0 (kernel-assigned) when omitted; --origin pins CORS to one exact origin)
+                                              defaults to 0 (kernel-assigned) when omitted; --origin pins CORS to one exact origin;
+                                              --llm-backend picks the spec-28 readability routes' backend id (claude-cli|haiku|replay|
+                                              heuristic|fake), same set HBC2JS_LLM_BACKEND accepts -- --llm-backend wins when both are given)
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -768,6 +770,11 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
   // one exact origin when a caller knows the paired SPA's origin up front.
   const noAuth = argv.includes("--no-auth");
   const origin = flagValue(argv, "--origin");
+  // Spec 28 landing 4d: the readability routes' own backend choice, distinct
+  // from the spec-23 worker pool's `HBC2JS_LLM_BACKEND` routing (`server.ts`'s
+  // `buildUiBackend`) -- `resolveBackendId` still applies the same env
+  // fallback when this flag is omitted.
+  const llmBackend = flagValue(argv, "--llm-backend");
   try {
     const handle = await startUiServer({
       projectDir,
@@ -777,6 +784,7 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
       ...(prewarm ? {} : { prewarm: false }),
       ...(noAuth ? { noAuth: true } : {}),
       ...(origin !== undefined ? { origin } : {}),
+      ...(llmBackend !== undefined ? { llmBackend } : {}),
     });
     // Spec 26 L2: "print it in the launch URL" — the SPA lifts `?token=`
     // from `location` into `sessionStorage` on first load (ui/src/api.ts)

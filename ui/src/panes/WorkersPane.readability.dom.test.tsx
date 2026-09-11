@@ -106,6 +106,27 @@ describe("WorkersPane readability section (spec 28 landing 4c)", () => {
     expect(screen.getByTestId("readability-diff-tx-1")).toBeTruthy();
   });
 
+  it("renders rendered before/after TEXT when the route supplies priorContent/newContent (landing 4d)", async () => {
+    const txWithContent: ReadabilitySuggestionsResult["suggestions"][number] = {
+      ...TX_ROW,
+      priorContent: { "src/module_1.js": "function old() { return 1; }" },
+      newContent: { "src/module_1.js": "function neu() { return 1; }" },
+    };
+    suggestionsMock.mockResolvedValue({ suggestions: [txWithContent], total: 1, backend: "fake" });
+    renderPane();
+    await screen.findByTestId("readability-diff-tx-1");
+    expect(screen.getByTestId("readability-diff-prior-text-tx-1").textContent).toContain("function old()");
+    expect(screen.getByTestId("readability-diff-new-text-tx-1").textContent).toContain("function neu()");
+  });
+
+  it("falls back to path + hash when priorContent/newContent are absent", async () => {
+    suggestionsMock.mockResolvedValue({ suggestions: [TX_ROW], total: 1, backend: "fake" });
+    renderPane();
+    await screen.findByTestId("readability-diff-tx-1");
+    expect(screen.queryByTestId("readability-diff-prior-text-tx-1")).toBeNull();
+    expect(screen.queryByTestId("readability-diff-new-text-tx-1")).toBeNull();
+  });
+
   it("changing the confidence filter re-queries with the new filter", async () => {
     suggestionsMock.mockResolvedValue({ suggestions: [NAME_ROW], total: 1, backend: "fake" });
     renderPane();

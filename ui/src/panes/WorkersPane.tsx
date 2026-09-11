@@ -198,19 +198,33 @@ function ReadabilityRowView({
         <div className="mt-1 grid grid-cols-2 gap-2 rounded-ui bg-surface-2 p-2 font-mono text-xs" data-testid={`readability-diff-${id}`}>
           <div>
             <div className="text-text-muted">before (prior)</div>
-            {row.tx.prior.files.map((f) => (
-              <div key={f.path} className="truncate text-text-muted" title={f.sha256}>
-                {f.path}
-              </div>
-            ))}
+            {row.tx.prior.files.map((f) => {
+              const content = row.priorContent?.[f.path];
+              return content !== undefined ? (
+                <pre key={f.path} className="max-h-40 overflow-auto whitespace-pre-wrap text-text-muted" data-testid={`readability-diff-prior-text-${id}`}>
+                  {content}
+                </pre>
+              ) : (
+                <div key={f.path} className="truncate text-text-muted" title={f.sha256}>
+                  {f.path}
+                </div>
+              );
+            })}
           </div>
           <div>
             <div className="text-text-muted">after (output)</div>
-            {row.tx.outputs.map((f) => (
-              <div key={f.path} className="truncate text-text">
-                {f.path}
-              </div>
-            ))}
+            {row.tx.outputs.map((f) => {
+              const content = row.newContent?.[f.path];
+              return content !== undefined ? (
+                <pre key={f.path} className="max-h-40 overflow-auto whitespace-pre-wrap text-text" data-testid={`readability-diff-new-text-${id}`}>
+                  {content}
+                </pre>
+              ) : (
+                <div key={f.path} className="truncate text-text">
+                  {f.path}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

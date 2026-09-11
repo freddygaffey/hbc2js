@@ -7,6 +7,13 @@
 // e2e-gate task: Fred found the rename dialog opens but "doesn't actually
 // rename anything"; this file is the AI-flow half of that same class of
 // escape, the palette-driven manual rename is code-pane-rename.spec.ts).
+//
+// `{ name: "Suggest name", exact: true }` (found running the full suite
+// alongside `readability.spec.ts`, spec 28 landing 4d): the readability
+// section's OWN "Suggest names" button (spec 28 §9.7) is a substring match
+// of this spec-23 jobs-rail button's accessible name, so an inexact
+// `getByRole` here resolved to two elements once landing 4c's readability
+// pane shipped in the same "AI" tab.
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
 const WAIT = process.env["PW_BASE_URL"] !== undefined ? 90_000 : 15_000;

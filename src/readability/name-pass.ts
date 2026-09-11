@@ -143,6 +143,7 @@ export async function runNamePass(targets: readonly NamePassTarget[], opts: Name
       confidence: proposal.confidence,
       evidence: proposal.evidence,
       source: "llm",
+      ...(target.securityRelevant !== undefined ? { securityRelevant: target.securityRelevant } : {}),
     });
     if (!set.ok) {
       outcomes.push({ target, proposal, written: false, reason: "gate-refused", detail: set.reason });
