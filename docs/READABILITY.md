@@ -359,3 +359,28 @@ Full details, including the one item still NOT wired (a real tree
 multi-select feeding "Combine files" -- an interaction design call for
 Fred, unresolved), are in docs/UI.md's "Readability section" and spec 28
 section 10 Landing 4's own status paragraph.
+
+## Whole-bundle setup, workers, and the analysis cache
+
+Every readability entry point starts by analysing the whole bytecode file:
+`hbc2js name set/list/context`, `hbc2js name llm-fill`, `hbc2js render`,
+`hbc2js readability rewrite/review`, and the MCP/UI surfaces (`suggest_names`,
+`classify_module`, `rewrite_function`). That setup goes through
+`analyseModuleParallel` (`src/parallel/analysis-pool.ts`), not a bare
+`analyseModule`: the per-function stage-A work (the structurer plus the D12
+pass pipeline) can run across worker threads and is spliced back into the main
+thread's emit byte-for-byte, the same mechanism `decompileParallel` uses.
+
+- `HBC2JS_WORKERS=N` -- worker count, default `max(1, cores - 2)`. `1` takes
+  the exact serial path: no worker is spawned and the result is identical by
+  construction, not by convergence.
+- `HBC2JS_ANALYSIS_POOL=1` -- force the pool on regardless of bundle size;
+  `=0` forces it off. Unset, it engages only above 20,000 functions. Below
+  that it costs more than it saves, because each worker re-parses the bundle:
+  measured 1.4 s serial vs 1.7 s pooled on rn-template, 12.3 s vs 12.4 s on
+  react-navigation. docs/PUSHBACK.md P-62 has the full breakdown.
+- The MCP/UI surfaces cache the analysis per context, keyed by the bytecode
+  file's path, size and mtime, so a session that calls `suggest_names` and
+  then `promote_change` analyses the bundle once. A first call still blocks
+  the event loop inside the emit phase -- docs/PUSHBACK.md P-63.
+

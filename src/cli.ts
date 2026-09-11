@@ -19,7 +19,7 @@ import { runTier, hbc2jsDecompiler } from "./harness/tiers.ts";
 import type { Tier } from "./harness/tiers.ts";
 import { VERDICT } from "./harness/ladder.ts";
 import type { OracleName } from "./harness/ladder.ts";
-import { decompile, decompileAst, decompileFunction, decompileTree, nodeCheck, parseForDecompile } from "./decompile.ts";
+import { decompile, decompileAst, decompileFunction, decompileTree, nodeCheck } from "./decompile.ts";
 import { analyseModule } from "./cfg/index.ts";
 import { NameService, OverlayStore, bindingKey, regId, shortForm } from "./name-overlay/index.ts";
 import type { Confidence, NameRecord, Source } from "./name-overlay/index.ts";
@@ -40,6 +40,7 @@ import { installPreCommitHook } from "./projdb/hooks.ts";
 import { ArtifactService } from "./artifact/service.ts";
 import { listNameable, contextSites } from "./artifact/frame-queries.ts";
 import { rawFrameBodies } from "./name-overlay/frames.ts";
+import { analyseModuleParallel } from "./parallel/analysis-pool.ts";
 import type { Stmt } from "./emit/ast.ts";
 import type { WorkerBackend } from "./workers/backend.ts";
 import { backendForId, resolveBackendId, BackendSelectionError } from "./readability/backends.ts";
@@ -1336,15 +1337,20 @@ function defaultStorePath(hbc: string | undefined, store: string | undefined): s
   fail(ErrorCode.E_USAGE, "name/render: give --store <path> or --hbc <input.hbc>", 2, false);
 }
 
-function buildAnalysis(hbc: string): ReturnType<typeof analyseModule> {
+/** The whole-bundle analysis every `name`/`render`/readability verb starts
+ *  from. Goes through the worker pool (docs/perf/PARALLEL-DECOMPILE.md part
+ *  2): the module analysis itself is identical to `analyseModule(module,
+ *  { strictEnv: true })`, and the per-function stage-A work the first
+ *  `rawFrameBodies` would otherwise do on one core is precomputed across
+ *  cores. `HBC2JS_WORKERS=1` takes the exact serial path. */
+async function buildAnalysis(hbc: string): Promise<ReturnType<typeof analyseModule>> {
   let bytes: Uint8Array;
   try {
     bytes = readFileSync(hbc);
   } catch (e) {
     fail(ErrorCode.E_IO, `cannot read ${hbc}: ${e instanceof Error ? e.message : String(e)}`, 2, false);
   }
-  const { module } = parseForDecompile(bytes, {});
-  return analyseModule(module, { strictEnv: true });
+  return analyseModuleParallel(new Uint8Array(bytes), { strictEnv: true });
 }
 
 /** The token-minimal record line (spec §10): `{42,7} userInput [med llm gate:passed]`. */
@@ -1353,7 +1359,7 @@ function recordLine(r: NameRecord): string {
   return `${id} ${r.name} [${r.confidence} ${r.source} gate:${r.gate}]`;
 }
 
-function runNameOverlay(argv: readonly string[]): void {
+async function runNameOverlay(argv: readonly string[]): Promise<void> {
   const sub = argv[0];
   const rest = argv.slice(1);
   const json = rest.includes("--json");
@@ -1373,7 +1379,7 @@ function runNameOverlay(argv: readonly string[]): void {
     const source = (flagValue(rest, "--source") ?? "human") as Source;
     const override = rest.includes("--override");
     const store = OverlayStore.load(storePath, hbc);
-    const svc = new NameService(buildAnalysis(hbc), store);
+    const svc = new NameService(await buildAnalysis(hbc), store);
     const outcome = svc.setName(regId(fn, reg), name, { confidence, evidence, source, override });
     if (!outcome.ok) {
       const hint = outcome.overridable ? " (use --override to force)" : "";
@@ -1439,7 +1445,7 @@ function runNameOverlay(argv: readonly string[]): void {
   if (sub === "list") {
     const fn = Number(rest[0]);
     if (!Number.isInteger(fn) || hbc === undefined) fail(ErrorCode.E_USAGE, "name list <fn> --hbc <input.hbc> [--store <path>]", 2, json);
-    const frames = rawFrameBodies(buildAnalysis(hbc));
+    const frames = rawFrameBodies(await buildAnalysis(hbc));
     const overlayStore = existsSync(storePath) ? OverlayStore.load(storePath, hbc) : undefined;
     const rows = listNameable(frames, fn, overlayStore);
     if (json) process.stdout.write(JSON.stringify(rows) + "\n");
@@ -1450,7 +1456,7 @@ function runNameOverlay(argv: readonly string[]): void {
     const fn = Number(rest[0]);
     const reg = Number(rest[1]);
     if (!Number.isInteger(fn) || !Number.isInteger(reg) || hbc === undefined) fail(ErrorCode.E_USAGE, "name context <fn> <reg> --hbc <input.hbc> [--store <path>]", 2, json);
-    const frames = rawFrameBodies(buildAnalysis(hbc));
+    const frames = rawFrameBodies(await buildAnalysis(hbc));
     const CONTEXT_CAP = 40;
     const rows = contextSites(frames, fn, reg);
     const shown = rows.slice(0, CONTEXT_CAP);
@@ -1533,7 +1539,7 @@ async function runNameLlmFill(argv: readonly string[]): Promise<number> {
   const budgetRaw = flagValue(argv, "--budget-tokens");
   const budgetTokens = budgetRaw !== undefined ? Number(budgetRaw) : undefined;
   const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
-  const analysis = buildAnalysis(hbc);
+  const analysis = await buildAnalysis(hbc);
   const store = OverlayStore.load(storePath, hbc);
   const service = new NameService(analysis, store);
   const frames = rawFrameBodies(analysis);
@@ -2316,12 +2322,12 @@ function runSecrets(argv: readonly string[]): void {
   }
 }
 
-function runRender(argv: readonly string[]): void {
+async function runRender(argv: readonly string[]): Promise<void> {
   const hbc = flagValue(argv, "--hbc") ?? argv.find((a) => !a.startsWith("-") && a.endsWith(".hbc"));
   if (hbc === undefined) fail(ErrorCode.E_USAGE, "render --hbc <input.hbc> [--fn N] [--store <path>] [--out <file>]", 2, false);
   const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
   const store = OverlayStore.load(storePath, hbc);
-  const svc = new NameService(buildAnalysis(hbc), store);
+  const svc = new NameService(await buildAnalysis(hbc), store);
   const fnStr = flagValue(argv, "--fn");
   const out = svc.render(fnStr !== undefined ? { fn: Number(fnStr) } : {});
   for (const c of out.collisions) {
@@ -2356,11 +2362,14 @@ function main(): void {
     return;
   }
   if (argv[0] === "name") {
-    runNameOverlay(argv.slice(1));
+    // Every branch of `runNameOverlay` ends in `process.exit`, so the
+    // promise is the only thing keeping the loop alive (same shape as
+    // `readability rewrite` above).
+    void runNameOverlay(argv.slice(1));
     return;
   }
   if (argv[0] === "render") {
-    runRender(argv.slice(1));
+    void runRender(argv.slice(1));
     return;
   }
   if (argv[0] === "query") {

@@ -531,6 +531,28 @@ server.ts`'s `buildUiBackend`, routing only `SKILL_FOR_KIND`'s job kinds to
 the LLM backend and everything else to `HeuristicBackend`) all resolve through
 it, so the default cannot drift between callers.
 
+### 9.1b Whole-bundle setup goes through the analysis worker pool
+
+`buildAnalysis` (`src/cli.ts`, behind `name set/list/context`, `name llm-fill`,
+`render` and `readability rewrite/review`) and `loadAnalysis`
+(`src/readability/surfaces.ts`) both call
+`analyseModuleParallel(bytes, { strictEnv: true })`
+(`src/parallel/analysis-pool.ts`) instead of `analyseModule` directly. The
+`ModuleAnalysis` they get back is the ordinary serial one -- same shape, same
+accessors, same diagnostics order; the only difference is that the stage-A
+work (`structure()` + the D12 pass pipeline) the first `rawFrameBodies` would
+otherwise do on one core can be precomputed across worker threads and spliced
+in, exactly the way `decompile()` splices `decompileParallel`'s results.
+`HBC2JS_WORKERS=1` takes the exact serial path; the pool engages only above
+`DEFAULT_MIN_FUNCTIONS` (20,000 functions -- docs/PUSHBACK.md P-62 has the
+measurements behind that number, and says which part of the setup is still
+serial and why) or when `HBC2JS_ANALYSIS_POOL=1` forces it. Parity is a gate:
+`tests/gate/parallel/analysis-parity.test.ts`.
+
+`loadAnalysis` also caches per `(ReadabilityContext, path, size, mtime)`, so a
+live MCP/UI session pays the whole-bundle analysis once, not once per tool
+call (docs/BUGS.md, the 72 s 435-module row).
+
 ### 9.2 Skill files
 
 - **Location**: `skills/<id>.md`, repo root, git-tracked, versioned. Shipped:

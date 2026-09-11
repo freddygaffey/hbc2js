@@ -32,12 +32,13 @@
 // and `file_op` keep using the transaction log unchanged (P-58's mapping for
 // rewrite, `runFileOp` directly for file ops); `list_suggestions` merges
 // both sources into one `SuggestionItem` union.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { parseForDecompile } from "../decompile.ts";
 import { analyseModule } from "../cfg/index.ts";
 import type { ModuleAnalysis } from "../cfg/index.ts";
+import { parseHbc } from "../parse/module.ts";
+import { analyseModuleParallel } from "../parallel/analysis-pool.ts";
 import { NameService, OverlayStore, bindingKey, regId, shortForm } from "../name-overlay/index.ts";
 import { rawFrameBodies } from "../name-overlay/frames.ts";
 import type { NameRecord } from "../name-overlay/store.ts";
@@ -127,9 +128,48 @@ async function maybeEvaluate(
   return runEvaluation(items, ctx.evaluator);
 }
 
-function loadAnalysis(hbcPath: string): ModuleAnalysis {
+/** Per-context analysis cache, keyed by the bytecode file's identity
+ *  (path, size, mtime) so an edited/replaced `.hbc` is never served stale.
+ *  Kept in a side table rather than on `ReadabilityContext` so the context
+ *  stays a plain readonly value a caller can build literally. Fixes the
+ *  docs/BUGS.md 2026-09-11 row "loadAnalysis re-parses the whole .hbc per
+ *  call, 72 s on the 435-module fixture": a live MCP/UI session calls
+ *  `suggest_names`, `classify_module`, `rewrite_function` and
+ *  `promote_change` against the same file. */
+const ANALYSIS_CACHE = new WeakMap<ReadabilityContext, { readonly key: string; readonly analysis: ModuleAnalysis }>();
+
+function cacheKey(hbcPath: string): string {
+  const st = statSync(hbcPath);
+  return `${hbcPath}\u0000${String(st.size)}\u0000${String(st.mtimeMs)}`;
+}
+
+/** `promoteChange` is a synchronous public surface (`src/ui-server/
+ *  readability-routes.ts` calls it inside a sync handler), so it cannot await
+ *  the pool. It shares this cache: warm -- the ordinary case, since a promote
+ *  follows a `suggest_names` on the same context -- it pays nothing; cold it
+ *  takes the serial `analyseModule` path, correct and no slower than before
+ *  this change. docs/PUSHBACK.md P-63. */
+function loadAnalysisSync(ctx: ReadabilityContext, hbcPath: string): ModuleAnalysis {
+  const key = cacheKey(hbcPath);
+  const hit = ANALYSIS_CACHE.get(ctx);
+  if (hit !== undefined && hit.key === key) return hit.analysis;
   const bytes = new Uint8Array(readFileSync(hbcPath));
-  return analyseModule(parseForDecompile(bytes, {}).module, { strictEnv: true });
+  const analysis = analyseModule(parseHbc(bytes), { strictEnv: true });
+  ANALYSIS_CACHE.set(ctx, { key, analysis });
+  return analysis;
+}
+
+async function loadAnalysis(ctx: ReadabilityContext, hbcPath: string): Promise<ModuleAnalysis> {
+  const key = cacheKey(hbcPath);
+  const hit = ANALYSIS_CACHE.get(ctx);
+  if (hit !== undefined && hit.key === key) return hit.analysis;
+  const bytes = new Uint8Array(readFileSync(hbcPath));
+  // Same analysis `analyseModule(module, { strictEnv: true })` returns, with
+  // the per-function stage-A work fanned out across workers when the bundle
+  // is big enough to pay for it (docs/perf/PARALLEL-DECOMPILE.md part 2).
+  const analysis = await analyseModuleParallel(bytes, { strictEnv: true });
+  ANALYSIS_CACHE.set(ctx, { key, analysis });
+  return analysis;
 }
 
 /** P-59's resolution: the overlay sidecar for `suggest_names`'
@@ -188,7 +228,7 @@ function validateTarget(target: SuggestNamesArgs["target"]): void {
 export async function suggestNames(ctx: ReadabilityContext, args: SuggestNamesArgs): Promise<SuggestNamesResult> {
   validateTarget(args.target);
   if (ctx.hbcPath === undefined) throw new ReadabilitySurfaceError("suggest_names: ctx.hbcPath is required");
-  const analysis = loadAnalysis(ctx.hbcPath);
+  const analysis = await loadAnalysis(ctx, ctx.hbcPath);
   const overlayPath = overlayPathFor(ctx);
   const service = new NameService(analysis, OverlayStore.load(overlayPath));
   const fns = "fn" in args.target && args.target.fn !== undefined ? [args.target.fn] : analysis.module.functions.map((_, i) => i);
@@ -245,7 +285,7 @@ export function inferModuleRole(text: string): ModuleRole | undefined {
  *  path for this tool, same as `suggest_names`. */
 export async function classifyModule(ctx: ReadabilityContext, args: ClassifyModuleArgs): Promise<ClassifyModuleResult> {
   if (ctx.hbcPath === undefined) throw new ReadabilitySurfaceError("classify_module: ctx.hbcPath is required");
-  const analysis = loadAnalysis(ctx.hbcPath);
+  const analysis = await loadAnalysis(ctx, ctx.hbcPath);
   const service = new NameService(analysis, new OverlayStore());
   const source = service.render().code;
   const res = await ctx.backend.run({ kind: "name-module", prompt: "", context: { module: args.module, source } });
@@ -287,7 +327,7 @@ const NO_PROPOSAL_PROOF: EquivProof = { scope: "function", verdict: "INCONCLUSIV
  *  from. */
 export async function rewriteFunction(ctx: ReadabilityContext, args: RewriteFunctionArgs): Promise<RewriteFunctionResult> {
   if (ctx.hbcPath === undefined) throw new ReadabilitySurfaceError("rewrite_function: ctx.hbcPath is required");
-  const analysis = loadAnalysis(ctx.hbcPath);
+  const analysis = await loadAnalysis(ctx, ctx.hbcPath);
   const service = new NameService(analysis, new OverlayStore());
   const faithfulCode = service.render().code;
   const res = await ctx.backend.run({ kind: "suggest-name", prompt: "", context: { fn: args.fn, source: faithfulCode } });
@@ -397,7 +437,7 @@ export function promoteChange(ctx: ReadabilityContext, args: PromoteChangeArgs):
       if (args.txId === undefined) throw new ReadabilitySurfaceError(`promote_change: no suggestion ${args.suggestionId}`);
     } else {
       if (ctx.hbcPath === undefined) throw new ReadabilitySurfaceError("promote_change: ctx.hbcPath is required to promote a name suggestion");
-      const analysis = loadAnalysis(ctx.hbcPath);
+      const analysis = loadAnalysisSync(ctx, ctx.hbcPath);
       const store = OverlayStore.load(overlayPath);
       const service = new NameService(analysis, store);
       const outcome = service.setName(record.id, record.name, { confidence: record.confidence, evidence: record.evidence, source: "human" });
