@@ -21,31 +21,39 @@ One item = one lean agent (Sonnet by default; Fable/Opus only where marked hard)
 
 ## Now — next candidates (ranked)
 
-Concrete, non-overlapping. Model: **Opus** = design/hard/checker-critical or semantic; **Sonnet** = mechanical impl against a settled spec/BUGS row.
+Concrete, non-overlapping. Model choice is the orchestrator's (Fred 2026-09-11: "make them yourself, but make them intentionally"): **Opus** = design/spec, checker-critical, semantic, soundness- or perf-sensitive; **Sonnet** = mechanical impl against a settled spec or BUGS row.
 
-1. **class-recover implementation** — *Opus (structure rung + checker)*. Spec 24 (`docs/specs/24-class-recover.md`, design `f0cc041`) is settled; implement once the golden batch (NEEDS FRED #1) and `agent/f24-3` (ctor/prototype aliasing fix) land, since both touch the same emit/CFG surface.
-2. **yield-recovery + async-recovery implementation** — *Opus (stage-B rung + generator-shape checker)*. Spec 25 (`docs/specs/25-ladder-yield-async.md`, design `a259788`, merged `45ebaf4`) is stage B, not stage A (PUSHBACK P-24) — this is the item that moves the pipeline-speed hash (NEEDS FRED #1).
-3. **BUGS row: `listIndex`/`defUse(after)` superlinear term** (`docs/BUGS.md` 2026-09-01, passes-superlinear-term-2) — *Opus (perf, soundness-sensitive)*. `src/passes/expr-rebuild/match.ts`/`ast.ts`; the eager-index and effect-sequence halves are fixed, `expressionOnlyCheck`'s `defUse(after)` in `ast.ts` is the next actionable term (still `O(list.length)` per applied site; real-bundle whole-file 563 s / `--split` 512 s, target <60-120 s).
-4. **BUGS row: register-prologue `CreateEnvironment`/`LoadConstUndefined`** (`docs/BUGS.md` 2026-09-01) — *Sonnet*. `src/emit` register prologue `let r0, r1, …;` compiles to N dead `LoadConstUndefined`s that `hermesc -O` does not remove; fix in the printer/var-naming, `--passes=none` byte-identity (PL-05) preserved.
-5. **`writeFindingShardForRid` perf** (`src/projdb/export.ts`) — *Sonnet*. One of the 2026-09-04 projdb read/export re-scan perf rows (`docs/BUGS.md` Open); per-rid shard write re-scans more than it needs to on large projects.
-6. **Bulk sigdb round 2b on deb** — *Sonnet*. Same item as IN FLIGHT below (`tools/pkgsig/bulk/round2b-runner.sh`); listed here too as the next disjoint slot once the current runner's incremental assemble exists.
-7. **destructure array-pattern: nested per-element default** (BUGS 2026-09-02 row) — *Sonnet*. `src/passes/destructure/match.ts` recognises only flat labeled blocks; a default nested inside an array pattern is missed. Sound recompute-and-diff checker; rung-owned assertions.
-8. **optional-chain matcher without a base guard** (BUGS 2026-09-02 row) — *Sonnet*. `src/passes/optional-chain/match.ts` `matchBaseGuard` requires every run to open with a base guard; holds at v94, not elsewhere. Rung-owned assertions.
-9. **object-literal rung** (BUGS 2026-09-01 row) — *Opus (new rung spec + checker)*. `NewObject`+`PutById` chains come back as `r3 = {}; r3.x = …` instead of an object literal with own-property definitions. Files: `src/emit` / M5 ladder + spec. Why: readability of `src/` module bodies.
-10. **CFG recursion-guard on flat block chains** (BUGS 2026-08-30 row) — *Opus (hard)*. `src/structure/structure.ts` `ramsey` `maxDepth` (1500) overflows V8's real call stack on a long flat chain with no nesting; make the structurer iterative or raise/guard soundly.
-12. **material-top-tabs sigdb coverage** (BUGS 2026-09-02 row) — *Sonnet*. `tools/pkgsig/db` has no `@react-navigation/material-top-tabs`; react-navigation-example module 1611 is a pure barrel/index that goes unattributed. Cheap, closes a classification gap.
+Fred's two directions of 2026-09-11 rank above everything else:
+
+1. **Spec 28 -- LLM readability layer** (`docs/specs/28-llm-readability.md`). Spec agent first (Opus, IN FLIGHT below): promote DRAFT -> ACCEPTED and ship the section-7 acceptance tests (`tests/gate/llm-readability/`, red-skipped per landing). Then five landings, each tests+docs in one commit, full gate green before push:
+   1. HaikuBackend + `hbc-name`/`hbc-classify` skills + equiv-gate on the naming path -- *Sonnet* (Opus if the gate contract proves subtle).
+   2. Rewrite path, function-level, `equiv --hbc` gated -- *Opus* (checker-critical).
+   3. DB transaction log + file ops (make/rename/combine/split), extending spec 18 -- *Opus* (integrity).
+   4. MCP tools + UI actions -- *Sonnet*.
+   5. Evaluation loop (pluggable, opt-in evaluator; human UI review is the default) -- *Sonnet*.
+   Non-negotiables: every change passes equiv or falls back to the faithful original; every action is a reversible, provenance-stamped DB transaction; zero orphan files; nothing canonical until reviewed.
+2. **Exportable, buildable app** (Fred 2026-09-11: "an exportable and buildable app is where we should be targeting at the moment"). Ladder, each step a gate test on rn-template, then react-navigation, then NSW: (a) `hbc2js export` skeleton = split + segregate + `deps --out` + RN boilerplate (app.json, babel/metro config, index.js registration), gate `npm install` offline; (b) LIBRARY modules with a known package become real imports, decompiled copies dropped, gate `npx react-native bundle` with no unresolved module; (c) the bundle boots in `tools/e2e/boot-split.mjs` then RN-web; (d) NSW end to end. Spec first (*Opus*); finish line (bundle builds vs boots on device) NEEDS FRED.
+
+Carried over (ladder and correctness, unblocked):
+
+3. **class-recover: module with two private-field derived classes recovers nothing** (BUGS 2026-09-06 GetOwnPrivate bucket row, tails 2026-09-08) -- *Opus*. Bucket `diff:GetOwnPrivateBySym/GetByVal` is 153 (was 177).
+4. **Fixture 82: `class B extends r1` with `let r1;` never assigned** (BUGS Open 2026-09-08) -- *Sonnet* once Fred says build the fixture; M5 ladder.
+5. **Graph pane hover-vs-mousedown race** (BUGS Open 2026-09-10, owner UI) -- Fred's call whether an agent takes it.
+6. **BUGS row: `listIndex`/`defUse(after)` superlinear term** (2026-09-01) -- *Opus (perf, soundness-sensitive)*. NSW whole-file is 318 s against a 60-120 s bar.
+7. **BUGS row: register-prologue dead `LoadConstUndefined`** (2026-09-01) -- *Sonnet*.
+8. **object-literal rung: computed keys and interleaved envs follow-ups** (BUGS 2026-09-01 row; fixtures 77/79 landed) -- *Sonnet*.
+9. **CFG recursion-guard on flat block chains** (BUGS 2026-08-30) -- *Opus (hard)*.
+10. **material-top-tabs sigdb coverage** (BUGS 2026-09-02) -- *Sonnet*.
+11. **Bulk sigdb round 2b on deb** -- *Sonnet*; deb compute, publish only when Fred says.
 
 ---
 
 ## IN FLIGHT
 
-- **Campaign runners on deb (own clone).** The campaign-2 `campaign-runner.sh` loops are dead (found stale — pre-dated the P-16/fix-wave-3 harness fixes, see `docs/reports/2026-09-05-campaign2-rediff.md`). Campaign 3 runs from a fresh clone `~/hbc2js-c3` at `1e1fe39` (`bb55220` docs), heavy fuzz compute stays on deb per the deb-compute rule; Mac keeps UI + gates — see `docs/fuzz/CONSTRUCT-FUZZER.md`'s "Campaign 3" section for dirs/status/resume/kill.
-- **object-tables verb consumers.** `query object-tables` LANDED (`docs/specs/hunt-tooling-backlog.md`); wiring it into the endpoint-table hunt UI/leads is the follow-through.
-- **Bulk sigdb round 2b — registry-driven candidates (lane B).** `tools/pkgsig/bulk/round2b-runner.sh` on `deb`; remaining = measure Service NSW / rn-template attribution once the first incremental assemble exists (record in `docs/DEPS.md`), widen to top ~3000. Publish only when Fred says.
-- **`agent/ladder-int`** (`3c09c77`) — specs 21 (try-shape) + 22 (for-in/for-of) implemented and merged onto the branch; HELD off main pending the pipeline-speed hash approval (NEEDS FRED #1).
-- **`agent/spec23-impl`** (`9a6359e`) — spec 23 (arguments-form + literal-forms) implemented on top of `agent/ladder-int`; same hold.
-- **`agent/f24-3`** (`0f1919d`) — class ctor/prototype aliasing fix (`CreateBaseClass`/`CreateDerivedClass` `dst_ctor`/`dst_prototype`) + a new fixture (spec 24 §6.6); HELD pending new-fixture goldens approval.
-- **Running agents (uncommitted/in-progress on their own worktrees):** points-to export prologue (`src/artifact/points-to.ts`); SecretsService DB-backed read path (`src/secrets`); finding-status DB read bug (`src/project`); `LoadThisNS` emit fix (`src/emit`); deps perf profiling on deb (`src/deps`).
+- **`agent/spec28`** (Opus, lean, worktree from `53423a70`) -- spec 28 promotion + acceptance tests. Lands via gate-wt with a test-count baseline bump.
+- **Campaign runners on deb (own clone)** -- campaign 3 from `~/hbc2js-c3`; heavy fuzz compute stays on deb (deb-compute rule).
+- **Bulk sigdb round 2b** (`tools/pkgsig/bulk/round2b-runner.sh` on deb) -- measure Service NSW / rn-template attribution once the first incremental assemble exists (record in `docs/DEPS.md`).
+- **object-tables verb consumers** -- wiring `query object-tables` into the endpoint-table hunt UI/leads.
 
 ---
 
