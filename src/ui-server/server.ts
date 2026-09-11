@@ -29,6 +29,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { DatabaseSync } from "node:sqlite";
 import { McpContext } from "../mcp/context.ts";
 import { openProjectDb } from "../projdb/db.ts";
 import { dbPath } from "../projdb/artifact-read.ts";
@@ -39,7 +40,9 @@ import { HeuristicBackend } from "../workers/backends/heuristic.ts";
 import type { WorkerBackend, WorkerJobRequest, WorkerJobResponse } from "../workers/backend.ts";
 import { backendForId, resolveBackendId } from "../readability/backends.ts";
 import { SKILL_FOR_KIND } from "../readability/types.ts";
+import type { ReadabilityContext } from "../readability/surfaces.ts";
 import { handle, tailLog, WRITE_TOOL_PATHS, type UiServerCtx } from "./routes.ts";
+import { hasReadableTree, type ReadabilityRoutesCtx } from "./readability-routes.ts";
 import { segregation } from "./segregation.ts";
 import { tailWorkerEvents, type WorkersCtx } from "./workers-routes.ts";
 
@@ -73,6 +76,13 @@ export interface UiServerOptions {
   /** Spec 26 L2: when given (CLI `--origin <url>`), CORS reflects ONLY this
    *  exact origin instead of the loopback-any default. */
   readonly origin?: string;
+  /** Spec 28 landing 4d: the readability surface's OWN backend choice (CLI
+   *  `--llm-backend <id>`), independent of the spec-23 worker pool's
+   *  `buildUiBackend` routing above -- a caller may want e.g. `fake` for the
+   *  readability routes in a test rig while the ordinary job pool still runs
+   *  `heuristic`. Falls back to `HBC2JS_LLM_BACKEND`/the default
+   *  (`resolveBackendId`'s own rule) when omitted. */
+  readonly llmBackend?: string;
 }
 
 export interface UiServerHandle {
@@ -242,22 +252,16 @@ function buildUiBackend(env: Readonly<Record<string, string | undefined>>): Work
   }
 }
 
-/** Builds the spec-23 worker surface over the project DB and starts ONE pool
- *  loop over `buildUiBackend`'s choice (spec 28 section 9.1's default,
- *  `claude-cli`, routed only to LLM-kind jobs; `HeuristicBackend` otherwise).
- *  Returns undefined (workers simply absent, routes 503) when the project has
- *  no `.hbcproj` — a JSONL-only project has no `jobs` table to queue into,
- *  and inventing one is not this server's job. Never throws: a server that
- *  can serve source must still start. */
-function startWorkers(projectDir: string, mcp: McpContext, concurrency: number): WorkerPool | undefined {
-  const path = dbPath(projectDir);
-  if (!existsSync(path)) return undefined;
-  let db;
-  try {
-    db = openProjectDb(path);
-  } catch {
-    return undefined;
-  }
+/** Builds the spec-23 worker surface over an ALREADY-OPEN project DB (shared
+ *  with `buildReadabilityCtx` below — spec 28 landing 4d wires both surfaces
+ *  off the SAME connection, the way `McpContext` already shares one
+ *  `ArtifactService`/`ProjectService` pair) and starts ONE pool loop over
+ *  `buildUiBackend`'s choice (spec 28 section 9.1's default, `claude-cli`,
+ *  routed only to LLM-kind jobs; `HeuristicBackend` otherwise). Never closes
+ *  `db` — the caller (`startUiServer`) owns that, since the readability ctx
+ *  may still be using the same connection after `pool.stop()` runs. Never
+ *  throws: a server that can serve source must still start. */
+function startWorkers(db: DatabaseSync, mcp: McpContext, concurrency: number): WorkerPool {
   const queue = new JobQueue(db);
   const presence = new Presence(db);
   const backend = buildUiBackend(process.env);
@@ -295,12 +299,44 @@ function startWorkers(projectDir: string, mcp: McpContext, concurrency: number):
       clearInterval(timer);
       try {
         presence.close(session.id, "server stopped");
-        db.close();
       } catch {
-        /* closing a DB the process is about to drop is never fatal */
+        /* closing presence on a DB the process is about to drop is never fatal */
       }
     },
   };
+}
+
+/** Spec 28 landing 4d: builds the `ReadabilityRoutesCtx` `readability-
+ *  routes.ts` needs off the SAME already-open project DB the worker pool
+ *  uses (`db`, shared — see `startWorkers`'s own doc comment), the split
+ *  tree `init`/`--split` always write at `<projectDir>/src` (`src/cli.ts`'s
+ *  `runInit`), and `opts.hbc` as the equivalence oracle's ground truth.
+ *  Returns undefined (routes 503, same "absent, not faked" convention as
+ *  `WorkersCtx`) when: there is no db, no readable tree at `<projectDir>/
+ *  src`, or the configured backend id is invalid — a bad `--llm-backend`
+ *  disables readability rather than silently downgrading it to a different
+ *  subsystem's fallback (`buildUiBackend`'s own fallback is a DIFFERENT
+ *  pool, spec 23's, not this one). Never throws. */
+function buildReadabilityCtx(db: DatabaseSync | undefined, projectDir: string, opts: UiServerOptions): ReadabilityRoutesCtx | undefined {
+  if (db === undefined) return undefined;
+  const treeDir = join(projectDir, "src");
+  if (!hasReadableTree(treeDir)) return undefined;
+  let backend: WorkerBackend;
+  try {
+    const id = resolveBackendId(opts.llmBackend, process.env);
+    backend = backendForId(id, { env: process.env, projectDir });
+  } catch {
+    return undefined;
+  }
+  const context: ReadabilityContext = {
+    db,
+    projectDir,
+    treeDir,
+    backend,
+    surface: "ui",
+    ...(opts.hbc !== undefined ? { hbcPath: opts.hbc } : {}),
+  };
+  return { context, backendId: backend.id };
 }
 
 /** Spec 21 §1.3's in-process doorbell: `server.ts`'s request handler
@@ -401,13 +437,30 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
   // and write through — a write is visible to the very next read with no
   // rebuild step (see `McpContext`'s own doc comment for why).
   const mcp = new McpContext(opts.projectDir, resourcesOpts);
+  // ONE project-db connection, shared by the spec-23 worker pool and the
+  // spec-28 readability routes below (both `startWorkers` and
+  // `buildReadabilityCtx`'s own doc comments) — undefined for a JSONL-only
+  // project (no `.hbcproj`), same "absent, not faked" convention as before.
+  const dbFilePath = dbPath(opts.projectDir);
+  let sharedDb: DatabaseSync | undefined;
+  if (existsSync(dbFilePath)) {
+    try {
+      sharedDb = openProjectDb(dbFilePath);
+    } catch {
+      sharedDb = undefined;
+    }
+  }
   const pool =
-    opts.workers === false ? undefined : startWorkers(opts.projectDir, mcp, Math.max(1, opts.workerConcurrency ?? DEFAULT_WORKER_CONCURRENCY));
+    sharedDb !== undefined && opts.workers !== false
+      ? startWorkers(sharedDb, mcp, Math.max(1, opts.workerConcurrency ?? DEFAULT_WORKER_CONCURRENCY))
+      : undefined;
+  const readability = buildReadabilityCtx(sharedDb, opts.projectDir, opts);
   const ctx: UiServerCtx = {
     resources: mcp.resources,
     tools: mcp.tools,
     artifactDir: opts.projectDir,
     ...(pool !== undefined ? { workers: pool.ctx } : {}),
+    ...(readability !== undefined ? { readability } : {}),
   };
   const host = opts.host ?? DEFAULT_HOST;
   const requestedPort = opts.port ?? DEFAULT_PORT;
@@ -535,6 +588,11 @@ export function startUiServer(opts: UiServerOptions): Promise<UiServerHandle> {
         close: () =>
           new Promise<void>((res2, rej2) => {
             pool?.stop();
+            try {
+              sharedDb?.close();
+            } catch {
+              /* closing a DB the process is about to drop is never fatal */
+            }
             server.close((err) => (err !== undefined && err !== null ? rej2(err) : res2()));
           }),
       });

@@ -1602,12 +1602,18 @@ count; there is nothing to enqueue for it, spec 28 §9.7).
 
 These four actions run to completion and answer directly rather than
 enqueuing a pollable job the way "Suggest name"/"Explain" above do
-(docs/PUSHBACK.md P-60: `JOB_KINDS`/`WorkerRunner`, spec 23, have no
-readability-aware branch yet). `src/ui-server/server.ts` does not build a
-`ReadabilityRoutesCtx` yet either, so every `/api/readability/*` route 503s
-against a real `ui-server` process today — the routes and the pane are real
-and tested against a hand-built ctx (`tests/ui-server/readability-routes.
-test.ts`), but production wiring is this landing's next open item.
+(docs/PUSHBACK.md P-61: `JOB_KINDS`/`WorkerRunner`, spec 23, still have no
+readability-aware branch). `src/ui-server/server.ts` (landing 4d) now DOES
+build a real `ReadabilityRoutesCtx` for a real `ui-server` process — a
+`--llm-backend <id>` CLI flag picks the readability routes' own backend
+(mirrors `HBC2JS_LLM_BACKEND`), `treeDir` is `<projectDir>/src` (where
+`init`/`--split` always write it), and the project db is the SAME
+connection the worker pool uses. No readable tree, no db, or a bad backend
+id still yields the pane's ordinary "not configured" 503, never a crash
+(`tests/ui-server/server-readability.test.ts`). "Combine files" still takes
+a manual comma-separated path list rather than the tree's own multi-select
+— unchanged, an interaction design call for Fred (spec 28 section 10
+Landing 4).
 
 ## Graph view
 

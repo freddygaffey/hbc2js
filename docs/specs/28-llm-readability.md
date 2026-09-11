@@ -966,16 +966,34 @@ reading the actual bytes back off `treeDir` is a follow-up endpoint. Combine
 files' file list is a manual comma-separated input, not the tree's own
 multi-select (no route into `ui/src/panes/LeftPane.tsx`'s tree selection was
 built this pass). The P-57 skill-file batch is unrelated prior work, already
-landed. Playwright coverage was left out per the brief's own escape hatch:
-`ui/e2e/playwright.config.ts`'s `webServer` starts `src/cli.ts ui-server`
-directly (no `--readability`/backend-pinning flag exists), and
-`src/ui-server/server.ts` -- production wiring, out of this task's file
-scope (`workers-routes.ts` + `readability-routes.ts` only) -- never builds a
-`ReadabilityRoutesCtx`, so `/api/readability/*` 503s under every e2e run
-today regardless of fixture. Wiring `server.ts` to build one (reusing the
-worker pool's already-open project db and a configured backend) is this
-landing's next open item, tracked in the landing report, not a correctness
-gap in the routes/pane that did ship.
+landed.
+
+**Status: LANDED (live wiring) 2026-09-11 (landing 4d).** `src/ui-server/
+server.ts` now builds a real `ReadabilityRoutesCtx` for a real `hbc2js
+ui-server` process: ONE project-db connection is opened up front and shared
+between the spec-23 worker pool (`startWorkers`, refactored to take the
+already-open `db` rather than opening its own) and the new
+`buildReadabilityCtx`, which points `treeDir` at `<projectDir>/src` (the
+split tree `init`/`--split` always write there), `hbcPath` at `--hbc`, and
+the backend at a NEW `--llm-backend <id>` CLI flag (mirrors
+`HBC2JS_LLM_BACKEND`, `--llm-backend` wins when both are given) --
+independent of the worker pool's own `HBC2JS_LLM_BACKEND` routing, so a rig
+can pin `fake`/`heuristic` for readability without changing the ordinary
+job pool's backend. No readable tree at `<projectDir>/src`, no project db,
+or an invalid backend id all yield the same "absent, not faked" 503 the
+pane already handles -- never a crash. Proved by `tests/ui-server/
+server-readability.test.ts` (3 tests) starting the real server over a real
+socket and hitting every readability route.
+
+Two things this pass did NOT build, recorded rather than silently dropped:
+(1) **PUSHBACK P-61**: the four actions run to completion and answer
+directly instead of enqueuing a pollable `JobRow` -- `JOB_KINDS`/
+`WorkerRunner` (spec 23) still have no readability-aware branch; landing 4d
+did not extend them either (see P-61's own row in `docs/PUSHBACK.md` for
+the file-scope reasoning, unchanged). (2) Playwright coverage: attempted
+this pass in `ui/e2e/readability.spec.ts` against the fixture rig with
+`HBC2JS_LLM_BACKEND=heuristic` (already pinned by `playwright.config.ts`);
+see that file's own header for what it proves and any determinism caveat.
 
 ### Landing 5 -- evaluation loop
 

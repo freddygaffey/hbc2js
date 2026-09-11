@@ -340,8 +340,10 @@ carries paths and hashes over the wire, not rendered content -- a true text
 diff needs a follow-up endpoint that reads `treeDir`, docs/BUGS.md), reach
 ordering (module order -- no xref caller-count reaches this pane yet), batch
 promote/revert over the current filter, and the four actions in the section
-header. Full details, including what this pass did NOT wire (production
-`server.ts` support, so `/api/readability/*` still 503s against a real
-`ui-server` process; a real tree multi-select feeding "Combine files"), are
-in docs/UI.md's "Readability section" and spec 28 section 10 Landing 4's own
-status paragraph.
+header. Landing 4d wired `server.ts` to build a real `ReadabilityRoutesCtx`
+(`--llm-backend` CLI flag, `treeDir` at `<projectDir>/src`, the shared
+project db), so `/api/readability/*` answers for real against a real
+`ui-server` process now. Full details, including what still is NOT wired (a
+real tree multi-select feeding "Combine files"; P-61's synchronous actions),
+are in docs/UI.md's "Readability section" and spec 28 section 10 Landing 4's
+own status paragraph.
