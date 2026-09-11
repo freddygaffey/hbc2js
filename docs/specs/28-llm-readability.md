@@ -829,6 +829,31 @@ prompt from stdin at all is still open (`docs/BUGS.md` row, cluster
 works; that needs one more real invocation, budgeted to the next agent
 touching this file.
 
+**Held-out recording, bounded, 2026-09-11.** `tools/readability/record.ts`
+used to walk every function of the bundle (~15k on the held-out app) to build
+the recording above -- unbounded cost/time for this section's own "src/
+registers"/"src/ modules" targets, which are a much smaller population.
+`src/readability/scope.ts` (`computeSrcScope`, new) reuses the exact
+`splitProject` -> `segregateSplitTree` classifier path `hbc2js segregate`
+uses (spec 08) to bound `record.ts` to functions in a `src`-bucket module;
+`record.ts` gained `--only src`, a deterministic `--sample N [--seed S]`
+reservoir sample for a bounded smoke run, and `--resume` (skips a target
+whose cache key is already in the output file, so a rate-limited run can
+continue without re-spending tokens). The orchestrator runs the real
+held-out recording with:
+
+```
+node tools/readability/record.ts <held-out.hbc> \
+    tests/fixtures/llm-readability/react-navigation-example-0.85.3.recording.json \
+    --backend claude-cli --only src --resume
+```
+
+Measured with `--backend fake` (no model call) on the held-out app itself,
+react-navigation-example-0.85.3: `--only src` selects 345/1782 modules; see
+`docs/AGENT-LOG.md` for the exact target/function count from that dry run.
+Tests: `tests/gate/llm-readability/record-scope.test.ts` (no network,
+`--backend fake`/hand-built recordings only).
+
 ### Landing 2 -- rewrite path (function-level, equiv-gated)
 
 - **Files**: `src/readability/rewrite.ts` (candidate rewrite -> parse -> render

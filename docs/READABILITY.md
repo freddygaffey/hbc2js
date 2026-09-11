@@ -46,6 +46,50 @@ Rejections print the class and leave everything alone:
 | `REJECTED_DIVERGENT` | the oracle proved the behaviour differs |
 | `REJECTED_INCONCLUSIVE` | the oracle could not prove anything: no Hermes VM for that bytecode version, no output observed, or coverage too thin. INCONCLUSIVE is never PASS |
 
+## Recording (`tools/readability/record.ts`)
+
+`tools/readability/record.ts` is the ONE tool in this layer that calls a real
+model (spec 28 section 9.1) -- it produces the committed
+`tests/fixtures/llm-readability/<app>.recording.json` a `ReplayBackend`
+answers from, so the gate's coverage/quality legs (spec 28 section 7) run
+against a held-out app without a live model in CI. It is never run by the
+gate itself.
+
+```
+node tools/readability/record.ts <input.hbc> <output.recording.json> \
+    [--limit N] [--backend claude-cli|haiku|fake] [--only src] \
+    [--sample N [--seed S]] [--resume]
+```
+
+- `--only src` (default off): restrict targets to functions belonging to a
+  module `src/readability/scope.ts`'s `computeSrcScope` classifies as `src`
+  app code (the same `splitProject` -> `segregateSplitTree` path
+  `hbc2js segregate` uses, spec 08) rather than `node_modules`/
+  `unclassified` -- spec 28 section 7's coverage target is measured over
+  exactly this population, not the whole bundle (~15k functions on the
+  held-out app). Prints the selected module/function counts to stderr
+  before the first model call.
+- `--sample N [--seed S]` (default seed 1): a deterministic reservoir sample
+  of N targets from the selected set, for a bounded, reproducible smoke run
+  -- the same seed always samples the same targets; a different seed samples
+  independently.
+- `--resume`: if the output recording already exists, any target whose
+  cache key is already a key in it answers from the existing file with zero
+  backend calls (counted as a cache hit in the final aggregate) -- lets a
+  rate-limited run continue without re-spending tokens.
+- Progress prints to stderr as `recorded k/N: fn<F> r<R> (<in>/<out> tok,
+  <s>s)` per target, and a final aggregate line (targets, calls, tokens
+  in/out, seconds, cache hits).
+
+The held-out app's own recording (spec 28 section 10, landing 1) is produced
+with:
+
+```
+node tools/readability/record.ts <held-out.hbc> \
+    tests/fixtures/llm-readability/react-navigation-example-0.85.3.recording.json \
+    --backend claude-cli --only src --resume
+```
+
 ## What the oracle actually checks (spec 28 section 9.4, REWRITE row)
 
 Two legs, and the weaker one can only ever lower the verdict.
