@@ -448,6 +448,35 @@ bundle bytes, no prior conversation.
 | `name-module` | `hbc-classify` | module source, export shape, placeholder path, dependency edges, segregation bucket and name signal, string literals |
 | `explain-fn`, `doc-screen` | `hbc-doc` (deferred, D28-3) | as `suggest-name`, plus the screen's route evidence |
 
+**One call per FUNCTION, not per register (landing 1, 2026-09-11).** The
+batch CLI (`name llm-fill`, section 3) and `tools/readability/record.ts`
+default to asking about a WHOLE function's unnamed registers in one
+`suggest-name` call: `context.source` is the function's scoped render
+(`decompileFunction`, never a whole-module `NameService.render({fn})` --
+BUGS 2026-09-11 "render() is O(whole-bundle) per call") and `context.targets`
+lists every one of that function's nameable `{fn,reg}`s in the skill's short
+form. The reply's `names[]` -- already an array, this needed no wire-contract
+change -- answers as many of them as the model has evidence for; a
+`bindingId` not in `context.targets` is dropped and counted
+(`NamePassResult.droppedUnknownNames`), never written, and a target with no
+matching name in the reply is an abstain for that one register, not for the
+whole call. **Cache key**: unchanged shape (`cacheKey`'s fields, section
+9.3) -- `body` is the function's scoped source and `context` is the
+canonicalised `{fn, targets, source}` object, so the key is naturally
+per-function: an unchanged function (same source, same requested register
+set) is a cache hit on a re-run, same as the per-register form always was.
+`--per-register` (CLI/`record.ts` flag) reverts to one call per `{fn,reg}`
+-- still the shape the UI's single-register `suggest_names` job uses,
+since it never batches a whole function. `runNamePass`
+(`src/readability/name-pass.ts`) implements both: `NamePassRegisterTarget`
+(one binding) and `NamePassFunctionTarget` (`{kind:"suggest-name", fn, regs,
+context}`, one function's whole batch); every `NamePassOutcome` is reported
+per register regardless of which form produced it, so a caller never has to
+special-case the batch shape. On the held-out app's `--only src` population
+this drops the call count from 31,298 (one per `{fn,reg}`) to 4,655 (one per
+function) -- see section 10 landing 1's status paragraph for the measured
+wall-clock this does and does not fix.
+
 **What it returns.** `WorkerJobResponse.text` is one JSON object matching the
 skill's output contract, parsed by `parseReadabilityResult` into
 `ReadabilityResult`: `names: {bindingId, name, confidence, evidence}[]`, an
@@ -895,6 +924,64 @@ react-navigation-example-0.85.3: `--only src` selects 345/1782 modules; see
 `docs/AGENT-LOG.md` for the exact target/function count from that dry run.
 Tests: `tests/gate/llm-readability/record-scope.test.ts` (no network,
 `--backend fake`/hand-built recordings only).
+
+**One call per function, 2026-09-11 (agent/name-batch).** `record.ts` and
+`name llm-fill` now default to one backend call per function (section 9.1
+above), dropping the held-out app's `--only src` call count from 31,298 to
+4,655 -- confirmed by re-running the same `--only src` selection (still
+345/1782 modules, 31,298 targets across 4,655 functions; the selection
+logic itself is untouched by this task). Both callers also stopped using
+`NameService.render({fn})` for the naming prompt's source (BUGS 2026-09-11
+"render() is O(whole-bundle) per call", now Resolved) in favour of
+`decompileFunction` (`src/decompile.ts`'s scoped single-function render).
+That fix is real but partial: `decompileFunction` still re-parses and
+re-analyses the whole bundle on every call (cheaper than a whole-module
+structure+emit, not free). Measured with `--backend fake` (zero model
+latency, so the number is pure local cost): a `--sample 50 --seed 1` run
+over the same `--only src` selection took 48.2s for 50 calls (~0.96s/call,
+largest recorded prompt well under the 48 KB cap); an unbounded `--only
+src` run was killed after 8m18s of wall-clock having reached ~1,578/4,655
+functions. Extrapolated, a full non-sampled `--only src` recording still
+pays on the order of tens of CPU-minutes of pure parse+analysis before any
+real model latency, even though the call count is the intended ~6.7x
+smaller -- tracked as a new, separate Open row (docs/BUGS.md, 2026-09-11,
+readability / render lane), since it is a distinct cost (parse+analysis,
+not structure+emit) from the row this task resolved. Tests:
+`tests/gate/llm-readability/name-batch.test.ts` (function-batch target
+form end to end with `FakeBackend`, bindingId matching incl. dropped/
+unknown ids, missing-reg abstain, the batch equiv backstop over one
+function's whole write set, per-register mode unchanged, cache-key
+stability, and the two mechanical "no live `service.render(` call" checks
+proving the prompt-source path). `--per-register` preserves landing 1's
+original one-call-per-register shape for the UI's single-register job and
+for anyone who wants it back.
+
+**Confirmed on the real thing, 2026-09-13 (Fred).** `hbc2js name llm-fill` on
+the NSW bundle (43,384 functions) ran 38 minutes at 16 GB RSS and was killed
+before the first model call. Two real gaps, both fixed the same day: (1)
+`name llm-fill`'s own collection loop (`llmFillTargetsForFn`, `src/cli.ts`)
+was not yet on this landing's `decompileFunction` fix when that run started;
+it is now, same as `record.ts`. (2) `--only src` was documented in the
+verb's own usage string since this row's first landing but never
+implemented -- the CLI always walked every function in the bundle regardless
+of the flag (`tests/gate/llm-readability/name-batch.test.ts`'s "was
+documented, never implemented" test is the regression test). Also added:
+`runNamePass` gained an `onProgress` hook (called once per target, before
+its backend call) and `name llm-fill` prints a collection-phase line every
+~5% of functions considered plus one line per target, because the killed
+run printed nothing at all past the initial module-selection line -- a long
+real run against `--backend claude-cli` must never look hung. The
+`decompileFunction` per-call parse+analysis cost itself (the thing that made
+the collection loop slow in the first place) is unchanged and stays the
+Open BUGS row. Measured directly (RSS-sampled every 5s, not run to
+completion -- a full run is on the order of a CPU-hour, see below): `name
+llm-fill --backend fake --only src` on the held-out bundle collected
+236/4,732 functions in 290s (~1.23s/function) with peak RSS ~3.2 GB within
+5 minutes. Extrapolated, a full `--only src` collection alone is ~97
+CPU-minutes on this bundle -- consistent with NSW's 43,384-function bundle
+(9.2x the function count, and un-scoped at the time of the killed run,
+since `--only src` did not exist yet) taking 38 minutes to get nowhere near
+done.
 
 ### Landing 2 -- rewrite path (function-level, equiv-gated)
 

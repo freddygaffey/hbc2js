@@ -9,7 +9,15 @@
 // Usage:
 //   node tools/readability/record.ts <input.hbc> <output.recording.json> \
 //     [--limit N] [--backend claude-cli|haiku|fake] [--only src] \
-//     [--sample N [--seed S]] [--resume]
+//     [--sample N [--seed S]] [--resume] [--per-register]
+//
+// Default: ONE backend call per FUNCTION (spec 28 section 9.1, "one model
+// call per function, not per register") -- the request's `context.targets`
+// lists every nameable `{fn,reg}` in that function and the reply's `names[]`
+// is expected to answer as many of them as it has evidence for. `--limit`
+// and the progress line both count FUNCTIONS in this mode. `--per-register`
+// reverts to landing 1's original shape (one call per `{fn,reg}`), which
+// `--limit`/progress then count as before.
 //
 // Default backend `claude-cli` (spec 28 section 9.1, Fred's 2026-09-11
 // ruling: the CLI on Fred's Claude plan, not the metered API). `--backend
@@ -41,14 +49,14 @@
 // cache-key fields).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseForDecompile } from "../../src/decompile.ts";
+import { decompileFunction, parseForDecompile } from "../../src/decompile.ts";
 import { analyseModule } from "../../src/cfg/index.ts";
 import { rawFrameBodies } from "../../src/name-overlay/frames.ts";
-import { NameService, OverlayStore, regId, shortForm } from "../../src/name-overlay/index.ts";
+import { OverlayStore, bindingKey, regId, shortForm } from "../../src/name-overlay/index.ts";
 import { listNameable } from "../../src/artifact/frame-queries.ts";
 import { bodyFromContext, canonicaliseContext } from "../../src/workers/backends/haiku.ts";
 import { backendForId, resolveBackendId, BackendSelectionError } from "../../src/readability/backends.ts";
-import { cacheKey, resolveClaudeCliConfig, resolveHaikuConfig, SKILL_FOR_KIND } from "../../src/readability/types.ts";
+import { cacheKey, parseReadabilityResult, resolveClaudeCliConfig, resolveHaikuConfig, SKILL_FOR_KIND } from "../../src/readability/types.ts";
 import { loadSkill } from "../../src/readability/skills.ts";
 import { computeSrcScope } from "../../src/readability/scope.ts";
 import { loadRecording } from "../../src/workers/backends/replay.ts";
@@ -66,7 +74,7 @@ const DEFAULT_SAMPLE_SEED = 1;
 function usage(): never {
   process.stderr.write(
     "usage: node tools/readability/record.ts <input.hbc> <output.recording.json> " +
-      "[--limit N] [--backend claude-cli|haiku|fake] [--only src] [--sample N [--seed S]] [--resume]\n",
+      "[--limit N] [--backend claude-cli|haiku|fake] [--only src] [--sample N [--seed S]] [--resume] [--per-register]\n",
   );
   process.exit(2);
 }
@@ -184,6 +192,7 @@ async function main(): Promise<void> {
   const seedFlag = argv.indexOf("--seed");
   const seed = seedFlag >= 0 ? Number(argv[seedFlag + 1]) : DEFAULT_SAMPLE_SEED;
   const resume = argv.includes("--resume");
+  const perRegister = argv.includes("--per-register");
 
   let backendId;
   try {
@@ -215,10 +224,18 @@ async function main(): Promise<void> {
     analysis = analyseModule(parseForDecompile(bytes, {}).module, { strictEnv: false });
   }
   const store = new OverlayStore({ bundle: hbc });
-  const service = new NameService(analysis, store, { strictEnv: false });
   const frames = rawFrameBodies(analysis, { strictEnv: false });
   const config = backendId === "claude-cli" ? resolveClaudeCliConfig(process.env) : resolveHaikuConfig(process.env);
   const backend = backendForId(backendId, { env: process.env });
+  // Scoped single-function render (docs/DECISIONS.md D-scoped-render) --
+  // NEVER `NameService.render({fn})` here (BUGS 2026-09-11 "render() is
+  // O(whole-bundle) per call"): that re-emits every function in the bundle
+  // to answer one function's source. `decompileFunction` costs the parse +
+  // module analysis (paid once by `analysis` above, re-derived internally
+  // per call since `decompile()` always re-parses `bytes`) plus that
+  // function's own closure subtree -- proportional to the requested
+  // function, never to the bundle's total function count.
+  const renderFn = (fn: number): string => decompileFunction(bytes, fn, { strictEnv: false }).code;
 
   // Cheap: no `render()` call anywhere in `collectTargets` (see its own
   // comment) -- safe to run over the WHOLE selected scope before any model
@@ -239,61 +256,117 @@ async function main(): Promise<void> {
 
   const sourceCache = new Map<number, string>();
   const diagnostics: string[] = [];
-  const total = Math.min(allTargets.length, limit);
   let recorded = 0;
   let calls = 0;
   let cacheHits = 0;
   let tokensInTotal = 0;
   let tokensOutTotal = 0;
   const startedAt = Date.now();
+  const skillId = SKILL_FOR_KIND["suggest-name"];
+  if (skillId === undefined) throw new Error("record.ts: no skill routed for suggest-name");
+  const skill = loadSkill(skillId, config.skillsDir);
 
-  for (const target of allTargets) {
-    if (recorded >= limit) break;
-    const { fn, reg } = target;
-    // `renderTargetSource` is the only place this run actually pays
-    // `NameService.render`'s whole-bundle-emit cost, and only for a
-    // function this target set will actually prompt on -- bounded by
-    // `--only`/`--sample`/`--limit`, never the whole selected population.
-    const source = renderTargetSource(fn, (n) => service.render({ fn: n }).code, sourceCache, diagnostics);
-    if (source === null) {
-      process.stderr.write(`${diagnostics[diagnostics.length - 1]!}\n`);
-      continue;
+  if (perRegister) {
+    // Landing-1 shape: one call per `{fn,reg}` -- kept for `--per-register`.
+    const total = Math.min(allTargets.length, limit);
+    for (const target of allTargets) {
+      if (recorded >= limit) break;
+      const { fn, reg } = target;
+      const source = renderTargetSource(fn, renderFn, sourceCache, diagnostics);
+      if (source === null) {
+        process.stderr.write(`${diagnostics[diagnostics.length - 1]!}\n`);
+        continue;
+      }
+      const id = regId(fn, reg);
+      const context = { target: shortForm(id), fn, reg, source };
+      const key = cacheKey({
+        kind: "suggest-name",
+        skillId,
+        skillVersion: skill.version,
+        model: config.model,
+        body: bodyFromContext(context),
+        context: canonicaliseContext(context),
+      });
+      recorded += 1;
+      if (resume && Object.prototype.hasOwnProperty.call(existing, key)) {
+        cacheHits += 1;
+        const cachedTokens = existing[key]?.cost;
+        tokensInTotal += cachedTokens?.tokensIn ?? 0;
+        tokensOutTotal += cachedTokens?.tokensOut ?? 0;
+        process.stderr.write(`recorded ${String(recorded)}/${String(total)}: fn${String(fn)} r${String(reg)} (cached)\n`);
+        continue;
+      }
+      const callStart = Date.now();
+      // eslint-disable-next-line no-await-in-loop -- sequential by design: one model call at a time, budget-visible.
+      const res = await backend.run({ kind: "suggest-name", prompt: "", context });
+      const callSeconds = (Date.now() - callStart) / 1000;
+      recording[key] = { text: res.text, ...(res.cost !== undefined ? { cost: res.cost } : {}) };
+      calls += 1;
+      const tokensIn = res.cost?.tokensIn ?? 0;
+      const tokensOut = res.cost?.tokensOut ?? 0;
+      tokensInTotal += tokensIn;
+      tokensOutTotal += tokensOut;
+      process.stderr.write(
+        `recorded ${String(recorded)}/${String(total)}: fn${String(fn)} r${String(reg)} (${String(tokensIn)}/${String(tokensOut)} tok, ${callSeconds.toFixed(1)}s)\n`,
+      );
     }
-    const id = regId(fn, reg);
-    const context = { target: shortForm(id), fn, reg, source };
-    const skillId = SKILL_FOR_KIND["suggest-name"];
-    if (skillId === undefined) continue;
-    const skill = loadSkill(skillId, config.skillsDir);
-    const key = cacheKey({
-      kind: "suggest-name",
-      skillId,
-      skillVersion: skill.version,
-      model: config.model,
-      body: bodyFromContext(context),
-      context: canonicaliseContext(context),
-    });
-    recorded += 1;
-    if (resume && Object.prototype.hasOwnProperty.call(existing, key)) {
-      cacheHits += 1;
-      const cachedTokens = existing[key]?.cost;
-      tokensInTotal += cachedTokens?.tokensIn ?? 0;
-      tokensOutTotal += cachedTokens?.tokensOut ?? 0;
-      process.stderr.write(`recorded ${String(recorded)}/${String(total)}: fn${String(fn)} r${String(reg)} (cached)\n`);
-      continue;
+  } else {
+    // Default: one call per FUNCTION (spec 28 section 9.1). `allTargets` is
+    // already in ascending-fn order (`collectTargets`'s own contract), so
+    // grouping by `fn` here preserves that order without a re-sort.
+    const byFn = new Map<number, Target[]>();
+    for (const t of allTargets) {
+      const list = byFn.get(t.fn);
+      if (list === undefined) byFn.set(t.fn, [t]);
+      else list.push(t);
     }
-    const callStart = Date.now();
-    // eslint-disable-next-line no-await-in-loop -- sequential by design: one model call at a time, budget-visible.
-    const res = await backend.run({ kind: "suggest-name", prompt: "", context });
-    const callSeconds = (Date.now() - callStart) / 1000;
-    recording[key] = { text: res.text, ...(res.cost !== undefined ? { cost: res.cost } : {}) };
-    calls += 1;
-    const tokensIn = res.cost?.tokensIn ?? 0;
-    const tokensOut = res.cost?.tokensOut ?? 0;
-    tokensInTotal += tokensIn;
-    tokensOutTotal += tokensOut;
-    process.stderr.write(
-      `recorded ${String(recorded)}/${String(total)}: fn${String(fn)} r${String(reg)} (${String(tokensIn)}/${String(tokensOut)} tok, ${callSeconds.toFixed(1)}s)\n`,
-    );
+    const fns = [...byFn.keys()];
+    const total = Math.min(fns.length, limit);
+    for (const fn of fns) {
+      if (recorded >= limit) break;
+      const regs = byFn.get(fn)!;
+      const source = renderTargetSource(fn, renderFn, sourceCache, diagnostics);
+      if (source === null) {
+        process.stderr.write(`${diagnostics[diagnostics.length - 1]!}\n`);
+        continue;
+      }
+      const ids = regs.map((r) => regId(fn, r.reg));
+      const context = { fn, targets: ids.map((id) => shortForm(id)), source };
+      const key = cacheKey({
+        kind: "suggest-name",
+        skillId,
+        skillVersion: skill.version,
+        model: config.model,
+        body: bodyFromContext(context),
+        context: canonicaliseContext(context),
+      });
+      recorded += 1;
+      if (resume && Object.prototype.hasOwnProperty.call(existing, key)) {
+        cacheHits += 1;
+        const cachedTokens = existing[key]?.cost;
+        tokensInTotal += cachedTokens?.tokensIn ?? 0;
+        tokensOutTotal += cachedTokens?.tokensOut ?? 0;
+        process.stderr.write(`recorded ${String(recorded)}/${String(total)}: fn${String(fn)} (${String(regs.length)} regs, cached)\n`);
+        continue;
+      }
+      const callStart = Date.now();
+      // eslint-disable-next-line no-await-in-loop -- sequential by design: one model call at a time, budget-visible.
+      const res = await backend.run({ kind: "suggest-name", prompt: "", context });
+      const callSeconds = (Date.now() - callStart) / 1000;
+      recording[key] = { text: res.text, ...(res.cost !== undefined ? { cost: res.cost } : {}) };
+      calls += 1;
+      const tokensIn = res.cost?.tokensIn ?? 0;
+      const tokensOut = res.cost?.tokensOut ?? 0;
+      tokensInTotal += tokensIn;
+      tokensOutTotal += tokensOut;
+      const parsed = parseReadabilityResult(res.text);
+      const requested = new Set(ids.map((id) => bindingKey(id)));
+      const named = parsed.ok ? parsed.result.names.filter((n) => requested.has(bindingKey(n.bindingId))).length : 0;
+      process.stderr.write(
+        `fn ${String(fn)}: ${String(named)} regs named / ${String(regs.length)} requested ` +
+          `(${String(tokensIn)}/${String(tokensOut)} tok, ${callSeconds.toFixed(1)}s)\n`,
+      );
+    }
   }
 
   const totalSeconds = (Date.now() - startedAt) / 1000;

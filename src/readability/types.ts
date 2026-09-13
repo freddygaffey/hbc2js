@@ -353,20 +353,40 @@ function parseRewriteProposal(r: unknown): RewriteProposal | undefined {
 
 const CONFIDENCES: readonly string[] = ["low", "med", "high"];
 
+/** Normalise a wire `bindingId` (`{fn,reg}` or `{fn}`, per the skill's Output
+ *  contract -- it never sends a `kind` discriminant) into a real `BindingId`
+ *  with `kind` set, so every consumer can match it with `bindingKey`/a plain
+ *  `{fn,reg}` comparison without re-deriving the kind itself. `reg` present
+ *  (any value, even non-numeric) commits to the register shape and must be a
+ *  valid non-negative integer or the whole proposal is rejected -- a
+ *  malformed `reg` is not silently treated as a function-level proposal. */
+function parseWireBindingId(raw: unknown): BindingId | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const b = raw as Record<string, unknown>;
+  const fn = b["fn"];
+  if (typeof fn !== "number" || !Number.isInteger(fn) || fn < 0) return undefined;
+  if ("reg" in b) {
+    const reg = b["reg"];
+    if (typeof reg !== "number" || !Number.isInteger(reg) || reg < 0) return undefined;
+    return { kind: "reg", fn, reg };
+  }
+  return { kind: "fn", fn };
+}
+
 function parseNameProposal(n: unknown): NameProposal | undefined {
   if (typeof n !== "object" || n === null || Array.isArray(n)) return undefined;
   const o = n as Record<string, unknown>;
   const name = o["name"];
   const confidence = o["confidence"];
   const evidence = o["evidence"];
-  const bindingId = o["bindingId"];
+  const bindingId = parseWireBindingId(o["bindingId"]);
   if (typeof name !== "string" || name === "") return undefined;
   if (typeof confidence !== "string" || !CONFIDENCES.includes(confidence)) return undefined;
   if (typeof evidence !== "string") return undefined;
-  if (typeof bindingId !== "object" || bindingId === null) return undefined;
+  if (bindingId === undefined) return undefined;
   // Evidence-free proposals can never be `high` (spec 28 sections 1 and 4).
   const conf = (evidence.trim() === "" && confidence === "high" ? "low" : confidence) as Confidence;
-  return { bindingId: bindingId as BindingId, name, confidence: conf, evidence };
+  return { bindingId, name, confidence: conf, evidence };
 }
 
 // ---------------------------------------------------------------------------

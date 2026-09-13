@@ -46,6 +46,29 @@ Rejections print the class and leave everything alone:
 | `REJECTED_DIVERGENT` | the oracle proved the behaviour differs |
 | `REJECTED_INCONCLUSIVE` | the oracle could not prove anything: no Hermes VM for that bytecode version, no output observed, or coverage too thin. INCONCLUSIVE is never PASS |
 
+## Batch naming (`hbc2js name llm-fill`)
+
+```
+hbc2js name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] \
+    [--budget-tokens N] [--recording <file>] [--only src] [--store <path>] [--per-register] [--json]
+```
+
+Same defaults as `record.ts` above: one backend call per function
+(`--per-register` reverts to one per `{fn,reg}`), `decompileFunction` for the
+prompt source, and `--only src` genuinely restricts collection to
+`computeSrcScope`'s src-bucket functions (fixed 2026-09-13 -- the flag was
+documented in this verb's own usage string well before it was implemented;
+without it, or before this fix, collection walks every function in the
+bundle, which is what a real 43,384-function run hit -- 38 minutes at 16 GB
+RSS, killed before the first model call, docs/BUGS.md 2026-09-11 residual
+row). Progress prints to stderr (suppressed under `--json`, which is meant
+for scripting): `collecting k/N function(s) (m target(s) so far)` during
+collection (the phase that can itself run for minutes on a large bundle,
+independent of any model call), then `target i/N: <label>` once per target
+as `runNamePass` processes it, so a long real run against `--backend
+claude-cli` is never silent. Final summary: `named X/Y targets (tokens T,
+equiv VERDICT)` (or the same fields as JSON with `--json`).
+
 ## Recording (`tools/readability/record.ts`)
 
 `tools/readability/record.ts` is the ONE tool in this layer that calls a real
@@ -58,9 +81,32 @@ gate itself.
 ```
 node tools/readability/record.ts <input.hbc> <output.recording.json> \
     [--limit N] [--backend claude-cli|haiku|fake] [--only src] \
-    [--sample N [--seed S]] [--resume]
+    [--sample N [--seed S]] [--resume] [--per-register]
 ```
 
+- **Default: one call per FUNCTION** (spec 28 section 9.1). Every nameable
+  register a function still needs a name for is asked about in ONE backend
+  call: the request's `context.targets` lists every one of them in the
+  skill's `{fn,reg}` short form, and the reply's `names[]` (already an
+  array, spec 28 section 9.1's wire contract) answers as many as the model
+  has evidence for. On the held-out app's `--only src` population this cuts
+  the recording from one call per `{fn,reg}` (31,298 calls) to one call per
+  function (4,655 calls) -- a ~6.7x reduction in real model calls/tokens.
+  `--limit`, `--resume` and the progress line all count FUNCTIONS in this
+  mode. `--per-register` reverts to landing 1's original one-call-per-`{fn,
+  reg}` shape (still used by `--per-register` on `name llm-fill` and by the
+  UI's single-register `suggest_names` job, which never batches).
+- The prompt source for BOTH modes is `decompileFunction`
+  (`src/decompile.ts`'s scoped single-function render, docs/DECISIONS.md
+  D-scoped-render), never `NameService.render({fn})` (BUGS 2026-09-11
+  "render() is O(whole-bundle) per call" -- resolved by no longer calling it
+  here at all). `decompileFunction` still re-parses and re-analyses the
+  whole bundle on every call (cheaper than a whole-module structure+emit,
+  but not free): measured on the held-out app with `--backend fake` (zero
+  model latency), a `--sample 50` run took 48.2s (~0.96s/call), so a full
+  non-sampled `--only src` recording still pays tens of minutes of pure
+  parse+analysis before any real model latency -- tracked as its own
+  follow-up (docs/BUGS.md, 2026-09-11, readability / render lane).
 - `--only src` (default off): restrict targets to functions belonging to a
   module `src/readability/scope.ts`'s `computeSrcScope` classifies as `src`
   app code (the same `splitProject` -> `segregateSplitTree` path
@@ -77,9 +123,11 @@ node tools/readability/record.ts <input.hbc> <output.recording.json> \
   cache key is already a key in it answers from the existing file with zero
   backend calls (counted as a cache hit in the final aggregate) -- lets a
   rate-limited run continue without re-spending tokens.
-- Progress prints to stderr as `recorded k/N: fn<F> r<R> (<in>/<out> tok,
-  <s>s)` per target, and a final aggregate line (targets, calls, tokens
-  in/out, seconds, cache hits).
+- Progress prints to stderr per function-batch target as `fn N: k regs
+  named / m requested (<in>/<out> tok, <s>s)` (default mode) or per
+  register as `recorded k/N: fn<F> r<R> (<in>/<out> tok, <s>s)`
+  (`--per-register`), and a final aggregate line (targets, calls, tokens
+  in/out, seconds, cache hits) either way.
 
 The held-out app's own recording (spec 28 section 10, landing 1) is produced
 with:

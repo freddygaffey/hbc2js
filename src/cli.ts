@@ -48,6 +48,7 @@ import { runNamePass, namedCount } from "./readability/name-pass.ts";
 import { runAdversarialRecheck } from "./readability/evaluate.ts";
 import { gateRewrite, rewriteSidecar } from "./readability/rewrite.ts";
 import type { RewriteProposal } from "./readability/types.ts";
+import { computeSrcScope } from "./readability/scope.ts";
 import type { NamePassTarget } from "./readability/name-pass.ts";
 import { readSplitDir, segregateSplitTree, writeSegregateResult } from "./split/segregate.ts";
 import type { DepsReport } from "./deps/report.ts";
@@ -1478,21 +1479,41 @@ async function runNameOverlay(argv: readonly string[]): Promise<void> {
 // section 5, "one core, two callers").
 // ---------------------------------------------------------------------------
 
-/** Every nameable, not-yet-named register in `fn`, as `NamePassTarget`s. The
- *  function's own render (overlay-free at this point) IS the `body`/`source`
- *  the cache key and the prompt both use. */
+/** Every nameable, not-yet-named register in `fn`, as ONE `NamePassFunctionTarget`
+ *  (spec 28 section 9.1: one model call per function, not per register) --
+ *  the default for `name llm-fill`. `renderFn` is `decompileFunction`'s
+ *  scoped single-function render (BUGS 2026-09-11 "render() is O(whole-bundle)
+ *  per call": this is what stopped calling `NameService.render({fn})`, which
+ *  re-emits the whole module per call). Returns `[]` when `fn` has nothing
+ *  left to name. */
 function llmFillTargetsForFn(
-  service: NameService,
   frames: ReadonlyMap<number, readonly Stmt[]>,
   store: OverlayStore,
   fn: number,
+  renderFn: (fn: number) => string,
+): readonly NamePassTarget[] {
+  const nameable = listNameable(frames, fn, store).filter((reg) => reg.named === null); // spec 28 section 2: never rename an already-named slot
+  if (nameable.length === 0) return [];
+  const source = renderFn(fn);
+  const ids = nameable.map((reg) => regId(fn, reg.reg));
+  return [{ kind: "suggest-name", fn, regs: ids, context: { fn, targets: ids.map((id) => shortForm(id)), source } }];
+}
+
+/** `--per-register`'s old landing-1 shape: one `NamePassTarget` (one backend
+ *  call) per nameable register, kept for the tests and calling patterns that
+ *  still want it. */
+function llmFillTargetsForFnPerRegister(
+  frames: ReadonlyMap<number, readonly Stmt[]>,
+  store: OverlayStore,
+  fn: number,
+  renderFn: (fn: number) => string,
 ): readonly NamePassTarget[] {
   const nameable = listNameable(frames, fn, store);
   if (nameable.length === 0) return [];
-  const source = service.render({ fn }).code;
+  const source = renderFn(fn);
   const out: NamePassTarget[] = [];
   for (const reg of nameable) {
-    if (reg.named !== null) continue; // spec 28 section 2: never rename an already-named slot
+    if (reg.named !== null) continue;
     const id = regId(fn, reg.reg);
     out.push({ bindingId: id, kind: "suggest-name", context: { target: shortForm(id), fn, reg: reg.reg, source } });
   }
@@ -1531,31 +1552,89 @@ async function runNameLlmFill(argv: readonly string[]): Promise<number> {
   if (hbc === undefined || hbc.startsWith("-")) {
     fail(
       ErrorCode.E_USAGE,
-      "name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>]",
+      "name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>] [--per-register]",
       2,
       json,
     );
   }
   const budgetRaw = flagValue(argv, "--budget-tokens");
   const budgetTokens = budgetRaw !== undefined ? Number(budgetRaw) : undefined;
+  const perRegister = argv.includes("--per-register");
+  const onlyArg = flagValue(argv, "--only");
+  if (onlyArg !== undefined && onlyArg !== "src") {
+    fail(ErrorCode.E_USAGE, `name llm-fill: --only must be "src", got ${onlyArg}`, 2, json);
+  }
   const storePath = defaultStorePath(hbc, flagValue(argv, "--store"));
-  const analysis = await buildAnalysis(hbc);
-  const store = OverlayStore.load(storePath, hbc);
-  const service = new NameService(analysis, store);
-  const frames = rawFrameBodies(analysis);
-  const backend = llmFillBackend(argv, json);
+  // Scoped per-function render, not `service.render({fn})` (BUGS 2026-09-11):
+  // reads `hbc`'s own bytes once, independent of `buildAnalysis`'s copy.
+  const bytes = readFileSync(hbc);
 
+  // `--only src` (spec 28 section 7): the exact `computeSrcScope` path
+  // `tools/readability/record.ts` uses, so a run over a bundle the size of
+  // NSW (tens of thousands of functions) does not have to build a target for
+  // every function outside `src`-bucket modules -- that (not this landing's
+  // fix) was the collection loop that never reached the first model call on
+  // a real run (docs/BUGS.md 2026-09-11). Falls back to `buildAnalysis`
+  // (strictEnv:true, unchanged) when `--only src` is not given.
+  let analysis: ReturnType<typeof analyseModule>;
+  let allowedFns: ReadonlySet<number> | null = null;
+  let serviceStrictEnv = true;
+  if (onlyArg === "src") {
+    const scope = await computeSrcScope(hbc, bytes);
+    analysis = scope.analysis;
+    allowedFns = scope.srcFns;
+    serviceStrictEnv = false;
+    if (!json) {
+      process.stderr.write(`name llm-fill: --only src selected ${String(scope.srcModuleCount)}/${String(scope.totalModuleCount)} module(s)\n`);
+    }
+  } else {
+    analysis = await buildAnalysis(hbc);
+  }
+  const store = OverlayStore.load(storePath, hbc);
+  const service = new NameService(analysis, store, { strictEnv: serviceStrictEnv });
+  const frames = rawFrameBodies(analysis, { strictEnv: serviceStrictEnv });
+  const backend = llmFillBackend(argv, json);
+  const renderFn = (fn: number): string => decompileFunction(bytes, fn, { strictEnv: false }).code;
+
+  // Collection itself is not free (`decompileFunction`'s own per-call
+  // parse+analysis cost, docs/BUGS.md 2026-09-11 residual row) -- on a real
+  // bundle this can run for minutes before the first backend call, so it
+  // gets its own progress line rather than going silent (Fred 2026-09-13,
+  // found via a killed real run that printed nothing past module selection).
+  const totalFnsToConsider = allowedFns !== null ? allowedFns.size : analysis.module.functions.length;
+  let fnsConsidered = 0;
+  const collectionProgressEvery = Math.max(1, Math.floor(totalFnsToConsider / 20));
   const targets: NamePassTarget[] = [];
   for (let fn = 0; fn < analysis.module.functions.length; fn++) {
-    targets.push(...llmFillTargetsForFn(service, frames, store, fn));
+    if (allowedFns !== null && !allowedFns.has(fn)) continue;
+    fnsConsidered += 1;
+    targets.push(...(perRegister ? llmFillTargetsForFnPerRegister(frames, store, fn, renderFn) : llmFillTargetsForFn(frames, store, fn, renderFn)));
+    if (!json && (fnsConsidered % collectionProgressEvery === 0 || fnsConsidered === totalFnsToConsider)) {
+      process.stderr.write(`name llm-fill: collecting ${String(fnsConsidered)}/${String(totalFnsToConsider)} function(s) (${String(targets.length)} target(s) so far)\n`);
+    }
   }
+  if (!json) process.stderr.write(`name llm-fill: ${String(targets.length)} target(s) collected, starting the naming pass\n`);
 
-  const result = await runNamePass(targets, { backend, service, ...(budgetTokens !== undefined ? { budgetTokens } : {}) });
+  const onProgress = json
+    ? undefined
+    : (p: { readonly index: number; readonly total: number; readonly target: NamePassTarget }): void => {
+        const t = p.target;
+        const label = "regs" in t ? `fn ${String(t.fn)} (${String(t.regs.length)} reg(s))` : `fn ${String(t.context["fn"])} r${String(t.context["reg"])}`;
+        process.stderr.write(`name llm-fill: target ${String(p.index + 1)}/${String(p.total)}: ${label}\n`);
+      };
+
+  const result = await runNamePass(targets, {
+    backend,
+    service,
+    ...(budgetTokens !== undefined ? { budgetTokens } : {}),
+    ...(onProgress !== undefined ? { onProgress } : {}),
+  });
   store.save(storePath);
   const named = namedCount(result.outcomes);
   const summary = {
     targets: targets.length,
     named,
+    droppedUnknownNames: result.droppedUnknownNames,
     tokensUsed: result.tokensUsed,
     stoppedAtBudget: result.stoppedAtBudget,
     equiv: result.equiv.verdict,

@@ -20,14 +20,16 @@ import type { EquivProof, NameProposal } from "./types.ts";
 import { runAdversarialRecheck } from "./evaluate.ts";
 import type { AdversarialTarget } from "./evaluate.ts";
 
-/** One target the loop should propose a name for: a register local (landing
- *  1) or, in principle, any binding the overlay can hold. `context` is the
- *  full `get_context`-shaped payload the backend prompts with (spec 28
- *  section 9.1's table); `context.source` doubles as the cache key's `body`
- *  (spec 28 section 9.3). Callers build this from whatever they already have
- *  warm -- the CLI from a freshly parsed bundle, the runner from
- *  `McpResources` -- so gather stays outside this shared core. */
-export interface NamePassTarget {
+/** One REGISTER the loop should propose a name for -- landing 1's original
+ *  shape, one backend call per `{fn,reg}`. `context` is the full
+ *  `get_context`-shaped payload the backend prompts with (spec 28 section
+ *  9.1's table); `context.source` doubles as the cache key's `body` (spec 28
+ *  section 9.3). Callers build this from whatever they already have warm --
+ *  the CLI from a freshly parsed bundle, the runner from `McpResources` --
+ *  so gather stays outside this shared core. Still used by the UI's
+ *  single-register job and by `--per-register` on the batch CLI/recorder;
+ *  the batch default is `NamePassFunctionTarget` below. */
+export interface NamePassRegisterTarget {
   readonly bindingId: BindingId;
   readonly kind: Extract<JobKind, "suggest-name" | "name-module">;
   readonly context: Record<string, unknown>;
@@ -40,6 +42,49 @@ export interface NamePassTarget {
   readonly reach?: number;
 }
 
+/** One FUNCTION's worth of unnamed registers, asked about in ONE backend
+ *  call (spec 28 section 9.1's "one model call per function, not per
+ *  register"). `context` carries the function's scoped source
+ *  (`context.source`, never a whole-module render -- BUGS 2026-09-11 "render()
+ *  is O(whole-bundle) per call") and `context.targets`, the skill's
+ *  `{fn,reg}` short form for every register in `regs`, so the model can
+ *  answer several bindings in the one `names[]` array its output contract
+ *  already allows. `securityRelevant`/`reach` apply to the whole function's
+ *  batch, same as the register form. */
+export interface NamePassFunctionTarget {
+  readonly kind: "suggest-name";
+  readonly fn: number;
+  readonly regs: readonly BindingId[];
+  readonly context: Record<string, unknown>;
+  readonly securityRelevant?: boolean;
+  readonly reach?: number;
+}
+
+/** A target the per-target loop can process: one register (one call) or one
+ *  function's whole batch of registers (one call, many names). */
+export type NamePassTarget = NamePassRegisterTarget | NamePassFunctionTarget;
+
+/** True for the function-batch form (`regs` is the discriminant -- a
+ *  register target never has it). */
+export function isFunctionTarget(target: NamePassTarget): target is NamePassFunctionTarget {
+  return "regs" in target;
+}
+
+/** Build the per-register target an outcome from a function batch is
+ *  reported against, so `NamePassOutcome.target` is always a
+ *  `NamePassRegisterTarget` regardless of which call produced it -- every
+ *  existing consumer (the adversarial re-check, `bindingKey(o.target.
+ *  bindingId)`, callers reading `outcomes`) keeps working unchanged. */
+function registerTargetFor(target: NamePassFunctionTarget, bindingId: BindingId): NamePassRegisterTarget {
+  return {
+    bindingId,
+    kind: target.kind,
+    context: target.context,
+    ...(target.securityRelevant !== undefined ? { securityRelevant: target.securityRelevant } : {}),
+    ...(target.reach !== undefined ? { reach: target.reach } : {}),
+  };
+}
+
 export type NamePassSkipReason =
   | "backend-error"
   | "parse-error"
@@ -49,7 +94,10 @@ export type NamePassSkipReason =
   | "equiv-backstop-failed";
 
 export interface NamePassOutcome {
-  readonly target: NamePassTarget;
+  /** Always a REGISTER target, even when the call that produced it was a
+   *  function batch (`registerTargetFor` synthesises one per requested
+   *  `{fn,reg}`) -- one outcome is always about one binding. */
+  readonly target: NamePassRegisterTarget;
   readonly proposal?: NameProposal;
   readonly written: boolean;
   readonly reason?: NamePassSkipReason;
@@ -79,6 +127,22 @@ export interface NamePassOptions {
    *  the outcome (`flagged: true`). Absent means no recheck runs -- the
    *  caller decides whether `evaluate` selected `agent` (section 9.6). */
   readonly adversarial?: { readonly backend: WorkerBackend; readonly signal?: AbortSignal };
+  /** Called once per target, BEFORE its backend call, so a long batch run
+   *  (a real bundle over `--backend claude-cli`, one call per target) has
+   *  visible progress instead of going silent until the final summary --
+   *  Fred 2026-09-13, found while a killed `name llm-fill --only src` run
+   *  against the held-out bundle printed nothing at all past the initial
+   *  module-selection line. Never throws into the loop: a caller's print
+   *  callback misbehaving must not abort the pass. */
+  readonly onProgress?: (progress: NamePassProgress) => void;
+}
+
+/** One target's position in a `runNamePass` run -- everything a progress
+ *  printer needs, without recomputing anything the loop already knows. */
+export interface NamePassProgress {
+  readonly index: number;
+  readonly total: number;
+  readonly target: NamePassTarget;
 }
 
 export interface NamePassResult {
@@ -91,6 +155,12 @@ export interface NamePassResult {
    *  semantics-preserving by construction; this backstop is what makes that
    *  provable rather than assumed). */
   readonly equiv: EquivProof;
+  /** Count of `names[]` entries a function-batch reply returned whose
+   *  `bindingId` was not one of that function's requested `regs` (an
+   *  unrequested or unrecognised binding) -- dropped rather than written,
+   *  and counted here so a caller can see a chatty/off-target reply without
+   *  it silently vanishing. Always 0 for a run over register targets only. */
+  readonly droppedUnknownNames: number;
 }
 
 /** Run the per-target loop over `targets`, in the order given (callers do
@@ -103,8 +173,89 @@ export async function runNamePass(targets: readonly NamePassTarget[], opts: Name
   const written: { readonly id: BindingId; readonly ts: string }[] = [];
   let tokensUsed = 0;
   let stoppedAtBudget = false;
+  let droppedUnknownNames = 0;
 
-  for (const target of targets) {
+  // Gate + write one proposal against one register target, recording the
+  // outcome (`written`/`outcomes`) exactly the way the pre-batch code did --
+  // shared by both the register loop and the function-batch loop below so
+  // there is one write path, not two.
+  const applyProposal = (regTarget: NamePassRegisterTarget, proposal: NameProposal): void => {
+    const set = opts.service.setName(regTarget.bindingId, proposal.name, {
+      confidence: proposal.confidence,
+      evidence: proposal.evidence,
+      source: "llm",
+      ...(regTarget.securityRelevant !== undefined ? { securityRelevant: regTarget.securityRelevant } : {}),
+    });
+    if (!set.ok) {
+      outcomes.push({ target: regTarget, proposal, written: false, reason: "gate-refused", detail: set.reason });
+      return;
+    }
+    written.push({ id: regTarget.bindingId, ts: set.result.record.ts });
+    outcomes.push({ target: regTarget, proposal, written: true });
+  };
+
+  for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+    const target = targets[targetIndex]!;
+    try {
+      opts.onProgress?.({ index: targetIndex, total: targets.length, target });
+    } catch {
+      // A progress printer's own failure must never abort the pass.
+    }
+    if (isFunctionTarget(target)) {
+      // ONE backend call for the whole function's unnamed registers (spec 28
+      // section 9.1: "one model call per function, not per register").
+      if (opts.budgetTokens !== undefined && tokensUsed >= opts.budgetTokens) {
+        stoppedAtBudget = true;
+        for (const bid of target.regs) outcomes.push({ target: registerTargetFor(target, bid), written: false, reason: "budget-stopped" });
+        continue;
+      }
+
+      const req: WorkerJobRequest = { kind: target.kind, prompt: "", context: target.context };
+      let text: string;
+      try {
+        const res = await opts.backend.run(req, opts.signal);
+        text = res.text;
+        tokensUsed += (res.cost?.tokensIn ?? 0) + (res.cost?.tokensOut ?? 0);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        for (const bid of target.regs) outcomes.push({ target: registerTargetFor(target, bid), written: false, reason: "backend-error", detail });
+        continue;
+      }
+
+      const parsed = parseReadabilityResult(text);
+      if (!parsed.ok) {
+        for (const bid of target.regs) outcomes.push({ target: registerTargetFor(target, bid), written: false, reason: "parse-error", detail: parsed.error });
+        continue;
+      }
+
+      // Match `names[]` to the requested regs by bindingId. A name whose
+      // bindingId is not one of `target.regs` is dropped and counted, never
+      // written -- it did not survive the bounded-domain check because it
+      // was never in-domain for this call. A reg with no matching name in
+      // the reply is an abstain for that reg, same as an empty `names[]`
+      // would be in the register form.
+      const requested = new Map(target.regs.map((bid) => [bindingKey(bid), bid] as const));
+      const byKey = new Map<string, NameProposal>();
+      for (const n of parsed.result.names) {
+        const k = bindingKey(n.bindingId);
+        if (!requested.has(k)) {
+          droppedUnknownNames += 1;
+          continue;
+        }
+        byKey.set(k, n); // last entry for a duplicated bindingId wins
+      }
+      for (const bid of target.regs) {
+        const proposal = byKey.get(bindingKey(bid));
+        if (proposal === undefined) {
+          outcomes.push({ target: registerTargetFor(target, bid), written: false, reason: "abstained" });
+          continue;
+        }
+        applyProposal(registerTargetFor(target, bid), proposal);
+      }
+      continue;
+    }
+
+    // Register form: unchanged, one call per `{fn,reg}`.
     if (opts.budgetTokens !== undefined && tokensUsed >= opts.budgetTokens) {
       stoppedAtBudget = true;
       outcomes.push({ target, written: false, reason: "budget-stopped" });
@@ -139,18 +290,7 @@ export async function runNamePass(targets: readonly NamePassTarget[], opts: Name
       continue;
     }
 
-    const set = opts.service.setName(target.bindingId, proposal.name, {
-      confidence: proposal.confidence,
-      evidence: proposal.evidence,
-      source: "llm",
-      ...(target.securityRelevant !== undefined ? { securityRelevant: target.securityRelevant } : {}),
-    });
-    if (!set.ok) {
-      outcomes.push({ target, proposal, written: false, reason: "gate-refused", detail: set.reason });
-      continue;
-    }
-    written.push({ id: target.bindingId, ts: set.result.record.ts });
-    outcomes.push({ target, proposal, written: true });
+    applyProposal(target, proposal);
   }
 
   // The landing-5 adversarial re-check (section 1b step 8), BEFORE the batch
@@ -219,7 +359,7 @@ export async function runNamePass(targets: readonly NamePassTarget[], opts: Name
     }
   }
 
-  return { outcomes, tokensUsed, stoppedAtBudget, equiv };
+  return { outcomes, tokensUsed, stoppedAtBudget, equiv, droppedUnknownNames };
 }
 
 /** How many targets in `outcomes` actually got a name written -- the
