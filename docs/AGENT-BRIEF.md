@@ -1,5 +1,7 @@
 # hbc2js in one page (read this; open other docs only when your task needs them)
 
+**One screen shorter than this:** [`docs/TLDR.md`](TLDR.md). **Driving hbc2js as a tool over MCP?** Call the `help` tool (or `hbc2js help`) first -- `docs/agent-help/*` is written for exactly that.
+
 **Goal.** Decompile React Native Hermes bytecode (`.hbc`) into runnable JavaScript and *prove* equivalence. Correct first (M4 baseline, done), readable second (M5 passes), then real apps: dependency extraction, per-module project output, multi-bundle APKs (M6).
 
 **Pipeline.** `src/parse` (bytes → tables; probes layout, never trusts the version field) → `src/disasm` (instructions, labels, switch tables; 100% match vs `hermesc -dump-bytecode`) → `src/cfg` (blocks, exception regions carved from handler tables, generator classification, env/closure graph) → `src/structure` (Ramsey ICFP'22 structurer with inline isomorphism verifier) → `src/emit` (JS + four runtime helpers incl. `__hbc_makeGenerator`) → `src/passes` (D12 matcher/writer/checker rewrites; readability only; **self-contained per pass — implementers read only `src/passes/README.md` + their spec, D12a**). `src/harness` = equivalence checker (trace vs Hermes VM, fuzz, recompile round-trip; verdicts PASS/DIVERGENT/INCONCLUSIVE — INCONCLUSIVE is never PASS). `src/deps` = npm dependency extraction (fingerprint DB + evidence-scored guesses + npm confirm).
