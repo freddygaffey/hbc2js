@@ -19,19 +19,65 @@
 //     re-read after the backend returns and before anything is written; a job
 //     cancelled mid-flight writes nothing at all.
 import type { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
+import { fileURLToPath } from "node:url";
 import type { McpResources } from "../mcp/resources.ts";
 import type { McpTools } from "../mcp/tools.ts";
 import type { Provenance } from "../project/schema.ts";
 import { TransientBackendError, type WorkerBackend, type WorkerJobRequest } from "./backend.ts";
 import { JobQueue, type Job, type JobKind } from "./queue.ts";
 import type { Presence } from "./presence.ts";
-import { fileOp, rewriteFunction, suggestNames, ReadabilitySurfaceError, type ReadabilityContext } from "../readability/surfaces.ts";
+import { fileOp, rewriteFunction, suggestNames, ReadabilitySurfaceError, type ReadabilityContext, type SuggestNamesArgs } from "../readability/surfaces.ts";
+import type { ReadabilityWorkerInput, ReadabilityWorkerMessage } from "./readability-worker.ts";
 import { TransactionRefused } from "../readability/transactions.ts";
 import { FileOpError } from "../readability/file-ops.ts";
 
 /** Body prefix every worker-written annotation carries (§4). The UI greps it
  *  to draw the accept/reject affordance. */
 export const SUGGESTED_PREFIX = "[ai-suggested]";
+
+/** Set to `"1"` to force `readability-suggest-names` back onto the main
+ *  thread (docs/DECISIONS.md D34). The off-thread path must produce the
+ *  SAME overlay sidecar and the same job result as the in-process one, and
+ *  this switch is what lets a test prove it by running both. */
+export const READABILITY_INPROCESS_ENV = "HBC2JS_READABILITY_INPROCESS";
+
+const READABILITY_WORKER_SCRIPT = fileURLToPath(new URL("./readability-worker.ts", import.meta.url));
+
+/** A failure reported BY the worker. `transient` was decided inside the
+ *  worker (only it still had the error object); `instanceof` cannot cross a
+ *  thread boundary, so it travels as a flag. */
+class OffThreadFailure extends Error {
+  readonly transient: boolean;
+  constructor(message: string, transient: boolean) {
+    super(message);
+    this.transient = transient;
+  }
+}
+
+/** Runs one `suggest_names` in `src/workers/readability-worker.ts` and
+ *  resolves with its plain-JSON result. Always tears the worker down --
+ *  never leaves a thread behind on success, failure or crash. */
+function runReadabilityWorker(input: ReadabilityWorkerInput): Promise<unknown> {
+  return new Promise<unknown>((resolve, reject) => {
+    const worker = new Worker(READABILITY_WORKER_SCRIPT, { workerData: input });
+    let settled = false;
+    const done = (act: () => void): void => {
+      if (settled) return;
+      settled = true;
+      void worker.terminate().catch(() => undefined);
+      act();
+    };
+    worker.once("message", (msg: ReadabilityWorkerMessage) => {
+      if (msg.ok) done(() => { resolve(msg.result); });
+      else done(() => { reject(new OffThreadFailure(msg.error, msg.transient)); });
+    });
+    worker.once("error", (err: unknown) => { done(() => { reject(err instanceof Error ? err : new Error(String(err))); }); });
+    worker.once("exit", (code: number) => {
+      if (code !== 0) done(() => { reject(new Error(`readability worker exited with code ${String(code)}`)); });
+    });
+  });
+}
 
 /** What a finished job records in `jobs.result` (§4): the tier, the proposal
  *  (for a kind that proposes something promotable), and the writes it made. */
@@ -211,7 +257,12 @@ export class WorkerRunner {
         if (fn === undefined && moduleId === undefined) {
           throw new ReadabilitySurfaceError("readability-suggest-names: one of {fn}|{module} is required");
         }
-        result = await suggestNames(this.readability, { target: fn !== undefined ? { fn } : { module: moduleId! } });
+        const args: SuggestNamesArgs = { target: fn !== undefined ? { fn } : { module: moduleId! } };
+        const offThread = this.offThreadInput(this.readability, args);
+        // The whole point of this kind going off-thread (docs/DECISIONS.md
+        // D34): `suggestNames` is seconds-to-minutes of synchronous emit and
+        // it used to run on the ui-server's event loop.
+        result = offThread === undefined ? await suggestNames(this.readability, args) : await runReadabilityWorker(offThread);
       } else if (job.kind === "readability-rewrite-function") {
         const fn = job.input["fn"];
         if (typeof fn !== "number") throw new ReadabilitySurfaceError("readability-rewrite-function: fn is required");
@@ -238,14 +289,51 @@ export class WorkerRunner {
       return this.queue.finish(job.id, { result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const transient = err instanceof TransientBackendError;
       // A refused gate (ReadabilitySurfaceError/TransactionRefused/FileOpError)
       // is a normal, reportable outcome -- never retried, never confused with
-      // a transient backend hiccup.
-      return this.queue.fail(job.id, message, { transient: transient && !(err instanceof ReadabilitySurfaceError || err instanceof TransactionRefused || err instanceof FileOpError) });
+      // a transient backend hiccup. The off-thread path decided that same
+      // question inside the worker and sent the answer back as a flag.
+      const transient =
+        err instanceof OffThreadFailure
+          ? err.transient
+          : err instanceof TransientBackendError &&
+            !(err instanceof ReadabilitySurfaceError || err instanceof TransactionRefused || err instanceof FileOpError);
+      return this.queue.fail(job.id, message, { transient });
     } finally {
       if (this.presence !== undefined && this.sessionId !== undefined) this.presence.release(target, this.sessionId);
     }
+  }
+
+  /** The `workerData` for an off-thread `suggest_names`, or `undefined` when
+   *  this context must stay in-process. Three reasons it stays:
+   *   - `HBC2JS_READABILITY_INPROCESS=1` (the equivalence test's switch);
+   *   - no `hbcPath`/`backendId` -- the worker rebuilds the context from
+   *     those two and cannot invent either (a `FakeBackend` handed straight
+   *     to a test's context has no id, so every existing suite keeps its
+   *     exact current behaviour);
+   *   - a wired `evaluator` -- a live function, not structured-clone-safe --
+   *     or the `replay` backend, whose recording path does not travel.
+   *  `oracle`/`functionOracle` are not checked here because `suggestNames`
+   *  never calls them (it has its own batch equiv backstop inside
+   *  `runNamePass`). */
+  private offThreadInput(ctx: ReadabilityContext, args: SuggestNamesArgs): ReadabilityWorkerInput | undefined {
+    if (process.env[READABILITY_INPROCESS_ENV] === "1") return undefined;
+    if (ctx.hbcPath === undefined || ctx.backendId === undefined) return undefined;
+    // `replay` needs a recording path `backendForId` takes as a separate
+    // option and `ReadabilityContext` does not carry, so the worker could
+    // not rebuild it -- keep it in-process rather than fail the job.
+    if (ctx.backendId === "replay") return undefined;
+    if (ctx.evaluator !== undefined) return undefined;
+    return {
+      hbcPath: ctx.hbcPath,
+      projectDir: ctx.projectDir,
+      treeDir: ctx.treeDir,
+      backendId: ctx.backendId,
+      args,
+      ...(ctx.overlayPath !== undefined ? { overlayPath: ctx.overlayPath } : {}),
+      ...(ctx.who !== undefined ? { who: ctx.who } : {}),
+      ...(ctx.surface !== undefined ? { surface: ctx.surface } : {}),
+    };
   }
 
   /** Drains the queue with at most `concurrency` jobs in flight (§2.2's cap).

@@ -733,6 +733,26 @@ CLI verbs: name llm-fill, readability rewrite, readability file-op, readability 
 UI actions: suggest names for this module, make this function readable, combine these files, review suggestions
 ```
 
+**The UI surface runs `suggest names` off the event loop (2026-09-13,
+docs/DECISIONS.md D34).** A UI action enqueues a spec-23 job rather than
+answering inline (landing 4d, P-61), and for `readability-suggest-names` the
+server's worker pool now dispatches that job to
+`src/workers/readability-worker.ts` instead of calling `suggestNames`
+in-process. The measured reason: 55.8 s of uninterrupted main-thread work for
+one `{fn:0}` job over rn-template-0.72 with the offline `heuristic` backend,
+during which every other route head-of-line-blocked and
+`ui/e2e/recompile.spec.ts` timed out on `/api/modules`. The worker rebuilds the
+`ReadabilityContext` from `{hbcPath, projectDir, treeDir, backendId, args}`
+(the backend via section 9.1's `backendForId`) and opens **no project DB
+connection**, which is sound exactly because of P-59: a name proposal writes
+the overlay sidecar, never `readability_tx`, so `txIds` is always empty and
+spec 18's single writer on the hash-chained log is still the main thread. The
+two UI actions that DO write a transaction -- `make this function readable`
+and `combine these files` -- stay in-process for that reason and keep their
+stall; docs/PUSHBACK.md P-65 and the docs/BUGS.md 2026-09-13 row name the fix
+(split compute from commit in `surfaces.ts` so the worker returns the
+transaction and the main thread commits it).
+
 `promote` and `revert` already exist on the spec-17 MCP surface with different
 argument shapes, so the readability verbs are `promote_change` / `revert_change`
 rather than overloading them. The names above are pinned in code
