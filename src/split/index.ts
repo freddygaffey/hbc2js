@@ -513,9 +513,24 @@ export function splitProject(bytes: Uint8Array, opts: SplitOptions = {}): SplitR
     // one header comment line (below) before `finalFuncText`, so every mark's
     // 1-based line (relative to `finalFuncText` alone) shifts down by one to
     // become the line within `file`. "factory" -> the module's own factory
-    // fnIndex; everything else already carries its real `_fn<idx>` name.
+    // fnIndex; everything else carries its real `_fn<idx>` name, EXCEPT a
+    // duplicated closure copy (`emit/index.ts`'s `copyNameOf`), which suffixes
+    // it `_fn<idx>__c<copy>` — stripping only the `_fn` prefix and calling
+    // `Number()` on the remainder turned that suffix into `NaN` (docs/BUGS.md
+    // 2026-09-13 `ix_ranges.fn` UNIQUE-constraint row): a `NaN` bound as a
+    // `node:sqlite` INTEGER PRIMARY KEY silently auto-assigns the next free
+    // rowid, which can coincide with a real fn id inserted later and blow up
+    // `initProjectDb` on an unrelated row. Extract the leading digit run
+    // instead, so a copy's range is attributed to the ORIGINAL function id
+    // (last copy printed wins the one row `ix_ranges` has room for — same
+    // "no fabrication, whichever the render actually printed" contract the
+    // header above already documents for the non-duplicated case).
     for (const mark of factoryMarks) {
-      const fnIdx = mark.name === "factory" ? m.factoryFunctionIndex : Number(mark.name.replace(/^_fn/, ""));
+      const fnIdx = mark.name === "factory" ? m.factoryFunctionIndex : Number(/^_fn(\d+)/.exec(mark.name)?.[1] ?? NaN);
+      if (Number.isNaN(fnIdx)) {
+        diagnostics.push(`module ${id}: emitted function range named ${JSON.stringify(mark.name)} does not match _fn<idx>[__c<copy>]; range dropped rather than recorded under a fabricated fn id`);
+        continue;
+      }
       functionRanges.set(fnIdx, { file, lines: [mark.startLine + 1, mark.endLine + 1] });
     }
     // `__d(factory, id, deps)` instead of `module.exports = factory` (Gap A,
