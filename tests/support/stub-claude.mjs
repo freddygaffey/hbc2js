@@ -92,6 +92,28 @@ function callMcpServer(serverCfg, calls) {
 }
 
 async function runMcpTranscript() {
+  // agent-driver.test.ts's own argv check (item 3a): print argv back
+  // instead of touching the MCP server at all, so the test can assert
+  // `--tools ""` and `--allowedTools mcp__hbc2js__*` are both present
+  // without spawning a second child process.
+  if (process.env["STUB_CLAUDE_ECHO_MCP_ARGV"] === "1") {
+    await write(JSON.stringify({ result: JSON.stringify({ argv: args }), is_error: false, usage: { input_tokens: 1, output_tokens: 1 } }));
+    process.exitCode = 0;
+    return;
+  }
+  // agent-driver.test.ts's "zero tool calls" scenario (item 3d): the real
+  // failure mode this queue item exists to catch -- the session hits
+  // `max_turns` before ever calling an MCP tool, so `result` is not the
+  // `DONE\n{...}` contract at all. No call to `callMcpServer` here on
+  // purpose: this models a run that made literally zero tool calls.
+  if (process.env["STUB_CLAUDE_ZERO_TOOL_CALLS"] === "1") {
+    // Exits 0 on purpose: proves `runReadabilityAgent` escalates a
+    // zero-tool-call run to a non-zero `exitCode` on its OWN, independent
+    // of whatever code the child process happened to exit with.
+    await write(JSON.stringify({ result: "", is_error: true, terminal_reason: "max_turns", usage: { input_tokens: 42, output_tokens: 0 } }));
+    process.exitCode = 0;
+    return;
+  }
   const configPath = flag("--mcp-config");
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const serverCfg = config.mcpServers.hbc2js;
