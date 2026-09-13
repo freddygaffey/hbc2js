@@ -425,6 +425,41 @@ thread's emit byte-for-byte, the same mechanism `decompileParallel` uses.
   react-navigation. docs/PUSHBACK.md P-62 has the full breakdown.
 - The MCP/UI surfaces cache the analysis per context, keyed by the bytecode
   file's path, size and mtime, so a session that calls `suggest_names` and
-  then `promote_change` analyses the bundle once. A first call still blocks
-  the event loop inside the emit phase -- docs/PUSHBACK.md P-63.
+  then `promote_change` analyses the bundle once.
+
+## How a readability job runs under the ui-server (D34)
+
+The three `readability-*` job kinds are enqueued by `POST
+/api/readability/actions/*` and claimed by the server's own worker pool
+(`src/workers/runner.ts`, spec 23). What happens next differs by kind, and the
+difference is load-bearing:
+
+- **`readability-suggest-names` runs in a worker thread**
+  (`src/workers/readability-worker.ts`). It has to: even with the analysis
+  cached and pooled, `suggestNames` then runs `rawFrameBodies` (a whole-module
+  `emitModule`) and one `NameService.render({fn})` per nameable register.
+  Measured 55.8 s of uninterrupted main-thread work for a single `{fn:0}` job
+  over `rn-template-0.72/index.android.hbc` with the offline `heuristic`
+  backend -- and while that ran, a concurrent `GET /api/modules` did not just
+  answer late, its socket was reset. The worker rebuilds the
+  `ReadabilityContext` from `{hbcPath, projectDir, treeDir, backendId, args}`
+  rather than receiving one (a live DB handle and a `WorkerBackend` instance
+  are not structured-clone-safe), resolving the backend through
+  `backendForId`. It opens **no project DB connection at all**: the only thing
+  `suggest_names` writes is the P-59 name-overlay sidecar, so spec 18's single
+  writer on the hash-chained log stays the main thread.
+- **`readability-rewrite-function` and `readability-combine-files` still run
+  in-process**, and still stall the server for the same emit cost. They end in
+  `recordTransaction` -- DB transaction, shard export, hash-chained log append
+  -- and a worker with its own write connection could fork that chain. Tracked
+  as an Open row in docs/BUGS.md (2026-09-13) with the fix named: split
+  compute from commit in `src/readability/surfaces.ts` so a worker can return
+  the transaction for the main thread to commit. docs/PUSHBACK.md P-65.
+- `HBC2JS_READABILITY_INPROCESS=1` forces `suggest-names` back in-process.
+  It exists so `tests/workers/runner-offthread.test.ts` can run both paths and
+  prove they produce the same job result and the same overlay sidecar; it is
+  not a supported production switch. A context built without a `backendId`
+  (a test handing in its own `FakeBackend`), with a wired `evaluator`, or on
+  the `replay` backend also keeps the in-process path -- none of those can be
+  rebuilt on the far side of a thread boundary.
 

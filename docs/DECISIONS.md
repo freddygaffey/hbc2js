@@ -405,3 +405,64 @@ its rows are ranked, so the top `limit` of them is only known after every
 function has been scanned; pushing it down would change the answer rather
 than its cost. A cheaper answer is never worth a wrong one.
 
+
+## D34 — A readability job that emits runs in a worker thread, and the worker never opens the project DB (2026-09-13, Claude Opus 5)
+
+`WorkerRunner.runReadabilityJob` called `suggestNames` in-process, on the
+ui-server's single event loop. `loadAnalysis` had already been made async,
+cached and pool-backed (P-62/P-63), but everything after it is one
+synchronous main-thread burst: `rawFrameBodies` re-runs `emitModule` over the
+whole bundle, and `nameableTargets` then calls `NameService.render({fn})` --
+another whole-module emit -- once per nameable register. Measured 55.8 s of
+uninterrupted main-thread work for a single `{fn:0}` job over
+`tests/fixtures/bundles/rn-template-0.72/index.android.hbc` with the offline
+`heuristic` backend; during it a concurrent `GET /api/modules` does not merely
+answer late, the socket is reset. That is the mechanism behind
+`ui/e2e/recompile.spec.ts` timing out right after `ui/e2e/readability.spec.ts`
+enqueues a job.
+
+**Chosen: a worker thread (the brief's Option A), not the generator drain
+(Option B).** Option B is the `searchSourceAsync` precedent and it is the
+right shape for a scan, but the cost here is inside `emitModule`, which is not
+a generator and whose consumers (`NameService`, `listNameable`, `runNamePass`)
+are all synchronous over its result. Converting it would mean rewriting the
+emitter as `Steps<T>` across `src/emit`, and the per-nameable `render({fn})`
+call would still be one indivisible whole-module emit -- the stall would be
+bounded by a whole render, not by one function. `src/workers/leads-worker.ts`
+already set the worker-thread precedent for exactly this shape of compute
+(one input path, plain-JSON result).
+
+**The worker rebuilds the context; it is never sent one.** A
+`ReadabilityContext` carries a live `DatabaseSync` handle and a
+`WorkerBackend` instance, neither structured-clone-safe. The worker receives
+`{hbcPath, projectDir, treeDir, backendId, overlayPath, who, surface, args}`
+and rebuilds the backend through `backendForId` -- spec 28 section 9.1's one
+id-to-constructor map -- so it is the same object the main thread would have
+built. A context with no `backendId` (a test's own `FakeBackend`), with a
+wired `evaluator` (a live function), or on the `replay` backend (its recording
+path does not travel) keeps the in-process path unchanged.
+
+**Spec 18 sections 5-6 hold because the worker opens NO project
+connection.** The spec-18 log is hash-chained: an appender reads the previous
+entry's hash and then appends, which is not atomic across two connections, so
+a second writer could fork the chain and make `hbcproj verify --full` fail.
+The worker builds its context with an in-memory placeholder handle, which is
+sound precisely because `suggestNames` touches `ctx.db` nowhere: P-59 put name
+proposals in the per-project name-overlay sidecar, not in `readability_tx`
+(`suggest_names`'s `txIds` is documented as always empty). If a future
+`suggestNames` ever reads the project DB it fails loudly on an empty schema
+instead of silently becoming a second writer.
+
+**Therefore only `readability-suggest-names` moved.**
+`readability-rewrite-function` and `readability-combine-files` go through
+`recordTransaction` -- DB transaction, then shard, then hash-chained log --
+and moving them would need exactly the second writer this decision refuses.
+They stay on the main thread and their own stall is a tracked bug
+(docs/BUGS.md, 2026-09-13 row, docs/PUSHBACK.md P-65): the honest fix is to
+split compute from commit in `src/readability/surfaces.ts` so the worker
+returns a `ReadabilityTransaction` the main thread commits, which is a
+surfaces-API change, not a worker change.
+
+`HBC2JS_READABILITY_INPROCESS=1` forces the old path. It exists so a test can
+run both and prove they produce the same job result and the same overlay
+sidecar; it is not a supported production switch.

@@ -340,7 +340,7 @@ function buildReadabilityCtx(db: DatabaseSync | undefined, projectDir: string, o
     backend,
     // Lets the worker pool run `readability-suggest-names` off the event
     // loop by rebuilding this exact backend inside
-    // `src/workers/readability-worker.ts` (docs/DECISIONS.md D24).
+    // `src/workers/readability-worker.ts` (docs/DECISIONS.md D34).
     backendId: backend.id,
     surface: "ui",
     ...(opts.hbc !== undefined ? { hbcPath: opts.hbc } : {}),

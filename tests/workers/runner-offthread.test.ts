@@ -1,6 +1,6 @@
 // tests/workers/runner-offthread.test.ts -- regression for the docs/BUGS.md
 // 2026-09-11 row "readability jobs block the ui-server event loop"
-// (docs/DECISIONS.md D24).
+// (docs/DECISIONS.md D34).
 //
 // Before the fix, `WorkerRunner.runReadabilityJob` called `suggestNames`
 // inline: measured 55.8 s of UNINTERRUPTED main-thread work for a single

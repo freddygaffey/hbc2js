@@ -87,6 +87,23 @@ caps and blast radius are OS-level facts** rather than promises made by our own
 code, and that a spawned agent talking to our MCP server exercises exactly the
 surface external agents use — one path to review, one path to secure.
 
+#### 2.1a As built (2026-09-13): a job that emits runs in a worker thread
+
+The recommendation above (in-process pool) holds for the LLM-shaped kinds,
+whose cost is the model call and is already async. It does not hold for a kind
+whose cost is CPU on the server's own event loop:
+`readability-suggest-names` measured 55.8 s of uninterrupted main-thread work
+for one `{fn:0}` job over rn-template-0.72 (`rawFrameBodies` re-emits the
+whole module, and `nameableTargets` renders it again per nameable register),
+during which every other route head-of-line-blocked. That kind is now
+dispatched to `src/workers/readability-worker.ts`, a `node:worker_threads`
+worker that rebuilds its context from `{hbcPath, projectDir, treeDir,
+backendId, args}` and opens no project DB connection, so spec 18's single
+writer is unaffected. Concurrency is unchanged (one job per project). The two
+transaction-writing readability kinds stay in-process; see docs/DECISIONS.md
+D34 and docs/PUSHBACK.md P-65 for why, and docs/BUGS.md for the remaining
+stall.
+
 ### 2.2 Queue
 
 - Storage: the `jobs` table (§3). `claimNext()` is a single conditional UPDATE

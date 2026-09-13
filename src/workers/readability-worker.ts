@@ -1,6 +1,6 @@
 // src/workers/readability-worker.ts -- off-main-thread compute for the
 // `readability-suggest-names` job kind (docs/BUGS.md 2026-09-11 row
-// "readability jobs block the ui-server event loop", docs/DECISIONS.md D24).
+// "readability jobs block the ui-server event loop", docs/DECISIONS.md D34).
 //
 // `WorkerRunner.runReadabilityJob` used to call `suggestNames`
 // (src/readability/surfaces.ts) inline on the ui-server's single event loop.

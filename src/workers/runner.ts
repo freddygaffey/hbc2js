@@ -37,7 +37,7 @@ import { FileOpError } from "../readability/file-ops.ts";
 export const SUGGESTED_PREFIX = "[ai-suggested]";
 
 /** Set to `"1"` to force `readability-suggest-names` back onto the main
- *  thread (docs/DECISIONS.md D24). The off-thread path must produce the
+ *  thread (docs/DECISIONS.md D34). The off-thread path must produce the
  *  SAME overlay sidecar and the same job result as the in-process one, and
  *  this switch is what lets a test prove it by running both. */
 export const READABILITY_INPROCESS_ENV = "HBC2JS_READABILITY_INPROCESS";
@@ -260,7 +260,7 @@ export class WorkerRunner {
         const args: SuggestNamesArgs = { target: fn !== undefined ? { fn } : { module: moduleId! } };
         const offThread = this.offThreadInput(this.readability, args);
         // The whole point of this kind going off-thread (docs/DECISIONS.md
-        // D24): `suggestNames` is seconds-to-minutes of synchronous emit and
+        // D34): `suggestNames` is seconds-to-minutes of synchronous emit and
         // it used to run on the ui-server's event loop.
         result = offThread === undefined ? await suggestNames(this.readability, args) : await runReadabilityWorker(offThread);
       } else if (job.kind === "readability-rewrite-function") {

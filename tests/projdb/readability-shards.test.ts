@@ -14,6 +14,10 @@ import { exportProject } from "../../src/projdb/export.ts";
 import { rebuildProject } from "../../src/projdb/rebuild.ts";
 import { verifyProject } from "../../src/projdb/verify.ts";
 import { migrationSql } from "../../src/projdb/db.ts";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
+import { repoRoot } from "../support/paths.ts";
+import type { ReadabilityWorkerInput, ReadabilityWorkerMessage } from "../../src/workers/readability-worker.ts";
 import { recordTransaction, sha256, transactionId } from "../../src/readability/transactions.ts";
 import type { EquivProof, ReadabilityTransaction } from "../../src/readability/types.ts";
 
@@ -135,5 +139,60 @@ test("spec 18 section 1.1: schema minor 6 is additive and its migration block is
     assert.equal(row.n, 0);
   } finally {
     db.close();
+  }
+});
+
+// docs/BUGS.md 2026-09-11 "readability jobs block the ui-server event loop"
+// (docs/DECISIONS.md D34): `readability-suggest-names` now runs in
+// `src/workers/readability-worker.ts`, a SECOND thread, over a project
+// directory the main thread is the single writer of. Spec 18 sections 5-6's
+// log is hash-chained, so a second writing connection could fork the chain;
+// the worker therefore opens no project connection at all and writes only
+// the P-59 name-overlay sidecar. This test runs the REAL worker against a
+// REAL exported project and then demands `verify --full` still be clean --
+// the shard hashes, the log chain and the readability family all intact,
+// and the sidecar not mistaken for a shard.
+const WORKER_SCRIPT = fileURLToPath(new URL("../../src/workers/readability-worker.ts", import.meta.url));
+const SMALL_HBC = join(repoRoot(), "tests", "fixtures", "constructs", "04-for-loop-basic", "v96.hbc");
+
+function runWorker(input: ReadabilityWorkerInput): Promise<ReadabilityWorkerMessage> {
+  return new Promise<ReadabilityWorkerMessage>((resolve, reject) => {
+    const w = new Worker(WORKER_SCRIPT, { workerData: input });
+    w.once("message", (m: ReadabilityWorkerMessage) => {
+      void w.terminate();
+      resolve(m);
+    });
+    w.once("error", reject);
+  });
+}
+
+test("spec 18 sections 5-6: the off-thread readability worker leaves `hbcproj verify --full` clean (it is never a second writer)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hbc2js-readability-offthread-"));
+  const db = freshDb();
+  try {
+    dbSetName(db, "fn:3:reg:4", "loopCounter", { source: "human", who: "fred" });
+    for (const n of [1, 2]) {
+      const content = `// module ${String(n)}\n`;
+      recordTransaction(db, dir, tx(n, content), { priorContents: new Map([[`src/module_${String(n)}.js`, content]]) });
+    }
+    const before = verifyProject(db, dir, { full: true });
+    assert.equal(before.ok, true, before.full?.detail.join("; "));
+
+    const msg = await runWorker({ hbcPath: SMALL_HBC, projectDir: dir, treeDir: join(dir, "src"), backendId: "heuristic", surface: "ui", args: { target: { module: 0 } } });
+    assert.equal(msg.ok, true, `worker failed: ${msg.ok ? "" : msg.error}`);
+    assert.ok(existsSync(join(dir, "readability-overlay.names.json")), "the worker must have written the P-59 overlay sidecar");
+
+    const after = verifyProject(db, dir, { full: true });
+    assert.equal(after.ok, true, after.full?.detail.join("; "));
+    assert.equal(after.full?.readability.checked, 2, "the worker adds no readability transaction (a name proposal has none)");
+    assert.deepEqual(after.full?.readability.problems, []);
+    assert.deepEqual(
+      after.shards.map((s) => s.path),
+      before.shards.map((s) => s.path),
+      "the overlay sidecar is not a shard and must never appear in the shard walk",
+    );
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
