@@ -315,6 +315,44 @@ The suggestion pane's evidence/confidence/equiv-status columns, the
 before/after diff, and the batch promote/revert filters (tier, confidence,
 module, security-relevant) are documented in `docs/UI.md`.
 
+## Discoverability: the `help` tool, `hbc2js://docs/*`, and the skill (2026-09-13)
+
+An external agent driving hbc2js over MCP can only discover what is
+callable, so the docs are tools and resources too, not just prose it has to
+already know to go look for. `src/mcp/help.ts` is the one loader (never
+duplicated in code): the text itself lives under `docs/agent-help/<topic>.md`
+(`tldr`, `tools`, `workflow`, `examples`, `limits`, `glossary`), read at
+runtime by three call sites that all resolve to it --
+
+- the `help` MCP tool (`src/mcp/tools.ts`'s `help`, wired into every server's
+  tool table by `src/mcp/server.ts`'s `generalTools`): `{topic?}` -> the
+  topic text, or (no topic) the tldr plus the topic list;
+- the `hbc2js://docs/<topic>` MCP resources, plus `hbc2js://docs/index`
+  (same text as the topic-less `help` call) -- listed unconditionally in
+  `resources/list` so a client that only browses resources still finds them;
+- `hbc2js help [topic]` on the CLI, and the "start here" line `hbc2js --help`
+  now carries.
+
+`docs/agent-help/tools.md` documents every MCP tool this codebase serves
+(general, spec-17 read/write, spec-28 readability) with a one-line purpose,
+its arguments, and a worked call/reply; `tests/mcp/help.test.ts` cross-checks
+it against the live tool table in both directions so the doc cannot rot out
+of sync with a renamed or added tool. The seven readability tools' own
+schema-table descriptions (`src/mcp/server.ts`'s `READABILITY_TOOL_DESCRIPTIONS`)
+were rewritten from the old generic "Readability surface: X" filler to one
+crisp sentence each, with a worked example on the ones whose reply shape
+most needs one (`ToolDef.examples`, surfaced in `tools/list`).
+
+For a Claude Code session using hbc2js as a tool rather than a session
+driving hbc2js's own MCP tools, `.claude/skills/hbc2js/SKILL.md` is the
+project skill: the five operator commands, the `--mcp-config` snippet,
+where outputs land, the safety model, and the common failure messages,
+kept under 150 lines and checked by `tests/gate/docs/agent-help.test.ts`
+(front matter, line count, every command it shows still parses, every
+`docs/` path it cites exists). `docs/TLDR.md` is the one-screen version for
+humans and lean workers, linked from the top of `README.md` and
+`docs/AGENT-BRIEF.md`.
+
 ## The evaluation loop -- opt-in, pluggable, never promotes (landing 5)
 
 Correctness is always the equivalence oracle above, and that is never

@@ -1,5 +1,8 @@
 # hbc2js
 
+**New here? Read [`docs/TLDR.md`](docs/TLDR.md) first** (one screen: what
+this is, install, the five commands that matter, where to read next).
+
 Decompile React Native **Hermes bytecode** (`.hbc` / `index.android.bundle`) back into **runnable JavaScript**, segregate it into a readable `src/` project, and build a queryable, versioned analysis database over it — with results checked against the real Hermes VM.
 
 Existing Hermes tools stop at disassembly or pseudo-code. hbc2js produces JavaScript that executes and is checked to behave identically to the original bytecode (execution traces against the real Hermes VM, differential-testing generators, recompile-with-`hermesc` round-trips), then goes further: it strips libraries out to `node_modules/`, recovers named screens and navigators into a `src/` tree, identifies npm dependencies by bytecode signature, and exposes the whole decompile as a queryable project database for analysis tooling.

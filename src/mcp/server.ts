@@ -21,8 +21,10 @@ import type { Readable, Writable } from "node:stream";
 import { McpContext } from "./context.ts";
 import type { McpContextOpts } from "./context.ts";
 import {
+  HELP_TOOL_SCHEMA,
   READABILITY_TOOL_SCHEMAS,
   ReadabilityToolArgumentError,
+  help,
   registerReadabilityTools,
   type AddCommentInput,
   type AddTagInput,
@@ -35,6 +37,7 @@ import {
   type SetFindingStatusInput,
   type SetNameInput,
 } from "./tools.ts";
+import { HELP_TOPICS, HelpTopicError, loadHelpTopic } from "./help.ts";
 import { READABILITY_MCP_TOOLS } from "../readability/types.ts";
 import type { ReadabilityContext } from "../readability/surfaces.ts";
 import { ReadabilitySurfaceError } from "../readability/surfaces.ts";
@@ -49,6 +52,14 @@ export interface ToolDef {
   readonly description: string;
   readonly inputSchema: JsonSchema;
   readonly handler: (args: unknown) => unknown;
+  /** A worked call/reply pair, where the schema helper's flat shape leaves
+   *  room for one (docs/lanes/readability.md discoverability task: "add an
+   *  examples field where the schema helper allows it") -- optional, since
+   *  several tools' real reply shapes are already spelled out in
+   *  `docs/agent-help/tools.md` in more depth than a single example here
+   *  could add. Never shown to `tools/list` callers as authoritative on its
+   *  own; it is illustrative, not a schema. */
+  readonly examples?: readonly { readonly call: unknown; readonly reply: unknown }[];
 }
 
 export type ToolTable = Readonly<Record<string, ToolDef>>;
@@ -162,27 +173,70 @@ function writeTools(ctx: McpContext): ToolTable {
  *  (`promoteChange`'s `worker:` gate, `ReadabilitySurfaceError`). This
  *  function adds nothing to that contract -- it only republishes the same
  *  handler map under this server's `ToolTable` shape. */
+/** One crisp sentence per readability tool -- when to call it, what it
+ *  returns -- replacing the old generic "Readability surface: X" filler
+ *  (docs/lanes/readability.md discoverability task). Kept in sync with
+ *  `docs/agent-help/tools.md`'s own "Readability tools" section by
+ *  `tests/mcp/help.test.ts` (every tool named there must exist here and
+ *  vice versa) rather than word-for-word, since the doc topic goes into
+ *  more depth (a worked example per tool) than a schema description needs
+ *  to. */
+const READABILITY_TOOL_DESCRIPTIONS: Readonly<Record<(typeof READABILITY_MCP_TOOLS)[number], string>> = {
+  suggest_names: "Propose names for one function's or module's bindings from real evidence; writes tier:suggested, or nothing when the evidence is thin.",
+  rewrite_function: "Propose a clearer restatement of one function's body; equivalence-gated (PASS only) before anything is recorded as a pending transaction.",
+  classify_module: "Classify one module (src vs vendored) from evidence; returns the classification, writes nothing durable of its own.",
+  file_op: "Propose a file-tree op (make/rename/move/combine/split) with the tree-level equivalence gate; returns a pending transaction.",
+  promote_change: "Promote a suggested name or a pending transaction to accepted; refuses any caller whose who identifies it as a worker.",
+  revert_change: "Revert a promoted or suggested change back out, itself recorded as a transaction.",
+  list_suggestions: "List pending/promoted suggestions and transactions for review.",
+};
+
+const READABILITY_TOOL_EXAMPLES: Partial<Record<(typeof READABILITY_MCP_TOOLS)[number], readonly { readonly call: unknown; readonly reply: unknown }[]>> = {
+  suggest_names: [{ call: { target: { fn: 188 } }, reply: { suggestionIds: ["s1"], names: [{ bindingId: "reg:188:1", name: "url" }] } }],
+  rewrite_function: [{ call: { fn: 40 }, reply: { txId: "t7", verdict: "PASS" } }],
+  promote_change: [{ call: { suggestionId: "s1", who: "worker:haiku" }, reply: { isError: true } }],
+};
+
 function readabilityTools(ctx: ReadabilityContext): ToolTable {
   const handlers = registerReadabilityTools(ctx);
   const out: Record<string, ToolDef> = {};
   for (const tool of READABILITY_MCP_TOOLS) {
     out[tool] = {
-      description: `Readability surface: ${tool} (spec 28 section 9.7).`,
+      description: READABILITY_TOOL_DESCRIPTIONS[tool],
       inputSchema: READABILITY_TOOL_SCHEMAS[tool],
       handler: handlers[tool],
+      ...(READABILITY_TOOL_EXAMPLES[tool] !== undefined ? { examples: READABILITY_TOOL_EXAMPLES[tool] } : {}),
     };
   }
   return out;
 }
 
+/** The one general-purpose tool every server serves regardless of whether
+ *  the project has readability wired up: `help`, over `docs/agent-help/*`
+ *  via `src/mcp/help.ts`/`src/mcp/tools.ts` (never duplicated here). */
+function generalTools(): ToolTable {
+  return {
+    help: {
+      description: "Read hbc2js's own agent docs. No topic returns the tldr plus the topic list; {topic} returns one of tldr|tools|workflow|examples|limits|glossary.",
+      inputSchema: HELP_TOOL_SCHEMA,
+      handler: (args) => help(args),
+      examples: [
+        { call: {}, reply: { topic: "tldr", text: "hbc2js in five lines ..." } },
+        { call: { topic: "workflow" }, reply: { topic: "workflow", text: "# Workflow: read before write ..." } },
+      ],
+    },
+  };
+}
+
 /** Builds the whole tool table this server answers `tools/list`/`tools/call`
- *  with: the spec-17 read+write tools, always; the seven readability tools
- *  only when a `ReadabilityContext` is given (a project with no readable
- *  `src/` tree, or a bad `--llm-backend`, gets the read/write half only --
- *  same "absent, not faked" convention `buildReadabilityCtx`
- *  (`src/ui-server/server.ts`) already uses for the ui-server's own routes). */
+ *  with: `help`, always; the spec-17 read+write tools, always; the seven
+ *  readability tools only when a `ReadabilityContext` is given (a project
+ *  with no readable `src/` tree, or a bad `--llm-backend`, gets the
+ *  read/write half only -- same "absent, not faked" convention
+ *  `buildReadabilityCtx` (`src/ui-server/server.ts`) already uses for the
+ *  ui-server's own routes). */
 export function buildToolTable(ctx: McpContext, readability?: ReadabilityContext): ToolTable {
-  return { ...readTools(ctx), ...writeTools(ctx), ...(readability !== undefined ? readabilityTools(readability) : {}) };
+  return { ...generalTools(), ...readTools(ctx), ...writeTools(ctx), ...(readability !== undefined ? readabilityTools(readability) : {}) };
 }
 
 // --- JSON-RPC 2.0 dispatch ---------------------------------------------------
@@ -202,7 +256,14 @@ export interface JsonRpcResponse {
 }
 
 function toolsListResult(table: ToolTable): unknown {
-  return { tools: Object.entries(table).map(([name, def]) => ({ name, description: def.description, inputSchema: def.inputSchema })) };
+  return {
+    tools: Object.entries(table).map(([name, def]) => ({
+      name,
+      description: def.description,
+      inputSchema: def.inputSchema,
+      ...(def.examples !== undefined ? { examples: def.examples } : {}),
+    })),
+  };
 }
 
 /** A tool THROWING (a gate refusal, a bad-shape argument,
@@ -234,14 +295,39 @@ async function callTool(
   }
 }
 
+/** The `hbc2js://docs/<topic>` resources (docs/lanes/readability.md
+ *  discoverability task) -- `docs/index` lists every topic (same text
+ *  `help` with no argument returns), one resource per `HELP_TOPICS` entry.
+ *  Static text, no arguments, so these are listed unconditionally
+ *  (unlike the read-tool resources below, which are just `table[name]`
+ *  lookups and so only appear when that name is actually in the table). */
+function docsResourceList(): readonly { readonly uri: string; readonly name: string; readonly description: string }[] {
+  return [
+    { uri: "hbc2js://docs/index", name: "docs/index", description: "Index of hbc2js's agent-help topics (same text as help with no topic)." },
+    ...HELP_TOPICS.map((topic) => ({ uri: `hbc2js://docs/${topic}`, name: `docs/${topic}`, description: `Agent-help topic: ${topic}.` })),
+  ];
+}
+
+function readDocsResource(name: string): unknown {
+  const topic = name === "docs/index" ? undefined : name.slice("docs/".length);
+  try {
+    return loadHelpTopic(topic);
+  } catch (e) {
+    throw e instanceof HelpTopicError ? e : new Error(`resources/read: unknown resource ${name}`);
+  }
+}
+
 /** Republishes every read tool as a spec-17 §6-deferred RESOURCE too (`hbc2js://<name>[?query]`,
  *  the query string standing in for the args a bare `{uri}` resources/read
  *  request has no other field for) -- most MCP-aware callers reach these
  *  through `tools/call` in practice (that is the whole of what the
  *  checkpoint-b driver's `--allowedTools "mcp__hbc2js__*"` grants), so this
- *  is deliberately the READ half only, kept thin. */
+ *  is deliberately the READ half only, kept thin. The `hbc2js://docs/*`
+ *  resources above are ALWAYS listed too, so a client that only browses
+ *  resources (never calls the `help` tool) still finds the docs. */
 function resourcesListResult(table: ToolTable, readNames: readonly string[]): unknown {
-  return { resources: readNames.filter((n) => table[n] !== undefined).map((name) => ({ uri: `hbc2js://${name}`, name, description: table[name]?.description })) };
+  const readResources = readNames.filter((n) => table[n] !== undefined).map((name) => ({ uri: `hbc2js://${name}`, name, description: table[name]?.description }));
+  return { resources: [...docsResourceList(), ...readResources] };
 }
 
 function readResource(table: ToolTable, params: unknown): unknown {
@@ -251,6 +337,9 @@ function readResource(table: ToolTable, params: unknown): unknown {
   const rest = uri.slice("hbc2js://".length);
   const q = rest.indexOf("?");
   const name = q < 0 ? rest : rest.slice(0, q);
+  if (name === "docs/index" || name.startsWith("docs/")) {
+    return { contents: [{ uri, mimeType: "text/markdown", text: readDocsResource(name) }] };
+  }
   const def = table[name];
   if (def === undefined) throw new Error(`resources/read: unknown resource ${name}`);
   const args: Record<string, unknown> = {};

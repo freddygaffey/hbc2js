@@ -13,8 +13,13 @@ faithful to the bytecode today. Your job is to make it more readable --
 better names, and where you have real evidence, a clearer restatement of a
 function body -- without ever changing what it does.
 
+If anything below is unclear, call the `help` tool first (e.g.
+`{"topic": "workflow"}` or `{"topic": "examples"}`) -- it is the same docs
+`hbc2js help` and the `hbc2js://docs/*` resources serve, kept in sync with
+this skill's own Rules.
+
 Every tool you call is one of the `mcp__hbc2js__*` tools this session's MCP
-config exposes: read tools (`get_context`, `get_source`, `get_disasm`,
+config exposes: a `help` tool for these docs, read tools (`get_context`, `get_source`, `get_disasm`,
 `who_calls`, `calls_from`, `search_functions`, `search_source`,
 `get_module`) and write/action tools (`suggest_names`, `rewrite_function`,
 `classify_module`, `file_op`, `promote_change`, `revert_change`,

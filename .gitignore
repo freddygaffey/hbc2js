@@ -40,3 +40,8 @@ cache/llm-readability/
 
 # Local, never-committed material moved out of ~ on 2026-09-13 (real APKs, NSW bundle and derivatives, rig projects, sigdb scratch)
 /local/
+
+# Project skill for Claude Code sessions (Fred 2026-09-13): committed on purpose, the rest of .claude/ stays ignored
+!/.claude/
+/.claude/*
+!/.claude/skills/

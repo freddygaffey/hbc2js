@@ -64,6 +64,7 @@ import { startUiServer, buildReadabilityCtx } from "./ui-server/server.ts";
 import { dbPath as projectDbPath } from "./projdb/artifact-read.ts";
 import { McpContext } from "./mcp/context.ts";
 import { buildToolTable, serveMcpStdio } from "./mcp/server.ts";
+import { HelpTopicError, loadHelpTopic } from "./mcp/help.ts";
 import type { Tier as SecretTier } from "./secrets/patterns.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
@@ -117,6 +118,8 @@ Usage:
                                               resources/read) -- docs/lanes/readability.md queue item 1a
   hbc2js --help                    print this message
   hbc2js --version                 print the version
+  hbc2js help [topic]              start here: agent-facing docs (tldr, tools, workflow,
+                                              examples, limits, glossary) -- see docs/TLDR.md
 
 Options (decompile):
   --fn N                    scoped readable decompile of ONE function: emit fn N
@@ -1601,6 +1604,12 @@ function llmFillBackend(argv: readonly string[], json: boolean): WorkerBackend {
 
 async function runNameLlmFill(argv: readonly string[]): Promise<number> {
   const json = argv.includes("--json");
+  if (argv.includes("--help")) {
+    process.stdout.write(
+      "Usage: hbc2js name llm-fill <input.hbc> [--backend claude-cli|haiku|replay|heuristic|fake] [--budget-tokens N] [--recording <file>] [--only src] [--store <path>] [--per-register]\n",
+    );
+    return 0;
+  }
   const hbc = argv[0];
   if (hbc === undefined || hbc.startsWith("-")) {
     fail(
@@ -2534,8 +2543,32 @@ async function runRender(argv: readonly string[]): Promise<void> {
   process.exit(0);
 }
 
+/** `hbc2js help [topic]` -- the CLI half of the discoverability task
+ *  (docs/lanes/readability.md): prints the exact same `docs/agent-help/*`
+ *  text `help` (the MCP tool) and `hbc2js://docs/*` (the MCP resources)
+ *  serve, via the one shared loader `./mcp/help.ts` -- never a second copy
+ *  of the words. An unknown topic prints the valid list on stderr and
+ *  exits 2; no args prints the tldr plus the topic list and exits 0. */
+function runHelpCmd(argv: readonly string[]): number {
+  const topic = argv.find((a) => !a.startsWith("-"));
+  try {
+    process.stdout.write(`${loadHelpTopic(topic)}\n`);
+    return 0;
+  } catch (e) {
+    if (e instanceof HelpTopicError) {
+      process.stderr.write(`${e.message}\n`);
+      return 2;
+    }
+    throw e;
+  }
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
+  if (argv[0] === "help") {
+    process.exitCode = runHelpCmd(argv.slice(1));
+    return;
+  }
   if (argv[0] === "decompile") {
     // Explicit alias for the default decompile command, so `hbc2js decompile
     // <input.hbc> [--fn N]` reads as a verb (docs/CLI.md, hunt-tooling #3).

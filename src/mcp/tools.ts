@@ -629,6 +629,36 @@ import {
 import type { ReadabilityContext } from "../readability/surfaces.ts";
 import { FILE_OP_KINDS, READABILITY_MCP_TOOLS } from "../readability/types.ts";
 import type { ReadabilityMcpTool } from "../readability/types.ts";
+import { HELP_TOPICS, loadHelpTopic } from "./help.ts";
+
+// --- `help` tool (docs/lanes/readability.md discoverability task) ----------
+//
+// The general-purpose `help` tool every hbc2js MCP server serves regardless
+// of whether a project has a readable `src/` tree (unlike the seven
+// readability tools below, which need one) -- `src/mcp/server.ts` always
+// includes it in `buildToolTable`. All the actual text lives under
+// `docs/agent-help/*.md` (`./help.ts`'s own doc comment); this is just the
+// argument-checked wrapper the tool table calls, same shape as every other
+// tool in this file.
+
+export class HelpArgumentError extends Error {}
+
+/** `{topic?: string}` -> the topic text, or (no topic) the tldr plus the
+ *  topic list. A bad topic is a thrown `HelpTopicError` from `./help.ts`,
+ *  surfaced by `src/mcp/server.ts`'s `callTool` as an `isError` tool result
+ *  like any other tool refusal -- never a silent empty reply. */
+export function help(args: unknown): { readonly topic: string; readonly text: string } {
+  const obj = args as Record<string, unknown> | null | undefined;
+  const raw = obj?.topic;
+  if (raw !== undefined && typeof raw !== "string") throw new HelpArgumentError("help: \"topic\" must be a string");
+  return { topic: raw ?? "tldr", text: loadHelpTopic(raw) };
+}
+
+export const HELP_TOOL_SCHEMA = {
+  type: "object" as const,
+  properties: { topic: { type: "string", enum: [...HELP_TOPICS] } },
+  required: [] as const,
+};
 
 /** A hand-rolled JSON-schema SUBSET (`type`/`properties`/`required`/`enum`) --
  *  enough to validate the section 9.7 argument table without adding a schema

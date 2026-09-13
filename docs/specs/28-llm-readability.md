@@ -789,6 +789,16 @@ rather than overloading them. The names above are pinned in code
 the gate asserts the spec text and the code agree, so a landing cannot rename a
 tool without editing this section in the same commit.
 
+**`help` (discoverability, 2026-09-13)** is a general MCP tool every server
+serves regardless of whether readability is wired up -- deliberately NOT
+part of `READABILITY_MCP_TOOLS` above (it is not readability-specific), so it
+is documented here rather than pinned in that list. `{topic?: tldr|tools|
+workflow|examples|limits|glossary}` -> the topic text, or (no topic) the
+tldr plus the topic list; the same text is also served as `hbc2js://docs/*`
+MCP resources and by `hbc2js help [topic]` on the CLI, all three reading
+from the one loader `src/mcp/help.ts` over `docs/agent-help/*.md`
+(`docs/READABILITY.md` "Discoverability" section).
+
 **MCP argument shapes** (landing 4):
 
 | tool | arguments | returns |
