@@ -46,6 +46,7 @@ import type { WorkerBackend } from "./workers/backend.ts";
 import { backendForId, resolveBackendId, BackendSelectionError } from "./readability/backends.ts";
 import { runNamePass, namedCount } from "./readability/name-pass.ts";
 import { runAdversarialRecheck } from "./readability/evaluate.ts";
+import { runReadabilityAgent, AgentDriverError } from "./readability/agent-driver.ts";
 import { gateRewrite, rewriteSidecar } from "./readability/rewrite.ts";
 import type { RewriteProposal } from "./readability/types.ts";
 import { computeSrcScope } from "./readability/scope.ts";
@@ -105,6 +106,10 @@ Usage:
                                               defaults to 0 (kernel-assigned) when omitted; --origin pins CORS to one exact origin;
                                               --llm-backend picks the spec-28 readability routes' backend id (claude-cli|haiku|replay|
                                               heuristic|fake), same set HBC2JS_LLM_BACKEND accepts -- --llm-backend wins when both are given)
+  hbc2js readability agent <project> --module M | --fn N | --file <path>
+                                              [--hbc <bundle.hbc>] [--llm-backend <id>] [--model <m>] [--max-turns N]
+                                              spawn a claude -p agent wired to the mcp-server tool table (docs/lanes/
+                                              readability.md queue item 1b); nothing is ever promoted
   hbc2js mcp-server <project> [--hbc <bundle.hbc>] [--llm-backend <id>]
                                               serve the spec-17 MCP analysis surface (read/annotate tools) plus, when
                                               <project>/src is a readable tree, the seven spec-28 readability tools, as a
@@ -1818,6 +1823,67 @@ async function runReadabilityReview(argv: readonly string[]): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// `hbc2js readability agent <project> --module M | --fn N | --file <path>
+//   [--model haiku] [--max-turns N] [--budget-tokens N]` -- docs/lanes/
+// readability.md queue item 1, checkpoint (b). Thin CLI wrapper over
+// `src/readability/agent-driver.ts`'s `runReadabilityAgent`; prints the
+// agent's own summary plus this driver's own end-of-run check (written
+// suggestions, tree equivalence verdict). Never promotes anything.
+// ---------------------------------------------------------------------------
+async function runReadabilityAgentCmd(argv: readonly string[]): Promise<number> {
+  const json = argv.includes("--json");
+  const projectDir = argv.find((a) => !a.startsWith("-"));
+  if (argv.includes("--help") || projectDir === undefined) {
+    process.stdout.write(
+      "Usage: hbc2js readability agent <project> --module M | --fn N | --file <path> [--hbc <bundle.hbc>] [--llm-backend <id>] [--model <m>] [--max-turns N] [--budget-tokens N] [--json]\n",
+    );
+    return argv.includes("--help") ? 0 : 2;
+  }
+  const moduleRaw = flagValue(argv, "--module");
+  const fnRaw = flagValue(argv, "--fn");
+  const file = flagValue(argv, "--file");
+  const scope = {
+    ...(moduleRaw !== undefined ? { module: Number(moduleRaw) } : {}),
+    ...(fnRaw !== undefined ? { fn: Number(fnRaw) } : {}),
+    ...(file !== undefined ? { file } : {}),
+  };
+  if (Object.keys(scope).length !== 1) {
+    fail(ErrorCode.E_USAGE, "readability agent needs exactly one of --module <id>, --fn <id>, --file <path>", 2, json);
+  }
+  const hbc = flagValue(argv, "--hbc");
+  const llmBackend = flagValue(argv, "--llm-backend");
+  const model = flagValue(argv, "--model");
+  const maxTurnsRaw = flagValue(argv, "--max-turns");
+  const budgetRaw = flagValue(argv, "--budget-tokens");
+  try {
+    const result = await runReadabilityAgent({
+      projectDir,
+      scope,
+      ...(hbc !== undefined ? { hbc } : {}),
+      ...(llmBackend !== undefined ? { llmBackend } : {}),
+      ...(model !== undefined ? { model } : {}),
+      ...(maxTurnsRaw !== undefined ? { maxTurns: Number(maxTurnsRaw) } : {}),
+      ...(budgetRaw !== undefined ? { budgetTokens: Number(budgetRaw) } : {}),
+    });
+    if (json) {
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    } else {
+      process.stdout.write(`${result.resultText}\n`);
+      process.stdout.write(`--- end-of-run check ---\n`);
+      process.stdout.write(`wrote ${String(result.written.length)} suggestion(s) (all tier:suggested)\n`);
+      if (result.equiv !== undefined) process.stdout.write(`tree equiv: ${result.equiv.verdict} — ${result.equiv.why}\n`);
+      process.stdout.write(`tokens in/out: ${String(result.usage.tokensIn ?? 0)}/${String(result.usage.tokensOut ?? 0)}\n`);
+    }
+    return 0;
+  } catch (e) {
+    const message = e instanceof AgentDriverError || e instanceof Error ? e.message : String(e);
+    if (json) process.stdout.write(`${JSON.stringify({ error: message })}\n`);
+    else process.stderr.write(`hbc2js readability agent: ${message}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // `hbc2js query <verb> …` — docs/specs/10-artifact-format.md §3. A thin
 // formatting wrapper over `ArtifactService`; the caps + truncation markers
 // here are the CLI's own presentation of §3.1's bounds, never a second
@@ -2482,6 +2548,10 @@ function main(): void {
   }
   if (argv[0] === "readability" && argv[1] === "review") {
     void runReadabilityReview(argv.slice(2)).then((code) => process.exit(code));
+    return;
+  }
+  if (argv[0] === "readability" && argv[1] === "agent") {
+    void runReadabilityAgentCmd(argv.slice(2)).then((code) => process.exit(code));
     return;
   }
   if (argv[0] === "name" && argv[1] === "llm-fill") {
