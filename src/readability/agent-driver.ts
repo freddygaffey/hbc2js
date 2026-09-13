@@ -26,6 +26,8 @@ import { existsSync } from "node:fs";
 import { listSuggestions, type SuggestionItem } from "./surfaces.ts";
 import type { ReadabilityContext } from "./surfaces.ts";
 import { defaultTreeEquivOracle, readModulesIndex, readTree, type TreeEquivResult } from "./file-ops.ts";
+import { openProjectDbReadonly, readMeta } from "../projdb/artifact-read.ts";
+import { sha256Hex } from "../artifact/schema.ts";
 
 export interface AgentScope {
   readonly module?: number;
@@ -57,6 +59,12 @@ export interface RunReadabilityAgentOpts {
 export interface AgentRunResult {
   readonly resultText: string;
   readonly usage: { readonly tokensIn?: number; readonly tokensOut?: number };
+  /** The spawned `claude` process's own exit code when it is non-zero
+   *  (a real crash/timeout takes priority); otherwise `1` when `toolCalls`
+   *  is `0` (item 3d: a run that made zero tool calls is a failure, not a
+   *  quiet success, however cleanly the process itself exited); otherwise
+   *  `0`. `null` only when the process was killed by a signal and never
+   *  reported a numeric code. */
   readonly exitCode: number | null;
   /** Every suggestion/transaction present after the run that was not
    *  present before it -- a before/after diff, not a `who`-filtered live
@@ -68,6 +76,16 @@ export interface AgentRunResult {
    *  the skill it hands the agent). */
   readonly written: readonly SuggestionItem[];
   readonly equiv: TreeEquivResult | undefined;
+  /** Count of tool calls the run itself reports (`investigated.length +
+   *  wrote.length + refusals.length` from the skill's `DONE` JSON output
+   *  contract) -- the only place this driver CAN count calls from: the
+   *  final `claude -p --output-format json` result has no
+   *  successful-tool-call field of its own (it has `permission_denials`,
+   *  which records refusals to grant a tool, not calls that went through).
+   *  0 when the reply is not a well-formed `DONE` payload at all, which is
+   *  exactly the item-3 failure mode this field exists to catch (a run
+   *  that hits `max_turns` before ever calling an MCP tool). */
+  readonly toolCalls: number;
 }
 
 export class AgentDriverError extends Error {}
@@ -147,12 +165,13 @@ function spawnClaude(
   });
 }
 
-function buildMcpConfig(cliPath: string, opts: RunReadabilityAgentOpts): { readonly path: string; readonly cleanup: () => void } {
+function buildMcpConfig(cliPath: string, opts: RunReadabilityAgentOpts): { readonly path: string; readonly callLog: string; readonly cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "hbc2js-mcp-config-"));
   const path = join(dir, "mcp-config.json");
   const args = [cliPath, "mcp-server", opts.projectDir, ...(opts.hbc !== undefined ? ["--hbc", opts.hbc] : []), ...(opts.llmBackend !== undefined ? ["--llm-backend", opts.llmBackend] : [])];
-  writeFileSync(path, JSON.stringify({ mcpServers: { hbc2js: { command: process.execPath, args } } }, null, 2));
-  return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  const callLog = join(dir, "tools-call.log");
+  writeFileSync(path, JSON.stringify({ mcpServers: { hbc2js: { command: process.execPath, args, env: { HBC2JS_MCP_CALL_LOG: callLog } } } }, null, 2));
+  return { path, callLog, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 /** Reads the SAME `ReadabilityContext` shape checkpoint (a)'s `mcp-server`
@@ -174,6 +193,91 @@ function buildDriverCtx(opts: RunReadabilityAgentOpts): ReadabilityContext | und
 
 function suggestionKey(item: SuggestionItem): string {
   return item.kind === "name" ? `name:${item.suggestionId}` : `tx:${item.tx.id}`;
+}
+
+/** Resolves the `.hbc` bytes the end-of-run equivalence check proves
+ *  against. `project.hbcproj`'s `meta` table records the ORIGINAL bundle's
+ *  sha256 (`bundle_sha256`, written by `hbc2js init`'s `buildIndexRows`)
+ *  but never its filesystem path, and neither does `MODULES.json` -- so
+ *  there is nothing to literally "derive" a path out of. `--hbc` is
+ *  therefore REQUIRED (fail fast, before spawning anything, rather than
+ *  the item-2 hand smoke's silent `INCONCLUSIVE` when it was omitted); when
+ *  the project has a recorded hash, the supplied file is checked against it
+ *  so a caller cannot accidentally point the equiv leg at the wrong bundle
+ *  and get a confident-looking wrong answer. See PUSHBACK P-66. */
+function resolveBundleHbc(opts: RunReadabilityAgentOpts): string {
+  if (opts.hbc === undefined) {
+    throw new AgentDriverError(
+      "readability agent: --hbc <bundle.hbc> is required -- project.hbcproj records the source bundle's sha256 but not its filesystem path, so the end-of-run equivalence check has nothing to prove against without one (pass the same bundle 'hbc2js init' used)",
+    );
+  }
+  const dbFilePath = dbPath(opts.projectDir);
+  if (existsSync(dbFilePath)) {
+    let db;
+    try {
+      db = openProjectDbReadonly(opts.projectDir);
+    } catch {
+      db = undefined;
+    }
+    if (db !== undefined) {
+      try {
+        const recorded = readMeta(db).get("bundle_sha256");
+        if (recorded !== undefined) {
+          const actual = sha256Hex(readFileSync(opts.hbc));
+          if (actual !== recorded) {
+            throw new AgentDriverError(
+              `readability agent: --hbc ${opts.hbc} does not match this project (sha256 ${actual}, project.hbcproj recorded ${recorded} at init time) -- pass the same bundle 'hbc2js init' used`,
+            );
+          }
+        }
+      } finally {
+        db.close();
+      }
+    }
+  }
+  return opts.hbc;
+}
+
+interface AgentSummary {
+  readonly investigated?: readonly unknown[];
+  readonly wrote?: readonly unknown[];
+  readonly refusals?: readonly unknown[];
+  readonly abstained?: readonly unknown[];
+}
+
+/** Parses the skill's `DONE\n{...}` output contract (`skills/hbc-agent.md`
+ *  "Output contract"). Never throws: a reply that is not `DONE` at all --
+ *  the real failure this queue item exists to catch, `max_turns` hit before
+ *  a single tool call -- parses to `undefined`, same "abstain over crash"
+ *  discipline `parseReadabilityResult` uses elsewhere in this lane. */
+function parseAgentSummary(resultText: string): AgentSummary | undefined {
+  const m = /^\s*DONE\s*\n([\s\S]*)$/.exec(resultText);
+  if (m === null) return undefined;
+  try {
+    const parsed: unknown = JSON.parse((m[1] ?? "").trim());
+    return typeof parsed === "object" && parsed !== null ? (parsed as AgentSummary) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `investigated.length + wrote.length + refusals.length` -- every entry in
+ *  any of those three arrays is one tool call the run itself reports
+ *  making (read tools land in `investigated`, write/action tools in `wrote`
+ *  or `refusals`). `abstained` entries are deliberate non-calls, not calls,
+ *  so they are not counted. */
+function countLoggedCalls(path: string): number {
+  try {
+    return readFileSync(path, "utf8").split("\n").filter((l) => l.length > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
+function countToolCalls(summary: AgentSummary | undefined): number {
+  if (summary === undefined) return 0;
+  const len = (v: readonly unknown[] | undefined): number => (Array.isArray(v) ? v.length : 0);
+  return len(summary.investigated) + len(summary.wrote) + len(summary.refusals);
 }
 
 /** The end-of-run check this module owns: a tree-level equivalence pass
@@ -201,10 +305,14 @@ function runEquivCheck(ctx: ReadabilityContext | undefined, hbc: string | undefi
  *  calls, not MCP tool calls). */
 export async function runReadabilityAgent(opts: RunReadabilityAgentOpts): Promise<AgentRunResult> {
   const prompt = goalPrompt(opts.scope);
+  resolveBundleHbc(opts);
   const cliPath = opts.cliPath ?? join(import.meta.dirname, "..", "cli.ts");
   const claudeBin = opts.claudeBin ?? process.env["HBC2JS_CLAUDE_BIN"] ?? "claude";
   const model = opts.model ?? "haiku";
-  const maxTurns = opts.maxTurns ?? 8;
+  // 12 turns of read-only investigation on a real module ended with stop_reason
+  // "tool_use" and nothing written (docs/BUGS.md 2026-09-13): the agent needs
+  // room to read AND write. 24 is the budget the token cap bounds anyway.
+  const maxTurns = opts.maxTurns ?? 24;
   const timeoutMs = opts.timeoutMs ?? 10 * 60 * 1000;
   const skillsDir = opts.skillsDir ?? join(import.meta.dirname, "..", "..", "skills");
   const skillBody = loadAgentSkillBody(skillsDir);
@@ -221,6 +329,8 @@ export async function runReadabilityAgent(opts: RunReadabilityAgentOpts): Promis
       "--mcp-config",
       config.path,
       "--strict-mcp-config",
+      "--tools",
+      "",
       "--allowedTools",
       "mcp__hbc2js__*",
       "--max-turns",
@@ -251,8 +361,15 @@ export async function runReadabilityAgent(opts: RunReadabilityAgentOpts): Promis
     const after = buildDriverCtx(opts);
     const written = after !== undefined ? listSuggestions(after, {}).suggestions.filter((item) => !beforeKeys.has(suggestionKey(item))) : [];
     const equiv = runEquivCheck(after, opts.hbc);
+    // The server logs every tools/call it serves (HBC2JS_MCP_CALL_LOG, set in
+    // the MCP config above); the model's DONE summary is the fallback for a
+    // stub that never reaches the server. The larger of the two is the truth:
+    // a run that hits --max-turns before DONE still made its calls.
+    const loggedCalls = countLoggedCalls(config.callLog);
+    const toolCalls = Math.max(loggedCalls, countToolCalls(parseAgentSummary(resultText)));
+    const exitCode = spawned.code !== 0 ? spawned.code : toolCalls === 0 ? 1 : 0;
 
-    return { resultText, usage, exitCode: spawned.code, written, equiv };
+    return { resultText, usage, exitCode, toolCalls, written, equiv };
   } finally {
     config.cleanup();
   }

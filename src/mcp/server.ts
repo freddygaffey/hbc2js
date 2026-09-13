@@ -16,6 +16,7 @@
 // gate/refusal rules (`promoteChange`'s `worker:` refusal, `validate
 // ReadabilityArgs`' schema checks, etc.) -- a caller reaching this server
 // gets exactly those, no more, no less.
+import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { McpContext } from "./context.ts";
@@ -228,6 +229,23 @@ function generalTools(): ToolTable {
   };
 }
 
+/** `HBC2JS_MCP_CALL_LOG=<file>`: append one line per `tools/call` (the tool
+ *  name) so a driver that cannot see this process (the `claude` CLI spawns
+ *  it from the MCP config) can still count what the model actually called.
+ *  Counting from the model's own DONE summary undercounts to zero whenever
+ *  `--max-turns` stops the run first (docs/BUGS.md 2026-09-13). Failures to
+ *  write the log are ignored: it is a measurement, never the transaction. */
+function logToolCall(params: unknown): void {
+  const path = process.env["HBC2JS_MCP_CALL_LOG"];
+  if (path === undefined || path === "") return;
+  const name = typeof params === "object" && params !== null && typeof (params as { name?: unknown }).name === "string" ? (params as { name: string }).name : "?";
+  try {
+    appendFileSync(path, name + "\n");
+  } catch {
+    // measurement only
+  }
+}
+
 /** Builds the whole tool table this server answers `tools/list`/`tools/call`
  *  with: `help`, always; the spec-17 read+write tools, always; the seven
  *  readability tools only when a `ReadabilityContext` is given (a project
@@ -368,6 +386,7 @@ export async function handleRequest(table: ToolTable, req: JsonRpcRequest): Prom
       case "tools/list":
         return { jsonrpc: "2.0", id, result: toolsListResult(table) };
       case "tools/call":
+        logToolCall(req.params);
         return { jsonrpc: "2.0", id, result: await callTool(table, req.params) };
       case "resources/list":
         return { jsonrpc: "2.0", id, result: resourcesListResult(table, READ_RESOURCE_NAMES) };

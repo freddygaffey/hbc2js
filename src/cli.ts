@@ -1844,7 +1844,7 @@ async function runReadabilityAgentCmd(argv: readonly string[]): Promise<number> 
   const projectDir = argv.find((a) => !a.startsWith("-"));
   if (argv.includes("--help") || projectDir === undefined) {
     process.stdout.write(
-      "Usage: hbc2js readability agent <project> --module M | --fn N | --file <path> [--hbc <bundle.hbc>] [--llm-backend <id>] [--model <m>] [--max-turns N] [--budget-tokens N] [--json]\n",
+      "Usage: hbc2js readability agent <project> --module M | --fn N | --file <path> --hbc <bundle.hbc> [--llm-backend <id>] [--model <m>] [--max-turns N] [--budget-tokens N] [--json]\n",
     );
     return argv.includes("--help") ? 0 : 2;
   }
@@ -1879,11 +1879,17 @@ async function runReadabilityAgentCmd(argv: readonly string[]): Promise<number> 
     } else {
       process.stdout.write(`${result.resultText}\n`);
       process.stdout.write(`--- end-of-run check ---\n`);
+      process.stdout.write(`tool calls: ${String(result.toolCalls)}\n`);
       process.stdout.write(`wrote ${String(result.written.length)} suggestion(s) (all tier:suggested)\n`);
+      for (const item of result.written) {
+        if (item.kind === "name") process.stdout.write(`  name: ${item.bindingId} -> ${item.name}\n`);
+      }
       if (result.equiv !== undefined) process.stdout.write(`tree equiv: ${result.equiv.verdict} — ${result.equiv.why}\n`);
       process.stdout.write(`tokens in/out: ${String(result.usage.tokensIn ?? 0)}/${String(result.usage.tokensOut ?? 0)}\n`);
     }
-    return 0;
+    // item 3d: zero tool calls (or a crashed/timed-out child) is a failure,
+    // not a quiet success -- `result.exitCode` already folds both in.
+    return result.exitCode === 0 ? 0 : 1;
   } catch (e) {
     const message = e instanceof AgentDriverError || e instanceof Error ? e.message : String(e);
     if (json) process.stdout.write(`${JSON.stringify({ error: message })}\n`);
