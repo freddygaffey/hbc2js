@@ -26,7 +26,11 @@ test("docs/lanes: every lane pack exists, has the required sections, and cites o
     for (const section of ["## Files and what owns what", "## Test commands", "## Gotchas", "## Queue", "## Last update"]) {
       assert.ok(text.includes(section), `${pack}: missing section starting "${section}"`);
     }
-    for (const m of text.matchAll(PATH_RE)) {
+    // The queue section names files a future task will CREATE; only the
+    // orientation sections (everything before it) must cite existing paths.
+    const queueAt = text.indexOf("## Queue");
+    const orientation = queueAt >= 0 ? text.slice(0, queueAt) : text;
+    for (const m of orientation.matchAll(PATH_RE)) {
       const p = m[1]!;
       if (p.includes("*") || p.includes("<")) continue;
       // A path with a file extension or a trailing slash must exist as written;
