@@ -34,3 +34,6 @@ ui/playwright-report/
 # spec 28 section 9.3: the LLM readability content-hash cache — one JSON file
 # per request key, derived data, rebuildable, never authoritative.
 cache/llm-readability/
+
+# Fred's local, never-committed material moved out of ~ on 2026-09-13 (real APKs, the NSW bundle and derivatives, rig projects, sigdb scratch)
+/local/
