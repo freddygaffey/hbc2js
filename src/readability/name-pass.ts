@@ -127,6 +127,22 @@ export interface NamePassOptions {
    *  the outcome (`flagged: true`). Absent means no recheck runs -- the
    *  caller decides whether `evaluate` selected `agent` (section 9.6). */
   readonly adversarial?: { readonly backend: WorkerBackend; readonly signal?: AbortSignal };
+  /** Called once per target, BEFORE its backend call, so a long batch run
+   *  (a real bundle over `--backend claude-cli`, one call per target) has
+   *  visible progress instead of going silent until the final summary --
+   *  Fred 2026-09-13, found while a killed `name llm-fill --only src` run
+   *  against the held-out bundle printed nothing at all past the initial
+   *  module-selection line. Never throws into the loop: a caller's print
+   *  callback misbehaving must not abort the pass. */
+  readonly onProgress?: (progress: NamePassProgress) => void;
+}
+
+/** One target's position in a `runNamePass` run -- everything a progress
+ *  printer needs, without recomputing anything the loop already knows. */
+export interface NamePassProgress {
+  readonly index: number;
+  readonly total: number;
+  readonly target: NamePassTarget;
 }
 
 export interface NamePassResult {
@@ -178,7 +194,13 @@ export async function runNamePass(targets: readonly NamePassTarget[], opts: Name
     outcomes.push({ target: regTarget, proposal, written: true });
   };
 
-  for (const target of targets) {
+  for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+    const target = targets[targetIndex]!;
+    try {
+      opts.onProgress?.({ index: targetIndex, total: targets.length, target });
+    } catch {
+      // A progress printer's own failure must never abort the pass.
+    }
     if (isFunctionTarget(target)) {
       // ONE backend call for the whole function's unnamed registers (spec 28
       // section 9.1: "one model call per function, not per register").
