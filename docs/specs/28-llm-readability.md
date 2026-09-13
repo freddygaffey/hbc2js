@@ -931,7 +931,15 @@ run printed nothing at all past the initial module-selection line -- a long
 real run against `--backend claude-cli` must never look hung. The
 `decompileFunction` per-call parse+analysis cost itself (the thing that made
 the collection loop slow in the first place) is unchanged and stays the
-Open BUGS row.
+Open BUGS row. Measured directly (RSS-sampled every 5s, not run to
+completion -- a full run is on the order of a CPU-hour, see below): `name
+llm-fill --backend fake --only src` on the held-out bundle collected
+236/4,732 functions in 290s (~1.23s/function) with peak RSS ~3.2 GB within
+5 minutes. Extrapolated, a full `--only src` collection alone is ~97
+CPU-minutes on this bundle -- consistent with NSW's 43,384-function bundle
+(9.2x the function count, and un-scoped at the time of the killed run,
+since `--only src` did not exist yet) taking 38 minutes to get nowhere near
+done.
 
 ### Landing 2 -- rewrite path (function-level, equiv-gated)
 
