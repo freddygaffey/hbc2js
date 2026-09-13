@@ -322,7 +322,14 @@ function startWorkers(db: DatabaseSync, mcp: McpContext, concurrency: number, re
  *  disables readability rather than silently downgrading it to a different
  *  subsystem's fallback (`buildUiBackend`'s own fallback is a DIFFERENT
  *  pool, spec 23's, not this one). Never throws. */
-function buildReadabilityCtx(db: DatabaseSync | undefined, projectDir: string, opts: UiServerOptions): ReadabilityRoutesCtx | undefined {
+// Exported so `hbc2js mcp-server` (`src/cli.ts`'s `runMcpServer`,
+// docs/lanes/readability.md queue item 1a) can build the SAME
+// `ReadabilityContext` off a plain project directory without duplicating
+// this function's "absent, not faked" fallbacks (no `src/` tree, bad
+// `--llm-backend`) — one place decides what makes a project directory
+// readability-capable, whether the caller is the ui-server or the MCP
+// stdio server.
+export function buildReadabilityCtx(db: DatabaseSync | undefined, projectDir: string, opts: UiServerOptions): ReadabilityRoutesCtx | undefined {
   if (db === undefined) return undefined;
   const treeDir = join(projectDir, "src");
   if (!hasReadableTree(treeDir)) return undefined;

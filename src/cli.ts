@@ -59,7 +59,10 @@ import type { AnnotationRow } from "./project/service.ts";
 import type { EvidenceRef, FindingStatus, Provenance, Severity, Tag } from "./project/schema.ts";
 import type { ResolvedFinding } from "./project/findings.ts";
 import { SecretsService } from "./secrets/service.ts";
-import { startUiServer } from "./ui-server/server.ts";
+import { startUiServer, buildReadabilityCtx } from "./ui-server/server.ts";
+import { dbPath as projectDbPath } from "./projdb/artifact-read.ts";
+import { McpContext } from "./mcp/context.ts";
+import { buildToolTable, serveMcpStdio } from "./mcp/server.ts";
 import type { Tier as SecretTier } from "./secrets/patterns.ts";
 
 const USAGE = `hbc2js ${VERSION} — Hermes bytecode (HBC) -> JavaScript decompiler
@@ -102,6 +105,11 @@ Usage:
                                               defaults to 0 (kernel-assigned) when omitted; --origin pins CORS to one exact origin;
                                               --llm-backend picks the spec-28 readability routes' backend id (claude-cli|haiku|replay|
                                               heuristic|fake), same set HBC2JS_LLM_BACKEND accepts -- --llm-backend wins when both are given)
+  hbc2js mcp-server <project> [--hbc <bundle.hbc>] [--llm-backend <id>]
+                                              serve the spec-17 MCP analysis surface (read/annotate tools) plus, when
+                                              <project>/src is a readable tree, the seven spec-28 readability tools, as a
+                                              stdio JSON-RPC 2.0 server (initialize/tools/list/tools/call/resources/list/
+                                              resources/read) -- docs/lanes/readability.md queue item 1a
   hbc2js --help                    print this message
   hbc2js --version                 print the version
 
@@ -799,6 +807,46 @@ async function runUiServer(argv: readonly string[]): Promise<number> {
     process.stderr.write(`hbc2js ui-server: ${e instanceof Error ? e.message : String(e)}\n`);
     return 1;
   }
+}
+
+function tryOpenProjectDb(path: string) {
+  try {
+    return openProjectDb(path);
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// `hbc2js mcp-server <project> [--hbc <bundle>] [--llm-backend <id>]` --
+// docs/lanes/readability.md queue item 1, checkpoint (a). Builds the SAME
+// `McpContext`/`ReadabilityContext` pair the ui-server builds
+// (`buildReadabilityCtx`, reused here so "readable tree present, backend id
+// valid" is decided in exactly one place) and serves them over
+// `src/mcp/server.ts`'s stdio JSON-RPC transport. `exitOnClose: true` --
+// unlike `ui-server`, a stdio server's only shutdown signal is its stdin
+// closing (the driver in checkpoint b kills or closes the child).
+// ---------------------------------------------------------------------------
+function runMcpServer(argv: readonly string[]): number {
+  const projectDir = argv.find((a) => !a.startsWith("-"));
+  if (argv.includes("--help") || projectDir === undefined) {
+    process.stdout.write("Usage: hbc2js mcp-server <project> [--hbc <bundle.hbc>] [--llm-backend <id>]\n");
+    return argv.includes("--help") ? 0 : 2;
+  }
+  const hbc = flagValue(argv, "--hbc");
+  const llmBackend = flagValue(argv, "--llm-backend");
+  const resourcesOpts = hbc !== undefined ? { hbc } : {};
+  const mcp = new McpContext(projectDir, resourcesOpts);
+  const dbFilePath = projectDbPath(projectDir);
+  const db = existsSync(dbFilePath) ? tryOpenProjectDb(dbFilePath) : undefined;
+  const readabilityCtx = buildReadabilityCtx(db, projectDir, {
+    projectDir,
+    ...(hbc !== undefined ? { hbc } : {}),
+    ...(llmBackend !== undefined ? { llmBackend } : {}),
+  });
+  const table = buildToolTable(mcp, readabilityCtx?.context);
+  serveMcpStdio(table, process.stdin, process.stdout, { exitOnClose: true });
+  return 0;
 }
 
 function runInit(argv: readonly string[]): number {
@@ -2479,6 +2527,10 @@ function main(): void {
     void runUiServer(argv.slice(1)).then((code) => {
       process.exitCode = code;
     });
+    return;
+  }
+  if (argv[0] === "mcp-server") {
+    process.exitCode = runMcpServer(argv.slice(1));
     return;
   }
   if (argv[0] === "disasm") {
