@@ -188,3 +188,32 @@ Full report: /Users/fred/nsw-hunt/NATIVE-INGEST-TEST.md
    BOTH Android and iOS from one Android-built bundle — and every single failure along the way was one of
    these six classes or a harness bug. NONE was a decompiler mistranslation. A seam report turns that
    result from a 38-session archaeology project into a checklist.
+
+7. **EMITTER: stop emitting `Reflect.apply` for ordinary calls — it is the systemic size AND speed cost.**
+   Measured on the NSW bundle: **122,351 `Reflect.apply` call sites** in the decompiled output. The emitted
+   shape is `r1 = Reflect.apply(r1, r2, [r3]);` where the ORIGINAL bytecode had a plain `Call` opcode.
+   Every site pays: an argument-array allocation, two property lookups (`Reflect`, `.apply`), and a
+   reflective dispatch — instead of one direct call instruction.
+
+   IMPACT, measured end-to-end on a real app:
+   - **Size:** original APK bundle 12,699,472 bytes; our decompile -> recompile 33,372,080 bytes — **2.63x**.
+   - **Not fixable downstream:** terser with `--compress --mangle` shrank the JS 78.4MB -> 28.3MB (64%) but
+     the resulting bytecode only fell 1.1% (33,372,080 -> 32,988,643). Minifiers cannot rewrite
+     `Reflect.apply` into a direct call without knowing `thisArg` semantics. **The decompiler can** — it is
+     reading the Call-vs-CallBuiltin distinction out of the bytecode and then throwing it away.
+   - **Speed:** the owner's repeated complaint on a real device/simulator is that the rebuilt app is
+     persistently slow, beyond what build type explains. 122k reflective dispatches plus 122k short-lived
+     array allocations per full execution path is a plausible dominant cause, and it is GC pressure as well
+     as raw dispatch cost.
+
+   FIX: specialise at emit time. When `thisArg` is `undefined`/unused, emit `f(a, b)`. When the callee was
+   loaded from the receiver, emit `obj.m(a, b)`. Keep `Reflect.apply` only for the genuinely dynamic cases
+   (spread/computed arity) where it is actually needed. This is a pure code-generation change: the semantics
+   are already known at emit time, and equivalence is checkable with the existing `runFunctionEquiv` oracle
+   (spec 09 / `src/harness/hbc-equiv.ts`) function-by-function.
+
+   WHY IT MATTERS: fidelity is already proven (the NSW hunt reached 60/60 screens on BOTH Android and iOS
+   from one Android-built bundle, zero confirmed mistranslations). The remaining gap between decompiled
+   output and the original is **efficiency**, and this single pattern is the bulk of it. Related smaller
+   offender in the same vein: ~35.6k `break L<n>` label-block exits per 20MB sampled, i.e. structured
+   control flow emitted as labelled breaks rather than natural loops/conditionals — worth measuring next.
