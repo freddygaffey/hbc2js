@@ -128,3 +128,63 @@ Ran native ingestion on the REAL NSW APK (base.apk) in a fresh project. Results:
 - TRAP: `hbc2js deps --out` on a STALE dist silently no-ops native ingestion (exit 0, no error, no
   native/ dir). Add a guard/warning. Bit the validation worker.
 Full report: /Users/fred/nsw-hunt/NATIVE-INGEST-TEST.md
+
+## Corpus sweep — timing + profiling (Fred 2026-09-05)
+- **PER-SUB-STEP timing in tools/e2e/corpus-regression.mjs (Fred 2026-09-05: time each stage like `time <cmd>`, not just total).** Record ms for EACH sub-step separately per app: parse, decompile (readable passes), split, segregate, deps, artifact/native-ingest — plus fn count + bundle size. Localises WHERE time goes (the O(n^2) is in readable-passes specifically; split is cheap). The fix-cycle re-sweeps capture it automatically. Small enhancement + a test.
+- **OUTLIER-TRIGGERED deep profiling (Fred 2026-09-05).** Compare each sub-step ACROSS apps; flag a sub-step that's an outlier (anomalously slow for that app's fn-count/size, or one stage dominating). ONLY THEN `--prof` deep-profile that specific slow sub-step on that specific app. Do NOT blanket-profile all 28 (expensive, redundant). Outlier detection localises the profile to exactly one stage × one app.
+- **SLOW-FOR-SIZE = a perf BUG** → feeds the same triage→fix cycle. Recommendation for any slow app ties to the existing perf items: O(n^2) whole-file name-bookkeeping fix, single-threaded deps speedup, un-parallelised decompile (function-level pool). Timing across 28 apps PRIORITISES those three.
+
+6. **Static SEAM REPORT — enumerate every point the bundle touches the outside world, BEFORE running it.**
+   The single biggest lever the NSW hunt exposed. Getting that app running took ~38 sessions, and the
+   overwhelming majority of that time was *discovering seams one runtime crash at a time*. Almost all of
+   them were statically findable. A `hbc2js seams <bundle>` report would have collapsed weeks into one scan.
+   Six classes, each with real evidence from the hunt:
+
+   **(a) Metro-baked platform variants — the biggest single class.** Metro resolves RN core's
+   `.android.js`/`.ios.js` sources at ORIGINAL build time and bakes ONE platform's copy into the bytecode.
+   Run that bundle on the other platform and it requests native components/methods that do not exist there.
+   FIVE separate instances in one app, each costing a debugging session: `legacySendAccessibilityEvent.android.js`
+   (`typeViewFocused` off a UIManager constant iOS never provides); `AndroidSwipeRefreshLayout`;
+   `RNSVGSvgViewAndroid` (vs iOS's `RNSVGSvgView`); `StatusBar.js` calling Android-only
+   `StatusBarManager.setColor`/`setTranslucent`; `AndroidTextInput` (broke ALL text entry on iOS —
+   renders but never becomes first responder). DETECTION: scan for `requireNativeComponent("<X>")` and
+   native-method calls whose names carry a platform affix, and cross-reference module ids against RN's
+   known platform-split core files. Output: "this bundle is Android-built; these N sites will fail on iOS",
+   with the suggested alias target. Trivially scriptable, enormous payoff.
+
+   **(b) Native-module seams.** Every `NativeModules.X` / `TurboModuleRegistry.getEnforcing("X")` call site
+   is a mock point. Found the hard way: AsyncStorage, Firebase, crypto, device-init, `RNRandomBytes`
+   (its `.seed` read unguarded at module top level, fatal), vision-camera, CookieManager, keychain,
+   StatusBarManager. DETECTION: enumerate call sites, diff against what a given host provides, list gaps.
+
+   **(c) Network/backend seams that gate rendering.** Screens that render chrome but an empty body because a
+   fetch never resolves. Real examples: `fetchManagedContent` (module 725) gating four CMS screens;
+   `getNotificationListAPI` (3031); `IssueReportingCategoriesCacheService.getCategories` (4059) — that one
+   left Help & Support stuck on a spinner for ~28 sessions; Auth0 `refreshToken` (2212), the single call
+   whose absence made a correct and an incorrect PIN indistinguishable. DETECTION: promise-returning exports
+   whose results populate redux/state, reachable from a screen's mount effect.
+
+   **(d) Module-scope caches the real bootstrap fills.** Own-root harnesses skip app startup, so
+   module-singleton caches stay empty forever and throw far from the cause. Examples:
+   `generateInitialLicenceInfos` (814) and the categories cache above. DETECTION: module-scope mutable
+   state whose only writer is called from the bootstrap chain, not from any screen.
+
+   **(e) React Contexts: real Provider vs default-only.** A diagnosis carried in this project's notes for
+   ~20 sessions said three Contexts were "unwired"; two of them (`PaymentProvider`, `VouchersProvider`)
+   have NO Provider component anywhere in the bundle and already ship complete `createContext` defaults —
+   only `NativeLinkingProvider` (4329) was real. DETECTION: for each `createContext`, does a Provider
+   component exist, and what is the default's shape? Cheap, and it kills a whole class of wrong guesses.
+
+   **(f) Data-shape expectations for seeding.** Seeds silently mis-shaped cost several sessions: the licence
+   card reads `codeDisplayClass`, not `name`; `dateOfBirth` is validated `DD/MM/YYYY` by `isValidDOBFormat`
+   while every other date wants `YYYY-MM-DD`; `bodyContent` must be an ARRAY because the view `.map()`s it.
+   Worst instance: `credentialInfoByLicenceType` (814) does a SHALLOW `Object.assign({}, licenceInfos,
+   getVCInfos())[type]`, so a two-field seed WHOLESALE REPLACED the real licence object — latent for ~20
+   sessions, surfacing later as three unrelated-looking screen crashes. DETECTION: for a given seeded object,
+   report every field the real code actually reads off it, plus any shallow-merge shadowing hazard.
+
+   WHY IT MATTERS BEYOND THIS APP: (a)-(c) are the difference between "the decompiled bundle runs" and "the
+   decompiled bundle works on a platform it was not extracted from". The NSW hunt reached 60/60 screens on
+   BOTH Android and iOS from one Android-built bundle — and every single failure along the way was one of
+   these six classes or a harness bug. NONE was a decompiler mistranslation. A seam report turns that
+   result from a 38-session archaeology project into a checklist.
